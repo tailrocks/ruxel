@@ -6,14 +6,23 @@
 
 mod apt;
 mod apt_repository;
+mod authorized_key;
+mod blockinfile;
 mod command;
 mod copy;
 mod file;
 mod get_url;
+mod git;
+mod iptables;
+mod lineinfile;
+mod misc;
+mod replace;
 mod shell;
 mod slurp;
 mod stat;
+mod sysctl;
 mod systemd;
+mod user;
 
 use serde_json::{Map, Value, json};
 
@@ -56,6 +65,17 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
     let result = match module {
         "apt" => apt::run(params, ctx),
         "apt_repository" => apt_repository::run(params, ctx),
+        "blockinfile" => blockinfile::run(params, ctx),
+        "lineinfile" => lineinfile::run(params, ctx),
+        "replace" => replace::run(params, ctx),
+        "sysctl" | "ansible.posix.sysctl" => sysctl::run(params, ctx),
+        "community.general.timezone" => misc::timezone(params, ctx),
+        "group" => misc::group(params, ctx),
+        "user" => user::run(params, ctx),
+        "authorized_key" => authorized_key::run(params, ctx),
+        "git" => git::run(params, ctx),
+        "iptables" => iptables::run(params, ctx),
+        "template" => copy::run(params, ctx),
         "get_url" => get_url::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
         "shell" => shell::run(params, free_form, ctx),

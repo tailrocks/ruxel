@@ -430,17 +430,24 @@ impl HostRun<'_> {
             let rendered = self.engine.render_value(v, scope)?;
             params.insert(k.clone(), serde_json::to_value(&rendered)?);
         }
-        // `copy` with src= reads the controller-side file (playbook-
-        // relative) and ships it as content — all file payload stays a
+        // `copy src=` reads the controller-side file (playbook-relative)
+        // and ships it as content; `template src=` additionally renders
+        // it through the engine with the full scope first (byte-fidelity
+        // proven by the M1 render-parity gate). All file payload stays a
         // controller concern (ARCHITECTURE §1); the content-addressed
         // blob channel later replaces inline shipping, not this logic.
-        if module == "copy"
+        if (module == "copy" || module == "template")
             && !params.contains_key("content")
             && let Some(src) = params.get("src").and_then(|v| v.as_str())
         {
             let path = self.playbook_dir.join(src);
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| anyhow!("copy src {}: {e}", path.display()))?;
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow!("{module} src {}: {e}", path.display()))?;
+            let content = if module == "template" {
+                self.engine.render_template_file(&raw, scope)?
+            } else {
+                raw
+            };
             params.remove("src");
             params.insert("content".into(), serde_json::Value::String(content));
         }

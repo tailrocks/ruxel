@@ -12,6 +12,11 @@ use std::path::Path;
 pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let url = str_param(obj, "url").ok_or("get_url: url required")?;
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!(
+            "get_url: only http(s) urls are in the closed surface: {url}"
+        ));
+    }
     let dest = str_param(obj, "dest").ok_or("get_url: dest required")?;
     let p = Path::new(dest);
 
@@ -67,6 +72,7 @@ fn fetch(url: &str, dest: &Path) -> Result<bool, String> {
         .arg("-fsSL")
         .arg("-o")
         .arg(dest)
+        .arg("--")
         .arg(url)
         .output();
     if let Ok(out) = curl {
@@ -82,6 +88,7 @@ fn fetch(url: &str, dest: &Path) -> Result<bool, String> {
         .arg("-q")
         .arg("-O")
         .arg(dest)
+        .arg("--")
         .arg(url)
         .output();
     match wget {

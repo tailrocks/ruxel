@@ -22,6 +22,9 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     )?;
     let update_cache = bool_param(obj, "update_cache", true);
 
+    if filename.is_empty() || filename.contains('/') || filename.contains("..") {
+        return Err(format!("apt_repository: invalid filename {filename:?}"));
+    }
     let path = PathBuf::from(format!("/etc/apt/sources.list.d/{filename}.list"));
     let want = format!("{repo}\n");
     let current = std::fs::read_to_string(&path).unwrap_or_default();
