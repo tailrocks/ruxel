@@ -224,8 +224,11 @@ ignore — that is what closed spec means).
   status for each name (present = installed at any version; latest =
   installed AND no candidate newer per apt policy). Change: `apt-get
   install/upgrade` with `DEBIAN_FRONTEND=noninteractive`. `update_cache`
-  refreshes lists; **⚠ verify** when Ansible reports `changed` for
-  update_cache-only invocations and for `upgrade: dist` with nothing to do.
+  refreshes lists. **Pinned 2026-06-11 (fixture captures
+  update-packages-run1/run2):** an `update_cache`-only invocation reports
+  `changed: false` always; `upgrade: dist` reports changed iff packages
+  actually upgraded (false on the converged second run); `autoremove`
+  with nothing to remove reports false.
   Ruxel batching rule (§ ARCHITECTURE 5.3) must not alter per-task reported
   status.
 - **`apt_repository` (6)** — `repo` (deb line), `filename`, `state`,
