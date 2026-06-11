@@ -105,8 +105,8 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 2: **M1 complete; M2 gate passed on a
-local VM** — M3 is next)._
+_Last updated: 2026-06-11 (session 2: **M1 complete; M2 gate passed; M3
+execution foundation running end-to-end on a local VM**)._
 
 **Blocker for the operator:** the `hcloud` context `ruxel-fixtures` still
 does not exist (`hcloud server-type list` fails; re-verified session 2).
@@ -215,10 +215,34 @@ the fast inner loop, recreatable in seconds with
 target/aarch64-unknown-linux-musl/release/ruxel-agent cargo test -p
 ruxel-cli --test transport_gate -- --ignored --nocapture`.
 
-M3 (next): module runtime (19 core modules w/ check/apply/diff/
-check-mode), ledger store + verdict engine, handlers/notify, apt
-batching, plan/apply end-to-end. First fixture-VM gate — x86_64 Hetzner
-preferred (blocked on hcloud context); local VM covers the inner loop.
+M3 (**started, session 2** — execution foundation in place):
+
+- [x] Agent module runtime: command (E15 shlex), shell (E14 creates
+      shape), file (directory/absent/link + attrs + recurse,
+      /etc/passwd-based id resolution for static musl), stat, copy
+      (content=, atomic), slurp; per-iteration TaskStart/TaskResult
+      streaming; check-mode skip (command/shell) and prediction
+      (file/copy)
+- [x] Linear per-host scheduler: JIT render with full scope (play vars +
+      facts + registers), when incl. per-item + short-circuit AND lists,
+      loop expansion, until/retries/delay, changed_when/failed_when,
+      register/set_fact, ignore_errors, block/rescue, notify + handler
+      flush, Ansible-rule recap; controller-side debug/assert/fail/
+      set_fact; `apply` drives it (RUXEL_AGENT_BIN)
+- [x] ⚠ closed: shell creates-guard status (golden E14: ok, not
+      skipped), command free-form shlex split (E15), no_log censoring
+      shape (E12/E13)
+- [x] E2E evidence: 13-task closed-surface playbook against ruxel-deb —
+      recap ok=12 changed=4 ignored=1 failed=0; loop/per-item-when/
+      register/creates/ignore_errors verified on target; reruns stable
+- [ ] Remaining M3: template/lineinfile/replace/blockinfile/get_url +
+      apt/apt_repository/systemd/service modules; blob channel for
+      copy/template src=; convergence ledger + verdict engine +
+      --no-cache; apt adjacency batching; per-task timing + --output
+      json; pause relay; become_user; oracle status-parity harness
+      (install sshd in the local VM, run pinned ansible vs ruxel on twin
+      state, diff statuses); then the M3 gate playbooks on an x86_64
+      fixture (blocked: hcloud context)
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
