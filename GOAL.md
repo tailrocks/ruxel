@@ -105,9 +105,17 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 3: **operator unblocked everything —
-M0 fully complete; M2 gate re-proven on x86_64; first real workload
-playbook (update-packages.yml) at full status parity**)._
+_Last updated: 2026-06-11 (session 3 cont.: **3/16 playbooks gate-proven,
+26/36 modules executing** — full-parity grind in progress)._
+
+**Operator decisions wanted (next session can proceed without, but these
+unblock the drives/storage and install-base gates):**
+1. Hetzner **volumes** for the init-*-drives playbooks (they stat
+   /dev/disk/by-id paths; loop devices don't appear there, Hetzner cloud
+   volumes do as scsi-0HC_Volume_*). GOAL.md rule: volumes need your OK.
+   1-2 × 10GB volumes ≈ €0.05/day while attached.
+2. **holla-apt.tailrocks.com** serves no Release file to fixture IPs —
+   allowlist fixtures or accept a stand-in repo for the install-base gate.
 
 **No operator blockers.** Session 3 received and wired both credentials:
 - `hcloud` context `ruxel-fixtures` active (token also backed up in 1P:
@@ -279,14 +287,38 @@ M3 (**started, session 2** — execution foundation in place):
       Known issue documented in transport.rs: second sequential connect
       inside one process stalls (shell repeats fine; real runs are one
       connect per process) — revisit before M5 parallelism
-- [ ] Remaining M3: template/lineinfile/replace/blockinfile/get_url/
-      apt_repository modules; blob channel for copy/template src=;
-      convergence ledger + verdict engine + --no-cache; apt adjacency
-      batching; per-task timing + --output json; pause relay;
-      become_user; automated status-parity harness (diff ruxel recap vs
-      capture statuses — done by hand for update-packages this session);
-      then the M3 gate playbooks (install-base needs the holla-apt
-      operator decision; install-docker/upgrade-debian unblocked)
+- [x] get_url + apt_repository + copy src= (controller-side read);
+      **upgrade-debian.yml and install-docker.yml gates passed** —
+      three-way convergence (ruxel rerun changed=0, ansible bless
+      changed=0 on ruxel's state). The intermediate changed=1 pair was
+      trixie order-interaction (upgrade-debian's sources target Debian
+      13; the next apt pulls trixie base-files and flips os-release
+      mid-sequence — ansible does the identical two-step), captured in
+      the bless goldens
+- [x] 11 more modules: sysctl (normalized compare), lineinfile (verbatim-
+      line-wins rule), replace, blockinfile, timezone, group, user,
+      authorized_key (key-material match), git, iptables, template
+      (controller-rendered → content; agent stays template-free).
+      13-task batch playbook on the fixture: rerun changed=0, state
+      byte-verified. **26/36 modules execute; 3/16 playbooks gated**
+- [x] Field hardening: per-fixture known_hosts (recycled IPs poison the
+      global file), SSH keepalives (sin route resets long sessions —
+      masqueraded as dead hosts twice), oracle captures run ansible with
+      ControlMaster=no (its own stale ControlPersist sockets from a
+      dropped link poisoned every later run), fixture default cpx22
+      (2 GB OOMs under docker+dist-upgrade), security-review fixes
+      (get_url `--` + scheme check; apt_repository filename validation)
+- [ ] Remaining M3+: storage modules lvg/lvol/filesystem/mount (needs
+      the volumes OK) and postgresql_db/user/privs/schema (PG18+port
+      40000 fixture); pause relay; become_user (postgres) + its env ⚠
+      experiment; convergence ledger + verdict engine + --no-cache; apt
+      adjacency batching; blob channel (perf, replaces inline content);
+      real `op` resolver in apply (dry-secrets is the test path —
+      secretful playbook gates run BOTH sides with the fake-lookup
+      plugins so no real secret ever lands on a fixture); tags engine,
+      live --check/--diff, --output json + run log; automated bless-gate
+      script (ruxel apply → ansible capture → assert changed=0 — done by
+      hand 3×); then the remaining 13 playbook gates, M5 benchmarks
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
@@ -311,3 +343,8 @@ Session log:
   at session end. Operator note: Hetzner token transited this
   transcript — rotate when convenient; revoke the old read-only ruxel-ci
   service account.
+- 2026-06-11 s3 cont. (goal: full parity): commits bef4998 (gates for
+  install-docker + upgrade-debian, transport field hardening), 17ed6da
+  (11-module batch). Safety check: target = ruxel-fixture-work
+  5.223.69.142, created via tools/fixtures, verified ≠ all six prod IPs.
+  Fixture destroyed + reaped at session end.
