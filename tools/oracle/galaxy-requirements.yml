@@ -1,0 +1,9 @@
+# Real collections for execution captures (capture_fixture.sh). The fake
+# community.general in collections/ stays render_parity-only.
+collections:
+  - name: community.general
+    version: ">=8.0.0"
+  - name: ansible.posix
+    version: ">=1.5.0"
+  - name: community.postgresql
+    version: ">=3.0.0"

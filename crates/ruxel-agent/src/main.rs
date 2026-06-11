@@ -80,6 +80,21 @@ fn serve() -> i32 {
         return 66;
     }
 
+    // Orphan guard: a controller that dies before completing the
+    // handshake can leave this process alive with an open channel (its
+    // local ssh client may be orphaned rather than closed). If no Hello
+    // arrives promptly, exit and free the lock. Exit code 67.
+    let handshaken = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let handshaken = handshaken.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
+                std::process::exit(67);
+            }
+        });
+    }
+
     let mut check_mode = false;
 
     loop {
@@ -96,6 +111,7 @@ fn serve() -> i32 {
         };
         match envelope.msg {
             Some(Msg::Hello(hello)) => {
+                handshaken.store(true, std::sync::atomic::Ordering::Relaxed);
                 check_mode = hello.check_mode;
                 if hello.proto_version != PROTO_VERSION {
                     log_event(

@@ -35,6 +35,7 @@ ip="$(hcloud server ip "$name")"
 # Wait for SSH (fresh Debian images take ~20-40s).
 for _ in $(seq 1 60); do
   if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=3 \
+        -o IdentitiesOnly=yes \
         -o UserKnownHostsFile="${keyfile}.known_hosts" \
         -i "$keyfile" "root@${ip}" true 2>/dev/null; then
     break
@@ -45,3 +46,4 @@ done
 echo "RUXEL_FIXTURE_NAME=${name}"
 echo "RUXEL_FIXTURE_IP=${ip}"
 echo "RUXEL_FIXTURE_KEY=${keyfile}"
+echo "RUXEL_FIXTURE_SSH_OPTS='-i ${keyfile} -o IdentitiesOnly=yes -o UserKnownHostsFile=${keyfile}.known_hosts -o StrictHostKeyChecking=accept-new'"
