@@ -115,6 +115,16 @@ impl AgentConnection {
         &mut self.stdout
     }
 
+    /// Send one controller→agent message.
+    pub async fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
+        write_frame(&mut self.stdin, envelope).await
+    }
+
+    /// Receive the next agent event; `None` when the agent closed cleanly.
+    pub async fn next_event(&mut self) -> Result<Option<v1::Event>> {
+        read_frame(&mut self.stdout).await
+    }
+
     /// Send Done and wait for the agent to flush and exit cleanly.
     pub async fn shutdown(mut self) -> Result<()> {
         write_frame(

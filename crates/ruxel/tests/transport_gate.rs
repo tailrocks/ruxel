@@ -44,6 +44,32 @@ async fn cold_connect_handshake_facts_shutdown() {
     assert!(!host.facts.default_ipv4_interface.is_empty());
     conn.shutdown().await.expect("clean shutdown 1");
 
+    // Event plumbing round-trip: M2 agents answer Plan with a Warn log.
+    let (mut conn_ev, _) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-events")
+        .await
+        .expect("event-test connect");
+    conn_ev
+        .send(&ruxel_proto::v1::Envelope {
+            msg: Some(ruxel_proto::v1::envelope::Msg::Plan(
+                ruxel_proto::v1::Plan::default(),
+            )),
+        })
+        .await
+        .expect("send plan");
+    let event = conn_ev
+        .next_event()
+        .await
+        .expect("event read")
+        .expect("an event");
+    assert!(
+        matches!(
+            event.msg,
+            Some(ruxel_proto::v1::event::Msg::Log(ref l)) if l.message.contains("M3")
+        ),
+        "expected the M2 not-implemented log, got {event:?}"
+    );
+    conn_ev.shutdown().await.expect("clean shutdown events");
+
     // Run 2: same hash → no upload; warm master → fast.
     let t1 = Instant::now();
     let (conn2, _host2) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-2")
