@@ -105,13 +105,31 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 2: **M1 complete; M2 gate passed; M3
-execution foundation running end-to-end on a local VM**)._
+_Last updated: 2026-06-11 (session 3: **operator unblocked everything —
+M0 fully complete; M2 gate re-proven on x86_64; first real workload
+playbook (update-packages.yml) at full status parity**)._
 
-**Blocker for the operator:** the `hcloud` context `ruxel-fixtures` still
-does not exist (`hcloud server-type list` fails; re-verified session 2).
-All fixture-dependent work below is parked on it. OPERATOR-SETUP.md §1 —
-~30 seconds in a separate terminal.
+**No operator blockers.** Session 3 received and wired both credentials:
+- `hcloud` context `ruxel-fixtures` active (token also backed up in 1P:
+  vault `ChainArgos`, item `ruxel Hetzner Cloud`); project verified empty
+  at first use; fixture scripts validated end-to-end on a real VM
+- 1P service account `ruxel-ci` (R/W on vault `ruxel-test` after one
+  rotation — the first token was read-only): `~/.config/ruxel/op-ci.env`,
+  GH Actions secret `OP_SERVICE_ACCOUNT_TOKEN`, 1P backup item
+  `ruxel CI service account`; vault seeded with synthetic
+  `ruxel-test SSH` + `ruxel-test PostgreSQL` items
+- Operator to-dos: revoke the old read-only `ruxel-ci` service account in
+  the 1P UI; rotate the Hetzner token when convenient (it is in this
+  transcript) and update the 1P item + recreate the hcloud context
+
+Remaining operator-optional: baseline timing logs (OPERATOR-SETUP §3).
+
+**Found this session (environmental, for the operator):**
+`https://holla-apt.tailrocks.com` serves no Release file to a Hetzner
+Cloud fixture (install-base.yml dies at "Refresh apt cache" after the
+holla source lands). If the repo is IP-allowlisted to production, the
+full install-base parity gate needs either an allowlist entry for
+fixtures or a stand-in repo. Captured failure is itself a golden.
 
 **Found for the operator (latent workload bug):**
 `config/sentry/config.yml` references `slack_client_id`,
@@ -124,10 +142,8 @@ faithfully (it is a committed golden); fixing it means adding the three
 
 Preconditions:
 
-- [ ] `hcloud` context `ruxel-fixtures` (**operator** — blocks smoke test,
-      fixture script validation, oracle VM captures)
-- [ ] `~/.config/ruxel/op-ci.env` with 1P service-account token (operator;
-      optional — blocks only CI secrets path)
+- [x] `hcloud` context `ruxel-fixtures` (session 3)
+- [x] `~/.config/ruxel/op-ci.env` + GH secret + vault seeding (session 3)
 - [ ] Baseline logs `/tmp/baseline-*.log` (operator; optional)
 
 M0 (offline parts done this session):
@@ -135,17 +151,25 @@ M0 (offline parts done this session):
 - [x] Workspace split: `crates/{ruxel,ruxel-core,ruxel-proto,ruxel-agent}`;
       agent cross-builds to 324K static x86_64-musl ELF (cargo-zigbuild);
       CI `agent-cross` job with static-linkage check
-- [x] `tools/fixtures/`: create/destroy/reap scripts written —
-      context-scoped, label-guarded, 2-VM cap, ephemeral keys.
-      **API-untested** (no context)
+- [x] `tools/fixtures/`: create/destroy/reap scripts — context-scoped,
+      label-guarded, 2-VM cap, ephemeral keys. **Validated session 3** on
+      a real VM (create → ssh → gate → destroy → reap). Defaults now
+      cpx12@sin (this account has no cx-line; EU shared-x86 capacity
+      unavailable 2026-06-11); create.sh prints ready-to-use SSH opts
 - [x] `tools/oracle/`: uv venv pinned to ansible-core 2.21.0 (exact match
       with controller) + `ruxel_capture` callback plugin; verified offline
       (local-connection playbook → ok/skipped/per-item records; raw_args
       arrive post-template at the callback layer)
-- [ ] Hetzner smoke test (blocked: context)
-- [ ] Seed `ruxel-test` 1P vault + GH secret (blocked: service account)
-- [ ] Oracle capture of install-base.yml on a fixture VM (blocked: context)
-- [ ] Ingest baselines (blocked: logs absent)
+- [x] Hetzner smoke test (session 3): ruxel-fixture-smoke, x86_64
+      Debian 12 bookworm @ sin — full cycle clean
+- [x] Seed `ruxel-test` 1P vault + GH secret (session 3)
+- [x] Oracle capture of install-base.yml on the fixture
+      (captures/install-base-fixture.jsonl, 30 records; stops at the
+      holla-apt environmental failure — see operator note) plus
+      update-packages run1/run2 (apt ⚠ items closed)
+- [ ] Ingest baselines (operator-optional; logs absent)
+
+**M0 is complete** modulo the operator-optional baselines.
 
 M1 (**complete, session 2**):
 
@@ -235,14 +259,34 @@ M3 (**started, session 2** — execution foundation in place):
 - [x] E2E evidence: 13-task closed-surface playbook against ruxel-deb —
       recap ok=12 changed=4 ignored=1 failed=0; loop/per-item-when/
       register/creates/ignore_errors verified on target; reruns stable
-- [ ] Remaining M3: template/lineinfile/replace/blockinfile/get_url +
-      apt/apt_repository/systemd/service modules; blob channel for
-      copy/template src=; convergence ledger + verdict engine +
-      --no-cache; apt adjacency batching; per-task timing + --output
-      json; pause relay; become_user; oracle status-parity harness
-      (install sshd in the local VM, run pinned ansible vs ruxel on twin
-      state, diff statuses); then the M3 gate playbooks on an x86_64
-      fixture (blocked: hcloud context)
+- [x] apt module (session 3): update_cache (pinned: never changed),
+      upgrade: dist with summary-parse changed detection, idle
+      autoremove unchanged, name install via dpkg-query (+apt-cache
+      policy for latest), check-mode via apt-get -s
+- [x] systemd/service module (session 3): daemon_reload executes but
+      reports changed: false (pinned), started/stopped vs is-active,
+      restarted always changed, enabled vs is-enabled
+- [x] **First full workload playbook at parity (session 3):**
+      `ruxel apply update-packages.yml` on the converged x86_64 Hetzner
+      fixture — recap ok=5 changed=0 failed=0, status-identical to the
+      pinned oracle capture of the same converged state
+- [x] Transport hardening (session 3): own ControlMaster via
+      tokio::process (openssh crate dropped — it lost the second
+      session's stdin), agent orphan guard (exit 67 without a Hello in
+      30 s — a dead controller can no longer wedge a host's lock),
+      HelloAck timeout, per-process gate driver tools/fixtures/gate.sh.
+      **x86_64 gate re-proof: cold 738 ms / warm 756 ms, no re-upload.**
+      Known issue documented in transport.rs: second sequential connect
+      inside one process stalls (shell repeats fine; real runs are one
+      connect per process) — revisit before M5 parallelism
+- [ ] Remaining M3: template/lineinfile/replace/blockinfile/get_url/
+      apt_repository modules; blob channel for copy/template src=;
+      convergence ledger + verdict engine + --no-cache; apt adjacency
+      batching; per-task timing + --output json; pause relay;
+      become_user; automated status-parity harness (diff ruxel recap vs
+      capture statuses — done by hand for update-packages this session);
+      then the M3 gate playbooks (install-base needs the holla-apt
+      operator decision; install-docker/upgrade-debian unblocked)
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
@@ -256,3 +300,14 @@ Session log:
   verified outside the production inventory before the first remote
   command; the only remote-ish target this session. hcloud precondition
   re-checked and still absent.
+- 2026-06-11 s3: operator provided both tokens mid-session (rotation of
+  the 1P one to R/W included). Credentials wired + backed up; M0
+  completed (smoke test, vault seed, fixture captures); transport
+  root-cause arc (bda9c13); fixture captures + apt ⚠ pins (e583019);
+  apt+systemd modules and update-packages.yml full parity (09f69d4).
+  Safety checks: target = ruxel-fixture-smoke 5.223.69.142 (created via
+  tools/fixtures this session, verified against all six production IPs
+  before first contact) and local ruxel-deb; fixture destroyed + reaped
+  at session end. Operator note: Hetzner token transited this
+  transcript — rotate when convenient; revoke the old read-only ruxel-ci
+  service account.
