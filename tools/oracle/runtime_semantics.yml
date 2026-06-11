@@ -1,0 +1,116 @@
+# Runtime-semantics experiments: pin the registered-result shapes Ansible
+# (core 2.21) produces for the control-flow constructs the workload uses —
+# skip, loop aggregation, per-item when, failure + ignore_errors, until/
+# retries, set_fact, loop-over-register. Run locally (connection: local,
+# never a remote target) by capture_runtime.sh; the dumped registered vars
+# become goldens that ruxel's task evaluator must reproduce.
+#
+# Constructs stay inside the closed surface of docs/SEMANTICS.md so this
+# playbook is also valid ruxel input later.
+- name: Runtime semantics experiments
+  hosts: localhost
+  vars:
+    items_list: [alpha, beta, gamma]
+  tasks:
+    - name: E0 clean markers
+      file:
+        path: /tmp/ruxel-e5-marker
+        state: absent
+
+    - name: E1 skipped task registers
+      command: echo never-runs
+      when: false
+      register: e1_skip
+    - name: E1 dump
+      debug:
+        msg: "{{ e1_skip }}"
+
+    - name: E2 command registers
+      command: echo hello
+      register: e2_cmd
+      changed_when: false
+    - name: E2 dump
+      debug:
+        msg: "{{ e2_cmd }}"
+
+    - name: E3 loop with per-item when
+      command: echo {{ item }}
+      loop: "{{ items_list }}"
+      when: item != 'beta'
+      register: e3_loop
+    - name: E3 dump
+      debug:
+        msg: "{{ e3_loop }}"
+
+    - name: E4 loop with a failing item
+      shell: test {{ item }} != beta
+      loop: "{{ items_list }}"
+      register: e4_loop
+      ignore_errors: yes
+    - name: E4 dump
+      debug:
+        msg: "{{ e4_loop }}"
+
+    - name: E5 until with retries
+      shell: test -f /tmp/ruxel-e5-marker && exit 0; touch /tmp/ruxel-e5-marker; exit 1
+      register: e5_until
+      until: e5_until.rc == 0
+      retries: 3
+      delay: 1
+    - name: E5 dump
+      debug:
+        msg: "{{ e5_until }}"
+
+    - name: E6 failing command with ignore_errors
+      command: /usr/bin/false
+      register: e6_fail
+      ignore_errors: yes
+    - name: E6 dump
+      debug:
+        msg: "{{ e6_fail }}"
+
+    - name: E7 when list is AND over registered results
+      command: echo conditional
+      when:
+        - e2_cmd.rc == 0
+        - e6_fail.failed
+      register: e7_cond
+    - name: E7 dump
+      debug:
+        msg: "{{ e7_cond }}"
+
+    - name: E8 set_fact from expression
+      set_fact:
+        e8_flag: "{{ e2_cmd.rc == 0 }}"
+    - name: E8 dump
+      debug:
+        msg: "{{ e8_flag }}"
+
+    - name: E9 stat loop registers per-item
+      stat:
+        path: "/tmp/ruxel-e9-{{ item }}"
+      loop: [one, two]
+      register: e9_stats
+    - name: E9 loop over registered results
+      debug:
+        msg: "{{ item.item }}={{ item.stat.exists }}"
+      loop: "{{ e9_stats.results }}"
+
+    - name: E10 loop where every item skips
+      command: echo {{ item }}
+      loop: "{{ items_list }}"
+      when: item == 'delta'
+      register: e10_all_skip
+    - name: E10 dump
+      debug:
+        msg: "{{ e10_all_skip }}"
+
+    - name: E11 loop over an empty list
+      command: echo {{ item }}
+      loop: "{{ empty_list }}"
+      vars:
+        empty_list: []
+      register: e11_empty
+    - name: E11 dump
+      debug:
+        msg: "{{ e11_empty }}"

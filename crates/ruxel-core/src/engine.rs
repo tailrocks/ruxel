@@ -305,7 +305,17 @@ impl Engine {
                     "undefined value in template output",
                 ));
             }
-            write!(out, "{value}").map_err(minijinja::Error::from)
+            // Concatenated output stringifies the Python way (str(True) =
+            // "True", str(None) = "None") — pinned by runtime golden E9
+            // ("{{ item.item }}={{ item.stat.exists }}" → "one=False").
+            match value.kind() {
+                minijinja::value::ValueKind::Bool => {
+                    write!(out, "{}", if value.is_true() { "True" } else { "False" })
+                }
+                minijinja::value::ValueKind::None => write!(out, "None"),
+                _ => write!(out, "{value}"),
+            }
+            .map_err(minijinja::Error::from)
         });
         // The template module's keep_trailing_newline=True default
         // (SEMANTICS §6 template). ⚠ pinned by the 22-template parity gate.
