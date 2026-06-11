@@ -112,20 +112,15 @@ _Last updated: 2026-06-12 (session 3 cont.: **all 36 modules implemented,
 always reap them (done — project empty after every run). Volumes appear
 at /dev/disk/by-id/scsi-0HC_Volume_* and drove the storage gate.
 
-**Operator action — the one thing blocking the setup-* playbook gates:**
-set `GH_HOLLA_APT_TOKEN` on tailrocks/holla (a PAT with Contents:write +
-Actions:write on tailrocks/holla-apt), then
-`gh workflow run release-deb.yml --repo tailrocks/holla -f tag=v0.4.2`.
-That brings holla-apt.tailrocks.com live so install-base.yml + the
-setup-* playbooks (which install holla/velnor) can gate. The two
-workflow bugs that kept it down are **fixed + merged** (holla-apt#9
-heredoc-indent, holla#21 --no-strip arm64); holla-apt has the GPG
-secrets + Pages=workflow already. Offer standing: I can bridge it
-manually with my own gh creds if you'd rather not set the token.
-
-**holla/velnor apt deployment (operator-directed sub-task, DONE):** both
-repos analyzed against velnor (the working reference); root-caused +
-fixed two real bugs, PRs merged. Remaining is only the token above.
+**holla-apt.tailrocks.com is LIVE** (session 3 cont., 2026-06-12).
+Operator set GH_HOLLA_APT_TOKEN; the full chain now works end-to-end:
+release-deb builds amd64+arm64 .debs → cross-uploads to holla-apt release
+v0.4.2 → publish.yml (reprepro+sign) → Pages. Verified: Release 200,
+`holla 0.4.2` in both binary-amd64 and binary-arm64 Packages, gpg key
+served. Four workflow bugs fixed + merged along the way (holla-apt#9
+heredoc; holla#21 --no-strip; #23 cargo-deb install; #24 inline-pin
+cargo-deb@3.7.0 in mise exec — `mise install` raced latest vs the 3.7.0
+pin). **install-base.yml + setup-* gates are now unblocked.**
 
 **No operator blockers.** Session 3 received and wired both credentials:
 - `hcloud` context `ruxel-fixtures` active (token also backed up in 1P:
