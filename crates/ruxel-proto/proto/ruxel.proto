@@ -55,19 +55,26 @@ message Resume {
 // End of run: agent flushes its ledger and exits 0.
 message Done {}
 
-// One executable task, fully rendered controller-side.
+// One executable task, fully rendered controller-side. A loop task carries
+// one Iteration per (non-skipped) item — all templating, including the
+// per-item param render, already happened on the controller. A loop-less
+// task is exactly one Iteration with an empty item label.
 message RenderedTask {
   uint64 task_id = 1;        // ordinal within the run, stable across patches
   string name = 2;
   string module = 3;         // closed-surface module name
   bool rendered = 4;         // false = deferred placeholder
-  bytes params_json = 5;     // canonical JSON object of rendered params
-  bytes loop_items_json = 6; // canonical JSON array; empty = no loop
-  string free_form = 7;      // shell/command body
-  bool check_mode_override = 8; // task-level `check_mode: no`
-  bool no_log = 9;
-  string become_user = 10;   // empty = run as connection user (root)
-  map<string, string> environment = 11;
+  repeated Iteration iterations = 5;
+  bool check_mode_override = 6; // task-level `check_mode: no`
+  bool no_log = 7;
+  string become_user = 8;    // empty = run as connection user (root)
+  map<string, string> environment = 9;
+}
+
+message Iteration {
+  string item_label = 1;  // loop item display label ("" when loop-less)
+  bytes params_json = 2;  // canonical JSON object of rendered params
+  string free_form = 3;   // shell/command body
 }
 
 // ---------------------------------------------------------------------------

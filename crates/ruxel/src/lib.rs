@@ -2,4 +2,5 @@
 //! later, the scheduler/reporter. The `ruxel` binary in main.rs is the
 //! CLI over this.
 
+pub mod scheduler;
 pub mod transport;

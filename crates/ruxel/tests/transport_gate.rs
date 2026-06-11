@@ -27,7 +27,7 @@ async fn cold_connect_handshake_facts_shutdown() {
 
     // Run 1: possibly uploads the agent.
     let t0 = Instant::now();
-    let (conn, host) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-1")
+    let (conn, host) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-1", false)
         .await
         .expect("first connect");
     let first_connect = t0.elapsed();
@@ -45,7 +45,7 @@ async fn cold_connect_handshake_facts_shutdown() {
     conn.shutdown().await.expect("clean shutdown 1");
 
     // Event plumbing round-trip: M2 agents answer Plan with a Warn log.
-    let (mut conn_ev, _) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-events")
+    let (mut conn_ev, _) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-events", false)
         .await
         .expect("event-test connect");
     conn_ev
@@ -72,7 +72,7 @@ async fn cold_connect_handshake_facts_shutdown() {
 
     // Run 2: same hash → no upload; warm master → fast.
     let t1 = Instant::now();
-    let (conn2, _host2) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-2")
+    let (conn2, _host2) = ruxel_cli::transport::connect(&dest, &bin, "gate-run-2", false)
         .await
         .expect("second connect");
     let second_connect = t1.elapsed();

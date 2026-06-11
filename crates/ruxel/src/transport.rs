@@ -38,6 +38,7 @@ pub async fn connect(
     destination: &str,
     agent_binary: &Path,
     run_id: &str,
+    check_mode: bool,
 ) -> Result<(AgentConnection, HostFacts)> {
     let session = std::sync::Arc::new(
         Session::connect_mux(destination, KnownHosts::Strict)
@@ -70,6 +71,7 @@ pub async fn connect(
             msg: Some(EnvMsg::Hello(v1::Hello {
                 proto_version: PROTO_VERSION,
                 run_id: run_id.to_string(),
+                check_mode,
                 ..Default::default()
             })),
         },

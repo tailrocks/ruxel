@@ -7,6 +7,7 @@
 //! as Log events or to stderr.
 
 mod facts;
+mod modules;
 
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
@@ -79,11 +80,14 @@ fn serve() -> i32 {
         return 66;
     }
 
+    let mut check_mode = false;
+
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
             Ok(Some(env)) => env,
             // Clean EOF: controller went away (Ctrl-C, connection loss).
-            // Nothing in flight in M2 — exit reusable (ARCHITECTURE §8).
+            // The current task always completes before the next frame read,
+            // so exiting here leaves the host reusable (ARCHITECTURE §8).
             Ok(None) => return 0,
             Err(e) => {
                 log_event(&mut stdout, v1::log::Level::Error, format!("frame: {e}"));
@@ -92,6 +96,7 @@ fn serve() -> i32 {
         };
         match envelope.msg {
             Some(Msg::Hello(hello)) => {
+                check_mode = hello.check_mode;
                 if hello.proto_version != PROTO_VERSION {
                     log_event(
                         &mut stdout,
@@ -116,14 +121,20 @@ fn serve() -> i32 {
                 }
             }
             Some(Msg::Done(_)) => {
-                // Ledger flush goes here in M3.
+                // Ledger flush goes here when the ledger lands.
                 return 0;
             }
-            Some(Msg::Plan(_)) | Some(Msg::PlanPatch(_)) | Some(Msg::Resume(_)) => {
+            Some(Msg::Plan(v1::Plan { tasks, .. }))
+            | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
+                for task in &tasks {
+                    execute_task(&mut stdout, task, check_mode);
+                }
+            }
+            Some(Msg::Resume(_)) => {
                 log_event(
                     &mut stdout,
                     v1::log::Level::Warn,
-                    "plan execution lands in M3; ignoring".to_string(),
+                    "unexpected Resume outside a pause".to_string(),
                 );
             }
             None => {
@@ -136,6 +147,108 @@ fn serve() -> i32 {
             }
         }
     }
+}
+
+/// Execute one rendered task: per iteration, TaskStart then TaskResult.
+/// Aggregation, register binding, and status envelopes are controller-side
+/// (task_eval) — the agent reports raw per-iteration module outcomes.
+fn execute_task(out: &mut impl std::io::Write, task: &v1::RenderedTask, check_mode: bool) {
+    let task_check_mode = check_mode && !task.check_mode_override;
+    for iteration in &task.iterations {
+        let start = std::time::Instant::now();
+        let _ = write_frame(
+            out,
+            &v1::Event {
+                msg: Some(v1::event::Msg::TaskStart(v1::TaskStart {
+                    task_id: task.task_id,
+                    item_label: iteration.item_label.clone(),
+                })),
+            },
+        );
+
+        let params: serde_json::Value = if iteration.params_json.is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_slice(&iteration.params_json) {
+                Ok(v) => v,
+                Err(e) => {
+                    send_result(
+                        out,
+                        task.task_id,
+                        iteration,
+                        "failed",
+                        true,
+                        &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
+                        start,
+                    );
+                    continue;
+                }
+            }
+        };
+
+        // check-mode skip for command/shell (SEMANTICS §3.5) — predicted
+        // as "skipped" by the agent so timing stays honest.
+        if task_check_mode && matches!(task.module.as_str(), "command" | "shell") {
+            send_result(
+                out,
+                task.task_id,
+                iteration,
+                "skipped",
+                false,
+                &serde_json::json!({
+                    "changed": false,
+                    "skipped": true,
+                    "msg": "remote module (command/shell) does not support check mode",
+                }),
+                start,
+            );
+            continue;
+        }
+
+        let ctx = modules::ExecContext {
+            check_mode: task_check_mode,
+            environment: task
+                .environment
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        };
+        let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
+        send_result(
+            out,
+            task.task_id,
+            iteration,
+            outcome.status,
+            outcome.changed,
+            &outcome.result,
+            start,
+        );
+    }
+}
+
+fn send_result(
+    out: &mut impl std::io::Write,
+    task_id: u64,
+    iteration: &v1::Iteration,
+    status: &str,
+    changed: bool,
+    result: &serde_json::Value,
+    start: std::time::Instant,
+) {
+    let _ = write_frame(
+        out,
+        &v1::Event {
+            msg: Some(v1::event::Msg::TaskResult(v1::TaskResult {
+                task_id,
+                status: status.to_string(),
+                changed,
+                result_json: serde_json::to_vec(result).unwrap_or_default(),
+                diff: String::new(),
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                item_label: iteration.item_label.clone(),
+            })),
+        },
+    );
 }
 
 fn log_event(out: &mut impl std::io::Write, level: v1::log::Level, message: String) {

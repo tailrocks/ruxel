@@ -1,9 +1,13 @@
-//! `ruxel apply -i hosts.ini [--limit pattern] playbook.yml` — execution
-//! arrives with the module runtime in M3; the CLI shape is fixed now so
-//! muscle memory and scripts form against the final surface.
+//! `ruxel apply -i hosts.ini [--limit pattern] playbook.yml` — the full
+//! pipeline: parse → connect (ControlMaster + agent) → linear scheduler →
+//! recap. `--check` falls back to the offline plan preview until the
+//! probe engine lands.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Args;
+use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};
+use ruxel_core::inventory::Inventory;
+use std::sync::Arc;
 
 #[derive(Args)]
 pub struct ApplyArgs {
@@ -22,6 +26,10 @@ pub struct ApplyArgs {
     /// Run only tasks with these tags (plus `always`)
     #[arg(long, value_delimiter = ',')]
     pub tags: Vec<String>,
+    /// Agent binary to provision (built for the target's arch);
+    /// defaults to $RUXEL_AGENT_BIN
+    #[arg(long, env = "RUXEL_AGENT_BIN")]
+    pub agent_bin: Option<std::path::PathBuf>,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
@@ -38,7 +46,89 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
             playbook: args.playbook,
         });
     }
-    bail!(
-        "apply needs the module runtime — it lands in M3 (docs/PLAN.md); use `ruxel plan` meanwhile"
-    )
+    if !args.tags.is_empty() {
+        bail!("--tags execution arrives with the tag engine (M4); only --check supports it now");
+    }
+    let agent_bin = args.agent_bin.clone().context(
+        "--agent-bin or RUXEL_AGENT_BIN required (cross-built ruxel-agent for the target)",
+    )?;
+
+    let inv_content = std::fs::read_to_string(&args.inventory)
+        .with_context(|| format!("read inventory {}", args.inventory.display()))?;
+    let inventory = Inventory::parse(&inv_content)?;
+    let pb_content = std::fs::read_to_string(&args.playbook)
+        .with_context(|| format!("read playbook {}", args.playbook.display()))?;
+    let pb_name = args
+        .playbook
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
+
+    // Secrets: dry resolver until the op-backed resolver lands (M3 tail).
+    let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+    let run_id = format!("ruxel-{}", std::process::id());
+
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(run(
+        &playbook, &inventory, &args, &agent_bin, &engine, &run_id,
+    ))
+}
+
+async fn run(
+    playbook: &ruxel_core::playbook::Playbook,
+    inventory: &Inventory,
+    args: &ApplyArgs,
+    agent_bin: &std::path::Path,
+    engine: &Engine,
+    run_id: &str,
+) -> Result<()> {
+    let mut any_failed = false;
+    let stdout = std::io::stdout();
+
+    for play in &playbook.plays {
+        let hosts = inventory.select(&play.hosts, args.limit.as_deref())?;
+        println!(
+            "\nPLAY [{}] {}",
+            play.name.as_deref().unwrap_or(&play.hosts),
+            "*".repeat(40)
+        );
+        for host in hosts {
+            let dest = match &host.ssh_user {
+                Some(user) => format!("{user}@{}", host.ssh_host),
+                None => host.ssh_host.clone(),
+            };
+            let (mut conn, ack) =
+                ruxel_cli::transport::connect(&dest, agent_bin, run_id, false).await?;
+            let recap = ruxel_cli::scheduler::run_play(
+                play,
+                &host.name,
+                &ack.facts,
+                engine,
+                &mut conn,
+                &mut stdout.lock(),
+            )
+            .await?;
+            conn.shutdown().await?;
+
+            println!("\nPLAY RECAP {}", "*".repeat(40));
+            println!(
+                "{:<24}: ok={} changed={} unreachable=0 failed={} skipped={} rescued={} ignored={}",
+                host.name,
+                recap.ok,
+                recap.changed,
+                recap.failed,
+                recap.skipped,
+                recap.rescued,
+                recap.ignored
+            );
+            if recap.failed > 0 {
+                any_failed = true;
+            }
+        }
+    }
+    if any_failed {
+        std::process::exit(1);
+    }
+    Ok(())
 }

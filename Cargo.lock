@@ -933,6 +933,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ruxel-proto",
+ "serde_json",
 ]
 
 [[package]]
@@ -942,11 +943,14 @@ dependencies = [
  "anyhow",
  "blake3",
  "clap",
+ "minijinja",
  "openssh",
  "openssh-sftp-client",
  "prost",
  "ruxel-core",
  "ruxel-proto",
+ "serde_json",
+ "serde_norway",
  "tokio",
 ]
 
