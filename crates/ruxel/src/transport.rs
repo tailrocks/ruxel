@@ -31,6 +31,9 @@ const AGENT_DIR: &str = "/var/lib/ruxel/agent";
 pub struct ConnectOptions {
     pub keyfile: Option<PathBuf>,
     pub accept_new_host_key: bool,
+    /// Dedicated known_hosts (fixtures: isolates ephemeral host keys from
+    /// the operator's global file, which recycled cloud IPs poison).
+    pub known_hosts_file: Option<PathBuf>,
 }
 
 /// The per-host ControlMaster: a foreground `ssh -M -N` child owning the
@@ -60,7 +63,14 @@ impl Master {
             .arg("-o")
             .arg("BatchMode=yes")
             .arg("-o")
-            .arg("ConnectTimeout=15");
+            .arg("ConnectTimeout=15")
+            // Long-lived masters cross flaky consumer routes; keepalives
+            // detect drops instead of wedging reads (observed: sin link
+            // resets mid-session, 2026-06-11).
+            .arg("-o")
+            .arg("ServerAliveInterval=15")
+            .arg("-o")
+            .arg("ServerAliveCountMax=4");
         apply_options(&mut cmd, options);
         cmd.arg(destination)
             .stdin(Stdio::null())
@@ -147,6 +157,10 @@ fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
             .arg(keyfile)
             .arg("-o")
             .arg("IdentitiesOnly=yes");
+    }
+    if let Some(kh) = &options.known_hosts_file {
+        cmd.arg("-o")
+            .arg(format!("UserKnownHostsFile={}", kh.display()));
     }
     if options.accept_new_host_key {
         cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");

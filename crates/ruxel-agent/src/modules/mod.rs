@@ -5,9 +5,11 @@
 //! rather than ignoring them (defense in depth, same closed-surface rule).
 
 mod apt;
+mod apt_repository;
 mod command;
 mod copy;
 mod file;
+mod get_url;
 mod shell;
 mod slurp;
 mod stat;
@@ -53,6 +55,8 @@ impl Outcome {
 pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext) -> Outcome {
     let result = match module {
         "apt" => apt::run(params, ctx),
+        "apt_repository" => apt_repository::run(params, ctx),
+        "get_url" => get_url::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
         "shell" => shell::run(params, free_form, ctx),
         "file" => file::run(params, ctx),

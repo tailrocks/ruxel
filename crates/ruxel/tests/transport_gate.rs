@@ -21,6 +21,9 @@ fn options() -> ruxel_cli::transport::ConnectOptions {
     ruxel_cli::transport::ConnectOptions {
         keyfile: std::env::var("RUXEL_TEST_SSH_KEY").ok().map(Into::into),
         accept_new_host_key: std::env::var("RUXEL_TEST_SSH_KEY").is_ok(),
+        known_hosts_file: std::env::var("RUXEL_TEST_SSH_KEY")
+            .ok()
+            .map(|k| format!("{k}.known_hosts").into()),
     }
 }
 

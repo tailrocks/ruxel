@@ -30,6 +30,7 @@ pub struct Recap {
 struct HostRun<'a> {
     engine: &'a Engine,
     conn: &'a mut AgentConnection,
+    playbook_dir: std::path::PathBuf,
     host: String,
     play_vars: Vec<(String, VarValue)>,
     facts: Vec<(String, VarValue)>,
@@ -45,11 +46,13 @@ pub async fn run_play(
     facts: &v1::Facts,
     engine: &Engine,
     conn: &mut AgentConnection,
+    playbook_dir: &std::path::Path,
     out: &mut impl Write,
 ) -> Result<Recap> {
     let mut run = HostRun {
         engine,
         conn,
+        playbook_dir: playbook_dir.to_path_buf(),
         host: host.to_string(),
         play_vars: play
             .vars
@@ -426,6 +429,20 @@ impl HostRun<'_> {
         for (k, v) in &call.params {
             let rendered = self.engine.render_value(v, scope)?;
             params.insert(k.clone(), serde_json::to_value(&rendered)?);
+        }
+        // `copy` with src= reads the controller-side file (playbook-
+        // relative) and ships it as content — all file payload stays a
+        // controller concern (ARCHITECTURE §1); the content-addressed
+        // blob channel later replaces inline shipping, not this logic.
+        if module == "copy"
+            && !params.contains_key("content")
+            && let Some(src) = params.get("src").and_then(|v| v.as_str())
+        {
+            let path = self.playbook_dir.join(src);
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow!("copy src {}: {e}", path.display()))?;
+            params.remove("src");
+            params.insert("content".into(), serde_json::Value::String(content));
         }
         let free_form = match &call.free_form {
             Some(body) => self

@@ -107,16 +107,29 @@ async fn run(
             let options = ruxel_cli::transport::ConnectOptions {
                 keyfile: args.ssh_key.clone(),
                 accept_new_host_key: args.accept_new_host_key || args.ssh_key.is_some(),
+                // Fixture convention (tools/fixtures/create.sh): the
+                // ephemeral key's sibling <key>.known_hosts.
+                known_hosts_file: args.ssh_key.as_ref().map(|k| {
+                    let mut p = k.as_os_str().to_owned();
+                    p.push(".known_hosts");
+                    p.into()
+                }),
             };
             let (mut conn, ack) =
                 ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, false, &options)
                     .await?;
+            let playbook_dir = args
+                .playbook
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| ".".into());
             let recap = ruxel_cli::scheduler::run_play(
                 play,
                 &host.name,
                 &ack.facts,
                 engine,
                 &mut conn,
+                &playbook_dir,
                 &mut stdout.lock(),
             )
             .await?;
