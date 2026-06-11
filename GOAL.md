@@ -124,10 +124,24 @@ breadth, not missing features**: gate the 6 setup-* + restart-blockchain
 **setup-* gate harness is READY** (this session): tools/fixtures/
 bless-gate.sh `<dest> <key> <agent> <playbook> "" dry` drives ruxel
 --dry-secrets both applies + ansible bless with the fake onepassword/pipe
-lookups (same deterministic values, no real secret on the fixture). Each
-setup-* needs its service fixture (PG18@40000 for nova/titan, ClickHouse
-for selene, sentry compose for sentry) — operator-cost long runs; gate
-one per session.
+lookups (same deterministic values, no real secret on the fixture). Use
+a hosts:all copy in the workload dir (the setup-* `hosts:` are literal
+prod hostnames; keep the copy in-dir so config/ src paths resolve).
+
+**Two operator decisions block the setup-* full gates** (attempted
+setup-postgresql-nova this session — 102 tasks; ruxel ran timezone/file/
+copy/ssh-key deploy correctly, stopped at the private clone):
+1. **Provisioning order:** setup-* assume `install-base.yml` ran first
+   (git, mise, base packages). The gate must apply install-base then the
+   setup-* on the same fixture. (install-base is itself gated.)
+2. **Private-repo access:** setup-* clone `git@github.com:ChainArgos/
+   java-monorepo.git` (and blockchain-nodes) — private. dry-secrets gives
+   a fake SSH key, so the clone can't authenticate (ansible fails the
+   same). Needs a **read-only deploy key for the ChainArgos private
+   repos** in the ruxel-test vault (or a public stand-in), same class as
+   the holla-apt allowlist. The `git` module itself is proven (public
+   clone in the module-batch gate). Until then, setup-* gate up to the
+   first private-clone task.
 
 **Operator pre-approved (session 3):** create Hetzner volumes as needed,
 always reap them (done — project empty after every run). Volumes appear
