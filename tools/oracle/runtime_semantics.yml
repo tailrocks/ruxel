@@ -131,3 +131,20 @@
     - name: E13 dump
       debug:
         msg: "{{ e13_loop_secret }}"
+
+    - name: E14 shell creates guard fires
+      shell: echo should-not-run > /tmp/ruxel-e14-out
+      args:
+        creates: /tmp/ruxel-e14-exists
+      register: e14_creates
+    - name: E14 dump
+      debug:
+        msg: "{{ e14_creates }}"
+
+    - name: E15 command free-form with quoted arg
+      command: echo 'a b' c
+      register: e15_argv
+      changed_when: false
+    - name: E15 dump
+      debug:
+        msg: "{{ e15_argv.cmd }}"

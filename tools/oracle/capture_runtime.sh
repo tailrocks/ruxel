@@ -6,6 +6,9 @@
 set -eu
 cd "$(dirname "$0")"
 
+# The capture callback appends; start each capture from zero.
+rm -f captures/runtime-semantics.jsonl
+
 ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
 ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
 ANSIBLE_LOCALHOST_WARNING=False \

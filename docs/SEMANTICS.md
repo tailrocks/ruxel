@@ -317,14 +317,17 @@ ignore — that is what closed spec means).
 ### Commands & control
 
 - **`command` (40)** — free-form or `cmd`/`argv`, `chdir`. No shell;
-  argv exec. Failure = rc≠0. Always "changed" unless `changed_when`.
-  Check-mode: skipped (unless task `check_mode: no`).
+  argv exec; free-form splits shlex-style (pinned 2026-06-11, golden E15:
+  `echo 'a b' c` → `["echo", "a b", "c"]`). Failure = rc≠0. Always
+  "changed" unless `changed_when`. Check-mode: skipped (unless task
+  `check_mode: no`).
 - **`shell` (50)** — free-form via shell; `args`: `executable` (44 — the
   only value in use is `/bin/bash`), `chdir` (38), `creates`
-  (7: skip task entirely if path exists — evaluate before execution, report
-  skipped/ok **⚠ verify** reported status when creates-guard fires:
-  Ansible reports `ok`/`skipped`? pin it). Env merging per task
-  `environment`.
+  (7: skip the command if the path exists). **Pinned 2026-06-11 (golden
+  E14):** when the creates-guard fires the task reports status `ok` (not
+  skipped), `changed: false`, `rc: 0`, `msg: "Did not run command since
+  '<path>' exists"`, `stdout: "skipped, since <path> exists"`, null
+  start/end/delta, empty stderr. Env merging per task `environment`.
 - **`assert` (7)** — `that` (list of expressions), `fail_msg`. Controller-
   side evaluation in ruxel (pure expression over vars/facts).
 - **`fail` (2)** — `msg`; unconditional failure (guarded by `when`).
