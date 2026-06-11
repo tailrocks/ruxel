@@ -418,7 +418,31 @@ impl HostRun<'_> {
                 })));
             }
             "pause" => {
-                bail!("pause relay is not wired yet (M3 in progress)");
+                // Interactive pause (SEMANTICS §4): controller-side, prompt
+                // on the operator TTY and block for Enter. When stdin is not
+                // a TTY (CI, --check), Ansible still prompts but a closed
+                // stdin returns immediately; mirror that — print and proceed.
+                let prompt = match call.params.iter().find(|(k, _)| k == "prompt") {
+                    Some((_, v)) => self
+                        .engine
+                        .render_value(v, scope)?
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_default(),
+                    None => "Press enter to continue, Ctrl+C to abort".to_string(),
+                };
+                use std::io::IsTerminal as _;
+                eprint!("[pause] {prompt}\n[pause] press Enter to continue: ");
+                let _ = std::io::Write::flush(&mut std::io::stderr());
+                if std::io::stdin().is_terminal() {
+                    let mut line = String::new();
+                    let _ = std::io::stdin().read_line(&mut line);
+                }
+                eprintln!();
+                return Ok(to_mj(serde_json::json!({
+                    "changed": false, "failed": false,
+                    "user_input": "",
+                })));
             }
             _ => {}
         }
