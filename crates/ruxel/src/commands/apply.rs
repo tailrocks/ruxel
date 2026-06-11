@@ -3,7 +3,7 @@
 //! recap. `--check` falls back to the offline plan preview until the
 //! probe engine lands.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Args;
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};
 use ruxel_core::inventory::Inventory;
@@ -54,9 +54,6 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
             dry_secrets: true,
             playbook: args.playbook,
         });
-    }
-    if !args.tags.is_empty() {
-        bail!("--tags execution arrives with the tag engine (M4); only --check supports it now");
     }
     let agent_bin = args.agent_bin.clone().context(
         "--agent-bin or RUXEL_AGENT_BIN required (cross-built ruxel-agent for the target)",
@@ -142,6 +139,11 @@ async fn run(
                 &mut conn,
                 &playbook_dir,
                 format,
+                if args.tags.is_empty() {
+                    None
+                } else {
+                    Some(args.tags.clone())
+                },
                 &mut stdout.lock(),
             )
             .await?;

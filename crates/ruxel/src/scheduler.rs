@@ -47,6 +47,24 @@ struct HostRun<'a> {
     recap: Recap,
     next_task_id: u64,
     format: OutputFormat,
+    /// `--tags` selection (SEMANTICS §4): None = run everything; Some =
+    /// run tasks whose effective tags intersect this set or include
+    /// `always`. Block tags propagate to contained tasks.
+    tags_filter: Option<Vec<String>>,
+}
+
+impl HostRun<'_> {
+    /// Whether a task runs under the active --tags filter, given the tags
+    /// inherited from any enclosing block.
+    fn tag_selected(&self, task: &Task, inherited: &[String]) -> bool {
+        let Some(filter) = &self.tags_filter else {
+            return true;
+        };
+        let effective = task.tags.iter().chain(inherited);
+        effective
+            .clone()
+            .any(|t| t == "always" || filter.iter().any(|f| f == t))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -58,6 +76,7 @@ pub async fn run_play(
     conn: &mut AgentConnection,
     playbook_dir: &std::path::Path,
     format: OutputFormat,
+    tags_filter: Option<Vec<String>>,
     out: &mut impl Write,
 ) -> Result<Recap> {
     let mut run = HostRun {
@@ -76,12 +95,13 @@ pub async fn run_play(
         recap: Recap::default(),
         next_task_id: 1,
         format,
+        tags_filter,
     };
 
     let mut host_failed = false;
     'sections: for section in [&play.pre_tasks, &play.tasks] {
         for task in section.iter() {
-            if run.run_task_or_block(task, out).await? {
+            if run.run_task_or_block(task, &[], out).await? {
                 host_failed = true;
                 break 'sections;
             }
@@ -93,7 +113,7 @@ pub async fn run_play(
     if !host_failed {
         for handler in &play.handlers {
             let name = handler.name.clone().unwrap_or_default();
-            if run.notified.contains(&name) && run.run_task_or_block(handler, out).await? {
+            if run.notified.contains(&name) && run.run_task_or_block(handler, &[], out).await? {
                 break; // handler failure ends the play; recap already counted
             }
         }
@@ -139,13 +159,23 @@ impl HostRun<'_> {
     }
 
     /// Returns true when the host must stop (unrescued failure).
-    async fn run_task_or_block(&mut self, task: &Task, out: &mut impl Write) -> Result<bool> {
+    /// `inherited_tags` are the tags of any enclosing block (SEMANTICS §4).
+    async fn run_task_or_block(
+        &mut self,
+        task: &Task,
+        inherited_tags: &[String],
+        out: &mut impl Write,
+    ) -> Result<bool> {
         if let TaskBody::Block {
             block,
             rescue,
             always: _,
         } = &task.body
         {
+            // The block's own tags propagate to its contained tasks.
+            let mut child_tags: Vec<String> = inherited_tags.to_vec();
+            child_tags.extend(task.tags.iter().cloned());
+
             // Block-level when gates the whole block (SEMANTICS §4).
             if let Some(when) = &task.when {
                 let scope = self.scope(&task.vars);
@@ -159,7 +189,7 @@ impl HostRun<'_> {
             }
             let mut block_failed = false;
             for sub in block {
-                if Box::pin(self.run_task_or_block(sub, out)).await? {
+                if Box::pin(self.run_task_or_block(sub, &child_tags, out)).await? {
                     block_failed = true;
                     break;
                 }
@@ -170,11 +200,18 @@ impl HostRun<'_> {
                 }
                 self.recap.rescued += 1;
                 for sub in rescue {
-                    if Box::pin(self.run_task_or_block(sub, out)).await? {
+                    if Box::pin(self.run_task_or_block(sub, &child_tags, out)).await? {
                         return Ok(true); // rescue itself failed
                     }
                 }
             }
+            return Ok(false);
+        }
+
+        // --tags: an unselected task reports skipped and does not run.
+        if !self.tag_selected(task, inherited_tags) {
+            self.print_status(out, task, "skipped", None);
+            self.recap.skipped += 1;
             return Ok(false);
         }
 
