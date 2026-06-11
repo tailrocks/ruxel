@@ -115,6 +115,31 @@ pub fn finalize_until(last: &Value, attempts: u64) -> Value {
     merge(last, [("attempts", Value::from(attempts))])
 }
 
+/// What `no_log: true` shows instead of a result, in every output channel
+/// (SEMANTICS §3.11) — the registered variable itself stays uncensored
+/// (pinned by goldens E12/E13: later tasks read the real data). `changed`
+/// is preserved; for a looped task each entry of `results` is censored the
+/// same way.
+pub fn censored_result(changed: bool, item_results_changed: Option<&[bool]>) -> Value {
+    const CENSORED: &str = "the output has been hidden due to the fact that 'no_log: true' was specified for this result";
+    let base = |changed: bool| {
+        vec![
+            ("_ansible_no_log", Value::from(true)),
+            ("censored", Value::from(CENSORED)),
+            ("changed", Value::from(changed)),
+        ]
+    };
+    match item_results_changed {
+        None => Value::from_iter(base(changed)),
+        Some(items) => {
+            let results: Vec<Value> = items.iter().map(|c| Value::from_iter(base(*c))).collect();
+            let mut pairs = base(changed);
+            pairs.push(("results", Value::from(results)));
+            Value::from_iter(pairs)
+        }
+    }
+}
+
 /// Shallow-merge extra keys into a map value (existing keys overwritten).
 fn merge<const N: usize>(base: &Value, extra: [(&str, Value); N]) -> Value {
     let mut pairs: Vec<(Value, Value)> = Vec::new();

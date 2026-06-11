@@ -114,3 +114,20 @@
     - name: E11 dump
       debug:
         msg: "{{ e11_empty }}"
+
+    - name: E12 no_log result is censored in output
+      command: echo topsecret
+      register: e12_secret
+      no_log: true
+    - name: E12 dump
+      debug:
+        msg: "{{ e12_secret }}"
+
+    - name: E13 no_log loop censors per item
+      command: echo {{ item }}
+      loop: [s1, s2]
+      register: e13_loop_secret
+      no_log: true
+    - name: E13 dump
+      debug:
+        msg: "{{ e13_loop_secret }}"

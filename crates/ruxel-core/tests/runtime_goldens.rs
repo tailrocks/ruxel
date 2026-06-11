@@ -214,3 +214,49 @@ fn e11_empty_loop_aggregate_matches() {
     let dumps = load_dumps();
     assert_eq!(to_json(&loop_aggregate(vec![])), dumps["E11"]);
 }
+
+/// no_log censoring applies to *output* records (the capture callback saw
+/// censored dicts) while the registered variable keeps the real data (the
+/// dumps printed it).
+#[test]
+fn e12_e13_no_log_censors_output_not_register() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/oracle/captures/runtime-semantics.jsonl");
+    let content = std::fs::read_to_string(&path).unwrap();
+    let mut e12_output = None;
+    let mut e13_output = None;
+    for line in content.lines() {
+        let rec: Json = serde_json::from_str(line).unwrap();
+        match (
+            rec["task_name"].as_str().unwrap(),
+            rec["status"].as_str().unwrap(),
+        ) {
+            ("E12 no_log result is censored in output", "ok") => {
+                e12_output = Some(rec["result"].clone());
+            }
+            ("E13 no_log loop censors per item", "ok") => {
+                e13_output = Some(rec["result"].clone());
+            }
+            _ => {}
+        }
+    }
+    let e12_output = e12_output.expect("E12 capture record");
+    let e13_output = e13_output.expect("E13 capture record");
+
+    assert_eq!(
+        to_json(&ruxel_core::task_eval::censored_result(true, None)),
+        e12_output
+    );
+    assert_eq!(
+        to_json(&ruxel_core::task_eval::censored_result(
+            true,
+            Some(&[true, true])
+        )),
+        e13_output
+    );
+
+    // The registered vars (dumped by the next tasks) are NOT censored.
+    let dumps = load_dumps();
+    assert_eq!(dumps["E12"]["stdout"], "topsecret");
+    assert_eq!(dumps["E13"]["results"][0]["stdout"], "s1");
+}
