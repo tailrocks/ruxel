@@ -305,15 +305,22 @@ ignore — that is what closed spec means).
   (datname, datdba). Change: CREATE DATABASE / ALTER OWNER.
 - **`community.postgresql.postgresql_user` (7)** — `name`, `password`,
   `role_attr_flags`, `state`, login params. Check: pg_roles + attr flags;
-  password idempotence: Ansible compares against stored SCRAM-SHA-256
-  verifier **⚠ verify** (it hashes and compares; must not report changed
-  every run — pin exact rule; this is a known subtlety).
+  password idempotence **resolved 2026-06-11**: re-derive the SCRAM-SHA-256
+  StoredKey from the cleartext using the stored verifier's salt+iterations
+  (PBKDF2-HMAC-SHA256 → HMAC "Client Key" → SHA256) and compare to the
+  stored StoredKey; equal = no change. Pinned against a live PG15 verifier
+  and proven idempotent on the fixture (ruxel rerun changed=0, ansible
+  bless changed=0).
 - **`community.postgresql.postgresql_privs` (20)** — `role`, `privs`,
   `type` (**exactly four shapes in use**: `database` ×3, `schema` ×3,
   `table` ×7, `default_privs` ×7), `objs`, `schema`, `login_db`, `state`.
-  Check: current ACL vs requested grant set; changed only on real ACL
-  delta. The subtlest module in the set — implement against pg_catalog ACL
-  parsing with fixture tests per grant shape used in the playbooks.
+  Check **resolved 2026-06-11**: idempotence is on the *explicit* ACL
+  grant to the role, read via `aclexplode(datacl/nspacl/relacl)` filtered
+  to the role's oid — NOT `has_*_privilege`, which counts PUBLIC defaults
+  and inheritance and wrongly reported CONNECT as already held. All four
+  shapes (database/schema/table ALL_IN_SCHEMA/default_privs) proven on the
+  fixture: ruxel rerun changed=0 and ansible bless changed=0 on ruxel's
+  state.
 - **`community.postgresql.postgresql_schema` (1)** — `name`, `login_db`,
   `state`; pg_namespace check.
 

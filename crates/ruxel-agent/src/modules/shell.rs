@@ -33,8 +33,7 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
     }
 
     let executable = str_param(obj, "executable").unwrap_or("/bin/sh");
-    let mut cmd = std::process::Command::new(executable);
-    cmd.arg("-c").arg(free_form);
+    let mut cmd = super::become_command(ctx, executable, &["-c", free_form]);
     if let Some(chdir) = str_param(obj, "chdir") {
         cmd.current_dir(chdir);
     }

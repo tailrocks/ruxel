@@ -27,8 +27,8 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
         return Err("empty command".into());
     }
 
-    let mut cmd = std::process::Command::new(&argv[0]);
-    cmd.args(&argv[1..]);
+    let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let mut cmd = super::become_command(ctx, argv_refs[0], &argv_refs[1..]);
     if let Some(chdir) = str_param(obj, "chdir") {
         cmd.current_dir(chdir);
     }

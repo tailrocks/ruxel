@@ -20,6 +20,7 @@ mod lvg;
 mod lvol;
 mod misc;
 mod mount;
+mod postgresql;
 mod replace;
 mod shell;
 mod slurp;
@@ -34,6 +35,8 @@ pub struct ExecContext {
     pub check_mode: bool,
     /// Task `environment:` merged into the child process env.
     pub environment: Vec<(String, String)>,
+    /// `become_user:` — run module subprocesses as this user (SEMANTICS §1).
+    pub become_user: Option<String>,
 }
 
 pub struct Outcome {
@@ -92,6 +95,10 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
         "copy" => copy::run(params, ctx),
         "slurp" => slurp::run(params),
         "systemd" | "service" => systemd::run(params, ctx),
+        "community.postgresql.postgresql_db" => postgresql::db(params, ctx),
+        "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
+        "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
+        "community.postgresql.postgresql_privs" => postgresql::privs(params, ctx),
         other => Err(format!(
             "module {other:?} is not implemented in this agent build"
         )),
@@ -107,6 +114,34 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
 }
 
 // -- Shared helpers -----------------------------------------------------------
+
+/// Build a std::process::Command, wrapped in `runuser -u <user> --` when the
+/// task set `become_user` (SEMANTICS §1: the task runs as that uid/gid with
+/// its environment). Used by command/shell and the postgresql modules
+/// (peer auth as the postgres OS user).
+pub(super) fn become_command(
+    ctx: &ExecContext,
+    program: &str,
+    args: &[&str],
+) -> std::process::Command {
+    match &ctx.become_user {
+        Some(user) => {
+            let mut cmd = std::process::Command::new("runuser");
+            cmd.arg("-u").arg(user).arg("--").arg(program);
+            for a in args {
+                cmd.arg(a);
+            }
+            cmd
+        }
+        None => {
+            let mut cmd = std::process::Command::new(program);
+            for a in args {
+                cmd.arg(a);
+            }
+            cmd
+        }
+    }
+}
 
 fn params_object(params: &Value) -> Result<&Map<String, Value>, String> {
     params

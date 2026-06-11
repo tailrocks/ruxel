@@ -228,6 +228,11 @@ fn execute_task(out: &mut impl std::io::Write, task: &v1::RenderedTask, check_mo
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            become_user: if task.become_user.is_empty() {
+                None
+            } else {
+                Some(task.become_user.clone())
+            },
         };
         let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
         send_result(
