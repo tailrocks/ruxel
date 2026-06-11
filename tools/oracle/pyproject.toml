@@ -1,0 +1,13 @@
+[project]
+name = "ruxel-oracle"
+version = "0.1.0"
+description = "Pinned ansible-core oracle for ruxel parity: capture callback + render harness"
+requires-python = ">=3.12"
+dependencies = [
+    # Pinned to the ansible-core the operator's controller runs today
+    # (brew ansible 14.0.0). Parity is against this version, exactly.
+    "ansible-core~=2.21.0",
+]
+
+[tool.uv]
+package = false
