@@ -112,3 +112,36 @@ jobs:
             cargo-registry-${{ runner.os }}-
 
       - run: cargo clippy --all-targets -- -D warnings
+
+  agent-cross:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - run: cargo zigbuild --target x86_64-unknown-linux-musl --release -p ruxel-agent
+
+      - name: Verify static binary
+        run: |
+          file target/x86_64-unknown-linux-musl/release/ruxel-agent | grep -E "ELF 64-bit.*x86-64.*statically linked"
