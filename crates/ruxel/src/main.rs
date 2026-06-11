@@ -41,21 +41,49 @@ mod tests {
     }
 
     #[test]
-    fn parses_plan_without_environment() {
-        let cli = Cli::try_parse_from(["ruxel", "plan"]).unwrap();
+    fn parses_the_drop_in_plan_shape() {
+        let cli = Cli::try_parse_from([
+            "ruxel",
+            "plan",
+            "-i",
+            "hosts.ini",
+            "--limit",
+            "titan",
+            "setup-titan.yml",
+        ])
+        .unwrap();
         let Command::Plan(args) = cli.command else {
             panic!("expected plan subcommand");
         };
-        assert_eq!(args.environment, None);
+        assert_eq!(args.inventory.to_str(), Some("hosts.ini"));
+        assert_eq!(args.limit.as_deref(), Some("titan"));
+        assert_eq!(args.playbook.to_str(), Some("setup-titan.yml"));
     }
 
     #[test]
-    fn parses_apply_with_environment() {
-        let cli = Cli::try_parse_from(["ruxel", "apply", "prod"]).unwrap();
+    fn plan_requires_inventory_and_playbook() {
+        assert!(Cli::try_parse_from(["ruxel", "plan"]).is_err());
+        assert!(Cli::try_parse_from(["ruxel", "plan", "-i", "hosts.ini"]).is_err());
+    }
+
+    #[test]
+    fn parses_apply_with_check_and_tags() {
+        let cli = Cli::try_parse_from([
+            "ruxel",
+            "apply",
+            "-i",
+            "hosts.ini",
+            "--check",
+            "--tags",
+            "sentry,velnor",
+            "setup-sentry.yml",
+        ])
+        .unwrap();
         let Command::Apply(args) = cli.command else {
             panic!("expected apply subcommand");
         };
-        assert_eq!(args.environment.as_deref(), Some("prod"));
+        assert!(args.check);
+        assert_eq!(args.tags, vec!["sentry", "velnor"]);
     }
 
     #[test]
