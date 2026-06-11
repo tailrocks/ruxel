@@ -169,11 +169,18 @@ so there is nothing to migrate back.
   Apache-2.0 codebase. Behavior is specified from SEMANTICS.md and the
   oracle captures, never from GPL implementations.
 
-## Operator decisions needed before M0 starts
+## Operator actions before M0 starts
 
-1. Hetzner Cloud project (or equivalent) for throwaway fixture VMs —
-   approve and provide access once; scripts keep them ephemeral.
-2. A test-only 1Password vault + service-account token for CI.
-3. One timed production run per key playbook (operator-run, any convenient
-   moment) for the real baseline — optional but makes every later
-   comparison honest.
+Exact click-paths and commands: [OPERATOR-SETUP.md](OPERATOR-SETUP.md).
+
+1. Hetzner Cloud project `ruxel-fixtures` + R/W API token → 1P item
+   `ruxel Hetzner Cloud`, field `token` (vault `ChainArgos`).
+2. 1P vault `ruxel-test` + service account `ruxel-ci` (access to that
+   vault only) → token in 1P item `ruxel CI service account`, field
+   `token`.
+3. Baseline timing logs (operator-run, optional, any time) — §3 of
+   OPERATOR-SETUP.md.
+
+M0's first act is a smoke test proving the fixture path end-to-end:
+create the cheapest x86_64 Debian 12 VM in `ruxel-fixtures`, SSH in,
+destroy it, reap leftovers.
