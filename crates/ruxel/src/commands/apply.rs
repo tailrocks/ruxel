@@ -39,6 +39,10 @@ pub struct ApplyArgs {
     /// Output format: human (ansible-shaped) or json (one event per line)
     #[arg(long, value_parser = ["human", "json"], default_value = "human")]
     pub output: String,
+    /// Resolve lookups as deterministic fakes instead of the real 1Password
+    /// CLI (gates, offline work — never touches the real vault)
+    #[arg(long)]
+    pub dry_secrets: bool,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
@@ -71,8 +75,15 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
         .unwrap_or_default();
     let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
 
-    // Secrets: dry resolver until the op-backed resolver lands (M3 tail).
-    let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+    // Secrets: the op-backed resolver by default (memoized once per run);
+    // --dry-secrets swaps in deterministic fakes for gates/offline.
+    let engine = if args.dry_secrets {
+        Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
+    } else {
+        Engine::new(Arc::new(MemoizedResolver::new(
+            ruxel_cli::secrets::OpResolver,
+        )))
+    };
     let run_id = format!("ruxel-{}", std::process::id());
 
     let runtime = tokio::runtime::Runtime::new()?;
