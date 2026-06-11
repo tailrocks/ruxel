@@ -103,8 +103,11 @@ the controller.
 1. **Parse** inventory + playbook into the typed model (SEMANTICS §1–§4).
    Hard error on anything outside the closed surface.
 2. **Resolve secrets**: collect every distinct `onepassword`/`pipe` lookup
-   across the effective tasks; resolve all concurrently through one `op`
-   session; memoize for the run. (Specified deviation, SEMANTICS §2.)
+   across the effective tasks; **group lookups by 1Password item** (an SSH
+   item's private+public key = two lookups, one `op item get <item>
+   --format json` fetch) and fetch all distinct items concurrently through
+   one `op` session; memoize for the run. (Specified deviation, SEMANTICS
+   §2.) The 52 lookups collapse to roughly half as many item fetches.
 3. **Compile**: evaluate statically renderable expressions; expand loops
    whose source is already known (literal lists, play-var lists); build the
    **register-dependency DAG** — each task is annotated with the registered
@@ -233,6 +236,16 @@ the playbook says happen every run.
   annotation (`ok (ledger)`, `ok (checked)`, `changed`, `would-run`),
   recap table, `--output json` = stable JSON-lines event stream (the same
   protocol events, serialized).
+- **Run log**: every run additionally writes its full JSON event stream
+  (secrets redacted) to `~/.local/state/ruxel/runs/<timestamp>-<run_id>.jsonl`
+  — forensics ("what exactly changed last Tuesday"), timing history, and
+  the raw material for future drift dashboards. Pruned by count, never a
+  dependency of execution.
+- Inventory vs `~/.ssh/config` precedence: `ansible_ssh_host`/
+  `ansible_ssh_user` from `hosts.ini` always win (passed explicitly to the
+  connection); everything else (keys, agent, ciphers, ControlMaster paths)
+  comes from the operator's ssh config — exactly the effective behavior of
+  their `ansible-playbook` runs today.
 
 ## 8. Failure, interruption, safety
 

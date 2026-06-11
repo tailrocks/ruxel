@@ -19,6 +19,47 @@ by assumption.
 
 ---
 
+## M0 — Test infrastructure, oracle, and workspace (prerequisite for every gate)
+
+Nothing in M1–M5 is provable without this; it comes first.
+
+- **Workspace layout**: restructure the crate into a Cargo workspace —
+  `crates/ruxel` (controller CLI), `crates/ruxel-agent` (target binary),
+  `crates/ruxel-proto` (prost messages), `crates/ruxel-core` (model,
+  compiler, modules' check/apply logic shared where sensible). Agent
+  release target `x86_64-unknown-linux-musl` cross-built with
+  cargo-zigbuild (the holla/velnor pattern); controller targets the
+  operator's macOS arm64 + linux.
+- **Fixture fleet**: the dev machine is arm64 macOS; the targets are
+  x86_64 Debian 12 with systemd, LVM, PG18 — containers cannot fixture
+  that faithfully. Decision: throwaway **Hetzner Cloud x86_64 VMs**
+  (same mirrors/network character as production, real systemd + loop-device
+  LVM), created/destroyed by a `tools/fixtures/` script the operator can
+  audit; local Lima/UTM Debian VM as the fast inner loop. CI system gates
+  run on x86_64 GitHub runners driving the same scripts. (Operator
+  provides/approves the Hetzner cloud project + budget once.)
+- **The Ansible oracle**: a pinned ansible-core 2.21 venv in-repo
+  (`tools/oracle/`, uv-managed, version-locked to what the controller runs
+  today) plus a **capture callback plugin** that records, for every task of
+  a real `ansible-playbook` run against a fixture VM: rendered args, result
+  dict, changed/ok/skipped status, and diff. Captures are committed as
+  golden files. Ruxel parity = replay against the same fixture state and
+  diff against the capture — semantics pinned by observation, not by
+  reading docs.
+- **Baseline timings**: record `ansible-playbook` wall-clock +
+  `profile_tasks` per playbook on the fixture fleet (automated), and —
+  operator-run, at his convenience — one timed run per key playbook against
+  production for the true denominator. Stored in `docs/benchmarks/baseline/`.
+- **Secrets in tests**: a dedicated 1Password vault containing only
+  synthetic test items, accessed in CI via a **1P service-account token**;
+  biometric/interactive `op` stays a local-dev path. No real secret ever
+  enters fixtures or captures.
+
+**Gate:** `cargo build` for all workspace members incl. cross-built agent;
+one scripted fixture VM up/down cycle; one captured oracle run of
+`install-base.yml` committed; baseline timings for the four common
+playbooks recorded.
+
 ## M1 — Fidelity layer (controller-side, fully offline)
 
 Parser (inventory INI + playbook YAML → typed model), MiniJinja engine
@@ -123,3 +164,16 @@ so there is nothing to migrate back.
 - **Warm-daemon tier** (ARCHITECTURE §9) and proactive drift reporting:
   designed, deliberately not scheduled until the ephemeral path is proven
   in M5 — it is an acceleration, not a dependency.
+- **Clean-room rule:** rash (GPL-3.0) and jetporch (GPL-3.0) are concept
+  references only; no source is read-and-ported from them into this
+  Apache-2.0 codebase. Behavior is specified from SEMANTICS.md and the
+  oracle captures, never from GPL implementations.
+
+## Operator decisions needed before M0 starts
+
+1. Hetzner Cloud project (or equivalent) for throwaway fixture VMs —
+   approve and provide access once; scripts keep them ephemeral.
+2. A test-only 1Password vault + service-account token for CI.
+3. One timed production run per key playbook (operator-run, any convenient
+   moment) for the real baseline — optional but makes every later
+   comparison honest.

@@ -20,8 +20,6 @@ enum Command {
     Plan(commands::plan::PlanArgs),
     /// Apply the desired state to an environment
     Apply(commands::apply::ApplyArgs),
-    /// Run an ad-hoc task against a target group
-    Run(commands::run::RunArgs),
 }
 
 fn main() -> Result<()> {
@@ -29,7 +27,6 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Plan(args) => commands::plan::execute(args),
         Command::Apply(args) => commands::apply::execute(args),
-        Command::Run(args) => commands::run::execute(args),
     }
 }
 
@@ -62,16 +59,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_run_with_target() {
-        let cli = Cli::try_parse_from(["ruxel", "run", "webservers"]).unwrap();
-        let Command::Run(args) = cli.command else {
-            panic!("expected run subcommand");
-        };
-        assert_eq!(args.target, "webservers");
-    }
-
-    #[test]
-    fn run_requires_a_target() {
-        assert!(Cli::try_parse_from(["ruxel", "run"]).is_err());
+    fn rejects_unknown_subcommand() {
+        assert!(Cli::try_parse_from(["ruxel", "run", "webservers"]).is_err());
     }
 }

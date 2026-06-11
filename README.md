@@ -50,7 +50,6 @@ provided by the operator. See [AGENTS.md](AGENTS.md).
 ```bash
 ruxel plan  -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml
 ruxel apply -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml
-ruxel run webservers
 ```
 
 ## Development

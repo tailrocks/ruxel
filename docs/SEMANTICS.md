@@ -140,7 +140,13 @@ workload).
   secrets redacted under `no_log`.
 - **Interactive `pause`** (1 use, with `prompt`): blocks awaiting operator
   Enter on the controller TTY; must keep working (Sentry manual bootstrap),
-  including under ruxel's streaming execution.
+  including under ruxel's streaming execution. **⚠ verify**: pause behavior
+  under `--check` (Ansible still prompts? skip?) — pin and mirror in
+  `ruxel plan`.
+- **Handlers under `--check`**: notified handlers run in check mode as
+  predictions (they do not execute real changes). **⚠ verify** exact
+  notify-on-predicted-change behavior in check runs and mirror it in
+  `ruxel plan`.
 
 ## 5. Connection-level semantics being replaced
 
