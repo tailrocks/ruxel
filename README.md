@@ -25,10 +25,18 @@ does not yet. Read the docs in order:
    this and nothing else.
 3. [docs/DIRECTION.md](docs/DIRECTION.md) — problem analysis, prior art,
    recommended architecture, alternatives considered.
-4. [docs/SKEPTIC.md](docs/SKEPTIC.md) — the adversarial pass: is building
-   this justified at all? Churn evidence, untuned-Ansible finding,
-   NixOS/OpenTofu verdicts, and the staged tune → unbundle → verify-first
-   recommendation ladder.
+4. [docs/SKEPTIC.md](docs/SKEPTIC.md) — the adversarial pass: churn
+   evidence, untuned-Ansible finding, NixOS/OpenTofu verdicts. Outcome:
+   the operator decided to build the full drop-in.
+5. [docs/SEMANTICS.md](docs/SEMANTICS.md) — **normative spec**: exactly
+   what Ansible does with these files (param- and value-scoped, closed
+   surface, ⚠-marked items pinned by parity experiments).
+6. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the detailed concept:
+   transport decision (SSH as carrier, "gRPC minus the g" protocol),
+   streaming execution, register-dependency pipelining, batched system
+   caches, the convergence ledger, warm-daemon tier.
+7. [docs/PLAN.md](docs/PLAN.md) — milestones M1–M6 with acceptance gates
+   and the spec-drift CI watch.
 
 ## Hard safety rule
 
