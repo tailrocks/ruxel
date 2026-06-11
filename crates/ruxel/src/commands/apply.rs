@@ -30,6 +30,12 @@ pub struct ApplyArgs {
     /// defaults to $RUXEL_AGENT_BIN
     #[arg(long, env = "RUXEL_AGENT_BIN")]
     pub agent_bin: Option<std::path::PathBuf>,
+    /// SSH identity for fixture/test targets (forces IdentitiesOnly)
+    #[arg(long, env = "RUXEL_SSH_KEY")]
+    pub ssh_key: Option<std::path::PathBuf>,
+    /// Accept new host keys (fixture/test targets)
+    #[arg(long)]
+    pub accept_new_host_key: bool,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
@@ -98,8 +104,13 @@ async fn run(
                 Some(user) => format!("{user}@{}", host.ssh_host),
                 None => host.ssh_host.clone(),
             };
+            let options = ruxel_cli::transport::ConnectOptions {
+                keyfile: args.ssh_key.clone(),
+                accept_new_host_key: args.accept_new_host_key || args.ssh_key.is_some(),
+            };
             let (mut conn, ack) =
-                ruxel_cli::transport::connect(&dest, agent_bin, run_id, false).await?;
+                ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, false, &options)
+                    .await?;
             let recap = ruxel_cli::scheduler::run_play(
                 play,
                 &host.name,

@@ -4,12 +4,14 @@
 //! time on the controller; the agent still rejects unknown params loudly
 //! rather than ignoring them (defense in depth, same closed-surface rule).
 
+mod apt;
 mod command;
 mod copy;
 mod file;
 mod shell;
 mod slurp;
 mod stat;
+mod systemd;
 
 use serde_json::{Map, Value, json};
 
@@ -50,12 +52,14 @@ impl Outcome {
 
 pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext) -> Outcome {
     let result = match module {
+        "apt" => apt::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
         "shell" => shell::run(params, free_form, ctx),
         "file" => file::run(params, ctx),
         "stat" => stat::run(params),
         "copy" => copy::run(params, ctx),
         "slurp" => slurp::run(params),
+        "systemd" | "service" => systemd::run(params, ctx),
         other => Err(format!(
             "module {other:?} is not implemented in this agent build"
         )),
