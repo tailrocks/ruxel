@@ -27,6 +27,14 @@ pub struct Recap {
     pub ignored: u32,
 }
 
+/// Output shape (SEMANTICS §7): ansible-shaped human lines, or one stable
+/// JSON object per task event on its own line (`--output json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Human,
+    Json,
+}
+
 struct HostRun<'a> {
     engine: &'a Engine,
     conn: &'a mut AgentConnection,
@@ -38,8 +46,10 @@ struct HostRun<'a> {
     notified: BTreeSet<String>,
     recap: Recap,
     next_task_id: u64,
+    format: OutputFormat,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_play(
     play: &Play,
     host: &str,
@@ -47,6 +57,7 @@ pub async fn run_play(
     engine: &Engine,
     conn: &mut AgentConnection,
     playbook_dir: &std::path::Path,
+    format: OutputFormat,
     out: &mut impl Write,
 ) -> Result<Recap> {
     let mut run = HostRun {
@@ -64,6 +75,7 @@ pub async fn run_play(
         notified: BTreeSet::new(),
         recap: Recap::default(),
         next_task_id: 1,
+        format,
     };
 
     let mut host_failed = false;
@@ -591,13 +603,29 @@ impl HostRun<'_> {
     }
 
     fn print_status(&self, out: &mut impl Write, task: &Task, status: &str, item: Option<&str>) {
-        let _ = writeln!(out, "TASK [{}] {}", label(task), "*".repeat(20));
-        match item {
-            Some(i) => {
-                let _ = writeln!(out, "{status}: [{}] => (item={i})", self.host);
+        match self.format {
+            OutputFormat::Human => {
+                let _ = writeln!(out, "TASK [{}] {}", label(task), "*".repeat(20));
+                match item {
+                    Some(i) => {
+                        let _ = writeln!(out, "{status}: [{}] => (item={i})", self.host);
+                    }
+                    None => {
+                        let _ = writeln!(out, "{status}: [{}]", self.host);
+                    }
+                }
             }
-            None => {
-                let _ = writeln!(out, "{status}: [{}]", self.host);
+            OutputFormat::Json => {
+                // One stable JSON object per task event, no_log-safe (no
+                // result payload here — only the shape operators grep).
+                let event = serde_json::json!({
+                    "event": "task",
+                    "host": self.host,
+                    "task": label(task),
+                    "status": status,
+                    "item": item,
+                });
+                let _ = writeln!(out, "{event}");
             }
         }
     }

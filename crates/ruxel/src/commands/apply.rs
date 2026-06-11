@@ -36,6 +36,9 @@ pub struct ApplyArgs {
     /// Accept new host keys (fixture/test targets)
     #[arg(long)]
     pub accept_new_host_key: bool,
+    /// Output format: human (ansible-shaped) or json (one event per line)
+    #[arg(long, value_parser = ["human", "json"], default_value = "human")]
+    pub output: String,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
@@ -91,14 +94,22 @@ async fn run(
 ) -> Result<()> {
     let mut any_failed = false;
     let stdout = std::io::stdout();
+    let format = if args.output == "json" {
+        ruxel_cli::scheduler::OutputFormat::Json
+    } else {
+        ruxel_cli::scheduler::OutputFormat::Human
+    };
+    let human = format == ruxel_cli::scheduler::OutputFormat::Human;
 
     for play in &playbook.plays {
         let hosts = inventory.select(&play.hosts, args.limit.as_deref())?;
-        println!(
-            "\nPLAY [{}] {}",
-            play.name.as_deref().unwrap_or(&play.hosts),
-            "*".repeat(40)
-        );
+        if human {
+            println!(
+                "\nPLAY [{}] {}",
+                play.name.as_deref().unwrap_or(&play.hosts),
+                "*".repeat(40)
+            );
+        }
         for host in hosts {
             let dest = match &host.ssh_user {
                 Some(user) => format!("{user}@{}", host.ssh_host),
@@ -130,22 +141,34 @@ async fn run(
                 engine,
                 &mut conn,
                 &playbook_dir,
+                format,
                 &mut stdout.lock(),
             )
             .await?;
             conn.shutdown().await?;
 
-            println!("\nPLAY RECAP {}", "*".repeat(40));
-            println!(
-                "{:<24}: ok={} changed={} unreachable=0 failed={} skipped={} rescued={} ignored={}",
-                host.name,
-                recap.ok,
-                recap.changed,
-                recap.failed,
-                recap.skipped,
-                recap.rescued,
-                recap.ignored
-            );
+            if human {
+                println!("\nPLAY RECAP {}", "*".repeat(40));
+                println!(
+                    "{:<24}: ok={} changed={} unreachable=0 failed={} skipped={} rescued={} ignored={}",
+                    host.name,
+                    recap.ok,
+                    recap.changed,
+                    recap.failed,
+                    recap.skipped,
+                    recap.rescued,
+                    recap.ignored
+                );
+            } else {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "event": "recap", "host": host.name,
+                        "ok": recap.ok, "changed": recap.changed, "failed": recap.failed,
+                        "skipped": recap.skipped, "rescued": recap.rescued, "ignored": recap.ignored,
+                    })
+                );
+            }
             if recap.failed > 0 {
                 any_failed = true;
             }
