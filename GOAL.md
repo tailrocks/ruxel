@@ -105,17 +105,27 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 3 cont.: **3/16 playbooks gate-proven,
-26/36 modules executing** — full-parity grind in progress)._
+_Last updated: 2026-06-12 (session 3 cont.: **all 36 modules implemented,
+5 playbook-shapes gated three-way** — full-parity grind continuing)._
 
-**Operator decisions wanted (next session can proceed without, but these
-unblock the drives/storage and install-base gates):**
-1. Hetzner **volumes** for the init-*-drives playbooks (they stat
-   /dev/disk/by-id paths; loop devices don't appear there, Hetzner cloud
-   volumes do as scsi-0HC_Volume_*). GOAL.md rule: volumes need your OK.
-   1-2 × 10GB volumes ≈ €0.05/day while attached.
-2. **holla-apt.tailrocks.com** serves no Release file to fixture IPs —
-   allowlist fixtures or accept a stand-in repo for the install-base gate.
+**Operator pre-approved (session 3):** create Hetzner volumes as needed,
+always reap them (done — project empty after every run). Volumes appear
+at /dev/disk/by-id/scsi-0HC_Volume_* and drove the storage gate.
+
+**Operator action — the one thing blocking the setup-* playbook gates:**
+set `GH_HOLLA_APT_TOKEN` on tailrocks/holla (a PAT with Contents:write +
+Actions:write on tailrocks/holla-apt), then
+`gh workflow run release-deb.yml --repo tailrocks/holla -f tag=v0.4.2`.
+That brings holla-apt.tailrocks.com live so install-base.yml + the
+setup-* playbooks (which install holla/velnor) can gate. The two
+workflow bugs that kept it down are **fixed + merged** (holla-apt#9
+heredoc-indent, holla#21 --no-strip arm64); holla-apt has the GPG
+secrets + Pages=workflow already. Offer standing: I can bridge it
+manually with my own gh creds if you'd rather not set the token.
+
+**holla/velnor apt deployment (operator-directed sub-task, DONE):** both
+repos analyzed against velnor (the working reference); root-caused +
+fixed two real bugs, PRs merged. Remaining is only the token above.
 
 **No operator blockers.** Session 3 received and wired both credentials:
 - `hcloud` context `ruxel-fixtures` active (token also backed up in 1P:
@@ -308,17 +318,42 @@ M3 (**started, session 2** — execution foundation in place):
       dropped link poisoned every later run), fixture default cpx22
       (2 GB OOMs under docker+dist-upgrade), security-review fixes
       (get_url `--` + scheme check; apt_repository filename validation)
-- [ ] Remaining M3+: storage modules lvg/lvol/filesystem/mount (needs
-      the volumes OK) and postgresql_db/user/privs/schema (PG18+port
-      40000 fixture); pause relay; become_user (postgres) + its env ⚠
-      experiment; convergence ledger + verdict engine + --no-cache; apt
-      adjacency batching; blob channel (perf, replaces inline content);
-      real `op` resolver in apply (dry-secrets is the test path —
-      secretful playbook gates run BOTH sides with the fake-lookup
-      plugins so no real secret ever lands on a fixture); tags engine,
-      live --check/--diff, --output json + run log; automated bless-gate
-      script (ruxel apply → ansible capture → assert changed=0 — done by
-      hand 3×); then the remaining 13 playbook gates, M5 benchmarks
+- [x] Storage modules (session 3 cont.): lvg (explicit-PV-set, vgs-json
+      ⚠), lvol (+100%FREE free-extent ⚠), filesystem (blkid), mount
+      (fstab-normalized ⚠) — drives playbook on a fixture + 2 real
+      Hetzner volumes: ruxel changed=4 → rerun 0 → ansible bless 0
+- [x] become_user (runuser wrapper in become_command; command/shell/pg
+      honor it) + all 4 PostgreSQL modules (PG15 fixture, port 40000):
+      db/user/schema/privs. Both ⚠ closed — SCRAM password idempotence
+      (StoredKey re-derivation, unit-pinned to a live verifier) and privs
+      explicit-ACL idempotence via aclexplode (not has_*_privilege, which
+      counts PUBLIC). ruxel rerun 0 → ansible bless 0. SQL streams on
+      stdin (no password in argv); privs allowlisted + identifier-quoted
+- [x] pause (controller-side TTY relay). **All 36 modules implemented.**
+- [x] **5 playbook-shapes gated three-way** (ruxel fresh → ruxel rerun
+      changed=0 → ansible bless changed=0): update-packages, upgrade-
+      debian, install-docker, drives(lvg/lvol/fs/mount), postgresql(db/
+      user/schema/privs). Goldens in tools/oracle/captures/
+- [ ] **Next rocks for full parity** (priority order):
+      1. **Convergence ledger** + verdict engine + `--no-cache` — the
+         "plan in seconds" promise (ARCHITECTURE §6). Today every run does
+         full native checks (correct + faster than ansible, not instant).
+         Biggest remaining subsystem; clean next-session start.
+      2. CLI surface: `--tags`/`always`, `--diff` output, `--output json`
+         + run log (~/.local/state/ruxel/runs), live `--check`.
+      3. Real `op` secret resolver in apply (dry-secrets is the test path;
+         secretful gates run BOTH sides with the fake-lookup plugins so no
+         real secret touches a fixture).
+      4. Remaining playbook gates: the 6 setup-* + restart-blockchain-
+         nodes + 4 init-*-drives variants. setup-* need holla-apt live
+         (operator token above) + multi-service fixtures (PG18, clickhouse
+         on selene, sentry compose). Build an automated bless-gate script
+         (ruxel apply → ansible capture → assert changed=0; done by hand 5×
+         so far) before grinding these.
+      5. M5: benchmark suite (criterion + wall-clock on fixtures), fuzz/
+         property tests on parser+protocol, chaos (mid-run disconnects).
+      6. Perf: apt adjacency batching, content-addressed blob channel
+         (replaces inline copy/template content shipping).
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
@@ -348,3 +383,13 @@ Session log:
   (11-module batch). Safety check: target = ruxel-fixture-work
   5.223.69.142, created via tools/fixtures, verified ≠ all six prod IPs.
   Fixture destroyed + reaped at session end.
+- 2026-06-12 s3 cont.: operator approved volumes + redirected to fix the
+  holla/velnor apt deployment. Fixed both (holla-apt#9, holla#21 — merged;
+  root-caused vs velnor). Then storage modules + drives gate (e02877d),
+  PG modules + become_user (f1f40a5), pause + all-36 (390eea9), PG
+  security hardening (fafcdc5). All 36 modules implemented; 5 playbook
+  shapes gated three-way. Safety: targets ruxel-fixture-{work,drives,pg}
+  + 2 volumes, all created via tools/fixtures (verified ≠ prod IPs),
+  destroyed + reaped — hcloud project empty at session end. Operator
+  to-do unchanged: GH_HOLLA_APT_TOKEN on tailrocks/holla to bring the
+  apt repo live; rotate Hetzner token when convenient.
