@@ -105,13 +105,22 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 1: M0 offline complete, M1 parser gate
-passed)._
+_Last updated: 2026-06-11 (session 2: **M1 complete — all gates green**;
+starting M2)._
 
 **Blocker for the operator:** the `hcloud` context `ruxel-fixtures` still
-does not exist (`hcloud context list` empty; verified this session). All
-fixture-dependent work below is parked on it. OPERATOR-SETUP.md §1 — ~30
-seconds in a separate terminal.
+does not exist (`hcloud server-type list` fails; re-verified session 2).
+All fixture-dependent work below is parked on it. OPERATOR-SETUP.md §1 —
+~30 seconds in a separate terminal.
+
+**Found for the operator (latent workload bug):**
+`config/sentry/config.yml` references `slack_client_id`,
+`slack_client_secret`, `slack_signing_secret` — defined nowhere in the
+workload (no play var, no inventory var). A real
+`ansible-playbook setup-sentry.yml` run that reaches "Replace config.yml"
+fails with AnsibleUndefinedVariable. Ruxel reproduces the error
+faithfully (it is a committed golden); fixing it means adding the three
+1P-backed play vars to setup-sentry.yml.
 
 Preconditions:
 
@@ -138,20 +147,51 @@ M0 (offline parts done this session):
 - [ ] Oracle capture of install-base.yml on a fixture VM (blocked: context)
 - [ ] Ingest baselines (blocked: logs absent)
 
-M1 (started):
+M1 (**complete, session 2**):
 
 - [x] Closed-surface model: 36-module registry with param-level closure and
       literal value enums; INI inventory parser (unknown anything = hard
       error). **Gate evidence: all 16 real playbooks parse**
       (`RUXEL_WORKLOAD_DIR=… cargo test -p ruxel-core --test workload`);
       unit tests prove rejection of unknown module/param/value/keyword
-- [ ] MiniJinja engine: native-types eval, filters default/bool/urlencode/
-      map/list/length/hash(sha256)/subelements, bare-expression conditions,
-      lookup resolver with dry-secrets mode
-- [ ] Render-parity harness vs the pinned oracle (offline): all 22
-      templates + every inline expression byte-identical
-- [ ] Loop/when/register golden tests; ⚠-item experiments recorded
+- [x] MiniJinja engine (`engine.rs`): native-types eval (single-expression
+      → native; concat → string, no literal_eval), filters incl. custom
+      bool/hash(sha256)/subelements/b64decode (b64decode + trim were
+      missing from the original spec extraction — found by the harness,
+      SEMANTICS.md updated), chainable-undefined that errors when a final
+      result or output (AnsibleUndefinedVariable parity), Python-style
+      output stringification (True/False/None), lazy layered scope with
+      memoization + cycle containment, LookupResolver with dry-secrets
+      fakes + per-run memoization
+- [x] Render-parity harness vs the pinned oracle:
+      `tools/oracle/render_parity.py` (fake 1P/pipe lookup plugins, shared
+      parity_vars.json) → committed goldens
+      `captures/render-parity.jsonl`; Rust replay
+      `tests/render_parity.rs`. **Gate evidence: 242/242 expressions+
+      conditions and 41/41 template files (22 with Jinja) byte-match
+      ansible-core 2.21**; expression entries re-verify offline in CI
+- [x] Loop/when/register golden tests: `runtime_semantics.yml` run against
+      localhost (connection=local) → `captures/runtime-semantics.jsonl`;
+      `task_eval.rs` reproduces every registered-result envelope (skip
+      shape incl. false_condition, loop aggregates incl. all-skip/empty
+      shapes, until attempts, changed_when_result, no_log censoring with
+      uncensored register) — `tests/runtime_goldens.rs`, 11 tests
+- [x] Plan compiler (`compiler.rs`): register/set_fact/fact read-set
+      annotation, static render with rendered-enum re-validation, static
+      loop expansion, deferred nodes with wait sets. **Gate evidence:
+      16/16 playbooks compile to plans (383 static / 50 deferred tasks)**
+
+M2 (next): proto/ruxel.proto + prost codegen + framed stdio protocol;
+openssh ControlMaster connection management; agent upload/handshake/facts;
+SFTP blob channel. Gate needs a local Debian 12 VM (Lima/UTM — fixture
+VMs still blocked on hcloud context; local VM is the PLAN-sanctioned
+inner loop and touches no remote host).
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
   quality gates now run with pipefail after one clippy slip-through.
+- 2026-06-11 s2: M1 complete. Commits 68fa8df (engine), 114d986 (parity
+  harness + goldens), 5cfed41 (runtime goldens + task_eval), 7f9cda3
+  (plan compiler + no_log). Oracle pins recorded in SEMANTICS.md §2.
+  Safety: no remote commands this session (offline + localhost-only
+  oracle runs); hcloud precondition re-checked and still absent.
