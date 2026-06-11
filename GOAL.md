@@ -105,8 +105,8 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session 2: **M1 complete — all gates green**;
-starting M2)._
+_Last updated: 2026-06-11 (session 2: **M1 complete; M2 gate passed on a
+local VM** — M3 is next)._
 
 **Blocker for the operator:** the `hcloud` context `ruxel-fixtures` still
 does not exist (`hcloud server-type list` fails; re-verified session 2).
@@ -181,11 +181,44 @@ M1 (**complete, session 2**):
       loop expansion, deferred nodes with wait sets. **Gate evidence:
       16/16 playbooks compile to plans (383 static / 50 deferred tasks)**
 
-M2 (next): proto/ruxel.proto + prost codegen + framed stdio protocol;
-openssh ControlMaster connection management; agent upload/handshake/facts;
-SFTP blob channel. Gate needs a local Debian 12 VM (Lima/UTM — fixture
-VMs still blocked on hcloud context; local VM is the PLAN-sanctioned
-inner loop and touches no remote host).
+M2 (**gate passed, session 2** — on aarch64; x86_64 re-proof rides the
+first Hetzner fixture once the context exists):
+
+- [x] Full protocol: Envelope{Hello,Plan,PlanPatch,Resume,Done} /
+      Event{HelloAck,BlobsNeeded,TaskStart,TaskResult,PauseRequest,Log,
+      CrashReport}; varint framing (64 MiB cap, clean-EOF) sync + async
+- [x] Agent loop: handshake w/ version enforcement, workload-exact facts
+      (default-route iface, VERSION_CODENAME, arch, hostname), Done/EOF
+      clean exits, panic→CrashReport frame, flock single-run guard;
+      pipe-driven integration tests incl. lock contention and kill -9
+      release. Static musl ELF: 324K x86_64 / 376K aarch64 (zigbuild)
+- [x] Controller transport: openssh ControlMaster native-mux (operator's
+      ssh config/keys/known_hosts), blake3 content-addressed agent upload
+      over a muxed SFTP channel (skip on hash hit), spawn + handshake +
+      event send/recv + clean shutdown
+- [x] CLI: drop-in `plan -i hosts.ini [--limit] [--tags] playbook.yml`
+      offline compile preview (static/deferred per task); `apply --check`
+      aliases plan; bare apply refuses until M3
+- [x] **Gate evidence** (`tests/transport_gate.rs` vs local OrbStack
+      Debian 12 bookworm VM `ruxel-deb`, root): cold connect+upload+
+      handshake+facts+shutdown 495 ms; warm rerun 143 ms, uploaded=false;
+      facts eth0/bookworm/aarch64; event round-trip (Plan → M2 Warn log)
+- [ ] Pause relay (deferred to M3 with the pause module — nothing can
+      emit PauseRequest until tasks execute)
+
+Local fixture note: lima/cloud.debian.org images stalled (~100 B/s on
+this network); the inner-loop VM is OrbStack machine `ruxel-deb`
+(local-only, 192.168.139.103, Debian 12 arm64) — kept across sessions as
+the fast inner loop, recreatable in seconds with
+`orb create -a arm64 debian:bookworm ruxel-deb`. Gate run command:
+`RUXEL_TEST_SSH_DEST='root@ruxel-deb@orb' RUXEL_TEST_AGENT_BIN=$PWD/
+target/aarch64-unknown-linux-musl/release/ruxel-agent cargo test -p
+ruxel-cli --test transport_gate -- --ignored --nocapture`.
+
+M3 (next): module runtime (19 core modules w/ check/apply/diff/
+check-mode), ledger store + verdict engine, handlers/notify, apt
+batching, plan/apply end-to-end. First fixture-VM gate — x86_64 Hetzner
+preferred (blocked on hcloud context); local VM covers the inner loop.
 
 Session log:
 - 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
@@ -193,5 +226,9 @@ Session log:
 - 2026-06-11 s2: M1 complete. Commits 68fa8df (engine), 114d986 (parity
   harness + goldens), 5cfed41 (runtime goldens + task_eval), 7f9cda3
   (plan compiler + no_log). Oracle pins recorded in SEMANTICS.md §2.
-  Safety: no remote commands this session (offline + localhost-only
-  oracle runs); hcloud precondition re-checked and still absent.
+  Then M2: cbd4a4b (proto+framing+agent loop), 5f079bb (SSH transport),
+  6245565 (CLI plan surface), then event API + gate pass. Safety check:
+  target = local OrbStack VM ruxel-deb (192.168.139.103), session-created,
+  verified outside the production inventory before the first remote
+  command; the only remote-ish target this session. hcloud precondition
+  re-checked and still absent.
