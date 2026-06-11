@@ -124,11 +124,13 @@ pub enum ErrorKind {
 type Result<T> = std::result::Result<T, ErrorKind>;
 
 /// Parse one playbook file's content.
-pub fn parse(source_name: &str, content: &str) -> std::result::Result<Playbook, ParseError> {
-    let err = |at: String, kind: ErrorKind| ParseError {
-        source_name: source_name.to_string(),
-        at,
-        kind,
+pub fn parse(source_name: &str, content: &str) -> std::result::Result<Playbook, Box<ParseError>> {
+    let err = |at: String, kind: ErrorKind| {
+        Box::new(ParseError {
+            source_name: source_name.to_string(),
+            at,
+            kind,
+        })
     };
     let doc: Value = serde_norway::from_str(content).map_err(|e| err("(file)".into(), e.into()))?;
     let Value::Sequence(plays_raw) = doc else {
@@ -357,17 +359,17 @@ fn validate_param(
             param: param.into(),
         });
     }
-    if let Some((_, values)) = surface.literal_enums.iter().find(|(p, _)| *p == param) {
-        if let Value::String(s) = value {
-            // Templated values are validated post-render, not here.
-            if !s.contains("{{") && !values.contains(&s.as_str()) {
-                return Err(ErrorKind::ValueOutsideSurface {
-                    module: surface.name.into(),
-                    param: param.into(),
-                    value: s.clone(),
-                    allowed: values.iter().map(|v| v.to_string()).collect(),
-                });
-            }
+    if let Some((_, values)) = surface.literal_enums.iter().find(|(p, _)| *p == param)
+        && let Value::String(s) = value
+    {
+        // Templated values are validated post-render, not here.
+        if !s.contains("{{") && !values.contains(&s.as_str()) {
+            return Err(ErrorKind::ValueOutsideSurface {
+                module: surface.name.into(),
+                param: param.into(),
+                value: s.clone(),
+                allowed: values.iter().map(|v| v.to_string()).collect(),
+            });
         }
     }
     Ok(())
