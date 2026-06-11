@@ -1,0 +1,11 @@
+namespace: community
+name: general
+version: 99.0.0
+readme: README.md
+authors:
+  - ruxel oracle (fake collection for render-parity captures)
+description: >-
+  Fake community.general providing only a deterministic dry-secrets
+  onepassword lookup, so parity captures never touch a real secret store.
+license:
+  - Apache-2.0

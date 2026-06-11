@@ -1,0 +1,69 @@
+{
+  "_comment": "Deterministic fake values for every name the workload's expressions reference that is not a play var: facts, register results, set_fact flags. Single source of truth for BOTH sides of the render-parity gate (tools/oracle/render_parity.py and crates/ruxel-core/tests/render_parity.rs). Shapes mirror SEMANTICS.md §3.8 result fields; values are synthetic.",
+
+  "ansible_default_ipv4": { "interface": "eth0", "address": "192.0.2.10" },
+  "ansible_facts": { "distribution_release": "bookworm" },
+  "ansible_architecture": "x86_64",
+
+  "data_disk_stats": {
+    "results": [
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_101", "stat": { "exists": true, "isblk": true }, "changed": false, "failed": false },
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_102", "stat": { "exists": false }, "changed": false, "failed": false },
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_103", "skipped": true, "changed": false }
+    ]
+  },
+  "hot_disk_stats": {
+    "results": [
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_201", "stat": { "exists": true, "isblk": true }, "changed": false, "failed": false },
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_202", "stat": { "exists": false }, "changed": false, "failed": false }
+    ]
+  },
+  "blockchain_disk_stats": {
+    "results": [
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_301", "stat": { "exists": true, "isblk": true }, "changed": false, "failed": false },
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_302", "stat": { "exists": true, "isblk": false }, "changed": false, "failed": false }
+    ]
+  },
+  "backup_disk_stats": {
+    "results": [
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_401", "stat": { "exists": true, "isblk": true }, "changed": false, "failed": false },
+      { "item": "/dev/disk/by-id/scsi-0HC_Volume_402", "stat": { "exists": false }, "changed": false, "failed": false }
+    ]
+  },
+
+  "data_disk_devices": { "results": [ { "stdout": "/dev/sda", "rc": 0 }, { "stdout": "/dev/sdb", "rc": 0 } ] },
+  "hot_disk_devices": { "results": [ { "stdout": "/dev/sdc", "rc": 0 }, { "stdout": "/dev/sdd", "rc": 0 } ] },
+  "blockchain_disk_devices": { "results": [ { "stdout": "/dev/sde", "rc": 0 }, { "stdout": "/dev/sdf", "rc": 0 } ] },
+  "backup_disk_devices": { "results": [ { "stdout": "/dev/sdg", "rc": 0 }, { "stdout": "/dev/sdh", "rc": 0 } ] },
+
+  "lvm_uuid": { "stdout": "9f3c2a18-5d77-4b21-9c4e-d2f4a1b6c8e0", "stdout_lines": ["9f3c2a18-5d77-4b21-9c4e-d2f4a1b6c8e0"], "rc": 0, "changed": false },
+  "main_lvm_uuid": { "stdout": "1a2b3c4d-1111-4aaa-9bbb-000000000001", "stdout_lines": ["1a2b3c4d-1111-4aaa-9bbb-000000000001"], "rc": 0, "changed": false },
+  "hot_lvm_uuid": { "stdout": "1a2b3c4d-2222-4aaa-9bbb-000000000002", "stdout_lines": ["1a2b3c4d-2222-4aaa-9bbb-000000000002"], "rc": 0, "changed": false },
+  "sentry_bootstrap_marker_content": { "content": "MjYuMi4xCg==", "encoding": "base64" },
+
+  "docker_list": { "stat": { "exists": true } },
+  "sentry_bootstrap_marker": { "stat": { "exists": false } },
+  "pg_parquet_installed": { "stat": { "exists": false } },
+
+  "user_input": { "user_input": "y" },
+  "ch_ready": { "rc": 0, "stdout": "Ok.", "stderr": "", "stdout_lines": ["Ok."], "changed": true, "failed": false, "attempts": 1 },
+  "docker_user_chain": { "rc": 1, "stdout": "", "stderr": "iptables: No chain/target/match by that name.", "changed": false, "failed": false },
+
+  "holla_apt_source": { "changed": true },
+  "holla_gpg_result": { "rc": 0, "stdout": "key installed", "stderr": "", "changed": true },
+  "velnor_pkg": { "rc": 0, "stdout": "ii  velnor-runner 0.2.1 amd64 runner", "stderr": "", "changed": false },
+  "velnor_gpg_result": { "rc": 0, "stdout": "already present", "stderr": "", "changed": false },
+  "mise_upgrade": { "rc": 0, "stdout": "", "stderr": "mise self-update: upgraded to 2026.5.1", "changed": true },
+
+  "clickhouse_systemd_override": { "changed": false },
+  "postgresql_conf": { "changed": true },
+  "pg_hba_conf": { "changed": false },
+  "postgresql_systemd_override": { "changed": false },
+  "storage_conf": { "changed": false },
+  "performance_conf": { "changed": false },
+  "network_conf": { "changed": true },
+  "logging_conf": { "changed": false },
+  "users_conf": { "changed": false },
+
+  "sentry_bootstrap_done": false
+}

@@ -52,15 +52,30 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   intent is one consistent secret snapshot. This is the only deliberate
   behavioral deviation in this spec.
 - Jinja constructs in use (closed list): filters `default`, `bool`,
-  `urlencode`, `map`, `list`, `length`, `hash('sha256')`, `subelements`;
+  `urlencode`, `map`, `list`, `length`, `hash('sha256')`, `subelements`,
+  `b64decode`, `trim` (the latter two found by the M1 harness in
+  setup-sentry.yml's bootstrap-marker compare, 2026-06-11 — the original
+  extraction missed them);
   attribute/index access on registered results (`x.stat.exists`,
   `ch_ready.rc`); comparisons and boolean operators in `when`/`until`;
   loop over `register` results (`item.item`, `item.stat`). MiniJinja covers
-  the core; `subelements` and Ansible-flavored `hash` need custom filter
-  implementations. **⚠ verify**: M1 harness renders every template and every
-  inline expression in the repo through ansible-core's Templar and through
-  ruxel's engine and diffs byte-for-byte — that harness, not this list, is
-  the completeness guarantee.
+  the core; `subelements`, Ansible-flavored `hash`, and `b64decode` need
+  custom filter implementations. **Verified 2026-06-11**: the M1 harness
+  (tools/oracle/render_parity.py → captures/render-parity.jsonl) renders
+  every inline expression and condition (242) and all 41 template files
+  through ansible-core 2.21's Templar and through ruxel's engine —
+  byte-identical strings, JSON-identical natives, matching errors. That
+  corpus, not this list, is the completeness guarantee. Pinned along the
+  way: a template that is exactly one `{{ expr }}` yields the native value;
+  any concatenation (`{{ a }}{{ b }}`, leading/trailing text or spaces)
+  yields a string with no literal_eval; undefined chains through attribute
+  access (caught by `default`) but erroring the moment it is the final
+  result of an expression, condition, or rendered output
+  (AnsibleUndefinedVariable); `urlencode` percent-encodes with `/` safe.
+  Known workload latent bug, preserved not fixed: config/sentry/config.yml
+  references `slack_client_id`/`slack_client_secret`/`slack_signing_secret`
+  which no playbook defines — rendering that template errors under both
+  Ansible and ruxel (the error is the golden).
 - Facts consumed (complete list): `ansible_default_ipv4.interface`,
   `ansible_facts['distribution_release']`, `ansible_architecture`. Ruxel's
   agent supplies exactly these (plus trivially cheap extras like hostname)

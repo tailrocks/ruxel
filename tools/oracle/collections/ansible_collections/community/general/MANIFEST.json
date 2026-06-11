@@ -1,0 +1,20 @@
+{
+  "collection_info": {
+    "namespace": "community",
+    "name": "general",
+    "version": "99.0.0",
+    "authors": ["ruxel oracle (fake collection for render-parity captures)"],
+    "readme": "README.md",
+    "license": ["Apache-2.0"],
+    "license_file": null,
+    "tags": [],
+    "description": "Fake community.general: deterministic dry-secrets onepassword lookup only.",
+    "repository": null,
+    "documentation": null,
+    "homepage": null,
+    "issues": null,
+    "dependencies": {}
+  },
+  "file_manifest_file": null,
+  "format": 1
+}

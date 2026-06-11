@@ -20,6 +20,8 @@ pub enum EngineError {
     Template(#[from] minijinja::Error),
     #[error("variable cycle while rendering {0:?}")]
     VarCycle(String),
+    #[error("undefined variable in {0:?}")]
+    Undefined(String),
     #[error("lookup {0:?} failed: {1}")]
     Lookup(String, String),
     #[error("unsupported YAML value (tagged) in template scope")]
@@ -293,6 +295,18 @@ impl Engine {
         // by `default` (the workload's `item.stat.exists | default(false)`
         // pattern). ⚠ pinned by the parity harness.
         env.set_undefined_behavior(UndefinedBehavior::Chainable);
+        // …but *emitting* an undefined into rendered output is
+        // AnsibleUndefinedVariable (pinned 2026-06-11: config/sentry/
+        // config.yml's slack_* refs error under the oracle).
+        env.set_formatter(|out, _state, value| {
+            if value.is_undefined() {
+                return Err(minijinja::Error::new(
+                    MjErrorKind::UndefinedError,
+                    "undefined value in template output",
+                ));
+            }
+            write!(out, "{value}").map_err(minijinja::Error::from)
+        });
         // The template module's keep_trailing_newline=True default
         // (SEMANTICS §6 template). ⚠ pinned by the 22-template parity gate.
         env.set_keep_trailing_newline(true);
@@ -300,6 +314,7 @@ impl Engine {
         env.add_filter("bool", filter_bool);
         env.add_filter("hash", filter_hash);
         env.add_filter("subelements", filter_subelements);
+        env.add_filter("b64decode", filter_b64decode);
 
         let lookup_resolver = resolver.clone();
         env.add_function(
@@ -380,6 +395,12 @@ impl Engine {
 fn eval_expr_bool(inner: &EngineInner, expr: &str, ctx: &Value) -> Result<bool, EngineError> {
     let compiled = inner.env.compile_expression(expr)?;
     let value = compiled.eval(ctx.clone())?;
+    // Ansible raises AnsibleUndefinedVariable when a condition's result is
+    // undefined (pinned 2026-06-11 against the 2.21 oracle) — chainable
+    // undefined is only allowed to survive *inside* an expression.
+    if value.is_undefined() {
+        return Err(EngineError::Undefined(expr.to_string()));
+    }
     Ok(value.is_true())
 }
 
@@ -402,7 +423,14 @@ fn render_str_inner(
     }
     if let Some(expr) = single_expression(template) {
         let compiled = inner.env.compile_expression(expr)?;
-        return Ok(compiled.eval(ctx.clone())?);
+        let value = compiled.eval(ctx.clone())?;
+        // Match AnsibleUndefinedVariable on an undefined final result
+        // (pinned 2026-06-11): chaining may pass through undefined, but a
+        // template must not silently *produce* it.
+        if value.is_undefined() {
+            return Err(EngineError::Undefined(template.to_string()));
+        }
+        return Ok(value);
     }
     Ok(Value::from(inner.env.render_str(template, ctx.clone())?))
 }
@@ -510,6 +538,26 @@ fn filter_hash(value: Value, algorithm: String) -> Result<String, minijinja::Err
     };
     let digest = Sha256::digest(s.as_bytes());
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Ansible's `b64decode` filter (setup-sentry.yml's bootstrap-marker
+/// compare). UTF-8 output only — the workload decodes a slurped text file.
+fn filter_b64decode(value: Value) -> Result<String, minijinja::Error> {
+    use base64::Engine as _;
+    let Some(s) = value.as_str() else {
+        return Err(minijinja::Error::new(
+            MjErrorKind::InvalidOperation,
+            "b64decode: input must be a string",
+        ));
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(s.trim())
+        .map_err(|e| {
+            minijinja::Error::new(MjErrorKind::InvalidOperation, format!("b64decode: {e}"))
+        })?;
+    String::from_utf8(bytes).map_err(|e| {
+        minijinja::Error::new(MjErrorKind::InvalidOperation, format!("b64decode: {e}"))
+    })
 }
 
 /// Ansible's `subelements` filter: list of dicts × subelement list key →
@@ -787,6 +835,44 @@ broken: "{{ undefined_thing.attr.deep }}"
             .render_str("{{ lookup('file', '/etc/passwd') }}", &Scope::new())
             .unwrap_err();
         assert!(err.to_string().contains("outside the closed surface"));
+    }
+
+    #[test]
+    fn undefined_template_result_is_error() {
+        // Oracle: AnsibleUndefinedVariable (pinned 2026-06-11).
+        assert!(matches!(
+            engine().render_str("{{ nope }}", &Scope::new()),
+            Err(EngineError::Undefined(_))
+        ));
+        assert!(matches!(
+            engine().eval_condition(&Condition::Expr("nope".into()), &Scope::new()),
+            Err(EngineError::Undefined(_))
+        ));
+    }
+
+    #[test]
+    fn concat_of_two_expressions_is_a_string() {
+        // Oracle: '12' (string), not 12 — 2.21 does not literal_eval concat
+        // results (pinned 2026-06-11).
+        let s = scope(&[("a", serde_json::json!(1)), ("b", serde_json::json!(2))]);
+        let v = engine().render_str("{{ a }}{{ b }}", &s).unwrap();
+        assert_eq!(v.as_str(), Some("12"));
+    }
+
+    #[test]
+    fn space_wrapped_expression_is_a_string() {
+        // Oracle: ' 1 ' — whitespace outside delimiters defeats native mode.
+        let s = scope(&[("a", serde_json::json!(1))]);
+        let v = engine().render_str(" {{ a }} ", &s).unwrap();
+        assert_eq!(v.as_str(), Some(" 1 "));
+    }
+
+    #[test]
+    fn urlencode_matches_python_quote() {
+        // Oracle: 'a%20b/c%2Bd%26e%3Df' — space %20, / kept, + encoded.
+        let s = scope(&[("pw", serde_json::json!("a b/c+d&e=f"))]);
+        let v = engine().render_str("{{ pw | urlencode }}", &s).unwrap();
+        assert_eq!(v.as_str(), Some("a%20b/c%2Bd%26e%3Df"));
     }
 
     #[test]
