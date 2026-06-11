@@ -1,0 +1,35 @@
+// Ruxel controller↔agent protocol. Framed as varint-length-prefixed messages
+// over the agent's stdio on an SSH channel ("gRPC minus the g" —
+// docs/ARCHITECTURE.md §2). M0 carries only the handshake; task/plan/event
+// messages land in M2 alongside the transport implementation.
+
+syntax = "proto3";
+
+package ruxel.v1;
+
+// First message, controller → agent.
+message Hello {
+  uint32 proto_version = 1;
+  string run_id = 2;
+  bool check_mode = 3;
+  bool diff_mode = 4;
+  bool no_cache = 5;
+}
+
+// First reply, agent → controller.
+message HelloAck {
+  string agent_version = 1;
+  uint32 proto_version = 2;
+  Facts facts = 3;
+  // Ledger generation: changes when the ledger was wiped or migrated, so the
+  // controller can report degraded (full-check) runs honestly.
+  uint64 ledger_generation = 4;
+}
+
+// The complete fact set the workload consumes (docs/SEMANTICS.md §2).
+message Facts {
+  string default_ipv4_interface = 1;
+  string distribution_release = 2;
+  string architecture = 3;
+  string hostname = 4;
+}

@@ -1,0 +1,19 @@
+[package]
+name = "ruxel-core"
+version.workspace = true
+edition.workspace = true
+description = "Ruxel controller core: inventory/playbook model, parser, templating, plan compiler"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+minijinja.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]

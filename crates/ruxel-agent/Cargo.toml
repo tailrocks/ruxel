@@ -1,0 +1,16 @@
+[package]
+name = "ruxel-agent"
+version.workspace = true
+edition.workspace = true
+description = "Ruxel target-host agent: native module runtime, probe engine, convergence ledger"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "ruxel-agent"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+ruxel-proto.workspace = true
