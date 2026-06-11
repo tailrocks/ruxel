@@ -18,5 +18,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+blake3.workspace = true
 clap.workspace = true
+openssh.workspace = true
+openssh-sftp-client.workspace = true
+prost.workspace = true
 ruxel-core.workspace = true
+ruxel-proto.workspace = true
+tokio.workspace = true
