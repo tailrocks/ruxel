@@ -33,10 +33,35 @@ use serde_json::{Map, Value, json};
 
 pub struct ExecContext {
     pub check_mode: bool,
+    /// `--diff`: content modules embed a unified diff in their result.
+    pub diff_mode: bool,
     /// Task `environment:` merged into the child process env.
     pub environment: Vec<(String, String)>,
     /// `become_user:` — run module subprocesses as this user (SEMANTICS §1).
     pub become_user: Option<String>,
+}
+
+/// A minimal unified diff (before → after) for content modules under
+/// `--diff`. Whole-file, no hunking — matches what operators expect to
+/// eyeball for a config change and keeps the agent dependency-free.
+pub(super) fn unified_diff(before: &str, after: &str) -> String {
+    if before == after {
+        return String::new();
+    }
+    let mut out = String::from("--- before\n+++ after\n");
+    let b: Vec<&str> = before.lines().collect();
+    let a: Vec<&str> = after.lines().collect();
+    for line in &b {
+        out.push('-');
+        out.push_str(line);
+        out.push('\n');
+    }
+    for line in &a {
+        out.push('+');
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 pub struct Outcome {

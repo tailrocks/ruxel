@@ -17,13 +17,22 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
     let exists = p.exists();
-    let same = exists
-        && std::fs::read(p)
-            .map(|cur| cur == content.as_bytes())
-            .unwrap_or(false);
+    let current = if exists {
+        std::fs::read(p).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let same = exists && current == content.as_bytes();
+
+    let mut result = json!({"dest": dest, "changed": false, "failed": false});
 
     if !exists || (force && !same) {
         changed = true;
+        // Unified content diff under --diff (before = current dest bytes).
+        if ctx.diff_mode {
+            let before = String::from_utf8_lossy(&current);
+            result["diff"] = json!(super::unified_diff(&before, content));
+        }
         if !ctx.check_mode {
             let tmp = p.with_file_name(format!(
                 ".{}.ruxel-tmp",
@@ -38,5 +47,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if p.exists() || !ctx.check_mode {
         apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
     }
-    Ok(json!({"dest": dest, "changed": changed, "failed": false}))
+    result["changed"] = json!(changed);
+    Ok(result)
 }

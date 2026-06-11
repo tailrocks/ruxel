@@ -637,6 +637,16 @@ impl HostRun<'_> {
         if !display.is_empty() {
             let _ = writeln!(out, "    {display}");
         }
+        // --diff: print the content diff the agent produced (no_log-safe:
+        // redacted tasks never carry one).
+        if self.format == OutputFormat::Human
+            && !task.no_log
+            && let Some(diff) = result.get_attr("diff").ok().filter(|d| !d.is_undefined())
+            && let Some(diff) = diff.as_str()
+            && !diff.is_empty()
+        {
+            let _ = writeln!(out, "{diff}");
+        }
     }
 
     fn print_status(&self, out: &mut impl Write, task: &Task, status: &str, item: Option<&str>) {

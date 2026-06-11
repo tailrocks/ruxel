@@ -96,6 +96,7 @@ fn serve() -> i32 {
     }
 
     let mut check_mode = false;
+    let mut diff_mode = false;
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -113,6 +114,7 @@ fn serve() -> i32 {
             Some(Msg::Hello(hello)) => {
                 handshaken.store(true, std::sync::atomic::Ordering::Relaxed);
                 check_mode = hello.check_mode;
+                diff_mode = hello.diff_mode;
                 if hello.proto_version != PROTO_VERSION {
                     log_event(
                         &mut stdout,
@@ -143,7 +145,7 @@ fn serve() -> i32 {
             Some(Msg::Plan(v1::Plan { tasks, .. }))
             | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
-                    execute_task(&mut stdout, task, check_mode);
+                    execute_task(&mut stdout, task, check_mode, diff_mode);
                 }
             }
             Some(Msg::Resume(_)) => {
@@ -168,7 +170,12 @@ fn serve() -> i32 {
 /// Execute one rendered task: per iteration, TaskStart then TaskResult.
 /// Aggregation, register binding, and status envelopes are controller-side
 /// (task_eval) — the agent reports raw per-iteration module outcomes.
-fn execute_task(out: &mut impl std::io::Write, task: &v1::RenderedTask, check_mode: bool) {
+fn execute_task(
+    out: &mut impl std::io::Write,
+    task: &v1::RenderedTask,
+    check_mode: bool,
+    diff_mode: bool,
+) {
     let task_check_mode = check_mode && !task.check_mode_override;
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
@@ -223,6 +230,7 @@ fn execute_task(out: &mut impl std::io::Write, task: &v1::RenderedTask, check_mo
 
         let ctx = modules::ExecContext {
             check_mode: task_check_mode,
+            diff_mode,
             environment: task
                 .environment
                 .iter()
@@ -264,7 +272,11 @@ fn send_result(
                 status: status.to_string(),
                 changed,
                 result_json: serde_json::to_vec(result).unwrap_or_default(),
-                diff: String::new(),
+                diff: result
+                    .get("diff")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 elapsed_ms: start.elapsed().as_millis() as u64,
                 item_label: iteration.item_label.clone(),
             })),

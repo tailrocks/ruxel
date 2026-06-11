@@ -133,6 +133,7 @@ async fn run(
                     p.push(".known_hosts");
                     p.into()
                 }),
+                diff_mode: args.diff,
             };
             let (mut conn, ack) =
                 ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, false, &options)

@@ -34,6 +34,8 @@ pub struct ConnectOptions {
     /// Dedicated known_hosts (fixtures: isolates ephemeral host keys from
     /// the operator's global file, which recycled cloud IPs poison).
     pub known_hosts_file: Option<PathBuf>,
+    /// `--diff`: ask the agent to emit unified content diffs.
+    pub diff_mode: bool,
 }
 
 /// The per-host ControlMaster: a foreground `ssh -M -N` child owning the
@@ -235,6 +237,7 @@ pub async fn connect_with(
                 proto_version: PROTO_VERSION,
                 run_id: run_id.to_string(),
                 check_mode,
+                diff_mode: options.diff_mode,
                 ..Default::default()
             })),
         },
