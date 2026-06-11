@@ -18,6 +18,12 @@ can create/destroy VMs there and nothing else, anywhere.
 
 Steps (≈2 minutes, in https://console.hetzner.cloud):
 
+0. **Account check (the only moment it can be verified):** log in as
+   **alexey@chainargos.com** — the ChainArgos Hetzner account (credentials
+   in the ChainArgos vault's existing `Hetzner` item), not a personal
+   account. The Cloud API has no account-identity endpoint, so a token's
+   owning account cannot be verified after creation; this console glance
+   is the verification.
 1. **New Project** → name it `ruxel-fixtures`. Keep it empty of anything
    else, forever.
 2. Open the project → **Security → API tokens → Generate API token** →
