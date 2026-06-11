@@ -1,11 +1,27 @@
 // Ruxel controller↔agent protocol. Framed as varint-length-prefixed messages
 // over the agent's stdio on an SSH channel ("gRPC minus the g" —
-// docs/ARCHITECTURE.md §2). M0 carries only the handshake; task/plan/event
-// messages land in M2 alongside the transport implementation.
+// docs/ARCHITECTURE.md §2). Every controller→agent message is an Envelope;
+// every agent→controller message is an Event. Module params travel as
+// canonical JSON bytes in M2; per-module typed structs land with the module
+// runtime in M3.
 
 syntax = "proto3";
 
 package ruxel.v1;
+
+// ---------------------------------------------------------------------------
+// Controller → agent
+// ---------------------------------------------------------------------------
+
+message Envelope {
+  oneof msg {
+    Hello hello = 1;
+    Plan plan = 2;
+    PlanPatch plan_patch = 3;
+    Resume resume = 4;
+    Done done = 5;
+  }
+}
 
 // First message, controller → agent.
 message Hello {
@@ -14,6 +30,60 @@ message Hello {
   bool check_mode = 3;
   bool diff_mode = 4;
   bool no_cache = 5;
+}
+
+// The full task list for one play run. Deferred tasks arrive as
+// placeholders (rendered=false) so the agent knows shape and order; their
+// rendered bodies follow in PlanPatch messages as register inputs arrive
+// (docs/ARCHITECTURE.md §4).
+message Plan {
+  repeated RenderedTask tasks = 1;
+  repeated string blobs_referenced = 2; // b3sums the tasks' payloads need
+}
+
+// Late-rendered continuation for deferred tasks.
+message PlanPatch {
+  repeated RenderedTask tasks = 1;
+}
+
+// Reply to PauseRequest: the operator pressed Enter (or aborted).
+message Resume {
+  uint64 task_id = 1;
+  bool abort = 2;
+}
+
+// End of run: agent flushes its ledger and exits 0.
+message Done {}
+
+// One executable task, fully rendered controller-side.
+message RenderedTask {
+  uint64 task_id = 1;        // ordinal within the run, stable across patches
+  string name = 2;
+  string module = 3;         // closed-surface module name
+  bool rendered = 4;         // false = deferred placeholder
+  bytes params_json = 5;     // canonical JSON object of rendered params
+  bytes loop_items_json = 6; // canonical JSON array; empty = no loop
+  string free_form = 7;      // shell/command body
+  bool check_mode_override = 8; // task-level `check_mode: no`
+  bool no_log = 9;
+  string become_user = 10;   // empty = run as connection user (root)
+  map<string, string> environment = 11;
+}
+
+// ---------------------------------------------------------------------------
+// Agent → controller
+// ---------------------------------------------------------------------------
+
+message Event {
+  oneof msg {
+    HelloAck hello_ack = 1;
+    BlobsNeeded blobs_needed = 2;
+    TaskStart task_start = 3;
+    TaskResult task_result = 4;
+    PauseRequest pause_request = 5;
+    Log log = 6;
+    CrashReport crash = 7;
+  }
 }
 
 // First reply, agent → controller.
@@ -32,4 +102,49 @@ message Facts {
   string distribution_release = 2;
   string architecture = 3;
   string hostname = 4;
+}
+
+// Content-addressed payloads the agent does not have yet; the controller
+// pushes them over the SFTP channel.
+message BlobsNeeded {
+  repeated string missing = 1; // b3sums
+}
+
+message TaskStart {
+  uint64 task_id = 1;
+  string item_label = 2; // loop item display label, empty when loop-less
+}
+
+message TaskResult {
+  uint64 task_id = 1;
+  string status = 2;       // ok | changed | failed | skipped
+  bool changed = 3;
+  bytes result_json = 4;   // full result dict (register payload)
+  string diff = 5;         // unified diff when diff mode produced one
+  uint64 elapsed_ms = 6;
+  string item_label = 7;   // per-item results carry their label
+}
+
+// Interactive pause (SEMANTICS §4): relayed to the operator TTY.
+message PauseRequest {
+  uint64 task_id = 1;
+  string prompt = 2;
+}
+
+message Log {
+  enum Level {
+    LEVEL_UNSPECIFIED = 0;
+    DEBUG = 1;
+    INFO = 2;
+    WARN = 3;
+    ERROR = 4;
+  }
+  Level level = 1;
+  string message = 2;
+}
+
+// Structured panic/abort report — the agent's last words.
+message CrashReport {
+  string message = 1;
+  string location = 2;
 }

@@ -1,6 +1,8 @@
 //! Controller↔agent protocol messages. See `proto/ruxel.proto` and
 //! docs/ARCHITECTURE.md §2 for the framing model.
 
+pub mod frame;
+
 pub mod v1 {
     include!(concat!(env!("OUT_DIR"), "/ruxel.v1.rs"));
 }
