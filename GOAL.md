@@ -105,35 +105,53 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-11 (session: pre-implementation design)._
+_Last updated: 2026-06-11 (session 1: M0 offline complete, M1 parser gate
+passed)._
 
-Done so far: design docs complete (SEMANTICS / ARCHITECTURE / PLAN /
-WORKLOAD / VISION / DIRECTION / SKEPTIC / OPERATOR-SETUP); CLI scaffold with
-plan/apply stubs; CI skeleton; spec extraction tooling decisions recorded.
+**Blocker for the operator:** the `hcloud` context `ruxel-fixtures` still
+does not exist (`hcloud context list` empty; verified this session). All
+fixture-dependent work below is parked on it. OPERATOR-SETUP.md §1 — ~30
+seconds in a separate terminal.
 
 Preconditions:
 
-- [ ] `hcloud` context `ruxel-fixtures` exists and authenticates
-      (**operator action** — OPERATOR-SETUP.md §1; blocks all fixture work)
-- [ ] `~/.config/ruxel/op-ci.env` with 1P service-account token
-      (operator action; optional now — blocks only the CI secrets path;
-      flag, don't wait)
-- [ ] Baseline logs `/tmp/baseline-*.log` (operator action; optional —
-      ingest whenever they appear)
+- [ ] `hcloud` context `ruxel-fixtures` (**operator** — blocks smoke test,
+      fixture script validation, oracle VM captures)
+- [ ] `~/.config/ruxel/op-ci.env` with 1P service-account token (operator;
+      optional — blocks only CI secrets path)
+- [ ] Baseline logs `/tmp/baseline-*.log` (operator; optional)
 
-M0 to-do (in order, per PLAN.md):
+M0 (offline parts done this session):
 
-- [ ] Hetzner smoke test: cheapest x86_64 Debian 12 VM in `ruxel-fixtures`,
-      ephemeral SSH key, SSH in, `uname -m`, destroy VM+key, prove zero
-      leftovers
-- [ ] `tools/fixtures/`: create / destroy / list-and-reap scripts
-- [ ] 1P CI path: create+seed `ruxel-test` vault (synthetic items mirroring
-      WORKLOAD.md §2 lookup shapes); set GH secret if op-ci.env exists
-- [ ] Workspace split: `crates/{ruxel,ruxel-agent,ruxel-proto,ruxel-core}`;
-      agent x86_64-musl via cargo-zigbuild; CI builds all + cross
-- [ ] `tools/oracle/`: uv-pinned ansible-core 2.21 + capture callback
-      plugin; capture `install-base.yml` against a fixture VM (golden files)
-- [ ] Ingest baselines into `docs/benchmarks/baseline/` if present
-- [ ] Mark M0 gate evidence in this file; proceed to M1 without waiting
+- [x] Workspace split: `crates/{ruxel,ruxel-core,ruxel-proto,ruxel-agent}`;
+      agent cross-builds to 324K static x86_64-musl ELF (cargo-zigbuild);
+      CI `agent-cross` job with static-linkage check
+- [x] `tools/fixtures/`: create/destroy/reap scripts written —
+      context-scoped, label-guarded, 2-VM cap, ephemeral keys.
+      **API-untested** (no context)
+- [x] `tools/oracle/`: uv venv pinned to ansible-core 2.21.0 (exact match
+      with controller) + `ruxel_capture` callback plugin; verified offline
+      (local-connection playbook → ok/skipped/per-item records; raw_args
+      arrive post-template at the callback layer)
+- [ ] Hetzner smoke test (blocked: context)
+- [ ] Seed `ruxel-test` 1P vault + GH secret (blocked: service account)
+- [ ] Oracle capture of install-base.yml on a fixture VM (blocked: context)
+- [ ] Ingest baselines (blocked: logs absent)
 
-M1+ to-do: tracked here once M0 closes; definitions in PLAN.md.
+M1 (started):
+
+- [x] Closed-surface model: 36-module registry with param-level closure and
+      literal value enums; INI inventory parser (unknown anything = hard
+      error). **Gate evidence: all 16 real playbooks parse**
+      (`RUXEL_WORKLOAD_DIR=… cargo test -p ruxel-core --test workload`);
+      unit tests prove rejection of unknown module/param/value/keyword
+- [ ] MiniJinja engine: native-types eval, filters default/bool/urlencode/
+      map/list/length/hash(sha256)/subelements, bare-expression conditions,
+      lookup resolver with dry-secrets mode
+- [ ] Render-parity harness vs the pinned oracle (offline): all 22
+      templates + every inline expression byte-identical
+- [ ] Loop/when/register golden tests; ⚠-item experiments recorded
+
+Session log:
+- 2026-06-11 s1: M0 offline + M1 parser. Commits 9beb77e…8deea64. Note:
+  quality gates now run with pipefail after one clippy slip-through.
