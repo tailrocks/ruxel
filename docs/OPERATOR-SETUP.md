@@ -28,20 +28,27 @@ Steps (≈2 minutes, in https://console.hetzner.cloud):
    else, forever.
 2. Open the project → **Security → API tokens → Generate API token** →
    description `ruxel-fixtures-agent`, permissions **Read & Write**.
-3. Store the token in 1Password: vault `ChainArgos`, new item named
-   **`ruxel Hetzner Cloud`**, field **`token`** (type: password).
+3. In a separate terminal (keeps the token out of any agent transcript),
+   create the local hcloud context — this is what makes the agent fully
+   autonomous, **no 1Password / fingerprint involved at runtime**:
 
-That's all. The agent then reads it at runtime — never written to disk,
-never committed:
+   ```bash
+   hcloud context create ruxel-fixtures   # paste token at the hidden prompt
+   hcloud server-type list                # table prints → auth works
+   ```
 
-```bash
-export HCLOUD_TOKEN="$(op read 'op://ChainArgos/ruxel Hetzner Cloud/token')"
-```
+   The token is stored once in `~/.config/hcloud/cli.toml` (mode 600) —
+   hcloud's standard mechanism, the same at-rest risk class as `~/.ssh`
+   keys, acceptable here because the token's blast radius is one empty
+   project with no path to production (Robot and Cloud are separate APIs).
+4. Optional, recommended: keep a backup copy in 1Password (vault
+   `ChainArgos`, item `ruxel Hetzner Cloud`, field `token`). Runtime never
+   reads it.
 
-`tools/fixtures/` scripts (M0) use `hcloud` CLI with that env var to
-create a CX-line x86_64 Debian 12 VM per test session and destroy it
-afterwards (cost: cents per session; a forgotten VM is a few €/month and
-the scripts list+reap leftovers on every run).
+`tools/fixtures/` scripts (M0) use the `hcloud` context to create a
+CX-line x86_64 Debian 12 VM per test session and destroy it afterwards
+(cost: cents per session; a forgotten VM is a few €/month and the scripts
+list+reap leftovers on every run).
 
 ## 2. 1Password test vault + service account (CI secrets path)
 
@@ -62,20 +69,24 @@ Steps (≈3 minutes, on https://my.1password.com):
    `ruxel-ci`, grant **read & write access to the `ruxel-test` vault
    only** (write lets the test suite create its own fixtures; it can be
    downgraded to read-only after M1 seeds them).
-3. Copy the token (`ops_…`) once, store it in 1Password: vault
-   `ChainArgos`, item **`ruxel CI service account`**, field **`token`**.
+3. Copy the token (`ops_…`) once and store it in **two places**:
+   - a local env file for the agent's fingerprint-free runs:
+     `printf 'OP_SERVICE_ACCOUNT_TOKEN=ops_…\n' > ~/.config/ruxel/op-ci.env
+     && chmod 600 ~/.config/ruxel/op-ci.env` (separate terminal again);
+   - optionally a 1Password backup item `ruxel CI service account`.
 
-The agent then installs it as a GitHub Actions secret itself:
+The agent installs the GitHub Actions secret itself from the env file:
 
 ```bash
-gh secret set OP_SERVICE_ACCOUNT_TOKEN \
-  --repo tailrocks/ruxel \
-  --body "$(op read 'op://ChainArgos/ruxel CI service account/token')"
+set -a; source ~/.config/ruxel/op-ci.env; set +a
+gh secret set OP_SERVICE_ACCOUNT_TOKEN --repo tailrocks/ruxel --body "$OP_SERVICE_ACCOUNT_TOKEN"
 ```
 
-In CI, `OP_SERVICE_ACCOUNT_TOKEN` in the environment makes `op read`/`op
-item get` work non-interactively — against `ruxel-test` only. Locally,
-nothing changes: your normal biometric `op` session is used.
+With `OP_SERVICE_ACCOUNT_TOKEN` in the environment, `op read`/`op item
+get` work non-interactively — against `ruxel-test` only — both in CI and
+in the agent's local autonomous runs. Your biometric session stays for
+human use of the real vaults; the agent needs no fingerprint for any
+routine work.
 
 ## 3. Baseline timings (you run, when convenient)
 

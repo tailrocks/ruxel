@@ -173,11 +173,12 @@ so there is nothing to migrate back.
 
 Exact click-paths and commands: [OPERATOR-SETUP.md](OPERATOR-SETUP.md).
 
-1. Hetzner Cloud project `ruxel-fixtures` + R/W API token → 1P item
-   `ruxel Hetzner Cloud`, field `token` (vault `ChainArgos`).
+1. Hetzner Cloud project `ruxel-fixtures` + R/W API token → local
+   `hcloud context create ruxel-fixtures` (fingerprint-free runtime; 1P
+   item optional backup).
 2. 1P vault `ruxel-test` + service account `ruxel-ci` (access to that
-   vault only) → token in 1P item `ruxel CI service account`, field
-   `token`.
+   vault only) → token in `~/.config/ruxel/op-ci.env` (and optional 1P
+   backup item).
 3. Baseline timing logs (operator-run, optional, any time) — §3 of
    OPERATOR-SETUP.md.
 
