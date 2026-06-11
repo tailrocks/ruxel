@@ -36,6 +36,8 @@ pub struct ConnectOptions {
     pub known_hosts_file: Option<PathBuf>,
     /// `--diff`: ask the agent to emit unified content diffs.
     pub diff_mode: bool,
+    /// `--no-cache`: bypass the convergence ledger (full check every task).
+    pub no_cache: bool,
 }
 
 /// The per-host ControlMaster: a foreground `ssh -M -N` child owning the
@@ -238,7 +240,7 @@ pub async fn connect_with(
                 run_id: run_id.to_string(),
                 check_mode,
                 diff_mode: options.diff_mode,
-                ..Default::default()
+                no_cache: options.no_cache,
             })),
         },
     )

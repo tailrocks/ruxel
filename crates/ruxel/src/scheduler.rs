@@ -558,6 +558,28 @@ impl HostRun<'_> {
             env
         };
 
+        // Stable ledger identity (ARCHITECTURE §6): blake3 over the task's
+        // identity and its fully-rendered params/body/item. Any change to
+        // params (including a rotated secret, which renders to different
+        // bytes) yields a different key → cache miss → re-check. A hash, so
+        // no secret is recoverable from it.
+        let params_bytes = serde_json::to_vec(&params)?;
+        let ledger_key = {
+            let mut h = blake3::Hasher::new();
+            h.update(self.playbook_dir.to_string_lossy().as_bytes());
+            h.update(b"\x1f");
+            h.update(module.as_bytes());
+            h.update(b"\x1f");
+            h.update(label(task).as_bytes());
+            h.update(b"\x1f");
+            h.update(item_label.as_bytes());
+            h.update(b"\x1f");
+            h.update(&params_bytes);
+            h.update(b"\x1f");
+            h.update(free_form.as_bytes());
+            h.finalize().to_hex().to_string()
+        };
+
         self.conn
             .send(&v1::Envelope {
                 msg: Some(EnvMsg::Plan(v1::Plan {
@@ -568,8 +590,9 @@ impl HostRun<'_> {
                         rendered: true,
                         iterations: vec![v1::Iteration {
                             item_label,
-                            params_json: serde_json::to_vec(&params)?,
+                            params_json: params_bytes,
                             free_form,
+                            ledger_key,
                         }],
                         check_mode_override: task.check_mode == Some(false),
                         no_log: task.no_log,

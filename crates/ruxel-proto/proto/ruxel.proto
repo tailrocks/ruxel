@@ -75,6 +75,10 @@ message Iteration {
   string item_label = 1;  // loop item display label ("" when loop-less)
   bytes params_json = 2;  // canonical JSON object of rendered params
   string free_form = 3;   // shell/command body
+  // Stable task identity for the convergence ledger (ARCHITECTURE §6):
+  // blake3 over playbook/play/task/module/canonical-params (+item). A hash,
+  // so no secret value is recoverable from it. Empty = do not cache.
+  string ledger_key = 4;
 }
 
 // ---------------------------------------------------------------------------

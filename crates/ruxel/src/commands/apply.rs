@@ -43,6 +43,9 @@ pub struct ApplyArgs {
     /// CLI (gates, offline work — never touches the real vault)
     #[arg(long)]
     pub dry_secrets: bool,
+    /// Bypass the convergence ledger — full native check of every task
+    #[arg(long)]
+    pub no_cache: bool,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
@@ -134,6 +137,7 @@ async fn run(
                     p.into()
                 }),
                 diff_mode: args.diff,
+                no_cache: args.no_cache,
             };
             let (mut conn, ack) =
                 ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, false, &options)

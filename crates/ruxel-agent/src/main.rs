@@ -7,6 +7,7 @@
 //! as Log events or to stderr.
 
 mod facts;
+mod ledger;
 mod modules;
 
 use ruxel_proto::PROTO_VERSION;
@@ -97,6 +98,8 @@ fn serve() -> i32 {
 
     let mut check_mode = false;
     let mut diff_mode = false;
+    let mut no_cache = false;
+    let mut ledger = ledger::Ledger::load(&dir);
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -115,6 +118,7 @@ fn serve() -> i32 {
                 handshaken.store(true, std::sync::atomic::Ordering::Relaxed);
                 check_mode = hello.check_mode;
                 diff_mode = hello.diff_mode;
+                no_cache = hello.no_cache;
                 if hello.proto_version != PROTO_VERSION {
                     log_event(
                         &mut stdout,
@@ -139,13 +143,20 @@ fn serve() -> i32 {
                 }
             }
             Some(Msg::Done(_)) => {
-                // Ledger flush goes here when the ledger lands.
+                ledger.flush();
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }))
             | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
-                    execute_task(&mut stdout, task, check_mode, diff_mode);
+                    execute_task(
+                        &mut stdout,
+                        task,
+                        check_mode,
+                        diff_mode,
+                        no_cache,
+                        &mut ledger,
+                    );
                 }
             }
             Some(Msg::Resume(_)) => {
@@ -170,11 +181,14 @@ fn serve() -> i32 {
 /// Execute one rendered task: per iteration, TaskStart then TaskResult.
 /// Aggregation, register binding, and status envelopes are controller-side
 /// (task_eval) — the agent reports raw per-iteration module outcomes.
+#[allow(clippy::too_many_arguments)]
 fn execute_task(
     out: &mut impl std::io::Write,
     task: &v1::RenderedTask,
     check_mode: bool,
     diff_mode: bool,
+    no_cache: bool,
+    ledger: &mut ledger::Ledger,
 ) {
     let task_check_mode = check_mode && !task.check_mode_override;
     for iteration in &task.iterations {
@@ -208,6 +222,21 @@ fn execute_task(
                 }
             }
         };
+
+        // Ledger fast path (ARCHITECTURE §6): if this exact task is on
+        // record and every fingerprint still verifies, replay the cached
+        // result (changed=false) without invoking the module — the
+        // converged no-op in microseconds. --no-cache and check mode skip
+        // the cache. Honesty rule is enforced in probe_for: always-execute
+        // modules have no fingerprints and never reach here cached.
+        if !no_cache
+            && !task_check_mode
+            && !iteration.ledger_key.is_empty()
+            && let Some(cached) = ledger.cached_ok(&iteration.ledger_key)
+        {
+            send_result(out, task.task_id, iteration, "ok", false, &cached, start);
+            continue;
+        }
 
         // check-mode skip for command/shell (SEMANTICS §3.5) — predicted
         // as "skipped" by the agent so timing stays honest.
@@ -243,6 +272,17 @@ fn execute_task(
             },
         };
         let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
+        // Record the converged fingerprint (real applies only — check mode
+        // didn't change the system, so its state isn't authoritative).
+        if !task_check_mode {
+            ledger.record(
+                &iteration.ledger_key,
+                &task.module,
+                &params,
+                outcome.status,
+                &outcome.result,
+            );
+        }
         send_result(
             out,
             task.task_id,

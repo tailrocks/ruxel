@@ -961,6 +961,7 @@ dependencies = [
  "pbkdf2",
  "regex-lite",
  "ruxel-proto",
+ "serde",
  "serde_json",
  "sha2",
 ]

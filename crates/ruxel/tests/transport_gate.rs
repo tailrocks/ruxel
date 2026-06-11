@@ -25,6 +25,7 @@ fn options() -> ruxel_cli::transport::ConnectOptions {
             .ok()
             .map(|k| format!("{k}.known_hosts").into()),
         diff_mode: false,
+        no_cache: false,
     }
 }
 
