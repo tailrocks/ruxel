@@ -4,3 +4,5 @@
 //! compiler. Filled in across M1 (docs/PLAN.md).
 
 pub mod inventory;
+pub mod modules;
+pub mod playbook;
