@@ -22,6 +22,7 @@ KEY="${2:?ssh keyfile}"
 AGENT="${3:?agent binary (x86_64-musl)}"
 PLAYBOOK="${4:?playbook path}"
 INV="${5:-}"
+DRY="${6:-}"   # pass "dry" for secretful playbooks (dry-secrets both sides)
 
 IP="${DEST##*@}"
 HOST="gate-host"
@@ -39,7 +40,7 @@ recap_changed() {
 
 echo "== [1/3] ruxel apply (fresh) =="
 RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \
-  cargo run -q -p ruxel-cli -- apply -i "$INV" "$PLAYBOOK" | tee /tmp/gate-fresh.log
+  cargo run -q -p ruxel-cli -- apply -i "$INV" ${DRY:+--dry-secrets} "$PLAYBOOK" | tee /tmp/gate-fresh.log
 
 # Parity, not zero: a converged run still reports the tasks that are
 # *inherently* always-changed — bare command/shell with no changed_when
@@ -49,12 +50,12 @@ RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \
 # from the captures when they disagree.
 echo "== [2/3] ruxel apply (converged rerun) =="
 RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \
-  cargo run -q -p ruxel-cli -- apply -i "$INV" "$PLAYBOOK" | tee /tmp/gate-rerun.log
+  cargo run -q -p ruxel-cli -- apply -i "$INV" ${DRY:+--dry-secrets} "$PLAYBOOK" | tee /tmp/gate-rerun.log
 RERUN_CHANGED="$(recap_changed < /tmp/gate-rerun.log || echo '?')"
 
 echo "== [3/3] ansible bless (same state) =="
 BLESS_NAME="bless-$(basename "$PLAYBOOK" .yml)"
-tools/oracle/capture_fixture.sh "$IP" "$KEY" "$PLAYBOOK" "$BLESS_NAME" | tee /tmp/gate-bless.log
+{ [ -n "$DRY" ] && export RUXEL_DRY_SECRETS=1; tools/oracle/capture_fixture.sh "$IP" "$KEY" "$PLAYBOOK" "$BLESS_NAME"; } | tee /tmp/gate-bless.log
 BLESS_CHANGED="$(grep -Eo 'changed=[0-9]+' /tmp/gate-bless.log | head -1 | cut -d= -f2 || echo '?')"
 
 if [ "$RERUN_CHANGED" != "$BLESS_CHANGED" ]; then

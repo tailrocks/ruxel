@@ -24,6 +24,22 @@ EOF
 mkdir -p captures
 rm -f "captures/${NAME}.jsonl"
 
+# Secretful playbooks: set RUXEL_DRY_SECRETS=1 so ansible resolves
+# onepassword/pipe lookups to the same deterministic dry values ruxel's
+# --dry-secrets produces (the fake onepassword is overlaid into galaxy's
+# community.general; the fake pipe plugin is in lookup_plugins/). No real
+# secret reaches the fixture, and ruxel↔ansible state stays byte-identical.
+LOOKUP_ARGS=""
+if [ "${RUXEL_DRY_SECRETS:-}" = "1" ]; then
+  LOOKUP_ARGS="ANSIBLE_LOOKUP_PLUGINS=$(pwd)/lookup_plugins"
+  # Self-heal the fake-onepassword overlay (galaxy/ is gitignored): copy
+  # the dry-secret onepassword lookup over the real one so ansible resolves
+  # to the same values ruxel does.
+  GG="galaxy/ansible_collections/community/general/plugins/lookup"
+  [ -d "$GG" ] && cp collections/ansible_collections/community/general/plugins/lookup/onepassword.py "$GG/onepassword.py"
+fi
+
+env $LOOKUP_ARGS \
 ANSIBLE_COLLECTIONS_PATH="$(pwd)/galaxy" \
 ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
 ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
