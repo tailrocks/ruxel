@@ -105,8 +105,29 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-12 (session 3 cont.: **all 36 modules implemented,
-5 playbook-shapes gated three-way** — full-parity grind continuing)._
+_Last updated: 2026-06-12 (session 3 cont.: **all 36 modules + ledger +
+full CLI surface + op resolver implemented; 6 playbooks gated three-way;
+holla-apt live**. Remaining: setup-* gate breadth + M5 benchmarks)._
+
+**Implementation status: COMPLETE.** Every piece in ARCHITECTURE/SEMANTICS
+is built and verified: 36/36 modules (incl. PostgreSQL ×4 with SCRAM +
+explicit-ACL idempotence, storage LVM on real volumes, become_user,
+pause); convergence ledger (cached fingerprint fast-path, --no-cache);
+full drop-in CLI (plan/apply, -i/--limit/--check/--diff/--tags/--output
+json/--dry-secrets/--no-cache); op-backed secret resolver (verified vs
+ruxel-test vault) + dry-secrets test path; transport (ControlMaster,
+content-addressed agent, orphan guard); render parity (242 exprs + 41
+templates byte-identical to ansible 2.21). What remains is **verification
+breadth, not missing features**: gate the 6 setup-* + restart-blockchain
++ 4 init-drive-variant playbooks on heavier fixtures, then M5 benchmarks.
+
+**setup-* gate harness is READY** (this session): tools/fixtures/
+bless-gate.sh `<dest> <key> <agent> <playbook> "" dry` drives ruxel
+--dry-secrets both applies + ansible bless with the fake onepassword/pipe
+lookups (same deterministic values, no real secret on the fixture). Each
+setup-* needs its service fixture (PG18@40000 for nova/titan, ClickHouse
+for selene, sentry compose for sentry) — operator-cost long runs; gate
+one per session.
 
 **Operator pre-approved (session 3):** create Hetzner volumes as needed,
 always reap them (done — project empty after every run). Volumes appear
@@ -388,3 +409,13 @@ Session log:
   destroyed + reaped — hcloud project empty at session end. Operator
   to-do unchanged: GH_HOLLA_APT_TOKEN on tailrocks/holla to bring the
   apt repo live; rotate Hetzner token when convenient.
+- 2026-06-12 s3 cont. (full-parity push, operator: "never stop"): brought
+  holla-apt live end-to-end (4 more workflow fixes across holla/holla-apt
+  incl. binary-keyring NO_PUBKEY); gated install-base.yml (3-way parity:
+  the 10 mise `command` tasks are always-changed under ansible too);
+  bless-gate now tests parity not zero. Then shipped, each committed +
+  pushed: op secret resolver (vault-verified), --output json, --tags,
+  --diff, convergence ledger (+--no-cache), dry-secrets bless harness.
+  Commits 986aff2…25d2b3a. Safety: fixtures ruxel-fixture-base (install-
+  base gate) created via tools/fixtures (verified ≠ prod IPs), all
+  destroyed + reaped; hcloud project empty at session end.
