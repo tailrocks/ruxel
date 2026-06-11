@@ -19,11 +19,17 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // argv flag-smuggling defense: positional values must not look like
     // flags (`--` placement is subcommand-sensitive in git — `checkout --
     // x` means path x — so validation, not separators, is the guard).
-    for (label, v) in [("repo", Some(repo)), ("dest", Some(dest)), ("version", version)] {
+    for (label, v) in [
+        ("repo", Some(repo)),
+        ("dest", Some(dest)),
+        ("version", version),
+    ] {
         if let Some(v) = v
             && v.starts_with('-')
         {
-            return Err(format!("git: refusing {label} that looks like a flag: {v:?}"));
+            return Err(format!(
+                "git: refusing {label} that looks like a flag: {v:?}"
+            ));
         }
     }
 

@@ -31,3 +31,7 @@ fixture_count() {
 }
 
 session_key_name() { echo "ruxel-fixture-key-$1"; }
+
+fixture_volumes() {
+  hcloud volume list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null
+}

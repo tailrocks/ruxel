@@ -11,9 +11,10 @@ require_context
 dry="${1:-}"
 
 servers="$(hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name || true)"
+volumes="$(hcloud volume list -l "$LABEL_SELECTOR" -o noheader -o columns=name || true)"
 keys="$(hcloud ssh-key list -l "$LABEL_SELECTOR" -o noheader -o columns=name || true)"
 
-if [ -z "$servers" ] && [ -z "$keys" ]; then
+if [ -z "$servers" ] && [ -z "$keys" ] && [ -z "$volumes" ]; then
   echo "no fixture leftovers"
   exit 0
 fi
@@ -21,6 +22,13 @@ fi
 for s in $servers; do
   echo "leftover server: $s"
   [ "$dry" = "--dry-run" ] || hcloud server delete "$s" >/dev/null
+done
+for v in $volumes; do
+  echo "leftover volume: $v"
+  if [ "$dry" != "--dry-run" ]; then
+    hcloud volume detach "$v" >/dev/null 2>&1 || true
+    hcloud volume delete "$v" >/dev/null
+  fi
 done
 for k in $keys; do
   echo "leftover ssh key: $k"

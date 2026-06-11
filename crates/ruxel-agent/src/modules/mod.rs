@@ -11,11 +11,15 @@ mod blockinfile;
 mod command;
 mod copy;
 mod file;
+mod filesystem;
 mod get_url;
 mod git;
 mod iptables;
 mod lineinfile;
+mod lvg;
+mod lvol;
 mod misc;
+mod mount;
 mod replace;
 mod shell;
 mod slurp;
@@ -75,6 +79,10 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
         "authorized_key" => authorized_key::run(params, ctx),
         "git" => git::run(params, ctx),
         "iptables" => iptables::run(params, ctx),
+        "community.general.lvg" => lvg::run(params, ctx),
+        "community.general.lvol" => lvol::run(params, ctx),
+        "filesystem" => filesystem::run(params, ctx),
+        "ansible.posix.mount" => mount::run(params, ctx),
         "template" => copy::run(params, ctx),
         "get_url" => get_url::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
