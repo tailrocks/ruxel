@@ -16,6 +16,17 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let force = bool_param(obj, "force", false);
     let accept_hostkey = bool_param(obj, "accept_hostkey", false);
 
+    // argv flag-smuggling defense: positional values must not look like
+    // flags (`--` placement is subcommand-sensitive in git — `checkout --
+    // x` means path x — so validation, not separators, is the guard).
+    for (label, v) in [("repo", Some(repo)), ("dest", Some(dest)), ("version", version)] {
+        if let Some(v) = v
+            && v.starts_with('-')
+        {
+            return Err(format!("git: refusing {label} that looks like a flag: {v:?}"));
+        }
+    }
+
     let dest_git = Path::new(dest).join(".git");
     let exists = dest_git.is_dir();
 
@@ -53,6 +64,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             args.push("--branch");
             args.push(v);
         }
+        args.push("--");
         args.push(repo);
         args.push(dest);
         let (_, ok) = git(&args, None)?;
@@ -71,7 +83,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if ctx.check_mode {
         // Compare remote HEAD for the branch without touching the tree.
         let branch = version.unwrap_or("HEAD");
-        let (ls, ok) = git(&["ls-remote", repo, branch], Some(dest))?;
+        let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
         let remote = ls.split_whitespace().next().unwrap_or("").to_string();
         let changed = ok && !remote.is_empty() && remote != before;
         return Ok(json!({"changed": changed, "failed": false, "before": before, "after": remote}));
