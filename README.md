@@ -25,6 +25,10 @@ does not yet. Read the docs in order:
    this and nothing else.
 3. [docs/DIRECTION.md](docs/DIRECTION.md) — problem analysis, prior art,
    recommended architecture, alternatives considered.
+4. [docs/SKEPTIC.md](docs/SKEPTIC.md) — the adversarial pass: is building
+   this justified at all? Churn evidence, untuned-Ansible finding,
+   NixOS/OpenTofu verdicts, and the staged tune → unbundle → verify-first
+   recommendation ladder.
 
 ## Hard safety rule
 

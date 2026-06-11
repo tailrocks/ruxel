@@ -1,6 +1,10 @@
 # Direction — Analysis and Recommended Architecture
 
 Status: proposal for operator review. 2026-06-11.
+Follow-up: [SKEPTIC.md](SKEPTIC.md) deliberately attacks this document's
+conclusion with churn evidence, the untuned-Ansible finding, and NixOS/Tofu
+deep-dives, then re-derives a staged recommendation (tune → unbundle →
+verify-first build). Read both before deciding.
 
 This document answers three questions in order: (1) where the time actually
 goes today, (2) whether an existing tool — including OpenTofu/Terraform, a
@@ -74,13 +78,16 @@ between "2 minutes" and "5 seconds".
 
 ### 2.1 Tuning Ansible itself (the honest baseline)
 
-`pipelining=true` (their sudoers permits it — root login), `gathering=smart`,
-Mitogen strategy plugin, and freezing every lookup into `set_fact` once at
-play start would plausibly take 15 min → **2–4 min**. Public data agrees:
-pipelining+facts+forks typically cut 50–70%; Mitogen adds 1.25–7x; and a
-well-tuned idempotent playbook still took ~3 minutes in the best documented
-comparison (<https://blog.hartwork.org/posts/replacing-ansible-with-salt-ssh-for-speed-and-for-good/>).
-Mitogen also chronically lags ansible-core releases. **Verdict: a legitimate
+`pipelining=true` (their sudoers permits it — root login), `gathering=smart`
+with a fact cache, and freezing every lookup into `set_fact` once at play
+start would plausibly take 15 min → **3–5 min**. Public data agrees:
+pipelining+facts+forks typically cut 50–70%; and a well-tuned idempotent
+playbook still took ~3 minutes in the best documented comparison
+(<https://blog.hartwork.org/posts/replacing-ansible-with-salt-ssh-for-speed-and-for-good/>).
+**Mitogen is not an option here**: it supports ansible-core 2.10–2.14 and the
+controller runs core 2.21. Note also the controller currently runs with
+`config file = None` — fully untuned defaults (see
+[SKEPTIC.md](SKEPTIC.md) §2). **Verdict: a legitimate
 interim relief, available this week, with no migration — but it plateaus at
 minutes, not seconds, because layer 1.3 remains.**
 
@@ -309,9 +316,11 @@ executor overhead drops from minutes to seconds, and hosts parallelize.
   operator-supervised pilot on one production host, explicitly authorized
   per occasion ([AGENTS.md](../AGENTS.md) rule stands).
 - **Parallel, optional, zero-risk relief now:** pipelining + smart facts +
-  `set_fact`-frozen lookups (+ Mitogen if version-compatible) on the existing
-  Ansible setup — buys 2–4x while ruxel is built. Independent of ruxel;
-  operator's call.
+  fact cache + `set_fact`-frozen lookups on the existing Ansible setup
+  (Mitogen is incompatible with core 2.21) — buys 2–4x while ruxel is
+  built. Independent of ruxel; operator's call. See the staged ladder in
+  [SKEPTIC.md](SKEPTIC.md) §5, which supersedes the phase ordering above
+  with a verify-first slice.
 
 ## 6. The recommendation in one paragraph
 
