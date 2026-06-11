@@ -17,24 +17,72 @@ fn login_port(obj: &serde_json::Map<String, Value>) -> String {
         .unwrap_or_else(|| "5432".into())
 }
 
-/// Run a SQL query, returning trimmed stdout (psql -tA: tuples-only,
-/// unaligned). `db` selects the target database (maintenance db otherwise).
+/// Run SQL, returning trimmed stdout (psql -tA: tuples-only, unaligned).
+/// The statement is fed on **stdin** (`-f -`), never argv — so a
+/// password-bearing `ALTER ROLE … PASSWORD '…'` never appears in the
+/// target's process table (ruxel's secrets-never-on-disk posture extends
+/// to the process list). `db` selects the target database.
 fn psql(ctx: &ExecContext, port: &str, db: Option<&str>, sql: &str) -> Result<String, String> {
-    let mut args = vec!["-p", port, "-tAc", sql];
+    use std::io::Write as _;
+    let mut args = vec!["-p", port, "-tA", "-f", "-"];
     if let Some(d) = db {
         args.insert(0, d);
         args.insert(0, "-d");
     }
-    let out = become_command(ctx, "psql", &args)
-        .output()
+    let mut child = become_command(ctx, "psql", &args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("exec psql: {e}"))?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("psql stdin")?
+        .write_all(sql.as_bytes())
+        .map_err(|e| format!("psql stdin write: {e}"))?;
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("psql wait: {e}"))?;
     if !out.status.success() {
+        // Never echo the SQL — it may carry a PASSWORD literal.
         return Err(format!(
-            "psql {sql:?}: {}",
+            "psql failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Allowlist of privilege keywords accepted in `privs` (SEMANTICS §6 grant
+/// set). Anything else is a hard error — closed surface, and it blocks
+/// keyword injection through the grant statements.
+fn validate_privs(privs: &str) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "TRUNCATE",
+        "REFERENCES",
+        "TRIGGER",
+        "USAGE",
+        "CREATE",
+        "CONNECT",
+        "TEMPORARY",
+        "TEMP",
+        "EXECUTE",
+        "ALL",
+        "ALL PRIVILEGES",
+    ];
+    for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if !ALLOWED.contains(&p.to_uppercase().as_str()) {
+            return Err(format!(
+                "postgresql_privs: privilege {p:?} outside the closed surface"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Quote an SQL string literal.
@@ -324,6 +372,7 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             "postgresql_privs: state {state:?} outside the closed surface"
         ));
     }
+    validate_privs(privs_list)?;
 
     // changed iff at least one requested privilege is not already held.
     let needed = match typ {
@@ -515,10 +564,11 @@ fn grant_sql(
                     ident(s)
                 )]
             } else {
+                let s = schema.unwrap_or("public");
                 o.split(',')
                     .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(|t| format!("GRANT {privs} ON TABLE {t} TO {r}"))
+                    .filter(|t| !t.is_empty())
+                    .map(|t| format!("GRANT {privs} ON TABLE {}.{} TO {r}", ident(s), ident(t)))
                     .collect()
             }
         }
