@@ -6,6 +6,12 @@ performance, tests, tech-debt, deps/DX, docs, direction) surveyed the whole
 workspace; every finding below was re-read and confirmed by the advisor
 before it became a plan.
 
+**Full findings inventory: [FINDINGS.md](FINDINGS.md)** — every finding across
+all eight categories (severity, evidence `file:line`, confidence) plus the
+direction options and rejected items, cross-referenced to the plan numbers
+below. This README is the execution index; `FINDINGS.md` is the searchable
+"what + where."
+
 Execute in the order below unless a plan's **Depends on** says otherwise.
 Each executor: read the plan fully before starting, run its **Drift check**
 first, honor its **STOP conditions**, and update your row in the table when
@@ -82,6 +88,17 @@ the exact opposite of the tool's promise. Two intent docs (`GOAL.md`,
 lazy — plan 021) and "all four postgresql_privs shapes idempotent, rerun
 changed=0" (`default_privs` is hardcoded always-changed — plan 011). Treat the
 code, not those two docs, as ground truth for those two claims.
+
+## Operator-resolved / operator-blocked
+
+- **`pg-bless.jsonl` credential (F-SEC-09) — RESOLVED 2026-07-03.** The operator
+  confirmed the capture was made against a disposable **test server**
+  (`91.99.37.240`), not a production host, so the 9-char `looker` value is a
+  test credential — **no rotation required**. Downgraded to a hygiene note
+  (capture future PG goldens with `RUXEL_DRY_SECRETS=1`). See plan 015 item D.
+- **setup-* gate sweep — BLOCKED.** Needs a read-only ChainArgos deploy key in
+  the `ruxel-test` 1Password vault (setup-* playbooks clone private repos).
+  Plan 025 covers only the gates that need no key.
 
 ## Findings considered and rejected
 

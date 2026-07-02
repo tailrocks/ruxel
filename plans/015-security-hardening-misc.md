@@ -71,8 +71,17 @@ is a 9-character literal that is **not** a `dry-secret-*` fake and **not**
 It corresponds to a PG role (the `looker` role in the capture). Other captures
 contain real `op://ChainArgos/...` item references and a GCP service-account key
 filename — reconnaissance metadata, not secret values. **Do not open the file
-to read the value; do not reproduce it anywhere.** Whether the 9-char value is a
-real credential depends on the upstream (private) playbook, not this repo.
+to read the value; do not reproduce it anywhere.**
+
+**Operator resolution (2026-07-03):** the operator confirmed this capture was
+made against a disposable **test server** (`91.99.37.240`) used to verify the
+workflow, not a production host — so the 9-char `looker` value is a
+test-server credential, **not** a production secret. **No rotation required.**
+SECURITY-09 therefore downgrades to a **hygiene** note only: prefer capturing
+with `RUXEL_DRY_SECRETS=1` going forward so future captures embed fakes rather
+than even test-server literals. The `op://` item references / GCP key filename
+in the other captures remain a minor "is committing these intended?" question
+for the operator, unrelated to the test-server credential.
 
 ## Commands you will need
 
@@ -154,17 +163,19 @@ ruxel-core` → pass.
 
 ### Step 4 (D): Surface the committed capture credential to the operator
 
-Do **not** read or reproduce the value. In the PR description and a new
-`plans/README.md` "Findings considered and rejected"/follow-up note, record:
-"`tools/oracle/captures/pg-bless.jsonl` contains a 9-character literal password
-for the PG `looker` role that is not a `dry-secret` fake. If it corresponds to a
-real role password, rotate it and re-capture with `RUXEL_DRY_SECRETS=1` so the
-bless renders a fake; also review whether committing real `op://` item paths and
-the GCP key filename in the captures is intended." Leave the decision to the
-operator (scrubbing history needs force-push authorization).
+Do **not** read or reproduce the value. **Status: operator-resolved
+(2026-07-03) — the capture is from a disposable test server (`91.99.37.240`),
+so no rotation is required** (see item D above). The remaining action is
+hygiene only: when re-capturing PG bless goldens, run with
+`RUXEL_DRY_SECRETS=1` so the fake-lookup plugins render a `dry-secret-*` value
+instead of the live one, and (separately, operator's call) decide whether
+committing real `op://` item paths / the GCP key filename in the other
+captures is intended. Do not scrub git history unless the operator explicitly
+authorizes a force-push.
 
-**Verify**: the note exists in the PR/README; **no** capture file was modified
-by this plan (`git status` shows no `tools/oracle/captures/` changes).
+**Verify**: the resolution note is recorded (item D + `plans/FINDINGS.md`);
+**no** capture file was modified by this plan (`git status` shows no
+`tools/oracle/captures/` changes).
 
 ### Step 5: Full gates
 
