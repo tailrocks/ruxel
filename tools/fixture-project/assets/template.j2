@@ -1,0 +1,7 @@
+{% for value in fixture_lines %}
+{{ value | default('missing') }}
+{% endfor %}
+joined={{ fixture_lines | join(',') }}
+hash={{ 'synthetic' | hash('sha256') }}
+optional={{ fixture_optional | default('fallback', true) }}
+encoded={{ 'synthetic value' | urlencode }}

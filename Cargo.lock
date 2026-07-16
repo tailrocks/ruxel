@@ -1067,6 +1067,8 @@ name = "ruxel-spec-extract"
 version = "0.1.0"
 dependencies = [
  "ruxel-core",
+ "serde",
+ "serde_json",
  "serde_norway",
 ]
 

@@ -1,0 +1,150 @@
+- name: Synthetic files and content surface
+  hosts: all
+  become: true
+  vars:
+    fixture_root: /tmp/ruxel-fixture-files
+    fixture_lines:
+      - alpha
+      - beta
+    fixture_encoded: c3ludGhldGljCg==
+    fixture_optional: ""
+  pre_tasks:
+    - name: Create synthetic fixture root
+      file:
+        path: "{{ fixture_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+  tasks:
+    - name: Exercise recursive directory attributes
+      file:
+        path: "{{ fixture_root }}/tree"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+        recurse: true
+
+    - name: Exercise destination alias
+      file:
+        dest: "{{ fixture_root }}/dest-dir"
+        state: directory
+
+    - name: Exercise symbolic link
+      file:
+        path: "{{ fixture_root }}/tree-link"
+        src: "{{ fixture_root }}/tree"
+        state: link
+
+    - name: Exercise absent path
+      file:
+        path: "{{ fixture_root }}/absent"
+        state: absent
+
+    - name: Copy literal content
+      copy:
+        content: "{{ fixture_encoded | b64decode | trim }}\n"
+        dest: "{{ fixture_root }}/copied.txt"
+        owner: root
+        group: root
+        mode: "0644"
+        force: true
+
+    - name: Copy synthetic source asset
+      copy:
+        src: assets/source.txt
+        dest: "{{ fixture_root }}/source.txt"
+
+    - name: Render synthetic template
+      template:
+        src: assets/template.j2
+        dest: "{{ fixture_root }}/rendered.txt"
+        owner: root
+        group: root
+        mode: "0640"
+      notify: Restart synthetic fixture service
+
+    - name: Exercise line replacement
+      lineinfile:
+        path: "{{ fixture_root }}/copied.txt"
+        regexp: ^synthetic
+        line: synthetic-line
+        state: present
+
+    - name: Exercise multiline replacement
+      replace:
+        path: "{{ fixture_root }}/copied.txt"
+        regexp: "synthetic(?:-line)?"
+        replace: replaced
+
+    - name: Exercise managed block
+      blockinfile:
+        path: "{{ fixture_root }}/block.txt"
+        block: |
+          alpha
+          beta
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Inspect path with follow
+      stat:
+        path: "{{ fixture_root }}/tree-link"
+        follow: true
+      register: fixture_stat
+
+    - name: Inspect templated registered path
+      stat:
+        path: "{{ fixture_root }}/{{ fixture_stat.stat.exists | default(false) }}"
+      register: fixture_dynamic_stat
+
+    - name: Read synthetic content
+      slurp:
+        src: "{{ fixture_root }}/copied.txt"
+      register: fixture_slurp
+
+    - name: Preserve decoded fact shape
+      set_fact:
+        fixture_decoded: "{{ fixture_slurp.content | b64decode | trim }}"
+
+    - name: Report mixed template shape
+      debug:
+        msg: "decoded={{ fixture_decoded }} count={{ fixture_lines | length }}"
+
+    - name: Exercise command mapping and creates
+      command:
+        cmd: /usr/bin/touch created-by-command
+        chdir: "{{ fixture_root }}"
+      args:
+        creates: "{{ fixture_root }}/created-by-command"
+
+    - name: Exercise command scalar
+      command: /usr/bin/true
+      changed_when: false
+
+    - name: Exercise shell arguments
+      shell: printf synthetic > created-by-shell
+      args:
+        chdir: "{{ fixture_root }}"
+        creates: "{{ fixture_root }}/created-by-shell"
+        executable: /bin/sh
+
+    - name: Exercise assertion message shape
+      assert:
+        that:
+          - fixture_stat.stat.exists
+        fail_msg: "fixture path missing: {{ fixture_root }}"
+
+    - name: Exercise guarded failure module
+      fail:
+        msg: synthetic failure should remain skipped
+      when: not fixture_stat.stat.exists
+
+  handlers:
+    - name: Restart synthetic fixture service
+      service:
+        name: ssh
+        state: restarted

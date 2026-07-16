@@ -1,0 +1,98 @@
+- name: Synthetic control-flow surface
+  hosts: all
+  become: true
+  vars:
+    fixture_enabled: true
+    fixture_environment:
+      FIXTURE_VALUE: synthetic
+    fixture_matrix:
+      - name: alpha
+        children:
+          - one
+          - two
+      - name: beta
+        children:
+          - three
+    fixture_pairs: "{{ fixture_matrix | subelements('children') }}"
+    fixture_pipe: "{{ lookup('pipe', 'printf synthetic') }}"
+    fixture_nested:
+      - - nested
+        - "{{ fixture_pipe }}"
+
+  pre_tasks:
+    - name: Validate synthetic controller lookup
+      assert:
+        that:
+          - fixture_pipe == 'synthetic'
+
+  tasks:
+    - name: Exercise block inheritance and list condition
+      block:
+        - name: Exercise nested mapping scalar variants
+          copy:
+            content: "nested-{{ item }}"
+            dest: /tmp/ruxel-fixture-nested-{{ item }}
+            owner: root
+          loop:
+            - literal
+            - "mixed-{{ fixture_pipe }}"
+          no_log: true
+
+        - name: Execute mapped loop with label and environment
+          shell: "printf '%s:%s' '{{ item.0.name }}' '{{ item.1 }}'"
+          environment:
+            FIXTURE_VALUE: "{{ fixture_pipe }}"
+          loop:
+            - - name: alpha
+                children:
+                  - one
+              - "{{ fixture_pipe }}"
+            - "{{ fixture_pairs }}"
+          loop_control:
+            label: "{{ item.0.name | default('synthetic') }}"
+          register: fixture_loop
+          changed_when: "fixture_loop.rc == 0"
+          failed_when: "fixture_loop.rc not in [0, 1]"
+          ignore_errors: "yes"
+          check_mode: "no"
+      rescue:
+        - name: Record rescued synthetic state
+          set_fact:
+            fixture_rescued: true
+      when:
+        - fixture_enabled | bool
+        - fixture_pipe | length > 0
+      tags:
+        - synthetic
+        - always
+
+    - name: Exercise retries and until
+      command: /usr/bin/true
+      register: fixture_retry
+      until: fixture_retry.rc == 0
+      retries: 3
+      delay: 1
+      changed_when: false
+      failed_when: false
+
+    - name: Exercise literal assertion failure message
+      assert:
+        that:
+          - fixture_enabled
+        fail_msg: synthetic assertion failed
+
+    - name: Exercise check-mode string value
+      command: /usr/bin/true
+      check_mode: "no"
+      changed_when: "false"
+
+    - name: Exercise interactive pause
+      pause:
+        prompt: Synthetic fixture pause; press Enter
+      tags:
+        - synthetic
+
+    - name: Exercise always tag scalar
+      debug:
+        msg: "pairs={{ fixture_pairs | length }} pipe={{ fixture_pipe }}"
+      tags: always

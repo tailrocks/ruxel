@@ -1,0 +1,241 @@
+- name: Synthetic scalar and template shape variants
+  hosts: all
+  become: true
+  vars:
+    fixture_name: synthetic
+    fixture_service: ssh
+    fixture_protocol: tcp
+    fixture_interface: eth0
+    fixture_destination: 192.0.2.2
+    fixture_packages:
+      - ca-certificates
+    fixture_versions:
+      - name: one
+        version: HEAD
+      - name: two
+        version: "{{ fixture_name }}"
+
+  tasks:
+    - name: Exercise literal file parameter shapes
+      file:
+        path: /tmp/ruxel-fixture-literal
+        dest: /tmp/ruxel-fixture-dest
+        src: /tmp/ruxel-fixture-source
+        state: absent
+        recurse: "yes"
+
+    - name: Exercise literal copy source and mixed source
+      copy:
+        src: "assets/{{ fixture_name }}.txt"
+        content: "prefix {{ fixture_name }} suffix"
+        dest: /tmp/ruxel-fixture-copy
+      check_mode: true
+
+    - name: Exercise exact copy source
+      copy:
+        src: "{{ fixture_name }}"
+        dest: /tmp/ruxel-fixture-exact-copy
+      check_mode: true
+
+    - name: Exercise literal template destination
+      template:
+        src: assets/template.j2
+        dest: /tmp/ruxel-fixture-template
+      check_mode: true
+
+    - name: Exercise string block parameters
+      blockinfile:
+        path: /tmp/ruxel-fixture-block
+        block: synthetic
+        create: "yes"
+      check_mode: true
+
+    - name: Exercise literal line path
+      lineinfile:
+        path: /tmp/ruxel-fixture-line
+        regexp: synthetic
+        line: synthetic
+        state: present
+      check_mode: true
+
+    - name: Exercise literal replace path
+      replace:
+        path: /tmp/ruxel-fixture-replace
+        regexp: synthetic
+        replace: replacement
+      check_mode: true
+
+    - name: Exercise literal stat path
+      stat:
+        path: /tmp/ruxel-fixture-stat
+      register: literal_stat
+
+    - name: Exercise exact stat path
+      stat:
+        path: "{{ fixture_name }}"
+      check_mode: true
+
+    - name: Exercise literal slurp source
+      slurp:
+        src: /tmp/ruxel-fixture-slurp
+      check_mode: true
+
+    - name: Exercise literal command args
+      command:
+        cmd: /usr/bin/true
+        chdir: /tmp
+      args:
+        creates: /tmp/ruxel-fixture-command
+      check_mode: true
+
+    - name: Exercise literal shell args
+      shell: /usr/bin/true
+      args:
+        chdir: /tmp
+        creates: /tmp/ruxel-fixture-shell
+      check_mode: true
+
+    - name: Exercise string apt flags and literal name
+      apt:
+        name: ca-certificates
+        state: latest
+        update_cache: "yes"
+        force: "no"
+        autoremove: "no"
+      check_mode: true
+
+    - name: Exercise mixed apt package template
+      apt:
+        name: "package-{{ fixture_name }}"
+        state: latest
+      check_mode: true
+
+    - name: Exercise literal repository strings
+      apt_repository:
+        repo: deb http://deb.debian.org/debian bookworm main
+        filename: ruxel-fixture-literal
+        state: present
+        update_cache: "no"
+      check_mode: true
+
+    - name: Exercise mixed repository template
+      apt_repository:
+        repo: "deb http://deb.debian.org/debian {{ fixture_name }} main"
+        filename: ruxel-fixture-mixed
+        state: present
+        update_cache: false
+      check_mode: true
+
+    - name: Exercise literal URL destination
+      get_url:
+        url: https://example.invalid/synthetic
+        dest: /tmp/ruxel-fixture-download
+      check_mode: true
+
+    - name: Exercise literal git flags and exact version
+      git:
+        repo: file:///tmp/ruxel-origin
+        dest: /tmp/ruxel-checkout
+        version: "{{ fixture_name }}"
+        update: "yes"
+        force: "no"
+        accept_hostkey: "no"
+      check_mode: true
+
+    - name: Exercise mixed git version
+      git:
+        repo: file:///tmp/ruxel-origin
+        dest: /tmp/ruxel-checkout-mixed
+        version: "release-{{ fixture_name }}"
+        update: false
+        force: false
+        accept_hostkey: false
+      check_mode: true
+
+    - name: Exercise templated firewall fields
+      iptables:
+        chain: OUTPUT
+        destination: "{{ fixture_destination }}"
+        protocol: "{{ fixture_protocol }}"
+        out_interface: "{{ fixture_interface }}"
+        jump: DROP
+        comment: "fixture-{{ fixture_name }}"
+      check_mode: true
+
+    - name: Exercise string sysctl flags
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "0"
+        state: present
+        reload: "yes"
+        sysctl_set: "yes"
+      check_mode: true
+
+    - name: Exercise templated systemd fields
+      systemd:
+        name: "{{ fixture_service }}"
+        state: restarted
+        enabled: "yes"
+        daemon_reload: "no"
+      check_mode: true
+
+    - name: Exercise mixed systemd name
+      systemd:
+        name: "{{ fixture_name }}.service"
+        state: stopped
+      check_mode: true
+
+    - name: Exercise string service enabled
+      service:
+        name: ssh
+        state: started
+        enabled: "yes"
+      check_mode: true
+
+    - name: Exercise string user flags
+      user:
+        name: ruxelfixture-absent
+        group: "29871"
+        append: "yes"
+        create_home: "no"
+        remove: "yes"
+        system: "no"
+        state: absent
+      check_mode: true
+
+    - name: Exercise mixed mount source
+      ansible.posix.mount:
+        path: /mnt/ruxel-fixture-shape
+        src: "device-{{ fixture_name }}"
+        fstype: ext4
+        opts: defaults
+        state: mounted
+      check_mode: true
+
+    - name: Exercise string filesystem resize flag
+      filesystem:
+        dev: /dev/null
+        fstype: ext4
+        resizefs: "yes"
+      check_mode: true
+
+    - name: Exercise literal PostgreSQL names
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        login_user: postgres
+        name: ruxel_fixture_literal
+        owner: ruxel_fixture_owner
+        state: present
+        login_port: 40000
+      check_mode: true
+
+    - name: Exercise scalar loop and nested task shapes
+      debug:
+        msg: "value={{ item }}"
+      loop:
+        - literal
+        - "mixed-{{ fixture_name }}"
+        - name: mapping
+      environment:
+        FIXTURE_LITERAL: synthetic
+      changed_when: false

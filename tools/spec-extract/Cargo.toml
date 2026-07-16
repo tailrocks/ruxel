@@ -7,4 +7,6 @@ publish = false
 
 [dependencies]
 ruxel-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 serde_norway.workspace = true

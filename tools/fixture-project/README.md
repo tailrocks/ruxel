@@ -17,3 +17,15 @@ Hard boundary:
 Each playbook should isolate a compatibility surface while preserving the
 same Ansible syntax and observable semantics. Ansible 2.21 is the oracle;
 Ruxel fresh apply, Ruxel converged rerun, and Ansible bless must agree.
+
+`tools/spec-extract/workload-features.json` is a normalized manifest generated
+offline from the reference workload. CI runs:
+
+```sh
+cargo run -p ruxel-spec-extract -- verify \
+  tools/spec-extract/workload-features.json tools/fixture-project
+```
+
+The gate must remain at 100%. Coverage here means the synthetic source contains
+every observed shape; executable result and final-state parity are separate,
+stronger gates and cannot be inferred from this number.

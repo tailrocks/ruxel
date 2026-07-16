@@ -1,29 +1,60 @@
 - name: Fixture PostgreSQL ownership and default privileges
   hosts: postgresql
   become: true
+  vars:
+    fixture_database: ruxel_fixture_database
+    fixture_owner: ruxel_fixture_owner
+    fixture_reader: ruxel_fixture_reader
+    fixture_schema: ruxel_fixture_schema
+    fixture_password: synthetic-fixture-password
   tasks:
     - name: Create fixture owner
       become_user: postgres
       community.postgresql.postgresql_user:
-        name: ruxel_fixture_owner
+        login_user: postgres
+        name: "{{ fixture_owner }}"
+        password: "{{ fixture_password }}"
+        role_attr_flags: LOGIN
         state: present
         login_port: 40000
 
     - name: Create fixture reader
       become_user: postgres
       community.postgresql.postgresql_user:
-        name: ruxel_fixture_reader
+        login_user: postgres
+        name: "{{ fixture_reader }}"
+        state: present
+        login_port: 40000
+
+    - name: Create fixture database
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        login_user: postgres
+        name: "{{ fixture_database }}"
+        owner: "{{ fixture_owner }}"
         state: present
         login_port: 40000
 
     - name: Create owned fixture schema
       become_user: postgres
       community.postgresql.postgresql_schema:
+        login_user: postgres
         login_db: postgres
-        name: ruxel_fixture_schema
+        name: "{{ fixture_schema }}"
+        owner: "{{ fixture_owner }}"
+        state: present
+        login_port: 40000
+
+    - name: Exercise literal PostgreSQL schema names
+      become_user: postgres
+      community.postgresql.postgresql_schema:
+        login_user: postgres
+        login_db: postgres
+        name: ruxel_fixture_literal_schema
         owner: ruxel_fixture_owner
         state: present
         login_port: 40000
+      check_mode: true
 
     - name: Grant fixture default table reads
       become_user: postgres
@@ -35,5 +66,42 @@
         role: ruxel_fixture_reader
         schema: ruxel_fixture_schema
         target_roles: ruxel_fixture_owner
+        state: present
+        login_port: 40000
+
+    - name: Grant fixture database access
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        login_user: postgres
+        login_db: postgres
+        type: database
+        objs: "{{ fixture_database }}"
+        privs: CONNECT
+        role: ruxel_fixture_reader
+        state: present
+        login_port: 40000
+
+    - name: Grant fixture schema access
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        login_user: postgres
+        login_db: postgres
+        type: schema
+        objs: "{{ fixture_schema }}"
+        privs: USAGE
+        role: ruxel_fixture_reader
+        state: present
+        login_port: 40000
+
+    - name: Grant fixture table access shape
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        login_user: postgres
+        login_db: postgres
+        type: table
+        schema: "{{ fixture_schema }}"
+        objs: ALL_IN_SCHEMA
+        privs: SELECT
+        role: ruxel_fixture_reader
         state: present
         login_port: 40000
