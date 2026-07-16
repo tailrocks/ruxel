@@ -903,10 +903,8 @@ dependencies = [
 name = "ruxel-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64",
  "minijinja",
- "serde",
  "serde_json",
  "serde_norway",
  "sha2",

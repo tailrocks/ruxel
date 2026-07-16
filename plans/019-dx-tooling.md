@@ -165,12 +165,12 @@ prints a version string (provenance).
 
 ALL must hold:
 
-- [ ] `just check` runs fmt+clippy+tests(+machete) and exits 0; `.editorconfig` exists
-- [ ] `cargo-machete` is pinned in mise and reports no unused deps
-- [ ] The oracle has a pinned `.python-version`; `uv` is pinned (not "latest"); `ansible-core 2.21` is unchanged
-- [ ] `renovate.json` has a custom manager for `rust-toolchain.toml` and parses as valid JSON
-- [ ] `CHANGELOG.md` exists; README/AGENTS point at `just check`; no release workflow added without operator confirmation
-- [ ] `plans/README.md` row for 019 updated
+- [x] `just check` runs fmt+clippy+tests(+machete) and exits 0; `.editorconfig` exists
+- [x] `cargo-machete` is pinned in mise and reports no unused deps
+- [x] The oracle has a pinned `.python-version`; `uv` is pinned (not "latest"); `ansible-core 2.21` is unchanged
+- [x] `renovate.json` has a custom manager for `rust-toolchain.toml` and parses as valid JSON
+- [x] `CHANGELOG.md` exists; README/AGENTS point at `just check`; no release workflow added without operator confirmation
+- [x] `plans/README.md` row for 019 updated
 
 ## STOP conditions
 

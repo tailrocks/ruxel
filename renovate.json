@@ -10,5 +10,16 @@
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["at any time"]
-  }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the pinned Rust toolchain",
+      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "rust-version",
+      "versioningTemplate": "semver"
+    }
+  ]
 }

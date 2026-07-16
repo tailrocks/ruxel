@@ -66,10 +66,16 @@ tools are managed with [mise](https://mise.jdx.dev):
 ```bash
 mise install
 cargo build
-cargo nextest run    # or: cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --all --check
+just check
 ```
+
+Releases are lightweight while the project remains a single-operator pilot:
+update the workspace version and changelog, commit, then create an annotated
+milestone tag (`git tag -a vX.Y.Z -m "ruxel X.Y.Z"`). `ruxel --version`
+embeds that workspace version, so a deployed binary has a provenance handle.
+Publishing to crates.io is intentionally unsupported; build a selected commit
+or tag locally. Release asset automation can be added if distribution becomes
+a project goal.
 
 The private workload fidelity gates require `RUXEL_WORKLOAD_DIR` to point at
 the `ansible-configs` checkout. They are explicitly ignored when unavailable;

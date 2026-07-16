@@ -39,6 +39,5 @@ asking. "Ansible has this feature" is not a reason to support something.
 ## Conventions
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
-- Quality gates before a PR: `cargo fmt --all --check`,
-  `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+- Quality gates before a PR: `just check` (fmt, clippy, nextest, unused deps).
 - Rust edition 2024, toolchain pinned in `rust-toolchain.toml`.
