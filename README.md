@@ -15,8 +15,11 @@ ever.
 
 ## Status
 
-Research and design phase. The CLI shape exists; the engine intentionally
-does not yet. Read the docs in order:
+Implementation is feature-complete: the closed-surface modules, the
+convergence ledger, the full `plan`/`apply` CLI, and the `op`-backed secret
+resolver are built and verified, with 6 of 16 workload playbooks gated
+three-way against pinned Ansible. Remaining work is verification breadth and
+the M5 performance proof. Read the docs in order:
 
 1. [docs/VISION.md](docs/VISION.md) — the problem, the vision, goals,
    non-goals, and the hard safety rule.
@@ -35,8 +38,11 @@ does not yet. Read the docs in order:
    transport decision (SSH as carrier, "gRPC minus the g" protocol),
    streaming execution, register-dependency pipelining, batched system
    caches, the convergence ledger, warm-daemon tier.
-7. [docs/PLAN.md](docs/PLAN.md) — milestones M1–M6 with acceptance gates
-   and the spec-drift CI watch.
+7. [docs/OPERATOR-SETUP.md](docs/OPERATOR-SETUP.md) — disposable fixture setup
+   and the operator-only production boundary.
+8. [docs/benchmarks/](docs/benchmarks/) — recorded benchmark evidence.
+9. [docs/PLAN.md](docs/PLAN.md) — milestones M0–M6 with acceptance gates and
+   the planned spec-drift CI watch.
 
 ## Hard safety rule
 

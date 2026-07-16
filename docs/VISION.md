@@ -5,7 +5,7 @@
 ## The problem
 
 ChainArgos provisions and maintains 6 dedicated Debian servers with Ansible
-(16 playbooks, 452 tasks, 29 distinct modules). The playbooks work, but every
+(16 playbooks, 452 tasks, 36 closed-surface module spellings). The playbooks work, but every
 run is slow — and the worst case is the most common one: **re-running a
 playbook against a server that is already fully converged takes ~15 minutes to
 conclude "nothing to do".**

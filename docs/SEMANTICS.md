@@ -89,8 +89,8 @@ Per task, in order — ruxel must preserve this pipeline observably:
 2. **`when`**: bare Jinja boolean expression; a list of strings = AND of
    all. Evaluated **per loop item** when `loop` is present. Skipped tasks
    produce a "skipped" result; a skipped task never notifies or registers
-   changed. **⚠ verify**: registered var shape on skip (dict with
-   `skipped: true`).
+   changed. Registered var shape on skip is a dict with `skipped: true`
+   (pinned by GOAL.md session 3 runtime goldens).
 3. **`loop`**: value is either a literal list or `"{{ var }}"` (native-type
    list). Each iteration binds `item`; `loop_control.label` only affects
    display. Result registered from a looped task is a dict with `results:
@@ -195,12 +195,13 @@ ignore — that is what closed spec means).
 - **`template` (41)** — `src` (Jinja file), `dest`, `owner/group/mode`.
   Render with full var scope (incl. 1P-derived vars), then byte-compare to
   dest. Trailing-newline and `keep_trailing_newline=True` behavior must
-  match Ansible's template module defaults. **⚠ verify** against all 22
-  real templates in M1 (byte-for-byte).
+  match Ansible's template module defaults. Verify all 41 template files (22
+  containing Jinja) in M1 byte-for-byte.
 - **`lineinfile` (15)** — `path`, `regexp`, `line`, `state`.
   present: if regexp matches a line → replace last matching line with
   `line`; else append `line` at EOF; absent: delete matching lines.
-  Idempotent if a line already equals `line` **⚠ verify** (exact
+  Idempotent if a line already equals `line` (pinned by GOAL.md session 6;
+  exact
   Ansible rule: if `line` already present unchanged even if regexp also
   matches elsewhere — pin with fixture tests; fstab/pam edits depend on it).
 - **`replace` (3)** — `path`, `regexp` (multiline), `replace`. Changed iff
@@ -212,9 +213,9 @@ ignore — that is what closed spec means).
   used: `exists`, plus disk checks. Never changed.
 - **`slurp` (1)** — `src`; returns base64 `content`. Read-only.
 - **`get_url` (5)** — `url`, `dest`. If dest exists → unchanged (no
-  checksum given, `force` not set); else download to dest. **⚠ verify**
-  default timeout/redirect behavior is irrelevant here; confirm
-  dest-exists-short-circuit matches (it does when force=no default).
+  checksum given, `force` not set); else download to dest. Default
+  timeout/redirect behavior is irrelevant here; the dest-exists short circuit
+  is pinned for the default `force=no` behavior.
 
 ### Packages & repos
 
@@ -241,8 +242,8 @@ ignore — that is what closed spec means).
 - **`systemd` (21)** — `name`, `state` (`started` ×5, `stopped` ×5,
   `restarted` ×3 — exactly these), `enabled`, `daemon_reload`. Check: unit ActiveState/UnitFileState via
   systemd. `restarted` is **always a change** (action, not state).
-  daemon_reload: executes reload; **⚠ verify** its changed semantics
-  (Ansible reports changed when daemon_reload runs? pin in fixtures).
+  daemon_reload executes reload and its changed semantics are pinned by the
+  GOAL.md session 3 fixture capture.
 - **`service` (8)** — `name`, `state` (`started` ×4, `restarted` ×4),
   `enabled`. On these hosts resolves to systemd; same semantics as above.
 - **`sysctl` (10) / `ansible.posix.sysctl` (6)** — `name`, `value`,
@@ -250,20 +251,22 @@ ignore — that is what closed spec means).
   file (and live value when sysctl_set). Change: write file + `sysctl -w` /
   `--system` reload. Value comparison is **string-normalized** (whitespace
   in multi-value keys like `vm.nr_hugepages` vs `net.ipv4.ip_local_port_range`)
-  **⚠ verify** normalization rules.
+  with normalization pinned by GOAL.md session 6 runtime goldens.
 - **`community.general.timezone` (1)** — `name: UTC`; timedatectl.
 
 ### Storage
 
 - **`community.general.lvg` (6)** — `vg`, `pvs` (list of /dev/disk/by-id
-  paths). Check: VG exists with exactly these PVs (**⚠ verify**: Ansible's
+  paths). Check: VG exists with exactly these PVs (pinned by GOAL.md sessions
+  7–8: Ansible's
   behavior when VG exists with a subset of pvs — it extends; with extras —
   it reduces? pin before implementing; the drive-add workflow in the
   AGENTS.md depends on "add disk to list, re-run").
   Change: pvcreate + vgcreate/vgextend.
 - **`community.general.lvol` (6)** — `vg`, `lv`, `size` (incl.
   `+100%FREE`), `resizefs`. Check: LV exists; size semantics: `%FREE` form
-  is only meaningful at creation/extension — **⚠ verify** idempotence rule
+  is only meaningful at creation/extension — idempotence is pinned by GOAL.md
+  sessions 7–8 for the rule
   for `size: +100%FREE` on an already-full LV (must be no-change, not
   error; Ansible handles via lvextend rc/output inspection).
 - **`filesystem` (6)** — `dev`, `fstype` (`xfs` ×5, `ext4` ×1),
@@ -271,9 +274,9 @@ ignore — that is what closed spec means).
   blkid fstype on dev; create only if absent; resizefs grows fs to device.
 - **`ansible.posix.mount` (6)** — `path`, `src` (UUID=…), `fstype`,
   `opts`, `state: mounted`. Check: fstab line (normalized fields) +
-  actually mounted. Change: write fstab + mount. **⚠ verify** fstab
-  field normalization (opts order, dump/pass defaults) so reruns are
-  no-change.
+  actually mounted. Change: write fstab + mount. Fstab field normalization
+  (opts order, dump/pass defaults) is pinned by GOAL.md sessions 7–8 so reruns
+  are no-change.
 
 ### Users, keys, firewall
 
@@ -284,8 +287,8 @@ ignore — that is what closed spec means).
   useradd/usermod/userdel.
 - **`group` (3)** — `name`, `gid`, `state`. getent group check.
 - **`authorized_key` (1)** — `user`, `key` (1P-sourced), `state`. Check:
-  exact key line (comment-insensitive matching on key material **⚠
-  verify**) in `~user/.ssh/authorized_keys`.
+  exact key line, with comment-insensitive matching on key material (pinned by
+  GOAL.md session 6), in `~user/.ssh/authorized_keys`.
 - **`iptables` (8)** — `chain`, `protocol`, `destination`,
   `out_interface`, `jump`, `comment`, `policy`, `ip_version`. Check: rule
   spec present (iptables -C equivalent); policy: current chain policy.
@@ -345,6 +348,13 @@ ignore — that is what closed spec means).
 - **`set_fact` (1)** — sets host var for the rest of the play (the Sentry
   bootstrap marker flag).
 - **`pause` (1)** — `prompt`; interactive, §4.
+
+### Still-open parity questions
+
+- Environment inherited under `become_user` (§1).
+- Combined `failed_when`/`changed_when` interaction (§3).
+- `pause` and handlers under `--check` (§4).
+- String mode such as `"0700"` octal handling (`file`, above).
 
 ## 7. Output contract
 

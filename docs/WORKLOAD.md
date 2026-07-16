@@ -9,7 +9,11 @@ with them — not the other way around.
 
 Source of truth: `ChainArgos/java-monorepo/ansible-configs/`.
 
-## 1. Module inventory (29 distinct modules)
+## 1. Module inventory (36 closed-surface module spellings)
+
+The canonical registry contains 36 entries: the 33 table rows below plus
+`apt_repository`, `fail`, and `set_fact`. Short `sysctl` and
+`ansible.posix.sysctl` are separate accepted spellings.
 
 ### Built-in modules (short names, per repo convention)
 
@@ -18,7 +22,7 @@ Source of truth: `ChainArgos/java-monorepo/ansible-configs/`.
 | `shell` | 54 | incl. 36× `eval "$(mise activate bash)" && ./containerctl.main.kts restart <node>` |
 | `file` | 46 | directories, symlinks, permissions |
 | `command` | 40 | `git lfs install`, `mise trust`, `readlink -f` disk resolution |
-| `group` | 39 | user group management |
+| `group` | 3 | user group management |
 | `copy` | 35 | static file deployment |
 | `apt` | 24 | package install/upgrade |
 | `systemd` | 21 | daemon_reload, enable, restart |
@@ -27,8 +31,8 @@ Source of truth: `ChainArgos/java-monorepo/ansible-configs/`.
 | `git` | 10 | repository clones |
 | `service` | 8 | older-style service calls |
 | `iptables` | 8 | firewall rules (pegasus) |
-| `replace` | 6 | regex file edits |
-| `user` | 6 | system users (chainargos-backup, airflow, looker) |
+| `replace` | 3 | regex file edits |
+| `user` | 5 | system users (chainargos-backup, airflow, looker) |
 | `get_url` | 5 | GPG key downloads |
 | `template` | 41 | Jinja2-rendered config files |
 | `sysctl` | 10 | kernel tuning (also via `ansible.posix.sysctl`) |
@@ -57,6 +61,9 @@ Source of truth: `ChainArgos/java-monorepo/ansible-configs/`.
 Convention (from repo AGENTS.md): built-ins use short names, collection
 modules keep explicit FQCN prefixes. Ruxel must accept both spellings it
 encounters in these files.
+
+`template`'s 41 is a file count; other numeric entries are task-use counts,
+so that row is intentionally outside the descending-use ordering.
 
 ## 2. Language features
 

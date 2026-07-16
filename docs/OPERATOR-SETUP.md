@@ -46,7 +46,8 @@ Steps (≈2 minutes, in https://console.hetzner.cloud):
    reads it.
 
 `tools/fixtures/` scripts (M0) use the `hcloud` context to create a
-CX-line x86_64 Debian 12 VM per test session and destroy it afterwards
+cpx12 x86_64 Debian 12 VM (smallest available; no CX-line in this account) in
+the sin region per test session and destroy it afterwards
 (cost: cents per session; a forgotten VM is a few €/month and the scripts
 list+reap leftovers on every run).
 

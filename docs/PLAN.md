@@ -77,7 +77,8 @@ byte-diff. Includes the loop/when/register shapes extracted on 2026-06-11
 (literal-list and template-string loops, list-AND `when`, per-item when,
 registered-result attribute access).
 
-**Gate:** 16/16 playbooks compile to plans; 22/22 templates byte-identical;
+**Gate:** 16/16 playbooks compile to plans; all 41 template files (22 with
+Jinja) byte-identical;
 every inline expression identical; all M1-class ⚠ items closed with
 recorded evidence.
 
@@ -156,11 +157,10 @@ so there is nothing to migrate back.
 
 ## Standing workstreams (no milestone, always on)
 
-- **Spec drift watch:** the param/value extractor from 2026-06-11 lives in
-  `tools/spec-extract/` and runs in CI against the ansible-configs
-  checkout; any new module/param/value appearing in the playbooks fails CI
-  until SEMANTICS.md and the implementation cover it. The spec stays
-  closed *and* current.
+- **Spec drift watch:** planned, not yet built (see plan 024). The intended
+  param/value extractor will compare against the ansible-configs checkout in
+  CI; any new module/param/value must fail CI until SEMANTICS.md and the
+  implementation cover it. The spec stays closed *and* current.
 - **Warm-daemon tier** (ARCHITECTURE §9) and proactive drift reporting:
   designed, deliberately not scheduled until the ephemeral path is proven
   in M5 — it is an acceleration, not a dependency.

@@ -32,8 +32,8 @@ disposable fixtures only. Quality gates before any commit:
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Correct the stale "do not build" docs (AGENTS.md, README) | P1 | S | — | TODO |
-| 002 | Reconcile ARCHITECTURE present-tense claims, module counts, ⚠ markers | P2 | M | — | TODO |
+| 001 | Correct the stale "do not build" docs (AGENTS.md, README) | P1 | S | — | DONE |
+| 002 | Reconcile ARCHITECTURE present-tense claims, module counts, ⚠ markers | P2 | M | — | DONE |
 | 003 | Remove dead dependencies and dead code | P2 | S | — | TODO |
 | 004 | Fix CI: cache parity, honest fidelity gate, advisory/license gate | P2 | M | — | TODO |
 | 005 | Characterization tests for the convergence ledger | P1 | M | — | TODO |

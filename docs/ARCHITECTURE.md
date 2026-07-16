@@ -60,12 +60,12 @@ Question asked: is SSH right at all? gRPC over SSH? Something else?
 - **Bootstrap is free**: the same connection uploads the agent binary the
   first time (and never again until the version hash changes).
 
-Implementation: the `openssh` crate over the system OpenSSH with
-**ControlMaster native-mux** — operator's `~/.ssh/config`, agent auth, and
-known_hosts behave byte-identically to their `ansible-playbook` runs today.
-The transport sits behind a small trait; pure-Rust `russh` is the swap-in
-if controlling the SSH stack ever becomes necessary (capability choice, not
-a now-decision).
+Implementation: system OpenSSH driven directly through `tokio::process`, with
+**ControlMaster native-mux** for the protocol stream and
+`openssh-sftp-client` for blob transfer. The former `openssh` crate was
+dropped. Operator `~/.ssh/config`, agent auth, and known_hosts therefore
+behave like their `ansible-playbook` runs today. Pure-Rust `russh` remains the
+swap-in if controlling the SSH stack ever becomes necessary.
 
 ### The protocol: "gRPC minus the g"
 
@@ -78,6 +78,11 @@ pipe that already has both) is dropped. If the warm-daemon tier ever wants
 a network protocol, the same `.proto` lifts into tonic unchanged.
 
 Message flow per host per run:
+
+> **Build status (2026-07): NOT YET BUILT.** `ProbeResult`, non-zero
+> `ledger_gen`, `BlobsNeeded`, `PauseRequest`, and controller-sent
+> `PlanPatch`/`Resume` are design protocol. The current protocol streams task
+> results and logs; the agent reports ledger generation zero.
 
 ```
 controller → agent   Hello{proto_ver, agent_b3sum_expected, run_id, flags(check, diff, no_cache)}
@@ -131,6 +136,11 @@ the controller.
 
 ## 4. Register-dependency pipelining
 
+> **Build status (2026-07): NOT YET BUILT.** This is the plan 020 target.
+> Current `apply` execution is linear: the controller sends one task and waits
+> for its result before rendering the next. The compiler DAG currently serves
+> `plan`, not `apply`.
+
 The workload's pattern: `stat` a set of disks → `register` → `when`/`loop`
 over results → `readlink` → `register` → LVM tasks templated from that.
 Ansible handles this by being fully sequential. Ruxel keeps **templating on
@@ -147,6 +157,10 @@ round-trip stalls becoming the bottleneck:
   entirely on the controller (no agent round-trip at all).
 
 ## 5. The agent: native modules over batched system caches
+
+> **Build status (2026-07): NOT YET BUILT.** The shared snapshots below are
+> the plan 021 target. Today package, unit, PostgreSQL, and ledger verification
+> paths fork their underlying system command per check.
 
 One process per run (or resident, §9), tokio runtime, panic=abort with a
 structured crash report event. Module implementations follow SEMANTICS §6
@@ -176,8 +190,9 @@ Shell/command tasks run exactly as written (`/bin/bash -c`, `chdir`,
 
 ## 6. The convergence ledger (why no-op is seconds)
 
-Per-host store: `/var/lib/ruxel/ledger/` — an append-compacted redb (or
-equivalent single-writer) keyed by **task identity**:
+Per-host store: `/var/lib/ruxel/ledger/ledger.json` — currently an atomically
+replaced JSON map protected by a single-writer lock, keyed by **task identity**.
+An append-compacted database remains a future storage option:
 
 ```
 task_id  = blake3(playbook_rel_path ‖ play_name ‖ task_name ‖ module ‖ canonical(params))
@@ -241,6 +256,10 @@ the playbook says happen every run.
   — forensics ("what exactly changed last Tuesday"), timing history, and
   the raw material for future drift dashboards. Pruned by count, never a
   dependency of execution.
+
+> **Build status (2026-07): NOT YET BUILT.** `--detailed-exitcode` and the
+> persistent per-run JSON log are plan 023 targets. Normal exit codes and
+> `--output json` exist today.
 - Inventory vs `~/.ssh/config` precedence: `ansible_ssh_host`/
   `ansible_ssh_user` from `hosts.ini` always win (passed explicitly to the
   connection); everything else (keys, agent, ciphers, ControlMaster paths)

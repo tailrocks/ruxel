@@ -20,9 +20,15 @@ reachability, and running `ruxel`/`ansible` in check mode against them.
 
 ## Project phase
 
-Research and design. Do not start building the execution engine until the
-operator explicitly moves the project to implementation. The current
-deliverables are the documents in `docs/` and the CLI skeleton.
+Implementation. The execution engine is built and feature-complete (all
+closed-surface modules, the convergence ledger, the full `plan`/`apply` CLI,
+and the `op` secret resolver). Current work is verification breadth (gating
+the remaining playbooks) and the M5 performance/hardening pass; M6 is the
+operator-driven production pilot and stays untouched by autonomous work.
+
+`GOAL.md` is the active operational contract and `RESTORE.md` the latest
+state snapshot — read both at session start. The design docs in `docs/`
+remain normative for behavior.
 
 ## Scope discipline
 

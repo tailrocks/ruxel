@@ -134,7 +134,7 @@ transport tax is the first thing to kill, and persistent connections plus
 "ship nothing (or ship once)" kills it.** From jetporch's death: the moat
 that kills general Ansible replacements is the *module ecosystem* — a
 problem ruxel does not have, because [WORKLOAD.md](WORKLOAD.md) closes the
-spec at **29 modules**. A closed-scope engine is a few engineer-months, not
+spec at **36 closed-surface module spellings**. A closed-scope engine is a few engineer-months, not
 a community project.
 
 **Conclusion: nothing on the market combines (a) drop-in execution of these
@@ -191,7 +191,7 @@ hosts are x86_64), reused until the version hash changes.
 
 ### 3.3 Agent: native modules, no interpreter, batch-aware
 
-The agent executes the 29-module set natively, and — unlike Ansible —
+The agent executes the 36-entry closed module surface natively, and — unlike Ansible —
 amortizes system interrogation across the whole plan:
 
 - `file/copy/template/lineinfile/replace/blockinfile/stat/slurp` →
@@ -295,7 +295,7 @@ executor overhead drops from minutes to seconds, and hosts parallelize.
 5. **Loop/register/when corner semantics** (e.g. `results` list shape) —
    covered by the closed spec; build a golden-output test per pattern in
    WORKLOAD.md.
-6. **Scope creep.** The spec is closed at 29 modules; any new playbook
+6. **Scope creep.** The spec is closed at 36 module spellings; any new playbook
    feature lands in WORKLOAD.md first, code second.
 
 ## 5. Phased plan (no server contact at any phase)
@@ -327,7 +327,7 @@ executor overhead drops from minutes to seconds, and hosts parallelize.
 Keep the playbooks exactly as they are — they are a correct description of
 the desired state. Replace the executor. Build ruxel as a Rust controller +
 ephemeral static Rust agent over one multiplexed SSH connection, with all
-secrets resolved once and in parallel on the controller, the 29-module
+secrets resolved once and in parallel on the controller, the 36-entry module
 workload implemented natively and batch-aware on the agent, and a per-host
 convergence ledger that turns "verify everything" into a sub-second parallel
 fingerprint pass with full-verification fallback. Use OpenTofu, if at all,
