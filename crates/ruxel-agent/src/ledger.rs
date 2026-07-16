@@ -22,6 +22,15 @@ enum Probe {
         path: String,
         sha256: String,
         len: u64,
+        mode: u32,
+        uid: u32,
+        gid: u32,
+    },
+    Dir {
+        path: String,
+        mode: u32,
+        uid: u32,
+        gid: u32,
     },
     Pkg {
         name: String,
@@ -37,15 +46,33 @@ enum Probe {
         name: String,
         value: String,
     },
+    SysctlLive {
+        name: String,
+        value: String,
+    },
 }
 
 impl Probe {
     /// True if the current system still matches this recorded fingerprint.
     fn verify(&self) -> bool {
         match self {
-            Probe::File { path, sha256, len } => file_fingerprint(Path::new(path))
-                .map(|(h, l)| &h == sha256 && l == *len)
-                .unwrap_or(false),
+            Probe::File {
+                path,
+                sha256,
+                len,
+                mode,
+                uid,
+                gid,
+            } => {
+                file_fingerprint(Path::new(path)).is_some_and(|(h, l)| &h == sha256 && l == *len)
+                    && file_attrs(Path::new(path)) == Some((*mode, *uid, *gid, false))
+            }
+            Probe::Dir {
+                path,
+                mode,
+                uid,
+                gid,
+            } => file_attrs(Path::new(path)) == Some((*mode, *uid, *gid, true)),
             Probe::Pkg { name, version } => dpkg_version(name).as_deref() == Some(version.as_str()),
             Probe::Unit {
                 name,
@@ -54,6 +81,9 @@ impl Probe {
             } => unit_active(name) == *active && unit_enabled(name) == *enabled,
             Probe::SysctlKV { file, name, value } => {
                 sysctl_file_value(file, name).as_deref() == Some(value.as_str())
+            }
+            Probe::SysctlLive { name, value } => {
+                read_sysctl(name).is_some_and(|current| normalized(&current) == normalized(value))
             }
         }
     }
@@ -163,14 +193,29 @@ fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
             if matches!(s("state"), Some("absent") | Some("link")) {
                 return None;
             }
+            let (mode, uid, gid, is_dir) = file_attrs(Path::new(path))?;
+            if is_dir {
+                return Some(vec![Probe::Dir {
+                    path: path.to_string(),
+                    mode,
+                    uid,
+                    gid,
+                }]);
+            }
             let (sha256, len) = file_fingerprint(Path::new(path))?;
             Some(vec![Probe::File {
                 path: path.to_string(),
                 sha256,
                 len,
+                mode,
+                uid,
+                gid,
             }])
         }
         "apt" => {
+            if s("state") == Some("latest") {
+                return None;
+            }
             let names = pkg_names(params)?;
             // update_cache/upgrade-only invocations have no stable package
             // fingerprint — let them run (network-truth class).
@@ -200,11 +245,18 @@ fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
             let name = s("name")?;
             let file = s("sysctl_file").unwrap_or("/etc/sysctl.conf");
             let value = sysctl_file_value(file, name)?;
-            Some(vec![Probe::SysctlKV {
+            let mut probes = vec![Probe::SysctlKV {
                 file: file.to_string(),
                 name: name.to_string(),
                 value,
-            }])
+            }];
+            if bool_value(params.get("sysctl_set"), false) {
+                probes.push(Probe::SysctlLive {
+                    name: name.to_string(),
+                    value: read_sysctl(name)?,
+                });
+            }
+            Some(probes)
         }
         _ => None,
     }
@@ -228,6 +280,45 @@ fn file_fingerprint(path: &Path) -> Option<(String, u64)> {
     let digest = Sha256::digest(&bytes);
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     Some((hex, bytes.len() as u64))
+}
+
+#[cfg(unix)]
+fn file_attrs(path: &Path) -> Option<(u32, u32, u32, bool)> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return None;
+    }
+    Some((
+        metadata.permissions().mode() & 0o7777,
+        metadata.uid(),
+        metadata.gid(),
+        metadata.is_dir(),
+    ))
+}
+
+fn bool_value(value: Option<&Value>, default: bool) -> bool {
+    match value {
+        None | Some(Value::Null) => default,
+        Some(Value::Bool(value)) => *value,
+        Some(Value::String(value)) => matches!(
+            value.to_ascii_lowercase().as_str(),
+            "yes" | "true" | "on" | "1"
+        ),
+        Some(other) => other.as_i64() == Some(1),
+    }
+}
+
+fn normalized(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn read_sysctl(name: &str) -> Option<String> {
+    let path = format!("/proc/sys/{}", name.replace('.', "/"));
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn dpkg_version(name: &str) -> Option<String> {
@@ -376,6 +467,19 @@ mod tests {
         assert!(ledger.cached_ok("key").is_none());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn cached_ok_misses_when_file_is_replaced_by_symlink() {
+        let dir = Scratch::new("symlink-drift");
+        let file = dir.file("target", b"stable");
+        let replacement = dir.file("replacement", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        std::fs::remove_file(&file).unwrap();
+        std::os::unix::fs::symlink(replacement, &file).unwrap();
+        assert!(ledger.cached_ok("key").is_none());
+    }
+
     #[test]
     fn cached_ok_misses_on_agent_version_change() {
         let dir = Scratch::new("version-drift");
@@ -393,17 +497,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn cached_ok_hits_even_when_mode_changed() {
+    fn cached_ok_misses_when_mode_changed() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = Scratch::new("mode-drift");
         let file = dir.file("target", b"stable");
         let mut ledger = Ledger::load(&dir.0);
         record_file(&mut ledger, "key", &file);
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
-
-        // BUG(plan 006, CORRECTNESS-01): File probes ignore mode/owner.
-        assert!(ledger.cached_ok("key").is_some());
+        let old_mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o7777;
+        let new_mode = if old_mode == 0o600 { 0o644 } else { 0o600 };
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(new_mode)).unwrap();
+        assert!(ledger.cached_ok("key").is_none());
     }
 
     #[test]
@@ -445,12 +549,73 @@ mod tests {
     }
 
     #[test]
-    fn record_considers_apt_latest_for_package_probes() {
+    fn apt_latest_is_not_cached() {
         let params = json!({"name": "not-queried", "state": "latest"});
+        assert!(probe_for("apt", &params).is_none());
+    }
 
-        // BUG(plan 006, CORRECTNESS-02): latest is not excluded before package
-        // probing. Assert the state-independent name path without invoking
-        // dpkg-query on the test machine.
-        assert_eq!(pkg_names(&params), Some(vec!["not-queried".to_string()]));
+    #[cfg(unix)]
+    #[test]
+    fn cached_ok_hits_when_directory_attrs_unchanged() {
+        let dir = Scratch::new("dir-hit");
+        let target = dir.0.join("target");
+        std::fs::create_dir(&target).unwrap();
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &target);
+        assert!(ledger.cached_ok("key").is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_ok_misses_when_directory_mode_changes() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = Scratch::new("dir-drift");
+        let target = dir.0.join("target");
+        std::fs::create_dir(&target).unwrap();
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &target);
+        let old_mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
+        let new_mode = if old_mode == 0o700 { 0o755 } else { 0o700 };
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(new_mode)).unwrap();
+        assert!(ledger.cached_ok("key").is_none());
+    }
+
+    #[test]
+    fn sysctl_live_verification_normalizes_and_rejects_missing_values() {
+        assert_eq!(normalized("1\t2  3"), normalized("1 2 3"));
+        assert!(
+            !Probe::SysctlLive {
+                name: "ruxel.test.nonexistent".to_string(),
+                value: "1".to_string(),
+            }
+            .verify()
+        );
+    }
+
+    #[test]
+    fn old_schema_ledger_loads_empty() {
+        let dir = Scratch::new("old-schema");
+        let file = dir.file("target", b"stable");
+        std::fs::create_dir_all(dir.0.join("ledger")).unwrap();
+        let old = json!({
+            "key": {
+                "agent_version": env!("CARGO_PKG_VERSION"),
+                "status": "ok",
+                "result_json": {"changed": false},
+                "probes": [{
+                    "kind": "File",
+                    "path": file,
+                    "sha256": "unused",
+                    "len": 6
+                }]
+            }
+        });
+        std::fs::write(
+            dir.0.join("ledger/ledger.json"),
+            serde_json::to_vec(&old).unwrap(),
+        )
+        .unwrap();
+        assert!(Ledger::load(&dir.0).cached_ok("key").is_none());
     }
 }
