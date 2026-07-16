@@ -1,0 +1,33 @@
+- name: Fixture ext4 storage
+  hosts: storage
+  become: true
+  vars:
+    fixture_disks:
+      - /dev/disk/by-id/ruxel-fixture-disk-1
+      - /dev/disk/by-id/ruxel-fixture-disk-2
+  tasks:
+    - name: Resolve fixture disks
+      command:
+        argv: [readlink, -f, "{{ item }}"]
+      loop: "{{ fixture_disks }}"
+      register: fixture_disk_devices
+      changed_when: false
+      check_mode: false
+
+    - name: Create fixture volume group
+      community.general.lvg:
+        vg: ruxel_fixture_ext4
+        pvs: "{{ fixture_disk_devices.results | map(attribute='stdout') | list }}"
+
+    - name: Create fixture logical volume
+      community.general.lvol:
+        lv: data
+        vg: ruxel_fixture_ext4
+        size: +100%FREE
+        resizefs: true
+
+    - name: Format fixture ext4 volume
+      filesystem:
+        fstype: ext4
+        dev: /dev/ruxel_fixture_ext4/data
+        resizefs: true

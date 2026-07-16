@@ -174,11 +174,11 @@ to return. No fixture or volume was created, no SSH target was obtained, and no
 remote host was contacted. Per Step 1 and the safety rules, the sweep did not
 proceed.
 
-Later the same day the CLI recovered. `init-titan-drives.yml` and
-`init-delorean-drives.yml` passed fresh apply, converged Ruxel rerun, and
-Ansible bless on isolated labeled fixtures. The delorean gate found and fixed
-an ext4 resize status bug: Ruxel now compares filesystem block counts before
-and after `resize2fs`, instead of parsing human output from the wrong stream.
+Later the same day the CLI recovered. Runs of real workload playbooks against
+fixtures were invalidated and their captures removed after the operator
+clarified the fixture-project isolation rule. The ext4 resize bug they exposed
+was reproduced with a synthetic minimal playbook and fixed structurally, but
+all parity gates must use repository-owned synthetic playbooks going forward.
 
 ## STOP conditions
 

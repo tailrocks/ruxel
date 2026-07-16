@@ -77,15 +77,14 @@ Publishing to crates.io is intentionally unsupported; build a selected commit
 or tag locally. Release asset automation can be added if distribution becomes
 a project goal.
 
-The private workload fidelity gates require `RUXEL_WORKLOAD_DIR` to point at
-the `ansible-configs` checkout. They are explicitly ignored when unavailable;
-run them locally with:
+The private workload checks are strictly offline parsers/spec extractors. They
+never invoke Ruxel or Ansible against workload files. Remote parity gates accept
+only synthetic playbooks under `tools/fixture-project/`.
+
+Run offline extraction locally with:
 
 ```bash
-RUXEL_WORKLOAD_DIR=/path/to/ansible-configs \
-  cargo test -p ruxel-core --test workload -- --ignored
-RUXEL_WORKLOAD_DIR=/path/to/ansible-configs \
-  cargo test -p ruxel-core --test render_parity template_files_match_oracle -- --ignored
+cargo run -p ruxel-spec-extract -- /path/to/ansible-configs
 ```
 
 ## License

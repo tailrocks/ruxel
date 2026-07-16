@@ -198,12 +198,13 @@ ALL must hold:
 - [x] Consecutive `Static` tasks batch into one wire `Plan`; the agent drains them without per-task controller stalls
 - [x] `Deferred` tasks render from arriving registers and stream as `PlanPatch`
 - [x] Playbook order, notify, register shapes, and failure-stop are preserved (all 009 tests + goldens green)
-- [x] On-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible
+- [ ] Synthetic on-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible
 - [x] `cargo nextest run` green; clippy/fmt clean
 - [x] `plans/README.md` row for 020 updated
 
-Disposable Hetzner `install-docker.yml` gate passed 2026-07-16: Ruxel
-converged rerun and Ansible bless both reported `changed=0`.
+The 2026-07-16 run used a real workload playbook against a fixture and is not
+valid evidence under the fixture-project isolation rule. Its capture was
+removed; this gate must be repeated with a synthetic fixture playbook.
 
 ## STOP conditions
 

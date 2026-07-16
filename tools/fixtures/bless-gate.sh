@@ -25,6 +25,13 @@ INV="${5:-}"
 DRY="${6:-}"   # pass "dry" for secretful playbooks (dry-secrets both sides)
 GROUP="${7:-nodes}"
 
+FIXTURE_ROOT="$(pwd)/tools/fixture-project"
+PLAYBOOK_REAL="$(realpath "$PLAYBOOK")"
+case "$PLAYBOOK_REAL" in
+  "$FIXTURE_ROOT"/*) PLAYBOOK="$PLAYBOOK_REAL" ;;
+  *) echo "fixtures: refusing non-fixture-project playbook: $PLAYBOOK" >&2; exit 1 ;;
+esac
+
 IP="${DEST##*@}"
 HOST="gate-host"
 

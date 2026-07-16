@@ -1,0 +1,39 @@
+- name: Fixture PostgreSQL ownership and default privileges
+  hosts: postgresql
+  become: true
+  tasks:
+    - name: Create fixture owner
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ruxel_fixture_owner
+        state: present
+        login_port: 40000
+
+    - name: Create fixture reader
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ruxel_fixture_reader
+        state: present
+        login_port: 40000
+
+    - name: Create owned fixture schema
+      become_user: postgres
+      community.postgresql.postgresql_schema:
+        login_db: postgres
+        name: ruxel_fixture_schema
+        owner: ruxel_fixture_owner
+        state: present
+        login_port: 40000
+
+    - name: Grant fixture default table reads
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        login_db: postgres
+        type: default_privs
+        objs: TABLES
+        privs: SELECT
+        role: ruxel_fixture_reader
+        schema: ruxel_fixture_schema
+        target_roles: ruxel_fixture_owner
+        state: present
+        login_port: 40000

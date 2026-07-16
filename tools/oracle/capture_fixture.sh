@@ -15,6 +15,14 @@ PLAYBOOK="${3:?playbook path}"
 NAME="${4:?capture name}"
 GROUP="${5:-nodes}"
 
+ROOT="$(cd ../.. && pwd)"
+FIXTURE_ROOT="$ROOT/tools/fixture-project"
+PLAYBOOK_REAL="$(realpath "$PLAYBOOK")"
+case "$PLAYBOOK_REAL" in
+  "$FIXTURE_ROOT"/*) PLAYBOOK="$PLAYBOOK_REAL" ;;
+  *) echo "oracle: refusing non-fixture-project playbook: $PLAYBOOK" >&2; exit 1 ;;
+esac
+
 INV="$(mktemp)"
 trap 'rm -f "$INV"' EXIT
 cat > "$INV" <<EOF

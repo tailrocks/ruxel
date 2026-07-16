@@ -41,11 +41,17 @@ Nothing in M1–M5 is provable without this; it comes first.
 - **The Ansible oracle**: a pinned ansible-core 2.21 venv in-repo
   (`tools/oracle/`, uv-managed, version-locked to what the controller runs
   today) plus a **capture callback plugin** that records, for every task of
-  a real `ansible-playbook` run against a fixture VM: rendered args, result
+  an `ansible-playbook` run of repository-owned synthetic playbooks against a
+  fixture VM: rendered args, result
   dict, changed/ok/skipped status, and diff. Captures are committed as
   golden files. Ruxel parity = replay against the same fixture state and
   diff against the capture — semantics pinned by observation, not by
   reading docs.
+- **Workload isolation**: real ChainArgos configuration is used only for
+  offline feature extraction. Remote gates execute only
+  `tools/fixture-project/`; gate scripts reject other paths. The fixture
+  project mirrors required syntax and semantics with synthetic identities and
+  data, never copied production inventory, secrets, hostnames, or device IDs.
 - **Baseline timings**: record `ansible-playbook` wall-clock +
   `profile_tasks` per playbook on the fixture fleet (automated), and —
   operator-run, at his convenience — one timed run per key playbook against
@@ -56,8 +62,8 @@ Nothing in M1–M5 is provable without this; it comes first.
   enters fixtures or captures.
 
 **Gate:** `cargo build` for all workspace members incl. cross-built agent;
-one scripted fixture VM up/down cycle; one captured oracle run of
-`install-base.yml` committed; baseline timings for the four common
+one scripted fixture VM up/down cycle; one captured oracle run of the
+synthetic base fixture committed; baseline timings for the four representative
 playbooks recorded.
 
 ## M1 — Fidelity layer (controller-side, fully offline)
@@ -69,16 +75,16 @@ resolver with `--dry-secrets` mode (deterministic fakes), loop/when/
 register/until evaluation, register-dependency DAG compiler, `no_log`
 redaction.
 
-**Parity harness** (the gate, and a permanent CI fixture): for every
-playbook — all 16 — and every template — all 22 — render every expression
+**Parity harness** (the gate, and a permanent CI fixture): for every extracted
+feature shape, render the corresponding synthetic fixture expression
 and template through ansible-core 2.21's Templar (driven via its Python
 API locally) and through ruxel, with identical fake variable sets;
 byte-diff. Includes the loop/when/register shapes extracted on 2026-06-11
 (literal-list and template-string loops, list-AND `when`, per-item when,
 registered-result attribute access).
 
-**Gate:** 16/16 playbooks compile to plans; all 41 template files (22 with
-Jinja) byte-identical;
+**Gate:** the offline extractor covers 16/16 workload playbooks; every
+corresponding synthetic fixture compiles and renders byte-identically;
 every inline expression identical; all M1-class ⚠ items closed with
 recorded evidence.
 

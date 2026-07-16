@@ -68,6 +68,12 @@ instead of trusted from a state file.
 6. **Parallel by default.** Hosts in parallel, independent tasks in parallel,
    secret lookups in parallel, verification probes in parallel. Sequential
    only where ordering is semantically required.
+7. **Extract features; never execute the real workload in development.** The
+   live ChainArgos configuration is read-only input to offline surface
+   extraction. Every Ruxel/Ansible execution comparison uses repository-owned
+   synthetic playbooks in `tools/fixture-project/` and disposable targets in
+   the isolated `ruxel-fixtures` project. Real playbooks, inventory, templates,
+   secrets, hostnames, and device IDs never enter a development execution.
 
 ## Goals
 
@@ -100,6 +106,11 @@ probe, or execute anything against the production servers.** All six hosts in
 against disposable targets (local VMs / containers / throwaway cloud hosts)
 that the operator provides explicitly. This rule has no exceptions and no
 expiry until the operator lifts it per-occasion.
+
+This also forbids running real ChainArgos playbooks against disposable hosts.
+Tests reproduce their feature shapes in the synthetic fixture project, then
+compare Ruxel with current Ansible there. Offline extraction may identify a
+module, parameter, literal, or control-flow shape; it must not execute it.
 
 ## Related documents
 
