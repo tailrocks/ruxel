@@ -35,6 +35,8 @@ pub struct ExecContext {
     pub check_mode: bool,
     /// `--diff`: content modules embed a unified diff in their result.
     pub diff_mode: bool,
+    /// `no_log`: sensitive task output must not be duplicated into diffs.
+    pub no_log: bool,
     /// Task `environment:` merged into the child process env.
     pub environment: Vec<(String, String)>,
     /// `become_user:` — run module subprocesses as this user (SEMANTICS §1).

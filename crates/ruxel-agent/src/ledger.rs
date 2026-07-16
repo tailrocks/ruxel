@@ -12,6 +12,7 @@
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// One verifiable fact about the post-task system state.
@@ -99,19 +100,33 @@ struct Record {
 
 pub struct Ledger {
     path: PathBuf,
+    host_key: Option<[u8; 32]>,
     records: HashMap<String, Record>,
     dirty: bool,
 }
 
 impl Ledger {
     pub fn load(state_dir: &Path) -> Self {
-        let path = state_dir.join("ledger").join("ledger.json");
+        let ledger_dir = state_dir.join("ledger");
+        let _ = std::fs::create_dir_all(&ledger_dir);
+        set_mode(&ledger_dir, 0o700);
+        let key_path = ledger_dir.join("key");
+        let had_host_key = key_path.exists();
+        let host_key = load_or_create_host_key(&key_path);
+        let path = ledger_dir.join("ledger.json");
+        // A ledger without its host key is legacy or unrecoverable. Remove it:
+        // legacy result payloads may contain pre-no_log plaintext diffs.
+        if !had_host_key {
+            let _ = std::fs::remove_file(&path);
+        }
+        set_mode(&path, 0o600);
         let records = std::fs::read(&path)
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
         Ledger {
             path,
+            host_key,
             records,
             dirty: false,
         }
@@ -123,11 +138,14 @@ impl Ledger {
         }
         if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
+            set_mode(parent, 0o700);
         }
         if let Ok(bytes) = serde_json::to_vec(&self.records) {
             let tmp = self.path.with_extension("json.tmp");
             if std::fs::write(&tmp, &bytes).is_ok() {
+                set_mode(&tmp, 0o600);
                 let _ = std::fs::rename(&tmp, &self.path);
+                set_mode(&self.path, 0o600);
             }
         }
     }
@@ -136,7 +154,8 @@ impl Ledger {
     /// every fingerprint still verifies. Returns the result to replay
     /// (changed forced false — the task is converged).
     pub fn cached_ok(&self, key: &str) -> Option<Value> {
-        let rec = self.records.get(key)?;
+        let key = self.storage_key(key)?;
+        let rec = self.records.get(&key)?;
         if rec.agent_version != env!("CARGO_PKG_VERSION") {
             return None;
         }
@@ -169,8 +188,11 @@ impl Ledger {
         if probes.is_empty() {
             return;
         }
+        let Some(key) = self.storage_key(key) else {
+            return;
+        };
         self.records.insert(
-            key.to_string(),
+            key,
             Record {
                 agent_version: env!("CARGO_PKG_VERSION").to_string(),
                 status: status.to_string(),
@@ -180,7 +202,69 @@ impl Ledger {
         );
         self.dirty = true;
     }
+
+    fn storage_key(&self, controller_key: &str) -> Option<String> {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let key = self.host_key?;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&key).ok()?;
+        mac.update(controller_key.as_bytes());
+        Some(
+            mac.finalize()
+                .into_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        )
+    }
 }
+
+fn load_or_create_host_key(path: &Path) -> Option<[u8; 32]> {
+    if let Ok(bytes) = std::fs::read(path) {
+        return bytes.try_into().ok();
+    }
+
+    let mut key = [0_u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .ok()?
+        .read_exact(&mut key)
+        .ok()?;
+
+    #[cfg(unix)]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+    };
+    #[cfg(not(unix))]
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path);
+
+    match file {
+        Ok(mut file) => {
+            file.write_all(&key).ok()?;
+            file.sync_all().ok()?;
+            set_mode(path, 0o600);
+            Some(key)
+        }
+        Err(_) => std::fs::read(path).ok()?.try_into().ok(),
+    }
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+}
+
+#[cfg(not(unix))]
+fn set_mode(_path: &Path, _mode: u32) {}
 
 /// The fingerprint set a module's converged end state can be verified by,
 /// or None if the module must always execute (ARCHITECTURE §6 honesty rule).
@@ -438,6 +522,47 @@ mod tests {
         let result = Ledger::load(&dir.0).cached_ok("key").unwrap();
         assert_eq!(result["changed"], false);
         assert_eq!(result["marker"], "kept");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ledger_files_and_directory_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = Scratch::new("private");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "controller-key", &file);
+        ledger.flush();
+
+        let ledger_dir = dir.0.join("ledger");
+        assert_eq!(
+            std::fs::metadata(&ledger_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        for path in [ledger_dir.join("key"), ledger_dir.join("ledger.json")] {
+            assert_eq!(
+                std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn stored_identity_is_host_keyed_and_stable() {
+        let dir = Scratch::new("keyed");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "controller-key", &file);
+        ledger.flush();
+
+        let stored: Value =
+            serde_json::from_slice(&std::fs::read(dir.0.join("ledger/ledger.json")).unwrap())
+                .unwrap();
+        let stored_key = stored.as_object().unwrap().keys().next().unwrap();
+        assert_ne!(stored_key, "controller-key");
+        assert_eq!(stored_key.len(), 64);
+        assert!(Ledger::load(&dir.0).cached_ok("controller-key").is_some());
     }
 
     #[test]

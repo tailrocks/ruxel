@@ -650,7 +650,8 @@ impl HostRun<'_> {
             _ => self.recap.ok += 1,
         }
         let display = if task.no_log {
-            String::new()
+            serde_json::to_string(&task_eval::censored_result(status == "changed", None))
+                .unwrap_or_default()
         } else if status == "failed" {
             serde_json::to_string(&result).unwrap_or_default()
         } else {

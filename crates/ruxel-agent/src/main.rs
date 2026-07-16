@@ -55,6 +55,11 @@ fn serve() -> i32 {
     // Single-run guard (ARCHITECTURE §8): one agent per host at a time.
     let dir = state_dir();
     let _ = std::fs::create_dir_all(&dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
     let lock_path = dir.join("agent.lock");
     let lock_file = match std::fs::OpenOptions::new()
         .create(true)
@@ -217,7 +222,7 @@ fn execute_task(
                 Err(e) => {
                     send_result(
                         out,
-                        task.task_id,
+                        task,
                         iteration,
                         "failed",
                         true,
@@ -237,10 +242,11 @@ fn execute_task(
         // modules have no fingerprints and never reach here cached.
         if !no_cache
             && !task_check_mode
+            && !task.no_log
             && !iteration.ledger_key.is_empty()
             && let Some(cached) = ledger.cached_ok(&iteration.ledger_key)
         {
-            send_result(out, task.task_id, iteration, "ok", false, &cached, start);
+            send_result(out, task, iteration, "ok", false, &cached, start);
             continue;
         }
 
@@ -249,7 +255,7 @@ fn execute_task(
         if task_check_mode && matches!(task.module.as_str(), "command" | "shell") {
             send_result(
                 out,
-                task.task_id,
+                task,
                 iteration,
                 "skipped",
                 false,
@@ -266,6 +272,7 @@ fn execute_task(
         let ctx = modules::ExecContext {
             check_mode: task_check_mode,
             diff_mode,
+            no_log: task.no_log,
             environment: task
                 .environment
                 .iter()
@@ -280,7 +287,7 @@ fn execute_task(
         let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
         // Record the converged fingerprint (real applies only — check mode
         // didn't change the system, so its state isn't authoritative).
-        if !task_check_mode {
+        if !task_check_mode && !task.no_log {
             ledger.record(
                 &iteration.ledger_key,
                 &task.module,
@@ -291,7 +298,7 @@ fn execute_task(
         }
         send_result(
             out,
-            task.task_id,
+            task,
             iteration,
             outcome.status,
             outcome.changed,
@@ -303,7 +310,7 @@ fn execute_task(
 
 fn send_result(
     out: &mut impl std::io::Write,
-    task_id: u64,
+    task: &v1::RenderedTask,
     iteration: &v1::Iteration,
     status: &str,
     changed: bool,
@@ -314,15 +321,19 @@ fn send_result(
         out,
         &v1::Event {
             msg: Some(v1::event::Msg::TaskResult(v1::TaskResult {
-                task_id,
+                task_id: task.task_id,
                 status: status.to_string(),
                 changed,
                 result_json: serde_json::to_vec(result).unwrap_or_default(),
-                diff: result
-                    .get("diff")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                diff: if task.no_log {
+                    String::new()
+                } else {
+                    result
+                        .get("diff")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                },
                 elapsed_ms: start.elapsed().as_millis() as u64,
                 item_label: iteration.item_label.clone(),
             })),

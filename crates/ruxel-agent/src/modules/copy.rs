@@ -29,7 +29,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if !exists || (force && !same) {
         changed = true;
         // Unified content diff under --diff (before = current dest bytes).
-        if ctx.diff_mode {
+        if ctx.diff_mode && !ctx.no_log {
             let before = String::from_utf8_lossy(&current);
             result["diff"] = json!(super::unified_diff(&before, content));
         }

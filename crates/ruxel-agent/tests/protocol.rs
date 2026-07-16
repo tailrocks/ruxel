@@ -144,6 +144,67 @@ fn ledger_flushes_on_eof_not_just_done() {
 }
 
 #[test]
+fn no_log_copy_emits_no_diff_and_leaves_no_ledger_record() {
+    const SYNTHETIC_CONTENT: &str = "test-content-not-a-secret";
+
+    let dir = temp_dir("no-log");
+    let dest = dir.join("managed-file");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+
+    let mut greeting = hello("no-log", PROTO_VERSION);
+    let Some(Msg::Hello(ref mut hello)) = greeting.msg else {
+        unreachable!();
+    };
+    hello.diff_mode = true;
+    write_frame(&mut stdin, &greeting).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+
+    let params = serde_json::to_vec(&serde_json::json!({
+        "dest": dest,
+        "content": SYNTHETIC_CONTENT
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![v1::RenderedTask {
+                    task_id: 1,
+                    name: "private copy".into(),
+                    module: "copy".into(),
+                    rendered: true,
+                    no_log: true,
+                    iterations: vec![v1::Iteration {
+                        params_json: params,
+                        ledger_key: "no-log-key".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("task start");
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("task result");
+    let Some(v1::event::Msg::TaskResult(result)) = event.msg else {
+        panic!("expected TaskResult");
+    };
+    assert!(result.diff.is_empty());
+    assert!(!String::from_utf8_lossy(&result.result_json).contains(SYNTHETIC_CONTENT));
+
+    drop(stdin);
+    assert_eq!(agent.wait().unwrap().code(), Some(0));
+    assert!(!dir.join("ledger/ledger.json").exists());
+    assert_eq!(std::fs::read_to_string(&dest).unwrap(), SYNTHETIC_CONTENT);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn second_agent_is_locked_out_and_kill9_releases() {
     let dir = temp_dir("lock");
 
