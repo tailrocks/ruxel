@@ -409,7 +409,7 @@ fn resolve_gid_from(groups: &str, group: &str) -> Result<u32, String> {
 }
 
 /// Parse a mode param: octal string ("0755") or integer.
-fn parse_mode(value: &Value) -> Result<u32, String> {
+pub(super) fn parse_mode(value: &Value) -> Result<u32, String> {
     match value {
         Value::String(s) => u32::from_str_radix(s.trim_start_matches("0o"), 8)
             .map_err(|_| format!("invalid mode {s:?}")),
@@ -423,6 +423,15 @@ fn parse_mode(value: &Value) -> Result<u32, String> {
         }
         other => Err(format!("invalid mode {other:?}")),
     }
+}
+
+pub(super) fn default_file_mode(status: &str) -> u32 {
+    let umask = status
+        .lines()
+        .find_map(|line| line.strip_prefix("Umask:\t"))
+        .and_then(|value| u32::from_str_radix(value.trim(), 8).ok())
+        .unwrap_or(0o022);
+    0o666 & !umask
 }
 
 /// chown/chmod attributes shared by file and copy.
@@ -465,8 +474,8 @@ fn apply_attrs(
 #[cfg(test)]
 mod security_tests {
     use super::{
-        bool_param, parse_mode, resolve_gid_from, resolve_uid_from, user_environment_from,
-        write_atomic,
+        bool_param, default_file_mode, parse_mode, resolve_gid_from, resolve_uid_from,
+        user_environment_from, write_atomic,
     };
     use serde_json::json;
     use std::os::unix::fs::symlink;
@@ -518,6 +527,12 @@ mod security_tests {
             user_environment_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice"),
             Some(("/home/alice", "/bin/sh"))
         );
+    }
+
+    #[test]
+    fn derives_new_file_mode_from_process_umask_without_mutating_it() {
+        assert_eq!(default_file_mode("Name:\truxel\nUmask:\t0022\n"), 0o644);
+        assert_eq!(default_file_mode("Name:\truxel\nUmask:\t0077\n"), 0o600);
     }
 
     #[test]

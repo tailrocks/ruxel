@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import difflib
 import sys
 from pathlib import Path
 
@@ -13,20 +12,27 @@ STAT_FIELDS = {"exists", "isdir", "islnk", "isblk", "path", "lnk_source"}
 
 def normalize_diff(value):
     """Represent Ansible structured and Ruxel unified diffs identically."""
-    lines = []
+    changes = []
     if isinstance(value, str):
-        lines = value.splitlines()
+        before, after = [], []
+        for line in value.splitlines():
+            if line.startswith("---") or line.startswith("+++"):
+                continue
+            if line.startswith("-"):
+                before.append(line[1:])
+            elif line.startswith("+"):
+                after.append(line[1:])
+        if before or after:
+            changes.append({"before": before, "after": after})
     elif isinstance(value, list):
         for item in value:
             if not isinstance(item, dict) or "before" not in item or "after" not in item:
                 continue
-            lines.extend(difflib.unified_diff(
-                str(item["before"]).splitlines(),
-                str(item["after"]).splitlines(),
-                lineterm="",
-            ))
-    return [line for line in lines if line.startswith(("+", "-"))
-            and not line.startswith(("+++", "---"))]
+            changes.append({
+                "before": str(item["before"]).splitlines(),
+                "after": str(item["after"]).splitlines(),
+            })
+    return changes
 
 
 def module_name(value):
@@ -54,6 +60,8 @@ def normalize_value(value, module=None):
     elif module == "set_fact":
         allowed.add("ansible_facts")
     normalized = {}
+    if "censored" in value:
+        normalized["redacted"] = True
     for key, child in value.items():
         if key not in allowed:
             continue
@@ -120,9 +128,11 @@ def compare(ruxel_path, ansible_path):
         for record in load_jsonl(ruxel_path)
         if record.get("event") == "task"
     ]
+    ansible_records = load_jsonl(ansible_path)
+    validate_item_aggregates(ansible_records)
     ansible = [
         normalize_ansible(record)
-        for record in load_jsonl(ansible_path)
+        for record in ansible_records
         if record.get("status") in {"ok", "failed", "skipped", "unreachable"}
         and module_name(record.get("action")) not in {"gather_facts", "setup"}
     ]
@@ -139,6 +149,27 @@ def compare(ruxel_path, ansible_path):
             print("ruxel:   " + json.dumps(left, sort_keys=True), file=sys.stderr)
             print("ansible: " + json.dumps(right, sort_keys=True), file=sys.stderr)
     return 1
+
+
+def validate_item_aggregates(records):
+    pending = {}
+    for record in records:
+        status = record.get("status", "")
+        task = task_name(record.get("task_name"))
+        if status.startswith("item_"):
+            pending.setdefault(task, []).append(record)
+            continue
+        items = pending.pop(task, [])
+        if not items:
+            continue
+        result = record.get("result") or {}
+        aggregate = result.get("results") if isinstance(result, dict) else None
+        if not isinstance(aggregate, list) or len(aggregate) != len(items):
+            raise SystemExit(f"Ansible item/aggregate mismatch for {task}")
+        module = module_name(record.get("action"))
+        for index, (item_record, aggregate_result) in enumerate(zip(items, aggregate)):
+            if normalize_value(item_record.get("result") or {}, module) != normalize_value(aggregate_result, module):
+                raise SystemExit(f"Ansible item result mismatch for {task}[{index}]")
 
 
 def main():

@@ -51,6 +51,16 @@ class ResultParityTests(unittest.TestCase):
         unified = "--- before\n+++ after\n-old\n+new\n"
         self.assertEqual(normalize_diff(structured), normalize_diff(unified))
 
+    def test_diff_normalization_preserves_order_and_unchanged_context(self):
+        self.assertNotEqual(
+            normalize_diff([{"before": "a\nb", "after": "c\nb"}]),
+            normalize_diff([{"before": "b\na", "after": "b\nc"}]),
+        )
+
+    def test_redaction_is_observable(self):
+        self.assertEqual(normalize_value({"changed": True, "censored": "hidden"}),
+                         {"changed": True, "redacted": True})
+
 
 if __name__ == "__main__":
     unittest.main()

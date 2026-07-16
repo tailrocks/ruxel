@@ -3,7 +3,10 @@
 //! when dest exists. The `src=` (controller-file) form arrives with the
 //! content-addressed blob channel.
 
-use super::{ExecContext, apply_attrs, bool_param, params_object, str_param, write_atomic};
+use super::{
+    ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode, str_param,
+    write_atomic_with,
+};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -34,7 +37,15 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             result["diff"] = json!(super::unified_diff(&before, content));
         }
         if !ctx.check_mode {
-            write_atomic(p, content.as_bytes())?;
+            let creation_mode = if exists {
+                None
+            } else if let Some(mode) = obj.get("mode") {
+                Some(parse_mode(mode)?)
+            } else {
+                let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+                Some(default_file_mode(&status))
+            };
+            write_atomic_with(p, content.as_bytes(), creation_mode, None)?;
         }
     }
     if p.exists() || !ctx.check_mode {

@@ -8,10 +8,6 @@ is forbidden.
 
 ## 1. Finish executable fixture parity
 
-- Regenerate deterministic captures that still contain machine/run-specific
-  data using `normalize_capture.py`.
-- Capture the remaining fixture playbooks: `control-flow`, `shape-variants`,
-  `system-surface`, and `check-semantics` remote check/diff behavior.
 - For every fixture, compare equivalent fresh Ansible and Ruxel targets, first
   apply, converged rerun, check/diff results, normalized per-task fields, and
   final state.
@@ -52,6 +48,9 @@ Ansible-equivalent.
   evidence chain.
 - Six-host disposable-container concurrency, ordered recaps, unreachable
   output, and repeated transport-resource cleanup pass reproducibly.
+- Every committed non-render oracle capture uses a CI-enforced normalized,
+  machine-independent schema; control-flow, shape-variant, system-surface, and
+  check-semantics captures exist.
 
 Ruxel status remains: **core implemented; closed-workload compatibility proof
-incomplete** until all four active sections pass.
+incomplete** until both active sections pass.

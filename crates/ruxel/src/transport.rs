@@ -5,13 +5,10 @@
 //! every channel (exec, sftp, the agent's stdio stream) is a plain
 //! `ssh -S <socket>` mux client whose pipes we own end to end.
 //!
-//! Known issue (2026-06-11, fixture-reproduced, also present with the
-//! openssh crate this replaced): the SECOND sequential connect inside one
-//! process stalls at the agent handshake — first connect and concurrent
-//! shell-driven repeats are fine. Real runs open one connection per host
-//! per process today; revisit before M5's multi-host parallelism (which
-//! needs concurrent, not sequential, sessions). Gate evidence therefore
-//! runs each connect in its own process (tools/fixtures/gate.sh).
+//! A 2026-06-11 second-connect stall could not be reproduced in later
+//! sequential, two-provider-host, or repeated six-container gates. Host
+//! sessions are bounded-concurrent and independently own collision-proof
+//! mux names; no speculative transport rewrite was made.
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
@@ -22,6 +19,7 @@ use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
@@ -50,6 +48,17 @@ struct Master {
     process: Child,
 }
 
+static SOCKET_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn socket_name() -> String {
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = SOCKET_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("ruxel-mux-{}-{epoch:x}-{sequence:x}", std::process::id())
+}
+
 impl Master {
     async fn establish(destination: &str, options: &ConnectOptions) -> Result<Self> {
         let socket_dir = socket_dir()?;
@@ -57,14 +66,7 @@ impl Master {
             .with_context(|| format!("create socket directory {}", socket_dir.display()))?;
         std::fs::set_permissions(&socket_dir, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("secure socket directory {}", socket_dir.display()))?;
-        let socket = socket_dir.join(format!(
-            "ruxel-mux-{}-{:x}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos()
-        ));
+        let socket = socket_dir.join(socket_name());
         let mut cmd = Command::new("ssh");
         cmd.arg("-M")
             .arg("-N")
@@ -455,8 +457,9 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
 
 #[cfg(test)]
 mod transport_security_tests {
-    use super::{read_frame, socket_dir_from, write_frame};
+    use super::{read_frame, socket_dir_from, socket_name, write_frame};
     use ruxel_proto::v1;
+    use std::collections::HashSet;
     use std::path::PathBuf;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -470,6 +473,19 @@ mod transport_security_tests {
             socket_dir_from(None, Some(PathBuf::from("/home/operator"))).unwrap(),
             PathBuf::from("/home/operator/.ruxel/cp")
         );
+    }
+
+    #[test]
+    fn concurrent_mux_socket_names_are_unique() {
+        let names = std::thread::scope(|scope| {
+            (0..16)
+                .map(|_| scope.spawn(|| (0..1_000).map(|_| socket_name()).collect::<Vec<_>>()))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .flat_map(|thread| thread.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(names.iter().collect::<HashSet<_>>().len(), names.len());
     }
 
     #[tokio::test]

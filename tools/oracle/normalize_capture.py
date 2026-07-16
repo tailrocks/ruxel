@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 DROP = {
-    "delta", "start", "end", "warnings", "invocation", "exception",
+    "delta", "start", "end", "stop", "warnings", "invocation", "exception",
     "discovered_interpreter_python",
 }
 
@@ -16,11 +16,14 @@ def scrub(value):
         return [scrub(item) for item in value]
     if not isinstance(value, dict):
         return value
-    return {
+    normalized = {
         key: scrub(child)
         for key, child in value.items()
-        if key not in DROP and not key.startswith("_ansible")
+        if key not in DROP and (not key.startswith("_ansible") or key == "_ansible_no_log")
     }
+    if "censored" in normalized:
+        normalized["_ansible_no_log"] = True
+    return normalized
 
 
 def normalize(record):
@@ -39,7 +42,15 @@ def normalize(record):
 
 def main():
     path = Path(sys.argv[1])
-    records = [normalize(json.loads(line)) for line in path.read_text().splitlines() if line]
+    records = []
+    for line in path.read_text().splitlines():
+        if not line:
+            continue
+        record = json.loads(line)
+        action = str(record.get("action", "")).split(".")[-1]
+        if action in {"gather_facts", "setup"}:
+            continue
+        records.append(normalize(record))
     path.write_text("".join(json.dumps(record, sort_keys=True) + "\n" for record in records))
 
 

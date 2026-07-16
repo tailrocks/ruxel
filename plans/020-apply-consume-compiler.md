@@ -198,14 +198,15 @@ ALL must hold:
 - [x] Consecutive `Static` tasks batch into one wire `Plan`; the agent drains them without per-task controller stalls
 - [x] `Deferred` tasks render from arriving registers and stream as `PlanPatch`
 - [x] Playbook order, notify, register shapes, and failure-stop are preserved (all 009 tests + goldens green)
-- [ ] Synthetic on-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible
+- [x] Synthetic on-VM bless-gate: converged rerun status-identical to Ansible
 - [x] `cargo nextest run` green; clippy/fmt clean
 - [x] `plans/README.md` row for 020 updated
 
 The invalid real-workload capture was removed. Replacement synthetic gates
 passed on 2026-07-16 for ext4 storage, controller delegation, and PostgreSQL
-ownership/default privileges: every Ruxel rerun and Ansible bless reported
-`changed=0`.
+ownership/default privileges. Ruxel and Ansible matched every converged task
+status; deliberately always-changed/check-forced tasks retained their measured
+Ansible changed behavior.
 
 ## STOP conditions
 

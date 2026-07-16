@@ -38,8 +38,10 @@ cat > "$INV" <<EOF
 fixture ansible_ssh_host=${IP} ansible_ssh_user=root ansible_ssh_private_key_file=${KEY}
 EOF
 
-mkdir -p captures
-rm -f "captures/${NAME}.jsonl"
+CAPTURE_DIR="${RUXEL_CAPTURE_DIR:-$(pwd)/captures}"
+mkdir -p "$CAPTURE_DIR"
+CAPTURE_FILE="$CAPTURE_DIR/${NAME}.jsonl"
+rm -f "$CAPTURE_FILE"
 
 # Secretful playbooks: set RUXEL_DRY_SECRETS=1 so ansible resolves
 # onepassword/pipe lookups to the same deterministic dry values ruxel's
@@ -49,28 +51,28 @@ rm -f "captures/${NAME}.jsonl"
 LOOKUP_ARGS=""
 if [ "${RUXEL_DRY_SECRETS:-}" = "1" ]; then
   LOOKUP_ARGS="ANSIBLE_LOOKUP_PLUGINS=$(pwd)/lookup_plugins"
-  # Self-heal the fake-onepassword overlay (galaxy/ is gitignored): copy
-  # the dry-secret onepassword lookup over the real one so ansible resolves
-  # to the same values ruxel does.
-  GG="galaxy/ansible_collections/community/general/plugins/lookup"
-  [ -d "$GG" ] && cp collections/ansible_collections/community/general/plugins/lookup/onepassword.py "$GG/onepassword.py"
 fi
 
 ANSIBLE_ARGS=()
 [ "${RUXEL_CAPTURE_CHECK:-0}" = "1" ] && ANSIBLE_ARGS+=(--check)
 [ "${RUXEL_CAPTURE_DIFF:-0}" = "1" ] && ANSIBLE_ARGS+=(--diff)
 
+set +e
 env $LOOKUP_ARGS \
-ANSIBLE_COLLECTIONS_PATH="$(pwd)/galaxy" \
+ANSIBLE_COLLECTIONS_PATH="$(pwd)/collections:$(pwd)/galaxy" \
 ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
 ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
 ANSIBLE_GATHERING=explicit \
 ANSIBLE_HOST_KEY_CHECKING=False \
 ANSIBLE_SSH_ARGS="-o ControlMaster=no -o ControlPath=none" \
 ANSIBLE_SSH_COMMON_ARGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY}.known_hosts -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
-RUXEL_CAPTURE_FILE="captures/${NAME}.jsonl" \
+RUXEL_CAPTURE_FILE="$CAPTURE_FILE" \
 uv run ansible-playbook -i "$INV" "${ANSIBLE_ARGS[@]}" "$PLAYBOOK"
+ANSIBLE_STATUS=$?
+set -e
 
-python3 normalize_capture.py "captures/${NAME}.jsonl"
+python3 normalize_capture.py "$CAPTURE_FILE"
+[ -z "${RUXEL_CAPTURE_STATUS_FILE:-}" ] || printf '%s\n' "$ANSIBLE_STATUS" >"$RUXEL_CAPTURE_STATUS_FILE"
 
-echo "wrote captures/${NAME}.jsonl ($(wc -l < "captures/${NAME}.jsonl" | tr -d ' ') records)"
+echo "wrote $CAPTURE_FILE ($(wc -l < "$CAPTURE_FILE" | tr -d ' ') records)"
+[ "${RUXEL_CAPTURE_ALLOW_FAILURE:-0}" = 1 ] || exit "$ANSIBLE_STATUS"

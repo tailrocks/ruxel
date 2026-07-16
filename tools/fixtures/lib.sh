@@ -61,3 +61,17 @@ require_fixture_key() {
   FIXTURE_KEY="$key"
   export FIXTURE_KEY
 }
+
+# Stable provider topology used to prove two parity targets started equivalent.
+# Deliberately excludes identity, address, timestamps, and provider object IDs.
+fixture_spec() {
+  local name="${1:?fixture name required}"
+  resolve_fixture "$name"
+  hcloud server describe "$name" -o json | jq -S '{
+    image: .image.name,
+    location: .location.name,
+    primary_disk_size,
+    server_type: .server_type.name,
+    volume_count: (.volumes | length)
+  }'
+}

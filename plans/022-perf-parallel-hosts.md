@@ -164,12 +164,12 @@ parallel benchmark (the last M5 headline number) and commits it to
 ALL must hold:
 
 - [x] Two hosts in one process both handshake; the historical stall did not reproduce in repeated sequential or concurrent fixture runs, so no speculative transport fix was made
-- [ ] Each host has an independent mux socket/master; socket names can't collide under concurrency
+- [x] Each host has an independent mux socket/master; socket names can't collide under concurrency
 - [x] `apply` runs hosts concurrently; wall-clock ≈ max(host), not sum; output per-host, not interleaved
 - [x] Recap aggregation + exit code correct (1 if any host failed)
-- [ ] Single-host transport gate unregressed; on-VM 6-host benchmark captured (operator)
+- [x] Single-host transport gate unregressed; disposable 6-host benchmark captured
 - [x] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 022 updated; `transport.rs` known-issue header removed/updated
+- [x] `plans/README.md` row for 022 updated; `transport.rs` known-issue header removed/updated
 - [x] No production host was ever contacted (only operator fixtures; `Safety check: target` recorded)
 
 2026-07-16 diagnostic: two local disposable Alpine SSH containers, bound only
@@ -187,6 +187,12 @@ rewrites. Bounded host orchestration was independently implemented and measured
 on two new labeled fixtures: 1.31 s and 1.54 s individually, 1.42 s together.
 Output remained grouped in inventory order and both recaps completed. Evidence:
 `docs/benchmarks/multihost-parallel.md`.
+
+The final six-host acceptance uses six isolated Debian SSH containers because
+the provider safety cap is two. It measures isolated-host, serial-sum, Ruxel,
+and pinned-Ansible timings; checks inventory-ordered recaps, structured
+unreachable output, and repeated-run SSH process cleanup. Evidence and
+reproduction command: `docs/benchmarks/six-host-local.md`.
 
 ## STOP conditions
 
