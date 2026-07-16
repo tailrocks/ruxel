@@ -14,8 +14,9 @@ playbooks are gated three-way** (Ruxel fresh → Ruxel rerun → Ansible 2.21
 bless). Real ChainArgos files are offline extraction input only and are never
 executed, even on fixtures. Repeated-action speed is proven on the synthetic
 corpus: **Ruxel 3.12s vs Ansible 173.34s (55.6×)**. Remaining work is fixture
-coverage breadth, plan 021 timing, and plan 022's non-reproducible transport
-stall; production pilot remains untouched.
+coverage breadth and plan 022's non-reproducible transport stall; production
+pilot remains untouched. Snapshot/secret performance is Ruxel 4.41s vs Ansible
+24.67s (5.59×), both converged.
 
 Milestones: **M0 ✅ M1 ✅ M2 ✅ M3 ✅** (modules + ledger + plan/apply) ·
 **M4 ~** (full module set done; remaining = setup-* gate coverage) ·

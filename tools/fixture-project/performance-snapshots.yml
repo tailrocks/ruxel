@@ -1,0 +1,40 @@
+- name: Fixture secret and system snapshots
+  hosts: performance
+  become: true
+  vars:
+    fixture_secret_alpha: "{{ lookup('community.general.onepassword', 'ruxel-fixture-item', field='alpha', vault='ruxel-test') }}"
+    fixture_secret_beta: "{{ lookup('community.general.onepassword', 'ruxel-fixture-item', field='beta', vault='ruxel-test') }}"
+  tasks:
+    - name: Resolve multiple fields from one synthetic secret item
+      assert:
+        that:
+          - fixture_secret_alpha | length > 0
+          - fixture_secret_beta | length > 0
+      no_log: true
+
+    - name: Verify fixture packages through one package snapshot
+      apt:
+        name:
+          - curl
+          - git
+        state: present
+
+    - name: Verify fixture service through one systemd snapshot
+      systemd:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Verify first PostgreSQL role through shared session
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ruxel_fixture_perf_a
+        state: present
+        login_port: 40000
+
+    - name: Verify second PostgreSQL role through shared session
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ruxel_fixture_perf_b
+        state: present
+        login_port: 40000

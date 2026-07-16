@@ -116,8 +116,9 @@ scripts enforce this path boundary. Historical real-workload captures were
 invalidated and removed.
 
 _Last updated: 2026-07-16. Six synthetic playbooks gated three-way; repeated
-36-action benchmark is Ruxel 3.12s vs Ansible 173.34s. Remaining: synthetic
-fixture coverage breadth, plan 021 timing, and plan 022 root-cause._
+36-action benchmark is Ruxel 3.12s vs Ansible 173.34s; snapshot/secret fixture
+is 4.41s vs 24.67s. Remaining: synthetic fixture coverage breadth and plan 022
+root-cause._
 
 **Implementation status: COMPLETE.** Every piece in ARCHITECTURE/SEMANTICS
 is built and verified: 36/36 modules (incl. PostgreSQL ×4 with SCRAM +

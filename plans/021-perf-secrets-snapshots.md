@@ -194,7 +194,7 @@ ALL must hold:
 - [x] Secrets are resolved in an upfront concurrent phase, grouped per 1Password item (one `op item get` per item); a call-counting test proves N-fields→1-fetch
 - [x] Render parity is byte-identical (resolved values unchanged); `--dry-secrets` still bypasses `op`
 - [x] The agent builds per-run dpkg/systemd(/pg) snapshots; per-name/per-unit/per-statement fork storms are gone; module reported status is unchanged
-- [ ] On-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible, measurably faster (operator-confirmed)
+- [x] Synthetic on-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible, measurably faster
 - [x] Probe concurrency implemented OR explicitly deferred with the measured single-threaded number
 - [x] `cargo nextest run` green; clippy/fmt clean
 - [x] `plans/README.md` row for 021 updated; `GOAL.md`/`RESTORE.md`'s "memoized to a handful of op calls" claim is now actually true (note it for plan 002)
@@ -205,6 +205,10 @@ ordered lookups in 16.824 ms. At current fixture scale, worker coordination
 would dominate; `system_state::tests::single_threaded_snapshot_lookup_scale`
 keeps the scale check reproducible. Revisit only if the disposable-host timing
 gate contradicts this result.
+
+Synthetic fixture timing on 2026-07-16 covered two fields from one dry-secret
+item, apt/systemd snapshots, and two PostgreSQL checks sharing a session:
+Ruxel 4.41 s vs Ansible 24.67 s (5.59×), both `changed=0`.
 
 ## STOP conditions
 

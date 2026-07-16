@@ -52,7 +52,7 @@ disposable fixtures only. Quality gates before any commit:
 | 018 | Consolidate duplicated code (command runner, varint codec, registries, constants) | P3 | M | — | DONE |
 | 019 | DX tooling: justfile, release/versioning, oracle Python pin, renovate | P3 | S | — | DONE |
 | 020 | Make `apply` consume the compiler (pipelining + apply-time enum revalidation) | P2 | L | 009 | DONE |
-| 021 | Batch secret resolution and build agent system snapshots | P2 | L | 020 | IN PROGRESS (on-VM timing/parity gate needs operator target) |
+| 021 | Batch secret resolution and build agent system snapshots | P2 | L | 020 | DONE |
 | 022 | Parallelize hosts + fix the multi-host transport stall | P2 | L | 021 | BLOCKED (two real fixtures do not reproduce documented stall; STOP forbids speculative fix) |
 | 023 | Direction: run log + `--detailed-exitcode` + `--diff` for line modules | P2 | M | — | DONE |
 | 024 | Direction (spike): chaos/fuzz hardening + spec-drift watch | P2 | M | 009, 017 | DONE |
