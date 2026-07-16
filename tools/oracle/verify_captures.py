@@ -19,6 +19,11 @@ FORBIDDEN_VALUES = re.compile(
 )
 
 
+def required_parity_stems(matrix_path):
+    matrix = json.loads(Path(matrix_path).read_text())
+    return {Path(entry["playbook"]).stem for entry in matrix}
+
+
 def walk(value, path=""):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -49,9 +54,22 @@ def main():
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    for manifest in sorted(Path("tools/oracle/parity").glob("*.json")):
+    manifests = sorted(Path("tools/oracle/parity").glob("*.json"))
+    required = required_parity_stems("tools/fixtures/parity-matrix.json")
+    present = {manifest.stem for manifest in manifests}
+    if present != required:
+        print(
+            "parity manifest matrix mismatch: "
+            f"missing={sorted(required - present)} extra={sorted(present - required)}",
+            file=sys.stderr,
+        )
+        return 1
+    for manifest in manifests:
         data = json.loads(manifest.read_text())
         stem = data["playbook"]
+        if manifest.stem != stem:
+            print(f"{manifest}: playbook stem mismatch", file=sys.stderr)
+            return 1
         names = {
             "fresh": f"fresh-{stem}.jsonl",
             "converged": f"converged-{stem}.jsonl",
@@ -59,6 +77,15 @@ def main():
         }
         for mode, name in names.items():
             capture = Path("tools/oracle/captures") / name
+            proof = data["modes"][mode]
+            required_proof = (
+                {"result_parity": True, "state_parity": True}
+                if mode != "check_diff"
+                else {"result_parity": True, "state_contract": True}
+            )
+            if any(proof.get(key) is not value for key, value in required_proof.items()):
+                print(f"{manifest}: incomplete {mode} proof", file=sys.stderr)
+                return 1
             digest = hashlib.sha256(capture.read_bytes()).hexdigest()
             if digest != data["modes"][mode]["capture_sha256"]:
                 print(f"{manifest}: stale {mode} capture hash", file=sys.stderr)

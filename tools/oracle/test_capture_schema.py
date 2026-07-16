@@ -1,7 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from normalize_capture import normalize
-from verify_captures import walk
+from verify_captures import required_parity_stems, walk
 
 
 class CaptureSchemaTests(unittest.TestCase):
@@ -18,6 +21,15 @@ class CaptureSchemaTests(unittest.TestCase):
             walk({"value": "/Users/operator/private"})
         with self.assertRaises(ValueError):
             walk({"value": "550e8400-e29b-41d4-a716-446655440000"})
+
+    def test_parity_matrix_requires_every_declared_playbook(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps([
+                {"playbook": "alpha.yml"},
+                {"playbook": "nested.name.yaml"},
+            ]))
+            self.assertEqual(required_parity_stems(path), {"alpha", "nested.name"})
 
 
 if __name__ == "__main__":
