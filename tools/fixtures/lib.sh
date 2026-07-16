@@ -46,8 +46,16 @@ resolve_fixture() {
     *) die "refusing target ${name@Q}: expected ruxel-fixture-* provider identity" ;;
   esac
   require_context
-  hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name \
-    | grep -Fxq "$name" \
+  local attempt found=0
+  for attempt in 1 2 3 4; do
+    if hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null \
+      | grep -Fxq "$name"; then
+      found=1
+      break
+    fi
+    [ "$attempt" -eq 4 ] || sleep "$attempt"
+  done
+  [ "$found" -eq 1 ] \
     || die "refusing target ${name@Q}: not a labeled fixture in ruxel-fixtures"
   FIXTURE_NAME="$name"
   FIXTURE_IP="$(hcloud server ip "$name")"

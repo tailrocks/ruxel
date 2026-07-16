@@ -1,7 +1,7 @@
 {
   "binaries": {
-    "agent_sha256": "93ae7b1d6c80e003587982c8b3ad8394656fab36806f46537eb1cb117851f0c4",
-    "controller_sha256": "0f18586e00333555c70edd0f4e3755495d50b71009d7ab984e3a6f96625da8d8"
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "8a054d3feb2e76a8690eecedb94b644477b4700e9bfb7c461a6008f319e4c7c0"
   },
   "fixture_spec": {
     "image": "debian-12",

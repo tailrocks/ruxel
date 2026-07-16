@@ -1,7 +1,7 @@
 {
   "binaries": {
     "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
-    "controller_sha256": "36c35899d29e5300c082b93bc0a103704183995d3b404d5b008de2369010fa58"
+    "controller_sha256": "8a054d3feb2e76a8690eecedb94b644477b4700e9bfb7c461a6008f319e4c7c0"
   },
   "fixture_spec": {
     "image": "debian-12",
@@ -22,7 +22,7 @@
       "state_parity": true
     },
     "fresh": {
-      "capture_sha256": "de9133596971c322a5121fbd0baf2360cbaa34af5b726a39fb0ba0f789a69c65",
+      "capture_sha256": "9639a9bef2ca57b3d1f176d0d92bb6cf21d3549d87e01920f5cf9a6bb42643a8",
       "result_parity": true,
       "state_parity": true
     }

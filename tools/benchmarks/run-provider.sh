@@ -11,16 +11,17 @@ REPS="${4:-3}"
 RESULTS_ROOT="${5:-docs/benchmarks/results}"
 
 case "$CASE" in
-  fresh) playbook=files-content.yml; group=all; scenario=fresh; prepare=; dry= ;;
-  converged) playbook=files-content.yml; group=all; scenario=converged; prepare=; dry= ;;
-  one-task-drift) playbook=files-content.yml; group=all; scenario=one-task-drift; prepare=; dry= ;;
-  check-diff) playbook=files-content.yml; group=all; scenario=check-diff; prepare=; dry= ;;
+  fresh) playbook=benchmarks/files.yml; parity_playbook=files-content.yml; group=all; scenario=fresh; prepare=; dry= ;;
+  converged) playbook=benchmarks/files.yml; parity_playbook=files-content.yml; group=all; scenario=converged; prepare=; dry= ;;
+  one-task-drift) playbook=benchmarks/files.yml; parity_playbook=files-content.yml; group=all; scenario=one-task-drift; prepare=; dry= ;;
+  check-diff) playbook=benchmarks/files.yml; parity_playbook=files-content.yml; group=all; scenario=check-diff; prepare=; dry= ;;
   secret) playbook=performance-snapshots.yml; group=performance; scenario=converged; prepare=postgresql; dry=1 ;;
   storage) playbook=storage-ext4.yml; group=storage; scenario=converged; prepare=storage-ext4; dry= ;;
   postgresql) playbook=postgresql-ownership.yml; group=postgresql; scenario=converged; prepare=postgresql; dry= ;;
-  simulated-rtt) playbook=files-content.yml; group=all; scenario=simulated-rtt; prepare=; dry= ;;
+  simulated-rtt) playbook=benchmarks/files.yml; parity_playbook=files-content.yml; group=all; scenario=simulated-rtt; prepare=; dry= ;;
   *) echo "benchmark: case must be one of fresh, converged, one-task-drift, check-diff, secret, storage, postgresql, simulated-rtt" >&2; exit 2 ;;
 esac
+parity_playbook="${parity_playbook:-$playbook}"
 case "$REPS" in ''|*[!0-9]*) echo "benchmark: repetitions must be an integer >=3" >&2; exit 2;; esac
 [ "$REPS" -ge 3 ] || { echo "benchmark: repetitions must be >=3" >&2; exit 2; }
 [ -x "$CONTROLLER" ] || { echo "benchmark: controller is not executable" >&2; exit 2; }
@@ -28,7 +29,7 @@ case "$REPS" in ''|*[!0-9]*) echo "benchmark: repetitions must be an integer >=3
 CONTROLLER="$(realpath "$CONTROLLER")"
 AGENT="$(realpath "$AGENT")"
 PLAYBOOK="$(realpath "tools/fixture-project/$playbook")"
-PARITY="tools/oracle/parity/${playbook%.yml}.json"
+PARITY="tools/oracle/parity/${parity_playbook%.yml}.json"
 [ -f "$PARITY" ] || die "missing correctness manifest: $PARITY"
 controller_sha="$(sha256sum "$CONTROLLER" | cut -d' ' -f1)"
 agent_sha="$(sha256sum "$AGENT" | cut -d' ' -f1)"
@@ -191,7 +192,7 @@ expected = ("Exercise command mapping and creates" if sys.argv[2] == "one-task-d
             else "Exercise managed block")
 assert changed == [expected], f"expected exactly one drifted task {expected!r}, got {changed!r}"
 PY
-  elif [ "$scenario" != fresh ]; then
+  elif [ "$scenario" = converged ] && [ "$playbook" = benchmarks/files.yml ]; then
     python3 - "$rraw" <<'PY'
 import json, sys
 changed = [record.get("task") for record in map(json.loads, open(sys.argv[1]))

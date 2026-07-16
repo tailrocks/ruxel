@@ -1,7 +1,7 @@
 {
   "binaries": {
     "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
-    "controller_sha256": "36c35899d29e5300c082b93bc0a103704183995d3b404d5b008de2369010fa58"
+    "controller_sha256": "8a054d3feb2e76a8690eecedb94b644477b4700e9bfb7c461a6008f319e4c7c0"
   },
   "fixture_spec": {
     "image": "debian-12",
@@ -12,17 +12,17 @@
   },
   "modes": {
     "check_diff": {
-      "capture_sha256": "9e982a653d51255ed632472b285b91d7a0a73d73a37d14df65043f59a0cd947a",
+      "capture_sha256": "fe8e81923952a0e7da7160afa8e132145a7dafb3461d03c3879dcc5018838d0f",
       "result_parity": true,
       "state_contract": true
     },
     "converged": {
-      "capture_sha256": "411a8a6a34e5f6d1e9e5521f51bf84bd828945098e76d1e2353770120bb0b6de",
+      "capture_sha256": "a7283bf1b5132e14196d7141c95c990598eeb34afd18d40d2f7716bf08fa910c",
       "result_parity": true,
       "state_parity": true
     },
     "fresh": {
-      "capture_sha256": "31cf2c392724add3e4cdb534cacd76655893ebce3a8fd7ac9eb8bf27191bcf48",
+      "capture_sha256": "57f7b77d20badd1681cd3a1542344912a94c353636ac0a307d4b4164565d7774",
       "result_parity": true,
       "state_parity": true
     }

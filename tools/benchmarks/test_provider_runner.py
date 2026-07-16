@@ -42,7 +42,7 @@ class ProviderRunnerSafetyTests(unittest.TestCase):
     def test_only_committed_fixture_playbooks_are_selected(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         expected = {
-            "files-content.yml",
+            "benchmarks/files.yml",
             "performance-snapshots.yml",
             "storage-ext4.yml",
             "postgresql-ownership.yml",

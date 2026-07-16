@@ -40,7 +40,8 @@ create_fixture() {
   [ -n "$CREATED_NAME" ] && [ -n "$CREATED_KEY" ] || die "fixture creation output incomplete"
 }
 
-while IFS= read -r entry; do
+exec 3< <(jq -c '.[]' "$MATRIX")
+while IFS= read -r entry <&3; do
   playbook="$(jq -r .playbook <<<"$entry")"
   stem="${playbook%.yml}"
   [ -z "$only" ] || [ "$only" = "$stem" ] || continue
@@ -73,6 +74,7 @@ while IFS= read -r entry; do
   tools/fixtures/destroy.sh "$ruxel_fixture"
   tools/fixtures/destroy.sh "$ansible_fixture"
   active=()
-done < <(jq -c '.[]' "$MATRIX")
+done
+exec 3<&-
 
 echo "PARITY MATRIX PASS${only:+: $only}"
