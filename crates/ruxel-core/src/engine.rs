@@ -742,6 +742,27 @@ fn lookup_fn(
 mod tests {
     use super::*;
     use crate::playbook::Condition;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountingResolver(Arc<AtomicUsize>);
+
+    impl LookupResolver for CountingResolver {
+        fn onepassword(
+            &self,
+            item: &str,
+            _field: Option<&str>,
+            _vault: Option<&str>,
+            _section: Option<&str>,
+        ) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(item.to_string())
+        }
+
+        fn pipe(&self, cmd: &str) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(cmd.to_string())
+        }
+    }
 
     fn engine() -> Engine {
         Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
@@ -944,13 +965,19 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn lookup_dry_secrets_deterministic_and_memoized() {
-        let e = engine();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let e = Engine::new(Arc::new(MemoizedResolver::new(CountingResolver(
+            calls.clone(),
+        ))));
         let s = Scope::new();
         let t = "{{ lookup('community.general.onepassword', 'titan SSH', field='private key', vault='ChainArgos') }}";
         let a = e.render_str(t, &s).unwrap();
         let b = e.render_str(t, &s).unwrap();
         assert_eq!(a.as_str(), b.as_str());
-        assert!(a.as_str().unwrap().starts_with("dry-secret-"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        e.render_str("{{ lookup('pipe', 'printf distinct') }}", &s)
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]

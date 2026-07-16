@@ -74,7 +74,16 @@ jobs:
         working-directory: tools/oracle
         run: |
           uv sync --locked
+          uv run ansible-galaxy collection install -r galaxy-requirements.yml -p galaxy
           uv run python render_parity.py
+
+      - name: Verify every synthetic fixture with Ansible
+        env:
+          ANSIBLE_COLLECTIONS_PATH: tools/oracle/galaxy
+          ANSIBLE_DEPRECATION_WARNINGS: "False"
+        run: >-
+          tools/oracle/.venv/bin/ansible-playbook -i 'localhost,' --syntax-check
+          tools/fixture-project/*.yml
 
       - name: Verify render oracle is reproducible
         run: git diff --exit-code -- tools/oracle/captures/render-parity.jsonl

@@ -72,13 +72,28 @@
         - always
 
     - name: Exercise retries and until
-      command: /usr/bin/true
+      shell: >-
+        test -f /tmp/ruxel-fixture-retry-marker && exit 0;
+        touch /tmp/ruxel-fixture-retry-marker; exit 1
       register: fixture_retry
       until: fixture_retry.rc == 0
       retries: 3
       delay: 1
       changed_when: false
       failed_when: false
+
+    - name: Exercise ignored failure
+      command: /usr/bin/false
+      ignore_errors: yes
+
+    - name: Exercise rescue transition
+      block:
+        - name: Trigger synthetic rescue
+          command: /usr/bin/false
+      rescue:
+        - name: Record rescued synthetic state
+          set_fact:
+            fixture_rescued: true
 
     - name: Exercise literal assertion failure message
       assert:
