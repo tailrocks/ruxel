@@ -193,13 +193,13 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] `apply` calls `compiler::compile` and drives execution from the compiled plan
-- [ ] Rendered enum params are re-validated at apply time (out-of-surface template → hard error, matching `plan`)
-- [ ] Consecutive `Static` tasks batch into one wire `Plan`; the agent drains them without per-task controller stalls
-- [ ] `Deferred` tasks render from arriving registers and stream as `PlanPatch`
-- [ ] Playbook order, notify, register shapes, and failure-stop are preserved (all 009 tests + goldens green)
+- [x] `apply` calls `compiler::compile` and drives execution from the compiled plan
+- [x] Rendered enum params are re-validated at apply time (out-of-surface template → hard error, matching `plan`)
+- [x] Consecutive `Static` tasks batch into one wire `Plan`; the agent drains them without per-task controller stalls
+- [x] `Deferred` tasks render from arriving registers and stream as `PlanPatch`
+- [x] Playbook order, notify, register shapes, and failure-stop are preserved (all 009 tests + goldens green)
 - [ ] On-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible (operator-confirmed)
-- [ ] `cargo nextest run` green; clippy/fmt clean
+- [x] `cargo nextest run` green; clippy/fmt clean
 - [ ] `plans/README.md` row for 020 updated
 
 ## STOP conditions

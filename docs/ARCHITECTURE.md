@@ -136,10 +136,10 @@ the controller.
 
 ## 4. Register-dependency pipelining
 
-> **Build status (2026-07): NOT YET BUILT.** This is the plan 020 target.
-> Current `apply` execution is linear: the controller sends one task and waits
-> for its result before rendering the next. The compiler DAG currently serves
-> `plan`, not `apply`.
+> **Build status (2026-07): BUILT.** `apply` consumes the compiler plan,
+> dispatches maximal runs of dependency-free agent tasks as one issue window,
+> and sends register-dependent tasks as `PlanPatch` messages. Controller-side
+> tasks and complex controls remain ordering boundaries.
 
 The workload's pattern: `stat` a set of disks → `register` → `when`/`loop`
 over results → `readlink` → `register` → LVM tasks templated from that.
@@ -149,10 +149,10 @@ round-trip stalls becoming the bottleneck:
 
 - The compiler splits the task list into **issue windows**: maximal runs of
   consecutive tasks whose params/conditions are already rendered.
-- Window N is streaming results while the controller renders window N+1
-  from arriving `register_payload`s. The added latency per dependency edge
-  is one controller round-trip (~RTT, tens of ms to Hetzner) — paid only at
-  true data dependencies, of which the playbooks have a handful, not 65.
+- The controller consumes each window's ordered result stream, binds arriving
+  register payloads, then renders and patches the next ready window. Added
+  latency is one controller round-trip per true dependency boundary, not per
+  task.
 - `assert`, `set_fact`, `debug`, `fail` and `when`-only evaluation execute
   entirely on the controller (no agent round-trip at all).
 
