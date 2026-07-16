@@ -1,0 +1,32 @@
+{
+  "binaries": {
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "36c35899d29e5300c082b93bc0a103704183995d3b404d5b008de2369010fa58"
+  },
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "4d70617ce198cea7b9d3b7400e31640638a466961480b6872518c43fa774aa09",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "13fd6767fb72985b85bf434083df1ea17eb6b8bc59b9df44e873203c3a7a594f",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "82dc70aeaae43c9d117e47e8616b9773aed56edbd71e5233e443a2f6400bb012",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "postgresql-ownership",
+  "schema": 1
+}
