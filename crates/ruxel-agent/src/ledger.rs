@@ -278,3 +278,179 @@ fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let id = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "ruxel-ledger-test-{}-{name}-{id}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn file(&self, name: &str, content: &[u8]) -> PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, content).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn record_file(ledger: &mut Ledger, key: &str, path: &Path) {
+        ledger.record(
+            key,
+            "file",
+            &json!({"path": path}),
+            "ok",
+            &json!({"changed": true, "marker": "kept"}),
+        );
+    }
+
+    #[test]
+    fn load_missing_ledger_is_empty() {
+        let dir = Scratch::new("missing");
+        assert!(Ledger::load(&dir.0).cached_ok("missing").is_none());
+    }
+
+    #[test]
+    fn flush_noop_when_not_dirty() {
+        let dir = Scratch::new("flush-noop");
+        Ledger::load(&dir.0).flush();
+        assert!(!dir.0.join("ledger/ledger.json").exists());
+    }
+
+    #[test]
+    fn record_then_flush_then_load_roundtrips() {
+        let dir = Scratch::new("roundtrip");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        ledger.flush();
+
+        let result = Ledger::load(&dir.0).cached_ok("key").unwrap();
+        assert_eq!(result["changed"], false);
+        assert_eq!(result["marker"], "kept");
+    }
+
+    #[test]
+    fn corrupt_ledger_json_loads_empty() {
+        let dir = Scratch::new("corrupt");
+        std::fs::create_dir_all(dir.0.join("ledger")).unwrap();
+        std::fs::write(dir.0.join("ledger/ledger.json"), b"not json").unwrap();
+        assert!(Ledger::load(&dir.0).cached_ok("key").is_none());
+    }
+
+    #[test]
+    fn cached_ok_hits_when_content_unchanged() {
+        let dir = Scratch::new("hit");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        assert_eq!(ledger.cached_ok("key").unwrap()["changed"], false);
+    }
+
+    #[test]
+    fn cached_ok_misses_when_content_changed() {
+        let dir = Scratch::new("content-drift");
+        let file = dir.file("target", b"before");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        std::fs::write(&file, b"after").unwrap();
+        assert!(ledger.cached_ok("key").is_none());
+    }
+
+    #[test]
+    fn cached_ok_misses_on_agent_version_change() {
+        let dir = Scratch::new("version-drift");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        ledger.flush();
+
+        let path = dir.0.join("ledger/ledger.json");
+        let mut stored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        stored["key"]["agent_version"] = json!("0.0.0-test");
+        std::fs::write(path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        assert!(Ledger::load(&dir.0).cached_ok("key").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_ok_hits_even_when_mode_changed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = Scratch::new("mode-drift");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "key", &file);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        // BUG(plan 006, CORRECTNESS-01): File probes ignore mode/owner.
+        assert!(ledger.cached_ok("key").is_some());
+    }
+
+    #[test]
+    fn record_skips_failed_and_skipped() {
+        let dir = Scratch::new("status-gate");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        for status in ["failed", "skipped"] {
+            ledger.record(status, "file", &json!({"path": file}), status, &json!({}));
+            assert!(ledger.cached_ok(status).is_none());
+        }
+    }
+
+    #[test]
+    fn record_skips_noncacheable_modules() {
+        let dir = Scratch::new("honesty-gate");
+        let mut ledger = Ledger::load(&dir.0);
+        for (key, module, params) in [
+            ("command", "command", json!({})),
+            ("shell", "shell", json!({})),
+            (
+                "restart",
+                "systemd",
+                json!({"name": "unused", "state": "restarted"}),
+            ),
+        ] {
+            ledger.record(key, module, &params, "ok", &json!({}));
+            assert!(ledger.cached_ok(key).is_none());
+        }
+    }
+
+    #[test]
+    fn record_skips_empty_key() {
+        let dir = Scratch::new("empty-key");
+        let file = dir.file("target", b"stable");
+        let mut ledger = Ledger::load(&dir.0);
+        record_file(&mut ledger, "", &file);
+        assert!(ledger.records.is_empty());
+    }
+
+    #[test]
+    fn record_considers_apt_latest_for_package_probes() {
+        let params = json!({"name": "not-queried", "state": "latest"});
+
+        // BUG(plan 006, CORRECTNESS-02): latest is not excluded before package
+        // probing. Assert the state-independent name path without invoking
+        // dpkg-query on the test machine.
+        assert_eq!(pkg_names(&params), Some(vec!["not-queried".to_string()]));
+    }
+}
