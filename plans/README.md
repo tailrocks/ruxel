@@ -42,7 +42,7 @@ disposable fixtures only. Quality gates before any commit:
 | 008 | Honor `no_log` agent-side; stop persisting secrets at rest | P1 | M | 005 | DONE |
 | 009 | Add a test seam to the scheduler control flow | P1 | M | — | DONE |
 | 010 | Fix register-on-skip and block keyword/always inheritance | P1 | M | 009 | DONE |
-| 011 | Fix PostgreSQL idempotence (default_privs, role flags) + flag allowlist | P1 | M | — | TODO |
+| 011 | Fix PostgreSQL idempotence (default_privs, role flags) + flag allowlist | P1 | M | — | DONE |
 | 012 | Fix module correctness bugs (lvol, replace, file, low-conf cluster) | P2 | M | — | TODO |
 | 013 | Make parse/usage errors exit 2 per the documented contract | P2 | S | — | TODO |
 | 014 | Close symlink-follow + injection surfaces in write/exec modules | P1 | M | — | TODO |

@@ -85,6 +85,41 @@ fn validate_privs(privs: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_role_attr_flags(flags: &str) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "SUPERUSER",
+        "NOSUPERUSER",
+        "CREATEDB",
+        "NOCREATEDB",
+        "CREATEROLE",
+        "NOCREATEROLE",
+        "INHERIT",
+        "NOINHERIT",
+        "LOGIN",
+        "NOLOGIN",
+        "REPLICATION",
+        "NOREPLICATION",
+        "BYPASSRLS",
+        "NOBYPASSRLS",
+    ];
+    for flag in role_flag_tokens(flags) {
+        if !ALLOWED.contains(&flag.as_str()) {
+            return Err(format!(
+                "postgresql_user: role attribute {flag:?} outside the closed surface"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn role_flag_tokens(flags: &str) -> Vec<String> {
+    flags
+        .split([',', ' '])
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_uppercase())
+        .collect()
+}
+
 /// Quote an SQL string literal.
 fn lit(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
@@ -166,6 +201,9 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err(format!(
             "postgresql_user: state {state:?} outside the closed surface"
         ));
+    }
+    if let Some(flags) = role_attr_flags {
+        validate_role_attr_flags(flags)?;
     }
 
     let exists = psql(
@@ -307,16 +345,45 @@ fn flags_changed(ctx: &ExecContext, port: &str, name: &str, flags: &str) -> Resu
         port,
         None,
         &format!(
-            "SELECT rolsuper,rolcreaterole,rolcreatedb,rolreplication FROM pg_roles WHERE rolname={}",
+            "SELECT rolsuper,rolcreaterole,rolcreatedb,rolinherit,rolcanlogin,rolreplication,rolbypassrls FROM pg_roles WHERE rolname={}",
             lit(name)
         ),
     )?;
     let cols: Vec<&str> = row.split('|').collect();
-    let is_super = cols.first() == Some(&"t");
-    let wants_super =
-        flags.to_uppercase().contains("SUPERUSER") && !flags.to_uppercase().contains("NOSUPERUSER");
-    // The workload only toggles SUPERUSER; broaden if more flags appear.
-    Ok(is_super != wants_super)
+    let mappings = [
+        ("SUPERUSER", 0),
+        ("CREATEROLE", 1),
+        ("CREATEDB", 2),
+        ("INHERIT", 3),
+        ("LOGIN", 4),
+        ("REPLICATION", 5),
+        ("BYPASSRLS", 6),
+    ];
+    for (flag, column) in mappings {
+        if let Some(wanted) = wanted_flag(flags, flag) {
+            let actual = match cols.get(column) {
+                Some(&"t") => true,
+                Some(&"f") => false,
+                _ => return Err("postgresql_user: malformed pg_roles flag row".into()),
+            };
+            if actual != wanted {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn wanted_flag(flags: &str, positive: &str) -> Option<bool> {
+    let tokens = role_flag_tokens(flags);
+    let negative = format!("NO{positive}");
+    if tokens.iter().any(|flag| flag == &negative) {
+        Some(false)
+    } else if tokens.iter().any(|flag| flag == positive) {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 // -- postgresql_schema ------------------------------------------------------
@@ -389,7 +456,14 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             schema,
             privs_list,
         )?,
-        "default_privs" => true, // pg_default_acl compare below decides; see grant
+        "default_privs" => privs_missing_default(
+            ctx,
+            &port,
+            login_db,
+            role,
+            schema.unwrap_or("public"),
+            privs_list,
+        )?,
         other => {
             return Err(format!(
                 "postgresql_privs: type {other:?} outside the closed surface"
@@ -538,6 +612,43 @@ fn privs_missing_table(
     Ok(false)
 }
 
+fn default_priv_query(role: &str, schema: &str, privilege: &str) -> String {
+    format!(
+        "SELECT 1 FROM pg_default_acl d \
+         JOIN pg_namespace n ON n.oid=d.defaclnamespace, \
+         aclexplode(d.defaclacl) a \
+         WHERE d.defaclobjtype='r' AND n.nspname={} \
+         AND d.defaclrole=(SELECT oid FROM pg_roles WHERE rolname=current_user) \
+         AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname={}) \
+         AND a.privilege_type={} LIMIT 1",
+        lit(schema),
+        lit(role),
+        lit(&privilege.to_uppercase())
+    )
+}
+
+fn privs_missing_default(
+    ctx: &ExecContext,
+    port: &str,
+    db: &str,
+    role: &str,
+    schema: &str,
+    privs: &str,
+) -> Result<bool, String> {
+    for privilege in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let held = psql(
+            ctx,
+            port,
+            Some(db),
+            &default_priv_query(role, schema, privilege),
+        )?;
+        if held != "1" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn grant_sql(
     typ: &str,
     role: &str,
@@ -648,6 +759,8 @@ fn b64_decode(s: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn b64_roundtrip() {
         for s in ["", "f", "fo", "foo", "foob", "fooba", "foobar"] {
@@ -670,5 +783,34 @@ mod tests {
         // 2-char tail (12 bits → 1 byte) is the case the first impl botched.
         assert_eq!(super::b64_decode("nA==").unwrap(), vec![0x9c]);
         assert_eq!(super::b64_decode("tA==").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn role_attribute_allowlist_accepts_boolean_flags() {
+        assert!(validate_role_attr_flags("SUPERUSER,CREATEDB").is_ok());
+        assert!(validate_role_attr_flags("NOLOGIN").is_ok());
+    }
+
+    #[test]
+    fn role_attribute_allowlist_rejects_statement_injection() {
+        assert!(validate_role_attr_flags("SUPERUSER; DROP ROLE synthetic").is_err());
+        assert!(validate_role_attr_flags("CONNECTION LIMIT 5").is_err());
+    }
+
+    #[test]
+    fn wanted_role_flag_handles_positive_negative_and_absent() {
+        assert_eq!(wanted_flag("CREATEDB", "CREATEDB"), Some(true));
+        assert_eq!(wanted_flag("NOCREATEDB", "CREATEDB"), Some(false));
+        assert_eq!(wanted_flag("LOGIN", "CREATEDB"), None);
+    }
+
+    #[test]
+    fn default_privilege_query_targets_explicit_table_acl() {
+        let query = default_priv_query("synthetic_role", "public", "select");
+        assert!(query.contains("pg_default_acl"));
+        assert!(query.contains("aclexplode(d.defaclacl)"));
+        assert!(query.contains("d.defaclobjtype='r'"));
+        assert!(query.contains("a.grantee=(SELECT oid FROM pg_roles"));
+        assert!(query.contains("a.privilege_type='SELECT'"));
     }
 }
