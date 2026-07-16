@@ -83,9 +83,11 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
     let engine = if args.dry_secrets {
         Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
     } else {
-        Engine::new(Arc::new(MemoizedResolver::new(
-            ruxel_cli::secrets::OpResolver,
-        )))
+        let resolver = ruxel_cli::secrets::OpResolver::default();
+        resolver
+            .prefetch(ruxel_cli::secrets::discover_items(&pb_content))
+            .map_err(anyhow::Error::msg)?;
+        Engine::new(Arc::new(MemoizedResolver::new(resolver)))
     };
     let compiled = ruxel_core::compiler::compile(&playbook, &engine)
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;

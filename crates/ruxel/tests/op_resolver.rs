@@ -12,7 +12,7 @@ use ruxel_core::engine::LookupResolver;
 #[test]
 #[ignore = "needs a 1Password session (OP_SERVICE_ACCOUNT_TOKEN) + ruxel-test vault"]
 fn resolves_synthetic_vault_item() {
-    let r = OpResolver;
+    let r = OpResolver::default();
     let pw = r
         .onepassword(
             "ruxel-test PostgreSQL",
