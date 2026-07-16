@@ -50,6 +50,11 @@ fn blkid_type(dev: &str) -> Result<Option<String>, String> {
 }
 
 fn make(dev: &str, fstype: &str) -> Result<(), String> {
+    if !matches!(fstype, "xfs" | "ext4") {
+        return Err(format!(
+            "filesystem: fstype {fstype:?} outside the closed surface"
+        ));
+    }
     let bin = format!("mkfs.{fstype}");
     // xfs needs -f only when overwriting; on a blank dev it is harmless.
     let args: &[&str] = if fstype == "xfs" {
@@ -95,4 +100,13 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mkfs_program_is_allowlisted() {
+        let error = super::make("/does/not/matter", "xfs;touch /tmp/pwn").unwrap_err();
+        assert!(error.contains("outside the closed surface"));
+    }
 }

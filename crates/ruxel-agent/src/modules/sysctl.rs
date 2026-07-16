@@ -3,7 +3,7 @@
 //! comparison — runs of whitespace compare equal, exactly the rule
 //! multi-value keys like net.ipv4.ip_local_port_range need.
 
-use super::{ExecContext, bool_param, params_object, str_param};
+use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
 pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -15,6 +15,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Some(Value::Bool(b)) => if *b { "1" } else { "0" }.to_string(),
         other => return Err(format!("sysctl: invalid value {other:?}")),
     };
+    reject_newlines("sysctl", &[("name", name), ("value", &value)])?;
     let state = str_param(obj, "state").unwrap_or("present");
     if state != "present" {
         return Err(format!(
@@ -59,7 +60,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if changed && !ctx.check_mode {
         let mut content = out_lines.join("\n");
         content.push('\n');
-        std::fs::write(file, content).map_err(|e| e.to_string())?;
+        write_atomic(std::path::Path::new(file), content.as_bytes())?;
     }
 
     // Live value when sysctl_set.
@@ -115,6 +116,7 @@ fn read_sysctl(name: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     #[test]
     fn whitespace_normalization() {
         assert_eq!(
@@ -122,5 +124,18 @@ mod tests {
             super::normalized("1024 65535")
         );
         assert_eq!(super::normalized(" 1 "), "1");
+    }
+
+    #[test]
+    fn rejects_newline_in_name_or_value_before_io() {
+        let ctx = super::ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        assert!(super::run(&json!({"name": "safe\ninjected", "value": "1"}), &ctx).is_err());
+        assert!(super::run(&json!({"name": "safe", "value": "1\rinjected"}), &ctx).is_err());
     }
 }

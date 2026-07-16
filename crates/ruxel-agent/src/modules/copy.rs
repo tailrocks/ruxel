@@ -3,7 +3,7 @@
 //! when dest exists. The `src=` (controller-file) form arrives with the
 //! content-addressed blob channel.
 
-use super::{ExecContext, apply_attrs, bool_param, params_object, str_param};
+use super::{ExecContext, apply_attrs, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -34,14 +34,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             result["diff"] = json!(super::unified_diff(&before, content));
         }
         if !ctx.check_mode {
-            let tmp = p.with_file_name(format!(
-                ".{}.ruxel-tmp",
-                p.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "copy".into())
-            ));
-            std::fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
-            std::fs::rename(&tmp, p).map_err(|e| e.to_string())?;
+            write_atomic(p, content.as_bytes())?;
         }
     }
     if p.exists() || !ctx.check_mode {

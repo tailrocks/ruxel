@@ -2,7 +2,7 @@
 //! markers; replace the block's content in place, or append the whole
 //! block at EOF when absent. `create: yes` materializes a missing file.
 
-use super::{ExecContext, apply_attrs, bool_param, params_object, str_param};
+use super::{ExecContext, apply_attrs, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -51,7 +51,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = next != current;
     if changed && !ctx.check_mode {
-        std::fs::write(p, &next).map_err(|e| e.to_string())?;
+        write_atomic(p, next.as_bytes())?;
     }
     if p.exists() || !ctx.check_mode {
         apply_attrs(p, obj, &mut changed, ctx.check_mode)?;

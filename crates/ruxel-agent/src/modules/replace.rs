@@ -1,7 +1,7 @@
 //! `replace` (SEMANTICS §6): multiline regexp substitution over the whole
 //! file; changed iff the substitution altered content.
 
-use super::{ExecContext, params_object, str_param};
+use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};
 
@@ -23,7 +23,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let changed = next != current;
 
     if changed && !ctx.check_mode {
-        std::fs::write(path, next).map_err(|e| e.to_string())?;
+        write_atomic(std::path::Path::new(path), next.as_bytes())?;
     }
     Ok(json!({"changed": changed, "failed": false}))
 }

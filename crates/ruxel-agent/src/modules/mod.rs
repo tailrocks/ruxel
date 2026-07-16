@@ -30,6 +30,10 @@ mod systemd;
 mod user;
 
 use serde_json::{Map, Value, json};
+use std::io::Write;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct ExecContext {
     pub check_mode: bool,
@@ -141,6 +145,78 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
 }
 
 // -- Shared helpers -----------------------------------------------------------
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    write_atomic_with(path, bytes, None, None)
+}
+
+/// Same-directory exclusive temp plus rename: never follows the destination.
+pub(super) fn write_atomic_with(
+    path: &Path,
+    bytes: &[u8],
+    mode: Option<u32>,
+    owner: Option<(u32, u32)>,
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent", path.display()))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("{} has no file name", path.display()))?;
+    let existing = std::fs::symlink_metadata(path).ok().filter(|m| m.is_file());
+    let final_mode = mode
+        .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
+        .unwrap_or(0o600);
+    let final_owner = owner.or_else(|| existing.as_ref().map(|m| (m.uid(), m.gid())));
+
+    for _ in 0..100 {
+        let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(
+            ".{}.ruxel-{}-{seq}.tmp",
+            name.to_string_lossy(),
+            std::process::id()
+        ));
+        let opened = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(final_mode)
+            .open(&temp);
+        let mut file = match opened {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        };
+        let result = (|| {
+            file.write_all(bytes).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(final_mode))
+                .map_err(|e| e.to_string())?;
+            if let Some((uid, gid)) = final_owner {
+                std::os::unix::fs::chown(&temp, Some(uid), Some(gid)).map_err(|e| e.to_string())?;
+            }
+            std::fs::rename(&temp, path).map_err(|e| e.to_string())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        return result;
+    }
+    Err(format!(
+        "could not create atomic temporary file for {}",
+        path.display()
+    ))
+}
+
+pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(), String> {
+    for (name, value) in fields {
+        if value.contains(['\n', '\r']) {
+            return Err(format!("{module}: {name} must be a single line"));
+        }
+    }
+    Ok(())
+}
 
 /// Build a std::process::Command, wrapped in `runuser -u <user> --` when the
 /// task set `become_user` (SEMANTICS §1: the task runs as that uid/gid with
@@ -275,4 +351,31 @@ fn apply_attrs(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::write_atomic;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn atomic_write_replaces_symlink_not_its_target() {
+        let root = std::env::temp_dir().join(format!("ruxel-atomic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir(&root).unwrap();
+        let victim = root.join("victim");
+        let dest = root.join("dest");
+        std::fs::write(&victim, "safe").unwrap();
+        symlink(&victim, &dest).unwrap();
+        write_atomic(&dest, b"replacement").unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "safe");
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "replacement");
+        assert!(
+            !std::fs::symlink_metadata(&dest)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

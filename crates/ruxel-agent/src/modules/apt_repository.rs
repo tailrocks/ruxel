@@ -3,7 +3,7 @@
 //! content changed; update_cache refreshes lists after a change (cache
 //! refresh itself never reports changed — same pin as apt).
 
-use super::{ExecContext, bool_param, params_object, str_param};
+use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -34,7 +34,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let changed = current != want;
 
     if changed && !ctx.check_mode {
-        std::fs::write(&path, &want).map_err(|e| e.to_string())?;
+        write_atomic(&path, want.as_bytes())?;
         if update_cache {
             let out = std::process::Command::new("apt-get")
                 .arg("update")

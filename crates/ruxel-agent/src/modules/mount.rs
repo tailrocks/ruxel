@@ -4,7 +4,7 @@
 //! the workload uses defaults) — so a converged rerun is no-change even
 //! though Ansible writes its own whitespace.
 
-use super::{ExecContext, params_object, str_param};
+use super::{ExecContext, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
 const FSTAB: &str = "/etc/fstab";
@@ -16,6 +16,17 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let fstype = str_param(obj, "fstype").ok_or("mount: fstype required")?;
     let opts = str_param(obj, "opts").unwrap_or("defaults");
     let state = str_param(obj, "state").unwrap_or("mounted");
+    reject_newlines(
+        "mount",
+        &[
+            ("src", src),
+            ("path", path),
+            ("fstype", fstype),
+            ("opts", opts),
+            ("dump", "0"),
+            ("pass", "0"),
+        ],
+    )?;
     if state != "mounted" {
         return Err(format!("mount: state {state:?} outside the closed surface"));
     }
@@ -51,7 +62,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if changed && !ctx.check_mode {
         let mut content = lines.join("\n");
         content.push('\n');
-        std::fs::write(FSTAB, content).map_err(|e| e.to_string())?;
+        write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
     }
 
     // 2. actually mounted?
@@ -91,4 +102,31 @@ fn is_mounted(path: &str) -> Result<bool, String> {
         .lines()
         .filter_map(|l| l.split_whitespace().nth(1))
         .any(|mp| mp == path))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn rejects_newline_in_fstab_fields_before_io() {
+        let ctx = super::ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        for (field, value) in [
+            ("path", "/mnt\nbad"),
+            ("src", "/dev/x\rbad"),
+            ("fstype", "xfs\nbad"),
+            ("opts", "defaults\nbad"),
+        ] {
+            let mut params =
+                json!({"path": "/mnt/x", "src": "/dev/x", "fstype": "xfs", "opts": "defaults"});
+            params[field] = json!(value);
+            assert!(super::run(&params, &ctx).is_err(), "field {field}");
+        }
+    }
 }

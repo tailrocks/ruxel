@@ -3,7 +3,7 @@
 //! also matches elsewhere); else replace the LAST regexp match; else
 //! append at EOF. absent = delete matching lines.
 
-use super::{ExecContext, params_object, str_param};
+use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};
 
@@ -68,7 +68,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if had_trailing_nl || !content.is_empty() {
             content.push('\n');
         }
-        std::fs::write(path, content).map_err(|e| e.to_string())?;
+        write_atomic(std::path::Path::new(path), content.as_bytes())?;
     }
 
     Ok(

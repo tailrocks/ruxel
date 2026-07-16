@@ -181,12 +181,12 @@ mkfs/LVM). Live behavior is the on-VM gate.
 
 ALL must hold:
 
-- [ ] `authorized_key` refuses a symlinked `.ssh`/`authorized_keys` and writes via in-dir temp + atomic rename (test proves the pointed-to file is untouched)
-- [ ] Content modules write via a shared `write_atomic` (temp+rename), not `std::fs::write` on the target path
-- [ ] `sysctl`/`mount` reject newline-bearing single-line field values
-- [ ] `filesystem` allowlists `fstype ∈ {xfs, ext4}` before building `mkfs.<fstype>`
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 014 updated
+- [x] `authorized_key` refuses a symlinked `.ssh`/`authorized_keys` and writes via in-dir temp + atomic rename (test proves the pointed-to file is untouched)
+- [x] Content modules write via a shared `write_atomic` (temp+rename), not `std::fs::write` on the target path
+- [x] `sysctl`/`mount` reject newline-bearing single-line field values
+- [x] `filesystem` allowlists `fstype ∈ {xfs, ext4}` before building `mkfs.<fstype>`
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 014 updated
 
 ## STOP conditions
 
