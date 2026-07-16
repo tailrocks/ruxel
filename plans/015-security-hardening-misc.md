@@ -194,12 +194,12 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] The mux socket resolves under a 0700 user-private dir, not `/tmp`
-- [ ] The agent's remote hash is re-verified before spawn (or SECURITY-08 explicitly deferred with a TODO + status note)
-- [ ] Secret-bearing `engine.rs` types no longer derive `Debug`; a test proves values aren't printed
-- [ ] The committed-capture credential is surfaced for operator rotation (no value reproduced; no capture file edited)
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 015 updated + the D follow-up note recorded
+- [x] The mux socket resolves under a 0700 user-private dir, not `/tmp`
+- [x] The agent's remote hash is re-verified before spawn (or SECURITY-08 explicitly deferred with a TODO + status note)
+- [x] Secret-bearing `engine.rs` types no longer derive `Debug`; a test proves values aren't printed
+- [x] The committed-capture credential is surfaced for operator rotation (no value reproduced; no capture file edited)
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 015 updated + the D follow-up note recorded
 
 ## STOP conditions
 

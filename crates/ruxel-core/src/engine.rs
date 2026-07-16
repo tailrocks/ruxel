@@ -151,17 +151,37 @@ impl<R: LookupResolver> LookupResolver for MemoizedResolver<R> {
 /// One variable binding: either a raw (possibly template-bearing) YAML value
 /// rendered lazily on first reference (play vars), or an already-final value
 /// (facts, register results, loop `item`).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum VarValue {
     Raw(Yaml),
     Final(Value),
 }
 
+impl std::fmt::Debug for VarValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raw(_) => f.write_str("Raw(<redacted>)"),
+            Self::Final(_) => f.write_str("Final(<redacted>)"),
+        }
+    }
+}
+
 /// Layered variable scope, lowest→highest precedence (SEMANTICS §2: play
 /// vars → set_fact → register; loop `item` and task vars on top).
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct Scope {
     layers: Vec<Arc<Vec<(String, VarValue)>>>,
+}
+
+impl std::fmt::Debug for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scope")
+            .field(
+                "layers",
+                &format_args!("<redacted; {} layers>", self.layers.len()),
+            )
+            .finish()
+    }
 }
 
 impl Scope {
@@ -201,12 +221,22 @@ impl Scope {
 /// raw values through the engine at first access (Ansible's lazy semantics —
 /// an unused broken var is never an error) and memoizing per evaluation
 /// context.
-#[derive(Debug)]
 struct ScopeObject {
     engine: Arc<EngineInner>,
     scope: Scope,
     memo: Mutex<HashMap<String, Value>>,
     in_flight: Mutex<HashSet<String>>,
+}
+
+impl std::fmt::Debug for ScopeObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScopeObject")
+            .field("engine", &"<redacted>")
+            .field("scope", &"<redacted>")
+            .field("memo", &"<redacted>")
+            .field("in_flight", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Object for ScopeObject {
@@ -691,6 +721,22 @@ mod tests {
                 })
                 .collect(),
         )
+    }
+
+    #[test]
+    fn scope_debug_redacts_values() {
+        let marker = "synthetic-debug-marker";
+        let scope = scope(&[("credential", serde_json::json!(marker))]);
+        let object = engine().scope_object(&scope);
+        object
+            .memo
+            .lock()
+            .unwrap()
+            .insert("credential".into(), Value::from(marker));
+
+        assert!(!format!("{scope:?}").contains(marker));
+        assert!(!format!("{object:?}").contains(marker));
+        assert!(!format!("{:?}", VarValue::Final(Value::from(marker))).contains(marker));
     }
 
     #[test]

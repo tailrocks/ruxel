@@ -102,6 +102,11 @@ Downgraded to hygiene: capture with `RUXEL_DRY_SECRETS=1` going forward. The
 committed `op://` refs / GCP key filename remain a minor "is this intended?"
 question for the operator.
 
+**F-SEC-06/08/10 — resolved (2026-07-16):** ControlMaster sockets now live in
+a mode-0700 XDG runtime or home directory; cached and freshly uploaded agents
+are SHA-256 verified remotely before execution; secret-bearing engine scope
+types use redacted manual `Debug` implementations with regression coverage.
+
 **Security leads that checked out CLEAN** (verified complete, not findings):
 git argv flag-smuggling guards (commit 670ece4); get_url `--` + scheme check;
 apt_repository filename validation; PG SQL-via-stdin (no password in argv) +

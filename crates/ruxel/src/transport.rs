@@ -17,6 +17,8 @@ use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
+use sha2::{Digest, Sha256};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -51,7 +53,12 @@ struct Master {
 
 impl Master {
     async fn establish(destination: &str, options: &ConnectOptions) -> Result<Self> {
-        let socket = std::env::temp_dir().join(format!(
+        let socket_dir = socket_dir()?;
+        std::fs::create_dir_all(&socket_dir)
+            .with_context(|| format!("create socket directory {}", socket_dir.display()))?;
+        std::fs::set_permissions(&socket_dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("secure socket directory {}", socket_dir.display()))?;
+        let socket = socket_dir.join(format!(
             "ruxel-mux-{}-{:x}",
             std::process::id(),
             std::time::SystemTime::now()
@@ -138,6 +145,16 @@ impl Master {
         cmd.status().await.context("ssh exec")
     }
 
+    async fn exec_output(&self, argv: &[&str]) -> Result<std::process::Output> {
+        let mut cmd = self.client();
+        cmd.arg("--");
+        for arg in argv {
+            cmd.arg(arg);
+        }
+        cmd.stdin(Stdio::null()).stderr(Stdio::piped());
+        cmd.output().await.context("ssh exec output")
+    }
+
     async fn close(mut self) {
         let _ = Command::new("ssh")
             .arg("-S")
@@ -153,6 +170,21 @@ impl Master {
         let _ = self.process.kill().await;
         let _ = std::fs::remove_file(&self.socket);
     }
+}
+
+fn socket_dir() -> Result<PathBuf> {
+    socket_dir_from(
+        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn socket_dir_from(xdg_runtime: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(runtime) = xdg_runtime {
+        return Ok(runtime.join("ruxel"));
+    }
+    home.map(|home| home.join(".ruxel/cp"))
+        .context("neither XDG_RUNTIME_DIR nor HOME is set for SSH control socket")
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
@@ -294,12 +326,12 @@ impl AgentConnection {
 /// executable file, nothing moves; otherwise upload via an SFTP channel on
 /// the same master and mark executable. Returns whether an upload happened.
 async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Result<bool> {
-    if master
+    let exists = master
         .exec_status(&["test", "-x", remote_path])
         .await?
-        .success()
-    {
-        return Ok(false); // already provisioned at this hash
+        .success();
+    if exists && remote_agent_hash_matches(master, remote_path, bytes).await? {
+        return Ok(false);
     }
 
     master
@@ -352,7 +384,29 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
         .then_some(())
         .context("chmod agent")?;
 
+    if !remote_agent_hash_matches(master, remote_path, bytes).await? {
+        bail!("uploaded agent failed remote content verification");
+    }
+
     Ok(true)
+}
+
+async fn remote_agent_hash_matches(
+    master: &Master,
+    remote_path: &str,
+    bytes: &[u8],
+) -> Result<bool> {
+    let output = master.exec_output(&["sha256sum", remote_path]).await?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    let remote = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let expected = format!("{:x}", Sha256::digest(bytes));
+    Ok(remote == expected)
 }
 
 // -- Async framing (same wire format as ruxel_proto::frame) -----------------
@@ -395,4 +449,22 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
     let mut body = vec![0u8; len as usize];
     r.read_exact(&mut body).await?;
     Ok(Some(M::decode(body.as_slice())?))
+}
+
+#[cfg(test)]
+mod transport_security_tests {
+    use super::socket_dir_from;
+    use std::path::PathBuf;
+
+    #[test]
+    fn socket_directory_is_private_location_not_tmp() {
+        assert_eq!(
+            socket_dir_from(Some(PathBuf::from("/run/user/1000")), None).unwrap(),
+            PathBuf::from("/run/user/1000/ruxel")
+        );
+        assert_eq!(
+            socket_dir_from(None, Some(PathBuf::from("/home/operator"))).unwrap(),
+            PathBuf::from("/home/operator/.ruxel/cp")
+        );
+    }
 }

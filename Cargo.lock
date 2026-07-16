@@ -894,6 +894,7 @@ dependencies = [
  "ruxel-proto",
  "serde_json",
  "serde_norway",
+ "sha2",
  "tokio",
 ]
 

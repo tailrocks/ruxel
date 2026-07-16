@@ -46,7 +46,7 @@ disposable fixtures only. Quality gates before any commit:
 | 012 | Fix module correctness bugs (lvol, replace, file, low-conf cluster) | P2 | M | — | DONE |
 | 013 | Make parse/usage errors exit 2 per the documented contract | P2 | S | — | DONE |
 | 014 | Close symlink-follow + injection surfaces in write/exec modules | P1 | M | — | DONE |
-| 015 | Misc security hardening (mux socket, agent re-hash, Debug, capture) | P2 | S | — | TODO |
+| 015 | Misc security hardening (mux socket, agent re-hash, Debug, capture) | P2 | S | — | DONE |
 | 016 | Unit-test the 18 untested agent modules' pure decision logic | P2 | L | — | TODO |
 | 017 | Protocol integration + frame edge-case tests | P2 | M | — | TODO |
 | 018 | Consolidate duplicated code (command runner, varint codec, registries, constants) | P3 | M | — | TODO |
