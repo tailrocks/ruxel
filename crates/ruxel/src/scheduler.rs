@@ -17,6 +17,42 @@ use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
 use std::collections::BTreeSet;
 use std::io::Write;
 
+/// Scheduler boundary for one fully rendered agent iteration.
+#[allow(async_fn_in_trait)]
+pub trait AgentExec {
+    async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value>;
+}
+
+impl AgentExec for AgentConnection {
+    async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value> {
+        let task_id = task.task_id;
+        self.send(&v1::Envelope {
+            msg: Some(EnvMsg::Plan(v1::Plan {
+                tasks: vec![task],
+                blobs_referenced: vec![],
+            })),
+        })
+        .await?;
+
+        loop {
+            let event = self.next_event().await?.context("agent closed mid-task")?;
+            match event.msg {
+                Some(EvMsg::TaskStart(_)) | Some(EvMsg::Log(_)) => continue,
+                Some(EvMsg::TaskResult(res)) if res.task_id == task_id => {
+                    let json = if res.result_json.is_empty() {
+                        serde_json::json!({})
+                    } else {
+                        serde_json::from_slice(&res.result_json)?
+                    };
+                    return Ok(to_mj(json));
+                }
+                Some(EvMsg::Crash(c)) => bail!("agent crashed: {} at {}", c.message, c.location),
+                other => bail!("unexpected agent event mid-task: {other:?}"),
+            }
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Recap {
     pub ok: u32,
@@ -35,9 +71,9 @@ pub enum OutputFormat {
     Json,
 }
 
-struct HostRun<'a> {
+struct HostRun<'a, A> {
     engine: &'a Engine,
-    conn: &'a mut AgentConnection,
+    agent: &'a mut A,
     playbook_dir: std::path::PathBuf,
     host: String,
     play_vars: Vec<(String, VarValue)>,
@@ -53,7 +89,7 @@ struct HostRun<'a> {
     tags_filter: Option<Vec<String>>,
 }
 
-impl HostRun<'_> {
+impl<A> HostRun<'_, A> {
     /// Whether a task runs under the active --tags filter, given the tags
     /// inherited from any enclosing block.
     fn tag_selected(&self, task: &Task, inherited: &[String]) -> bool {
@@ -68,12 +104,12 @@ impl HostRun<'_> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn run_play(
+pub async fn run_play<A: AgentExec>(
     play: &Play,
     host: &str,
     facts: &v1::Facts,
     engine: &Engine,
-    conn: &mut AgentConnection,
+    agent: &mut A,
     playbook_dir: &std::path::Path,
     format: OutputFormat,
     tags_filter: Option<Vec<String>>,
@@ -81,7 +117,7 @@ pub async fn run_play(
 ) -> Result<Recap> {
     let mut run = HostRun {
         engine,
-        conn,
+        agent,
         playbook_dir: playbook_dir.to_path_buf(),
         host: host.to_string(),
         play_vars: play
@@ -136,7 +172,7 @@ fn fact_layer(facts: &v1::Facts) -> Vec<(String, VarValue)> {
         .collect()
 }
 
-impl HostRun<'_> {
+impl<A: AgentExec> HostRun<'_, A> {
     fn scope(&self, task_vars: &[(String, serde_norway::Value)]) -> Scope {
         let mut scope = Scope::new()
             .with_layer(self.play_vars.clone())
@@ -580,53 +616,24 @@ impl HostRun<'_> {
             h.finalize().to_hex().to_string()
         };
 
-        self.conn
-            .send(&v1::Envelope {
-                msg: Some(EnvMsg::Plan(v1::Plan {
-                    tasks: vec![v1::RenderedTask {
-                        task_id,
-                        name: label(task),
-                        module: module.to_string(),
-                        rendered: true,
-                        iterations: vec![v1::Iteration {
-                            item_label,
-                            params_json: params_bytes,
-                            free_form,
-                            ledger_key,
-                        }],
-                        check_mode_override: task.check_mode == Some(false),
-                        no_log: task.no_log,
-                        become_user: task.become_user.clone().unwrap_or_default(),
-                        environment,
-                    }],
-                    blobs_referenced: vec![],
-                })),
+        self.agent
+            .run_iteration(v1::RenderedTask {
+                task_id,
+                name: label(task),
+                module: module.to_string(),
+                rendered: true,
+                iterations: vec![v1::Iteration {
+                    item_label,
+                    params_json: params_bytes,
+                    free_form,
+                    ledger_key,
+                }],
+                check_mode_override: task.check_mode == Some(false),
+                no_log: task.no_log,
+                become_user: task.become_user.clone().unwrap_or_default(),
+                environment,
             })
-            .await?;
-
-        loop {
-            let event = self
-                .conn
-                .next_event()
-                .await?
-                .context("agent closed mid-task")?;
-            match event.msg {
-                Some(EvMsg::TaskStart(_)) => continue,
-                Some(EvMsg::Log(_)) => continue,
-                Some(EvMsg::TaskResult(res)) if res.task_id == task_id => {
-                    let json: serde_json::Value = if res.result_json.is_empty() {
-                        serde_json::json!({})
-                    } else {
-                        serde_json::from_slice(&res.result_json)?
-                    };
-                    return Ok(to_mj(json));
-                }
-                Some(EvMsg::Crash(c)) => {
-                    bail!("agent crashed: {} at {}", c.message, c.location)
-                }
-                other => bail!("unexpected agent event mid-task: {other:?}"),
-            }
-        }
+            .await
     }
 
     /// Recap accounting mirrors Ansible's: `ok` includes changed tasks;
@@ -756,4 +763,129 @@ fn result_truthy(result: &Value, key: &str) -> bool {
 
 fn result_failed(result: &Value) -> bool {
     result_truthy(result, "failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ruxel_core::engine::{DrySecrets, MemoizedResolver};
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct FakeAgent {
+        scripted: VecDeque<serde_json::Value>,
+        calls: Vec<v1::RenderedTask>,
+    }
+
+    impl FakeAgent {
+        fn with_results(results: impl IntoIterator<Item = serde_json::Value>) -> Self {
+            Self {
+                scripted: results.into_iter().collect(),
+                calls: Vec::new(),
+            }
+        }
+    }
+
+    impl AgentExec for FakeAgent {
+        async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value> {
+            self.calls.push(task);
+            Ok(to_mj(self.scripted.pop_front().unwrap_or_else(
+                || serde_json::json!({"changed": true, "failed": false}),
+            )))
+        }
+    }
+
+    async fn run(
+        yaml: &str,
+        results: impl IntoIterator<Item = serde_json::Value>,
+    ) -> (Recap, FakeAgent, String) {
+        let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
+        let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let mut agent = FakeAgent::with_results(results);
+        let mut output = Vec::new();
+        let recap = run_play(
+            &playbook.plays[0],
+            "test-host",
+            &v1::Facts::default(),
+            &engine,
+            &mut agent,
+            std::path::Path::new("."),
+            OutputFormat::Human,
+            None,
+            &mut output,
+        )
+        .await
+        .unwrap();
+        (recap, agent, String::from_utf8(output).unwrap())
+    }
+
+    #[tokio::test]
+    async fn command_changed_updates_recap() {
+        let (recap, agent, _) = run(
+            "- hosts: all\n  tasks:\n    - name: run\n      command: echo hi\n",
+            [],
+        )
+        .await;
+        assert_eq!(recap.ok, 1);
+        assert_eq!(recap.changed, 1);
+        assert_eq!(agent.calls.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn false_when_skips_without_agent_call() {
+        let (recap, agent, _) = run(
+            "- hosts: all\n  tasks:\n    - name: skip\n      command: echo hi\n      when: false\n",
+            [],
+        )
+        .await;
+        assert_eq!(recap.skipped, 1);
+        assert!(agent.calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn loop_when_skips_only_false_item() {
+        let (recap, agent, _) = run(
+            "- hosts: all\n  tasks:\n    - name: loop\n      command: echo hi\n      loop: [1, 2]\n      when: item == 2\n",
+            [],
+        )
+        .await;
+        assert_eq!(recap.changed, 1);
+        assert_eq!(agent.calls.len(), 1);
+        assert_eq!(agent.calls[0].iterations[0].item_label, "2");
+    }
+
+    #[tokio::test]
+    async fn changed_when_false_overrides_agent_result() {
+        let (recap, _, _) = run(
+            "- hosts: all\n  tasks:\n    - name: stable\n      command: echo hi\n      changed_when: false\n",
+            [],
+        )
+        .await;
+        assert_eq!(recap.ok, 1);
+        assert_eq!(recap.changed, 0);
+    }
+
+    #[tokio::test]
+    async fn rescue_continues_after_block_failure() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: guarded\n      block:\n        - name: fail inside\n          command: 'false'\n      rescue:\n        - name: recover\n          command: 'true'\n    - name: after\n      command: 'true'\n";
+        let results = [
+            serde_json::json!({"changed": false, "failed": true}),
+            serde_json::json!({"changed": false, "failed": false}),
+            serde_json::json!({"changed": false, "failed": false}),
+        ];
+        let (recap, agent, _) = run(yaml, results).await;
+        assert_eq!(recap.rescued, 1);
+        assert_eq!(agent.calls.len(), 3, "task after rescued block must run");
+    }
+
+    #[tokio::test]
+    async fn notified_handler_runs_at_play_end() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: change\n      command: echo hi\n      notify: restart service\n  handlers:\n    - name: restart service\n      command: echo restart\n";
+        let (recap, agent, _) = run(yaml, []).await;
+        assert_eq!(recap.ok, 2);
+        assert_eq!(recap.changed, 2);
+        assert_eq!(agent.calls.len(), 2);
+        assert_eq!(agent.calls[1].name, "restart service");
+    }
 }
