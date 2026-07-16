@@ -9,6 +9,7 @@
 mod facts;
 mod ledger;
 mod modules;
+mod system_state;
 
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
@@ -107,6 +108,7 @@ fn serve() -> i32 {
     let mut diff_mode = false;
     let mut no_cache = false;
     let mut ledger = ledger::Ledger::load(&dir);
+    let mut system_state = system_state::SystemState::default();
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -169,6 +171,7 @@ fn serve() -> i32 {
                         diff_mode,
                         no_cache,
                         &mut ledger,
+                        &mut system_state,
                     ) {
                         break;
                     }
@@ -204,6 +207,7 @@ fn execute_task(
     diff_mode: bool,
     no_cache: bool,
     ledger: &mut ledger::Ledger,
+    system_state: &mut system_state::SystemState,
 ) -> bool {
     let task_check_mode = check_mode && !task.check_mode_override;
     for iteration in &task.iterations {
@@ -251,7 +255,7 @@ fn execute_task(
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
-            && let Some(cached) = ledger.cached_ok(&iteration.ledger_key)
+            && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
         {
             send_result(out, task, iteration, "ok", false, &cached, start);
             continue;
@@ -291,16 +295,23 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
-        let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
+        let outcome = modules::execute(
+            &task.module,
+            &params,
+            &iteration.free_form,
+            &ctx,
+            system_state,
+        );
         // Record the converged fingerprint (real applies only — check mode
         // didn't change the system, so its state isn't authoritative).
         if !task_check_mode && !task.no_log {
-            ledger.record(
+            ledger.record_with_state(
                 &iteration.ledger_key,
                 &task.module,
                 &params,
                 outcome.status,
                 &outcome.result,
+                system_state,
             );
         }
         send_result(

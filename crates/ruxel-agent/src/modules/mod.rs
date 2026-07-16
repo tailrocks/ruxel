@@ -99,7 +99,13 @@ impl Outcome {
     }
 }
 
-pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext) -> Outcome {
+pub fn execute(
+    module: &str,
+    params: &Value,
+    free_form: &str,
+    ctx: &ExecContext,
+    system_state: &mut crate::system_state::SystemState,
+) -> Outcome {
     if !is_implemented(module) {
         return Outcome::from_result(json!({
             "failed": true,
@@ -108,7 +114,7 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
         }));
     }
     let result = match module {
-        "apt" => apt::run(params, ctx),
+        "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx),
         "blockinfile" => blockinfile::run(params, ctx),
         "lineinfile" => lineinfile::run(params, ctx),
@@ -132,7 +138,7 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
         "stat" => stat::run(params),
         "copy" => copy::run(params, ctx),
         "slurp" => slurp::run(params),
-        "systemd" | "service" => systemd::run(params, ctx),
+        "systemd" | "service" => systemd::run(params, ctx, system_state),
         "community.postgresql.postgresql_db" => postgresql::db(params, ctx),
         "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
         "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
@@ -524,7 +530,13 @@ mod security_tests {
             .map(|surface| surface.name)
             .filter(|name| !CONTROLLER_ONLY.contains(name))
         {
-            let outcome = super::execute(module, &serde_json::Value::Null, "", &context);
+            let outcome = super::execute(
+                module,
+                &serde_json::Value::Null,
+                "",
+                &context,
+                &mut crate::system_state::SystemState::default(),
+            );
             assert!(
                 !outcome.result["msg"]
                     .as_str()

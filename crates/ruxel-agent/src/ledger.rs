@@ -55,7 +55,7 @@ enum Probe {
 
 impl Probe {
     /// True if the current system still matches this recorded fingerprint.
-    fn verify(&self) -> bool {
+    fn verify(&self, system_state: &mut crate::system_state::SystemState) -> bool {
         match self {
             Probe::File {
                 path,
@@ -74,12 +74,16 @@ impl Probe {
                 uid,
                 gid,
             } => file_attrs(Path::new(path)) == Some((*mode, *uid, *gid, true)),
-            Probe::Pkg { name, version } => dpkg_version(name).as_deref() == Some(version.as_str()),
+            Probe::Pkg { name, version } => {
+                system_state.package_version(name).as_deref() == Some(version.as_str())
+            }
             Probe::Unit {
                 name,
                 active,
                 enabled,
-            } => unit_active(name) == *active && unit_enabled(name) == *enabled,
+            } => system_state
+                .unit(name)
+                .is_ok_and(|unit| unit.active == *active && unit.enabled == *enabled),
             Probe::SysctlKV { file, name, value } => {
                 sysctl_file_value(file, name).as_deref() == Some(value.as_str())
             }
@@ -153,13 +157,22 @@ impl Ledger {
     /// CachedOk verdict: a record for this key, same agent version, and
     /// every fingerprint still verifies. Returns the result to replay
     /// (changed forced false — the task is converged).
+    #[cfg(test)]
     pub fn cached_ok(&self, key: &str) -> Option<Value> {
+        self.cached_ok_with_state(key, &mut crate::system_state::SystemState::default())
+    }
+
+    pub fn cached_ok_with_state(
+        &self,
+        key: &str,
+        system_state: &mut crate::system_state::SystemState,
+    ) -> Option<Value> {
         let key = self.storage_key(key)?;
         let rec = self.records.get(&key)?;
         if rec.agent_version != env!("CARGO_PKG_VERSION") {
             return None;
         }
-        if rec.probes.is_empty() || !rec.probes.iter().all(Probe::verify) {
+        if rec.probes.is_empty() || !rec.probes.iter().all(|probe| probe.verify(system_state)) {
             return None;
         }
         let mut result = rec.result_json.clone();
@@ -171,6 +184,7 @@ impl Ledger {
 
     /// Record a freshly-executed task's fingerprints, if its module is
     /// cacheable. No-op for always-execute modules (probe_for → None).
+    #[cfg(test)]
     pub fn record(
         &mut self,
         key: &str,
@@ -179,10 +193,29 @@ impl Ledger {
         status: &str,
         result: &Value,
     ) {
+        self.record_with_state(
+            key,
+            module,
+            params,
+            status,
+            result,
+            &mut crate::system_state::SystemState::default(),
+        );
+    }
+
+    pub fn record_with_state(
+        &mut self,
+        key: &str,
+        module: &str,
+        params: &Value,
+        status: &str,
+        result: &Value,
+        system_state: &mut crate::system_state::SystemState,
+    ) {
         if key.is_empty() || status == "failed" || status == "skipped" {
             return;
         }
-        let Some(probes) = probe_for(module, params) else {
+        let Some(probes) = probe_for(module, params, system_state) else {
             return;
         };
         if probes.is_empty() {
@@ -271,7 +304,11 @@ fn set_mode(_path: &Path, _mode: u32) {}
 /// Cacheable registry: content/file modules, apt present (not latest),
 /// non-restarted systemd/service, and sysctl. Every other dispatch arm is
 /// intentionally always-execute until it gains an honest probe here.
-fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
+fn probe_for(
+    module: &str,
+    params: &Value,
+    system_state: &mut crate::system_state::SystemState,
+) -> Option<Vec<Probe>> {
     let s = |k: &str| params.get(k).and_then(Value::as_str);
     match module {
         "file" | "copy" | "template" | "lineinfile" | "replace" | "blockinfile" => {
@@ -311,7 +348,7 @@ fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
             }
             let mut probes = Vec::new();
             for name in names {
-                let version = dpkg_version(&name)?;
+                let version = system_state.package_version(&name)?;
                 probes.push(Probe::Pkg { name, version });
             }
             Some(probes)
@@ -324,8 +361,8 @@ fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
             }
             Some(vec![Probe::Unit {
                 name: name.to_string(),
-                active: unit_active(name),
-                enabled: unit_enabled(name),
+                active: system_state.unit(name).ok()?.active,
+                enabled: system_state.unit(name).ok()?.enabled,
             }])
         }
         "sysctl" | "ansible.posix.sysctl" => {
@@ -406,39 +443,6 @@ fn read_sysctl(name: &str) -> Option<String> {
     std::fs::read_to_string(path)
         .ok()
         .map(|s| s.trim().to_string())
-}
-
-fn dpkg_version(name: &str) -> Option<String> {
-    let out = std::process::Command::new("dpkg-query")
-        .args(["-W", "-f", "${Status}|${Version}", name])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout);
-    let (status, version) = s.split_once('|')?;
-    if status.contains("install ok installed") {
-        Some(version.trim().to_string())
-    } else {
-        None
-    }
-}
-
-fn unit_active(name: &str) -> bool {
-    std::process::Command::new("systemctl")
-        .args(["is-active", name])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
-        .unwrap_or(false)
-}
-
-fn unit_enabled(name: &str) -> bool {
-    std::process::Command::new("systemctl")
-        .args(["is-enabled", name])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
-        .unwrap_or(false)
 }
 
 fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
@@ -679,7 +683,14 @@ mod tests {
     #[test]
     fn apt_latest_is_not_cached() {
         let params = json!({"name": "not-queried", "state": "latest"});
-        assert!(probe_for("apt", &params).is_none());
+        assert!(
+            probe_for(
+                "apt",
+                &params,
+                &mut crate::system_state::SystemState::default()
+            )
+            .is_none()
+        );
     }
 
     #[cfg(unix)]
@@ -717,7 +728,7 @@ mod tests {
                 name: "ruxel.test.nonexistent".to_string(),
                 value: "1".to_string(),
             }
-            .verify()
+            .verify(&mut crate::system_state::SystemState::default())
         );
     }
 

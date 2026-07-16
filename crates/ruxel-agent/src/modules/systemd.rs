@@ -8,7 +8,11 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub fn run(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut crate::system_state::SystemState,
+) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name");
     let state = str_param(obj, "state");
@@ -24,13 +28,13 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if st.1 != 0 {
             return Err(format!("daemon-reload failed: {}", st.2));
         }
+        system_state.invalidate_units();
         // Pinned: reload runs but does not report changed.
     }
 
     if let Some(unit) = name {
         if let Some(want_enabled) = enabled {
-            let (out, _, _) = systemctl(&["is-enabled", unit])?;
-            let is_enabled = is_enabled(&out);
+            let is_enabled = system_state.unit(unit)?.enabled;
             if is_enabled != want_enabled {
                 changed = true;
                 if !ctx.check_mode {
@@ -39,13 +43,13 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     if st.1 != 0 {
                         return Err(format!("systemctl {verb} {unit}: {}", st.2));
                     }
+                    system_state.invalidate_units();
                 }
             }
         }
 
         if let Some(state) = state {
-            let (out, _, _) = systemctl(&["is-active", unit])?;
-            let active = is_active(&out);
+            let active = system_state.unit(unit)?.active;
             if state_needs_action(state, active)? {
                 changed = true;
                 if !ctx.check_mode {
@@ -59,6 +63,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     if st.1 != 0 {
                         return Err(format!("{verb} {unit}: {}", st.2));
                     }
+                    system_state.invalidate_units();
                 }
             }
         }
@@ -70,14 +75,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         "name": name,
         "status": {},
     }))
-}
-
-fn is_enabled(output: &str) -> bool {
-    output.trim() == "enabled"
-}
-
-fn is_active(output: &str) -> bool {
-    output.trim() == "active"
 }
 
 fn state_needs_action(state: &str, active: bool) -> Result<bool, String> {
@@ -107,9 +104,6 @@ fn systemctl(args: &[&str]) -> Result<(String, i32, String), String> {
 mod tests {
     #[test]
     fn parses_status_and_restart_is_always_action() {
-        assert!(super::is_active("active\n"));
-        assert!(!super::is_active("inactive\n"));
-        assert!(super::is_enabled("enabled\n"));
         assert!(!super::state_needs_action("started", true).unwrap());
         assert!(super::state_needs_action("stopped", true).unwrap());
         assert!(super::state_needs_action("restarted", false).unwrap());
