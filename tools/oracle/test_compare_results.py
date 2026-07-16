@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from compare_results import compare, normalize_value
+from compare_results import compare, normalize_diff, normalize_value
 
 
 class ResultParityTests(unittest.TestCase):
@@ -44,6 +44,12 @@ class ResultParityTests(unittest.TestCase):
             }, "lineinfile"),
             {"changed": True},
         )
+
+    def test_structured_and_unified_content_diffs_match(self):
+        structured = [{"before": "old\n", "after": "new\n",
+                       "before_header": "/tmp/file", "after_header": "/tmp/file"}]
+        unified = "--- before\n+++ after\n-old\n+new\n"
+        self.assertEqual(normalize_diff(structured), normalize_diff(unified))
 
 
 if __name__ == "__main__":

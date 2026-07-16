@@ -59,7 +59,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             return Ok(json!({"changed": true, "failed": false, "before": null, "after": null}));
         }
         let mut args: Vec<&str> = vec!["clone"];
-        if let Some(v) = version {
+        if let Some(v) = clone_branch(version) {
             args.push("--branch");
             args.push(v);
         }
@@ -119,6 +119,10 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }))
 }
 
+fn clone_branch(version: Option<&str>) -> Option<&str> {
+    version.filter(|version| *version != "HEAD")
+}
+
 fn validate_positionals(values: &[(&str, Option<&str>)]) -> Result<(), String> {
     for (label, value) in values {
         if value.is_some_and(|value| value.starts_with('-')) {
@@ -155,5 +159,7 @@ mod tests {
         assert_eq!(super::repo_action(true, false, false), "unchanged");
         assert_eq!(super::repo_action(true, true, true), "compare");
         assert_eq!(super::repo_action(true, true, false), "update");
+        assert_eq!(super::clone_branch(Some("HEAD")), None);
+        assert_eq!(super::clone_branch(Some("main")), Some("main"));
     }
 }

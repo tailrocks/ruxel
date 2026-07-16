@@ -11,6 +11,7 @@ RENDER_PREFIXES = (
     "filter:", "jinja-", "lookup:", "template:", "template-file:",
 )
 CONTROLLER_MODULES = {"assert", "debug", "fail", "pause", "set_fact"}
+PLAY_PREFIXES = ("document:", "play-key:", "shape:play-vars", "template:play-vars")
 
 
 def read_json(path: Path):
@@ -35,24 +36,26 @@ def capture_for(fixture: str, capture_root: Path) -> Path:
     return capture_root / f"{name}.jsonl"
 
 
-def render_locations(capture_root: Path) -> set[str]:
+def render_locations(capture_root: Path) -> tuple[set[str], set[str]]:
     path = capture_root / "render-parity.jsonl"
     locations = set()
+    playbooks = set()
     for line in path.read_text().splitlines():
         record = json.loads(line)
         playbook = record.get("playbook")
         task = record.get("task")
         if playbook and task:
             locations.add(f"{playbook}#{task}")
+            playbooks.add(playbook)
         if record.get("kind") == "template_file":
             locations.add(Path(record["src"]).name)
-    return locations
+    return locations, playbooks
 
 
 def build(required_path: Path, fixture_path: Path, capture_root: Path):
     required = read_json(required_path)
     fixtures = read_json(fixture_path)
-    render = render_locations(capture_root)
+    render, rendered_playbooks = render_locations(capture_root)
     cache: dict[Path, set[str]] = {}
     entries = {}
     missing = []
@@ -61,6 +64,14 @@ def build(required_path: Path, fixture_path: Path, capture_root: Path):
         candidates = []
         for location in sorted(fixtures.get("locations", {}).get(feature, [])):
             fixture, _, task = location.partition("#")
+            if feature.startswith(RENDER_PREFIXES) and not task and fixture in rendered_playbooks:
+                candidates.append({
+                    "fixture_task": f"{fixture}#(play vars)",
+                    "oracle": "tools/oracle/captures/render-parity.jsonl",
+                    "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+                    "state_assertion": "not-applicable: controller rendering",
+                })
+                continue
             if feature.startswith(RENDER_PREFIXES) and location in render:
                 candidates.append({
                     "fixture_task": location,
@@ -69,13 +80,19 @@ def build(required_path: Path, fixture_path: Path, capture_root: Path):
                     "state_assertion": "not-applicable: controller rendering",
                 })
                 continue
-            if not task or not fixture.endswith((".yml", ".yaml")):
+            if not fixture.endswith((".yml", ".yaml")):
                 continue
             capture = capture_for(fixture, capture_root)
             if not capture.exists():
                 continue
             tasks = cache.setdefault(capture, capture_tasks(capture))
-            if task not in tasks:
+            structural = (
+                feature.startswith(PLAY_PREFIXES)
+                or feature.startswith("shape:task-key.block")
+                or feature.startswith("shape:task-key.when")
+                or feature == "task-key:block"
+            )
+            if task and task not in tasks and not structural:
                 continue
             module = feature.removeprefix("module:") if feature.startswith("module:") else ""
             state = (
@@ -84,7 +101,7 @@ def build(required_path: Path, fixture_path: Path, capture_root: Path):
                 else "tools/fixtures/state-snapshot.sh"
             )
             candidates.append({
-                "fixture_task": location,
+                "fixture_task": location if task else f"{fixture}#(play)",
                 "oracle": str(capture),
                 "ruxel_assertion": "tools/oracle/compare_results.py",
                 "state_assertion": state,

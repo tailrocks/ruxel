@@ -7,6 +7,7 @@
 # Usage:
 #   tools/oracle/capture_fixture.sh <fixture-name> <keyfile> <playbook-path> <capture-name> [group]
 set -eu
+CALLER_PWD="$PWD"
 cd "$(dirname "$0")"
 
 FIXTURE="${1:?provider fixture name}"
@@ -14,6 +15,7 @@ KEY="${2:?ssh keyfile}"
 PLAYBOOK="${3:?playbook path}"
 NAME="${4:?capture name}"
 GROUP="${5:-nodes}"
+[ "${PLAYBOOK#/}" != "$PLAYBOOK" ] || PLAYBOOK="$CALLER_PWD/$PLAYBOOK"
 
 # shellcheck source=../fixtures/lib.sh
 . ../fixtures/lib.sh
@@ -54,6 +56,10 @@ if [ "${RUXEL_DRY_SECRETS:-}" = "1" ]; then
   [ -d "$GG" ] && cp collections/ansible_collections/community/general/plugins/lookup/onepassword.py "$GG/onepassword.py"
 fi
 
+ANSIBLE_ARGS=()
+[ "${RUXEL_CAPTURE_CHECK:-0}" = "1" ] && ANSIBLE_ARGS+=(--check)
+[ "${RUXEL_CAPTURE_DIFF:-0}" = "1" ] && ANSIBLE_ARGS+=(--diff)
+
 env $LOOKUP_ARGS \
 ANSIBLE_COLLECTIONS_PATH="$(pwd)/galaxy" \
 ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
@@ -63,7 +69,7 @@ ANSIBLE_HOST_KEY_CHECKING=False \
 ANSIBLE_SSH_ARGS="-o ControlMaster=no -o ControlPath=none" \
 ANSIBLE_SSH_COMMON_ARGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY}.known_hosts -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
 RUXEL_CAPTURE_FILE="captures/${NAME}.jsonl" \
-uv run ansible-playbook -i "$INV" "$PLAYBOOK"
+uv run ansible-playbook -i "$INV" "${ANSIBLE_ARGS[@]}" "$PLAYBOOK"
 
 python3 normalize_capture.py "captures/${NAME}.jsonl"
 

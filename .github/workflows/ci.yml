@@ -70,6 +70,17 @@ jobs:
           verify tools/spec-extract/workload-features.json
           tools/fixture-project
 
+      - name: Verify closed-surface evidence chain
+        run: |
+          cargo run -p ruxel-spec-extract -- fixture-manifest \
+            tools/fixture-project tools/spec-extract/fixture-features.json
+          python3 tools/spec-extract/build_evidence.py --verify \
+            tools/spec-extract/workload-features.json \
+            tools/spec-extract/fixture-features.json \
+            tools/oracle/captures tools/spec-extract/evidence-map.json
+          (cd tools/spec-extract && python3 -m unittest test_build_evidence.py)
+          git diff --exit-code -- tools/spec-extract/fixture-features.json
+
       - name: Regenerate synthetic Ansible render oracle
         working-directory: tools/oracle
         run: |

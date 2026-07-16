@@ -329,13 +329,16 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if !exists {
         changed = true;
         if !ctx.check_mode {
-            let mut sql = format!("CREATE ROLE {} LOGIN", ident(name));
+            let mut sql = format!("CREATE ROLE {}", ident(name));
+            let flags = role_attr_flags
+                .map(flags_to_sql)
+                .unwrap_or_else(|| "LOGIN".into());
+            if !flags.is_empty() {
+                sql.push(' ');
+                sql.push_str(&flags);
+            }
             if let Some(p) = password {
                 sql.push_str(&format!(" PASSWORD {}", lit(p)));
-            }
-            if let Some(f) = role_attr_flags {
-                sql.push(' ');
-                sql.push_str(&flags_to_sql(f));
             }
             psql(ctx, &port, None, &sql)?;
         }
@@ -577,7 +580,13 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     // changed iff at least one requested privilege is not already held.
     let needed = match typ {
-        "database" => privs_missing_database(ctx, &port, login_db, role, privs_list)?,
+        "database" => privs_missing_database(
+            ctx,
+            &port,
+            objs.ok_or("postgresql_privs: objs required for type=database")?,
+            role,
+            privs_list,
+        )?,
         "schema" => {
             privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), privs_list)?
         }
@@ -628,26 +637,28 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 fn privs_missing_database(
     ctx: &ExecContext,
     port: &str,
-    db: &str,
+    objs: &str,
     role: &str,
     privs: &str,
 ) -> Result<bool, String> {
-    for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        let held = psql(
-            ctx,
-            port,
-            None,
-            &format!(
-                "SELECT 1 FROM pg_database d, aclexplode(d.datacl) a \
-                 WHERE d.datname={} AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname={}) \
-                 AND a.privilege_type={} LIMIT 1",
-                lit(db),
-                lit(role),
-                lit(&p.to_uppercase())
-            ),
-        )?;
-        if held != "1" {
-            return Ok(true);
+    for db in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let held = psql(
+                ctx,
+                port,
+                None,
+                &format!(
+                    "SELECT 1 FROM pg_database d, aclexplode(d.datacl) a \
+                     WHERE d.datname={} AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname={}) \
+                     AND a.privilege_type={} LIMIT 1",
+                    lit(db),
+                    lit(role),
+                    lit(&p.to_uppercase())
+                ),
+            )?;
+            if held != "1" {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -814,7 +825,13 @@ fn grant_sql(
 ) -> Result<Vec<String>, String> {
     let r = ident(role);
     Ok(match typ {
-        "database" => vec![format!("GRANT {privs} ON DATABASE CURRENT_CATALOG TO {r}")],
+        "database" => objs
+            .ok_or("postgresql_privs: objs required for type=database")?
+            .split(',')
+            .map(str::trim)
+            .filter(|db| !db.is_empty())
+            .map(|db| format!("GRANT {privs} ON DATABASE {} TO {r}", ident(db)))
+            .collect(),
         "schema" => objs
             .unwrap_or("")
             .split(',')

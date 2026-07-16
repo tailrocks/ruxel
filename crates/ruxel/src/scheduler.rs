@@ -412,6 +412,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 ledger_key,
             }],
             check_mode_override: task.check_mode == Some(false),
+            force_check_mode: task.check_mode == Some(true),
             no_log: task.no_log,
             become_user: if task.becomes.or(inherited.becomes) == Some(false) {
                 String::new()
@@ -500,6 +501,10 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 if rescue.is_empty() {
                     host_failed = true;
                 } else {
+                    // Ansible moves the triggering failure from `failed` to
+                    // `rescued` when rescue succeeds/starts; it is not counted
+                    // as a terminal host failure in the recap.
+                    self.recap.failed = self.recap.failed.saturating_sub(1);
                     self.recap.rescued += 1;
                     for (sub, planned_sub) in rescue.iter().zip(planned_rescue) {
                         if Box::pin(self.run_task_or_block(
@@ -1004,6 +1009,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 ledger_key,
             }],
             check_mode_override: task.check_mode == Some(false),
+            force_check_mode: task.check_mode == Some(true),
             no_log: task.no_log,
             become_user: if task.becomes.or(inherited.becomes) == Some(false) {
                 String::new()
@@ -1027,8 +1033,8 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             .context("agent returned no result for iteration")
     }
 
-    /// Recap accounting mirrors Ansible's: `ok` includes changed tasks;
-    /// an ignored failure counts only under `ignored`.
+    /// Recap accounting mirrors Ansible's: `ok` includes changed tasks and
+    /// ignored failures; an ignored changed failure also increments changed.
     fn finish_task(
         &mut self,
         task: &Task,
@@ -1038,7 +1044,13 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         ignored: bool,
     ) {
         match status {
-            "failed" if ignored => self.recap.ignored += 1,
+            "failed" if ignored => {
+                self.recap.ignored += 1;
+                self.recap.ok += 1;
+                if result_truthy(&result, "changed") {
+                    self.recap.changed += 1;
+                }
+            }
             "failed" => self.recap.failed += 1,
             "skipped" => self.recap.skipped += 1,
             "changed" => {
@@ -1048,7 +1060,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             _ => self.recap.ok += 1,
         }
         let display = if task.no_log {
-            serde_json::to_string(&task_eval::censored_result(status == "changed", None))
+            serde_json::to_string(&censored_task_result(&result, status == "changed"))
                 .unwrap_or_default()
         } else if status == "failed" {
             serde_json::to_string(&result).unwrap_or_default()
@@ -1117,8 +1129,15 @@ fn task_event(
     ignored: bool,
 ) -> serde_json::Value {
     let event_result = if task.no_log {
-        serde_json::to_value(task_eval::censored_result(status == "changed", None))
-            .unwrap_or_default()
+        result
+            .map(|result| {
+                serde_json::to_value(censored_task_result(result, status == "changed"))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_else(|| {
+                serde_json::to_value(task_eval::censored_result(status == "changed", None))
+                    .unwrap_or_default()
+            })
     } else if let Some(result) = result {
         serde_json::to_value(result).unwrap_or_default()
     } else {
@@ -1134,6 +1153,23 @@ fn task_event(
         "ignored": ignored,
         "result": event_result,
     })
+}
+
+fn censored_task_result(result: &Value, changed: bool) -> Value {
+    let json = serde_json::to_value(result).unwrap_or_default();
+    let item_changes = json.get("results").and_then(|results| {
+        results.as_array().map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    item.get("changed")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+    task_eval::censored_result(changed, item_changes.as_deref())
 }
 
 fn label(task: &Task) -> String {
@@ -1603,6 +1639,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn no_log_loop_preserves_only_per_item_changed_shape() {
+        let result = Value::from_serialize(serde_json::json!({
+            "changed": true,
+            "results": [
+                {"changed": false, "stdout": "secret-one"},
+                {"changed": true, "stdout": "secret-two"}
+            ]
+        }));
+        let censored = serde_json::to_value(censored_task_result(&result, true)).unwrap();
+        assert_eq!(censored["changed"], true);
+        assert_eq!(censored["results"][0]["changed"], false);
+        assert_eq!(censored["results"][1]["changed"], true);
+        assert!(!censored.to_string().contains("secret"));
+    }
+
     #[tokio::test]
     async fn false_when_skips_without_agent_call() {
         let (recap, agent, _) = run(
@@ -1612,6 +1664,19 @@ mod tests {
         .await;
         assert_eq!(recap.skipped, 1);
         assert!(agent.calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ignored_changed_failure_counts_ok_changed_and_ignored() {
+        let (recap, _, _) = run(
+            "- hosts: all\n  tasks:\n    - command: /usr/bin/false\n      ignore_errors: true\n",
+            [serde_json::json!({"changed": true, "failed": true, "rc": 1})],
+        )
+        .await;
+        assert_eq!(recap.ok, 1);
+        assert_eq!(recap.changed, 1);
+        assert_eq!(recap.ignored, 1);
+        assert_eq!(recap.failed, 0);
     }
 
     #[tokio::test]
@@ -1668,6 +1733,7 @@ mod tests {
         ];
         let (recap, agent, _) = run(yaml, results).await;
         assert_eq!(recap.rescued, 1);
+        assert_eq!(recap.failed, 0);
         assert_eq!(agent.calls.len(), 3, "task after rescued block must run");
     }
 

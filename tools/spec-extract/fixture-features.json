@@ -642,16 +642,11 @@
     "shape:task-key.block[].value=mapping",
     "shape:task-key.block[].value=sequence",
     "shape:task-key.block[].value=string",
+    "shape:task-key.block[].value=template-exact",
     "shape:task-key.block[].value=template-mixed",
-    "shape:task-key.block[].value[]=sequence",
     "shape:task-key.block[].value[]=string",
     "shape:task-key.block[].value[]=template-exact",
     "shape:task-key.block[].value[]=template-mixed",
-    "shape:task-key.block[].value[][].value=sequence",
-    "shape:task-key.block[].value[][].value=string",
-    "shape:task-key.block[].value[][].value[]=string",
-    "shape:task-key.block[].value[][]=mapping",
-    "shape:task-key.block[].value[][]=template-exact",
     "shape:task-key.block[]=mapping",
     "shape:task-key.changed_when=bool",
     "shape:task-key.changed_when=string",
@@ -669,15 +664,9 @@
     "shape:task-key.loop=template-exact",
     "shape:task-key.loop[].value=string",
     "shape:task-key.loop[]=mapping",
-    "shape:task-key.loop[]=sequence",
     "shape:task-key.loop[]=string",
     "shape:task-key.loop[]=template-exact",
     "shape:task-key.loop[]=template-mixed",
-    "shape:task-key.loop[][].value=sequence",
-    "shape:task-key.loop[][].value=string",
-    "shape:task-key.loop[][].value[]=string",
-    "shape:task-key.loop[][]=mapping",
-    "shape:task-key.loop[][]=template-exact",
     "shape:task-key.loop_control.value=template-exact",
     "shape:task-key.loop_control=mapping",
     "shape:task-key.name=string",
@@ -694,6 +683,7 @@
     "shape:task-key.tags=string",
     "shape:task-key.tags[]=string",
     "shape:task-key.until=string",
+    "shape:task-key.when=bool",
     "shape:task-key.when=sequence",
     "shape:task-key.when=string",
     "shape:task-key.when[]=string",
@@ -800,11 +790,9 @@
     "template:task-key.block[].value.value:expression",
     "template:task-key.block[].value:expression",
     "template:task-key.block[].value[]:expression",
-    "template:task-key.block[].value[][]:expression",
     "template:task-key.environment.value:expression",
     "template:task-key.loop:expression",
     "template:task-key.loop[]:expression",
-    "template:task-key.loop[][]:expression",
     "template:task-key.loop_control.value:expression",
     "template:template-file:expression",
     "template:template-file:statement"
@@ -903,7 +891,8 @@
     "enum:file.state=directory": [
       "files-content.yml#Create synthetic fixture root",
       "files-content.yml#Exercise destination alias",
-      "files-content.yml#Exercise recursive directory attributes"
+      "files-content.yml#Exercise recursive directory attributes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "enum:file.state=link": [
       "files-content.yml#Exercise symbolic link"
@@ -951,7 +940,8 @@
     ],
     "enum:systemd.state=stopped": [
       "shape-variants.yml#Exercise mixed systemd name",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "enum:user.state=absent": [
       "shape-variants.yml#Exercise string user flags",
@@ -975,6 +965,8 @@
     ],
     "filter:length": [
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise block inheritance and list condition",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "files-content.yml#Report mixed template shape"
     ],
     "filter:list": [
@@ -1031,6 +1023,7 @@
       "control-flow.yml",
       "control-flow.yml#Execute mapped loop with label and environment",
       "control-flow.yml#Exercise block inheritance and list condition",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "control-flow.yml#Exercise nested mapping scalar variants",
       "files-content.yml#Copy literal content",
@@ -1082,12 +1075,15 @@
       "storage-xfs.yml#Resolve fixture disks",
       "system-surface.yml#Clone synthetic repository",
       "system-surface.yml#Configure synthetic Debian repository",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Create synthetic system fixture root",
       "system-surface.yml#Download public synthetic payload",
       "system-surface.yml#Ensure fixture group",
       "system-surface.yml#Exercise closed absent-user surface",
       "system-surface.yml#Initialize synthetic source repository",
       "system-surface.yml#Install synthetic authorized key",
-      "system-surface.yml#Mount disposable tmpfs"
+      "system-surface.yml#Mount disposable tmpfs",
+      "system-surface.yml#Start disposable payload server"
     ],
     "jinja-expression-count:2": [
       "control-flow.yml#Execute mapped loop with label and environment",
@@ -1177,7 +1173,8 @@
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
-      "storage-xfs.yml#Resolve fixture disks"
+      "storage-xfs.yml#Resolve fixture disks",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "module:community.general.lvg": [
       "storage-ext4.yml#Create fixture volume group",
@@ -1221,11 +1218,14 @@
       "files-content.yml#Copy synthetic source asset",
       "restart-actions.yml#Install synthetic restart command",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "module:debug": [
       "check-semantics.yml#Record predicted handler",
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -1239,7 +1239,8 @@
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "module:filesystem": [
       "shape-variants.yml#Exercise string filesystem resize flag",
@@ -1294,7 +1295,9 @@
       "files-content.yml#Exercise shell arguments",
       "restart-actions.yml#Restart synthetic workload units",
       "shape-variants.yml#Exercise literal shell args",
-      "system-surface.yml#Initialize synthetic source repository"
+      "system-surface.yml#Initialize synthetic source repository",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server"
     ],
     "module:slurp": [
       "files-content.yml#Read synthetic content",
@@ -1315,7 +1318,8 @@
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "module:template": [
       "files-content.yml#Render synthetic template",
@@ -1636,7 +1640,9 @@
       "control-flow.yml#Exercise nested mapping scalar variants",
       "files-content.yml#Copy literal content",
       "restart-actions.yml#Install synthetic restart command",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "param:copy.dest": [
       "check-semantics.yml#Predict a notifying file change",
@@ -1645,7 +1651,9 @@
       "files-content.yml#Copy synthetic source asset",
       "restart-actions.yml#Install synthetic restart command",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "param:copy.force": [
       "files-content.yml#Copy literal content"
@@ -1671,6 +1679,7 @@
     "param:debug.msg": [
       "check-semantics.yml#Record predicted handler",
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -1699,7 +1708,8 @@
       "files-content.yml#Exercise absent path",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "param:file.recurse": [
       "files-content.yml#Exercise recursive directory attributes",
@@ -1715,7 +1725,8 @@
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "param:filesystem.dev": [
       "shape-variants.yml#Exercise string filesystem resize flag",
@@ -1906,26 +1917,30 @@
     ],
     "param:systemd.daemon_reload": [
       "shape-variants.yml#Exercise templated systemd fields",
-      "system-surface.yml#Exercise restarted systemd shape"
+      "system-surface.yml#Exercise restarted systemd shape",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "param:systemd.enabled": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "shape-variants.yml#Exercise templated systemd fields",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "param:systemd.name": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "param:systemd.state": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "param:template.dest": [
       "files-content.yml#Render synthetic template",
@@ -1961,6 +1976,7 @@
       "system-surface.yml#Exercise closed absent-user surface"
     ],
     "param:user.groups": [
+      "shape-variants.yml#Exercise string user flags",
       "system-surface.yml#Exercise closed absent-user surface"
     ],
     "param:user.home": [
@@ -2251,7 +2267,8 @@
       "control-flow.yml#Exercise check-mode string value",
       "control-flow.yml#Exercise ignored failure",
       "control-flow.yml#Trigger synthetic rescue",
-      "files-content.yml#Exercise command scalar"
+      "files-content.yml#Exercise command scalar",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:module.community.general.lvg.value=string": [
       "storage-ext4.yml#Create fixture volume group",
@@ -2380,7 +2397,9 @@
       "files-content.yml#Copy synthetic source asset",
       "restart-actions.yml#Install synthetic restart command",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "shape:module.copy.value=template-exact": [
       "files-content.yml#Copy literal content",
@@ -2390,7 +2409,8 @@
       "control-flow.yml#Exercise nested mapping scalar variants",
       "files-content.yml#Copy literal content",
       "files-content.yml#Copy synthetic source asset",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source"
     ],
     "shape:module.copy=mapping": [
       "check-semantics.yml#Predict a notifying file change",
@@ -2399,13 +2419,16 @@
       "files-content.yml#Copy synthetic source asset",
       "restart-actions.yml#Install synthetic restart command",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "shape:module.debug.value=string": [
       "check-semantics.yml#Record predicted handler"
     ],
     "shape:module.debug.value=template-mixed": [
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -2413,6 +2436,7 @@
     "shape:module.debug=mapping": [
       "check-semantics.yml#Record predicted handler",
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -2432,10 +2456,12 @@
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "shape:module.file.value=template-exact": [
-      "files-content.yml#Create synthetic fixture root"
+      "files-content.yml#Create synthetic fixture root",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "shape:module.file.value=template-mixed": [
       "files-content.yml#Exercise absent path",
@@ -2449,7 +2475,8 @@
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "shape:module.filesystem.value=bool": [
       "storage-ext4.yml#Format fixture ext4 volume",
@@ -2590,12 +2617,14 @@
       "become-environment.yml#Capture synthetic become environment",
       "control-flow.yml#Exercise retries and until",
       "files-content.yml#Exercise shell arguments",
-      "shape-variants.yml#Exercise literal shell args"
+      "shape-variants.yml#Exercise literal shell args",
+      "system-surface.yml#Stop disposable payload server"
     ],
     "shape:module.shell=template-mixed": [
       "control-flow.yml#Execute mapped loop with label and environment",
       "restart-actions.yml#Restart synthetic workload units",
-      "system-surface.yml#Initialize synthetic source repository"
+      "system-surface.yml#Initialize synthetic source repository",
+      "system-surface.yml#Start disposable payload server"
     ],
     "shape:module.slurp.value=string": [
       "shape-variants.yml#Exercise literal slurp source"
@@ -2640,14 +2669,16 @@
     "shape:module.systemd.value=bool": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:module.systemd.value=string": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:module.systemd.value=template-exact": [
       "shape-variants.yml#Exercise templated systemd fields"
@@ -2660,7 +2691,8 @@
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:module.template.value=string": [
       "files-content.yml#Render synthetic template",
@@ -3066,7 +3098,9 @@
     ],
     "shape:param.copy.content=string": [
       "check-semantics.yml#Predict a notifying file change",
-      "restart-actions.yml#Install synthetic restart command"
+      "restart-actions.yml#Install synthetic restart command",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "shape:param.copy.content=template-exact": [
       "files-content.yml#Copy literal content"
@@ -3079,12 +3113,14 @@
       "check-semantics.yml#Predict a notifying file change",
       "restart-actions.yml#Install synthetic restart command",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Install disposable fixture service"
     ],
     "shape:param.copy.dest=template-mixed": [
       "control-flow.yml#Exercise nested mapping scalar variants",
       "files-content.yml#Copy literal content",
-      "files-content.yml#Copy synthetic source asset"
+      "files-content.yml#Copy synthetic source asset",
+      "system-surface.yml#Create public synthetic payload source"
     ],
     "shape:param.copy.force=bool": [
       "files-content.yml#Copy literal content"
@@ -3116,6 +3152,7 @@
     ],
     "shape:param.debug.msg=template-mixed": [
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -3145,7 +3182,8 @@
       "shape-variants.yml#Exercise literal file parameter shapes"
     ],
     "shape:param.file.path=template-exact": [
-      "files-content.yml#Create synthetic fixture root"
+      "files-content.yml#Create synthetic fixture root",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "shape:param.file.path=template-mixed": [
       "files-content.yml#Exercise absent path",
@@ -3170,7 +3208,8 @@
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
       "files-content.yml#Exercise symbolic link",
-      "shape-variants.yml#Exercise literal file parameter shapes"
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "shape:param.filesystem.dev=string": [
       "shape-variants.yml#Exercise string filesystem resize flag",
@@ -3406,14 +3445,16 @@
       "system-surface.yml#Set sysctl through short module name"
     ],
     "shape:param.systemd.daemon_reload=bool": [
-      "system-surface.yml#Exercise restarted systemd shape"
+      "system-surface.yml#Exercise restarted systemd shape",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:param.systemd.daemon_reload=string": [
       "shape-variants.yml#Exercise templated systemd fields"
     ],
     "shape:param.systemd.enabled=bool": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:param.systemd.enabled=string": [
       "shape-variants.yml#Exercise templated systemd fields"
@@ -3421,7 +3462,8 @@
     "shape:param.systemd.name=string": [
       "performance-snapshots.yml#Verify fixture service through one systemd snapshot",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:param.systemd.name=template-exact": [
       "shape-variants.yml#Exercise templated systemd fields"
@@ -3434,7 +3476,8 @@
       "shape-variants.yml#Exercise mixed systemd name",
       "shape-variants.yml#Exercise templated systemd fields",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Load stopped disposable fixture service"
     ],
     "shape:param.template.dest=string": [
       "shape-variants.yml#Exercise literal template destination"
@@ -3478,6 +3521,7 @@
       "system-surface.yml#Exercise closed absent-user surface"
     ],
     "shape:param.user.groups=string": [
+      "shape-variants.yml#Exercise string user flags",
       "system-surface.yml#Exercise closed absent-user surface"
     ],
     "shape:param.user.home=string": [
@@ -3517,7 +3561,8 @@
     ],
     "shape:play-vars.value=bool": [
       "control-flow.yml",
-      "files-content.yml"
+      "files-content.yml",
+      "shape-variants.yml"
     ],
     "shape:play-vars.value=mapping": [
       "control-flow.yml"
@@ -3648,10 +3693,10 @@
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise rescue transition"
     ],
-    "shape:task-key.block[].value=template-mixed": [
+    "shape:task-key.block[].value=template-exact": [
       "control-flow.yml#Exercise block inheritance and list condition"
     ],
-    "shape:task-key.block[].value[]=sequence": [
+    "shape:task-key.block[].value=template-mixed": [
       "control-flow.yml#Exercise block inheritance and list condition"
     ],
     "shape:task-key.block[].value[]=string": [
@@ -3663,27 +3708,13 @@
     "shape:task-key.block[].value[]=template-mixed": [
       "control-flow.yml#Exercise block inheritance and list condition"
     ],
-    "shape:task-key.block[].value[][].value=sequence": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
-    "shape:task-key.block[].value[][].value=string": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
-    "shape:task-key.block[].value[][].value[]=string": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
-    "shape:task-key.block[].value[][]=mapping": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
-    "shape:task-key.block[].value[][]=template-exact": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
     "shape:task-key.block[]=mapping": [
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise rescue transition"
     ],
     "shape:task-key.changed_when=bool": [
       "become-environment.yml#Capture synthetic become environment",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise retries and until",
       "controller-delegation.yml#Read synthetic value on controller",
       "files-content.yml#Exercise command scalar",
@@ -3691,7 +3722,10 @@
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
-      "storage-xfs.yml#Resolve fixture disks"
+      "storage-xfs.yml#Resolve fixture disks",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:task-key.changed_when=string": [
       "control-flow.yml#Execute mapped loop with label and environment",
@@ -3739,7 +3773,8 @@
       "control-flow.yml#Exercise check-mode string value"
     ],
     "shape:task-key.delay=number": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:task-key.delegate_to=string": [
       "controller-delegation.yml#Read synthetic value on controller"
@@ -3767,12 +3802,13 @@
       "control-flow.yml#Exercise ignored failure"
     ],
     "shape:task-key.loop=sequence": [
-      "control-flow.yml#Execute mapped loop with label and environment",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise nested mapping scalar variants",
       "restart-actions.yml#Restart synthetic workload units",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
     ],
     "shape:task-key.loop=template-exact": [
+      "control-flow.yml#Execute mapped loop with label and environment",
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
@@ -3784,35 +3820,17 @@
     "shape:task-key.loop[]=mapping": [
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
     ],
-    "shape:task-key.loop[]=sequence": [
-      "control-flow.yml#Execute mapped loop with label and environment"
-    ],
     "shape:task-key.loop[]=string": [
       "control-flow.yml#Exercise nested mapping scalar variants",
       "restart-actions.yml#Restart synthetic workload units",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
     ],
     "shape:task-key.loop[]=template-exact": [
-      "control-flow.yml#Execute mapped loop with label and environment"
+      "control-flow.yml#Exercise exact expression nested in a literal loop"
     ],
     "shape:task-key.loop[]=template-mixed": [
       "control-flow.yml#Exercise nested mapping scalar variants",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
-    ],
-    "shape:task-key.loop[][].value=sequence": [
-      "control-flow.yml#Execute mapped loop with label and environment"
-    ],
-    "shape:task-key.loop[][].value=string": [
-      "control-flow.yml#Execute mapped loop with label and environment"
-    ],
-    "shape:task-key.loop[][].value[]=string": [
-      "control-flow.yml#Execute mapped loop with label and environment"
-    ],
-    "shape:task-key.loop[][]=mapping": [
-      "control-flow.yml#Execute mapped loop with label and environment"
-    ],
-    "shape:task-key.loop[][]=template-exact": [
-      "control-flow.yml#Execute mapped loop with label and environment"
     ],
     "shape:task-key.loop_control.value=template-exact": [
       "control-flow.yml#Execute mapped loop with label and environment"
@@ -3831,6 +3849,7 @@
       "control-flow.yml#Exercise always tag scalar",
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise check-mode string value",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise ignored failure",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "control-flow.yml#Exercise interactive pause",
@@ -3930,6 +3949,8 @@
       "system-surface.yml#Clone synthetic repository",
       "system-surface.yml#Configure fixture timezone",
       "system-surface.yml#Configure synthetic Debian repository",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Create synthetic system fixture root",
       "system-surface.yml#Download public synthetic payload",
       "system-surface.yml#Ensure SSH service is enabled and started",
       "system-surface.yml#Ensure disposable absent group",
@@ -3940,11 +3961,16 @@
       "system-surface.yml#Exercise restarted systemd shape",
       "system-surface.yml#Exercise stopped service prediction",
       "system-surface.yml#Initialize synthetic source repository",
+      "system-surface.yml#Install disposable fixture service",
       "system-surface.yml#Install synthetic authorized key",
+      "system-surface.yml#Load stopped disposable fixture service",
       "system-surface.yml#Mount disposable tmpfs",
       "system-surface.yml#Refresh package metadata and install fixture package",
       "system-surface.yml#Set sysctl through collection name",
-      "system-surface.yml#Set sysctl through short module name"
+      "system-surface.yml#Set sysctl through short module name",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:task-key.no_log=bool": [
       "control-flow.yml#Exercise nested mapping scalar variants",
@@ -3966,7 +3992,8 @@
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
-      "storage-xfs.yml#Resolve fixture disks"
+      "storage-xfs.yml#Resolve fixture disks",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:task-key.rescue=sequence": [
       "control-flow.yml#Exercise block inheritance and list condition",
@@ -3989,7 +4016,8 @@
       "control-flow.yml#Exercise rescue transition"
     ],
     "shape:task-key.retries=number": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "shape:task-key.tags=sequence": [
       "control-flow.yml#Exercise block inheritance and list condition",
@@ -4003,7 +4031,25 @@
       "control-flow.yml#Exercise interactive pause"
     ],
     "shape:task-key.until=string": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
+    ],
+    "shape:task-key.when=bool": [
+      "shape-variants.yml#Exercise exact copy source",
+      "shape-variants.yml#Exercise literal PostgreSQL names",
+      "shape-variants.yml#Exercise literal URL destination",
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "shape-variants.yml#Exercise literal git flags and exact version",
+      "shape-variants.yml#Exercise literal line path",
+      "shape-variants.yml#Exercise literal replace path",
+      "shape-variants.yml#Exercise literal slurp source",
+      "shape-variants.yml#Exercise mixed apt package template",
+      "shape-variants.yml#Exercise mixed git version",
+      "shape-variants.yml#Exercise mixed mount source",
+      "shape-variants.yml#Exercise mixed repository template",
+      "shape-variants.yml#Exercise mixed systemd name",
+      "shape-variants.yml#Exercise string filesystem resize flag"
     ],
     "shape:task-key.when=sequence": [
       "control-flow.yml#Exercise block inheritance and list condition"
@@ -4048,6 +4094,7 @@
       "become-environment.yml#Capture synthetic become environment",
       "control-flow.yml#Execute mapped loop with label and environment",
       "control-flow.yml#Exercise check-mode string value",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise retries and until",
       "controller-delegation.yml#Read synthetic value on controller",
       "files-content.yml#Exercise command scalar",
@@ -4055,7 +4102,10 @@
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
-      "storage-xfs.yml#Resolve fixture disks"
+      "storage-xfs.yml#Resolve fixture disks",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:check_mode": [
       "control-flow.yml#Execute mapped loop with label and environment",
@@ -4097,7 +4147,8 @@
       "system-surface.yml#Exercise stopped service prediction"
     ],
     "task-key:delay": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:delegate_to": [
       "controller-delegation.yml#Read synthetic value on controller"
@@ -4117,6 +4168,7 @@
     ],
     "task-key:loop": [
       "control-flow.yml#Execute mapped loop with label and environment",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise nested mapping scalar variants",
       "restart-actions.yml#Restart synthetic workload units",
       "shape-variants.yml#Exercise scalar loop and nested task shapes",
@@ -4139,6 +4191,7 @@
       "control-flow.yml#Exercise always tag scalar",
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise check-mode string value",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise ignored failure",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "control-flow.yml#Exercise interactive pause",
@@ -4238,6 +4291,8 @@
       "system-surface.yml#Clone synthetic repository",
       "system-surface.yml#Configure fixture timezone",
       "system-surface.yml#Configure synthetic Debian repository",
+      "system-surface.yml#Create public synthetic payload source",
+      "system-surface.yml#Create synthetic system fixture root",
       "system-surface.yml#Download public synthetic payload",
       "system-surface.yml#Ensure SSH service is enabled and started",
       "system-surface.yml#Ensure disposable absent group",
@@ -4248,11 +4303,16 @@
       "system-surface.yml#Exercise restarted systemd shape",
       "system-surface.yml#Exercise stopped service prediction",
       "system-surface.yml#Initialize synthetic source repository",
+      "system-surface.yml#Install disposable fixture service",
       "system-surface.yml#Install synthetic authorized key",
+      "system-surface.yml#Load stopped disposable fixture service",
       "system-surface.yml#Mount disposable tmpfs",
       "system-surface.yml#Refresh package metadata and install fixture package",
       "system-surface.yml#Set sysctl through collection name",
-      "system-surface.yml#Set sysctl through short module name"
+      "system-surface.yml#Set sysctl through short module name",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:no_log": [
       "control-flow.yml#Exercise nested mapping scalar variants",
@@ -4274,14 +4334,16 @@
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
-      "storage-xfs.yml#Resolve fixture disks"
+      "storage-xfs.yml#Resolve fixture disks",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:rescue": [
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise rescue transition"
     ],
     "task-key:retries": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:tags": [
       "control-flow.yml#Exercise always tag scalar",
@@ -4289,12 +4351,28 @@
       "control-flow.yml#Exercise interactive pause"
     ],
     "task-key:until": [
-      "control-flow.yml#Exercise retries and until"
+      "control-flow.yml#Exercise retries and until",
+      "system-surface.yml#Wait for disposable payload server"
     ],
     "task-key:when": [
       "control-flow.yml#Exercise block inheritance and list condition",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
-      "files-content.yml#Exercise guarded failure module"
+      "files-content.yml#Exercise guarded failure module",
+      "shape-variants.yml#Exercise exact copy source",
+      "shape-variants.yml#Exercise literal PostgreSQL names",
+      "shape-variants.yml#Exercise literal URL destination",
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "shape-variants.yml#Exercise literal file parameter shapes",
+      "shape-variants.yml#Exercise literal git flags and exact version",
+      "shape-variants.yml#Exercise literal line path",
+      "shape-variants.yml#Exercise literal replace path",
+      "shape-variants.yml#Exercise literal slurp source",
+      "shape-variants.yml#Exercise mixed apt package template",
+      "shape-variants.yml#Exercise mixed git version",
+      "shape-variants.yml#Exercise mixed mount source",
+      "shape-variants.yml#Exercise mixed repository template",
+      "shape-variants.yml#Exercise mixed systemd name",
+      "shape-variants.yml#Exercise string filesystem resize flag"
     ],
     "template-file:jinja": [
       "template.j2"
@@ -4364,10 +4442,12 @@
       "files-content.yml#Copy literal content",
       "files-content.yml#Copy synthetic source asset",
       "shape-variants.yml#Exercise exact copy source",
-      "shape-variants.yml#Exercise literal copy source and mixed source"
+      "shape-variants.yml#Exercise literal copy source and mixed source",
+      "system-surface.yml#Create public synthetic payload source"
     ],
     "template:module.debug.value:expression": [
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -4377,7 +4457,8 @@
       "files-content.yml#Exercise absent path",
       "files-content.yml#Exercise destination alias",
       "files-content.yml#Exercise recursive directory attributes",
-      "files-content.yml#Exercise symbolic link"
+      "files-content.yml#Exercise symbolic link",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "template:module.get_url.value:expression": [
       "system-surface.yml#Download public synthetic payload"
@@ -4405,7 +4486,8 @@
     "template:module.shell:expression": [
       "control-flow.yml#Execute mapped loop with label and environment",
       "restart-actions.yml#Restart synthetic workload units",
-      "system-surface.yml#Initialize synthetic source repository"
+      "system-surface.yml#Initialize synthetic source repository",
+      "system-surface.yml#Start disposable payload server"
     ],
     "template:module.slurp.value:expression": [
       "files-content.yml#Read synthetic content"
@@ -4494,7 +4576,8 @@
     "template:param.copy.dest:expression": [
       "control-flow.yml#Exercise nested mapping scalar variants",
       "files-content.yml#Copy literal content",
-      "files-content.yml#Copy synthetic source asset"
+      "files-content.yml#Copy synthetic source asset",
+      "system-surface.yml#Create public synthetic payload source"
     ],
     "template:param.copy.src:expression": [
       "shape-variants.yml#Exercise exact copy source",
@@ -4502,6 +4585,7 @@
     ],
     "template:param.debug.msg:expression": [
       "control-flow.yml#Exercise always tag scalar",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise indexed equality and boolean conjunction",
       "files-content.yml#Report mixed template shape",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
@@ -4513,7 +4597,8 @@
       "files-content.yml#Create synthetic fixture root",
       "files-content.yml#Exercise absent path",
       "files-content.yml#Exercise recursive directory attributes",
-      "files-content.yml#Exercise symbolic link"
+      "files-content.yml#Exercise symbolic link",
+      "system-surface.yml#Create synthetic system fixture root"
     ],
     "template:param.file.src:expression": [
       "files-content.yml#Exercise symbolic link"
@@ -4597,25 +4682,20 @@
     "template:task-key.block[].value[]:expression": [
       "control-flow.yml#Exercise block inheritance and list condition"
     ],
-    "template:task-key.block[].value[][]:expression": [
-      "control-flow.yml#Exercise block inheritance and list condition"
-    ],
     "template:task-key.environment.value:expression": [
       "control-flow.yml#Execute mapped loop with label and environment"
     ],
     "template:task-key.loop:expression": [
+      "control-flow.yml#Execute mapped loop with label and environment",
       "storage-ext4.yml#Resolve fixture disks",
       "storage-two-tier.yml#Resolve synthetic data disks",
       "storage-two-tier.yml#Resolve synthetic hot disks",
       "storage-xfs.yml#Resolve fixture disks"
     ],
     "template:task-key.loop[]:expression": [
-      "control-flow.yml#Execute mapped loop with label and environment",
+      "control-flow.yml#Exercise exact expression nested in a literal loop",
       "control-flow.yml#Exercise nested mapping scalar variants",
       "shape-variants.yml#Exercise scalar loop and nested task shapes"
-    ],
-    "template:task-key.loop[][]:expression": [
-      "control-flow.yml#Execute mapped loop with label and environment"
     ],
     "template:task-key.loop_control.value:expression": [
       "control-flow.yml#Execute mapped loop with label and environment"

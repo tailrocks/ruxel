@@ -3,7 +3,7 @@
 //! pinned by golden E14: status ok, changed false, rc 0, the
 //! "Did not run command" msg, and null timing fields.
 
-use super::command::{command_result, creates_guard};
+use super::command::{check_mode_guard, command_result, creates_guard};
 use super::{ExecContext, params_object, str_param};
 use serde_json::Value;
 
@@ -14,6 +14,9 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
     }
 
     if let Some(result) = creates_guard(obj, Value::from(free_form)) {
+        return Ok(result);
+    }
+    if let Some(result) = check_mode_guard(obj, Value::from(free_form), ctx.check_mode) {
         return Ok(result);
     }
 

@@ -36,7 +36,8 @@ esac
 
 HOST="gate-host"
 INV="$RUN_DIR/inventory.ini"
-printf '[nodes]\n%s ansible_ssh_host=%s ansible_ssh_user=root\n' "$HOST" "$FIXTURE_IP" > "$INV"
+printf '[%s]\n%s ansible_ssh_host=%s ansible_ssh_user=root\n' \
+  "$GROUP" "$HOST" "$FIXTURE_IP" > "$INV"
 
 echo "== [1/3] ruxel apply (fresh) =="
 RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \

@@ -43,16 +43,18 @@
             - "mixed-{{ fixture_pipe }}"
           no_log: true
 
+        - name: Exercise exact expression nested in a literal loop
+          debug:
+            msg: "nested-count={{ item | length }}"
+          loop:
+            - "{{ fixture_pairs }}"
+          changed_when: false
+
         - name: Execute mapped loop with label and environment
           shell: "printf '%s:%s' '{{ item.0.name }}' '{{ item.1 }}'"
           environment:
             FIXTURE_VALUE: "{{ fixture_pipe }}"
-          loop:
-            - - name: alpha
-                children:
-                  - one
-              - "{{ fixture_pipe }}"
-            - "{{ fixture_pairs }}"
+          loop: "{{ fixture_pairs }}"
           loop_control:
             label: "{{ item.0.name | default('synthetic') }}"
           register: fixture_loop

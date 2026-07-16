@@ -21,7 +21,7 @@
 
     - name: Exercise package upgrade shape without applying it
       apt:
-        upgrade: safe
+        upgrade: dist
         update_cache: false
       check_mode: true
 
@@ -32,10 +32,40 @@
         state: present
         update_cache: false
 
+    - name: Create synthetic system fixture root
+      file:
+        path: "{{ fixture_root }}"
+        state: directory
+
+    - name: Create public synthetic payload source
+      copy:
+        content: synthetic-download
+        dest: "{{ fixture_root }}/payload-source.txt"
+
+    - name: Start disposable payload server
+      shell: >-
+        nohup python3 -m http.server 18080 --bind 127.0.0.1
+        --directory {{ fixture_root }} </dev/null
+        >/tmp/ruxel-fixture-http.log 2>&1 &
+        echo $! >/tmp/ruxel-fixture-http.pid
+      changed_when: false
+
+    - name: Wait for disposable payload server
+      command: /usr/bin/curl --fail --silent http://127.0.0.1:18080/payload-source.txt
+      register: fixture_payload_ready
+      until: fixture_payload_ready.rc == 0
+      retries: 3
+      delay: 1
+      changed_when: false
+
     - name: Download public synthetic payload
       get_url:
-        url: https://www.debian.org/robots.txt
-        dest: "{{ fixture_root }}/robots.txt"
+        url: http://127.0.0.1:18080/payload-source.txt
+        dest: "{{ fixture_root }}/payload.txt"
+
+    - name: Stop disposable payload server
+      shell: kill "$(cat /tmp/ruxel-fixture-http.pid)"
+      changed_when: false
 
     - name: Ensure fixture group
       group:
@@ -112,9 +142,29 @@
         state: started
         enabled: true
 
+    - name: Install disposable fixture service
+      copy:
+        content: |
+          [Unit]
+          Description=Ruxel synthetic fixture
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/true
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/ruxel-fixture.service
+
+    - name: Load stopped disposable fixture service
+      systemd:
+        name: ruxel-fixture.service
+        state: stopped
+        enabled: false
+        daemon_reload: true
+
     - name: Exercise stopped service prediction
       systemd:
-        name: ruxel-fixture-missing.service
+        name: ruxel-fixture.service
         state: stopped
         enabled: false
       check_mode: true

@@ -30,6 +30,9 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
     if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
         return Ok(result);
     }
+    if let Some(result) = check_mode_guard(obj, Value::from(argv.clone()), ctx.check_mode) {
+        return Ok(result);
+    }
 
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let mut cmd = super::become_command(ctx, argv_refs[0], &argv_refs[1..]);
@@ -41,6 +44,29 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
     }
     let output = cmd.output().map_err(|e| format!("exec {}: {e}", argv[0]))?;
     Ok(command_result(Value::from(argv), &output))
+}
+
+pub(super) fn check_mode_guard(
+    params: &serde_json::Map<String, Value>,
+    cmd: Value,
+    check_mode: bool,
+) -> Option<Value> {
+    check_mode.then(|| {
+        if str_param(params, "creates").is_some() {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": true, "failed": false,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        } else {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": false, "failed": false,
+                "skipped": true,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        }
+    })
 }
 
 pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value) -> Option<Value> {

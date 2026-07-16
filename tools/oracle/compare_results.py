@@ -4,10 +4,29 @@
 from __future__ import annotations
 
 import json
+import difflib
 import sys
 from pathlib import Path
 
 STAT_FIELDS = {"exists", "isdir", "islnk", "isblk", "path", "lnk_source"}
+
+
+def normalize_diff(value):
+    """Represent Ansible structured and Ruxel unified diffs identically."""
+    lines = []
+    if isinstance(value, str):
+        lines = value.splitlines()
+    elif isinstance(value, list):
+        for item in value:
+            if not isinstance(item, dict) or "before" not in item or "after" not in item:
+                continue
+            lines.extend(difflib.unified_diff(
+                str(item["before"]).splitlines(),
+                str(item["after"]).splitlines(),
+                lineterm="",
+            ))
+    return [line for line in lines if line.startswith(("+", "-"))
+            and not line.startswith(("+++", "---"))]
 
 
 def module_name(value):
@@ -38,13 +57,12 @@ def normalize_value(value, module=None):
     for key, child in value.items():
         if key not in allowed:
             continue
-        normalized_child = normalize_value(child, module)
-        if key == "diff" and (
-            normalized_child in (None, "", [], {})
-            or isinstance(normalized_child, list)
-            and all(item in ({}, None, "") for item in normalized_child)
-        ):
+        if key == "diff":
+            normalized_child = normalize_diff(child)
+            if normalized_child:
+                normalized[key] = normalized_child
             continue
+        normalized_child = normalize_value(child, module)
         if key == "stat" and isinstance(child, dict):
             normalized[key] = {
                 field: normalize_value(field_value, module)

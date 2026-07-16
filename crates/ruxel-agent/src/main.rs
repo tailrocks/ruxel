@@ -216,7 +216,8 @@ fn execute_task(
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
 ) -> bool {
-    let task_check_mode = check_mode && !task.check_mode_override;
+    let task_check_mode =
+        effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
         let _ = write_frame(
@@ -265,25 +266,6 @@ fn execute_task(
             && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
         {
             send_result(out, task, iteration, "ok", false, &cached, start);
-            continue;
-        }
-
-        // check-mode skip for command/shell (SEMANTICS §3.5) — predicted
-        // as "skipped" by the agent so timing stays honest.
-        if task_check_mode && matches!(task.module.as_str(), "command" | "shell") {
-            send_result(
-                out,
-                task,
-                iteration,
-                "skipped",
-                false,
-                &serde_json::json!({
-                    "changed": false,
-                    "skipped": true,
-                    "msg": "remote module (command/shell) does not support check mode",
-                }),
-                start,
-            );
             continue;
         }
 
@@ -337,6 +319,10 @@ fn execute_task(
     false
 }
 
+fn effective_check_mode(global: bool, force: bool, override_off: bool) -> bool {
+    (global || force) && !override_off
+}
+
 fn send_result(
     out: &mut impl std::io::Write,
     task: &v1::RenderedTask,
@@ -378,4 +364,16 @@ fn log_event(out: &mut impl std::io::Write, level: v1::log::Level, message: Stri
         })),
     };
     let _ = write_frame(out, &event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_check_mode;
+
+    #[test]
+    fn task_check_mode_yes_forces_prediction_and_no_forces_execution() {
+        assert!(effective_check_mode(false, true, false));
+        assert!(effective_check_mode(true, false, false));
+        assert!(!effective_check_mode(true, false, true));
+    }
 }

@@ -1,3 +1,3 @@
-{"action": "copy", "changed": true, "status": "ok", "task": "Predict a notifying file change"}
-{"action": "pause", "changed": false, "status": "ok", "task": "Prompt during check mode", "user_input": ""}
-{"action": "debug", "changed": false, "msg": "predicted handler ran", "status": "ok", "task": "Record predicted handler"}
+{"action": "copy", "raw_args": {"content": "synthetic", "dest": "/tmp/ruxel-fixture-check-notify"}, "result": {"changed": true, "diff": [{"after": "synthetic", "after_header": "/tmp/ruxel-fixture-check-notify", "before": ""}]}, "status": "ok", "task_name": "Predict a notifying file change"}
+{"action": "pause", "raw_args": {"prompt": "Synthetic check-mode pause"}, "result": {"changed": false, "echo": true, "rc": 0, "stderr": "", "stderr_lines": [], "stdout": "Paused for 0.0 minutes", "stdout_lines": ["Paused for 0.0 minutes"], "stop": "2026-07-16 19:57:50.107191", "user_input": ""}, "status": "ok", "task_name": "Prompt during check mode"}
+{"action": "debug", "raw_args": {"msg": "predicted handler ran"}, "result": {"changed": false, "msg": "predicted handler ran"}, "status": "ok", "task_name": "Record predicted handler"}

@@ -25,7 +25,11 @@ done | LC_ALL=C sort
 echo '[managed-content]'
 for root in /tmp/ruxel-fixture-* /mnt/ruxel-fixture* /var/lib/ruxelfixture; do
   [ -e "$root" ] || continue
-  find "$root" -xdev -type f -print0 2>/dev/null
+  find "$root" -xdev -type f \
+    ! -name 'ruxel-fixture-http.log' \
+    ! -name 'ruxel-fixture-http.pid' \
+    ! -path '*/.git/logs/*' \
+    -print0 2>/dev/null
 done | LC_ALL=C sort -z | xargs -0 -r sha256sum
 
 echo '[packages]'

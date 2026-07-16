@@ -74,6 +74,7 @@ message RenderedTask {
   // Batch safety: stop draining this Plan after this task fails. The
   // controller clears it for ignore_errors tasks.
   bool halt_on_failure = 10;
+  bool force_check_mode = 11; // task-level `check_mode: yes`
 }
 
 message Iteration {

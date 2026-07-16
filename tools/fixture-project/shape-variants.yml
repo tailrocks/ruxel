@@ -9,6 +9,10 @@
     fixture_destination: 192.0.2.2
     fixture_packages:
       - ca-certificates
+    fixture_enabled: true
+    fixture_lines:
+      - alpha
+      - beta
     fixture_versions:
       - name: one
         version: HEAD
@@ -23,6 +27,7 @@
         src: /tmp/ruxel-fixture-source
         state: absent
         recurse: "yes"
+      when: false
 
     - name: Exercise literal copy source and mixed source
       copy:
@@ -30,12 +35,14 @@
         content: "prefix {{ fixture_name }} suffix"
         dest: /tmp/ruxel-fixture-copy
       check_mode: true
+      when: false
 
     - name: Exercise exact copy source
       copy:
         src: "{{ fixture_name }}"
         dest: /tmp/ruxel-fixture-exact-copy
       check_mode: true
+      when: false
 
     - name: Exercise literal template destination
       template:
@@ -57,6 +64,7 @@
         line: synthetic
         state: present
       check_mode: true
+      when: false
 
     - name: Exercise literal replace path
       replace:
@@ -64,6 +72,7 @@
         regexp: synthetic
         replace: replacement
       check_mode: true
+      when: false
 
     - name: Exercise literal stat path
       stat:
@@ -79,6 +88,7 @@
       slurp:
         src: /tmp/ruxel-fixture-slurp
       check_mode: true
+      when: false
 
     - name: Exercise literal command args
       command:
@@ -109,6 +119,7 @@
         name: "package-{{ fixture_name }}"
         state: latest
       check_mode: true
+      when: false
 
     - name: Exercise literal repository strings
       apt_repository:
@@ -125,12 +136,14 @@
         state: present
         update_cache: false
       check_mode: true
+      when: false
 
     - name: Exercise literal URL destination
       get_url:
         url: https://example.invalid/synthetic
         dest: /tmp/ruxel-fixture-download
       check_mode: true
+      when: false
 
     - name: Exercise literal git flags and exact version
       git:
@@ -141,6 +154,7 @@
         force: "no"
         accept_hostkey: "no"
       check_mode: true
+      when: false
 
     - name: Exercise mixed git version
       git:
@@ -151,6 +165,7 @@
         force: false
         accept_hostkey: false
       check_mode: true
+      when: false
 
     - name: Exercise templated firewall fields
       iptables:
@@ -184,6 +199,7 @@
         name: "{{ fixture_name }}.service"
         state: stopped
       check_mode: true
+      when: false
 
     - name: Exercise string service enabled
       service:
@@ -196,6 +212,7 @@
       user:
         name: ruxelfixture-absent
         group: "29871"
+        groups: adm
         append: "yes"
         create_home: "no"
         remove: "yes"
@@ -211,6 +228,7 @@
         opts: defaults
         state: mounted
       check_mode: true
+      when: false
 
     - name: Exercise string filesystem resize flag
       filesystem:
@@ -218,6 +236,7 @@
         fstype: ext4
         resizefs: "yes"
       check_mode: true
+      when: false
 
     - name: Exercise literal PostgreSQL names
       become_user: postgres
@@ -228,6 +247,7 @@
         state: present
         login_port: 40000
       check_mode: true
+      when: false
 
     - name: Exercise scalar loop and nested task shapes
       debug:

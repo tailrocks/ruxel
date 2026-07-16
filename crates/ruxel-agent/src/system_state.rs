@@ -49,11 +49,15 @@ impl SystemState {
 
     pub fn unit(&mut self, name: &str) -> Result<UnitState, String> {
         self.ensure_units()?;
-        Ok(self
-            .units
-            .as_ref()
-            .expect("units initialized")
+        let units = self.units.as_ref().expect("units initialized");
+        Ok(units
             .get(name)
+            .or_else(|| {
+                (!name.contains('.'))
+                    .then(|| format!("{name}.service"))
+                    .as_ref()
+                    .and_then(|qualified| units.get(qualified))
+            })
             .copied()
             .unwrap_or_default())
     }
