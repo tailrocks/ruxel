@@ -265,6 +265,7 @@ async fn run_host(
                     &mut connection,
                     playbook_dir,
                     format,
+                    args.check,
                     tags,
                     &mut output,
                     &mut events,

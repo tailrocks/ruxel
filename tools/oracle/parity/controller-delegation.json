@@ -1,0 +1,32 @@
+{
+  "binaries": {
+    "agent_sha256": "93ae7b1d6c80e003587982c8b3ad8394656fab36806f46537eb1cb117851f0c4",
+    "controller_sha256": "0f18586e00333555c70edd0f4e3755495d50b71009d7ab984e3a6f96625da8d8"
+  },
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "e99d624b55ff48565cc8fea6ad7fcf964c0580db43e3cde4199eb63560589d05",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "854677193d259ffcae10086e740ddff53dd98f449d1af86c5104b67eaee53460",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "854677193d259ffcae10086e740ddff53dd98f449d1af86c5104b67eaee53460",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "controller-delegation",
+  "schema": 1
+}

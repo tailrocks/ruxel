@@ -115,6 +115,7 @@ struct HostRun<'a, A, L> {
     recap: Recap,
     next_task_id: u64,
     format: OutputFormat,
+    check_mode: bool,
     /// `--tags` selection (SEMANTICS §4): None = run everything; Some =
     /// run tasks whose effective tags intersect this set or include
     /// `always`. Block tags propagate to contained tasks.
@@ -174,6 +175,7 @@ pub async fn run_play<A: AgentExec, L: Write>(
     agent: &mut A,
     playbook_dir: &std::path::Path,
     format: OutputFormat,
+    check_mode: bool,
     tags_filter: Option<Vec<String>>,
     out: &mut impl Write,
     event_log: &mut L,
@@ -195,6 +197,7 @@ pub async fn run_play<A: AgentExec, L: Write>(
         recap: Recap::default(),
         next_task_id: 1,
         format,
+        check_mode,
         tags_filter,
     };
 
@@ -972,6 +975,21 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                     label(task)
                 );
             }
+            let effective_check_mode = (self.check_mode || task.check_mode == Some(true))
+                && task.check_mode != Some(false);
+            if effective_check_mode {
+                return Ok(to_mj(serde_json::json!({
+                    "changed": false,
+                    "failed": false,
+                    "skipped": true,
+                    "rc": 0,
+                    "stdout": "",
+                    "stderr": "",
+                    "stdout_lines": [],
+                    "stderr_lines": [],
+                    "msg": "Command would have run if not in check mode",
+                })));
+            }
             return run_local_delegated(module, &params, &free_form, &environment).map(to_mj);
         }
 
@@ -1499,6 +1517,7 @@ mod tests {
             &mut agent,
             std::path::Path::new("."),
             OutputFormat::Human,
+            false,
             None,
             &mut output,
             &mut event_log,
@@ -1623,6 +1642,7 @@ mod tests {
             &mut agent,
             std::path::Path::new("."),
             OutputFormat::Human,
+            false,
             None,
             &mut output,
             &mut event_log,
@@ -1712,6 +1732,35 @@ mod tests {
             agent.calls.is_empty(),
             "delegated task must not reach agent"
         );
+    }
+
+    #[tokio::test]
+    async fn check_mode_skips_delegated_command_and_registers_skip_result() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: controller value\n      become: false\n      delegate_to: localhost\n      command: /usr/bin/true\n      register: controller_value\n    - name: verify skip\n      assert:\n        that: controller_value.skipped\n";
+        let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
+        let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
+        let mut agent = FakeAgent::default();
+        let mut output = Vec::new();
+        let mut event_log = Vec::new();
+        let recap = run_play(
+            &playbook.plays[0],
+            &compiled.plays[0],
+            "test-host",
+            &v1::Facts::default(),
+            &engine,
+            &mut agent,
+            std::path::Path::new("."),
+            OutputFormat::Human,
+            true,
+            None,
+            &mut output,
+            &mut event_log,
+        )
+        .await
+        .unwrap();
+        assert_eq!((recap.skipped, recap.ok, recap.failed), (1, 1, 0));
+        assert!(agent.calls.is_empty());
     }
 
     #[test]
@@ -1831,6 +1880,7 @@ mod tests {
             &mut agent,
             std::path::Path::new("."),
             OutputFormat::Human,
+            false,
             None,
             &mut output,
             &mut event_log,

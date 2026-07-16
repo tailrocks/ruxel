@@ -1,0 +1,16 @@
+[
+  {"playbook":"become-environment.yml","group":"all"},
+  {"playbook":"check-semantics.yml","group":"all"},
+  {"playbook":"control-flow.yml","group":"all"},
+  {"playbook":"controller-delegation.yml","group":"nodes"},
+  {"playbook":"files-content.yml","group":"all"},
+  {"playbook":"multihost.yml","group":"multihost"},
+  {"playbook":"performance-snapshots.yml","group":"performance","dry":true,"prepare":"postgresql"},
+  {"playbook":"postgresql-ownership.yml","group":"postgresql","prepare":"postgresql"},
+  {"playbook":"restart-actions.yml","group":"nodes"},
+  {"playbook":"shape-variants.yml","group":"all"},
+  {"playbook":"storage-ext4.yml","group":"storage","prepare":"storage-ext4"},
+  {"playbook":"storage-two-tier.yml","group":"storage","prepare":"storage-two-tier"},
+  {"playbook":"storage-xfs.yml","group":"storage","prepare":"storage-xfs"},
+  {"playbook":"system-surface.yml","group":"all"}
+]
