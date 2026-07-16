@@ -37,7 +37,7 @@ jobs:
 
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust cargo:cargo-nextest uv"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Cargo registry
@@ -69,6 +69,15 @@ jobs:
           cargo run -p ruxel-spec-extract --
           verify tools/spec-extract/workload-features.json
           tools/fixture-project
+
+      - name: Regenerate synthetic Ansible render oracle
+        working-directory: tools/oracle
+        run: |
+          uv sync --locked
+          uv run python render_parity.py
+
+      - name: Verify render oracle is reproducible
+        run: git diff --exit-code -- tools/oracle/captures/render-parity.jsonl
 
       - name: sccache stats
         if: always() && steps.sccache.outcome == 'success'

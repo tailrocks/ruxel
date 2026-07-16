@@ -375,7 +375,38 @@ fn collect_template_features(context: &str, text: &str, manifest: &mut FeatureMa
             let Some(end) = rest.find(closer) else {
                 break;
             };
-            for segment in rest[..end].split('|').skip(1) {
+            let expression = rest[..end].trim();
+            if opener == "{%"
+                && let Some(keyword) = expression.split_whitespace().next()
+            {
+                manifest.add("jinja-tag", keyword);
+            }
+            for (needle, feature) in [
+                (" not in ", "not-in"),
+                (" in ", "in"),
+                (" and ", "and"),
+                (" or ", "or"),
+                ("==", "eq"),
+                ("!=", "ne"),
+                (">=", "ge"),
+                ("<=", "le"),
+                (">", "gt"),
+                ("<", "lt"),
+            ] {
+                if expression.contains(needle) {
+                    manifest.add("jinja-op", feature);
+                }
+            }
+            if expression.contains('.') {
+                manifest.add("jinja-access", "attribute");
+            }
+            if expression.contains('[') {
+                manifest.add("jinja-access", "index");
+            }
+            if expression.contains('(') {
+                manifest.add("jinja-expr", "call");
+            }
+            for segment in expression.split('|').skip(1) {
                 let name: String = segment
                     .trim_start()
                     .chars()
@@ -387,6 +418,10 @@ fn collect_template_features(context: &str, text: &str, manifest: &mut FeatureMa
             }
             rest = &rest[end + closer.len()..];
         }
+    }
+    let expression_count = text.matches("{{").count().min(3);
+    if expression_count > 0 {
+        manifest.add("jinja-expression-count", expression_count.to_string());
     }
     for lookup in ["community.general.onepassword", "pipe"] {
         if text.contains(lookup) {
@@ -634,6 +669,7 @@ mod tests {
                 .any(|entry| entry.contains("secret_specific_name"))
         );
         assert!(!manifest.features.contains("filter:tee"));
+        assert!(manifest.features.contains("jinja-expr:call"));
     }
 
     #[test]

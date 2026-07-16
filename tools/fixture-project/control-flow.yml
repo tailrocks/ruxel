@@ -23,9 +23,14 @@
     - name: Validate synthetic controller lookup
       assert:
         that:
-          - fixture_pipe == 'synthetic'
+          - fixture_pipe | length > 0
 
   tasks:
+    - name: Exercise indexed equality and boolean conjunction
+      debug:
+        msg: "first={{ fixture_matrix[0].name }}"
+      when: fixture_enabled == true and fixture_matrix[0].name == 'alpha'
+
     - name: Exercise block inheritance and list condition
       block:
         - name: Exercise nested mapping scalar variants

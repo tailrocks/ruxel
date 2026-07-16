@@ -60,22 +60,21 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   `ch_ready.rc`); comparisons and boolean operators in `when`/`until`;
   loop over `register` results (`item.item`, `item.stat`). MiniJinja covers
   the core; `subelements`, Ansible-flavored `hash`, and `b64decode` need
-  custom filter implementations. **Verified 2026-06-11**: the M1 harness
-  (tools/oracle/render_parity.py → captures/render-parity.jsonl) renders
-  every inline expression and condition (242) and all 41 template files
-  through ansible-core 2.21's Templar and through ruxel's engine —
-  byte-identical strings, JSON-identical natives, matching errors. That
-  corpus, not this list, is the completeness guarantee. Pinned along the
-  way: a template that is exactly one `{{ expr }}` yields the native value;
+  custom filter implementations. **Current reproducible gate**:
+  `tools/spec-extract/workload-features.json` records normalized constructs
+  extracted offline, and CI requires the synthetic fixture project to cover
+  all of them. `tools/oracle/render_parity.py` renders that synthetic corpus
+  through ansible-core 2.21; `crates/ruxel-core/tests/render_parity.rs` replays
+  it through Ruxel and compares strings, native values, conditions, errors,
+  template bytes, and trailing-newline behavior. Pinned along the way: a
+  template that is exactly one `{{ expr }}` yields the native value;
   any concatenation (`{{ a }}{{ b }}`, leading/trailing text or spaces)
   yields a string with no literal_eval; undefined chains through attribute
   access (caught by `default`) but erroring the moment it is the final
   result of an expression, condition, or rendered output
-  (AnsibleUndefinedVariable); `urlencode` percent-encodes with `/` safe.
-  Known workload latent bug, preserved not fixed: config/sentry/config.yml
-  references `slack_client_id`/`slack_client_secret`/`slack_signing_secret`
-  which no playbook defines — rendering that template errors under both
-  Ansible and ruxel (the error is the golden).
+  (AnsibleUndefinedVariable); `urlencode` percent-encodes with `/` safe; and
+  template files use `trim_blocks=True`, `lstrip_blocks=False`, and preserve
+  their trailing newline.
 - Facts consumed (complete list): `ansible_default_ipv4.interface`,
   `ansible_facts['distribution_release']`, `ansible_architecture`. Ruxel's
   agent supplies exactly these (plus trivially cheap extras like hostname)

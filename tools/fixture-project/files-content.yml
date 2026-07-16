@@ -8,6 +8,7 @@
       - beta
     fixture_encoded: c3ludGhldGljCg==
     fixture_optional: ""
+    fixture_enabled: true
   pre_tasks:
     - name: Create synthetic fixture root
       file:

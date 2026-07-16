@@ -24,3 +24,21 @@ Captured records are JSON lines; see `callback_plugins/ruxel_capture.py`.
 Note: by the time results reach the callback, `raw_args` are already
 template-rendered (verified on 2.21.0) — captures carry post-template
 parameters even for modules that do not echo an `invocation`.
+
+## Offline render parity
+
+`render_parity.py` walks every repository-owned synthetic playbook and template
+without loading inventory or opening a connection. Pinned Ansible renders each
+expression, condition, loop bind, and template file with deterministic fake
+facts/registers/lookups. The committed JSONL is replayed through Ruxel by
+`crates/ruxel-core/tests/render_parity.rs`.
+
+```bash
+cd tools/oracle
+uv run python render_parity.py
+git diff --exit-code captures/render-parity.jsonl
+cargo test -p ruxel-core --test render_parity
+```
+
+The corpus contains synthetic fixture names and values only. Regeneration from
+the real workload is forbidden.

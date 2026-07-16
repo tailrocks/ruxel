@@ -1,0 +1,15 @@
+{
+  "ansible_default_ipv4": {"interface": "eth0", "address": "192.0.2.10"},
+  "ansible_facts": {"distribution_release": "bookworm"},
+  "ansible_architecture": "x86_64",
+  "fixture_controller_value": {"stdout": "synthetic", "rc": 0, "changed": false},
+  "fixture_disk_devices": {"results": [{"stdout": "/dev/loop10", "rc": 0, "item": "/dev/disk/by-id/fixture-a"}]},
+  "fixture_data_devices": {"results": [{"stdout": "/dev/loop11", "rc": 0, "item": "/dev/disk/by-id/fixture-b"}]},
+  "fixture_hot_devices": {"results": [{"stdout": "/dev/loop12", "rc": 0, "item": "/dev/disk/by-id/fixture-c"}]},
+  "fixture_stat": {"stat": {"exists": true, "isdir": true}, "changed": false},
+  "fixture_dynamic_stat": {"stat": {"exists": false}, "changed": false},
+  "fixture_slurp": {"content": "c3ludGhldGljCg==", "encoding": "base64", "changed": false},
+  "fixture_loop": {"rc": 0, "stdout": "synthetic", "stderr": "", "changed": true},
+  "fixture_retry": {"rc": 0, "stdout": "", "stderr": "", "changed": false, "attempts": 1},
+  "literal_stat": {"stat": {"exists": false}, "changed": false}
+}

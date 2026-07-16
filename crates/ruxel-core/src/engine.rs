@@ -354,6 +354,9 @@ impl Engine {
         // The template module's keep_trailing_newline=True default
         // (SEMANTICS §6 template). ⚠ pinned by the 22-template parity gate.
         env.set_keep_trailing_newline(true);
+        // Ansible uses trim_blocks=True and lstrip_blocks=False. Remove the
+        // first newline after block tags while preserving leading indentation.
+        env.set_trim_blocks(true);
 
         env.add_filter("bool", filter_bool);
         env.add_filter("hash", filter_hash);
@@ -989,6 +992,15 @@ broken: "{{ undefined_thing.attr.deep }}"
         let s = scope(&[("x", serde_json::json!("v"))]);
         let out = engine().render_template_file("key={{ x }}\n", &s).unwrap();
         assert_eq!(out, "key=v\n");
+    }
+
+    #[test]
+    fn template_file_matches_ansible_block_trimming() {
+        let s = scope(&[("items", serde_json::json!(["a", "b"]))]);
+        let out = engine()
+            .render_template_file("{% for item in items %}\n{{ item }}\n{% endfor %}\n", &s)
+            .unwrap();
+        assert_eq!(out, "a\nb\n");
     }
 
     #[test]
