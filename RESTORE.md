@@ -2,21 +2,20 @@
 
 Handoff snapshot to resume work after a break. Authoritative operational
 runbook is still `GOAL.md`; this file is the quick "what happened / where
-we are / what's next" restore point. Date: 2026-06-12. Repo HEAD: `1411ba0`
-(all work below is committed + pushed to `tailrocks/ruxel` main, CI green).
+we are / what's next" restore point. Updated: 2026-07-16.
 Hetzner `ruxel-fixtures` project is **empty** (every fixture reaped).
 
 ---
 
 ## 1. One-line status
 
-**ruxel is feature-complete** — every module, the convergence ledger, the
-full drop-in CLI, and real secret resolution are built and verified. **6 of
-16 workload playbooks are gated three-way** (ruxel apply → ruxel rerun →
-real Ansible blesses the state, all at parity). Converged-run speed proven:
-**ruxel 1.04s vs Ansible 15.16s (14.6×)**. What remains is **verification
-breadth** (the 6 `setup-*` + drive-variant playbooks) and the rest of the
-M5 benchmark suite — not missing features.
+Core execution is implemented. **Six repository-owned synthetic fixture
+playbooks are gated three-way** (Ruxel fresh → Ruxel rerun → Ansible 2.21
+bless). Real ChainArgos files are offline extraction input only and are never
+executed, even on fixtures. Repeated-action speed is proven on the synthetic
+corpus: **Ruxel 3.12s vs Ansible 173.34s (55.6×)**. Remaining work is fixture
+coverage breadth, plan 021 timing, and plan 022's non-reproducible transport
+stall; production pilot remains untouched.
 
 Milestones: **M0 ✅ M1 ✅ M2 ✅ M3 ✅** (modules + ledger + plan/apply) ·
 **M4 ~** (full module set done; remaining = setup-* gate coverage) ·
@@ -56,17 +55,13 @@ playbook.yml`.
 handful of `op` calls per run.
 
 **Transport / fidelity:** openssh ControlMaster (own tokio::process),
-content-addressed agent upload, orphan guard; render parity = 242
-expressions + 41 templates byte-identical to ansible-core 2.21 (offline CI
-gate). Runtime semantics (loop/when/register/until/no_log/changed_when)
-golden-pinned from real 2.21 captures.
+content-addressed agent upload, orphan guard. Executable parity evidence comes
+only from `tools/fixture-project/`; workload surface extraction stays offline.
 
-**Playbooks gated three-way** (`tools/fixtures/bless-gate.sh`): `update-
-packages`, `upgrade-debian`, `install-docker`, drives (lvg/lvol/filesystem/
-mount), postgresql (db/user/schema/privs), `install-base` (39 tasks, holla
-installed from the live repo). "Parity" not "zero": a converged rerun still
-reports the bare `command`/`shell` tasks that have no `changed_when` —
-Ansible reports those changed every run too, so equal changed-sets = parity.
+**Synthetic playbooks gated three-way** (`tools/fixtures/bless-gate.sh`):
+controller delegation, PostgreSQL ownership/default privileges, ext4 storage,
+XFS storage, two-tier storage, and 36 repeated restart actions. Gate scripts
+reject playbooks outside `tools/fixture-project/`.
 
 **M5 headline benchmark** (`docs/benchmarks/converged-noop.md`): install-
 docker converged no-op, cpx22 fixture, best of 3 — ruxel+ledger **1.04s**,

@@ -1,0 +1,51 @@
+- name: Fixture repeated restart actions
+  hosts: nodes
+  become: true
+  tasks:
+    - name: Install synthetic restart command
+      copy:
+        content: "#!/bin/sh\nexit 0\n"
+        dest: /usr/local/bin/ruxel-fixture-restart
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Restart synthetic workload units
+      shell: /usr/local/bin/ruxel-fixture-restart {{ item }}
+      loop:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+        - "11"
+        - "12"
+        - "13"
+        - "14"
+        - "15"
+        - "16"
+        - "17"
+        - "18"
+        - "19"
+        - "20"
+        - "21"
+        - "22"
+        - "23"
+        - "24"
+        - "25"
+        - "26"
+        - "27"
+        - "28"
+        - "29"
+        - "30"
+        - "31"
+        - "32"
+        - "33"
+        - "34"
+        - "35"
+        - "36"

@@ -56,7 +56,7 @@ disposable fixtures only. Quality gates before any commit:
 | 022 | Parallelize hosts + fix the multi-host transport stall | P2 | L | 021 | BLOCKED (two real fixtures do not reproduce documented stall; STOP forbids speculative fix) |
 | 023 | Direction: run log + `--detailed-exitcode` + `--diff` for line modules | P2 | M | — | DONE |
 | 024 | Direction (spike): chaos/fuzz hardening + spec-drift watch | P2 | M | 009, 017 | DONE |
-| 025 | Direction: sweep the available-now parity gates | P3 | M | — | IN PROGRESS (synthetic fixture matrix: 3 gates landed) |
+| 025 | Direction: sweep the available-now parity gates | P3 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) |
 REJECTED (one-line rationale).

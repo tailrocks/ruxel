@@ -105,9 +105,19 @@ the milestone is marked done here.
 
 ## Current Status and To-Do
 
-_Last updated: 2026-06-12 (session 3 cont.: **all 36 modules + ledger +
-full CLI surface + op resolver implemented; 6 playbooks gated three-way;
-holla-apt live**. Remaining: setup-* gate breadth + M5 benchmarks)._
+### Non-negotiable fixture isolation (2026-07-16)
+
+Real ChainArgos configuration is read-only input to offline feature extraction.
+Never run or render-compare those playbooks, inventory, templates, secrets,
+hostnames, or device IDs. Reproduce extracted feature shapes with synthetic
+files under `tools/fixture-project/`; execute Ruxel and Ansible only there,
+against labeled disposable resources in the isolated fixture project. Gate
+scripts enforce this path boundary. Historical real-workload captures were
+invalidated and removed.
+
+_Last updated: 2026-07-16. Six synthetic playbooks gated three-way; repeated
+36-action benchmark is Ruxel 3.12s vs Ansible 173.34s. Remaining: synthetic
+fixture coverage breadth, plan 021 timing, and plan 022 root-cause._
 
 **Implementation status: COMPLETE.** Every piece in ARCHITECTURE/SEMANTICS
 is built and verified: 36/36 modules (incl. PostgreSQL ×4 with SCRAM +
@@ -121,12 +131,9 @@ templates byte-identical to ansible 2.21). What remains is **verification
 breadth, not missing features**: gate the 6 setup-* + restart-blockchain
 + 4 init-drive-variant playbooks on heavier fixtures, then M5 benchmarks.
 
-**setup-* gate harness is READY** (this session): tools/fixtures/
-bless-gate.sh `<dest> <key> <agent> <playbook> "" dry` drives ruxel
---dry-secrets both applies + ansible bless with the fake onepassword/pipe
-lookups (same deterministic values, no real secret on the fixture). Use
-a hosts:all copy in the workload dir (the setup-* `hosts:` are literal
-prod hostnames; keep the copy in-dir so config/ src paths resolve).
+**Fixture gate harness:** `tools/fixtures/bless-gate.sh` accepts only playbooks
+under `tools/fixture-project/`, applies them twice with Ruxel, then blesses the
+same state with pinned Ansible. Synthetic secrets and identities only.
 
 **Two operator decisions block the setup-* full gates** (attempted
 setup-postgresql-nova this session — 102 tasks; ruxel ran timezone/file/
