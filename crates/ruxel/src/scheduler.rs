@@ -89,6 +89,35 @@ struct HostRun<'a, A> {
     tags_filter: Option<Vec<String>>,
 }
 
+#[derive(Clone, Default)]
+struct InheritedCtx {
+    vars: Vec<(String, serde_norway::Value)>,
+    environment: Vec<(String, serde_norway::Value)>,
+    becomes: Option<bool>,
+    become_user: Option<String>,
+}
+
+impl InheritedCtx {
+    fn for_block(&self, task: &Task) -> Self {
+        let mut next = self.clone();
+        next.vars.extend(task.vars.iter().cloned());
+        for (key, value) in &task.environment {
+            if let Some(existing) = next.environment.iter_mut().find(|(name, _)| name == key) {
+                existing.1 = value.clone();
+            } else {
+                next.environment.push((key.clone(), value.clone()));
+            }
+        }
+        if task.becomes.is_some() {
+            next.becomes = task.becomes;
+        }
+        if task.become_user.is_some() {
+            next.become_user = task.become_user.clone();
+        }
+        next
+    }
+}
+
 impl<A> HostRun<'_, A> {
     /// Whether a task runs under the active --tags filter, given the tags
     /// inherited from any enclosing block.
@@ -135,9 +164,10 @@ pub async fn run_play<A: AgentExec>(
     };
 
     let mut host_failed = false;
+    let inherited = InheritedCtx::default();
     'sections: for section in [&play.pre_tasks, &play.tasks] {
         for task in section.iter() {
-            if run.run_task_or_block(task, &[], out).await? {
+            if run.run_task_or_block(task, &[], &inherited, out).await? {
                 host_failed = true;
                 break 'sections;
             }
@@ -149,7 +179,9 @@ pub async fn run_play<A: AgentExec>(
     if !host_failed {
         for handler in &play.handlers {
             let name = handler.name.clone().unwrap_or_default();
-            if run.notified.contains(&name) && run.run_task_or_block(handler, &[], out).await? {
+            if run.notified.contains(&name)
+                && run.run_task_or_block(handler, &[], &inherited, out).await?
+            {
                 break; // handler failure ends the play; recap already counted
             }
         }
@@ -173,11 +205,24 @@ fn fact_layer(facts: &v1::Facts) -> Vec<(String, VarValue)> {
 }
 
 impl<A: AgentExec> HostRun<'_, A> {
-    fn scope(&self, task_vars: &[(String, serde_norway::Value)]) -> Scope {
+    fn scope(
+        &self,
+        inherited: &InheritedCtx,
+        task_vars: &[(String, serde_norway::Value)],
+    ) -> Scope {
         let mut scope = Scope::new()
             .with_layer(self.play_vars.clone())
             .with_layer(self.facts.clone())
             .with_layer(self.registered.clone());
+        if !inherited.vars.is_empty() {
+            scope = scope.with_layer(
+                inherited
+                    .vars
+                    .iter()
+                    .map(|(k, v)| (k.clone(), VarValue::Raw(v.clone())))
+                    .collect(),
+            );
+        }
         if !task_vars.is_empty() {
             scope = scope.with_layer(
                 task_vars
@@ -200,12 +245,13 @@ impl<A: AgentExec> HostRun<'_, A> {
         &mut self,
         task: &Task,
         inherited_tags: &[String],
+        inherited: &InheritedCtx,
         out: &mut impl Write,
     ) -> Result<bool> {
         if let TaskBody::Block {
             block,
             rescue,
-            always: _,
+            always,
         } = &task.body
         {
             // The block's own tags propagate to its contained tasks.
@@ -214,7 +260,7 @@ impl<A: AgentExec> HostRun<'_, A> {
 
             // Block-level when gates the whole block (SEMANTICS §4).
             if let Some(when) = &task.when {
-                let scope = self.scope(&task.vars);
+                let scope = self.scope(inherited, &task.vars);
                 if !self.engine.eval_condition(when, &scope)? {
                     for sub in block {
                         self.print_status(out, sub, "skipped", None);
@@ -223,25 +269,37 @@ impl<A: AgentExec> HostRun<'_, A> {
                     return Ok(false);
                 }
             }
+            let child_ctx = inherited.for_block(task);
             let mut block_failed = false;
             for sub in block {
-                if Box::pin(self.run_task_or_block(sub, &child_tags, out)).await? {
+                if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out)).await? {
                     block_failed = true;
                     break;
                 }
             }
+            let mut host_failed = false;
             if block_failed {
                 if rescue.is_empty() {
-                    return Ok(true);
-                }
-                self.recap.rescued += 1;
-                for sub in rescue {
-                    if Box::pin(self.run_task_or_block(sub, &child_tags, out)).await? {
-                        return Ok(true); // rescue itself failed
+                    host_failed = true;
+                } else {
+                    self.recap.rescued += 1;
+                    for sub in rescue {
+                        if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out))
+                            .await?
+                        {
+                            host_failed = true;
+                            break;
+                        }
                     }
                 }
             }
-            return Ok(false);
+            for sub in always {
+                if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out)).await? {
+                    host_failed = true;
+                    break;
+                }
+            }
+            return Ok(host_failed);
         }
 
         // --tags: an unselected task reports skipped and does not run.
@@ -251,14 +309,19 @@ impl<A: AgentExec> HostRun<'_, A> {
             return Ok(false);
         }
 
-        self.run_module_task(task, out).await
+        self.run_module_task(task, inherited, out).await
     }
 
-    async fn run_module_task(&mut self, task: &Task, out: &mut impl Write) -> Result<bool> {
+    async fn run_module_task(
+        &mut self,
+        task: &Task,
+        inherited: &InheritedCtx,
+        out: &mut impl Write,
+    ) -> Result<bool> {
         let TaskBody::Module(call) = &task.body else {
             unreachable!("blocks handled by caller")
         };
-        let scope = self.scope(&task.vars);
+        let scope = self.scope(inherited, &task.vars);
 
         // Loop expansion (per-item when) or single-shot when.
         let loop_items: Option<Vec<Value>> = match &task.loop_ {
@@ -284,16 +347,22 @@ impl<A: AgentExec> HostRun<'_, A> {
                     if outcomes.iter().any(|ok| !ok) {
                         let fc = task_eval::first_false_condition(when, &outcomes);
                         let skip = task_eval::skipped_result(&fc);
+                        if let Some(reg) = &task.register {
+                            self.register(reg, skip.clone());
+                        }
                         self.finish_task(task, out, skip, "skipped", false);
                         return Ok(false);
                     }
                 }
-                self.execute_iterations(task, call, vec![(None, scope.clone())], out)
+                self.execute_iterations(task, call, vec![(None, scope.clone())], inherited, out)
                     .await?
             }
             Some(items) => {
                 if items.is_empty() {
                     let agg = task_eval::loop_aggregate(vec![]);
+                    if let Some(reg) = &task.register {
+                        self.register(reg, agg.clone());
+                    }
                     self.finish_task(task, out, agg, "skipped", false);
                     return Ok(false);
                 }
@@ -303,7 +372,8 @@ impl<A: AgentExec> HostRun<'_, A> {
                         scope.with_layer(vec![("item".to_string(), VarValue::Final(item.clone()))]);
                     iterations.push((Some(item), item_scope));
                 }
-                self.execute_iterations(task, call, iterations, out).await?
+                self.execute_iterations(task, call, iterations, inherited, out)
+                    .await?
             }
         };
 
@@ -343,6 +413,7 @@ impl<A: AgentExec> HostRun<'_, A> {
         task: &Task,
         call: &ruxel_core::playbook::ModuleCall,
         iterations: Vec<(Option<Value>, Scope)>,
+        inherited: &InheritedCtx,
         _out: &mut impl Write,
     ) -> Result<Value> {
         let is_loop = iterations.len() != 1 || iterations[0].0.is_some();
@@ -367,7 +438,7 @@ impl<A: AgentExec> HostRun<'_, A> {
             let raw = loop {
                 attempts += 1;
                 let raw = self
-                    .execute_once(task, call, &item_scope, item.as_ref())
+                    .execute_once(task, call, &item_scope, item.as_ref(), inherited)
                     .await?;
                 let Some(until) = &task.until else { break raw };
                 // The until expression sees the candidate result under the
@@ -427,6 +498,7 @@ impl<A: AgentExec> HostRun<'_, A> {
         call: &ruxel_core::playbook::ModuleCall,
         scope: &Scope,
         item: Option<&Value>,
+        inherited: &InheritedCtx,
     ) -> Result<Value> {
         let module = call.module.name;
         // Controller-side modules: no agent round-trip (ARCHITECTURE §4).
@@ -581,6 +653,16 @@ impl<A: AgentExec> HostRun<'_, A> {
         self.next_task_id += 1;
         let environment: std::collections::HashMap<String, String> = {
             let mut env = std::collections::HashMap::new();
+            for (k, v) in &inherited.environment {
+                let rendered = self.engine.render_value(v, scope)?;
+                env.insert(
+                    k.clone(),
+                    rendered
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| rendered.to_string()),
+                );
+            }
             for (k, v) in &task.environment {
                 let rendered = self.engine.render_value(v, scope)?;
                 env.insert(
@@ -630,7 +712,14 @@ impl<A: AgentExec> HostRun<'_, A> {
                 }],
                 check_mode_override: task.check_mode == Some(false),
                 no_log: task.no_log,
-                become_user: task.become_user.clone().unwrap_or_default(),
+                become_user: if task.becomes.or(inherited.becomes) == Some(false) {
+                    String::new()
+                } else {
+                    task.become_user
+                        .clone()
+                        .or_else(|| inherited.become_user.clone())
+                        .unwrap_or_default()
+                },
                 environment,
             })
             .await
@@ -887,5 +976,68 @@ mod tests {
         assert_eq!(recap.changed, 2);
         assert_eq!(agent.calls.len(), 2);
         assert_eq!(agent.calls[1].name, "restart service");
+    }
+
+    #[tokio::test]
+    async fn skipped_single_task_registers_skip_dict() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: skipped\n      command: echo hi\n      when: false\n      register: r\n    - name: verify\n      assert:\n        that:\n          - r.skipped\n";
+        let (recap, agent, _) = run(yaml, []).await;
+        assert_eq!(recap.skipped, 1);
+        assert_eq!(recap.ok, 1);
+        assert!(agent.calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn empty_loop_registers_skipped_empty_aggregate() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: empty\n      command: echo hi\n      loop: []\n      register: r\n    - name: verify\n      assert:\n        that:\n          - r.skipped\n          - r.results | length == 0\n";
+        let (recap, agent, _) = run(yaml, []).await;
+        assert_eq!(recap.skipped, 1);
+        assert_eq!(recap.ok, 1);
+        assert!(agent.calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn block_context_is_inherited_with_task_precedence() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: contextual\n      become: true\n      become_user: inherited-user\n      vars:\n        inherited_var: inherited-value\n      environment:\n        INHERITED: '{{ inherited_var }}'\n        OVERRIDE: block-value\n      block:\n        - name: child\n          command: echo {{ inherited_var }}\n          environment:\n            OVERRIDE: task-value\n";
+        let (_, agent, _) = run(yaml, []).await;
+        let task = &agent.calls[0];
+        assert_eq!(task.become_user, "inherited-user");
+        assert_eq!(task.environment["INHERITED"], "inherited-value");
+        assert_eq!(task.environment["OVERRIDE"], "task-value");
+        assert_eq!(task.iterations[0].free_form, "echo inherited-value");
+    }
+
+    #[tokio::test]
+    async fn block_always_runs_on_success() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: guarded\n      block:\n        - name: body\n          command: echo body\n      always:\n        - name: cleanup\n          command: echo cleanup\n";
+        let (_, agent, _) = run(yaml, []).await;
+        assert_eq!(agent.calls.len(), 2);
+        assert_eq!(agent.calls[1].name, "cleanup");
+    }
+
+    #[tokio::test]
+    async fn block_always_runs_after_rescue() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: guarded\n      block:\n        - name: body\n          command: echo body\n      rescue:\n        - name: rescue\n          command: echo rescue\n      always:\n        - name: cleanup\n          command: echo cleanup\n";
+        let results = [
+            serde_json::json!({"changed": false, "failed": true}),
+            serde_json::json!({"changed": false, "failed": false}),
+            serde_json::json!({"changed": false, "failed": false}),
+        ];
+        let (recap, agent, _) = run(yaml, results).await;
+        assert_eq!(recap.rescued, 1);
+        assert_eq!(agent.calls.len(), 3);
+        assert_eq!(agent.calls[2].name, "cleanup");
+    }
+
+    #[tokio::test]
+    async fn block_always_runs_before_unrescued_failure_stops_host() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: guarded\n      block:\n        - name: body\n          command: echo body\n      always:\n        - name: cleanup\n          command: echo cleanup\n    - name: must not run\n      command: echo after\n";
+        let results = [
+            serde_json::json!({"changed": false, "failed": true}),
+            serde_json::json!({"changed": false, "failed": false}),
+        ];
+        let (_, agent, _) = run(yaml, results).await;
+        assert_eq!(agent.calls.len(), 2);
+        assert_eq!(agent.calls[1].name, "cleanup");
     }
 }
