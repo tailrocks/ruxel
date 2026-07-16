@@ -38,7 +38,7 @@ disposable fixtures only. Quality gates before any commit:
 | 004 | Fix CI: cache parity, honest fidelity gate, advisory/license gate | P2 | M | — | DONE |
 | 005 | Characterization tests for the convergence ledger | P1 | M | — | DONE |
 | 006 | Fix ledger silent-drift probes (attrs, apt=latest, sysctl live) | P1 | M | 005 | DONE |
-| 007 | Flush the ledger on interrupt / connection loss | P1 | S | 005 | TODO |
+| 007 | Flush the ledger on interrupt / connection loss | P1 | S | 005 | DONE |
 | 008 | Honor `no_log` agent-side; stop persisting secrets at rest | P1 | M | 005 | TODO |
 | 009 | Add a test seam to the scheduler control flow | P1 | M | — | TODO |
 | 010 | Fix register-on-skip and block keyword/always inheritance | P1 | M | 009 | TODO |

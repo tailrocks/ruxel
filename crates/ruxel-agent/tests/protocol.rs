@@ -92,6 +92,58 @@ fn eof_without_done_exits_clean() {
 }
 
 #[test]
+fn ledger_flushes_on_eof_not_just_done() {
+    let dir = temp_dir("ledger-eof");
+    let dest = dir.join("managed-file");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+
+    write_frame(&mut stdin, &hello("ledger-eof", PROTO_VERSION)).unwrap();
+    let ack: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    assert!(matches!(ack.msg, Some(v1::event::Msg::HelloAck(_))));
+
+    let params = serde_json::to_vec(&serde_json::json!({
+        "dest": dest,
+        "content": "durable"
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![v1::RenderedTask {
+                    task_id: 1,
+                    name: "cacheable copy".into(),
+                    module: "copy".into(),
+                    rendered: true,
+                    iterations: vec![v1::Iteration {
+                        params_json: params,
+                        ledger_key: "ledger-eof-key".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+
+    let start: v1::Event = read_frame(&mut stdout).unwrap().expect("task start");
+    assert!(matches!(start.msg, Some(v1::event::Msg::TaskStart(_))));
+    let result: v1::Event = read_frame(&mut stdout).unwrap().expect("task result");
+    assert!(matches!(result.msg, Some(v1::event::Msg::TaskResult(ref r)) if r.status == "changed"));
+
+    drop(stdin);
+    assert_eq!(agent.wait().unwrap().code(), Some(0));
+    let ledger = dir.join("ledger/ledger.json");
+    assert!(ledger.exists());
+    assert!(!std::fs::read(&ledger).unwrap().is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn second_agent_is_locked_out_and_kill9_releases() {
     let dir = temp_dir("lock");
 

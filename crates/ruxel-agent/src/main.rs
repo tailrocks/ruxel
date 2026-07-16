@@ -107,9 +107,15 @@ fn serve() -> i32 {
             // Clean EOF: controller went away (Ctrl-C, connection loss).
             // The current task always completes before the next frame read,
             // so exiting here leaves the host reusable (ARCHITECTURE §8).
-            Ok(None) => return 0,
+            Ok(None) => {
+                ledger.flush();
+                return 0;
+            }
             Err(e) => {
                 log_event(&mut stdout, v1::log::Level::Error, format!("frame: {e}"));
+                // Completed-task fingerprints remain valid even when a later
+                // frame is corrupt.
+                ledger.flush();
                 return 64;
             }
         };
