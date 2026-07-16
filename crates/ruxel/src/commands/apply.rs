@@ -201,7 +201,13 @@ async fn run(
                     totals.changed += recap.changed;
                 }
                 Err(error) => {
-                    eprintln!("{}: unreachable: {error}", outcome.host);
+                    let record = super::run_log::unreachable_record(&outcome.host, &error);
+                    run_log.record_unreachable(&outcome.host, &error);
+                    if human {
+                        eprintln!("{}: unreachable: {error}", outcome.host);
+                    } else {
+                        println!("{record}");
+                    }
                     totals.failed += 1;
                 }
             }

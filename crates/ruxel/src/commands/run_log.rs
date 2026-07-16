@@ -61,6 +61,17 @@ impl RunLog {
             })
         );
     }
+
+    pub fn record_unreachable(&mut self, host: &str, error: &str) {
+        let _ = writeln!(self, "{}", unreachable_record(host, error));
+    }
+}
+
+pub(crate) fn unreachable_record(host: &str, error: &str) -> serde_json::Value {
+    serde_json::json!({
+        "event": "unreachable", "host": host, "msg": error,
+        "changed": false, "unreachable": true,
+    })
 }
 
 impl Write for RunLog {
@@ -170,5 +181,16 @@ mod tests {
     fn disabled_writer_is_non_fatal() {
         let mut log = RunLog { writer: None };
         assert_eq!(log.write(b"ignored").unwrap(), 7);
+    }
+
+    #[test]
+    fn unreachable_record_has_ansible_observable_shape() {
+        assert_eq!(
+            unreachable_record("fixture", "refused"),
+            serde_json::json!({
+                "event": "unreachable", "host": "fixture", "msg": "refused",
+                "changed": false, "unreachable": true,
+            })
+        );
     }
 }
