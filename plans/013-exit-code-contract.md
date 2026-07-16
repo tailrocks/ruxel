@@ -164,11 +164,11 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] `main` returns `ExitCode`; a playbook/inventory/compile parse error exits **2**
-- [ ] Host failure still exits **1**; success exits **0**; clap usage errors exit **2**
-- [ ] A unit test pins the error→code classifier
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 013 updated
+- [x] `main` returns `ExitCode`; a playbook/inventory/compile parse error exits **2**
+- [x] Host failure still exits **1**; success exits **0**; clap usage errors exit **2**
+- [x] A unit test pins the error→code classifier
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 013 updated
 
 ## STOP conditions
 

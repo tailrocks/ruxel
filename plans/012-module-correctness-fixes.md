@@ -232,14 +232,14 @@ Model on the inline test modules already in `command.rs`/`sysctl.rs`.
 
 ALL must hold:
 
-- [ ] `lvol` create strips `+` (unit test proves `+100%FREE`→`100%FREE`)
-- [ ] `replace` treats `$` literally (unit test proves `$PATH` survives)
-- [ ] `file` with no `state` applies attrs to an existing path / errors on missing (not "outside the closed surface")
-- [ ] `shlex_split` errors on an unclosed quote; `blockinfile create:no` on a missing file is unchanged (not Err)
-- [ ] `ansible.posix.sysctl` registry includes `sysctl_file` (and the workload parse gate still passes) OR a STOP was reported explaining why not
-- [ ] CORRECTNESS-14 either fixed with render-parity goldens still green, OR explicitly deferred with a reason
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 012 updated
+- [x] `lvol` create strips `+` (unit test proves `+100%FREE`→`100%FREE`)
+- [x] `replace` treats `$` literally (unit test proves `$PATH` survives)
+- [x] `file` with no `state` applies attrs to an existing path / errors on missing (not "outside the closed surface")
+- [x] `shlex_split` errors on an unclosed quote; `blockinfile create:no` on a missing file is unchanged (not Err)
+- [x] `ansible.posix.sysctl` registry includes `sysctl_file` (and the workload parse gate still passes) OR a STOP was reported explaining why not
+- [x] CORRECTNESS-14 either fixed with render-parity goldens still green, OR explicitly deferred with a reason
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 012 updated
 
 ## STOP conditions
 

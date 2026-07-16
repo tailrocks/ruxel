@@ -200,12 +200,12 @@ in any test string. `cargo nextest run -p ruxel-agent postgres` → pass.
 
 ALL must hold:
 
-- [ ] `default_privs` idempotence uses `pg_default_acl`/`aclexplode`; the hardcoded `true` is gone
-- [ ] `grep -n '"default_privs" => true' crates/ruxel-agent/src/modules/postgresql.rs` → no matches
-- [ ] `flags_changed` compares all requested role flags (not only SUPERUSER)
-- [ ] `validate_role_attr_flags` rejects any token outside the closed role-flag set (incl. `;`-bearing input) and is called before `flags_to_sql`
-- [ ] Pure-function unit tests pass; `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 011 updated
+- [x] `default_privs` idempotence uses `pg_default_acl`/`aclexplode`; the hardcoded `true` is gone
+- [x] `grep -n '"default_privs" => true' crates/ruxel-agent/src/modules/postgresql.rs` → no matches
+- [x] `flags_changed` compares all requested role flags (not only SUPERUSER)
+- [x] `validate_role_attr_flags` rejects any token outside the closed role-flag set (incl. `;`-bearing input) and is called before `flags_to_sql`
+- [x] Pure-function unit tests pass; `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 011 updated
 
 ## STOP conditions
 

@@ -210,12 +210,12 @@ string literals so the parser path is exercised.
 
 ALL must hold:
 
-- [ ] A `when`-skipped single task and an empty-loop task both bind their `register` variable to the Ansible skip/aggregate dict
-- [ ] Block `become_user` (and any other keyword a block node parses) is inherited by child tasks, with task-own values taking precedence
-- [ ] Block `always` runs after block/rescue in both success and failure paths
-- [ ] New scheduler tests cover all three and pass on the 009 seam
-- [ ] `cargo nextest run` green; clippy/fmt clean; no existing golden regressed
-- [ ] `plans/README.md` row for 010 updated
+- [x] A `when`-skipped single task and an empty-loop task both bind their `register` variable to the Ansible skip/aggregate dict
+- [x] Block `become_user` (and any other keyword a block node parses) is inherited by child tasks, with task-own values taking precedence
+- [x] Block `always` runs after block/rescue in both success and failure paths
+- [x] New scheduler tests cover all three and pass on the 009 seam
+- [x] `cargo nextest run` green; clippy/fmt clean; no existing golden regressed
+- [x] `plans/README.md` row for 010 updated
 
 ## STOP conditions
 

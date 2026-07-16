@@ -198,13 +198,13 @@ pin. Two tests deliberately assert **current buggy** behavior and are labeled
 
 ALL must hold:
 
-- [ ] `cargo nextest run -p ruxel-agent ledger` runs ≥ 10 new tests, all pass
-- [ ] `cargo fmt --all --check` exits 0
-- [ ] `cargo clippy -p ruxel-agent --all-targets -- -D warnings` exits 0
-- [ ] The two `BUG(plan 006 ...)` tests exist and pass (documenting current behavior)
-- [ ] No behavior change to `ledger.rs` (only a `#[cfg(test)]` module and, if
+- [x] `cargo nextest run -p ruxel-agent ledger` runs ≥ 10 new tests, all pass
+- [x] `cargo fmt --all --check` exits 0
+- [x] `cargo clippy -p ruxel-agent --all-targets -- -D warnings` exits 0
+- [x] The two `BUG(plan 006 ...)` tests exist and pass (documenting current behavior)
+- [x] No behavior change to `ledger.rs` (only a `#[cfg(test)]` module and, if
       unavoidable, `pub(super)` on ≤2 items) — `git diff` shows no logic edits
-- [ ] `plans/README.md` row for 005 updated
+- [x] `plans/README.md` row for 005 updated
 
 ## STOP conditions
 

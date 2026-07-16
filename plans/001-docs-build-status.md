@@ -151,11 +151,11 @@ inspections above plus:
 
 ALL must hold:
 
-- [ ] `grep -rn "Do not start building the execution engine" AGENTS.md` → no matches
-- [ ] `grep -rn "engine intentionally does not yet" README.md` → no matches
-- [ ] `AGENTS.md` still contains the "never touch the production servers" hard rule (`grep -n "never" AGENTS.md` → matches present)
-- [ ] `git status --porcelain` shows only `AGENTS.md` and `README.md` modified
-- [ ] `plans/README.md` status row for 001 updated
+- [x] `grep -rn "Do not start building the execution engine" AGENTS.md` → no matches
+- [x] `grep -rn "engine intentionally does not yet" README.md` → no matches
+- [x] `AGENTS.md` still contains the "never touch the production servers" hard rule (`grep -n "never" AGENTS.md` → matches present)
+- [x] `git status --porcelain` shows only `AGENTS.md` and `README.md` modified
+- [x] `plans/README.md` status row for 001 updated
 
 ## STOP conditions
 

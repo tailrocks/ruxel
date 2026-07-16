@@ -146,12 +146,12 @@ the pre-existing protocol tests still pass.
 
 ALL must hold:
 
-- [ ] The clean-EOF branch flushes the ledger before returning
-- [ ] The frame-error branch flushes before returning 64 (completed-task fingerprints durable)
-- [ ] The panic hook is unchanged (still no flush)
-- [ ] `protocol.rs` proves a ledger written on EOF-without-Done
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 007 updated
+- [x] The clean-EOF branch flushes the ledger before returning
+- [x] The frame-error branch flushes before returning 64 (completed-task fingerprints durable)
+- [x] The panic hook is unchanged (still no flush)
+- [x] `protocol.rs` proves a ledger written on EOF-without-Done
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 007 updated
 
 ## STOP conditions
 

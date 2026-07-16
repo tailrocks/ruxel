@@ -210,13 +210,13 @@ the PR description for the operator to triage rather than force-allowing it.
 
 ALL must hold:
 
-- [ ] `clippy` and `agent-cross` jobs each have a `target/` cache with a unique key + sccache enabled
-- [ ] Target cache keys no longer contain `github.head_ref`
-- [ ] `cargo nextest run` reports the workload + template fidelity gates as **skipped** (visible), not passed, when `RUXEL_WORKLOAD_DIR` is unset
-- [ ] `deny.toml` exists and a `deny` CI job runs `cargo deny check`
-- [ ] `README.md` dev section documents `RUXEL_WORKLOAD_DIR` (what it points at, that it's private, that the gate skips without it)
-- [ ] `.github/workflows/ci.yml` parses as valid YAML
-- [ ] `plans/README.md` row for 004 updated
+- [x] `clippy` and `agent-cross` jobs each have a `target/` cache with a unique key + sccache enabled
+- [x] Target cache keys no longer contain `github.head_ref`
+- [x] `cargo nextest run` reports the workload + template fidelity gates as **skipped** (visible), not passed, when `RUXEL_WORKLOAD_DIR` is unset
+- [x] `deny.toml` exists and a `deny` CI job runs `cargo deny check`
+- [x] `README.md` dev section documents `RUXEL_WORKLOAD_DIR` (what it points at, that it's private, that the gate skips without it)
+- [x] `.github/workflows/ci.yml` parses as valid YAML
+- [x] `plans/README.md` row for 004 updated
 
 ## STOP conditions
 

@@ -201,13 +201,13 @@ Model structurally on plan 005's harness (scratch temp dir, no external crates).
 
 ALL must hold:
 
-- [ ] `Probe::File` includes mode/uid/gid; `verify()` compares them; directories are probeable (not force-uncached)
-- [ ] `probe_for` returns `None` for `apt` with `state: latest`
-- [ ] `sysctl_set` tasks record and verify the live `/proc/sys` value with whitespace normalization
-- [ ] Old-schema `ledger.json` degrades to "re-check" without panic
-- [ ] The two plan-005 `BUG(...)` tests are flipped to assert correct behavior and pass
-- [ ] `cargo nextest run` green; `cargo clippy --all-targets -- -D warnings` exits 0; `cargo fmt --all --check` exits 0
-- [ ] `plans/README.md` row for 006 updated
+- [x] `Probe::File` includes mode/uid/gid; `verify()` compares them; directories are probeable (not force-uncached)
+- [x] `probe_for` returns `None` for `apt` with `state: latest`
+- [x] `sysctl_set` tasks record and verify the live `/proc/sys` value with whitespace normalization
+- [x] Old-schema `ledger.json` degrades to "re-check" without panic
+- [x] The two plan-005 `BUG(...)` tests are flipped to assert correct behavior and pass
+- [x] `cargo nextest run` green; `cargo clippy --all-targets -- -D warnings` exits 0; `cargo fmt --all --check` exits 0
+- [x] `plans/README.md` row for 006 updated
 
 ## STOP conditions
 

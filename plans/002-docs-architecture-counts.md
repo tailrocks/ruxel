@@ -227,13 +227,13 @@ cited code lines.
 
 ALL must hold:
 
-- [ ] `grep -rn "29 distinct modules\|29 modules" docs/` → no matches
-- [ ] `grep -n "group | 39" docs/WORKLOAD.md` → no matches
-- [ ] ARCHITECTURE §2/§4/§5/§6/§7 each carry a build-status note for the unbuilt/replaced mechanism
-- [ ] The 9 resolved ⚠ items are cleared; the 4 open ones remain and are listed
-- [ ] `PLAN.md`/README spec-drift claim reads as "planned", not "runs in CI"
-- [ ] No `crates/**`, `Cargo.toml`, or `.github/**` file modified (`git status`)
-- [ ] `plans/README.md` row for 002 updated
+- [x] `grep -rn "29 distinct modules\|29 modules" docs/` → no matches
+- [x] `grep -n "group | 39" docs/WORKLOAD.md` → no matches
+- [x] ARCHITECTURE §2/§4/§5/§6/§7 each carry a build-status note for the unbuilt/replaced mechanism
+- [x] The 9 resolved ⚠ items are cleared; the 4 open ones remain and are listed
+- [x] `PLAN.md`/README spec-drift claim reads as "planned", not "runs in CI"
+- [x] No `crates/**`, `Cargo.toml`, or `.github/**` file modified (`git status`)
+- [x] `plans/README.md` row for 002 updated
 
 ## STOP conditions
 

@@ -166,7 +166,7 @@ ALL must hold:
 - [ ] Every fixture + volume created is destroyed and reaped; `hcloud server list` and `hcloud volume list` are empty
 - [ ] No production host was ever contacted (`Safety check: target` recorded per remote session)
 - [ ] Coverage count updated in `RESTORE.md`/`GOAL.md`
-- [ ] `plans/README.md` row for 025 updated
+- [x] `plans/README.md` row for 025 updated
 
 2026-07-16 precondition attempt: active context was confirmed as
 `ruxel-fixtures`, but both `hcloud server list` and `hcloud volume list` failed

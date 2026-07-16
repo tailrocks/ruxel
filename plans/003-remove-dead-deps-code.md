@@ -176,13 +176,13 @@ suite:
 
 ALL must hold:
 
-- [ ] `cargo build --workspace` exits 0
-- [ ] `cargo clippy --all-targets -- -D warnings` exits 0
-- [ ] `cargo nextest run` passes with no drop in test count vs. before
-- [ ] `cargo tree -i openssh` reports the crate is gone; `openssh-sftp-client` remains
-- [ ] `grep -rn "anyhow" crates/ruxel-agent/` → no matches
-- [ ] `grep -n "pub async fn connect(" crates/ruxel/src/transport.rs` → no matches
-- [ ] `plans/README.md` row for 003 updated
+- [x] `cargo build --workspace` exits 0
+- [x] `cargo clippy --all-targets -- -D warnings` exits 0
+- [x] `cargo nextest run` passes with no drop in test count vs. before
+- [x] `cargo tree -i openssh` reports the crate is gone; `openssh-sftp-client` remains
+- [x] `grep -rn "anyhow" crates/ruxel-agent/` → no matches
+- [x] `grep -n "pub async fn connect(" crates/ruxel/src/transport.rs` → no matches
+- [x] `plans/README.md` row for 003 updated
 
 ## STOP conditions
 

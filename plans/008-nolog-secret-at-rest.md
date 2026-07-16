@@ -235,15 +235,15 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] `grep -n "no_log" crates/ruxel-agent/src/main.rs` → the agent reads it
-- [ ] A `no_log` task is not recorded in the ledger; `no_log` content tasks embed no plaintext diff
-- [ ] `ledger.json` is created mode 0600 and its dir 0700 (test proves it)
-- [ ] Ledger key: either keyed with a per-host secret, OR Steps 1–3 landed with an explicit deferred `TODO(SECURITY-04)` and a README follow-up
-- [ ] `censored_result` is either wired in or removed (no dead code)
-- [ ] The registered variable remains uncensored (Ansible parity intact — goldens E12/E13 still pass)
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] PR description recommends the operator rotate any secret previously written to a real host's ledger and wipe stale ledgers
-- [ ] `plans/README.md` row for 008 updated
+- [x] `grep -n "no_log" crates/ruxel-agent/src/main.rs` → the agent reads it
+- [x] A `no_log` task is not recorded in the ledger; `no_log` content tasks embed no plaintext diff
+- [x] `ledger.json` is created mode 0600 and its dir 0700 (test proves it)
+- [x] Ledger key: either keyed with a per-host secret, OR Steps 1–3 landed with an explicit deferred `TODO(SECURITY-04)` and a README follow-up
+- [x] `censored_result` is either wired in or removed (no dead code)
+- [x] The registered variable remains uncensored (Ansible parity intact — goldens E12/E13 still pass)
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] PR description recommends the operator rotate any secret previously written to a real host's ledger and wipe stale ledgers
+- [x] `plans/README.md` row for 008 updated
 
 ## STOP conditions
 

@@ -190,13 +190,13 @@ warnings` → 0; `cargo nextest run` → green (no regressions anywhere).
 
 ALL must hold:
 
-- [ ] An `AgentExec` (or equivalent) trait abstracts the scheduler↔agent round-trip; `AgentConnection` implements it
-- [ ] `run_play` runs against a `FakeAgent` in unit tests with no SSH/agent
-- [ ] ≥ 6 characterization tests pass, covering when/loop/changed_when/block-rescue/notify
-- [ ] `cargo nextest run` shows **no regressions** in existing tests (behavior preserved)
-- [ ] No new external dependency added (or, if `async_trait` is genuinely needed, it's justified in the PR)
-- [ ] `cargo clippy --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
-- [ ] `plans/README.md` row for 009 updated
+- [x] An `AgentExec` (or equivalent) trait abstracts the scheduler↔agent round-trip; `AgentConnection` implements it
+- [x] `run_play` runs against a `FakeAgent` in unit tests with no SSH/agent
+- [x] ≥ 6 characterization tests pass, covering when/loop/changed_when/block-rescue/notify
+- [x] `cargo nextest run` shows **no regressions** in existing tests (behavior preserved)
+- [x] No new external dependency added (or, if `async_trait` is genuinely needed, it's justified in the PR)
+- [x] `cargo clippy --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
+- [x] `plans/README.md` row for 009 updated
 
 ## STOP conditions
 
