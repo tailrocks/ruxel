@@ -311,7 +311,7 @@ fn render_static(task: &Task, ctx: &PlayCtx<'_>) -> Result<RenderedParts, Engine
 
 /// Templated literal-enum params are validated post-render (the parser let
 /// them through on the promise we would).
-fn validate_rendered_enums(
+pub fn validate_rendered_enums(
     module: &crate::modules::ModuleSurface,
     params: &[(String, Value)],
     playbook: &str,

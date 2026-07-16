@@ -607,10 +607,18 @@ impl<A: AgentExec> HostRun<'_, A> {
         // Agent-side execution: render params + free-form with the item
         // scope, ship one iteration, await its result.
         let mut params = serde_json::Map::new();
+        let mut rendered_params = Vec::new();
         for (k, v) in &call.params {
             let rendered = self.engine.render_value(v, scope)?;
             params.insert(k.clone(), serde_json::to_value(&rendered)?);
+            rendered_params.push((k.clone(), rendered));
         }
+        ruxel_core::compiler::validate_rendered_enums(
+            call.module,
+            &rendered_params,
+            &self.playbook_dir.to_string_lossy(),
+            &label(task),
+        )?;
         // `copy src=` reads the controller-side file (playbook-relative)
         // and ships it as content; `template src=` additionally renders
         // it through the engine with the full scope first (byte-fidelity
@@ -1039,5 +1047,32 @@ mod tests {
         let (_, agent, _) = run(yaml, results).await;
         assert_eq!(agent.calls.len(), 2);
         assert_eq!(agent.calls[1].name, "cleanup");
+    }
+
+    #[tokio::test]
+    async fn apply_revalidates_templated_enum_values() {
+        let yaml = "- hosts: all\n  vars:\n    selected_fs: btrfs\n  tasks:\n    - name: invalid rendered enum\n      filesystem:\n        dev: /dev/synthetic\n        fstype: '{{ selected_fs }}'\n";
+        let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
+        let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let mut agent = FakeAgent::default();
+        let mut output = Vec::new();
+        let error = run_play(
+            &playbook.plays[0],
+            "test-host",
+            &v1::Facts::default(),
+            &engine,
+            &mut agent,
+            std::path::Path::new("."),
+            OutputFormat::Human,
+            None,
+            &mut output,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("outside the observed value set"),
+            "{error:#}"
+        );
+        assert!(agent.calls.is_empty());
     }
 }
