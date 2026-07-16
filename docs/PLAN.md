@@ -1,194 +1,50 @@
-# PLAN — Build Order and Acceptance Gates
+# PLAN — Remaining Work to Verified Ansible Compatibility
 
-Status: committed plan, 2026-06-11. Operator decision: build the full
-drop-in executor. Ordering below is **dependency order** (what must exist
-before what can be proven), with explicit acceptance gates. Two standing
-rules govern every milestone:
+Status: active. Implementation core exists; compatibility proof is incomplete.
+The executable backlog is maintained in [`plans/README.md`](../plans/README.md).
 
-1. **Only the used surface** ([SEMANTICS.md](SEMANTICS.md) is normative;
-   unknown module/param/value = hard error). No speculative features, no
-   "while we're here" generality.
-2. **No production contact, ever**, until M6's operator-driven pilot
-   ([AGENTS.md](../AGENTS.md)). All gates run against local VMs/containers
-   and the repo's own files.
+## Source of truth
 
-Every **⚠ verify** item in SEMANTICS.md is an open question with an
-experiment attached; a milestone is not done while one of its ⚠ items is
-unresolved — they are resolved by *measurement against real Ansible*, not
-by assumption.
+Pinned Ansible 2.21 defines behavior for the closed surface extracted from the
+16 reference playbooks. Real reference configuration is used only for offline
+feature extraction. Every executable experiment uses repository-owned
+synthetic fixtures on disposable demo servers.
 
----
+Production hosts are never contacted, resolved, probed, or used for automated
+comparison. A future production pilot is a separate operator-authorized phase
+and is not a completion gate for this development plan.
 
-## M0 — Test infrastructure, oracle, and workspace (prerequisite for every gate)
+## Remaining milestones
 
-Nothing in M1–M5 is provable without this; it comes first.
+1. Produce a complete traceability manifest from extracted workload shapes to
+   synthetic fixtures, oracle captures, Ruxel tests, and state assertions.
+2. Restore exhaustive synthetic render/expression parity and close every
+   `⚠ verify` item in `SEMANTICS.md` using measured Ansible behavior.
+3. Expand `tools/fixture-project/` to cover the full module and control-flow
+   surface, including interactions that require full-play sequencing.
+4. Compare normalized per-task results and observable server state—not only
+   aggregate changed counts—across fresh, converged, check, and diff runs.
+5. Make remote tooling accept only provider-verified disposable fixture
+   identities.
+6. Finish and verify bounded multi-host execution on multiple disposable demo
+   servers without speculative transport changes.
+7. Publish reproducible correctness-coupled performance and chaos evidence for
+   fresh, converged, drifted, secretful, storage, PostgreSQL, RTT, and
+   multi-host cases.
 
-- **Workspace layout**: restructure the crate into a Cargo workspace —
-  `crates/ruxel` (controller CLI), `crates/ruxel-agent` (target binary),
-  `crates/ruxel-proto` (prost messages), `crates/ruxel-core` (model,
-  compiler, modules' check/apply logic shared where sensible). Agent
-  release target `x86_64-unknown-linux-musl` cross-built with
-  cargo-zigbuild (the holla/velnor pattern); controller targets the
-  operator's macOS arm64 + linux.
-- **Fixture fleet**: the dev machine is arm64 macOS; the targets are
-  x86_64 Debian 12 with systemd, LVM, PG18 — containers cannot fixture
-  that faithfully. Decision: throwaway **Hetzner Cloud x86_64 VMs**
-  (same mirrors/network character as production, real systemd + loop-device
-  LVM), created/destroyed by a `tools/fixtures/` script the operator can
-  audit; local Lima/UTM Debian VM as the fast inner loop. CI system gates
-  run on x86_64 GitHub runners driving the same scripts. (Operator
-  provides/approves the Hetzner cloud project + budget once.)
-- **The Ansible oracle**: a pinned ansible-core 2.21 venv in-repo
-  (`tools/oracle/`, uv-managed, version-locked to what the controller runs
-  today) plus a **capture callback plugin** that records, for every task of
-  an `ansible-playbook` run of repository-owned synthetic playbooks against a
-  fixture VM: rendered args, result
-  dict, changed/ok/skipped status, and diff. Captures are committed as
-  golden files. Ruxel parity = replay against the same fixture state and
-  diff against the capture — semantics pinned by observation, not by
-  reading docs.
-- **Workload isolation**: real ChainArgos configuration is used only for
-  offline feature extraction. Remote gates execute only
-  `tools/fixture-project/`; gate scripts reject other paths. The fixture
-  project mirrors required syntax and semantics with synthetic identities and
-  data, never copied production inventory, secrets, hostnames, or device IDs.
-- **Baseline timings**: record `ansible-playbook` wall-clock +
-  `profile_tasks` per playbook on the fixture fleet (automated), and —
-  operator-run, at his convenience — one timed run per key playbook against
-  production for the true denominator. Stored in `docs/benchmarks/baseline/`.
-- **Secrets in tests**: a dedicated 1Password vault containing only
-  synthetic test items, accessed in CI via a **1P service-account token**;
-  biometric/interactive `op` stays a local-dev path. No real secret ever
-  enters fixtures or captures.
+## Final acceptance gate
 
-**Gate:** `cargo build` for all workspace members incl. cross-built agent;
-one scripted fixture VM up/down cycle; one captured oracle run of the
-synthetic base fixture committed; baseline timings for the four representative
-playbooks recorded.
+Ruxel may be called complete only when:
 
-## M1 — Fidelity layer (controller-side, fully offline)
+- every extracted feature shape is mapped and tested;
+- pinned Ansible and Ruxel agree on rendered inputs, task outcomes, result
+  shapes, diffs, and final disposable-server state;
+- every closed-surface module and control-flow interaction has executable
+  synthetic evidence;
+- all experiments are reproducible from committed fixture sources;
+- all remaining semantic questions are resolved by oracle measurement;
+- multi-host execution and every required benchmark/chaos class pass; and
+- normal tooling cannot accidentally target a non-fixture server.
 
-Parser (inventory INI + playbook YAML → typed model), MiniJinja engine
-with the workload's filter set (`default, bool, urlencode, map, list,
-length, hash('sha256'), subelements` + native-types semantics), lookup
-resolver with `--dry-secrets` mode (deterministic fakes), loop/when/
-register/until evaluation, register-dependency DAG compiler, `no_log`
-redaction.
-
-**Parity harness** (the gate, and a permanent CI fixture): for every extracted
-feature shape, render the corresponding synthetic fixture expression
-and template through ansible-core 2.21's Templar (driven via its Python
-API locally) and through ruxel, with identical fake variable sets;
-byte-diff. Includes the loop/when/register shapes extracted on 2026-06-11
-(literal-list and template-string loops, list-AND `when`, per-item when,
-registered-result attribute access).
-
-**Gate:** the offline extractor covers 16/16 workload playbooks; every
-corresponding synthetic fixture compiles and renders byte-identically;
-every inline expression identical; all M1-class ⚠ items closed with
-recorded evidence.
-
-## M2 — Transport + agent skeleton
-
-`proto/ruxel.proto`, prost codegen, framed stdio protocol; `openssh`
-ControlMaster connection management; agent upload (content-addressed) +
-handshake + facts; SFTP blob channel; event stream plumbing; `pause`
-relay; structured crash reporting; flock single-run guard.
-
-**Gate:** against a local Debian 12 VM: cold connect → handshake → facts →
-clean shutdown in < 1 s; agent re-upload only on hash change; kill -9 /
-disconnect mid-stream leaves the target reusable (rerun succeeds).
-
-## M3 — Core modules + ledger + plan/apply
-
-Modules: `file, copy, template, lineinfile, replace, blockinfile, stat,
-slurp, shell, command, apt, apt_repository, systemd, service, get_url,
-debug, assert, fail, set_fact` — each with native check, apply, diff,
-check-mode prediction, and ledger probe set (ARCHITECTURE §6 classes).
-Ledger store + verdict engine + `--no-cache`. Handlers/notify. dpkg and
-systemd snapshots; apt adjacency batching with per-task status
-reconstruction. CLI: `plan`/`apply`, `-i`, `--limit`, `--check`, `--diff`,
-ansible-shaped output + `--output json`.
-
-**Gate (fixture VM, fresh Debian 12):** `install-base.yml`,
-`install-docker.yml`, `upgrade-debian.yml`, `update-packages.yml` —
-(a) ruxel apply from scratch produces end state byte-equivalent to
-`ansible-playbook` from scratch on a twin VM (automated state-diff
-harness: package set, file tree hashes under managed paths, unit states);
-(b) converged `ruxel plan` < 2 s on the VM; (c) per-task status/changed
-counts match Ansible's recap exactly on both first and second runs;
-(d) M3 ⚠ items (apt update_cache/upgrade changed semantics, lineinfile
-idempotence rule, daemon_reload changed, creates-guard status, become_user
-env) closed by recorded side-by-side experiments.
-
-## M4 — Full module set + full control flow
-
-Remaining modules: `sysctl` (both spellings), `user, group,
-authorized_key, iptables, git, pause, timezone, lvg, lvol, filesystem,
-mount, postgresql_db, postgresql_user, postgresql_privs,
-postgresql_schema`. Storage fixtures use loop devices for LVM/XFS/ext4;
-PostgreSQL 18 + port 40000 fixture mirrors titan/nova; tags (`--tags`,
-`always`), block/rescue, `until/retries/delay`, `environment`,
-`become_user: postgres`, secret resolution against real `op` (read-only
-items created for testing).
-
-**Gate:** every one of the 16 playbooks converges on its fixture VM with
-end-state equivalence vs Ansible (the M3 harness extended: LVM layout,
-pg_catalog dump diff, iptables-save diff, crontab/unit diff); the
-postgresql_user password idempotence and lvg/lvol ⚠ items closed;
-`setup-sentry.yml`'s pause flow exercised end-to-end (fixture compose
-standing in for Sentry's installer).
-
-## M5 — Performance proof + hardening
-
-Benchmark suite (criterion + wall-clock harness on VMs with simulated
-RTT): converged no-op per playbook, edit-one-task rerun, fresh provision,
-6-hosts-parallel run. Targets from ARCHITECTURE §10 — measured, recorded
-in-repo, regressions gated in CI. Fuzz/property tests on parser and
-protocol; chaos tests (mid-run disconnects at every protocol state).
-
-**Gate:** converged `plan` ≤ 5 s including real 1P resolution against the
-fixture fleet; no protocol state leaves a target unrecoverable; published
-benchmark report in `docs/benchmarks/`.
-
-## M6 — Operator pilot (production, operator-driven, plan-only first)
-
-Sequence per host, each step individually authorized by the operator who
-runs the commands himself: (1) `ruxel plan` read-only against one
-low-risk host, output compared with `ansible-playbook --check --diff`;
-(2) diffs reviewed; (3) first `ruxel apply` on a change the operator was
-going to make anyway; (4) graduate host-by-host. Ansible remains installed
-and authoritative until the operator retires it — the files never changed,
-so there is nothing to migrate back.
-
-## Standing workstreams (no milestone, always on)
-
-- **Spec drift watch:** built locally in `tools/spec-extract`; it rejects
-  uncovered modules, parameters, and literal values. CI wiring against the
-  private ansible-configs checkout remains pending its read-only credential.
-  Once wired, any drift must fail CI until SEMANTICS.md and implementation
-  cover it.
-- **Warm-daemon tier** (ARCHITECTURE §9) and proactive drift reporting:
-  designed, deliberately not scheduled until the ephemeral path is proven
-  in M5 — it is an acceleration, not a dependency.
-- **Clean-room rule:** rash (GPL-3.0) and jetporch (GPL-3.0) are concept
-  references only; no source is read-and-ported from them into this
-  Apache-2.0 codebase. Behavior is specified from SEMANTICS.md and the
-  oracle captures, never from GPL implementations.
-
-## Operator actions before M0 starts
-
-Exact click-paths and commands: [OPERATOR-SETUP.md](OPERATOR-SETUP.md).
-
-1. Hetzner Cloud project `ruxel-fixtures` + R/W API token → local
-   `hcloud context create ruxel-fixtures` (fingerprint-free runtime; 1P
-   item optional backup).
-2. 1P vault `ruxel-test` + service account `ruxel-ci` (access to that
-   vault only) → token in `~/.config/ruxel/op-ci.env` (and optional 1P
-   backup item).
-3. Baseline timing logs (operator-run, optional, any time) — §3 of
-   OPERATOR-SETUP.md.
-
-M0's first act is a smoke test proving the fixture path end-to-end:
-create the cheapest x86_64 Debian 12 VM in `ruxel-fixtures`, SSH in,
-destroy it, reap leftovers.
+Until then the correct status is: **core implemented; Ansible compatibility
+verification incomplete**.
