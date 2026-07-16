@@ -6,19 +6,7 @@ are offline extraction input only; every executable comparison uses committed
 synthetic fixtures on provider-verified disposable targets. Production contact
 is forbidden.
 
-## 1. Complete evidence-chain traceability
-
-- Extend the versioned extraction artifact so every required feature maps to
-  its exact synthetic fixture task, normalized Ansible capture, Ruxel
-  assertion, and observable-state assertion.
-- Preserve distinct expression/register/control-flow input shapes instead of
-  collapsing them to construct names.
-- Fail CI when any evidence link is removed.
-
-Done when every extracted shape has the reproducible chain:
-`offline extraction -> fixture task -> Ansible oracle -> Ruxel assertion -> state assertion`.
-
-## 2. Finish executable fixture parity
+## 1. Finish executable fixture parity
 
 - Regenerate deterministic captures that still contain machine/run-specific
   data using `normalize_capture.py`.
@@ -36,21 +24,7 @@ Done when every extracted shape has the reproducible chain:
 Done when all 36 modules and all mapped interactions pass every run mode and
 state comparison from committed synthetic sources.
 
-## 3. Finish multi-host acceptance
-
-- Keep the historical transport-stall fix STOP-blocked unless a deterministic
-  cause is reproduced. Bounded parallel host orchestration is implemented and
-  passed the two-host disposable-fixture gate.
-- Capture the remaining six-host disposable benchmark and repeated resource-
-  leak/stall checks. Do not weaken the fixture safety cap silently; use six
-  local disposable SSH targets or an operator-approved cap change.
-- Complete unreachable-host output/run-log parity if the closed workload's
-  operational acceptance requires it.
-
-Done when six-host time is approximately the slowest host, ordered output and
-recaps match the contract, and repeated runs leak no transport resources.
-
-## 4. Complete performance and resilience proof
+## 2. Complete performance and resilience proof
 
 - Benchmark Ansible and Ruxel on equivalent synthetic fresh, converged,
   one-task-drift, check/diff, secret, storage, PostgreSQL, simulated-RTT, and
@@ -74,6 +48,10 @@ Ansible-equivalent.
 - Result comparison and server-state bless checks exist.
 - Remote gates structurally accept only labeled fixture identities.
 - Bounded six-way host orchestration passed a two-host real-fixture gate.
+- All 675 extracted features have a CI-enforced fixture/oracle/Ruxel/state
+  evidence chain.
+- Six-host disposable-container concurrency, ordered recaps, unreachable
+  output, and repeated transport-resource cleanup pass reproducibly.
 
 Ruxel status remains: **core implemented; closed-workload compatibility proof
 incomplete** until all four active sections pass.

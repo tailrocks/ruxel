@@ -16,13 +16,9 @@ and is not a completion gate for this development plan.
 
 ## Remaining milestones
 
-1. Complete evidence-chain traceability from each distinct extracted workload
-   shape to its fixture task, oracle, Ruxel assertion, and state assertion.
-2. Finish fresh/converged/check/diff task and final-state parity for every
+1. Finish fresh/converged/check/diff task and final-state parity for every
    synthetic fixture, including fully provisioned storage and PostgreSQL cases.
-3. Complete the six-host disposable benchmark and repeated transport/resource
-   checks. Bounded host concurrency and the two-host gate already pass.
-4. Publish reproducible correctness-coupled performance and chaos evidence for
+2. Publish reproducible correctness-coupled performance and chaos evidence for
    fresh, converged, drifted, secretful, storage, PostgreSQL, RTT, and
    multi-host cases.
 

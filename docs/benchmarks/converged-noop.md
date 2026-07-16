@@ -1,4 +1,9 @@
-# Benchmark — converged no-op (the "seconds on converged hosts" claim)
+# Historical benchmark — not acceptance evidence
+
+This 2026-06-12 measurement used a source playbook that is not committed as a
+synthetic fixture. It is retained only as historical context and does not
+support any current compatibility or performance claim. Current acceptance
+evidence must come from `tools/fixture-project` and disposable targets.
 
 Wall-clock of a re-run against an already-converged host: the case the
 operator hits constantly (nothing to change). Measured 2026-06-12 on a

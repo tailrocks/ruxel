@@ -54,10 +54,8 @@ are not current reproducible acceptance evidence.
 
 Remaining required work:
 
-1. complete per-shape evidence-chain traceability;
-2. finish fresh/converged/check/diff and final-state parity for every fixture;
-3. capture the six-host acceptance benchmark; and
-4. complete correctness-coupled performance and chaos evidence.
+1. finish fresh/converged/check/diff and final-state parity for every fixture;
+2. complete correctness-coupled performance and chaos evidence.
 
 Detailed acceptance criteria and execution order live in `plans/README.md`.
 Do not describe Ruxel as complete until all seven workstreams pass.
