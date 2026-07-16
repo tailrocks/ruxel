@@ -19,6 +19,9 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let current = match std::fs::read_to_string(p) {
         Ok(c) => c,
         Err(_) if create => String::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({"changed": false, "failed": false, "msg": ""}));
+        }
         Err(e) => return Err(format!("read {path}: {e}")),
     };
 
@@ -56,4 +59,25 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(
         json!({"changed": changed, "failed": false, "msg": if changed { "Block inserted" } else { "" }}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_file_with_create_false_is_unchanged() {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-blockinfile-missing-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = run(&json!({"path": path, "block": "synthetic"}), &ctx).unwrap();
+        assert_eq!(result["changed"], false);
+    }
 }

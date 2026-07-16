@@ -54,6 +54,8 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let present = probe(binary, &check)?;
     let changed = !present;
     if changed && !ctx.check_mode {
+        // Closed surface is append-only. TODO(spec): add insert semantics only
+        // if a future workload introduces `rule_num`/`action`.
         let mut append: Vec<&str> = vec!["-A", chain];
         append.extend(spec.iter().map(String::as_str));
         exec_rule(binary, &append)?;

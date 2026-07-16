@@ -79,18 +79,27 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
         match c {
             '\'' => {
                 in_word = true;
+                let mut closed = false;
                 for q in chars.by_ref() {
                     if q == '\'' {
+                        closed = true;
                         break;
                     }
                     current.push(q);
                 }
+                if !closed {
+                    return Err("No closing quotation".into());
+                }
             }
             '"' => {
                 in_word = true;
+                let mut closed = false;
                 while let Some(q) = chars.next() {
                     match q {
-                        '"' => break,
+                        '"' => {
+                            closed = true;
+                            break;
+                        }
                         '\\' => {
                             if let Some(&n) = chars.peek()
                                 && (n == '"' || n == '\\' || n == '$' || n == '`')
@@ -103,6 +112,9 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
                         }
                         other => current.push(other),
                     }
+                }
+                if !closed {
+                    return Err("No closing quotation".into());
                 }
             }
             '\\' => {
@@ -146,6 +158,18 @@ mod tests {
         assert_eq!(
             shlex_split(r#"sh -c "echo \"x\" y""#).unwrap(),
             vec!["sh", "-c", r#"echo "x" y"#]
+        );
+    }
+
+    #[test]
+    fn shlex_rejects_unclosed_quotes() {
+        assert_eq!(
+            shlex_split("echo 'unterminated").unwrap_err(),
+            "No closing quotation"
+        );
+        assert_eq!(
+            shlex_split("echo \"unterminated").unwrap_err(),
+            "No closing quotation"
         );
     }
 }

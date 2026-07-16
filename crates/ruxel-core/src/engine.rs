@@ -20,6 +20,10 @@ pub enum EngineError {
     Template(#[from] minijinja::Error),
     #[error("undefined variable in {0:?}")]
     Undefined(String),
+    #[error("variable cycle while rendering {0:?}")]
+    VarCycle(String),
+    #[error("failed to render variable {0:?}: {1}")]
+    LazyVar(String, String),
     #[error("unsupported YAML value (tagged) in template scope")]
     TaggedValue,
 }
@@ -216,7 +220,11 @@ impl Object for ScopeObject {
             VarValue::Final(v) => v,
             VarValue::Raw(yaml) => {
                 if !self.in_flight.lock().unwrap().insert(name.to_string()) {
-                    return Some(Value::from(format!("[ruxel: variable cycle at {name}]")));
+                    return Some(Value::from_object(ScopeRenderError {
+                        name: name.to_string(),
+                        message: "variable cycle".into(),
+                        cycle: true,
+                    }));
                 }
                 let result = render_yaml(&self.engine, &yaml, self);
                 self.in_flight.lock().unwrap().remove(name);
@@ -226,9 +234,11 @@ impl Object for ScopeObject {
                     // lazy templating does: the error message becomes the
                     // failure when the variable is actually consumed.
                     Err(e) => {
+                        let cycle = matches!(e, EngineError::VarCycle(_));
                         return Some(Value::from_object(ScopeRenderError {
                             name: name.to_string(),
                             message: e.to_string(),
+                            cycle,
                         }));
                     }
                 }
@@ -254,6 +264,7 @@ impl Object for ScopeObject {
 struct ScopeRenderError {
     name: String,
     message: String,
+    cycle: bool,
 }
 
 impl Object for ScopeRenderError {
@@ -265,11 +276,8 @@ impl Object for ScopeRenderError {
     where
         Self: Sized + 'static,
     {
-        write!(
-            f,
-            "[ruxel: error rendering {}: {}]",
-            self.name, self.message
-        )
+        let _ = f;
+        Err(std::fmt::Error)
     }
 }
 
@@ -407,7 +415,19 @@ fn eval_expr_bool(inner: &EngineInner, expr: &str, ctx: &Value) -> Result<bool, 
     if value.is_undefined() {
         return Err(EngineError::Undefined(expr.to_string()));
     }
+    if let Some(error) = poison_error(&value) {
+        return Err(error);
+    }
     Ok(value.is_true())
+}
+
+fn poison_error(value: &Value) -> Option<EngineError> {
+    let error = value.downcast_object_ref::<ScopeRenderError>()?;
+    Some(if error.cycle {
+        EngineError::VarCycle(error.name.clone())
+    } else {
+        EngineError::LazyVar(error.name.clone(), error.message.clone())
+    })
 }
 
 /// `"{{ expr }}"` (exactly one expression, nothing else) → Some(expr).
@@ -435,6 +455,9 @@ fn render_str_inner(
         // template must not silently *produce* it.
         if value.is_undefined() {
             return Err(EngineError::Undefined(template.to_string()));
+        }
+        if let Some(error) = poison_error(&value) {
+            return Err(error);
         }
         return Ok(value);
     }
@@ -882,10 +905,27 @@ broken: "{{ undefined_thing.attr.deep }}"
     }
 
     #[test]
-    fn variable_cycle_is_contained() {
+    fn variable_cycle_is_a_hard_error() {
         let s = raw_scope("a: \"{{ b }}\"\nb: \"{{ a }}\"\n");
-        let v = engine().render_str("{{ a }}", &s).unwrap();
-        assert!(v.as_str().unwrap().contains("cycle"));
+        let result = engine().render_str("{{ a }}", &s);
+        assert!(
+            matches!(result, Err(EngineError::VarCycle(_))),
+            "unexpected cycle result: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failed_lazy_variable_is_not_truthy_or_rendered() {
+        let s = raw_scope("bad: \"{{ missing }}\"\n");
+        assert!(matches!(
+            engine().eval_condition(&Condition::Expr("bad".into()), &s),
+            Err(EngineError::LazyVar(_, _))
+        ));
+        assert!(
+            engine()
+                .render_template_file("value={{ bad }}", &s)
+                .is_err()
+        );
     }
 
     #[test]

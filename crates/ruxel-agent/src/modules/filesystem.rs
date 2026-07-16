@@ -65,8 +65,9 @@ fn make(dev: &str, fstype: &str) -> Result<(), String> {
 fn grow(dev: &str, fstype: &str) -> Result<bool, String> {
     match fstype {
         "xfs" => {
-            // xfs_growfs needs a mountpoint; skip when unmounted (the
-            // workload grows after mount via the mount module path).
+            // xfs_growfs requires a mountpoint, but the closed filesystem
+            // surface carries only `dev`. Mounted XFS growth is handled by
+            // lvol's `resizefs` (`lvextend -r`); do not guess a mountpoint.
             Ok(false)
         }
         "ext4" => {

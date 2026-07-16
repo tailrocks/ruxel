@@ -83,7 +83,11 @@ fn free_extents(vg: &str) -> Result<u64, String> {
 fn create(vg: &str, lv: &str, size: &str) -> Result<(), String> {
     // %-forms use -l (extents); absolute sizes use -L.
     let flag = if size.contains('%') { "-l" } else { "-L" };
-    run_cmd("lvcreate", &[flag, size, "-n", lv, vg])
+    run_cmd("lvcreate", &[flag, lvcreate_size(size), "-n", lv, vg])
+}
+
+fn lvcreate_size(size: &str) -> &str {
+    size.strip_prefix('+').unwrap_or(size)
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -99,4 +103,14 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn create_size_removes_relative_prefix() {
+        assert_eq!(super::lvcreate_size("+100%FREE"), "100%FREE");
+        assert_eq!(super::lvcreate_size("100%FREE"), "100%FREE");
+        assert_eq!(super::lvcreate_size("10G"), "10G");
+    }
 }

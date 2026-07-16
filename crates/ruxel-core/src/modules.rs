@@ -45,7 +45,14 @@ pub static MODULES: &[ModuleSurface] = &[
         literal_enums: &[("state", &["present"])],
         ..surface(
             "ansible.posix.sysctl",
-            &["name", "reload", "state", "sysctl_set", "value"],
+            &[
+                "name",
+                "reload",
+                "state",
+                "sysctl_file",
+                "sysctl_set",
+                "value",
+            ],
         )
     },
     ModuleSurface {
