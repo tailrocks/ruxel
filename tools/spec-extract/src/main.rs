@@ -1,7 +1,7 @@
 use ruxel_core::modules::{self, ModuleSurface};
 use serde::{Deserialize, Serialize};
 use serde_norway::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const TASK_KEYS: &[&str] = &[
@@ -58,6 +58,12 @@ enum Drift {
 struct FeatureManifest {
     schema: u32,
     features: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    locations: BTreeMap<String, BTreeSet<String>>,
+    #[serde(skip)]
+    current_file: String,
+    #[serde(skip)]
+    current_task: String,
 }
 
 impl FeatureManifest {
@@ -65,11 +71,23 @@ impl FeatureManifest {
         Self {
             schema: 1,
             features: BTreeSet::new(),
+            locations: BTreeMap::new(),
+            current_file: String::new(),
+            current_task: String::new(),
         }
     }
 
     fn add(&mut self, kind: &str, value: impl AsRef<str>) {
-        self.features.insert(format!("{kind}:{}", value.as_ref()));
+        let feature = format!("{kind}:{}", value.as_ref());
+        self.features.insert(feature.clone());
+        if !self.current_file.is_empty() {
+            let location = if self.current_task.is_empty() {
+                self.current_file.clone()
+            } else {
+                format!("{}#{}", self.current_file, self.current_task)
+            };
+            self.locations.entry(feature).or_default().insert(location);
+        }
     }
 }
 
@@ -77,14 +95,16 @@ fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.is_empty() {
         eprintln!(
-            "usage: ruxel-spec-extract check <workload-dir>\n       ruxel-spec-extract manifest <workload-dir> [output.json]\n       ruxel-spec-extract coverage <workload-dir> <fixture-dir>\n       ruxel-spec-extract verify <manifest.json> <fixture-dir>"
+            "usage: ruxel-spec-extract check <workload-dir>\n       ruxel-spec-extract manifest <workload-dir> [output.json]\n       ruxel-spec-extract fixture-manifest <fixture-dir> [output.json]\n       ruxel-spec-extract coverage <workload-dir> <fixture-dir>\n       ruxel-spec-extract verify <manifest.json> <fixture-dir>"
         );
         std::process::exit(2);
     }
     let command = args[0].to_string_lossy();
     match command.as_ref() {
         "manifest" if matches!(args.len(), 2 | 3) => match extract_manifest(Path::new(&args[1])) {
-            Ok(manifest) => {
+            Ok(mut manifest) => {
+                // The committed workload artifact is deliberately source-free.
+                manifest.locations.clear();
                 let json = format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap());
                 if let Some(output) = args.get(2) {
                     std::fs::write(output, json).unwrap_or_else(|error| {
@@ -96,6 +116,21 @@ fn main() {
             }
             Err(error) => fail(&error),
         },
+        "fixture-manifest" if matches!(args.len(), 2 | 3) => {
+            match extract_manifest(Path::new(&args[1])) {
+                Ok(manifest) => {
+                    let json = format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap());
+                    if let Some(output) = args.get(2) {
+                        std::fs::write(output, json).unwrap_or_else(|error| {
+                            fail(&format!("write {}: {error}", Path::new(output).display()))
+                        });
+                    } else {
+                        print!("{json}");
+                    }
+                }
+                Err(error) => fail(&error),
+            }
+        }
         "coverage" if args.len() == 3 => {
             let required =
                 extract_manifest(Path::new(&args[1])).unwrap_or_else(|error| fail(&error));
@@ -182,6 +217,13 @@ fn extract_manifest(root: &Path) -> Result<FeatureManifest, String> {
     files.sort();
     let mut manifest = FeatureManifest::new();
     for path in files {
+        manifest.current_file = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        manifest.current_task.clear();
         let source = std::fs::read_to_string(&path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
         let value: Value = serde_norway::from_str(&source)
@@ -212,6 +254,12 @@ fn collect_template_file_features(
         if let Ok(text) = std::fs::read_to_string(path)
             && (text.contains("{{") || text.contains("{%"))
         {
+            manifest.current_file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("template")
+                .to_string();
+            manifest.current_task.clear();
             manifest.add("template-file", "jinja");
             collect_template_features("template-file", &text, manifest);
         }
@@ -269,6 +317,11 @@ fn collect_task_features(value: &Value, manifest: &mut FeatureManifest) {
         let Some(mapping) = task.as_mapping() else {
             continue;
         };
+        let previous_task = manifest.current_task.clone();
+        manifest.current_task = map_get(mapping, "name")
+            .and_then(Value::as_str)
+            .unwrap_or("(unnamed)")
+            .to_string();
         for block in ["block", "rescue", "always"] {
             if let Some(children) = map_get(mapping, block) {
                 manifest.add("task-key", block);
@@ -317,6 +370,7 @@ fn collect_task_features(value: &Value, manifest: &mut FeatureManifest) {
                 }
             }
         }
+        manifest.current_task = previous_task;
     }
 }
 
