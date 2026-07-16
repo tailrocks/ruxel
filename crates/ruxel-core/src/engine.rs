@@ -62,6 +62,37 @@ fn dry_value(key: &str) -> String {
     format!("dry-secret-{hex}")
 }
 
+fn python_display(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "None".into(),
+        serde_json::Value::Bool(value) => if *value { "True" } else { "False" }.into(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => {
+            format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+        }
+        serde_json::Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(python_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        serde_json::Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    python_display(&key.clone().into()),
+                    python_display(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// Deterministic fake secrets: stable across runs and languages so parity
 /// goldens are reproducible without any real secret store.
 pub struct DrySecrets;
@@ -347,6 +378,22 @@ impl Engine {
                     write!(out, "{}", if value.is_true() { "True" } else { "False" })
                 }
                 minijinja::value::ValueKind::None => write!(out, "None"),
+                minijinja::value::ValueKind::Seq => {
+                    let json = serde_json::to_value(value).map_err(|error| {
+                        minijinja::Error::new(MjErrorKind::InvalidOperation, error.to_string())
+                    })?;
+                    write!(out, "{}", python_display(&json))
+                }
+                minijinja::value::ValueKind::Map => {
+                    let json = serde_json::to_value(value).map_err(|error| {
+                        minijinja::Error::new(MjErrorKind::InvalidOperation, error.to_string())
+                    })?;
+                    if json.as_object().is_some_and(|map| !map.is_empty()) {
+                        write!(out, "{}", python_display(&json))
+                    } else {
+                        write!(out, "{value}")
+                    }
+                }
                 _ => write!(out, "{value}"),
             }
             .map_err(minijinja::Error::from)

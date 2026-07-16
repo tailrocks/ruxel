@@ -90,6 +90,13 @@ fn value_to_json(value: &Value) -> Json {
     serde_json::to_value(value).expect("MiniJinja value serializes")
 }
 
+fn matches_ansible_error(expected: &Json, error: &impl std::fmt::Display) -> bool {
+    expected["v"] == "AnsibleUndefinedVariable"
+        && format!("{error}")
+            .to_ascii_lowercase()
+            .contains("undefined")
+}
+
 #[test]
 fn synthetic_expressions_and_conditions_match_ansible() {
     let corpus = load_corpus();
@@ -106,7 +113,7 @@ fn synthetic_expressions_and_conditions_match_ansible() {
                 let matches = match (expected["t"].as_str().unwrap(), &got) {
                     ("str", Ok(value)) => value.as_str() == expected["v"].as_str(),
                     ("native", Ok(value)) => value_to_json(value) == expected["v"],
-                    ("error", Err(_)) => true,
+                    ("error", Err(error)) => matches_ansible_error(expected, error),
                     _ => false,
                 };
                 if !matches {
@@ -126,7 +133,7 @@ fn synthetic_expressions_and_conditions_match_ansible() {
                 );
                 let matches = match (expected["t"].as_str().unwrap(), &got) {
                     ("bool", Ok(value)) => Some(*value) == expected["v"].as_bool(),
-                    ("error", Err(_)) => true,
+                    ("error", Err(error)) => matches_ansible_error(expected, error),
                     _ => false,
                 };
                 if !matches {

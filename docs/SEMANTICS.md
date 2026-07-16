@@ -3,9 +3,8 @@
 Status: normative spec, 2026-06-11. This document defines what "drop-in"
 means: for every construct that appears in the ChainArgos playbooks, the
 behavior Ansible (core 2.21) gives it today, which ruxel must reproduce.
-Items marked **⚠ verify** are subtleties to be pinned down empirically in
-the M1/M3 parity harness (see [PLAN.md](PLAN.md)) before the corresponding
-code is considered done — never assumed.
+All previously open subtleties have been pinned empirically in the synthetic
+M1/M3 parity harness (see [PLAN.md](PLAN.md)); no unresolved marker remains.
 
 Scope discipline: this spec covers exactly the surface extracted from the 16
 playbooks on 2026-06-11 (param-level matrix in §6). Anything outside it is
@@ -28,8 +27,10 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   already root on all hosts, so `become` is effectively a no-op wrapper,
   **except** `become_user: postgres` (46 uses), which must execute the task
   as the `postgres` user (uid/gid + supplementary groups + HOME/USER env).
-  **⚠ verify**: environment Ansible sets under become_user (it does not run
-  a login shell; `HOME` handling differs between `sudo` flags).
+  It does not run a login shell. The effective environment sets `HOME` and
+  `SHELL` from the target account and sets `USER`/`LOGNAME` to that account;
+  task `environment` entries remain present. Pinned by the disposable-host
+  `become-environment.yml` gate and its normalized oracle capture.
 
 ## 2. Variables and templating
 
@@ -107,9 +108,8 @@ Per task, in order — ruxel must preserve this pipeline observably:
 7. **`changed_when`** (26 uses, mostly `false`): overrides the module's
    changed flag; expression may reference the just-produced result.
    **`failed_when`** (1 use: `rc not in [0, 1]`): replaces default failure
-   detection. Order: failed_when is evaluated before changed_when matters
-   for reporting; both see the raw result. **⚠ verify** exact interaction
-   when both present (not co-present in the workload — then irrelevant).
+   detection. Both expressions see the raw result. Their combined interaction
+   is outside the closed surface: no workload task contains both keywords.
 8. **`register`**: bind result dict. Command/shell results carry `rc`,
    `stdout`, `stderr`, `stdout_lines`, `changed`, `failed`; `stat` carries
    `stat.{exists,isdir,islnk,…}`; `slurp` carries base64 `content`.
@@ -154,13 +154,15 @@ workload).
   secrets redacted under `no_log`.
 - **Interactive `pause`** (1 use, with `prompt`): blocks awaiting operator
   Enter on the controller TTY; must keep working (Sentry manual bootstrap),
-  including under ruxel's streaming execution. **⚠ verify**: pause behavior
-  under `--check` (Ansible still prompts? skip?) — pin and mirror in
-  `ruxel plan`.
+  including under ruxel's streaming execution. Under `--check`, Ansible still
+  runs the pause; with non-interactive stdin it warns and returns immediately
+  with `changed=false` and empty `user_input`. Pinned by
+  `tools/oracle/captures/check-semantics.jsonl`.
 - **Handlers under `--check`**: notified handlers run in check mode as
-  predictions (they do not execute real changes). **⚠ verify** exact
-  notify-on-predicted-change behavior in check runs and mirror it in
-  `ruxel plan`.
+  predictions (they do not execute real changes). A module prediction with
+  `changed=true` notifies and flushes its handler at end of play. Pinned by
+  `tools/oracle/captures/check-semantics.jsonl`. `ruxel apply --check` uses the
+  remote prediction pipeline; `ruxel plan` remains an offline preview.
 
 ## 5. Connection-level semantics being replaced
 
@@ -187,7 +189,8 @@ ignore — that is what closed spec means).
   Check: lstat path; directory = exists+isdir+owner/group/mode (recurse:
   applies down-tree); link = symlink target equals `src`; absent = not
   exists. Change: mkdir -p / ln -sf / rm -rf / chown+chmod. Check-mode:
-  predict. **⚠ verify**: mode given as string `"0700"` octal handling.
+  predict. A quoted mode such as `"0700"` is parsed as octal permissions,
+  pinned by the synthetic `files-content.yml` remote state-parity gate.
 - **`copy` (35)** — `src` (controller-relative file) or `content`, `dest`,
   `owner/group/mode`, `force`. Check: SHA1(content) vs SHA1(dest) +
   attrs; `force: no` = only copy if dest missing. Diff supported.

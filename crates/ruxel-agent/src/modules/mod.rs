@@ -314,7 +314,17 @@ pub(super) fn become_command(
     match &ctx.become_user {
         Some(user) => {
             let mut cmd = std::process::Command::new("runuser");
-            cmd.arg("-u").arg(user).arg("--").arg(program);
+            cmd.arg("-u").arg(user).arg("--");
+            if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
+                && let Some((home, shell)) = user_environment_from(&passwd, user)
+            {
+                cmd.arg("/usr/bin/env")
+                    .arg(format!("HOME={home}"))
+                    .arg(format!("USER={user}"))
+                    .arg(format!("LOGNAME={user}"))
+                    .arg(format!("SHELL={shell}"));
+            }
+            cmd.arg(program);
             for a in args {
                 cmd.arg(a);
             }
@@ -328,6 +338,13 @@ pub(super) fn become_command(
             cmd
         }
     }
+}
+
+fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
+    passwd.lines().find_map(|line| {
+        let fields = line.split(':').collect::<Vec<_>>();
+        (fields.len() >= 7 && fields[0] == user).then_some((fields[5], fields[6]))
+    })
 }
 
 fn params_object(params: &Value) -> Result<&Map<String, Value>, String> {
@@ -447,7 +464,10 @@ fn apply_attrs(
 
 #[cfg(test)]
 mod security_tests {
-    use super::{bool_param, parse_mode, resolve_gid_from, resolve_uid_from, write_atomic};
+    use super::{
+        bool_param, parse_mode, resolve_gid_from, resolve_uid_from, user_environment_from,
+        write_atomic,
+    };
     use serde_json::json;
     use std::os::unix::fs::symlink;
 
@@ -493,6 +513,10 @@ mod security_tests {
         assert_eq!(
             resolve_gid_from("staff:x:1002:alice\n", "staff").unwrap(),
             1002
+        );
+        assert_eq!(
+            user_environment_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice"),
+            Some(("/home/alice", "/bin/sh"))
         );
     }
 

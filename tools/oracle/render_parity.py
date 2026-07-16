@@ -109,7 +109,7 @@ def process_task(records, loader, playbook, base_vars, task):
         except Exception:
             items = []
         if isinstance(items, list) and items:
-            binds = [{"item": item} for item in items[:2]]
+            binds = [{"item": item} for item in items]
 
     for bind in binds:
         bound_vars = dict(task_vars)

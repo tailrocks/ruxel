@@ -11,5 +11,6 @@
   "fixture_slurp": {"content": "c3ludGhldGljCg==", "encoding": "base64", "changed": false},
   "fixture_loop": {"rc": 0, "stdout": "synthetic", "stderr": "", "changed": true},
   "fixture_retry": {"rc": 0, "stdout": "", "stderr": "", "changed": false, "attempts": 1},
+  "fixture_become_environment": {"stdout_lines": ["/tmp/ruxel-fixture-become-home", "ruxelbecome", "ruxelbecome", "/bin/sh", "synthetic"], "changed": false},
   "literal_stat": {"stat": {"exists": false}, "changed": false}
 }

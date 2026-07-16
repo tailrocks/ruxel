@@ -1,7 +1,7 @@
 //! `ruxel apply -i hosts.ini [--limit pattern] playbook.yml` — the full
 //! pipeline: parse → connect (ControlMaster + agent) → linear scheduler →
-//! recap. `--check` falls back to the offline plan preview until the
-//! probe engine lands.
+//! recap. `--check` executes the same remote pipeline with module prediction
+//! enabled, matching Ansible check-mode semantics.
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -17,7 +17,7 @@ pub struct ApplyArgs {
     /// Limit to hosts matching this pattern
     #[arg(long)]
     pub limit: Option<String>,
-    /// Predict only — alias of `ruxel plan`
+    /// Predict changes remotely without applying them
     #[arg(long)]
     pub check: bool,
     /// Show diffs
@@ -54,18 +54,6 @@ pub struct ApplyArgs {
 }
 
 pub fn execute(args: ApplyArgs) -> Result<u8> {
-    if args.check {
-        return super::plan::execute(super::plan::PlanArgs {
-            inventory: args.inventory,
-            limit: args.limit,
-            check: true,
-            diff: args.diff,
-            tags: args.tags,
-            dry_secrets: true,
-            detailed_exitcode: args.detailed_exitcode,
-            playbook: args.playbook,
-        });
-    }
     let agent_bin = args.agent_bin.clone().context(
         "--agent-bin or RUXEL_AGENT_BIN required (cross-built ruxel-agent for the target)",
     )?;
@@ -177,7 +165,7 @@ async fn run(
                 no_cache: args.no_cache,
             };
             let (mut conn, ack) =
-                ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, false, &options)
+                ruxel_cli::transport::connect_with(&dest, agent_bin, run_id, args.check, &options)
                     .await?;
             let playbook_dir = args
                 .playbook

@@ -1,0 +1,3 @@
+{"action": "copy", "changed": true, "status": "ok", "task": "Predict a notifying file change"}
+{"action": "pause", "changed": false, "status": "ok", "task": "Prompt during check mode", "user_input": ""}
+{"action": "debug", "changed": false, "msg": "predicted handler ran", "status": "ok", "task": "Record predicted handler"}

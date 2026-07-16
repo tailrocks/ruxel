@@ -1,0 +1,25 @@
+- name: Synthetic become-user environment semantics
+  hosts: all
+  become: true
+  tasks:
+    - name: Create synthetic become account
+      user:
+        name: ruxelbecome
+        home: /tmp/ruxel-fixture-become-home
+        shell: /bin/sh
+        create_home: true
+
+    - name: Capture synthetic become environment
+      shell: >-
+        printf '%s\n' "$HOME" "$USER" "$LOGNAME" "$SHELL"
+        "$RUXEL_FIXTURE_VALUE"
+      become_user: ruxelbecome
+      environment:
+        RUXEL_FIXTURE_VALUE: synthetic
+      register: fixture_become_environment
+      changed_when: false
+
+    - name: Verify explicit become environment
+      assert:
+        that:
+          - "fixture_become_environment.stdout_lines == ['/tmp/ruxel-fixture-become-home', 'ruxelbecome', 'ruxelbecome', '/bin/sh', 'synthetic']"
