@@ -7,11 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-CORE_FIELDS = {
-    "changed", "failed", "skipped", "rc", "stdout", "stderr",
-    "stdout_lines", "attempts", "content", "encoding", "diff", "item",
-    "results", "stat",
-}
 STAT_FIELDS = {"exists", "isdir", "islnk", "isblk", "path", "lnk_source"}
 
 
@@ -25,23 +20,41 @@ def task_name(value):
     return str(value).split(" : ")[-1]
 
 
-def normalize_value(value):
+def normalize_value(value, module=None):
     if isinstance(value, list):
-        return [normalize_value(item) for item in value]
+        return [normalize_value(item, module) for item in value]
     if not isinstance(value, dict):
         return value
+    allowed = {"changed", "item", "results", "diff"}
+    if module in {"command", "shell"}:
+        allowed.update({"rc", "stdout", "stderr", "stdout_lines", "attempts"})
+    elif module == "stat":
+        allowed.add("stat")
+    elif module == "slurp":
+        allowed.update({"content", "encoding"})
+    elif module == "set_fact":
+        allowed.add("ansible_facts")
     normalized = {}
     for key, child in value.items():
-        if key not in CORE_FIELDS:
+        if key not in allowed:
+            continue
+        normalized_child = normalize_value(child, module)
+        if key == "diff" and (
+            normalized_child in (None, "", [], {})
+            or isinstance(normalized_child, list)
+            and all(item in ({}, None, "") for item in normalized_child)
+        ):
             continue
         if key == "stat" and isinstance(child, dict):
             normalized[key] = {
-                field: normalize_value(field_value)
+                field: normalize_value(field_value, module)
                 for field, field_value in child.items()
                 if field in STAT_FIELDS
             }
+        elif key == "ansible_facts":
+            normalized[key] = child
         else:
-            normalized[key] = normalize_value(child)
+            normalized[key] = normalized_child
     return normalized
 
 
@@ -50,22 +63,24 @@ def normalize_ansible(record):
     status = record.get("status")
     if status == "ok" and result.get("changed"):
         status = "changed"
+    module = module_name(record.get("action"))
     return {
         "task": task_name(record.get("task_name")),
-        "module": module_name(record.get("action")),
+        "module": module,
         "status": status,
         "ignored": bool(record.get("ignore_errors")),
-        "result": normalize_value(result),
+        "result": normalize_value(result, module),
     }
 
 
 def normalize_ruxel(record):
+    module = module_name(record.get("module"))
     return {
         "task": task_name(record.get("task")),
-        "module": module_name(record.get("module")),
+        "module": module,
         "status": record.get("status"),
         "ignored": bool(record.get("ignored")),
-        "result": normalize_value(record.get("result") or {}),
+        "result": normalize_value(record.get("result") or {}, module),
     }
 
 

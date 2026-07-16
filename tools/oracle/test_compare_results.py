@@ -14,7 +14,7 @@ class ResultParityTests(unittest.TestCase):
                 "invocation": {"module_args": {"secret": "hidden"}},
                 "delta": "0:00:01",
                 "stat": {"exists": True, "mode": "0644", "isdir": False},
-            }),
+            }, "stat"),
             {"changed": False, "stat": {"exists": True, "isdir": False}},
         )
 
@@ -35,6 +35,15 @@ class ResultParityTests(unittest.TestCase):
                                             "delta": "variable"},
             }) + "\n")
             self.assertEqual(compare(ruxel, ansible), 0)
+
+    def test_metadata_only_diff_is_ignored_after_normalization(self):
+        self.assertEqual(
+            normalize_value({
+                "changed": True,
+                "diff": [{"before_header": "old"}, {"after_header": "new"}],
+            }, "lineinfile"),
+            {"changed": True},
+        )
 
 
 if __name__ == "__main__":

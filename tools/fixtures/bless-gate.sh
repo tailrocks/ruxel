@@ -72,5 +72,5 @@ fi
 if [ "$RERUN_CHANGED" = "0" ]; then
   echo "GATE PASS: $(basename "$PLAYBOOK") — fully idempotent, ruxel + ansible both changed=0"
 else
-  echo "GATE PASS: $(basename "$PLAYBOOK") — at parity: ruxel and ansible both report changed=$RERUN_CHANGED (inherent always-changed command/shell tasks; see $BLESS_NAME.jsonl)"
+  echo "GATE PASS: $(basename "$PLAYBOOK") — at parity: ruxel and ansible both report changed=$RERUN_CHANGED (see $BLESS_NAME.jsonl)"
 fi

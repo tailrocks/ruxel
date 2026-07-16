@@ -3,9 +3,9 @@
 //! pinned by golden E14: status ok, changed false, rc 0, the
 //! "Did not run command" msg, and null timing fields.
 
-use super::command::command_result;
+use super::command::{command_result, creates_guard};
 use super::{ExecContext, params_object, str_param};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -13,23 +13,8 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
         return Err("shell needs a free-form body".into());
     }
 
-    if let Some(creates) = str_param(obj, "creates")
-        && std::path::Path::new(creates).exists()
-    {
-        return Ok(json!({
-            "cmd": free_form,
-            "rc": 0,
-            "changed": false,
-            "failed": false,
-            "msg": format!("Did not run command since '{creates}' exists"),
-            "stdout": format!("skipped, since {creates} exists"),
-            "stderr": "",
-            "stdout_lines": [format!("skipped, since {creates} exists")],
-            "stderr_lines": [],
-            "start": null,
-            "end": null,
-            "delta": null,
-        }));
+    if let Some(result) = creates_guard(obj, Value::from(free_form)) {
+        return Ok(result);
     }
 
     let executable = str_param(obj, "executable").unwrap_or("/bin/sh");
