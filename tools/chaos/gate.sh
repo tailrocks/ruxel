@@ -8,8 +8,7 @@ FIXTURE="${1:?provider fixture name}"
 KEY="${2:?fixture key}"
 RUXEL="$(realpath "${3:?ruxel binary}")"
 AGENT="$(realpath "${4:?x86_64 Linux agent binary}")"
-PLAYBOOK="$(realpath tools/fixture-project/chaos/chaos.yml)"
-PAYLOAD="$(dirname "$PLAYBOOK")/large-payload.txt"
+SOURCE_PLAYBOOK="$(realpath tools/fixture-project/chaos/chaos.yml)"
 resolve_fixture "$FIXTURE"
 require_fixture_key "$KEY"
 [ -x "$RUXEL" ] || die "ruxel binary is not executable"
@@ -23,8 +22,12 @@ REAL_SSH="$(command -v ssh)"
 case "$REAL_SSH" in
   "$(pwd)/tools/chaos/ssh") die "real ssh resolves to chaos proxy" ;;
 esac
-work="$(mktemp -d)"
+# OpenSSH limits Unix-domain socket paths to roughly 100 bytes. macOS TMPDIR
+# is already long, so keep the chaos ControlPath root deliberately short.
+work="$(mktemp -d /tmp/rx-chaos.XXXXXX)"
 runtime="$work/runtime"
+PLAYBOOK="$work/chaos.yml"
+PAYLOAD="$work/large-payload.txt"
 mkdir -m 700 "$runtime"
 controller_pids=()
 cleanup() {
@@ -37,6 +40,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 python3 tools/chaos/make_payload.py "$PAYLOAD"
+python3 - "$SOURCE_PLAYBOOK" "$PAYLOAD" "$PLAYBOOK" <<'PY'
+import json, pathlib, sys
+source, payload, output = map(pathlib.Path, sys.argv[1:])
+text = source.read_text()
+needle = "    - name: Large Plan payload"
+assert text.count(needle) == 1
+text = text.replace(needle, "    - name: " + json.dumps("Large Plan payload " + payload.read_text()))
+output.write_text(text)
+PY
 
 DEST="root@${FIXTURE_IP}"
 KNOWN_HOSTS="${KEY}.known_hosts"
@@ -50,6 +62,15 @@ safe_ssh() {
   "$REAL_SSH" -q -i "$KEY" -o IdentitiesOnly=yes \
     -o "UserKnownHostsFile=$KNOWN_HOSTS" -o StrictHostKeyChecking=accept-new \
     -o ConnectTimeout=10 "$DEST" -- "$@"
+}
+
+wait_for_ssh() {
+  local attempt
+  for attempt in $(seq 1 12); do
+    if safe_ssh true; then return 0; fi
+    sleep "$attempt"
+  done
+  die "fixture SSH did not become ready"
 }
 
 run_ruxel() {
@@ -69,8 +90,15 @@ PY
 }
 
 echo "Safety check: provider-verified disposable <fixture>"
-run_ruxel >"$work/seed.jsonl"
-run_ruxel >"$work/converged.jsonl"
+wait_for_ssh
+if ! run_ruxel >"$work/seed.jsonl"; then
+  tail -80 "$work/seed.jsonl" >&2 || true
+  die "chaos seed apply failed"
+fi
+if ! run_ruxel >"$work/converged.jsonl"; then
+  tail -80 "$work/converged.jsonl" >&2 || true
+  die "chaos convergence apply failed"
+fi
 assert_converged "$work/converged.jsonl" seed
 tools/fixtures/state-snapshot.sh "$FIXTURE" "$KEY" "$work/baseline.state"
 
@@ -109,7 +137,11 @@ for case_name in "${cases[@]}"; do
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.05
   done
-  [ "$observed" -eq 1 ] || die "$case_name injection boundary was not observed"
+  if [ "$observed" -ne 1 ]; then
+    tail -80 "$work/$case_name.interrupted.jsonl" >&2 || true
+    tail -80 "$work/$case_name.interrupted.stderr" >&2 || true
+    die "$case_name injection boundary was not observed"
+  fi
   if [ "$case_name" = long-subprocess ] || [ "$case_name" = controlmaster-sigint ] || [ "$case_name" = upload-start ]; then
     kill -INT "$pid" 2>/dev/null || true
   fi

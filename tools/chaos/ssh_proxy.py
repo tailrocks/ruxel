@@ -106,7 +106,7 @@ def proxy_frames(child, fault):
         count = 0
         while (frame := read_frame(sys.stdin.buffer)) is not None:
             count += 1
-            if fault == "large-plan" and count == 2:
+            if fault == "large-plan" and len(frame) >= LARGE_FRAME_BYTES:
                 cut_and_exit(child, child.stdin, frame, require_large=True)
             child.stdin.write(frame)
             child.stdin.flush()
