@@ -20,6 +20,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 blake3.workspace = true
 clap.workspace = true
+futures.workspace = true
 minijinja.workspace = true
 openssh-sftp-client.workspace = true
 prost.workspace = true

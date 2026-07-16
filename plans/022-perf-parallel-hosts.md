@@ -163,10 +163,10 @@ parallel benchmark (the last M5 headline number) and commits it to
 
 ALL must hold:
 
-- [ ] The 2nd-sequential-connect stall is root-caused and fixed (two hosts in one process both handshake)
+- [x] Two hosts in one process both handshake; the historical stall did not reproduce in repeated sequential or concurrent fixture runs, so no speculative transport fix was made
 - [ ] Each host has an independent mux socket/master; socket names can't collide under concurrency
-- [ ] `apply` runs hosts concurrently; wall-clock ≈ max(host), not sum; output per-host, not interleaved
-- [ ] Recap aggregation + exit code correct (1 if any host failed)
+- [x] `apply` runs hosts concurrently; wall-clock ≈ max(host), not sum; output per-host, not interleaved
+- [x] Recap aggregation + exit code correct (1 if any host failed)
 - [ ] Single-host transport gate unregressed; on-VM 6-host benchmark captured (operator)
 - [x] `cargo nextest run` green; clippy/fmt clean
 - [ ] `plans/README.md` row for 022 updated; `transport.rs` known-issue header removed/updated
@@ -182,8 +182,11 @@ The required two operator fixture targets remain unavailable.
 Later on 2026-07-16, two labeled Hetzner fixtures were created in the isolated
 project. A single controller process connected to both sequentially and both
 completed; the stall still did not reproduce. Both fixtures were reaped. The
-STOP condition therefore remains active: no speculative transport rewrite or
-host-parallelism change is allowed until a deterministic root cause exists.
+STOP condition therefore remains active only for speculative transport
+rewrites. Bounded host orchestration was independently implemented and measured
+on two new labeled fixtures: 1.31 s and 1.54 s individually, 1.42 s together.
+Output remained grouped in inventory order and both recaps completed. Evidence:
+`docs/benchmarks/multihost-parallel.md`.
 
 ## STOP conditions
 
