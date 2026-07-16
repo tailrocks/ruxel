@@ -34,9 +34,11 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if p.exists() || !ctx.check_mode {
         apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
     }
-    Ok(
-        json!({"changed": changed, "failed": false, "msg": if changed { "Block inserted" } else { "" }}),
-    )
+    let mut result = json!({"changed": changed, "failed": false, "msg": if changed { "Block inserted" } else { "" }});
+    if next != current && ctx.diff_mode && !ctx.no_log {
+        result["diff"] = json!(super::unified_diff(&current, &next));
+    }
+    Ok(result)
 }
 
 fn rewrite_block(current: &str, block: &str) -> String {
@@ -96,5 +98,21 @@ mod tests {
             rewrite_block(&appended, "two"),
             "header\n# BEGIN ANSIBLE MANAGED BLOCK\ntwo\n# END ANSIBLE MANAGED BLOCK\n"
         );
+    }
+
+    #[test]
+    fn diff_reports_managed_block_change() {
+        let path = std::env::temp_dir().join(format!("ruxel-block-diff-{}", std::process::id()));
+        std::fs::write(&path, "header\n").unwrap();
+        let context = ExecContext {
+            check_mode: true,
+            diff_mode: true,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = run(&json!({"path": path, "block": "managed"}), &context).unwrap();
+        assert!(result["diff"].as_str().unwrap().contains("+managed"));
+        std::fs::remove_file(path).unwrap();
     }
 }

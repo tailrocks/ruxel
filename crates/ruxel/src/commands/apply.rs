@@ -46,11 +46,14 @@ pub struct ApplyArgs {
     /// Bypass the convergence ledger — full native check of every task
     #[arg(long)]
     pub no_cache: bool,
+    /// Return 2 when changes were applied (0 converged, 1 failed)
+    #[arg(long)]
+    pub detailed_exitcode: bool,
     /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
 
-pub fn execute(args: ApplyArgs) -> Result<()> {
+pub fn execute(args: ApplyArgs) -> Result<u8> {
     if args.check {
         return super::plan::execute(super::plan::PlanArgs {
             inventory: args.inventory,
@@ -59,6 +62,7 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
             diff: args.diff,
             tags: args.tags,
             dry_secrets: true,
+            detailed_exitcode: args.detailed_exitcode,
             playbook: args.playbook,
         });
     }
@@ -92,13 +96,39 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
     let compiled = ruxel_core::compiler::compile(&playbook, &engine)
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let run_id = format!("ruxel-{}", std::process::id());
+    let mut run_log = super::run_log::RunLog::open(&run_id);
 
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(run(
-        &playbook, &compiled, &inventory, &args, &agent_bin, &engine, &run_id,
-    ))
+    let totals = runtime.block_on(run(
+        &playbook,
+        &compiled,
+        &inventory,
+        &args,
+        &agent_bin,
+        &engine,
+        &run_id,
+        &mut run_log,
+    ))?;
+    Ok(apply_exit_code(totals, args.detailed_exitcode))
 }
 
+#[derive(Clone, Copy, Default)]
+struct RunTotals {
+    changed: u32,
+    failed: u32,
+}
+
+fn apply_exit_code(totals: RunTotals, detailed: bool) -> u8 {
+    if totals.failed > 0 {
+        1
+    } else if detailed && totals.changed > 0 {
+        2
+    } else {
+        0
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run(
     playbook: &ruxel_core::playbook::Playbook,
     compiled: &ruxel_core::compiler::Plan,
@@ -107,8 +137,9 @@ async fn run(
     agent_bin: &std::path::Path,
     engine: &Engine,
     run_id: &str,
-) -> Result<()> {
-    let mut any_failed = false;
+    run_log: &mut super::run_log::RunLog,
+) -> Result<RunTotals> {
+    let mut totals = RunTotals::default();
     let stdout = std::io::stdout();
     let format = if args.output == "json" {
         ruxel_cli::scheduler::OutputFormat::Json
@@ -168,9 +199,11 @@ async fn run(
                     Some(args.tags.clone())
                 },
                 &mut stdout.lock(),
+                run_log,
             )
             .await?;
             conn.shutdown().await?;
+            run_log.record_recap(&host.name, recap);
 
             if human {
                 println!("\nPLAY RECAP {}", "*".repeat(40));
@@ -194,13 +227,49 @@ async fn run(
                     })
                 );
             }
-            if recap.failed > 0 {
-                any_failed = true;
-            }
+            totals.failed += recap.failed;
+            totals.changed += recap.changed;
         }
     }
-    if any_failed {
-        std::process::exit(1);
+    Ok(totals)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detailed_exit_code_obeys_failure_change_success_precedence() {
+        assert_eq!(apply_exit_code(RunTotals::default(), true), 0);
+        assert_eq!(
+            apply_exit_code(
+                RunTotals {
+                    changed: 1,
+                    failed: 0,
+                },
+                true
+            ),
+            2
+        );
+        assert_eq!(
+            apply_exit_code(
+                RunTotals {
+                    changed: 1,
+                    failed: 1,
+                },
+                true
+            ),
+            1
+        );
+        assert_eq!(
+            apply_exit_code(
+                RunTotals {
+                    changed: 1,
+                    failed: 0,
+                },
+                false
+            ),
+            0
+        );
     }
-    Ok(())
 }

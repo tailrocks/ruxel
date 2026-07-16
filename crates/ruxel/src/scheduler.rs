@@ -102,9 +102,10 @@ pub enum OutputFormat {
     Json,
 }
 
-struct HostRun<'a, A> {
+struct HostRun<'a, A, L> {
     engine: &'a Engine,
     agent: &'a mut A,
+    event_log: &'a mut L,
     playbook_dir: std::path::PathBuf,
     host: String,
     play_vars: Vec<(String, VarValue)>,
@@ -149,7 +150,7 @@ impl InheritedCtx {
     }
 }
 
-impl<A> HostRun<'_, A> {
+impl<A, L> HostRun<'_, A, L> {
     /// Whether a task runs under the active --tags filter, given the tags
     /// inherited from any enclosing block.
     fn tag_selected(&self, task: &Task, inherited: &[String]) -> bool {
@@ -164,7 +165,7 @@ impl<A> HostRun<'_, A> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn run_play<A: AgentExec>(
+pub async fn run_play<A: AgentExec, L: Write>(
     play: &Play,
     compiled: &PlayPlan,
     host: &str,
@@ -175,10 +176,12 @@ pub async fn run_play<A: AgentExec>(
     format: OutputFormat,
     tags_filter: Option<Vec<String>>,
     out: &mut impl Write,
+    event_log: &mut L,
 ) -> Result<Recap> {
     let mut run = HostRun {
         engine,
         agent,
+        event_log,
         playbook_dir: playbook_dir.to_path_buf(),
         host: host.to_string(),
         play_vars: play
@@ -259,7 +262,7 @@ fn fact_layer(facts: &v1::Facts) -> Vec<(String, VarValue)> {
         .collect()
 }
 
-impl<A: AgentExec> HostRun<'_, A> {
+impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
     fn scope(
         &self,
         inherited: &InheritedCtx,
@@ -1046,7 +1049,21 @@ impl<A: AgentExec> HostRun<'_, A> {
         }
     }
 
-    fn print_status(&self, out: &mut impl Write, task: &Task, status: &str, item: Option<&str>) {
+    fn print_status(
+        &mut self,
+        out: &mut impl Write,
+        task: &Task,
+        status: &str,
+        item: Option<&str>,
+    ) {
+        let event = serde_json::json!({
+            "event": "task",
+            "host": self.host,
+            "task": label(task),
+            "status": status,
+            "item": item,
+        });
+        let _ = writeln!(self.event_log, "{event}");
         match self.format {
             OutputFormat::Human => {
                 let _ = writeln!(out, "TASK [{}] {}", label(task), "*".repeat(20));
@@ -1060,15 +1077,6 @@ impl<A: AgentExec> HostRun<'_, A> {
                 }
             }
             OutputFormat::Json => {
-                // One stable JSON object per task event, no_log-safe (no
-                // result payload here — only the shape operators grep).
-                let event = serde_json::json!({
-                    "event": "task",
-                    "host": self.host,
-                    "task": label(task),
-                    "status": status,
-                    "item": item,
-                });
                 let _ = writeln!(out, "{event}");
             }
         }
@@ -1241,6 +1249,7 @@ mod tests {
         let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
         let mut agent = FakeAgent::with_results(results);
         let mut output = Vec::new();
+        let mut event_log = Vec::new();
         let recap = run_play(
             &playbook.plays[0],
             &compiled.plays[0],
@@ -1252,6 +1261,7 @@ mod tests {
             OutputFormat::Human,
             None,
             &mut output,
+            &mut event_log,
         )
         .await
         .unwrap();
@@ -1324,6 +1334,44 @@ mod tests {
         assert_eq!(recap.ok, 2);
         assert_eq!(agent.patches, vec![false, true]);
         assert_eq!(agent.calls[1].iterations[0].free_form, "echo True");
+    }
+
+    #[tokio::test]
+    async fn no_log_result_payload_never_enters_event_log() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: sensitive task\n      command: echo hidden\n      no_log: true\n";
+        let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
+        let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
+        let mut agent = FakeAgent::with_results([serde_json::json!({
+            "changed": true,
+            "failed": false,
+            "stdout": "synthetic-secret-value"
+        })]);
+        let mut output = Vec::new();
+        let mut event_log = Vec::new();
+        run_play(
+            &playbook.plays[0],
+            &compiled.plays[0],
+            "test-host",
+            &v1::Facts::default(),
+            &engine,
+            &mut agent,
+            std::path::Path::new("."),
+            OutputFormat::Human,
+            None,
+            &mut output,
+            &mut event_log,
+        )
+        .await
+        .unwrap();
+        let log = String::from_utf8(event_log).unwrap();
+        assert!(log.contains("\"status\":\"changed\""));
+        assert!(!log.contains("synthetic-secret-value"));
+        assert!(
+            !String::from_utf8(output)
+                .unwrap()
+                .contains("synthetic-secret-value")
+        );
     }
 
     #[tokio::test]
@@ -1454,6 +1502,7 @@ mod tests {
         let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
         let mut agent = FakeAgent::default();
         let mut output = Vec::new();
+        let mut event_log = Vec::new();
         let error = run_play(
             &playbook.plays[0],
             &compiled.plays[0],
@@ -1468,6 +1517,7 @@ mod tests {
             OutputFormat::Human,
             None,
             &mut output,
+            &mut event_log,
         )
         .await
         .unwrap_err();

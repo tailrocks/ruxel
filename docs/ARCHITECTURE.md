@@ -258,9 +258,8 @@ the playbook says happen every run.
   the raw material for future drift dashboards. Pruned by count, never a
   dependency of execution.
 
-> **Build status (2026-07): NOT YET BUILT.** `--detailed-exitcode` and the
-> persistent per-run JSON log are plan 023 targets. Normal exit codes and
-> `--output json` exist today.
+> **Build status (2026-07): BUILT.** `--detailed-exitcode`, persistent pruned
+> JSON run logs, normal exit codes, and `--output json` are implemented.
 - Inventory vs `~/.ssh/config` precedence: `ansible_ssh_host`/
   `ansible_ssh_user` from `hosts.ini` always win (passed explicitly to the
   connection); everything else (keys, agent, ciphers, ControlMaster paths)

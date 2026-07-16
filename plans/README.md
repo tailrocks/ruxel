@@ -54,7 +54,7 @@ disposable fixtures only. Quality gates before any commit:
 | 020 | Make `apply` consume the compiler (pipelining + apply-time enum revalidation) | P2 | L | 009 | IN PROGRESS (on-VM gate needs operator target) |
 | 021 | Batch secret resolution and build agent system snapshots | P2 | L | 020 | IN PROGRESS (on-VM timing/parity gate needs operator target) |
 | 022 | Parallelize hosts + fix the multi-host transport stall | P2 | L | 021 | TODO |
-| 023 | Direction: run log + `--detailed-exitcode` + `--diff` for line modules | P2 | M | — | TODO |
+| 023 | Direction: run log + `--detailed-exitcode` + `--diff` for line modules | P2 | M | — | DONE |
 | 024 | Direction (spike): chaos/fuzz hardening + spec-drift watch | P2 | M | 009, 017 | TODO |
 | 025 | Direction: sweep the available-now parity gates | P3 | M | — | TODO |
 

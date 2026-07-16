@@ -24,9 +24,11 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         write_atomic(std::path::Path::new(path), content.as_bytes())?;
     }
 
-    Ok(
-        json!({"changed": changed, "failed": false, "msg": if changed { "line changed" } else { "" }}),
-    )
+    let mut result = json!({"changed": changed, "failed": false, "msg": if changed { "line changed" } else { "" }});
+    if changed && ctx.diff_mode && !ctx.no_log {
+        result["diff"] = json!(super::unified_diff(&current, &content));
+    }
+    Ok(result)
 }
 
 fn rewrite_lines(
@@ -126,5 +128,32 @@ mod tests {
                 .0,
             "other\n"
         );
+    }
+
+    #[test]
+    fn diff_reports_changed_lines_and_stays_absent_when_unchanged() {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-lineinfile-diff-{}", std::process::id()));
+        std::fs::write(&path, "key=old\n").unwrap();
+        let context = ExecContext {
+            check_mode: true,
+            diff_mode: true,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let changed = run(
+            &json!({"path": path, "regexp": "^key=", "line": "key=new"}),
+            &context,
+        )
+        .unwrap();
+        assert!(changed["diff"].as_str().unwrap().contains("+key=new"));
+        let stable = run(
+            &json!({"path": path, "regexp": "^key=", "line": "key=old"}),
+            &context,
+        )
+        .unwrap();
+        assert!(stable.get("diff").is_none());
+        std::fs::remove_file(path).unwrap();
     }
 }

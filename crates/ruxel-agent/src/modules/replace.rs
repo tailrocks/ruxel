@@ -25,7 +25,11 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if changed && !ctx.check_mode {
         write_atomic(std::path::Path::new(path), next.as_bytes())?;
     }
-    Ok(json!({"changed": changed, "failed": false}))
+    let mut result = json!({"changed": changed, "failed": false});
+    if changed && ctx.diff_mode && !ctx.no_log {
+        result["diff"] = json!(super::unified_diff(&current, &next));
+    }
+    Ok(result)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -111,5 +115,25 @@ mod tests {
             }),
             "$PATH-value"
         );
+    }
+
+    #[test]
+    fn diff_reports_replacement() {
+        let path = std::env::temp_dir().join(format!("ruxel-replace-diff-{}", std::process::id()));
+        std::fs::write(&path, "old value\n").unwrap();
+        let context = ExecContext {
+            check_mode: true,
+            diff_mode: true,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = run(
+            &json!({"path": path, "regexp": "old", "replace": "new"}),
+            &context,
+        )
+        .unwrap();
+        assert!(result["diff"].as_str().unwrap().contains("+new value"));
+        std::fs::remove_file(path).unwrap();
     }
 }

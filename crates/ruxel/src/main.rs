@@ -29,7 +29,7 @@ fn main() -> ExitCode {
         Command::Apply(args) => commands::apply::execute(args),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code),
         Err(error) => {
             eprintln!("{error:#}");
             ExitCode::from(exit_code_for_error(&error))

@@ -151,12 +151,12 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] `lineinfile`/`replace`/`blockinfile` emit a unified `diff` under `--diff`
-- [ ] `--detailed-exitcode` returns 2 on changes, 0 converged, 1 on failure; absent → today's contract
-- [ ] Every run writes a redacted `~/.local/state/ruxel/runs/<ts>-<run_id>.jsonl`, pruned by count, non-fatal on write error
-- [ ] `no_log` payloads are redacted in the run log (test proves it)
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 023 updated; ARCHITECTURE §7 items un-marked "unbuilt" (coordinate with plan 002)
+- [x] `lineinfile`/`replace`/`blockinfile` emit a unified `diff` under `--diff`
+- [x] `--detailed-exitcode` returns 2 on changes, 0 converged, 1 on failure; absent → today's contract
+- [x] Every run writes a redacted `~/.local/state/ruxel/runs/<ts>-<run_id>.jsonl`, pruned by count, non-fatal on write error
+- [x] `no_log` payloads are redacted in the run log (test proves it)
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 023 updated; ARCHITECTURE §7 items un-marked "unbuilt" (coordinate with plan 002)
 
 ## STOP conditions
 
