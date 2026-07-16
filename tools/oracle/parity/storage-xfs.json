@@ -1,0 +1,32 @@
+{
+  "binaries": {
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "36c35899d29e5300c082b93bc0a103704183995d3b404d5b008de2369010fa58"
+  },
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "757c15cf26a4bb81678965b7ae0ef900dbf990e8b541b65f4f61c8ccc220b545",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "757c15cf26a4bb81678965b7ae0ef900dbf990e8b541b65f4f61c8ccc220b545",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "77e969be558d4c764f663aa34b1e222e4bee79df9ac0f4a7ca8b8a7ec17cd0b2",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "storage-xfs",
+  "schema": 1
+}
