@@ -314,9 +314,11 @@ ignore — that is what closed spec means).
   stored StoredKey; equal = no change. Pinned against a live PG15 verifier
   and proven idempotent on the fixture (ruxel rerun changed=0, ansible
   bless changed=0).
-- **`community.postgresql.postgresql_privs` (20)** — `role`, `privs`,
-  `type` (**exactly four shapes in use**: `database` ×3, `schema` ×3,
-  `table` ×7, `default_privs` ×7), `objs`, `schema`, `login_db`, `state`.
+- **`community.postgresql.postgresql_privs` (27)** — `role`, `privs`,
+  `type` (**exactly four shapes in use**: `database` ×4, `schema` ×5,
+  `table` ×9, `default_privs` ×9), `objs`, `schema`, `login_db`, `state`,
+  `target_roles` (default privileges are attached to objects subsequently
+  created by those roles).
   Check **resolved 2026-06-11**: idempotence is on the *explicit* ACL
   grant to the role, read via `aclexplode(datacl/nspacl/relacl)` filtered
   to the role's oid — NOT `has_*_privilege`, which counts PUBLIC defaults
@@ -324,10 +326,16 @@ ignore — that is what closed spec means).
   shapes (database/schema/table ALL_IN_SCHEMA/default_privs) proven on the
   fixture: ruxel rerun changed=0 and ansible bless changed=0 on ruxel's
   state.
-- **`community.postgresql.postgresql_schema` (1)** — `name`, `login_db`,
-  `state`; pg_namespace check.
+- **`community.postgresql.postgresql_schema` (2)** — `name`, `login_db`,
+  `owner`, `state`; pg_namespace name + owner check.
 
 ### Commands & control
+
+- **`delegate_to: localhost` (2)** — command/shell execute on the controller,
+  using controller environment and paths, while register/when/failed_when/
+  changed_when retain normal Ansible task semantics. The extracted shape
+  explicitly sets `become: false`; other delegated hosts remain outside the
+  closed surface.
 
 - **`command` (40)** — free-form or `cmd`/`argv`, `chdir`. No shell;
   argv exec; free-form splits shlex-style (pinned 2026-06-11, golden E15:

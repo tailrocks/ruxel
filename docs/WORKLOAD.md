@@ -48,10 +48,10 @@ The canonical registry contains 36 entries: the 33 table rows below plus
 
 | Module | Uses | Notes |
 |---|---|---|
-| `community.postgresql.postgresql_privs` | 20 | GRANTs |
+| `community.postgresql.postgresql_privs` | 27 | GRANTs |
 | `community.postgresql.postgresql_db` | 17 | 9 DBs on nova, 5+ on titan |
 | `community.postgresql.postgresql_user` | 7 | 12+ users total |
-| `community.postgresql.postgresql_schema` | 1 | |
+| `community.postgresql.postgresql_schema` | 2 | |
 | `community.general.lvg` | 6 | VGs: blockchain, data, backup, clickhouse-hot |
 | `community.general.lvol` | 6 | LVs, `+100%FREE` |
 | `community.general.timezone` | 1 | UTC |
@@ -81,13 +81,14 @@ so that row is intentionally outside the descending-use ordering.
 | `ignore_errors` | 7 | iptables chain may exist |
 | `failed_when` | 1 | rc not in [0, 1] |
 | `check_mode: no` | 6 | readlink during drive init |
+| `delegate_to: localhost` | 2 | synthesize terminfo on the controller |
 | `block` / `rescue` | 5 | Sentry config blocks |
 | `vars` (play-level, inline) | 16 | with 1Password lookups |
 | `set_fact` | 1 | SHA256 password hashing |
 | `no_log: true` | 3 | secret-bearing tasks |
 | `pre_tasks` | 1 | secret validation asserts |
 | `gather_facts` | default on | see Facts subset below |
-| Not used | — | `serial`, `delegate_to`, `run_once`, `any_errors_fatal`, roles, includes/imports, vault files |
+| Not used | — | `serial`, `run_once`, `any_errors_fatal`, roles, includes/imports, vault files |
 
 ### Facts subset actually consumed
 

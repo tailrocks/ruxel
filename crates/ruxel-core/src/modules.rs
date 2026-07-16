@@ -116,6 +116,7 @@ pub static MODULES: &[ModuleSurface] = &[
                 "role",
                 "schema",
                 "state",
+                "target_roles",
                 "type",
             ],
         )
@@ -124,7 +125,14 @@ pub static MODULES: &[ModuleSurface] = &[
         literal_enums: &[("state", &["present"])],
         ..surface(
             "community.postgresql.postgresql_schema",
-            &["login_db", "login_port", "login_user", "name", "state"],
+            &[
+                "login_db",
+                "login_port",
+                "login_user",
+                "name",
+                "owner",
+                "state",
+            ],
         )
     },
     ModuleSurface {

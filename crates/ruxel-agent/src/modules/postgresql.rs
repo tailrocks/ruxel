@@ -504,6 +504,7 @@ pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_schema: login_db required")?;
     let state = str_param(obj, "state").unwrap_or("present");
+    let owner = str_param(obj, "owner");
     let port = login_port(obj);
     if state != "present" {
         return Err(format!(
@@ -511,22 +512,40 @@ pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         ));
     }
 
-    let exists = psql(
+    let current_owner = psql(
         ctx,
         &port,
         Some(login_db),
-        &format!("SELECT 1 FROM pg_namespace WHERE nspname={}", lit(name)),
-    )? == "1";
+        &format!(
+            "SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner WHERE n.nspname={}",
+            lit(name)
+        ),
+    )?;
 
     let mut changed = false;
-    if !exists {
+    if current_owner.is_empty() {
+        changed = true;
+        if !ctx.check_mode {
+            let authorization = owner
+                .map(|value| format!(" AUTHORIZATION {}", ident(value)))
+                .unwrap_or_default();
+            psql(
+                ctx,
+                &port,
+                Some(login_db),
+                &format!("CREATE SCHEMA {}{authorization}", ident(name)),
+            )?;
+        }
+    } else if let Some(owner) = owner
+        && current_owner != owner
+    {
         changed = true;
         if !ctx.check_mode {
             psql(
                 ctx,
                 &port,
                 Some(login_db),
-                &format!("CREATE SCHEMA {}", ident(name)),
+                &format!("ALTER SCHEMA {} OWNER TO {}", ident(name), ident(owner)),
             )?;
         }
     }
@@ -544,6 +563,7 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let state = str_param(obj, "state").unwrap_or("present");
     let objs = str_param(obj, "objs");
     let schema = str_param(obj, "schema");
+    let target_roles = str_param(obj, "target_roles");
     let port = login_port(obj);
     if state != "present" {
         return Err(format!(
@@ -551,6 +571,9 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         ));
     }
     validate_privs(privs_list)?;
+    if target_roles.is_some() && typ != "default_privs" {
+        return Err("postgresql_privs: target_roles requires type=default_privs".into());
+    }
 
     // changed iff at least one requested privilege is not already held.
     let needed = match typ {
@@ -574,6 +597,7 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             role,
             schema.unwrap_or("public"),
             privs_list,
+            target_roles,
         )?,
         other => {
             return Err(format!(
@@ -586,7 +610,7 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if needed {
         changed = true;
         if !ctx.check_mode {
-            for sql in grant_sql(typ, role, privs_list, objs, schema)? {
+            for sql in grant_sql(typ, role, privs_list, objs, schema, target_roles)? {
                 psql(ctx, &port, Some(login_db), &sql)?;
             }
         }
@@ -723,13 +747,21 @@ fn privs_missing_table(
     Ok(false)
 }
 
-fn default_priv_query(role: &str, schema: &str, privilege: &str) -> String {
+fn default_priv_query(
+    role: &str,
+    schema: &str,
+    privilege: &str,
+    target_role: Option<&str>,
+) -> String {
+    let owner = target_role
+        .map(|role| format!("(SELECT oid FROM pg_roles WHERE rolname={})", lit(role)))
+        .unwrap_or_else(|| "(SELECT oid FROM pg_roles WHERE rolname=current_user)".into());
     format!(
         "SELECT 1 FROM pg_default_acl d \
          JOIN pg_namespace n ON n.oid=d.defaclnamespace, \
          aclexplode(d.defaclacl) a \
          WHERE d.defaclobjtype='r' AND n.nspname={} \
-         AND d.defaclrole=(SELECT oid FROM pg_roles WHERE rolname=current_user) \
+         AND d.defaclrole={owner} \
          AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname={}) \
          AND a.privilege_type={} LIMIT 1",
         lit(schema),
@@ -745,16 +777,28 @@ fn privs_missing_default(
     role: &str,
     schema: &str,
     privs: &str,
+    target_roles: Option<&str>,
 ) -> Result<bool, String> {
-    for privilege in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        let held = psql(
-            ctx,
-            port,
-            Some(db),
-            &default_priv_query(role, schema, privilege),
-        )?;
-        if held != "1" {
-            return Ok(true);
+    let targets: Vec<Option<&str>> = match target_roles {
+        Some(roles) => roles
+            .split(',')
+            .map(str::trim)
+            .filter(|role| !role.is_empty())
+            .map(Some)
+            .collect(),
+        None => vec![None],
+    };
+    for target in targets {
+        for privilege in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let held = psql(
+                ctx,
+                port,
+                Some(db),
+                &default_priv_query(role, schema, privilege, target),
+            )?;
+            if held != "1" {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -766,6 +810,7 @@ fn grant_sql(
     privs: &str,
     objs: Option<&str>,
     schema: Option<&str>,
+    target_roles: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let r = ident(role);
     Ok(match typ {
@@ -796,10 +841,24 @@ fn grant_sql(
         }
         "default_privs" => {
             let s = schema.unwrap_or("public");
-            vec![format!(
-                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT {privs} ON TABLES TO {r}",
-                ident(s)
-            )]
+            match target_roles {
+                Some(roles) => roles
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|role| !role.is_empty())
+                    .map(|target| {
+                        format!(
+                            "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA {} GRANT {privs} ON TABLES TO {r}",
+                            ident(target),
+                            ident(s)
+                        )
+                    })
+                    .collect(),
+                None => vec![format!(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT {privs} ON TABLES TO {r}",
+                    ident(s)
+                )],
+            }
         }
         other => {
             return Err(format!(
@@ -890,15 +949,41 @@ mod tests {
 
     #[test]
     fn grants_and_default_acl_queries_target_role_and_schema() {
-        let sql = grant_sql("table", "reader", "SELECT", Some("events"), Some("audit")).unwrap();
+        let sql = grant_sql(
+            "table",
+            "reader",
+            "SELECT",
+            Some("events"),
+            Some("audit"),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             sql,
             vec!["GRANT SELECT ON TABLE \"audit\".\"events\" TO \"reader\""]
         );
-        let query = default_priv_query("reader", "audit", "select");
+        let query = default_priv_query("reader", "audit", "select", None);
         assert!(query.contains("n.nspname='audit'"));
         assert!(query.contains("rolname='reader'"));
         assert!(query.contains("privilege_type='SELECT'"));
+    }
+
+    #[test]
+    fn default_privileges_target_object_creator_roles() {
+        let query = default_priv_query("reader", "audit", "select", Some("writer"));
+        assert!(query.contains("d.defaclrole=(SELECT oid FROM pg_roles WHERE rolname='writer')"));
+        let sql = grant_sql(
+            "default_privs",
+            "reader",
+            "SELECT",
+            Some("TABLES"),
+            Some("audit"),
+            Some("writer,loader"),
+        )
+        .unwrap();
+        assert_eq!(sql.len(), 2);
+        assert!(sql[0].contains("FOR ROLE \"writer\""));
+        assert!(sql[1].contains("FOR ROLE \"loader\""));
     }
 
     #[test]
@@ -945,7 +1030,7 @@ mod tests {
 
     #[test]
     fn default_privilege_query_targets_explicit_table_acl() {
-        let query = default_priv_query("synthetic_role", "public", "select");
+        let query = default_priv_query("synthetic_role", "public", "select", None);
         assert!(query.contains("pg_default_acl"));
         assert!(query.contains("aclexplode(d.defaclacl)"));
         assert!(query.contains("d.defaclobjtype='r'"));

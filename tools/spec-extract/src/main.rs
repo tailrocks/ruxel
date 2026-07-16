@@ -14,6 +14,7 @@ const TASK_KEYS: &[&str] = &[
     "notify",
     "become",
     "become_user",
+    "delegate_to",
     "changed_when",
     "failed_when",
     "ignore_errors",

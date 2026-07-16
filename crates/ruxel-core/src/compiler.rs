@@ -381,6 +381,9 @@ fn scan_task_reads(task: &Task, providers: &BTreeSet<String>, out: &mut BTreeSet
     for (_, v) in &task.environment {
         scan_yaml(v, providers, out);
     }
+    if let Some(delegate_to) = &task.delegate_to {
+        scan_template(delegate_to, providers, out);
+    }
     if let TaskBody::Module(call) = &task.body {
         for (_, v) in &call.params {
             scan_yaml(v, providers, out);

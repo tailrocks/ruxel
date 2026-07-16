@@ -948,6 +948,28 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             env
         };
 
+        if let Some(delegate_to) = &task.delegate_to {
+            let target = self
+                .engine
+                .render_str(delegate_to, scope)?
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_default();
+            if target != "localhost" {
+                bail!(
+                    "{}: delegate_to supports only the extracted fixture target localhost, got {target:?}",
+                    label(task)
+                );
+            }
+            if task.becomes.or(inherited.becomes) != Some(false) {
+                bail!(
+                    "{}: delegate_to localhost requires become: false in the extracted surface",
+                    label(task)
+                );
+            }
+            return run_local_delegated(module, &params, &free_form, &environment).map(to_mj);
+        }
+
         // Stable ledger identity (ARCHITECTURE §6): blake3 over the task's
         // identity and its fully-rendered params/body/item. Any change to
         // params (including a rotated secret, which renders to different
@@ -1103,13 +1125,164 @@ fn static_batch_candidate(task: &Task, planned: &PlanTask) -> bool {
     !matches!(
         call.module.name,
         "assert" | "debug" | "fail" | "pause" | "set_fact"
-    ) && task.loop_.is_none()
+    ) && task.delegate_to.is_none()
+        && task.loop_.is_none()
         && task.when.is_none()
         && task.until.is_none()
         && task.retries.is_none()
         && task.delay.is_none()
         && task.changed_when.is_none()
         && task.failed_when.is_none()
+}
+
+fn run_local_delegated(
+    module: &str,
+    params: &serde_json::Map<String, serde_json::Value>,
+    free_form: &str,
+    environment: &std::collections::HashMap<String, String>,
+) -> Result<serde_json::Value> {
+    let string = |name: &str| params.get(name).and_then(|value| value.as_str());
+    if let Some(creates) = string("creates")
+        && std::path::Path::new(creates).exists()
+    {
+        return Ok(serde_json::json!({
+            "cmd": free_form,
+            "rc": 0,
+            "changed": false,
+            "failed": false,
+            "msg": format!("Did not run command since '{creates}' exists"),
+            "stdout": format!("skipped, since {creates} exists"),
+            "stderr": "",
+            "stdout_lines": [format!("skipped, since {creates} exists")],
+            "stderr_lines": [],
+            "start": null,
+            "end": null,
+            "delta": null,
+        }));
+    }
+
+    let (display, mut command) = match module {
+        "command" => {
+            let argv = if !free_form.is_empty() {
+                split_shell_words(free_form)?
+            } else if let Some(cmd) = string("cmd") {
+                split_shell_words(cmd)?
+            } else if let Some(values) = params.get("argv").and_then(|value| value.as_array()) {
+                values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_string)
+                            .ok_or_else(|| anyhow!("argv entries must be strings"))
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                bail!("command needs a free-form body, cmd, or argv");
+            };
+            let (program, args) = argv.split_first().context("empty command")?;
+            let mut command = std::process::Command::new(program);
+            command.args(args);
+            (serde_json::to_value(&argv)?, command)
+        }
+        "shell" => {
+            if free_form.is_empty() {
+                bail!("shell needs a free-form body");
+            }
+            let executable = string("executable").unwrap_or("/bin/sh");
+            let mut command = std::process::Command::new(executable);
+            command.args(["-c", free_form]);
+            (serde_json::Value::String(free_form.to_string()), command)
+        }
+        other => bail!("delegate_to localhost is unsupported for module {other:?}"),
+    };
+    if let Some(chdir) = string("chdir") {
+        command.current_dir(chdir);
+    }
+    command.envs(environment);
+    let output = command
+        .output()
+        .map_err(|error| anyhow!("delegated {module}: {error}"))?;
+    Ok(local_command_result(display, &output))
+}
+
+fn local_command_result(
+    command: serde_json::Value,
+    output: &std::process::Output,
+) -> serde_json::Value {
+    let rc = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches('\n')
+        .to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr)
+        .trim_end_matches('\n')
+        .to_string();
+    let lines = |value: &str| {
+        if value.is_empty() {
+            Vec::new()
+        } else {
+            value.lines().map(str::to_string).collect()
+        }
+    };
+    serde_json::json!({
+        "cmd": command,
+        "rc": rc,
+        "stdout": stdout,
+        "stderr": stderr,
+        "stdout_lines": lines(&stdout),
+        "stderr_lines": lines(&stderr),
+        "changed": true,
+        "failed": rc != 0,
+        "msg": if rc == 0 { "" } else { "The command exited with a non-zero return code." },
+    })
+}
+
+fn split_shell_words(input: &str) -> Result<Vec<String>> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quoted = None;
+    let mut escaped = false;
+    let mut started = false;
+    for character in input.chars() {
+        if escaped {
+            word.push(character);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match (quoted, character) {
+            (Some('\''), '\'') | (Some('"'), '"') => quoted = None,
+            (Some('\''), value) => word.push(value),
+            (Some('"'), '\\') => escaped = true,
+            (Some('"'), value) => word.push(value),
+            (None, '\'' | '"') => {
+                quoted = Some(character);
+                started = true;
+            }
+            (None, '\\') => {
+                escaped = true;
+                started = true;
+            }
+            (None, value) if value.is_whitespace() => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            (None, value) => {
+                word.push(value);
+                started = true;
+            }
+            _ => unreachable!(),
+        }
+    }
+    if escaped || quoted.is_some() {
+        bail!("No closing quotation");
+    }
+    if started {
+        words.push(word);
+    }
+    Ok(words)
 }
 
 fn ledger_key(
@@ -1406,6 +1579,27 @@ mod tests {
         .await;
         assert_eq!(recap.ok, 1);
         assert_eq!(recap.changed, 0);
+    }
+
+    #[tokio::test]
+    async fn delegate_to_localhost_executes_on_controller_and_registers() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: controller value\n      become: false\n      delegate_to: localhost\n      command:\n        argv: [/usr/bin/printf, fixture-value]\n      register: controller_value\n      changed_when: false\n    - name: verify\n      assert:\n        that: controller_value.stdout == 'fixture-value'\n";
+        let (recap, agent, _) = run(yaml, []).await;
+        assert_eq!(recap.ok, 2);
+        assert_eq!(recap.changed, 0);
+        assert!(
+            agent.calls.is_empty(),
+            "delegated task must not reach agent"
+        );
+    }
+
+    #[test]
+    fn delegated_command_split_matches_agent_surface() {
+        assert_eq!(
+            split_shell_words("echo 'a b' c").unwrap(),
+            vec!["echo", "a b", "c"]
+        );
+        assert!(split_shell_words("echo 'unterminated").is_err());
     }
 
     #[tokio::test]
