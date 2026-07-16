@@ -1,0 +1,51 @@
+---
+- name: Synthetic transport chaos workload
+  hosts: nodes
+  vars:
+    fixture_root: /tmp/ruxel-fixture-chaos
+  tasks:
+    - name: Materialize chaos root
+      file:
+        path: "{{ fixture_root }}"
+        state: directory
+        mode: "0755"
+      tags: always
+
+    - name: Upload start recovery marker
+      copy:
+        dest: "{{ fixture_root }}/upload-start"
+        content: "stable\n"
+      tags: upload-start
+
+    - name: Partial HelloAck recovery marker
+      copy:
+        dest: "{{ fixture_root }}/partial-hello-ack"
+        content: "stable\n"
+      tags: partial-hello-ack
+
+    - name: Large Plan payload
+      copy:
+        src: large-payload.txt
+        dest: "{{ fixture_root }}/large-plan"
+      tags: large-plan
+
+    - name: Large TaskResult payload
+      shell: >-
+        python3 -c "print('R' * 2097152)" &&
+        touch {{ fixture_root }}/large-task-result
+      args:
+        creates: "{{ fixture_root }}/large-task-result"
+      tags: large-task-result
+
+    - name: Long subprocess
+      shell: >-
+        sleep 8 && printf 'stable\n' > {{ fixture_root }}/long-subprocess
+      args:
+        creates: "{{ fixture_root }}/long-subprocess"
+      tags: long-subprocess
+
+    - name: ControlMaster SIGINT recovery marker
+      copy:
+        dest: "{{ fixture_root }}/controlmaster-sigint"
+        content: "stable\n"
+      tags: controlmaster-sigint

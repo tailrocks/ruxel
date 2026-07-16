@@ -65,21 +65,33 @@ ANSIBLE_ARGS=()
 [ "${RUXEL_CAPTURE_CHECK:-0}" = "1" ] && ANSIBLE_ARGS+=(--check)
 [ "${RUXEL_CAPTURE_DIFF:-0}" = "1" ] && ANSIBLE_ARGS+=(--diff)
 
-set +e
-env $LOOKUP_ARGS \
-ANSIBLE_COLLECTIONS_PATH="$COLLECTION_PATH" \
-ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
-ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
-ANSIBLE_GATHERING=explicit \
-ANSIBLE_HOST_KEY_CHECKING=False \
-ANSIBLE_SSH_RETRIES=3 \
-ANSIBLE_SSH_ARGS="-o ControlMaster=no -o ControlPath=none" \
-ANSIBLE_SSH_COMMON_ARGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY}.known_hosts -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
-RUXEL_CAPTURE_FILE="$CAPTURE_FILE" \
-uv run ansible-playbook -i "$INV" "${ANSIBLE_ARGS[@]}" "$PLAYBOOK" \
-  | tee "${RUXEL_CAPTURE_STDOUT_FILE:-/dev/null}"
-ANSIBLE_STATUS=${PIPESTATUS[0]}
-set -e
+COMMAND=(env $LOOKUP_ARGS
+  "ANSIBLE_COLLECTIONS_PATH=$COLLECTION_PATH"
+  ANSIBLE_CALLBACK_PLUGINS=callback_plugins
+  ANSIBLE_CALLBACKS_ENABLED=ruxel_capture
+  ANSIBLE_GATHERING=explicit
+  ANSIBLE_HOST_KEY_CHECKING=False
+  ANSIBLE_SSH_RETRIES=3
+  "ANSIBLE_SSH_ARGS=-o ControlMaster=no -o ControlPath=none"
+  "ANSIBLE_SSH_COMMON_ARGS=-o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY}.known_hosts -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+  "RUXEL_CAPTURE_FILE=$CAPTURE_FILE"
+  uv run ansible-playbook -i "$INV" "${ANSIBLE_ARGS[@]}" "$PLAYBOOK")
+
+if [ -n "${RUXEL_CAPTURE_BENCH_ELAPSED:-}" ]; then
+  : "${RUXEL_CAPTURE_BENCH_STATUS:?benchmark status path required}"
+  : "${RUXEL_CAPTURE_BENCH_STDOUT:?benchmark stdout path required}"
+  : "${RUXEL_CAPTURE_BENCH_STDERR:?benchmark stderr path required}"
+  python3 "$ROOT/tools/benchmarks/run_timed.py" \
+    "$RUXEL_CAPTURE_BENCH_ELAPSED" "$RUXEL_CAPTURE_BENCH_STATUS" \
+    "$RUXEL_CAPTURE_BENCH_STDOUT" "$RUXEL_CAPTURE_BENCH_STDERR" -- "${COMMAND[@]}"
+  ANSIBLE_STATUS="$(cat "$RUXEL_CAPTURE_BENCH_STATUS")"
+  [ -z "${RUXEL_CAPTURE_STDOUT_FILE:-}" ] || cp "$RUXEL_CAPTURE_BENCH_STDOUT" "$RUXEL_CAPTURE_STDOUT_FILE"
+else
+  set +e
+  "${COMMAND[@]}" | tee "${RUXEL_CAPTURE_STDOUT_FILE:-/dev/null}"
+  ANSIBLE_STATUS=${PIPESTATUS[0]}
+  set -e
+fi
 
 python3 normalize_capture.py "$CAPTURE_FILE"
 [ -z "${RUXEL_CAPTURE_STATUS_FILE:-}" ] || printf '%s\n' "$ANSIBLE_STATUS" >"$RUXEL_CAPTURE_STATUS_FILE"
