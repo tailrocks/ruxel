@@ -1,19 +1,25 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Capture a real ansible-core 2.21 run of a workload playbook against a
 # ruxel fixture VM (tools/fixtures/create.sh output), writing golden
 # records. Targets come exclusively from the fixture scripts — never the
 # production inventory (GOAL.md rule 2).
 #
 # Usage:
-#   tools/oracle/capture_fixture.sh <fixture-ip> <keyfile> <playbook-path> <capture-name> [group]
+#   tools/oracle/capture_fixture.sh <fixture-name> <keyfile> <playbook-path> <capture-name> [group]
 set -eu
 cd "$(dirname "$0")"
 
-IP="${1:?fixture ip}"
+FIXTURE="${1:?provider fixture name}"
 KEY="${2:?ssh keyfile}"
 PLAYBOOK="${3:?playbook path}"
 NAME="${4:?capture name}"
 GROUP="${5:-nodes}"
+
+# shellcheck source=../fixtures/lib.sh
+. ../fixtures/lib.sh
+resolve_fixture "$FIXTURE"
+require_fixture_key "$KEY"
+IP="$FIXTURE_IP"
 
 ROOT="$(cd ../.. && pwd)"
 FIXTURE_ROOT="$ROOT/tools/fixture-project"

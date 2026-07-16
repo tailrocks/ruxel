@@ -44,8 +44,9 @@ dropping a read-only ChainArgos deploy key, `RESTORE.md:84-93`; out of scope.)
   (36 identical `containerctl` shell restarts — always-execute by design, a good
   honest datapoint on whether ruxel's one-connection path helps the workload's
   worst duplication case, `WORKLOAD.md:174-177`).
-- Harness: `tools/fixtures/bless-gate.sh <dest> <keyfile> <agent-bin> <playbook>
-  "" [dry]` automates the three-way proof (`RESTORE.md:146-149`). Fixtures via
+- Harness: `tools/fixtures/bless-gate.sh <fixture-name> <keyfile> <agent-bin>
+  <synthetic-playbook> [dry] [group]` resolves the labeled provider fixture
+  itself and automates per-task plus recap proof. Fixtures via
   `tools/fixtures/create.sh`; volumes via `hcloud volume create ... --label
   ruxel=fixture`; **always** `tools/fixtures/reap.sh` at session end.
 - The drive-variants differ from the already-proven `drives` gate only in disk
@@ -66,16 +67,16 @@ end.
 | Create fixture | `RUXEL_FIXTURE_TYPE=cpx22 tools/fixtures/create.sh <suffix>` | VM up; prints SSH opts + `RUXEL_FIXTURE_KEY` |
 | Add volume(s) | `hcloud volume create --name ruxel-fixture-vol-N --size 10 --server <name> --label ruxel=fixture` | volume attached at `/dev/disk/by-id/scsi-0HC_Volume_*` |
 | Build agent (musl) | `mise exec -- cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release` | binary at `target/x86_64-unknown-linux-musl/release/ruxel-agent` |
-| Gate a playbook | `tools/fixtures/bless-gate.sh root@<ip> <keyfile> <agent-bin> <playbook> ""` | three-way parity (ruxel rerun changed=0, ansible bless changed=0) |
+| Gate a playbook | `tools/fixtures/bless-gate.sh <fixture-name> <keyfile> <agent-bin> <synthetic-playbook>` | normalized task-result and recap parity |
 | Reap | `tools/fixtures/destroy.sh <name>` then `tools/fixtures/reap.sh` | project empty |
 | Confirm empty | `hcloud server list && hcloud volume list` | no lingering resources |
 
 ## Scope
 
 **In scope**:
-- Running `bless-gate.sh` against fresh fixtures for the 5 drive-variants +
-  restart-blockchain-nodes; committing the resulting goldens to
-  `tools/oracle/captures/`.
+- Modeling the five drive variants and repeated restart flow with repository-
+  owned synthetic playbooks, then running `bless-gate.sh` against fresh
+  fixtures and committing goldens to `tools/oracle/captures/`.
 - Small harness fixes if a variant needs a different disk count/VG name (the
   gate is data-driven; prefer configuration over code).
 

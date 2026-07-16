@@ -35,3 +35,29 @@ session_key_name() { echo "ruxel-fixture-key-$1"; }
 fixture_volumes() {
   hcloud volume list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null
 }
+
+# Resolve a provider identity to its address. Never accept an address from the
+# caller: this is the structural boundary preventing a gate typo from reaching
+# an arbitrary server.
+resolve_fixture() {
+  local name="${1:?fixture name required}"
+  case "$name" in
+    ruxel-fixture-*) ;;
+    *) die "refusing target ${name@Q}: expected ruxel-fixture-* provider identity" ;;
+  esac
+  require_context
+  hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name \
+    | grep -Fxq "$name" \
+    || die "refusing target ${name@Q}: not a labeled fixture in ruxel-fixtures"
+  FIXTURE_NAME="$name"
+  FIXTURE_IP="$(hcloud server ip "$name")"
+  [ -n "$FIXTURE_IP" ] || die "fixture ${name@Q} has no provider address"
+  export FIXTURE_NAME FIXTURE_IP
+}
+
+require_fixture_key() {
+  local key="${1:?fixture key required}"
+  [ -f "$key" ] || die "fixture key ${key@Q} does not exist"
+  FIXTURE_KEY="$key"
+  export FIXTURE_KEY
+}

@@ -479,7 +479,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 let scope = self.scope(inherited, &task.vars);
                 if !self.engine.eval_condition(when, &scope)? {
                     for sub in block {
-                        self.print_status(out, sub, "skipped", None);
+                        self.print_status(out, sub, "skipped", None, None, false);
                         self.recap.skipped += 1;
                     }
                     return Ok(false);
@@ -530,7 +530,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
 
         // --tags: an unselected task reports skipped and does not run.
         if !self.tag_selected(task, inherited_tags) {
-            self.print_status(out, task, "skipped", None);
+            self.print_status(out, task, "skipped", None, None, false);
             self.recap.skipped += 1;
             return Ok(false);
         }
@@ -1055,7 +1055,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         } else {
             String::new()
         };
-        self.print_status(out, task, status, None);
+        self.print_status(out, task, status, None, Some(&result), ignored);
         if !display.is_empty() {
             let _ = writeln!(out, "    {display}");
         }
@@ -1077,14 +1077,10 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         task: &Task,
         status: &str,
         item: Option<&str>,
+        result: Option<&Value>,
+        ignored: bool,
     ) {
-        let event = serde_json::json!({
-            "event": "task",
-            "host": self.host,
-            "task": label(task),
-            "status": status,
-            "item": item,
-        });
+        let event = task_event(&self.host, task, status, item, result, ignored);
         let _ = writeln!(self.event_log, "{event}");
         match self.format {
             OutputFormat::Human => {
@@ -1103,6 +1099,41 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             }
         }
     }
+}
+
+fn task_module(task: &Task) -> Option<&str> {
+    match &task.body {
+        TaskBody::Module(call) => Some(call.module.name),
+        TaskBody::Block { .. } => None,
+    }
+}
+
+fn task_event(
+    host: &str,
+    task: &Task,
+    status: &str,
+    item: Option<&str>,
+    result: Option<&Value>,
+    ignored: bool,
+) -> serde_json::Value {
+    let event_result = if task.no_log {
+        serde_json::to_value(task_eval::censored_result(status == "changed", None))
+            .unwrap_or_default()
+    } else if let Some(result) = result {
+        serde_json::to_value(result).unwrap_or_default()
+    } else {
+        serde_json::json!({"changed": false, "skipped": status == "skipped"})
+    };
+    serde_json::json!({
+        "event": "task",
+        "host": host,
+        "task": label(task),
+        "module": task_module(task),
+        "status": status,
+        "item": item,
+        "ignored": ignored,
+        "result": event_result,
+    })
 }
 
 fn label(task: &Task) -> String {
@@ -1451,6 +1482,31 @@ mod tests {
         assert_eq!(recap.ok, 1);
         assert_eq!(recap.changed, 1);
         assert_eq!(agent.calls.len(), 1);
+    }
+
+    #[test]
+    fn json_task_event_carries_normalized_result_and_module() {
+        let playbook = ruxel_core::playbook::parse(
+            "test.yml",
+            "- hosts: all\n  tasks:\n    - name: Synthetic task\n      command: /usr/bin/true\n",
+        )
+        .unwrap();
+        let task = &playbook.plays[0].tasks[0];
+        let result = to_mj(serde_json::json!({
+            "changed": true,
+            "failed": false,
+            "rc": 0,
+            "stdout": "synthetic"
+        }));
+        let event = task_event("fixture", task, "changed", None, Some(&result), false);
+
+        assert_eq!(event["event"], "task");
+        assert_eq!(event["host"], "fixture");
+        assert_eq!(event["task"], "Synthetic task");
+        assert_eq!(event["module"], "command");
+        assert_eq!(event["status"], "changed");
+        assert_eq!(event["result"]["rc"], 0);
+        assert_eq!(event["result"]["stdout"], "synthetic");
     }
 
     #[tokio::test]

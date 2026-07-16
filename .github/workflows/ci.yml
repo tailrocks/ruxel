@@ -79,6 +79,13 @@ jobs:
       - name: Verify render oracle is reproducible
         run: git diff --exit-code -- tools/oracle/captures/render-parity.jsonl
 
+      - name: Test parity result normalizer
+        working-directory: tools/oracle
+        run: uv run python -m unittest test_compare_results.py
+
+      - name: Test fixture target safety
+        run: tools/fixtures/tests/safety.sh
+
       - name: sccache stats
         if: always() && steps.sccache.outcome == 'success'
         run: sccache --show-stats

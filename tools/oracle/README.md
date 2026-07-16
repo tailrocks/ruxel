@@ -42,3 +42,16 @@ cargo test -p ruxel-core --test render_parity
 
 The corpus contains synthetic fixture names and values only. Regeneration from
 the real workload is forbidden.
+
+## Remote result and state parity
+
+`tools/fixtures/bless-gate.sh` emits Ruxel JSON events containing normalized
+task results, captures the subsequent Ansible run, and compares task identity,
+module, status, ignored state, registered-result fields, and diffs with
+`compare_results.py`. It snapshots managed files/metadata/content, selected
+packages/accounts/sysctls/firewall/mount/LVM state, and synthetic PostgreSQL
+catalog state before and after the Ansible bless; any state mutation fails the
+gate.
+
+Remote tools accept only a labeled provider fixture name. Raw IPs and caller
+inventories are rejected before SSH starts.

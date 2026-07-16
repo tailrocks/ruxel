@@ -94,6 +94,11 @@ parity, converged parity, check/diff parity, and final-state equivalence.
 
 ### 5. Enforce disposable-target safety structurally
 
+**Status: DONE (2026-07-16).** Shared fixture resolution requires a labeled
+`ruxel-fixture-*` identity from the isolated hcloud context; parity, capture,
+snapshot, and transport gates derive the address internally. Hermetic safety
+tests reject raw addresses, unlabeled identities, and missing keys.
+
 - Gate scripts must accept fixture identity, not arbitrary IP/inventory.
 - Resolve addresses internally from the isolated fixture provider context and
   require the `ruxel=fixture` label plus an expected per-run identifier.
@@ -145,6 +150,6 @@ recovers.
 ## Current status
 
 Core execution is substantially implemented and local quality gates are green.
-Compatibility verification is incomplete. Workstreams 1-7 are open; plan 022
-is incorporated into workstream 6. Do not describe Ruxel as complete until all
-seven done criteria pass.
+Compatibility verification is incomplete. Workstreams 1-4, 6, and 7 remain
+open; workstream 5 is complete. Plan 022 is incorporated into workstream 6. Do
+not describe Ruxel as complete until all seven done criteria pass.

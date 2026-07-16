@@ -11,6 +11,8 @@ Hard boundary:
   never passed to `ruxel apply` or `ansible-playbook`.
 - `tools/fixtures/bless-gate.sh` and `tools/oracle/capture_fixture.sh` reject
   every playbook outside this directory.
+- Remote scripts accept a provider fixture name, resolve its address from the
+  isolated hcloud context, and reject raw addresses or caller inventories.
 - Inventories contain only disposable resources created in the isolated
   `ruxel-fixtures` Hetzner project.
 
