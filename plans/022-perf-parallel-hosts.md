@@ -179,6 +179,12 @@ the documented Hetzner fixture stall, so no speculative transport or host-loop
 change was shipped. Both containers and their temporary key were destroyed.
 The required two operator fixture targets remain unavailable.
 
+Later on 2026-07-16, two labeled Hetzner fixtures were created in the isolated
+project. A single controller process connected to both sequentially and both
+completed; the stall still did not reproduce. Both fixtures were reaped. The
+STOP condition therefore remains active: no speculative transport rewrite or
+host-parallelism change is allowed until a deterministic root cause exists.
+
 ## STOP conditions
 
 Stop and report if:

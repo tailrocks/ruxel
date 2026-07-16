@@ -189,9 +189,9 @@ ALL must hold:
 - [x] `cargo nextest run` green; clippy/fmt clean; on-VM transport gate still connects
 - [x] `plans/README.md` row for 018 updated
 
-Local implementation and all hermetic gates completed 2026-07-16 (170 passed,
-5 fixture-dependent skips). The ignored transport gate remains pending an
-explicitly supplied disposable SSH fixture; production targets are forbidden.
+Local implementation and all hermetic gates completed 2026-07-16. The ignored
+transport gate subsequently passed on a labeled disposable fixture; production
+targets and real workload execution remained forbidden.
 
 Disposable Hetzner fixture gate passed 2026-07-16: cold upload + handshake
 1.905 s; warm cached handshake 983.5 ms with no re-upload.

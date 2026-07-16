@@ -202,9 +202,10 @@ ALL must hold:
 - [x] `cargo nextest run` green; clippy/fmt clean
 - [x] `plans/README.md` row for 020 updated
 
-The 2026-07-16 run used a real workload playbook against a fixture and is not
-valid evidence under the fixture-project isolation rule. Its capture was
-removed; this gate must be repeated with a synthetic fixture playbook.
+The invalid real-workload capture was removed. Replacement synthetic gates
+passed on 2026-07-16 for ext4 storage, controller delegation, and PostgreSQL
+ownership/default privileges: every Ruxel rerun and Ansible bless reported
+`changed=0`.
 
 ## STOP conditions
 

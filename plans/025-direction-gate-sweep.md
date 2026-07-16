@@ -161,12 +161,18 @@ fixtures. No unit tests. The evidence is the committed golden captures + the
 
 ALL must hold:
 
-- [ ] The 5 drive-variant playbooks are gated three-way on fixtures with committed goldens
+- [ ] Synthetic storage fixtures cover the five extracted shapes (ext4, XFS, disk-count variation, VG variation, two-tier) with committed goldens
 - [ ] `restart-blockchain-nodes` is gated (changed-set parity, not zero) with a committed golden + wall-clock datapoint
 - [x] Every fixture + volume created is destroyed and reaped; `hcloud server list` and `hcloud volume list` are empty
 - [x] No production host was ever contacted (`Safety check: target` recorded per remote session)
 - [ ] Coverage count updated in `RESTORE.md`/`GOAL.md`
 - [x] `plans/README.md` row for 025 updated
+
+Synthetic replacement gates landed 2026-07-16 for ext4 storage, controller
+delegation, and PostgreSQL schema ownership/default-privilege target roles.
+Each passed Ruxel fresh apply, Ruxel converged rerun, and Ansible bless; all
+resources were reaped. Remaining storage shapes and restart semantics stay
+open.
 
 2026-07-16 precondition attempt: active context was confirmed as
 `ruxel-fixtures`, but both `hcloud server list` and `hcloud volume list` failed
