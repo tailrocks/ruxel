@@ -12,7 +12,6 @@ name = "ruxel-agent"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
 hmac.workspace = true
 pbkdf2.workspace = true
 regex-lite.workspace = true

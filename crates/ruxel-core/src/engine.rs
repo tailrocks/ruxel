@@ -18,12 +18,8 @@ use std::sync::{Arc, Mutex};
 pub enum EngineError {
     #[error("template error: {0}")]
     Template(#[from] minijinja::Error),
-    #[error("variable cycle while rendering {0:?}")]
-    VarCycle(String),
     #[error("undefined variable in {0:?}")]
     Undefined(String),
-    #[error("lookup {0:?} failed: {1}")]
-    Lookup(String, String),
     #[error("unsupported YAML value (tagged) in template scope")]
     TaggedValue,
 }

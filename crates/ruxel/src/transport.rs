@@ -183,25 +183,6 @@ pub struct AgentConnection {
 
 pub struct HostFacts {
     pub facts: v1::Facts,
-    pub agent_version: String,
-    pub ledger_generation: u64,
-}
-
-/// Connect, ensure the agent binary, spawn it, and complete the handshake.
-pub async fn connect(
-    destination: &str,
-    agent_binary: &Path,
-    run_id: &str,
-    check_mode: bool,
-) -> Result<(AgentConnection, HostFacts)> {
-    connect_with(
-        destination,
-        agent_binary,
-        run_id,
-        check_mode,
-        &ConnectOptions::default(),
-    )
-    .await
 }
 
 pub async fn connect_with(
@@ -276,8 +257,6 @@ pub async fn connect_with(
         },
         HostFacts {
             facts: ack.facts.unwrap_or_default(),
-            agent_version: ack.agent_version,
-            ledger_generation: ack.ledger_generation,
         },
     ))
 }
