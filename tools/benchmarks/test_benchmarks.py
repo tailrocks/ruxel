@@ -65,6 +65,13 @@ class BenchmarkEvidenceTests(unittest.TestCase):
                 "unreachable_exit_status": 1,
                 **gate_hashes,
             }
+        if case == "scale-65x52":
+            manifest["scale_gate"] = {
+                "task_count": 65,
+                "synthetic_lookup_count": 52,
+                "dry_secrets": True,
+                "ruxel_median_limit_ns": 5_000_000_000,
+            }
         self.write_json(directory / "manifest.json", manifest)
         samples = []
         for executor, base in (("ansible", 20), ("ruxel", 10)):
@@ -156,6 +163,19 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.write_json(summary_path, summary)
         with self.assertRaisesRegex(summarize.EvidenceError, "summary does not match"):
             verify.verify_case(self.root / "fresh", "fresh")
+
+    def test_scale_median_limit_is_enforced(self) -> None:
+        path = self.root / "scale-65x52" / "samples.jsonl"
+        samples = summarize.load_samples(path)
+        for sample in samples:
+            if sample["executor"] == "ruxel":
+                sample["elapsed_ns"] = 5_000_000_000
+        path.write_text("".join(json.dumps(value) + "\n" for value in samples), encoding="utf-8")
+        summary = summarize.summarize_samples(samples)
+        summary["case"] = "scale-65x52"
+        self.write_json(self.root / "scale-65x52" / "summary.json", summary)
+        with self.assertRaisesRegex(summarize.EvidenceError, "not below 5 seconds"):
+            verify.verify_case(self.root / "scale-65x52", "scale-65x52")
 
 
 if __name__ == "__main__":

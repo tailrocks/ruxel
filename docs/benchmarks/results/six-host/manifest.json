@@ -1,0 +1,42 @@
+{
+  "binaries": {
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "2fbcad07e6d716421fac14b68db62a5f78886f2da399e18d48cfbeb3e642d781"
+  },
+  "case": "six-host",
+  "correctness": {
+    "diff_parity": true,
+    "fixture_identity_verified": true,
+    "resources_reaped": true,
+    "result_parity": true,
+    "state_parity": true
+  },
+  "fixture": {
+    "kind": "six-disposable-local-containers",
+    "specification": {
+      "ansible_forks": 6,
+      "host_count": 6,
+      "image": "ruxel-local-fixture:debian12",
+      "label": "ruxel=local-fixture"
+    }
+  },
+  "fixture_source_sha256": "fc4c1380887ea5a80faea1a4f0aecba293b19c1942bfe8e33ee194306ca586a7",
+  "gate_artifacts": {
+    "ordered_recaps": true,
+    "sshd_leaks": 0,
+    "unreachable_exit_status": 1,
+    "unreachable_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unreachable_stdout_sha256": "181605f117b66b35af32e342453c2850d3d595d9960556dcdfaaf17b805abe65"
+  },
+  "playbook": "tools/fixture-project/multihost.yml",
+  "repetitions": 3,
+  "schema": 1,
+  "versions": {
+    "agent": "0.1.0",
+    "ansible": "2.21.0",
+    "kernel": "7.0.11-orbstack-00360-gc9bc4d96ac70",
+    "os": "Debian 12 local SSH containers",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ruxel": "0.1.0"
+  }
+}

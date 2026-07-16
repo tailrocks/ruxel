@@ -313,6 +313,7 @@ fn print_recap(host: &str, recap: ruxel_cli::scheduler::Recap, human: bool) {
             serde_json::json!({
                 "event": "recap", "host": host,
                 "ok": recap.ok, "changed": recap.changed, "failed": recap.failed,
+                "unreachable": 0,
                 "skipped": recap.skipped, "rescued": recap.rescued, "ignored": recap.ignored,
             })
         );

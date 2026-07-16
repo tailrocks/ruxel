@@ -24,6 +24,7 @@ REQUIRED_CASES = {
     "postgresql",
     "simulated-rtt",
     "six-host",
+    "scale-65x52",
 }
 REQUIRED_CORRECTNESS = {
     "fixture_identity_verified",
@@ -194,6 +195,17 @@ def verify_case(case_dir: Path, expected_case: str) -> None:
     expected_summary["case"] = expected_case
     if load_json(case_dir / "summary.json") != expected_summary:
         raise EvidenceError(f"summary does not match raw samples in {case_dir}")
+    if expected_case == "scale-65x52":
+        gate = require_object(manifest.get("scale_gate"), "manifest.scale_gate")
+        if gate != {
+            "task_count": 65,
+            "synthetic_lookup_count": 52,
+            "dry_secrets": True,
+            "ruxel_median_limit_ns": 5_000_000_000,
+        }:
+            raise EvidenceError("scale-65x52 fixture/threshold gate is incomplete")
+        if expected_summary["executors"]["ruxel"]["median_ns"] >= 5_000_000_000:
+            raise EvidenceError("scale-65x52 Ruxel median is not below 5 seconds")
 
     for path in case_dir.rglob("*"):
         if path.is_file():

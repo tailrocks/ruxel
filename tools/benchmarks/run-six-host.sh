@@ -70,7 +70,11 @@ validate_ansible() {
   python3 - "$1" <<'PY'
 import re, sys
 text = open(sys.argv[1]).read()
-rows = re.findall(r"^(fixture-[1-6])\s*:.*failed=0.*unreachable=0", text, re.M)
+rows = []
+for line in text.splitlines():
+    match = re.match(r"^(fixture-[1-6])\s*:", line)
+    if match and "failed=0" in line and "unreachable=0" in line:
+        rows.append(match.group(1))
 assert sorted(rows) == [f"fixture-{index}" for index in range(1, 7)], rows
 PY
 }
