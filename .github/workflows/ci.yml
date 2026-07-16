@@ -101,7 +101,9 @@ jobs:
 
       - name: Test parity result normalizer
         working-directory: tools/oracle
-        run: uv run python -m unittest test_compare_results.py test_capture_schema.py
+        run: >-
+          uv run python -m unittest
+          test_compare_results.py test_compare_diffs.py test_capture_schema.py
 
       - name: Verify committed oracle capture schema
         run: python3 tools/oracle/verify_captures.py

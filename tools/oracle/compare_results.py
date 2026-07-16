@@ -45,9 +45,9 @@ def task_name(value):
     return str(value).split(" : ")[-1]
 
 
-def normalize_value(value, module=None):
+def normalize_value(value, module=None, include_diff=True):
     if isinstance(value, list):
-        return [normalize_value(item, module) for item in value]
+        return [normalize_value(item, module, include_diff) for item in value]
     if not isinstance(value, dict):
         return value
     allowed = {"changed", "item", "results", "diff"}
@@ -66,11 +66,13 @@ def normalize_value(value, module=None):
         if key not in allowed:
             continue
         if key == "diff":
+            if not include_diff:
+                continue
             normalized_child = normalize_diff(child)
             if normalized_child:
                 normalized[key] = normalized_child
             continue
-        normalized_child = normalize_value(child, module)
+        normalized_child = normalize_value(child, module, include_diff)
         if key == "stat" and isinstance(child, dict):
             normalized[key] = {
                 field: normalize_value(field_value, module)
@@ -84,7 +86,7 @@ def normalize_value(value, module=None):
     return normalized
 
 
-def normalize_ansible(record):
+def normalize_ansible(record, include_diff=True):
     result = record.get("result") if isinstance(record.get("result"), dict) else {}
     status = record.get("status")
     if status == "ok" and result.get("changed"):
@@ -95,18 +97,18 @@ def normalize_ansible(record):
         "module": module,
         "status": status,
         "ignored": bool(record.get("ignore_errors")),
-        "result": normalize_value(result, module),
+        "result": normalize_value(result, module, include_diff),
     }
 
 
-def normalize_ruxel(record):
+def normalize_ruxel(record, include_diff=True):
     module = module_name(record.get("module"))
     return {
         "task": task_name(record.get("task")),
         "module": module,
         "status": record.get("status"),
         "ignored": bool(record.get("ignored")),
-        "result": normalize_value(record.get("result") or {}, module),
+        "result": normalize_value(record.get("result") or {}, module, include_diff),
     }
 
 
@@ -122,16 +124,16 @@ def load_jsonl(path):
     return records
 
 
-def compare(ruxel_path, ansible_path):
+def compare(ruxel_path, ansible_path, include_diff=True):
     ruxel = [
-        normalize_ruxel(record)
+        normalize_ruxel(record, include_diff)
         for record in load_jsonl(ruxel_path)
         if record.get("event") == "task"
     ]
     ansible_records = load_jsonl(ansible_path)
     validate_item_aggregates(ansible_records)
     ansible = [
-        normalize_ansible(record)
+        normalize_ansible(record, include_diff)
         for record in ansible_records
         if record.get("status") in {"ok", "failed", "skipped", "unreachable"}
         and module_name(record.get("action")) not in {"gather_facts", "setup"}
@@ -173,10 +175,11 @@ def validate_item_aggregates(records):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage: compare_results.py <ruxel.jsonl> <ansible.jsonl>", file=sys.stderr)
+    args = [arg for arg in sys.argv[1:] if arg != "--ignore-diffs"]
+    if len(args) != 2:
+        print("usage: compare_results.py [--ignore-diffs] <ruxel.jsonl> <ansible.jsonl>", file=sys.stderr)
         return 2
-    return compare(sys.argv[1], sys.argv[2])
+    return compare(args[0], args[1], "--ignore-diffs" not in sys.argv)
 
 
 if __name__ == "__main__":

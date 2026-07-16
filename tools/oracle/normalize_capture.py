@@ -7,6 +7,7 @@ from pathlib import Path
 
 DROP = {
     "delta", "start", "end", "stop", "warnings", "invocation", "exception",
+    "before_header", "after_header",
     "discovered_interpreter_python",
 }
 

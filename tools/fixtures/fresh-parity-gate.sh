@@ -76,14 +76,16 @@ ruxel_check_status=$?
 set -e
 RUXEL_CAPTURE_CHECK=1 RUXEL_CAPTURE_DIFF=1 \
   capture "check-$stem" env RUXEL_CAPTURE_CHECK=1 RUXEL_CAPTURE_DIFF=1 \
-    RUXEL_CAPTURE_ALLOW_FAILURE=1 RUXEL_CAPTURE_STATUS_FILE="$work/ansible-check-status"
+    RUXEL_CAPTURE_ALLOW_FAILURE=1 RUXEL_CAPTURE_STATUS_FILE="$work/ansible-check-status" \
+    RUXEL_CAPTURE_STDOUT_FILE="$work/ansible-check.stdout"
 ansible_check_status="$(cat "$work/ansible-check-status")"
 if { [ "$ruxel_check_status" -eq 0 ] && [ "$ansible_check_status" -ne 0 ]; } || \
    { [ "$ruxel_check_status" -ne 0 ] && [ "$ansible_check_status" -eq 0 ]; }; then
   die "check-mode success/failure mismatch: ruxel=$ruxel_check_status ansible=$ansible_check_status"
 fi
-tools/oracle/compare_results.py "$work/ruxel-check.jsonl" \
+tools/oracle/compare_results.py --ignore-diffs "$work/ruxel-check.jsonl" \
   "$work/captures/check-$stem.jsonl"
+tools/oracle/compare_diffs.py "$work/ruxel-check.jsonl" "$work/ansible-check.stdout"
 snapshot "$RUXEL_FIXTURE" "$RUXEL_KEY" "$work/check-ruxel"
 snapshot "$ANSIBLE_FIXTURE" "$ANSIBLE_KEY" "$work/check-ansible"
 diff -u "$work/converged-ruxel" "$work/check-ruxel"
