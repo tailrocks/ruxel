@@ -163,8 +163,8 @@ ALL must hold:
 
 - [ ] The 5 drive-variant playbooks are gated three-way on fixtures with committed goldens
 - [ ] `restart-blockchain-nodes` is gated (changed-set parity, not zero) with a committed golden + wall-clock datapoint
-- [ ] Every fixture + volume created is destroyed and reaped; `hcloud server list` and `hcloud volume list` are empty
-- [ ] No production host was ever contacted (`Safety check: target` recorded per remote session)
+- [x] Every fixture + volume created is destroyed and reaped; `hcloud server list` and `hcloud volume list` are empty
+- [x] No production host was ever contacted (`Safety check: target` recorded per remote session)
 - [ ] Coverage count updated in `RESTORE.md`/`GOAL.md`
 - [x] `plans/README.md` row for 025 updated
 

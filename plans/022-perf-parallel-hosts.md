@@ -168,9 +168,9 @@ ALL must hold:
 - [ ] `apply` runs hosts concurrently; wall-clock ≈ max(host), not sum; output per-host, not interleaved
 - [ ] Recap aggregation + exit code correct (1 if any host failed)
 - [ ] Single-host transport gate unregressed; on-VM 6-host benchmark captured (operator)
-- [ ] `cargo nextest run` green; clippy/fmt clean
+- [x] `cargo nextest run` green; clippy/fmt clean
 - [ ] `plans/README.md` row for 022 updated; `transport.rs` known-issue header removed/updated
-- [ ] No production host was ever contacted (only operator fixtures; `Safety check: target` recorded)
+- [x] No production host was ever contacted (only operator fixtures; `Safety check: target` recorded)
 
 2026-07-16 diagnostic: two local disposable Alpine SSH containers, bound only
 to `127.0.0.1:22221` and `127.0.0.1:22222`, both completed sequential
