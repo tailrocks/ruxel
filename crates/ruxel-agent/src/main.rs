@@ -50,6 +50,13 @@ fn state_dir() -> std::path::PathBuf {
 }
 
 fn serve() -> i32 {
+    struct ModuleGuard;
+    impl Drop for ModuleGuard {
+        fn drop(&mut self) {
+            modules::shutdown();
+        }
+    }
+    let _module_guard = ModuleGuard;
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 

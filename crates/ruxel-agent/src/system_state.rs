@@ -253,4 +253,23 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn single_threaded_snapshot_lookup_scale() {
+        let source = (0..10_000)
+            .map(|index| {
+                format!(
+                    "Package: package-{index}\nStatus: install ok installed\nVersion: 1.{index}\n\n"
+                )
+            })
+            .collect::<String>();
+        let started = std::time::Instant::now();
+        let packages = parse_dpkg_status(&source);
+        for index in 0..10_000 {
+            assert!(packages.contains_key(&format!("package-{index}")));
+        }
+        let elapsed = started.elapsed();
+        eprintln!("10k package snapshot + 10k lookups: {elapsed:?}");
+        assert!(elapsed < std::time::Duration::from_secs(5));
+    }
 }

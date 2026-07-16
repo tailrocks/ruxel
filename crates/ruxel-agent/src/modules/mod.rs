@@ -192,6 +192,10 @@ pub fn is_implemented(module: &str) -> bool {
     )
 }
 
+pub fn shutdown() {
+    postgresql::shutdown();
+}
+
 // -- Shared helpers -----------------------------------------------------------
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);

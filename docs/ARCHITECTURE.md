@@ -158,9 +158,10 @@ round-trip stalls becoming the bottleneck:
 
 ## 5. The agent: native modules over batched system caches
 
-> **Build status (2026-07): NOT YET BUILT.** The shared snapshots below are
-> the plan 021 target. Today package, unit, PostgreSQL, and ledger verification
-> paths fork their underlying system command per check.
+> **Build status (2026-07): PARTIAL.** Package and systemd reads use lazy
+> per-run snapshots shared by modules and ledger verification. PostgreSQL reuses
+> one `psql` session per become-user/port/database tuple. Other listed snapshots
+> remain future work.
 
 One process per run (or resident, §9), tokio runtime, panic=abort with a
 structured crash report event. Module implementations follow SEMANTICS §6
@@ -169,9 +170,9 @@ tasks" stops meaning "65 interrogations":
 
 | Cache | Built | Serves |
 |---|---|---|
-| dpkg status snapshot (one parse of `/var/lib/dpkg/status` + `apt-cache policy` batch for `latest`) | once per run, invalidated on any apt write | all 24 `apt` + 6 `apt_repository` checks |
-| systemd: one D-Bus connection, `ListUnits`+`unit file state` batch | once | all 21 `systemd` + 8 `service` checks; `daemon_reload` coalesced to ≤1 per run window |
-| PostgreSQL: one connection (unix socket, peer auth as postgres, port 40000) | lazily | all 44 `postgresql_*` checks/changes |
+| dpkg status snapshot (one parse of `/var/lib/dpkg/status` + `apt-cache policy` batch for `latest`) | **built**; lazy once per run, invalidated on apt writes | all `apt` checks and package ledger probes |
+| systemd: batched `list-units` + `list-unit-files` snapshot | **built**; lazy, invalidated on unit writes | all `systemd`/`service` checks and unit ledger probes |
+| PostgreSQL: one `psql` connection per become-user/port/database tuple | **built**; lazy, closed at agent shutdown | all `postgresql_*` checks/changes |
 | `/proc/mounts` + `blkid` + `vgs/lvs --reportformat json` snapshot | once, invalidated on storage writes | mount/lvg/lvol/filesystem |
 | `getent passwd/group` snapshot | once, invalidated on user/group writes | user/group/authorized_key |
 | `iptables-save` parse | once per table, invalidated on writes | all 8 iptables checks |

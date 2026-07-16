@@ -6,6 +6,11 @@
 
 use super::{ExecContext, become_command, params_object, str_param};
 use serde_json::{Value, json};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write as _};
+use std::process::{Child, ChildStdin, ChildStdout, Stdio};
+use std::sync::{Arc, Mutex};
 
 fn login_port(obj: &serde_json::Map<String, Value>) -> String {
     obj.get("login_port")
@@ -18,40 +23,146 @@ fn login_port(obj: &serde_json::Map<String, Value>) -> String {
 }
 
 /// Run SQL, returning trimmed stdout (psql -tA: tuples-only, unaligned).
-/// The statement is fed on **stdin** (`-f -`), never argv — so a
+/// Run-scoped sessions are keyed by become user/port/database, removing the
+/// former runuser+psql fork per statement. SQL stays on **stdin**, never argv — so a
 /// password-bearing `ALTER ROLE … PASSWORD '…'` never appears in the
 /// target's process table (ruxel's secrets-never-on-disk posture extends
 /// to the process list). `db` selects the target database.
 fn psql(ctx: &ExecContext, port: &str, db: Option<&str>, sql: &str) -> Result<String, String> {
-    use std::io::Write as _;
-    let mut args = vec!["-p", port, "-tA", "-f", "-"];
-    if let Some(d) = db {
-        args.insert(0, d);
-        args.insert(0, "-d");
+    let key = SessionKey {
+        become_user: ctx.become_user.clone(),
+        port: port.to_string(),
+        database: db.map(str::to_string),
+    };
+    SESSIONS.with(|sessions| {
+        let mut sessions = sessions.borrow_mut();
+        if !sessions.contains_key(&key) {
+            sessions.insert(key.clone(), PsqlSession::spawn(ctx, &key)?);
+        }
+        let result = sessions.get_mut(&key).expect("session inserted").query(sql);
+        if result.is_err() {
+            sessions.remove(&key);
+        }
+        result
+    })
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct SessionKey {
+    become_user: Option<String>,
+    port: String,
+    database: Option<String>,
+}
+
+struct PsqlSession {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr: Arc<Mutex<String>>,
+    stderr_thread: Option<std::thread::JoinHandle<()>>,
+    sequence: u64,
+}
+
+thread_local! {
+    static SESSIONS: RefCell<HashMap<SessionKey, PsqlSession>> = RefCell::new(HashMap::new());
+}
+
+pub fn shutdown() {
+    SESSIONS.with(|sessions| sessions.borrow_mut().clear());
+}
+
+impl PsqlSession {
+    fn spawn(ctx: &ExecContext, key: &SessionKey) -> Result<Self, String> {
+        let mut args = vec!["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-p", &key.port];
+        if let Some(database) = &key.database {
+            args.push("-d");
+            args.push(database);
+        }
+        let mut child = become_command(ctx, "psql", &args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("exec psql: {error}"))?;
+        let stdin = child.stdin.take().ok_or("psql stdin")?;
+        let stdout = BufReader::new(child.stdout.take().ok_or("psql stdout")?);
+        let mut child_stderr = child.stderr.take().ok_or("psql stderr")?;
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let captured = Arc::clone(&stderr);
+        let stderr_thread = std::thread::spawn(move || {
+            use std::io::Read as _;
+            let mut text = String::new();
+            let _ = child_stderr.read_to_string(&mut text);
+            *captured.lock().unwrap() = text;
+        });
+        Ok(Self {
+            child,
+            stdin,
+            stdout,
+            stderr,
+            stderr_thread: Some(stderr_thread),
+            sequence: 0,
+        })
     }
-    let mut child = become_command(ctx, "psql", &args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("exec psql: {e}"))?;
-    child
-        .stdin
-        .as_mut()
-        .ok_or("psql stdin")?
-        .write_all(sql.as_bytes())
-        .map_err(|e| format!("psql stdin write: {e}"))?;
-    let out = child
-        .wait_with_output()
-        .map_err(|e| format!("psql wait: {e}"))?;
-    if !out.status.success() {
-        // Never echo the SQL — it may carry a PASSWORD literal.
-        return Err(format!(
-            "psql failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
+
+    fn query(&mut self, sql: &str) -> Result<String, String> {
+        self.sequence += 1;
+        let marker = format!(
+            "__RUXEL_QUERY_END_{}_{}__",
+            std::process::id(),
+            self.sequence
+        );
+        self.stdin
+            .write_all(sql.as_bytes())
+            .and_then(|_| {
+                if sql.trim_end().ends_with(';') {
+                    self.stdin.write_all(b"\n")
+                } else {
+                    self.stdin.write_all(b";\n")
+                }
+            })
+            .and_then(|_| {
+                self.stdin
+                    .write_all(format!("\\echo {marker}\n").as_bytes())
+            })
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("psql stdin: {error}"))?;
+
+        let mut output = String::new();
+        loop {
+            let mut line = String::new();
+            let read = self
+                .stdout
+                .read_line(&mut line)
+                .map_err(|error| format!("psql stdout: {error}"))?;
+            if read == 0 {
+                if let Some(thread) = self.stderr_thread.take() {
+                    let _ = thread.join();
+                }
+                let error = self.stderr.lock().unwrap().trim().to_string();
+                return Err(if error.is_empty() {
+                    "psql exited before query completed".into()
+                } else {
+                    format!("psql failed: {error}")
+                });
+            }
+            if line.trim_end() == marker {
+                return Ok(output.trim().to_string());
+            }
+            output.push_str(&line);
+        }
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+impl Drop for PsqlSession {
+    fn drop(&mut self) {
+        let _ = self.stdin.write_all(b"\\q\n");
+        let _ = self.stdin.flush();
+        let _ = self.child.wait();
+        if let Some(thread) = self.stderr_thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 /// Allowlist of privilege keywords accepted in `privs` (SEMANTICS §6 grant

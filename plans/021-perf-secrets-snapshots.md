@@ -191,13 +191,20 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] Secrets are resolved in an upfront concurrent phase, grouped per 1Password item (one `op item get` per item); a call-counting test proves N-fields→1-fetch
-- [ ] Render parity is byte-identical (resolved values unchanged); `--dry-secrets` still bypasses `op`
-- [ ] The agent builds per-run dpkg/systemd(/pg) snapshots; per-name/per-unit/per-statement fork storms are gone; module reported status is unchanged
+- [x] Secrets are resolved in an upfront concurrent phase, grouped per 1Password item (one `op item get` per item); a call-counting test proves N-fields→1-fetch
+- [x] Render parity is byte-identical (resolved values unchanged); `--dry-secrets` still bypasses `op`
+- [x] The agent builds per-run dpkg/systemd(/pg) snapshots; per-name/per-unit/per-statement fork storms are gone; module reported status is unchanged
 - [ ] On-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible, measurably faster (operator-confirmed)
-- [ ] Probe concurrency implemented OR explicitly deferred with the measured single-threaded number
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 021 updated; `GOAL.md`/`RESTORE.md`'s "memoized to a handful of op calls" claim is now actually true (note it for plan 002)
+- [x] Probe concurrency implemented OR explicitly deferred with the measured single-threaded number
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 021 updated; `GOAL.md`/`RESTORE.md`'s "memoized to a handful of op calls" claim is now actually true (note it for plan 002)
+
+Probe concurrency is deferred: shared-snapshot single-thread measurement on
+this development host parses 10,000 synthetic dpkg records and performs 10,000
+ordered lookups in 16.824 ms. At current fixture scale, worker coordination
+would dominate; `system_state::tests::single_threaded_snapshot_lookup_scale`
+keeps the scale check reproducible. Revisit only if the disposable-host timing
+gate contradicts this result.
 
 ## STOP conditions
 
