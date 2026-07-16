@@ -172,6 +172,13 @@ ALL must hold:
 - [ ] `plans/README.md` row for 022 updated; `transport.rs` known-issue header removed/updated
 - [ ] No production host was ever contacted (only operator fixtures; `Safety check: target` recorded)
 
+2026-07-16 diagnostic: two local disposable Alpine SSH containers, bound only
+to `127.0.0.1:22221` and `127.0.0.1:22222`, both completed sequential
+`connect_with` handshakes in one process in 0.84 s. This does **not** reproduce
+the documented Hetzner fixture stall, so no speculative transport or host-loop
+change was shipped. Both containers and their temporary key were destroyed.
+The required two operator fixture targets remain unavailable.
+
 ## STOP conditions
 
 Stop and report if:

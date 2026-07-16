@@ -168,6 +168,12 @@ ALL must hold:
 - [ ] Coverage count updated in `RESTORE.md`/`GOAL.md`
 - [ ] `plans/README.md` row for 025 updated
 
+2026-07-16 precondition attempt: active context was confirmed as
+`ruxel-fixtures`, but both `hcloud server list` and `hcloud volume list` failed
+to return. No fixture or volume was created, no SSH target was obtained, and no
+remote host was contacted. Per Step 1 and the safety rules, the sweep did not
+proceed.
+
 ## STOP conditions
 
 Stop and report if:

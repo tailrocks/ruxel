@@ -187,7 +187,7 @@ ALL must hold:
 - [x] A registry cross-check test asserts every core module (minus controller-side) has an agent dispatch arm
 - [x] `/var/lib/ruxel` and `/etc/sysctl.conf` come from single shared constants; the two handshake timeouts share a named const
 - [ ] `cargo nextest run` green; clippy/fmt clean; on-VM transport gate still connects (operator-confirmed)
-- [ ] `plans/README.md` row for 018 updated
+- [x] `plans/README.md` row for 018 updated
 
 Local implementation and all hermetic gates completed 2026-07-16 (170 passed,
 5 fixture-dependent skips). The ignored transport gate remains pending an

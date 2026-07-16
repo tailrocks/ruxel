@@ -200,7 +200,7 @@ ALL must hold:
 - [x] Playbook order, notify, register shapes, and failure-stop are preserved (all 009 tests + goldens green)
 - [ ] On-VM bless-gate: converged rerun `changed=0`, status-identical to Ansible (operator-confirmed)
 - [x] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 020 updated
+- [x] `plans/README.md` row for 020 updated
 
 ## STOP conditions
 
