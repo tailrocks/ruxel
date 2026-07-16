@@ -70,6 +70,13 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if !ok {
             return Err(format!("git clone {repo} failed"));
         }
+        // Ansible's git module resets the new worktree to the selected
+        // revision after cloning. Besides enforcing a clean checkout, this
+        // records ORIG_HEAD; preserve that observable repository state.
+        let (_, ok) = git(&["reset", "--hard", "HEAD"], Some(dest))?;
+        if !ok {
+            return Err("git reset --hard HEAD after clone failed".into());
+        }
         let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
     }

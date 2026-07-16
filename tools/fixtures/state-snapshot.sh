@@ -29,6 +29,7 @@ for root in /tmp/ruxel-fixture-* /mnt/ruxel-fixture* /var/lib/ruxelfixture; do
   find "$root" -xdev -path '*/.ansible' -prune -o -type f \
     ! -name 'ruxel-fixture-http.log' \
     ! -name 'ruxel-fixture-http.pid' \
+    ! -path '*/.git/index' \
     ! -path '*/.git/logs/*' \
     -print0 2>/dev/null
 done | LC_ALL=C sort -z | xargs -0 -r sha256sum

@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
 STAT_FIELDS = {"exists", "isdir", "islnk", "isblk", "path", "lnk_source"}
+GIT_COMMIT_SUMMARY = re.compile(r"(?<=\[master \(root-commit\) )[0-9a-f]{7,40}(?=])")
 
 
 def normalize_diff(value):
@@ -48,6 +50,8 @@ def task_name(value):
 def normalize_value(value, module=None, include_diff=True):
     if isinstance(value, list):
         return [normalize_value(item, module, include_diff) for item in value]
+    if isinstance(value, str) and module in {"command", "shell"}:
+        return GIT_COMMIT_SUMMARY.sub("<GIT_SHA>", value)
     if not isinstance(value, dict):
         return value
     allowed = {"changed", "item", "results", "diff"}

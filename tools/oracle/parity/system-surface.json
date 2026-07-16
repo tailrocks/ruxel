@@ -1,0 +1,32 @@
+{
+  "binaries": {
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "36c35899d29e5300c082b93bc0a103704183995d3b404d5b008de2369010fa58"
+  },
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "03f1b0080d2f943e0ea0f5b06208ab6fd50f887fda7ead6d911f9b4a3bda55c9",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "3af6555b60bfb082dd52f890b80c7d02387173fa21aed2b315ea9b232873d125",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "6c9495b88f524e23f7fd8ce6a3c99b925c8aebac6595a8daa0f28b0aaad5f15c",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "system-surface",
+  "schema": 1
+}

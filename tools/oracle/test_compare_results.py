@@ -65,6 +65,12 @@ class ResultParityTests(unittest.TestCase):
         self.assertEqual(normalize_value({"changed": True, "censored": "hidden"}),
                          {"changed": True, "redacted": True})
 
+    def test_disposable_git_commit_hash_is_normalized(self):
+        first = "[master (root-commit) 3413db7] fixture"
+        second = "[master (root-commit) 367fc14] fixture"
+        self.assertEqual(normalize_value(first, "shell"), normalize_value(second, "shell"))
+        self.assertEqual(normalize_value("3413db7", "shell"), "3413db7")
+
 
 if __name__ == "__main__":
     unittest.main()

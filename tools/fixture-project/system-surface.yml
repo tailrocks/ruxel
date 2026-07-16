@@ -43,12 +43,21 @@
         dest: "{{ fixture_root }}/payload-source.txt"
 
     - name: Start disposable payload server
-      shell: >-
-        nohup python3 -m http.server 18080 --bind 127.0.0.1
-        --directory {{ fixture_root }} </dev/null
-        >/tmp/ruxel-fixture-http.log 2>&1 &
+      shell: |
+        nohup python3 -m http.server 18080 --bind 127.0.0.1 \
+          --directory {{ fixture_root }} </dev/null \
+          >/tmp/ruxel-fixture-http.log 2>&1 &
         echo $! >/tmp/ruxel-fixture-http.pid
+        for attempt in 1 2 3 4 5 6 7 8 9 10; do
+          if /usr/bin/curl --fail --silent \
+            http://127.0.0.1:18080/payload-source.txt >/dev/null; then
+            exit 0
+          fi
+          sleep 0.1
+        done
+        exit 1
       changed_when: false
+      check_mode: false
 
     - name: Wait for disposable payload server
       command: /usr/bin/curl --fail --silent http://127.0.0.1:18080/payload-source.txt
@@ -66,6 +75,7 @@
     - name: Stop disposable payload server
       shell: kill "$(cat /tmp/ruxel-fixture-http.pid)"
       changed_when: false
+      check_mode: false
 
     - name: Ensure fixture group
       group:
@@ -193,7 +203,9 @@
         git -C {{ fixture_root }}/origin config user.name Synthetic
         printf fixture > {{ fixture_root }}/origin/data.txt
         git -C {{ fixture_root }}/origin add data.txt
-        git -C {{ fixture_root }}/origin commit -m fixture || true
+        GIT_AUTHOR_DATE=2020-01-01T00:00:00Z \
+        GIT_COMMITTER_DATE=2020-01-01T00:00:00Z \
+          git -C {{ fixture_root }}/origin commit -m fixture || true
       args:
         creates: "{{ fixture_root }}/origin/.git/HEAD"
 
