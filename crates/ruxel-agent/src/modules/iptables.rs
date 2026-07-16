@@ -73,39 +73,25 @@ fn parse_policy(output: &str, chain: &str) -> Option<String> {
 }
 
 fn current_policy(binary: &str, chain: &str) -> Result<Option<String>, String> {
-    let out = std::process::Command::new(binary)
-        .args(["-S", chain])
-        .output()
-        .map_err(|e| format!("exec {binary}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{binary} -S {chain}: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(binary);
+    command.args(["-S", chain]);
+    let out = super::run_checked(command)?;
     Ok(parse_policy(&String::from_utf8_lossy(&out.stdout), chain))
 }
 
 fn probe(binary: &str, args: &[&str]) -> Result<bool, String> {
-    let out = std::process::Command::new(binary)
+    let mut command = std::process::Command::new(binary);
+    command
         .args(args)
-        .output()
-        .map_err(|e| format!("exec {binary}: {e}"))?;
-    Ok(out.status.success())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    super::run_ok(command)
 }
 
 fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(binary)
-        .args(args)
-        .output()
-        .map_err(|e| format!("exec {binary}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{binary} {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(binary);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
 }
 

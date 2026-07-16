@@ -874,6 +874,7 @@ dependencies = [
  "hmac",
  "pbkdf2",
  "regex-lite",
+ "ruxel-core",
  "ruxel-proto",
  "serde",
  "serde_json",

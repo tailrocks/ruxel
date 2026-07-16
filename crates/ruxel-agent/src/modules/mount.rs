@@ -47,16 +47,9 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         changed = true;
         if !ctx.check_mode {
             std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
-            let out = std::process::Command::new("mount")
-                .arg(path)
-                .output()
-                .map_err(|e| format!("exec mount: {e}"))?;
-            if !out.status.success() {
-                return Err(format!(
-                    "mount {path}: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
-            }
+            let mut command = std::process::Command::new("mount");
+            command.arg(path);
+            super::run_checked(command)?;
         }
     }
 

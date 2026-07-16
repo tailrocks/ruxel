@@ -91,17 +91,9 @@ fn lvcreate_size(size: &str) -> &str {
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("exec {cmd}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{cmd} {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
 }
 

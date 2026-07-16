@@ -268,6 +268,9 @@ fn set_mode(_path: &Path, _mode: u32) {}
 
 /// The fingerprint set a module's converged end state can be verified by,
 /// or None if the module must always execute (ARCHITECTURE §6 honesty rule).
+/// Cacheable registry: content/file modules, apt present (not latest),
+/// non-restarted systemd/service, and sysctl. Every other dispatch arm is
+/// intentionally always-execute until it gains an honest probe here.
 fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
     let s = |k: &str| params.get(k).and_then(Value::as_str);
     match module {
@@ -327,7 +330,7 @@ fn probe_for(module: &str, params: &Value) -> Option<Vec<Probe>> {
         }
         "sysctl" | "ansible.posix.sysctl" => {
             let name = s("name")?;
-            let file = s("sysctl_file").unwrap_or("/etc/sysctl.conf");
+            let file = s("sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
             let value = sysctl_file_value(file, name)?;
             let mut probes = vec![Probe::SysctlKV {
                 file: file.to_string(),

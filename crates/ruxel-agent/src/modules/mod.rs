@@ -100,6 +100,13 @@ impl Outcome {
 }
 
 pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext) -> Outcome {
+    if !is_implemented(module) {
+        return Outcome::from_result(json!({
+            "failed": true,
+            "changed": false,
+            "msg": format!("module {module:?} is not implemented in this agent build"),
+        }));
+    }
     let result = match module {
         "apt" => apt::run(params, ctx),
         "apt_repository" => apt_repository::run(params, ctx),
@@ -130,9 +137,7 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
         "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
         "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
         "community.postgresql.postgresql_privs" => postgresql::privs(params, ctx),
-        other => Err(format!(
-            "module {other:?} is not implemented in this agent build"
-        )),
+        _ => unreachable!("is_implemented and execute dispatch must stay aligned"),
     };
     match result {
         Ok(value) => Outcome::from_result(value),
@@ -142,6 +147,43 @@ pub fn execute(module: &str, params: &Value, free_form: &str, ctx: &ExecContext)
             "msg": msg,
         })),
     }
+}
+
+pub fn is_implemented(module: &str) -> bool {
+    matches!(
+        module,
+        "ansible.posix.mount"
+            | "ansible.posix.sysctl"
+            | "apt"
+            | "apt_repository"
+            | "authorized_key"
+            | "blockinfile"
+            | "command"
+            | "community.general.lvg"
+            | "community.general.lvol"
+            | "community.general.timezone"
+            | "community.postgresql.postgresql_db"
+            | "community.postgresql.postgresql_privs"
+            | "community.postgresql.postgresql_schema"
+            | "community.postgresql.postgresql_user"
+            | "copy"
+            | "file"
+            | "filesystem"
+            | "get_url"
+            | "git"
+            | "group"
+            | "iptables"
+            | "lineinfile"
+            | "replace"
+            | "service"
+            | "shell"
+            | "slurp"
+            | "stat"
+            | "sysctl"
+            | "systemd"
+            | "template"
+            | "user"
+    )
 }
 
 // -- Shared helpers -----------------------------------------------------------
@@ -216,6 +258,38 @@ pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(
         }
     }
     Ok(())
+}
+
+pub(super) fn run_checked(
+    mut command: std::process::Command,
+) -> Result<std::process::Output, String> {
+    let display = command_display(&command);
+    let output = command
+        .output()
+        .map_err(|error| format!("exec {}: {error}", command.get_program().to_string_lossy()))?;
+    if output.status.success() {
+        Ok(output)
+    } else {
+        Err(format!(
+            "{display}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+pub(super) fn run_ok(mut command: std::process::Command) -> Result<bool, String> {
+    command
+        .status()
+        .map(|status| status.success())
+        .map_err(|error| format!("exec {}: {error}", command.get_program().to_string_lossy()))
+}
+
+fn command_display(command: &std::process::Command) -> String {
+    std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .map(|part| part.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Build a std::process::Command, wrapped in `runuser -u <user> --` when the
@@ -410,5 +484,54 @@ mod security_tests {
             resolve_gid_from("staff:x:1002:alice\n", "staff").unwrap(),
             1002
         );
+    }
+
+    #[test]
+    fn checked_runner_preserves_program_args_and_stderr() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "printf synthetic-error >&2; exit 7"]);
+        let error = super::run_checked(command).unwrap_err();
+        assert!(error.starts_with("sh -c printf synthetic-error >&2; exit 7:"));
+        assert!(error.ends_with("synthetic-error"));
+
+        let mut ok = std::process::Command::new("sh");
+        ok.args(["-c", "exit 0"]);
+        assert!(super::run_ok(ok).unwrap());
+    }
+
+    #[test]
+    fn every_remote_core_module_has_agent_dispatch() {
+        const CONTROLLER_ONLY: &[&str] = &["assert", "debug", "fail", "pause", "set_fact"];
+        let missing: Vec<_> = ruxel_core::modules::MODULES
+            .iter()
+            .map(|surface| surface.name)
+            .filter(|name| !CONTROLLER_ONLY.contains(name))
+            .filter(|name| !super::is_implemented(name))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "core modules missing agent dispatch: {missing:?}"
+        );
+        let context = super::ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        for module in ruxel_core::modules::MODULES
+            .iter()
+            .map(|surface| surface.name)
+            .filter(|name| !CONTROLLER_ONLY.contains(name))
+        {
+            let outcome = super::execute(module, &serde_json::Value::Null, "", &context);
+            assert!(
+                !outcome.result["msg"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("not implemented"),
+                "{module} is advertised but has no execute arm"
+            );
+        }
     }
 }

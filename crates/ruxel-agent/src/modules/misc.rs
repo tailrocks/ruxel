@@ -13,17 +13,9 @@ pub fn timezone(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         .unwrap_or_default();
     let changed = current != name;
     if changed && !ctx.check_mode {
-        let out = std::process::Command::new("timedatectl")
-            .arg("set-timezone")
-            .arg(name)
-            .output()
-            .map_err(|e| format!("timedatectl: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "timedatectl set-timezone {name}: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
+        let mut command = std::process::Command::new("timedatectl");
+        command.args(["set-timezone", name]);
+        super::run_checked(command)?;
     }
     Ok(json!({"changed": changed, "failed": false}))
 }
@@ -105,17 +97,9 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
 }
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("exec {cmd}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{cmd} {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
 }
 

@@ -16,6 +16,7 @@
 use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
+use ruxel_proto::constants::{AGENT_DIR, HANDSHAKE_TIMEOUT_SECS};
 use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
@@ -23,8 +24,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-
-const AGENT_DIR: &str = "/var/lib/ruxel/agent";
 
 /// Connection tuning beyond the operator's ssh config. Production runs use
 /// `Default` (config-driven, strict known_hosts, exactly like ansible);
@@ -260,7 +259,12 @@ pub async fn connect_with(
     .await?;
 
     let ack_read = read_frame::<v1::Event>(&mut stdout);
-    let event = match tokio::time::timeout(std::time::Duration::from_secs(30), ack_read).await {
+    let event = match tokio::time::timeout(
+        std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS),
+        ack_read,
+    )
+    .await
+    {
         Ok(result) => match result? {
             Some(ev) => ev,
             None => bail!("agent closed the stream before HelloAck"),
@@ -412,21 +416,22 @@ async fn remote_agent_hash_matches(
 // -- Async framing (same wire format as ruxel_proto::frame) -----------------
 
 async fn write_frame<M: Message>(w: &mut (impl AsyncWrite + Unpin), msg: &M) -> Result<()> {
-    let mut buf = Vec::with_capacity(msg.encoded_len() + 5);
-    msg.encode_length_delimited(&mut buf)
-        .expect("Vec<u8> write is infallible");
+    let buf = ruxel_proto::frame::encode_frame(msg);
     w.write_all(&buf).await?;
     w.flush().await?;
     Ok(())
 }
 
 async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> Result<Option<M>> {
-    let mut len: u64 = 0;
-    let mut shift = 0u32;
+    let mut decoder = ruxel_proto::frame::VarintDecoder::default();
     let mut first = true;
-    loop {
+    let len = loop {
         let mut byte = [0u8; 1];
-        let n = r.read(&mut byte).await?;
+        let n = match r.read(&mut byte).await {
+            Ok(n) => n,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
         if n == 0 {
             if first {
                 return Ok(None);
@@ -434,15 +439,12 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
             bail!("EOF inside frame length");
         }
         first = false;
-        len |= u64::from(byte[0] & 0x7f) << shift;
-        if byte[0] & 0x80 == 0 {
-            break;
+        match decoder.push(byte[0]) {
+            Ok(Some(len)) => break len,
+            Ok(None) => {}
+            Err(message) => bail!(message),
         }
-        shift += 7;
-        if shift >= 64 {
-            bail!("frame length varint overflow");
-        }
-    }
+    };
     if len > ruxel_proto::frame::MAX_FRAME_LEN {
         bail!("frame of {len} bytes exceeds MAX_FRAME_LEN");
     }
@@ -453,8 +455,10 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
 
 #[cfg(test)]
 mod transport_security_tests {
-    use super::socket_dir_from;
+    use super::{read_frame, socket_dir_from, write_frame};
+    use ruxel_proto::v1;
     use std::path::PathBuf;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn socket_directory_is_private_location_not_tmp() {
@@ -466,5 +470,27 @@ mod transport_security_tests {
             socket_dir_from(None, Some(PathBuf::from("/home/operator"))).unwrap(),
             PathBuf::from("/home/operator/.ruxel/cp")
         );
+    }
+
+    #[tokio::test]
+    async fn async_and_sync_framing_are_byte_identical() {
+        let message = v1::Envelope {
+            msg: Some(v1::envelope::Msg::Hello(v1::Hello {
+                proto_version: ruxel_proto::PROTO_VERSION,
+                run_id: "codec-identity".into(),
+                ..Default::default()
+            })),
+        };
+        let sync = ruxel_proto::frame::encode_frame(&message);
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        write_frame(&mut writer, &message).await.unwrap();
+        let mut asynchronous = vec![0; sync.len()];
+        reader.read_exact(&mut asynchronous).await.unwrap();
+        assert_eq!(asynchronous, sync);
+
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        writer.write_all(&sync).await.unwrap();
+        let decoded: v1::Envelope = read_frame(&mut reader).await.unwrap().unwrap();
+        assert_eq!(decoded, message);
     }
 }

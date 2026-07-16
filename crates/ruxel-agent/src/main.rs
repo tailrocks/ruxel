@@ -45,7 +45,7 @@ fn main() {
 fn state_dir() -> std::path::PathBuf {
     std::env::var_os("RUXEL_STATE_DIR")
         .map(Into::into)
-        .unwrap_or_else(|| "/var/lib/ruxel".into())
+        .unwrap_or_else(|| ruxel_proto::constants::STATE_ROOT.into())
 }
 
 fn serve() -> i32 {
@@ -94,7 +94,9 @@ fn serve() -> i32 {
     {
         let handshaken = handshaken.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(30));
+            std::thread::sleep(std::time::Duration::from_secs(
+                ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS,
+            ));
             if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
                 std::process::exit(67);
             }

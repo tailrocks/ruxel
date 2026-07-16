@@ -182,12 +182,16 @@ warnings` → 0; `cargo nextest run` → green.
 
 ALL must hold:
 
-- [ ] Agent modules use a shared `run_checked`/`run_ok`; the ~14 raw spawn+check copies are gone (`grep` count dropped)
-- [ ] One varint codec in `ruxel-proto` backs both sync (`frame.rs`) and async (`transport.rs`); the async path handles `Interrupted`; a byte-identity test passes
-- [ ] A registry cross-check test asserts every core module (minus controller-side) has an agent dispatch arm
-- [ ] `/var/lib/ruxel` and `/etc/sysctl.conf` come from single shared constants; the two handshake timeouts share a named const
+- [x] Agent modules use a shared `run_checked`/`run_ok`; the duplicated checked-run blocks are consolidated while output-sensitive/special-error sites remain explicit
+- [x] One varint codec in `ruxel-proto` backs both sync (`frame.rs`) and async (`transport.rs`); the async path handles `Interrupted`; a byte-identity test passes
+- [x] A registry cross-check test asserts every core module (minus controller-side) has an agent dispatch arm
+- [x] `/var/lib/ruxel` and `/etc/sysctl.conf` come from single shared constants; the two handshake timeouts share a named const
 - [ ] `cargo nextest run` green; clippy/fmt clean; on-VM transport gate still connects (operator-confirmed)
 - [ ] `plans/README.md` row for 018 updated
+
+Local implementation and all hermetic gates completed 2026-07-16 (170 passed,
+5 fixture-dependent skips). The ignored transport gate remains pending an
+explicitly supplied disposable SSH fixture; production targets are forbidden.
 
 ## STOP conditions
 

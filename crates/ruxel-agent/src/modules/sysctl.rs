@@ -24,7 +24,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
-    let file = str_param(obj, "sysctl_file").unwrap_or("/etc/sysctl.conf");
+    let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
 
     let mut changed = false;
 
