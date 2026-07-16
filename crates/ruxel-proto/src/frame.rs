@@ -129,4 +129,50 @@ mod tests {
         let res: io::Result<Option<v1::Envelope>> = read_frame(&mut r);
         assert!(res.is_err());
     }
+
+    #[test]
+    fn mid_varint_eof_is_error() {
+        let mut input = [0x80].as_slice();
+        let error = read_frame::<v1::Envelope>(&mut input).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn varint_overflow_is_error() {
+        let mut input = [0x80; 10].as_slice();
+        let error = read_frame::<v1::Envelope>(&mut input).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("varint overflow"));
+    }
+
+    #[test]
+    fn interrupted_read_retries() {
+        struct InterruptOnce {
+            interrupted: bool,
+            bytes: io::Cursor<Vec<u8>>,
+        }
+        impl Read for InterruptOnce {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if !self.interrupted {
+                    self.interrupted = true;
+                    return Err(io::Error::from(io::ErrorKind::Interrupted));
+                }
+                self.bytes.read(buf)
+            }
+        }
+
+        let expected = v1::Envelope {
+            msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+        };
+        let mut bytes = Vec::new();
+        write_frame(&mut bytes, &expected).unwrap();
+        let mut input = InterruptOnce {
+            interrupted: false,
+            bytes: io::Cursor::new(bytes),
+        };
+        assert_eq!(
+            read_frame::<v1::Envelope>(&mut input).unwrap(),
+            Some(expected)
+        );
+    }
 }

@@ -48,7 +48,7 @@ disposable fixtures only. Quality gates before any commit:
 | 014 | Close symlink-follow + injection surfaces in write/exec modules | P1 | M | — | DONE |
 | 015 | Misc security hardening (mux socket, agent re-hash, Debug, capture) | P2 | S | — | DONE |
 | 016 | Unit-test the 18 untested agent modules' pure decision logic | P2 | L | — | DONE |
-| 017 | Protocol integration + frame edge-case tests | P2 | M | — | TODO |
+| 017 | Protocol integration + frame edge-case tests | P2 | M | — | DONE |
 | 018 | Consolidate duplicated code (command runner, varint codec, registries, constants) | P3 | M | — | TODO |
 | 019 | DX tooling: justfile, release/versioning, oracle Python pin, renovate | P3 | S | — | TODO |
 | 020 | Make `apply` consume the compiler (pipelining + apply-time enum revalidation) | P2 | L | 009 | TODO |

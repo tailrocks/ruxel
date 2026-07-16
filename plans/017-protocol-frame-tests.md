@@ -161,13 +161,13 @@ first, reuse its helper; if this lands first, 007 reuses yours.
 
 ALL must hold:
 
-- [ ] `frame.rs` tests cover mid-varint EOF, varint overflow, and interrupted-retry
-- [ ] `protocol.rs` proves the agent executes a `Plan` (dispatch + `TaskResult`)
-- [ ] `protocol.rs` proves ledger replay: a second identical run returns `changed:false` from cache
-- [ ] `protocol.rs` proves malformed params yield a `failed` result without killing the agent
-- [ ] No behavior change to `frame.rs`/`main.rs` (or a real bug was found and reported, not silently patched)
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 017 updated
+- [x] `frame.rs` tests cover mid-varint EOF, varint overflow, and interrupted-retry
+- [x] `protocol.rs` proves the agent executes a `Plan` (dispatch + `TaskResult`)
+- [x] `protocol.rs` proves ledger replay: a second identical run returns `changed:false` from cache
+- [x] `protocol.rs` proves malformed params yield a `failed` result without killing the agent
+- [x] No behavior change to `frame.rs`/`main.rs` (or a real bug was found and reported, not silently patched)
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 017 updated
 
 ## STOP conditions
 
