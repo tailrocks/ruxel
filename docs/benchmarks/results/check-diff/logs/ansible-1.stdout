@@ -1,0 +1,26 @@
+
+PLAY [Synthetic stable file benchmark] *****************************************
+
+TASK [Create benchmark root] ***************************************************
+ok: [fixture]
+
+TASK [Install stable benchmark content] ****************************************
+ok: [fixture]
+
+TASK [Exercise managed block] **************************************************
+--- before: /tmp/ruxel-fixture-files/block.txt (content)
++++ after: /tmp/ruxel-fixture-files/block.txt (content)
+@@ -1 +1,4 @@
+ drifted
++# BEGIN ANSIBLE MANAGED BLOCK
++synthetic benchmark block
++# END ANSIBLE MANAGED BLOCK
+
+changed: [fixture]
+
+TASK [Exercise command mapping and creates] ************************************
+ok: [fixture]
+
+PLAY RECAP *********************************************************************
+fixture                    : ok=4    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

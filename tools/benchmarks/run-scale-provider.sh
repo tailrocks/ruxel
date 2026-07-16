@@ -74,6 +74,11 @@ make_inventory "$RFIXTURE" "$RKEY" "$stage/ruxel.ini"
 make_inventory "$AFIXTURE" "$AKEY" "$stage/ansible.ini"
 resolve_fixture "$RFIXTURE"; RIP="$FIXTURE_IP"
 resolve_fixture "$AFIXTURE"; AIP="$FIXTURE_IP"
+# Gate timed samples on both SSH endpoints being ready and semantically equal.
+# Provider creation can complete before sshd accepts its first connection.
+tools/fixtures/state-snapshot.sh "$RFIXTURE" "$RKEY" "$stage/base-ruxel"
+tools/fixtures/state-snapshot.sh "$AFIXTURE" "$AKEY" "$stage/base-ansible"
+diff -u "$stage/base-ruxel" "$stage/base-ansible"
 
 for repetition in $(seq 1 "$REPS"); do
   capture="$stage/ansible-$repetition.jsonl"
@@ -89,11 +94,19 @@ for repetition in $(seq 1 "$REPS"); do
     ANSIBLE_CALLBACKS_ENABLED=ruxel_capture ANSIBLE_GATHERING=explicit ANSIBLE_HOST_KEY_CHECKING=False
     ANSIBLE_SSH_RETRIES=3 "ANSIBLE_SSH_ARGS=-o ControlMaster=no -o ControlPath=none"
     "ANSIBLE_SSH_COMMON_ARGS=-o IdentitiesOnly=yes -o UserKnownHostsFile=${AKEY}.known_hosts -o StrictHostKeyChecking=accept-new"
-    "RUXEL_CAPTURE_FILE=$capture" uv run ansible-playbook -i "$stage/ansible.ini" "$PLAYBOOK")
+    "RUXEL_CAPTURE_FILE=$capture" uv run ansible-playbook --private-key "$AKEY" \
+    -i "$stage/ansible.ini" "$PLAYBOOK")
   run_ruxel() { python3 tools/benchmarks/run_timed.py "$relapsed" "$rstatus" "$rstdout" "$rstderr" -- "${rcmd[@]}"; }
   run_ansible() { python3 tools/benchmarks/run_timed.py "$aelapsed" "$astatus" "$astdout" "$astderr" -- "${acmd[@]}"; }
   if [ $((repetition % 2)) -eq 1 ]; then run_ansible; run_ruxel; aorder=1; rorder=2; else run_ruxel; run_ansible; rorder=1; aorder=2; fi
-  [ "$(cat "$rstatus")" -eq 0 ] && [ "$(cat "$astatus")" -eq 0 ] || die "timed scale command failed"
+  if [ "$(cat "$rstatus")" -ne 0 ] || [ "$(cat "$astatus")" -ne 0 ]; then
+    echo "ruxel status=$(cat "$rstatus") ansible status=$(cat "$astatus")" >&2
+    tail -40 "$rstdout" >&2 || true
+    tail -40 "$rstderr" >&2 || true
+    tail -40 "$astdout" >&2 || true
+    tail -40 "$astderr" >&2 || true
+    die "timed scale command failed"
+  fi
   python3 tools/oracle/normalize_capture.py "$capture"
   tools/oracle/compare_results.py "$rstdout" "$capture"
   tools/fixtures/state-snapshot.sh "$RFIXTURE" "$RKEY" "$stage/state-ruxel"

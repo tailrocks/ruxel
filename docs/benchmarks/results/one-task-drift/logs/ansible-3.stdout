@@ -1,0 +1,18 @@
+
+PLAY [Synthetic stable file benchmark] *****************************************
+
+TASK [Create benchmark root] ***************************************************
+ok: [fixture]
+
+TASK [Install stable benchmark content] ****************************************
+ok: [fixture]
+
+TASK [Exercise managed block] **************************************************
+ok: [fixture]
+
+TASK [Exercise command mapping and creates] ************************************
+changed: [fixture]
+
+PLAY RECAP *********************************************************************
+fixture                    : ok=4    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

@@ -175,7 +175,12 @@ run_pair() {
     fi
   }
   if [ $((repetition % 2)) -eq 1 ]; then run_one ansible; run_one ruxel; else run_one ruxel; run_one ansible; fi
-  [ "$(cat "$rstatus")" -eq 0 ] && [ "$(cat "$astatus")" -eq 0 ] || die "timed command failed"
+  if [ "$(cat "$rstatus")" -ne 0 ] || [ "$(cat "$astatus")" -ne 0 ]; then
+    echo "ruxel status=$(cat "$rstatus") ansible status=$(cat "$astatus")" >&2
+    tail -40 "$reraw" >&2 || true
+    tail -40 "$aeraw" >&2 || true
+    die "timed command failed"
+  fi
   if [ "$scenario" = check-diff ]; then
     tools/oracle/compare_results.py --ignore-diffs "$rraw" "$capture_dir/$name.jsonl"
     tools/oracle/compare_diffs.py "$rraw" "$araw"

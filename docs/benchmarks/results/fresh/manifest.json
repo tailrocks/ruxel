@@ -1,0 +1,39 @@
+{
+  "binaries": {
+    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
+    "controller_sha256": "2fbcad07e6d716421fac14b68db62a5f78886f2da399e18d48cfbeb3e642d781"
+  },
+  "case": "fresh",
+  "correctness": {
+    "diff_parity": true,
+    "fixture_identity_verified": true,
+    "resources_reaped": true,
+    "result_parity": true,
+    "state_parity": true
+  },
+  "fixture": {
+    "kind": "disposable-provider-twin",
+    "specification": {
+      "image": "debian-12",
+      "location": "sin",
+      "primary_disk_size": 40,
+      "server_type": "cpx12",
+      "volume_count": 0
+    }
+  },
+  "fixture_source_sha256": "d0f783c27cc041f480c26f498659924c613bf02626583ac89e8daed9ec84cc8c",
+  "parity_manifest_sha256": "6fd9fc5c3988a9a9c8c790c8fa49519063034f54709630d3a4d170aa5c14b42e",
+  "playbook": "tools/fixture-project/benchmarks/files.yml",
+  "preparation": "",
+  "repetitions": 3,
+  "scenario": "fresh",
+  "schema": 1,
+  "versions": {
+    "agent": "0.1.0",
+    "ansible": "ansible-playbook [core 2.21.0]",
+    "kernel": "25.5.0",
+    "os": "Darwin 25.5.0 arm64",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ruxel": "0.1.0"
+  }
+}
