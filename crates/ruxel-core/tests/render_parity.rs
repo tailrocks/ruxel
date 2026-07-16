@@ -164,11 +164,9 @@ fn expressions_and_conditions_match_oracle() {
 }
 
 #[test]
+#[ignore = "requires RUXEL_WORKLOAD_DIR (private ansible-configs checkout)"]
 fn template_files_match_oracle() {
-    let Ok(workload) = std::env::var("RUXEL_WORKLOAD_DIR") else {
-        eprintln!("RUXEL_WORKLOAD_DIR not set — skipping template-file parity");
-        return;
-    };
+    let workload = std::env::var("RUXEL_WORKLOAD_DIR").expect("RUXEL_WORKLOAD_DIR must be set");
     let corpus = load_corpus();
     let engine = engine();
     let mut checked = 0;

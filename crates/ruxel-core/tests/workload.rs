@@ -7,14 +7,12 @@
 use ruxel_core::playbook;
 
 #[test]
+#[ignore = "requires RUXEL_WORKLOAD_DIR (private ansible-configs checkout)"]
 fn entire_workload_compiles_to_plans() {
     use ruxel_core::compiler::{self, PlanBody, PlanTask, Readiness};
     use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};
 
-    let Ok(dir) = std::env::var("RUXEL_WORKLOAD_DIR") else {
-        eprintln!("RUXEL_WORKLOAD_DIR not set — skipping workload compile gate");
-        return;
-    };
+    let dir = std::env::var("RUXEL_WORKLOAD_DIR").expect("RUXEL_WORKLOAD_DIR must be set");
     let engine = Engine::new(std::sync::Arc::new(MemoizedResolver::new(DrySecrets)));
     let mut entries: Vec<_> = std::fs::read_dir(&dir)
         .expect("workload dir readable")
@@ -76,11 +74,9 @@ fn entire_workload_compiles_to_plans() {
 }
 
 #[test]
+#[ignore = "requires RUXEL_WORKLOAD_DIR (private ansible-configs checkout)"]
 fn entire_workload_parses() {
-    let Ok(dir) = std::env::var("RUXEL_WORKLOAD_DIR") else {
-        eprintln!("RUXEL_WORKLOAD_DIR not set — skipping workload parse gate");
-        return;
-    };
+    let dir = std::env::var("RUXEL_WORKLOAD_DIR").expect("RUXEL_WORKLOAD_DIR must be set");
     let mut parsed = 0;
     let mut failures = Vec::new();
     let mut entries: Vec<_> = std::fs::read_dir(&dir)

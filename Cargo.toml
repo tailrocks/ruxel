@@ -15,8 +15,8 @@ repository = "https://github.com/tailrocks/ruxel"
 homepage = "https://github.com/tailrocks/ruxel"
 
 [workspace.dependencies]
-ruxel-core = { path = "crates/ruxel-core" }
-ruxel-proto = { path = "crates/ruxel-proto" }
+ruxel-core = { path = "crates/ruxel-core", version = "0.1.0" }
+ruxel-proto = { path = "crates/ruxel-proto", version = "0.1.0" }
 
 anyhow = "1.0"
 base64 = "0.22"

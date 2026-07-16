@@ -71,6 +71,17 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
+The private workload fidelity gates require `RUXEL_WORKLOAD_DIR` to point at
+the `ansible-configs` checkout. They are explicitly ignored when unavailable;
+run them locally with:
+
+```bash
+RUXEL_WORKLOAD_DIR=/path/to/ansible-configs \
+  cargo test -p ruxel-core --test workload -- --ignored
+RUXEL_WORKLOAD_DIR=/path/to/ansible-configs \
+  cargo test -p ruxel-core --test render_parity template_files_match_oracle -- --ignored
+```
+
 ## License
 
 [Apache-2.0](LICENSE)

@@ -15,6 +15,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # TODO(operator): provide a redacted or private ansible-configs checkout to
+  # run the RUXEL_WORKLOAD_DIR fidelity gates in CI.
   test:
     runs-on: ubuntu-latest
     env:
@@ -56,15 +58,13 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-test-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-target-${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-test-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-test-
+            cargo-target-${{ runner.os }}-test-
             cargo-target-${{ runner.os }}-
 
+      # Revisit --no-tests=pass after plans 016/017 add tests to every crate.
       - run: cargo nextest run --all-features --color=always --no-tests=pass
-
-      - run: cargo build --color=always
 
       - name: sccache stats
         if: always() && steps.sccache.outcome == 'success'
@@ -92,6 +92,18 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      - id: sccache
+        uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
@@ -111,7 +123,20 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
+      - name: Cache Cargo target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-clippy-
+            cargo-target-${{ runner.os }}-
+
       - run: cargo clippy --all-targets -- -D warnings
+
+      - name: sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   agent-cross:
     runs-on: ubuntu-latest
@@ -120,6 +145,18 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - id: sccache
+        uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
 
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
@@ -140,8 +177,33 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
+      - name: Cache Cargo target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-musl-x86_64-unknown-linux-musl-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-musl-x86_64-unknown-linux-musl-
+            cargo-target-${{ runner.os }}-
+
       - run: cargo zigbuild --target x86_64-unknown-linux-musl --release -p ruxel-agent
 
       - name: Verify static binary
         run: |
           file target/x86_64-unknown-linux-musl/release/ruxel-agent | grep -E "ELF 64-bit.*x86-64.*statically linked"
+
+      - name: sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-deny"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: cargo deny check advisories bans licenses sources
