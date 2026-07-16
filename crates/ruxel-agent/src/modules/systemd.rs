@@ -30,7 +30,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if let Some(unit) = name {
         if let Some(want_enabled) = enabled {
             let (out, _, _) = systemctl(&["is-enabled", unit])?;
-            let is_enabled = out.trim() == "enabled";
+            let is_enabled = is_enabled(&out);
             if is_enabled != want_enabled {
                 changed = true;
                 if !ctx.check_mode {
@@ -45,44 +45,20 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
         if let Some(state) = state {
             let (out, _, _) = systemctl(&["is-active", unit])?;
-            let active = out.trim() == "active";
-            match state {
-                "started" => {
-                    if !active {
-                        changed = true;
-                        if !ctx.check_mode {
-                            let st = systemctl(&["start", unit])?;
-                            if st.1 != 0 {
-                                return Err(format!("start {unit}: {}", st.2));
-                            }
-                        }
+            let active = is_active(&out);
+            if state_needs_action(state, active)? {
+                changed = true;
+                if !ctx.check_mode {
+                    let verb = match state {
+                        "started" => "start",
+                        "stopped" => "stop",
+                        "restarted" => "restart",
+                        _ => unreachable!("validated by state_needs_action"),
+                    };
+                    let st = systemctl(&[verb, unit])?;
+                    if st.1 != 0 {
+                        return Err(format!("{verb} {unit}: {}", st.2));
                     }
-                }
-                "stopped" => {
-                    if active {
-                        changed = true;
-                        if !ctx.check_mode {
-                            let st = systemctl(&["stop", unit])?;
-                            if st.1 != 0 {
-                                return Err(format!("stop {unit}: {}", st.2));
-                            }
-                        }
-                    }
-                }
-                "restarted" => {
-                    // Always an action, always changed (SEMANTICS §6).
-                    changed = true;
-                    if !ctx.check_mode {
-                        let st = systemctl(&["restart", unit])?;
-                        if st.1 != 0 {
-                            return Err(format!("restart {unit}: {}", st.2));
-                        }
-                    }
-                }
-                other => {
-                    return Err(format!(
-                        "systemd: state {other:?} outside the closed surface"
-                    ));
                 }
             }
         }
@@ -96,6 +72,25 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }))
 }
 
+fn is_enabled(output: &str) -> bool {
+    output.trim() == "enabled"
+}
+
+fn is_active(output: &str) -> bool {
+    output.trim() == "active"
+}
+
+fn state_needs_action(state: &str, active: bool) -> Result<bool, String> {
+    match state {
+        "started" => Ok(!active),
+        "stopped" => Ok(active),
+        "restarted" => Ok(true),
+        other => Err(format!(
+            "systemd: state {other:?} outside the closed surface"
+        )),
+    }
+}
+
 fn systemctl(args: &[&str]) -> Result<(String, i32, String), String> {
     let out = std::process::Command::new("systemctl")
         .args(args)
@@ -106,4 +101,17 @@ fn systemctl(args: &[&str]) -> Result<(String, i32, String), String> {
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stderr).to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_status_and_restart_is_always_action() {
+        assert!(super::is_active("active\n"));
+        assert!(!super::is_active("inactive\n"));
+        assert!(super::is_enabled("enabled\n"));
+        assert!(!super::state_needs_action("started", true).unwrap());
+        assert!(super::state_needs_action("stopped", true).unwrap());
+        assert!(super::state_needs_action("restarted", false).unwrap());
+    }
 }

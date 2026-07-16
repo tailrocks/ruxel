@@ -274,6 +274,10 @@ fn resolve_uid(owner: &str) -> Result<u32, String> {
         return Ok(uid);
     }
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    resolve_uid_from(&passwd, owner)
+}
+
+fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
     for line in passwd.lines() {
         let mut fields = line.split(':');
         if fields.next() == Some(owner) {
@@ -289,6 +293,10 @@ fn resolve_gid(group: &str) -> Result<u32, String> {
         return Ok(gid);
     }
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    resolve_gid_from(&groups, group)
+}
+
+fn resolve_gid_from(groups: &str, group: &str) -> Result<u32, String> {
     for line in groups.lines() {
         let mut fields = line.split(':');
         if fields.next() == Some(group) {
@@ -355,7 +363,8 @@ fn apply_attrs(
 
 #[cfg(test)]
 mod security_tests {
-    use super::write_atomic;
+    use super::{bool_param, parse_mode, resolve_gid_from, resolve_uid_from, write_atomic};
+    use serde_json::json;
     use std::os::unix::fs::symlink;
 
     #[test]
@@ -377,5 +386,29 @@ mod security_tests {
                 .is_symlink()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parses_modes_booleans_and_identity_files() {
+        assert_eq!(parse_mode(&json!("0755")).unwrap(), 0o755);
+        assert_eq!(parse_mode(&json!(644)).unwrap(), 0o644);
+        for value in [
+            json!("yes"),
+            json!("true"),
+            json!("on"),
+            json!("1"),
+            json!(1),
+        ] {
+            let obj = json!({"value": value});
+            assert!(bool_param(obj.as_object().unwrap(), "value", false));
+        }
+        assert_eq!(
+            resolve_uid_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice").unwrap(),
+            1001
+        );
+        assert_eq!(
+            resolve_gid_from("staff:x:1002:alice\n", "staff").unwrap(),
+            1002
+        );
     }
 }

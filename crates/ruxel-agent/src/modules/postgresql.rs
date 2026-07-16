@@ -770,6 +770,34 @@ mod tests {
     }
 
     #[test]
+    fn sql_inputs_are_allowlisted_and_quoted() {
+        assert!(validate_privs("SELECT,UPDATE").is_ok());
+        assert!(validate_privs("SELECT; DROP TABLE users").is_err());
+        assert_eq!(lit("it's"), "'it''s'");
+        assert_eq!(ident("odd\"name"), "\"odd\"\"name\"");
+    }
+
+    #[test]
+    fn grants_and_default_acl_queries_target_role_and_schema() {
+        let sql = grant_sql("table", "reader", "SELECT", Some("events"), Some("audit")).unwrap();
+        assert_eq!(
+            sql,
+            vec!["GRANT SELECT ON TABLE \"audit\".\"events\" TO \"reader\""]
+        );
+        let query = default_priv_query("reader", "audit", "select");
+        assert!(query.contains("n.nspname='audit'"));
+        assert!(query.contains("rolname='reader'"));
+        assert!(query.contains("privilege_type='SELECT'"));
+    }
+
+    #[test]
+    fn role_flag_wants_positive_and_negative_forms() {
+        assert_eq!(wanted_flag("LOGIN,CREATEDB", "LOGIN"), Some(true));
+        assert_eq!(wanted_flag("NOLOGIN", "LOGIN"), Some(false));
+        assert_eq!(wanted_flag("CREATEDB", "LOGIN"), None);
+    }
+
+    #[test]
     fn scram_stored_key_matches_postgres() {
         // The live verifier captured from PG15 for password "s3cr3t-ruxel"
         // (salt+iterations from SCRAM-SHA-256$4096:<salt>$<storedkey>:...).

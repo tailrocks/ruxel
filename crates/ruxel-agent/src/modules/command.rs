@@ -144,6 +144,7 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::ExitStatusExt;
 
     #[test]
     fn shlex_matches_golden_e15() {
@@ -171,5 +172,19 @@ mod tests {
             shlex_split("echo \"unterminated").unwrap_err(),
             "No closing quotation"
         );
+    }
+
+    #[test]
+    fn result_shape_tracks_rc_and_output_lines() {
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(7 << 8),
+            stdout: b"one\ntwo\n".to_vec(),
+            stderr: b"bad\n".to_vec(),
+        };
+        let result = command_result(json!(["synthetic"]), &output);
+        assert_eq!(result["rc"], 7);
+        assert_eq!(result["failed"], true);
+        assert_eq!(result["stdout_lines"], json!(["one", "two"]));
+        assert_eq!(result["stderr_lines"], json!(["bad"]));
     }
 }

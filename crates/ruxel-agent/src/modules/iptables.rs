@@ -25,30 +25,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     // Rule mode: build the spec from the closed param surface.
-    let mut spec: Vec<String> = Vec::new();
-    if let Some(p) = str_param(obj, "protocol") {
-        spec.push("-p".into());
-        spec.push(p.into());
-    }
-    if let Some(d) = str_param(obj, "destination") {
-        spec.push("-d".into());
-        spec.push(d.into());
-    }
-    if let Some(o) = str_param(obj, "out_interface") {
-        spec.push("-o".into());
-        spec.push(o.into());
-    }
-    if let Some(j) = str_param(obj, "jump") {
-        spec.push("-j".into());
-        spec.push(j.into());
-    }
-    if let Some(c) = str_param(obj, "comment") {
-        spec.push("-m".into());
-        spec.push("comment".into());
-        spec.push("--comment".into());
-        spec.push(c.into());
-    }
-
+    let spec = rule_spec(obj);
     let mut check: Vec<&str> = vec!["-C", chain];
     check.extend(spec.iter().map(String::as_str));
     let present = probe(binary, &check)?;
@@ -63,6 +40,38 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "chain": chain}))
 }
 
+fn rule_spec(obj: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut spec = Vec::new();
+    for (flag, value) in [
+        ("-p", str_param(obj, "protocol")),
+        ("-d", str_param(obj, "destination")),
+        ("-o", str_param(obj, "out_interface")),
+        ("-j", str_param(obj, "jump")),
+    ] {
+        if let Some(value) = value {
+            spec.extend([flag.into(), value.into()]);
+        }
+    }
+    if let Some(comment) = str_param(obj, "comment") {
+        spec.extend([
+            "-m".into(),
+            "comment".into(),
+            "--comment".into(),
+            comment.into(),
+        ]);
+    }
+    spec
+}
+
+fn parse_policy(output: &str, chain: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        (fields.next() == Some("-P") && fields.next() == Some(chain))
+            .then(|| fields.next().map(str::to_string))
+            .flatten()
+    })
+}
+
 fn current_policy(binary: &str, chain: &str) -> Result<Option<String>, String> {
     let out = std::process::Command::new(binary)
         .args(["-S", chain])
@@ -74,14 +83,7 @@ fn current_policy(binary: &str, chain: &str) -> Result<Option<String>, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        // "-P CHAIN POLICY"
-        let mut f = line.split_whitespace();
-        if f.next() == Some("-P") && f.next() == Some(chain) {
-            return Ok(f.next().map(str::to_string));
-        }
-    }
-    Ok(None)
+    Ok(parse_policy(&String::from_utf8_lossy(&out.stdout), chain))
 }
 
 fn probe(binary: &str, args: &[&str]) -> Result<bool, String> {
@@ -105,4 +107,34 @@ fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn builds_rule_spec_and_parses_policy() {
+        let params = json!({"protocol":"tcp", "destination":"10.0.0.0/8", "jump":"ACCEPT", "comment":"allow"});
+        let spec = super::rule_spec(params.as_object().unwrap());
+        assert_eq!(
+            spec,
+            [
+                "-p",
+                "tcp",
+                "-d",
+                "10.0.0.0/8",
+                "-j",
+                "ACCEPT",
+                "-m",
+                "comment",
+                "--comment",
+                "allow"
+            ]
+        );
+        assert_eq!(
+            super::parse_policy("-P INPUT DROP\n-A INPUT -j ACCEPT\n", "INPUT").as_deref(),
+            Some("DROP")
+        );
+    }
 }

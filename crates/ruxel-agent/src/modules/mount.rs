@@ -34,34 +34,10 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     // 1. fstab entry (normalized compare on the 6 fields).
-    let want = [src, path, fstype, opts, "0", "0"];
     let current = std::fs::read_to_string(FSTAB).unwrap_or_default();
-    let mut lines: Vec<String> = current.lines().map(str::to_string).collect();
-    let mut found = false;
-    for line in lines.iter_mut() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let f: Vec<&str> = t.split_whitespace().collect();
-        // Match on mount point (field 1) — Ansible keys fstab by path.
-        if f.len() >= 2 && f[1] == path {
-            found = true;
-            let matches = f.len() >= 4 && f[0] == src && f[2] == fstype && opts_eq(f[3], opts);
-            if !matches {
-                *line = want.join("\t");
-                changed = true;
-            }
-            break;
-        }
-    }
-    if !found {
-        lines.push(want.join("\t"));
-        changed = true;
-    }
-    if changed && !ctx.check_mode {
-        let mut content = lines.join("\n");
-        content.push('\n');
+    let (content, fstab_changed) = rewrite_fstab(&current, src, path, fstype, opts);
+    changed |= fstab_changed;
+    if fstab_changed && !ctx.check_mode {
         write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
     }
 
@@ -85,6 +61,41 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     Ok(json!({"changed": changed, "failed": false, "name": path, "src": src, "fstype": fstype}))
+}
+
+fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str) -> (String, bool) {
+    let want = [src, path, fstype, opts, "0", "0"];
+    let mut lines: Vec<String> = current.lines().map(str::to_string).collect();
+    let mut found = false;
+    let mut changed = false;
+    for line in lines.iter_mut() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = t.split_whitespace().collect();
+        // Match on mount point (field 1) — Ansible keys fstab by path.
+        if f.len() >= 2 && f[1] == path {
+            found = true;
+            let matches = f.len() >= 4 && f[0] == src && f[2] == fstype && opts_eq(f[3], opts);
+            if !matches {
+                *line = want.join("\t");
+                changed = true;
+            }
+            break;
+        }
+    }
+    if !found {
+        lines.push(want.join("\t"));
+        changed = true;
+    }
+    if changed {
+        let mut content = lines.join("\n");
+        content.push('\n');
+        (content, true)
+    } else {
+        (current.to_string(), false)
+    }
 }
 
 /// Option-set equality ignoring order (defaults is the common case).
@@ -128,5 +139,18 @@ mod tests {
             params[field] = json!(value);
             assert!(super::run(&params, &ctx).is_err(), "field {field}");
         }
+    }
+
+    #[test]
+    fn normalizes_options_and_rewrites_matching_mountpoint() {
+        assert!(super::opts_eq("rw,noatime", "noatime,rw"));
+        let current = "# keep\n/dev/old /srv ext4 defaults 0 0\n";
+        let (next, changed) = super::rewrite_fstab(current, "/dev/new", "/srv", "xfs", "rw");
+        assert!(changed);
+        assert_eq!(next, "# keep\n/dev/new\t/srv\txfs\trw\t0\t0\n");
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/new", "/srv", "xfs", "rw"),
+            (next, false)
+        );
     }
 }

@@ -169,12 +169,23 @@ credentials. Model on `command.rs`/`sysctl.rs` existing tests.
 
 ALL must hold:
 
-- [ ] Every module in the matrix with "highest-value untested" logic has at least one pure-logic test (priority-tier modules from Step 1 fully covered)
-- [ ] Any helper extracted for testability produces byte-identical results to the prior inline code (behavior preserved)
-- [ ] No test forks a real system tool or uses a real credential
-- [ ] `cargo nextest run` green; clippy/fmt clean; test count up substantially
-- [ ] The PR states honestly which logic is unit-tested vs. on-VM-only
-- [ ] `plans/README.md` row for 016 updated
+- [x] Every module in the matrix with "highest-value untested" logic has at least one pure-logic test (priority-tier modules from Step 1 fully covered)
+- [x] Any helper extracted for testability produces byte-identical results to the prior inline code (behavior preserved)
+- [x] No test forks a real system tool or uses a real credential
+- [x] `cargo nextest run` green; clippy/fmt clean; test count up substantially
+- [x] The PR states honestly which logic is unit-tested vs. on-VM-only
+- [x] `plans/README.md` row for 016 updated
+
+## Completion evidence (2026-07-16)
+
+Pure helpers now cover SQL/ACL construction, account/group parsing and set
+reconciliation, LVM decisions and canned reports, fstab/sysctl/content
+rewrites, package status/policy parsing, service state decisions, URL/Git/
+iptables argument guards, metadata mapping, and shared parameter parsers. The
+agent suite grew from 49 to 74 tests; the full workspace reports 161 passed and
+5 fixture-dependent skips. Live dpkg/systemctl/psql/mkfs/LVM execution remains
+on the disposable-VM gate only; these unit tests deliberately do not claim to
+exercise privileged external tools.
 
 ## STOP conditions
 

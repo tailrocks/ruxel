@@ -26,7 +26,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut result = json!({"dest": dest, "changed": false, "failed": false});
 
-    if !exists || (force && !same) {
+    if copy_needs_write(exists, same, force) {
         changed = true;
         // Unified content diff under --diff (before = current dest bytes).
         if ctx.diff_mode && !ctx.no_log {
@@ -42,4 +42,21 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     result["changed"] = json!(changed);
     Ok(result)
+}
+
+fn copy_needs_write(exists: bool, same: bool, force: bool) -> bool {
+    !exists || (force && !same)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::copy_needs_write;
+
+    #[test]
+    fn force_and_content_equality_control_write() {
+        assert!(copy_needs_write(false, false, false));
+        assert!(!copy_needs_write(true, false, false));
+        assert!(!copy_needs_write(true, true, true));
+        assert!(copy_needs_write(true, false, true));
+    }
 }

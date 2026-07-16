@@ -124,6 +124,10 @@ mod tests {
         let a = key_material("ssh-ed25519 AAAAC3Nza host-a").unwrap();
         let b = key_material("ssh-ed25519 AAAAC3Nza completely-different-comment").unwrap();
         assert_eq!(a, b);
+        assert_eq!(
+            key_material("from=\"10.0.0.1\" ssh-ed25519 AAAAC3Nza comment").unwrap(),
+            ("ssh-ed25519".into(), "AAAAC3Nza".into())
+        );
     }
 
     #[test]

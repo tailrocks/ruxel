@@ -108,5 +108,7 @@ mod tests {
     fn mkfs_program_is_allowlisted() {
         let error = super::make("/does/not/matter", "xfs;touch /tmp/pwn").unwrap_err();
         assert!(error.contains("outside the closed surface"));
+        assert!(!super::grow("/does/not/matter", "xfs").unwrap());
+        assert!(!super::grow("/does/not/matter", "btrfs").unwrap());
     }
 }

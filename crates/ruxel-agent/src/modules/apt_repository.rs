@@ -22,9 +22,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     )?;
     let update_cache = bool_param(obj, "update_cache", true);
 
-    if filename.is_empty() || filename.contains('/') || filename.contains("..") {
-        return Err(format!("apt_repository: invalid filename {filename:?}"));
-    }
+    validate_filename(filename)?;
     let path = PathBuf::from(format!("/etc/apt/sources.list.d/{filename}.list"));
     let want = format!("{repo}\n");
     let current = std::fs::read_to_string(&path).unwrap_or_default();
@@ -56,4 +54,23 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         "repo": repo,
         "state": state,
     }))
+}
+
+fn validate_filename(filename: &str) -> Result<(), String> {
+    if filename.is_empty() || filename.contains('/') || filename.contains("..") {
+        Err(format!("apt_repository: invalid filename {filename:?}"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn filename_is_single_safe_component() {
+        assert!(super::validate_filename("vendor").is_ok());
+        for bad in ["", "../vendor", "a/b", "vendor..backup"] {
+            assert!(super::validate_filename(bad).is_err(), "{bad}");
+        }
+    }
 }

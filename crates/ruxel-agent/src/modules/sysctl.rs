@@ -30,36 +30,9 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     // File state: a `name = value` line, replacing any existing entry.
     let current = std::fs::read_to_string(file).unwrap_or_default();
-    let mut found = false;
-    let mut out_lines: Vec<String> = Vec::new();
-    for line in current.lines() {
-        let trimmed = line.trim();
-        let is_entry = !trimmed.starts_with('#')
-            && trimmed
-                .split('=')
-                .next()
-                .map(|k| k.trim() == name)
-                .unwrap_or(false);
-        if is_entry {
-            found = true;
-            let existing = trimmed.split('=').nth(1).unwrap_or("").trim();
-            if normalized(existing) == normalized(&value) {
-                out_lines.push(line.to_string());
-            } else {
-                changed = true;
-                out_lines.push(format!("{name}={value}"));
-            }
-        } else {
-            out_lines.push(line.to_string());
-        }
-    }
-    if !found {
-        changed = true;
-        out_lines.push(format!("{name}={value}"));
-    }
-    if changed && !ctx.check_mode {
-        let mut content = out_lines.join("\n");
-        content.push('\n');
+    let (content, file_changed) = rewrite_file(&current, name, &value);
+    changed |= file_changed;
+    if file_changed && !ctx.check_mode {
         write_atomic(std::path::Path::new(file), content.as_bytes())?;
     }
 
@@ -83,9 +56,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
     }
-
     if changed && reload && !ctx.check_mode {
-        // Ansible reloads with `sysctl -p <file>` on change.
         let st = std::process::Command::new("sysctl")
             .arg("-p")
             .arg(file)
@@ -98,8 +69,45 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             ));
         }
     }
-
     Ok(json!({"changed": changed, "failed": false}))
+}
+
+fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
+    let mut found = false;
+    let mut changed = false;
+    let mut out_lines = Vec::new();
+    for line in current.lines() {
+        let trimmed = line.trim();
+        let is_entry = !trimmed.starts_with('#')
+            && trimmed
+                .split('=')
+                .next()
+                .map(|k| k.trim() == name)
+                .unwrap_or(false);
+        if is_entry {
+            found = true;
+            let existing = trimmed.split('=').nth(1).unwrap_or("").trim();
+            if normalized(existing) == normalized(value) {
+                out_lines.push(line.to_string());
+            } else {
+                changed = true;
+                out_lines.push(format!("{name}={value}"));
+            }
+        } else {
+            out_lines.push(line.to_string());
+        }
+    }
+    if !found {
+        changed = true;
+        out_lines.push(format!("{name}={value}"));
+    }
+    if changed {
+        let mut content = out_lines.join("\n");
+        content.push('\n');
+        (content, true)
+    } else {
+        (current.to_string(), false)
+    }
 }
 
 /// Whitespace-run normalization: "1\t2  3" == "1 2 3".
@@ -124,6 +132,23 @@ mod tests {
             super::normalized("1024 65535")
         );
         assert_eq!(super::normalized(" 1 "), "1");
+    }
+
+    #[test]
+    fn rewrites_existing_key_or_appends_missing_key() {
+        let current = "# keep\nnet.test = old\n";
+        assert_eq!(
+            super::rewrite_file(current, "net.test", "new"),
+            ("# keep\nnet.test=new\n".into(), true)
+        );
+        assert_eq!(
+            super::rewrite_file("# keep\n", "net.test", "new"),
+            ("# keep\nnet.test=new\n".into(), true)
+        );
+        assert_eq!(
+            super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
+            ("net.test = 1  2\n".into(), false)
+        );
     }
 
     #[test]

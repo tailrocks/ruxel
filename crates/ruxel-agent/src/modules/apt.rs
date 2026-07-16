@@ -192,8 +192,8 @@ fn missing_packages(names: &[String], state: &str) -> Result<Vec<String>, String
             .arg(name)
             .output()
             .map_err(|e| format!("dpkg-query: {e}"))?;
-        let installed = out.status.success()
-            && String::from_utf8_lossy(&out.stdout).contains("install ok installed");
+        let installed =
+            out.status.success() && status_is_installed(&String::from_utf8_lossy(&out.stdout));
         if !installed {
             missing.push(name.clone());
             continue;
@@ -204,21 +204,8 @@ fn missing_packages(names: &[String], state: &str) -> Result<Vec<String>, String
                 .arg(name)
                 .output()
                 .map_err(|e| format!("apt-cache policy: {e}"))?;
-            let text = String::from_utf8_lossy(&policy.stdout).to_string();
-            let grab = |key: &str| -> Option<String> {
-                text.lines()
-                    .find(|l| l.trim_start().starts_with(key))
-                    .map(|l| {
-                        l.split(':')
-                            .skip(1)
-                            .collect::<Vec<_>>()
-                            .join(":")
-                            .trim()
-                            .to_string()
-                    })
-            };
-            let installed_v = grab("Installed");
-            let candidate_v = grab("Candidate");
+            let (installed_v, candidate_v) =
+                policy_versions(&String::from_utf8_lossy(&policy.stdout));
             if let (Some(i), Some(c)) = (installed_v, candidate_v)
                 && i != c
             {
@@ -229,9 +216,29 @@ fn missing_packages(names: &[String], state: &str) -> Result<Vec<String>, String
     Ok(missing)
 }
 
+fn status_is_installed(output: &str) -> bool {
+    output.contains("install ok installed")
+}
+
+fn policy_versions(text: &str) -> (Option<String>, Option<String>) {
+    let grab = |key: &str| {
+        text.lines()
+            .find(|line| line.trim_start().starts_with(key))
+            .map(|line| {
+                line.split(':')
+                    .skip(1)
+                    .collect::<Vec<_>>()
+                    .join(":")
+                    .trim()
+                    .to_string()
+            })
+    };
+    (grab("Installed"), grab("Candidate"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::summary_changed;
+    use super::{policy_versions, status_is_installed, summary_changed};
 
     #[test]
     fn summary_parsing() {
@@ -248,5 +255,15 @@ mod tests {
         assert!(!summary_changed(
             "0 upgraded, 0 newly installed, 0 to remove and 7 not upgraded."
         ));
+    }
+
+    #[test]
+    fn parses_installed_status_and_latest_candidate() {
+        assert!(status_is_installed("install ok installed"));
+        assert!(!status_is_installed("deinstall ok config-files"));
+        assert_eq!(
+            policy_versions("  Installed: 1:2.0-1\n  Candidate: 1:2.1-1\n"),
+            (Some("1:2.0-1".into()), Some("1:2.1-1".into()))
+        );
     }
 }

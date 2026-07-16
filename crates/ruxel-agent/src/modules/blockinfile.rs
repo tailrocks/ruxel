@@ -25,29 +25,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Err(e) => return Err(format!("read {path}: {e}")),
     };
 
-    let mut managed = String::new();
-    managed.push_str(BEGIN);
-    managed.push('\n');
-    managed.push_str(block.trim_end_matches('\n'));
-    managed.push('\n');
-    managed.push_str(END);
-
-    let next = match (current.find(BEGIN), current.find(END)) {
-        (Some(b), Some(e)) if e >= b => {
-            let end_of_marker = e + END.len();
-            format!("{}{}{}", &current[..b], managed, &current[end_of_marker..])
-        }
-        _ => {
-            // Insert at EOF.
-            let mut s = current.clone();
-            if !s.is_empty() && !s.ends_with('\n') {
-                s.push('\n');
-            }
-            s.push_str(&managed);
-            s.push('\n');
-            s
-        }
-    };
+    let next = rewrite_block(&current, block);
 
     let mut changed = next != current;
     if changed && !ctx.check_mode {
@@ -59,6 +37,32 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(
         json!({"changed": changed, "failed": false, "msg": if changed { "Block inserted" } else { "" }}),
     )
+}
+
+fn rewrite_block(current: &str, block: &str) -> String {
+    let mut managed = String::new();
+    managed.push_str(BEGIN);
+    managed.push('\n');
+    managed.push_str(block.trim_end_matches('\n'));
+    managed.push('\n');
+    managed.push_str(END);
+
+    match (current.find(BEGIN), current.find(END)) {
+        (Some(b), Some(e)) if e >= b => {
+            let end_of_marker = e + END.len();
+            format!("{}{}{}", &current[..b], managed, &current[end_of_marker..])
+        }
+        _ => {
+            // Insert at EOF.
+            let mut s = current.to_string();
+            if !s.is_empty() && !s.ends_with('\n') {
+                s.push('\n');
+            }
+            s.push_str(&managed);
+            s.push('\n');
+            s
+        }
+    }
 }
 
 #[cfg(test)]
@@ -79,5 +83,18 @@ mod tests {
         };
         let result = run(&json!({"path": path, "block": "synthetic"}), &ctx).unwrap();
         assert_eq!(result["changed"], false);
+    }
+
+    #[test]
+    fn block_replaces_markers_or_appends_at_eof() {
+        let appended = rewrite_block("header\n", "one");
+        assert_eq!(
+            appended,
+            "header\n# BEGIN ANSIBLE MANAGED BLOCK\none\n# END ANSIBLE MANAGED BLOCK\n"
+        );
+        assert_eq!(
+            rewrite_block(&appended, "two"),
+            "header\n# BEGIN ANSIBLE MANAGED BLOCK\ntwo\n# END ANSIBLE MANAGED BLOCK\n"
+        );
     }
 }
