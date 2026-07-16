@@ -72,6 +72,7 @@ ANSIBLE_CALLBACK_PLUGINS=callback_plugins \
 ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
 ANSIBLE_GATHERING=explicit \
 ANSIBLE_HOST_KEY_CHECKING=False \
+ANSIBLE_SSH_RETRIES=3 \
 ANSIBLE_SSH_ARGS="-o ControlMaster=no -o ControlPath=none" \
 ANSIBLE_SSH_COMMON_ARGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY}.known_hosts -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
 RUXEL_CAPTURE_FILE="$CAPTURE_FILE" \

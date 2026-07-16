@@ -17,9 +17,9 @@ case "$PROFILE" in
   *) die "unknown storage profile: $PROFILE" ;;
 esac
 
-ssh -i "$KEY" -o IdentitiesOnly=yes \
-  -o "UserKnownHostsFile=${KEY}.known_hosts" -o StrictHostKeyChecking=accept-new \
-  "root@${FIXTURE_IP}" bash -se -- "${names[@]}" <<'REMOTE'
+remote_script="$(mktemp)"
+trap 'rm -f "$remote_script"' EXIT
+cat >"$remote_script" <<'REMOTE'
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq lvm2 xfsprogs
@@ -31,5 +31,18 @@ for name in "$@"; do
   ln -sfn "$device" "/dev/disk/by-id/ruxel-fixture-${name}"
 done
 REMOTE
+
+prepared=0
+for attempt in 1 2 3 4 5; do
+  if ssh -i "$KEY" -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+    -o "UserKnownHostsFile=${KEY}.known_hosts" -o StrictHostKeyChecking=accept-new \
+    "root@${FIXTURE_IP}" bash -se -- "${names[@]}" <"$remote_script"; then
+    prepared=1
+    break
+  fi
+  echo "storage fixture SSH attempt $attempt failed; retrying" >&2
+  sleep 2
+done
+[ "$prepared" -eq 1 ] || die "storage fixture preparation failed after SSH retries"
 
 echo "Storage fixture $PROFILE ready on provider identity: $FIXTURE"

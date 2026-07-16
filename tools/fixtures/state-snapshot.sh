@@ -10,10 +10,10 @@ OUTPUT="${3:?output path}"
 resolve_fixture "$FIXTURE"
 require_fixture_key "$KEY"
 
-ssh -o IdentitiesOnly=yes \
-  -o UserKnownHostsFile="${KEY}.known_hosts" \
-  -o StrictHostKeyChecking=accept-new \
-  -i "$KEY" "root@${FIXTURE_IP}" 'bash -s' > "$OUTPUT" <<'REMOTE'
+remote_script="$(mktemp)"
+snapshot="$(mktemp)"
+trap 'rm -f "$remote_script" "$snapshot"' EXIT
+cat >"$remote_script" <<'REMOTE'
 set -euo pipefail
 
 echo '[managed-paths]'
@@ -119,3 +119,19 @@ if command -v psql >/dev/null && id postgres >/dev/null 2>&1; then
     "SELECT defaclrole::regrole||'|'||coalesce(n.nspname,'')||'|'||defaclobjtype||'|'||defaclacl::text FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace WHERE defaclrole::regrole::text LIKE 'ruxel_fixture%' ORDER BY 1" 2>/dev/null || true
 fi
 REMOTE
+
+captured=0
+for attempt in 1 2 3 4 5; do
+  if ssh -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+    -o UserKnownHostsFile="${KEY}.known_hosts" \
+    -o StrictHostKeyChecking=accept-new \
+    -i "$KEY" "root@${FIXTURE_IP}" 'bash -s' \
+    <"$remote_script" >"$snapshot"; then
+    captured=1
+    break
+  fi
+  echo "state snapshot SSH attempt $attempt failed; retrying" >&2
+  sleep 2
+done
+[ "$captured" -eq 1 ] || die "state snapshot failed after SSH retries"
+mv "$snapshot" "$OUTPUT"

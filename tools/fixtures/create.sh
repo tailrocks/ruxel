@@ -32,16 +32,36 @@ hcloud server create \
 
 ip="$(hcloud server ip "$name")"
 
-# Wait for SSH (fresh Debian images take ~20-40s).
+# Wait through cloud-init. Fresh images may briefly accept SSH, then restart
+# sshd while cloud-init finishes; one successful probe is not readiness.
+cloud_init_ready=0
 for _ in $(seq 1 60); do
   if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=3 \
         -o IdentitiesOnly=yes \
         -o UserKnownHostsFile="${keyfile}.known_hosts" \
-        -i "$keyfile" "root@${ip}" true 2>/dev/null; then
+        -i "$keyfile" "root@${ip}" \
+        'cloud-init status --wait >/dev/null 2>&1 || true' 2>/dev/null; then
+    cloud_init_ready=1
     break
   fi
   sleep 2
 done
+[ "$cloud_init_ready" -eq 1 ] || die "fixture SSH/cloud-init readiness timed out"
+
+stable=0
+for _ in $(seq 1 30); do
+  if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=3 \
+        -o IdentitiesOnly=yes \
+        -o UserKnownHostsFile="${keyfile}.known_hosts" \
+        -i "$keyfile" "root@${ip}" true 2>/dev/null; then
+    stable=$((stable + 1))
+    [ "$stable" -ge 3 ] && break
+  else
+    stable=0
+  fi
+  sleep 2
+done
+[ "$stable" -ge 3 ] || die "fixture SSH did not remain stable"
 
 echo "RUXEL_FIXTURE_NAME=${name}"
 echo "RUXEL_FIXTURE_IP=${ip}"
