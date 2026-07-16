@@ -91,16 +91,24 @@ pub fn execute(args: ApplyArgs) -> Result<u8> {
     let mut run_log = super::run_log::RunLog::open(&run_id);
 
     let runtime = tokio::runtime::Runtime::new()?;
-    let totals = runtime.block_on(run(
-        &playbook,
-        &compiled,
-        &inventory,
-        &args,
-        &agent_bin,
-        &engine,
-        &run_id,
-        &mut run_log,
-    ))?;
+    let totals = runtime.block_on(async {
+        tokio::select! {
+            result = run(
+                &playbook,
+                &compiled,
+                &inventory,
+                &args,
+                &agent_bin,
+                &engine,
+                &run_id,
+                &mut run_log,
+            ) => result,
+            signal = tokio::signal::ctrl_c() => {
+                signal.context("install Ctrl-C handler")?;
+                anyhow::bail!("interrupted by Ctrl-C")
+            }
+        }
+    })?;
     Ok(apply_exit_code(totals, args.detailed_exitcode))
 }
 

@@ -48,6 +48,15 @@ struct Master {
     process: Child,
 }
 
+impl Drop for Master {
+    fn drop(&mut self) {
+        // Tokio kills the foreground master because kill_on_drop is set.
+        // Remove its private mux path even when a cancelled host future never
+        // reaches the async close handshake.
+        let _ = std::fs::remove_file(&self.socket);
+    }
+}
+
 static SOCKET_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn socket_name() -> String {
@@ -332,6 +341,7 @@ impl AgentConnection {
 /// executable file, nothing moves; otherwise upload via an SFTP channel on
 /// the same master and mark executable. Returns whether an upload happened.
 async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Result<bool> {
+    cleanup_stale_agent_temps(master, remote_path).await?;
     let exists = master
         .exec_status(&["test", "-x", remote_path])
         .await?
@@ -366,7 +376,7 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
     .context("sftp handshake")?;
 
     let tmp_path = format!("{remote_path}.tmp-{}", std::process::id());
-    {
+    let upload_result: Result<()> = async {
         let mut file = sftp
             .options()
             .write(true)
@@ -376,12 +386,18 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
             .context("sftp create tmp")?;
         file.write_all(bytes).await.context("sftp write agent")?;
         file.close().await.context("sftp close")?;
+        sftp.fs()
+            .rename(&tmp_path, remote_path)
+            .await
+            .context("rename agent into place")?;
+        sftp.close().await.context("sftp shutdown")?;
+        Ok(())
     }
-    sftp.fs()
-        .rename(&tmp_path, remote_path)
-        .await
-        .context("rename agent into place")?;
-    sftp.close().await.context("sftp shutdown")?;
+    .await;
+    if let Err(error) = upload_result {
+        let _ = master.exec_status(&["rm", "-f", &tmp_path]).await;
+        return Err(error);
+    }
 
     master
         .exec_status(&["chmod", "755", remote_path])
@@ -395,6 +411,37 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
     }
 
     Ok(true)
+}
+
+async fn cleanup_stale_agent_temps(master: &Master, remote_path: &str) -> Result<()> {
+    if !master
+        .exec_status(&["test", "-d", AGENT_DIR])
+        .await?
+        .success()
+    {
+        return Ok(());
+    }
+    let name = Path::new(remote_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("agent path has no UTF-8 file name")?;
+    let pattern = format!("{name}.tmp-*");
+    master
+        .exec_status(&[
+            "find",
+            AGENT_DIR,
+            "-maxdepth",
+            "1",
+            "-type",
+            "f",
+            "-name",
+            &pattern,
+            "-delete",
+        ])
+        .await?
+        .success()
+        .then_some(())
+        .context("clean stale agent upload files")
 }
 
 async fn remote_agent_hash_matches(
