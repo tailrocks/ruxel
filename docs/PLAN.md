@@ -16,19 +16,13 @@ and is not a completion gate for this development plan.
 
 ## Remaining milestones
 
-1. Produce a complete traceability manifest from extracted workload shapes to
-   synthetic fixtures, oracle captures, Ruxel tests, and state assertions.
-2. Restore exhaustive synthetic render/expression parity and close every
-   `⚠ verify` item in `SEMANTICS.md` using measured Ansible behavior.
-3. Expand `tools/fixture-project/` to cover the full module and control-flow
-   surface, including interactions that require full-play sequencing.
-4. Compare normalized per-task results and observable server state—not only
-   aggregate changed counts—across fresh, converged, check, and diff runs.
-5. Make remote tooling accept only provider-verified disposable fixture
-   identities.
-6. Finish and verify bounded multi-host execution on multiple disposable demo
-   servers without speculative transport changes.
-7. Publish reproducible correctness-coupled performance and chaos evidence for
+1. Complete evidence-chain traceability from each distinct extracted workload
+   shape to its fixture task, oracle, Ruxel assertion, and state assertion.
+2. Finish fresh/converged/check/diff task and final-state parity for every
+   synthetic fixture, including fully provisioned storage and PostgreSQL cases.
+3. Complete the six-host disposable benchmark and repeated transport/resource
+   checks. Bounded host concurrency and the two-host gate already pass.
+4. Publish reproducible correctness-coupled performance and chaos evidence for
    fresh, converged, drifted, secretful, storage, PostgreSQL, RTT, and
    multi-host cases.
 

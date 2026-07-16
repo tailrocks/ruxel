@@ -54,13 +54,10 @@ are not current reproducible acceptance evidence.
 
 Remaining required work:
 
-1. complete extracted-shape traceability;
-2. restore exhaustive synthetic render and semantic parity;
-3. cover all modules and control-flow interactions in the fixture project;
-4. compare normalized task results and final server state;
-5. structurally restrict remote tools to disposable fixture identities;
-6. finish multi-host execution verification; and
-7. complete correctness-coupled performance and chaos evidence.
+1. complete per-shape evidence-chain traceability;
+2. finish fresh/converged/check/diff and final-state parity for every fixture;
+3. capture the six-host acceptance benchmark; and
+4. complete correctness-coupled performance and chaos evidence.
 
 Detailed acceptance criteria and execution order live in `plans/README.md`.
 Do not describe Ruxel as complete until all seven workstreams pass.

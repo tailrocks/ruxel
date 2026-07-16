@@ -4,11 +4,11 @@ Updated: 2026-07-16. Authoritative backlog: `plans/README.md`.
 
 ## Status
 
-Core execution is substantially implemented. Local Rust gates pass and seven
-repository-owned synthetic fixtures exercise important storage, PostgreSQL,
-delegation, restart, and snapshot paths. Full Ansible compatibility is not yet
-proven: fixture breadth, render parity, end-state comparison, multi-host
-execution, and performance/chaos coverage remain open.
+Core execution is substantially implemented. Local Rust gates, exhaustive
+synthetic render parity, semantic measurements, target safety, and two-host
+parallel execution pass. Full compatibility proof still needs per-shape
+evidence links, complete fresh/check/diff/final-state fixture gates, the
+six-host benchmark, and performance/chaos coverage.
 
 Never use the old “implementation complete” claim. Never count captures whose
 source fixture is absent. Never use historical real-workload execution as
@@ -26,14 +26,11 @@ current reproducible acceptance evidence.
 
 ## Resume order
 
-1. Build extracted-shape-to-fixture traceability.
-2. Restore the synthetic Ansible/Ruxel render oracle and close all semantic
-   verification markers.
-3. Expand the fixture project to every mapped module and interaction.
-4. Compare normalized task results and final managed state.
-5. Enforce fixture identity before remote execution.
-6. Verify bounded multi-host execution on disposable demo servers.
-7. Run the complete correctness-coupled performance and chaos matrix.
+1. Finish per-shape fixture/oracle/Ruxel/state traceability.
+2. Run every fixture through fresh, converged, check/diff, and final-state
+   equivalence gates; extend snapshots where required.
+3. Capture six-host disposable acceptance.
+4. Run the complete correctness-coupled performance and chaos matrix.
 
 ## Useful locations
 
