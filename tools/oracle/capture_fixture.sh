@@ -5,7 +5,7 @@
 # production inventory (GOAL.md rule 2).
 #
 # Usage:
-#   tools/oracle/capture_fixture.sh <fixture-ip> <keyfile> <playbook-path> <capture-name>
+#   tools/oracle/capture_fixture.sh <fixture-ip> <keyfile> <playbook-path> <capture-name> [group]
 set -eu
 cd "$(dirname "$0")"
 
@@ -13,11 +13,12 @@ IP="${1:?fixture ip}"
 KEY="${2:?ssh keyfile}"
 PLAYBOOK="${3:?playbook path}"
 NAME="${4:?capture name}"
+GROUP="${5:-nodes}"
 
 INV="$(mktemp)"
 trap 'rm -f "$INV"' EXIT
 cat > "$INV" <<EOF
-[nodes]
+[${GROUP}]
 fixture ansible_ssh_host=${IP} ansible_ssh_user=root ansible_ssh_private_key_file=${KEY}
 EOF
 

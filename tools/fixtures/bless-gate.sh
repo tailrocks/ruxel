@@ -9,7 +9,7 @@
 # (update-packages, upgrade-debian, install-docker, drives, postgresql).
 #
 # Usage:
-#   tools/fixtures/bless-gate.sh <dest> <keyfile> <agent-bin> <playbook> [inventory]
+#   tools/fixtures/bless-gate.sh <dest> <keyfile> <agent-bin> <playbook> [inventory] [dry] [group]
 #
 # <dest> must come from `hcloud server list` (GOAL.md rule 2). <inventory>
 # defaults to a one-host ini built from <dest>; the playbook's `hosts:`
@@ -23,6 +23,7 @@ AGENT="${3:?agent binary (x86_64-musl)}"
 PLAYBOOK="${4:?playbook path}"
 INV="${5:-}"
 DRY="${6:-}"   # pass "dry" for secretful playbooks (dry-secrets both sides)
+GROUP="${7:-nodes}"
 
 IP="${DEST##*@}"
 HOST="gate-host"
@@ -55,7 +56,7 @@ RERUN_CHANGED="$(recap_changed < /tmp/gate-rerun.log || echo '?')"
 
 echo "== [3/3] ansible bless (same state) =="
 BLESS_NAME="bless-$(basename "$PLAYBOOK" .yml)"
-{ [ -n "$DRY" ] && export RUXEL_DRY_SECRETS=1; tools/oracle/capture_fixture.sh "$IP" "$KEY" "$PLAYBOOK" "$BLESS_NAME"; } | tee /tmp/gate-bless.log
+{ [ -n "$DRY" ] && export RUXEL_DRY_SECRETS=1; tools/oracle/capture_fixture.sh "$IP" "$KEY" "$PLAYBOOK" "$BLESS_NAME" "$GROUP"; } | tee /tmp/gate-bless.log
 BLESS_CHANGED="$(grep -Eo 'changed=[0-9]+' /tmp/gate-bless.log | head -1 | cut -d= -f2 || echo '?')"
 
 if [ "$RERUN_CHANGED" != "$BLESS_CHANGED" ]; then

@@ -103,13 +103,19 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
         std::fs::read_dir(path).map_err(|error| format!("read {}: {error}", path.display()))?
     {
         let path = entry.map_err(|error| error.to_string())?.path();
-        if path.is_dir()
-            || matches!(
+        // The closed workload is the top-level playbook set. Nested YAML is
+        // input data (for example application config), not Ansible tasks.
+        if path.is_file()
+            && !matches!(
+                path.file_name().and_then(|value| value.to_str()),
+                Some("requirements.yml" | "requirements.yaml")
+            )
+            && matches!(
                 path.extension().and_then(|value| value.to_str()),
                 Some("yml" | "yaml")
             )
         {
-            collect_yaml(&path, files)?;
+            files.push(path);
         }
     }
     Ok(())

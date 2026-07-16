@@ -87,6 +87,7 @@ pub static MODULES: &[ModuleSurface] = &[
     ),
     ModuleSurface {
         free_form: true,
+        args_params: &["chdir", "creates"],
         ..surface("command", &["argv", "chdir", "cmd"])
     },
     surface("community.general.lvg", &["pvs", "vg"]),
