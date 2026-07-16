@@ -42,7 +42,7 @@ the M5 performance proof. Read the docs in order:
    and the operator-only production boundary.
 8. [docs/benchmarks/](docs/benchmarks/) — recorded benchmark evidence.
 9. [docs/PLAN.md](docs/PLAN.md) — milestones M0–M6 with acceptance gates and
-   the planned spec-drift CI watch.
+   the local spec-drift extractor (private-checkout CI wiring pending).
 
 ## Hard safety rule
 

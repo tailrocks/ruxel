@@ -13,3 +13,6 @@ prost.workspace = true
 [build-dependencies]
 prost-build.workspace = true
 protoc-bin-vendored.workspace = true
+
+[dev-dependencies]
+proptest = "1.11.0"

@@ -98,6 +98,7 @@ pub fn read_frame<M: Message + Default>(r: &mut impl Read) -> io::Result<Option<
 mod tests {
     use super::*;
     use crate::v1;
+    use proptest::prelude::*;
 
     #[test]
     fn roundtrip_through_buffer() {
@@ -204,5 +205,25 @@ mod tests {
             read_frame::<v1::Envelope>(&mut input).unwrap(),
             Some(expected)
         );
+    }
+
+    proptest! {
+        #[test]
+        fn read_frame_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            let mut input = bytes.as_slice();
+            let _ = read_frame::<v1::Envelope>(&mut input);
+        }
+
+        #[test]
+        fn oversized_lengths_are_rejected_before_body_read(
+            extra in 1_u64..(u32::MAX as u64)
+        ) {
+            let mut bytes = Vec::new();
+            encode_varint(MAX_FRAME_LEN + extra, &mut bytes);
+            let mut input = bytes.as_slice();
+            let error = read_frame::<v1::Envelope>(&mut input).unwrap_err();
+            prop_assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            prop_assert!(error.to_string().contains("MAX_FRAME_LEN"));
+        }
     }
 }

@@ -1,0 +1,10 @@
+[package]
+name = "ruxel-spec-extract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ruxel-core.workspace = true
+serde_norway.workspace = true

@@ -6,6 +6,7 @@
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
+use std::io::Write as _;
 use std::process::{Child, Command, Stdio};
 
 fn spawn_agent(state_dir: &std::path::Path) -> Child {
@@ -448,5 +449,85 @@ fn failed_task_halts_remaining_batch_when_requested() {
         !dest.exists(),
         "task after failed batch member must not run"
     );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn assert_reconnects(state_dir: &std::path::Path, run_id: &str) {
+    let mut agent = spawn_agent(state_dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello(run_id, PROTO_VERSION)).unwrap();
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    assert!(matches!(event.msg, Some(v1::event::Msg::HelloAck(_))));
+    finish_agent(&mut agent, &mut stdin);
+}
+
+#[test]
+fn chaos_drop_after_hello_releases_flock() {
+    let dir = temp_dir("chaos-after-hello");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("chaos-first", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    drop(stdin);
+    assert_eq!(agent.wait().unwrap().code(), Some(0));
+    assert_reconnects(&dir, "chaos-second");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn chaos_truncated_plan_releases_flock() {
+    let dir = temp_dir("chaos-mid-plan");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("chaos-corrupt", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    stdin.write_all(&[0x80]).unwrap();
+    drop(stdin);
+    assert_eq!(agent.wait().unwrap().code(), Some(64));
+    assert_reconnects(&dir, "chaos-recovered");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
+    let dir = temp_dir("chaos-task-start");
+    let dest = dir.join("large-copy");
+    let content = "x".repeat(2 * 1024 * 1024);
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("chaos-task", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    write_frame(
+        &mut stdin,
+        &copy_plan(71, &dest, &content, "chaos-copy-key"),
+    )
+    .unwrap();
+    let start: v1::Event = read_frame(&mut stdout).unwrap().expect("task start");
+    assert!(matches!(start.msg, Some(v1::event::Msg::TaskStart(_))));
+    drop(stdin);
+    assert_eq!(agent.wait().unwrap().code(), Some(0));
+    assert_eq!(
+        std::fs::metadata(&dest).unwrap().len(),
+        content.len() as u64
+    );
+
+    let mut rerun = spawn_agent(&dir);
+    let mut rerun_stdin = rerun.stdin.take().unwrap();
+    let mut rerun_stdout = rerun.stdout.take().unwrap();
+    write_frame(&mut rerun_stdin, &hello("chaos-rerun", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut rerun_stdout).unwrap().expect("hello ack");
+    write_frame(
+        &mut rerun_stdin,
+        &copy_plan(72, &dest, &content, "chaos-copy-key"),
+    )
+    .unwrap();
+    let result = read_task_result(&mut rerun_stdout);
+    assert_eq!(result.status, "ok");
+    assert!(!result.changed);
+    finish_agent(&mut rerun, &mut rerun_stdin);
     std::fs::remove_dir_all(dir).unwrap();
 }

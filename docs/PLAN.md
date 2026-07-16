@@ -157,10 +157,11 @@ so there is nothing to migrate back.
 
 ## Standing workstreams (no milestone, always on)
 
-- **Spec drift watch:** planned, not yet built (see plan 024). The intended
-  param/value extractor will compare against the ansible-configs checkout in
-  CI; any new module/param/value must fail CI until SEMANTICS.md and the
-  implementation cover it. The spec stays closed *and* current.
+- **Spec drift watch:** built locally in `tools/spec-extract`; it rejects
+  uncovered modules, parameters, and literal values. CI wiring against the
+  private ansible-configs checkout remains pending its read-only credential.
+  Once wired, any drift must fail CI until SEMANTICS.md and implementation
+  cover it.
 - **Warm-daemon tier** (ARCHITECTURE §9) and proactive drift reporting:
   designed, deliberately not scheduled until the ephemeral path is proven
   in M5 — it is an acceleration, not a dependency.

@@ -171,12 +171,16 @@ now **built** (local; CI-wiring is the remaining follow-up). Full gates:
 
 ALL must hold:
 
-- [ ] `proptest` property tests for `playbook::parse` and `frame::read_frame` exist and pass (no panics, invariants held)
-- [ ] A chaos harness proves flock-release + rerun-convergence for the locally-testable protocol states; fixture-only states are documented for the operator
-- [ ] `tools/spec-extract/` exists, diffs workload triples against the closed registry, and flags an injected unknown in a synthetic test
-- [ ] Any bug the chaos/property tests found is reported as a separate finding (not silently patched)
-- [ ] `cargo nextest run` green; clippy/fmt clean
-- [ ] `plans/README.md` row for 024 updated; PLAN/README spec-drift claim updated to "built (CI-wiring pending)"
+- [x] `proptest` property tests for `playbook::parse` and `frame::read_frame` exist and pass (no panics, invariants held)
+- [x] A chaos harness proves flock-release + rerun-convergence for the locally-testable protocol states; fixture-only states are documented for the operator
+- [x] `tools/spec-extract/` exists, diffs workload triples against the closed registry, and flags an injected unknown in a synthetic test
+- [x] Any bug the chaos/property tests found is reported as a separate finding (not silently patched)
+- [x] `cargo nextest run` green; clippy/fmt clean
+- [x] `plans/README.md` row for 024 updated; PLAN/README spec-drift claim updated to "built (CI-wiring pending)"
+
+No parser, framing, closed-surface, flock, or local rerun-convergence bug was
+found by this plan's property and chaos cases. The private workload check was
+not run because `RUXEL_WORKLOAD_DIR` was unavailable.
 
 ## STOP conditions
 

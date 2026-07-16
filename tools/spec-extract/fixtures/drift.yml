@@ -1,0 +1,5 @@
+- hosts: all
+  tasks:
+    - apt:
+        name: git
+        synthetic_unknown: true
