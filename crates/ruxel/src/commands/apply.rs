@@ -87,16 +87,19 @@ pub fn execute(args: ApplyArgs) -> Result<()> {
             ruxel_cli::secrets::OpResolver,
         )))
     };
+    let compiled = ruxel_core::compiler::compile(&playbook, &engine)
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let run_id = format!("ruxel-{}", std::process::id());
 
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(run(
-        &playbook, &inventory, &args, &agent_bin, &engine, &run_id,
+        &playbook, &compiled, &inventory, &args, &agent_bin, &engine, &run_id,
     ))
 }
 
 async fn run(
     playbook: &ruxel_core::playbook::Playbook,
+    compiled: &ruxel_core::compiler::Plan,
     inventory: &Inventory,
     args: &ApplyArgs,
     agent_bin: &std::path::Path,
@@ -112,7 +115,8 @@ async fn run(
     };
     let human = format == ruxel_cli::scheduler::OutputFormat::Human;
 
-    for play in &playbook.plays {
+    for (play_index, play) in playbook.plays.iter().enumerate() {
+        let compiled_play = &compiled.plays[play_index];
         let hosts = inventory.select(&play.hosts, args.limit.as_deref())?;
         if human {
             println!(
@@ -149,6 +153,7 @@ async fn run(
                 .unwrap_or_else(|| ".".into());
             let recap = ruxel_cli::scheduler::run_play(
                 play,
+                compiled_play,
                 &host.name,
                 &ack.facts,
                 engine,

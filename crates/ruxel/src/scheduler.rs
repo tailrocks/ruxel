@@ -10,6 +10,7 @@
 use crate::transport::AgentConnection;
 use anyhow::{Context, Result, anyhow, bail};
 use minijinja::value::Value;
+use ruxel_core::compiler::{PlanBody, PlanTask, PlayPlan, Readiness};
 use ruxel_core::engine::{Engine, Scope, VarValue};
 use ruxel_core::playbook::{Condition, Play, Task, TaskBody};
 use ruxel_core::task_eval;
@@ -20,34 +21,64 @@ use std::io::Write;
 /// Scheduler boundary for one fully rendered agent iteration.
 #[allow(async_fn_in_trait)]
 pub trait AgentExec {
-    async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value>;
+    async fn run_batch(&mut self, tasks: Vec<v1::RenderedTask>, patch: bool) -> Result<Vec<Value>>;
+
+    async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value> {
+        self.run_batch(vec![task], false)
+            .await?
+            .into_iter()
+            .next()
+            .context("agent returned no result for iteration")
+    }
 }
 
 impl AgentExec for AgentConnection {
-    async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value> {
-        let task_id = task.task_id;
-        self.send(&v1::Envelope {
-            msg: Some(EnvMsg::Plan(v1::Plan {
-                tasks: vec![task],
+    async fn run_batch(&mut self, tasks: Vec<v1::RenderedTask>, patch: bool) -> Result<Vec<Value>> {
+        if tasks.is_empty() {
+            return Ok(Vec::new());
+        }
+        let message = if patch {
+            EnvMsg::PlanPatch(v1::PlanPatch {
+                tasks: tasks.clone(),
+            })
+        } else {
+            EnvMsg::Plan(v1::Plan {
+                tasks: tasks.clone(),
                 blobs_referenced: vec![],
-            })),
-        })
-        .await?;
+            })
+        };
+        self.send(&v1::Envelope { msg: Some(message) }).await?;
 
+        let mut results = Vec::with_capacity(tasks.len());
         loop {
-            let event = self.next_event().await?.context("agent closed mid-task")?;
+            let event = self.next_event().await?.context("agent closed mid-batch")?;
             match event.msg {
                 Some(EvMsg::TaskStart(_)) | Some(EvMsg::Log(_)) => continue,
-                Some(EvMsg::TaskResult(res)) if res.task_id == task_id => {
+                Some(EvMsg::TaskResult(res)) => {
+                    let expected = tasks
+                        .get(results.len())
+                        .context("agent returned excess task result")?;
+                    if res.task_id != expected.task_id {
+                        bail!(
+                            "agent batch result out of order: expected {}, got {}",
+                            expected.task_id,
+                            res.task_id
+                        );
+                    }
                     let json = if res.result_json.is_empty() {
                         serde_json::json!({})
                     } else {
                         serde_json::from_slice(&res.result_json)?
                     };
-                    return Ok(to_mj(json));
+                    let failed = res.status == "failed"
+                        || json.get("failed").and_then(|value| value.as_bool()) == Some(true);
+                    results.push(to_mj(json));
+                    if results.len() == tasks.len() || (failed && expected.halt_on_failure) {
+                        return Ok(results);
+                    }
                 }
                 Some(EvMsg::Crash(c)) => bail!("agent crashed: {} at {}", c.message, c.location),
-                other => bail!("unexpected agent event mid-task: {other:?}"),
+                other => bail!("unexpected agent event mid-batch: {other:?}"),
             }
         }
     }
@@ -135,6 +166,7 @@ impl<A> HostRun<'_, A> {
 #[allow(clippy::too_many_arguments)]
 pub async fn run_play<A: AgentExec>(
     play: &Play,
+    compiled: &PlayPlan,
     host: &str,
     facts: &v1::Facts,
     engine: &Engine,
@@ -165,22 +197,45 @@ pub async fn run_play<A: AgentExec>(
 
     let mut host_failed = false;
     let inherited = InheritedCtx::default();
-    'sections: for section in [&play.pre_tasks, &play.tasks] {
-        for task in section.iter() {
-            if run.run_task_or_block(task, &[], &inherited, out).await? {
+    'sections: for (section, compiled_section) in [
+        (&play.pre_tasks, &compiled.pre_tasks),
+        (&play.tasks, &compiled.tasks),
+    ] {
+        let mut index = 0;
+        while index < section.len() {
+            if let Some((consumed, failed)) = run
+                .run_static_window(section, compiled_section, index, &inherited, out)
+                .await?
+            {
+                index += consumed;
+                if failed {
+                    host_failed = true;
+                    break 'sections;
+                }
+                continue;
+            }
+            let task = &section[index];
+            let planned = &compiled_section[index];
+            if run
+                .run_task_or_block(task, planned, &[], &inherited, out)
+                .await?
+            {
                 host_failed = true;
                 break 'sections;
             }
+            index += 1;
         }
     }
 
     // Handlers flush at end of play, definition order, once each, only if
     // notified by a changed task (SEMANTICS §4).
     if !host_failed {
-        for handler in &play.handlers {
+        for (handler, planned) in play.handlers.iter().zip(&compiled.handlers) {
             let name = handler.name.clone().unwrap_or_default();
             if run.notified.contains(&name)
-                && run.run_task_or_block(handler, &[], &inherited, out).await?
+                && run
+                    .run_task_or_block(handler, planned, &[], &inherited, out)
+                    .await?
             {
                 break; // handler failure ends the play; recap already counted
             }
@@ -239,11 +294,161 @@ impl<A: AgentExec> HostRun<'_, A> {
             .push((name.to_string(), VarValue::Final(value)));
     }
 
+    /// Dispatch one maximal dependency-free issue window. Complex task
+    /// controls remain sequential; compiler-static plain agent tasks can be
+    /// rendered up front and drained by the agent in one wire Plan.
+    async fn run_static_window(
+        &mut self,
+        tasks: &[Task],
+        planned: &[PlanTask],
+        start: usize,
+        inherited: &InheritedCtx,
+        out: &mut impl Write,
+    ) -> Result<Option<(usize, bool)>> {
+        let mut end = start;
+        while end < tasks.len()
+            && self.tag_selected(&tasks[end], &[])
+            && static_batch_candidate(&tasks[end], &planned[end])
+        {
+            end += 1;
+        }
+        if end == start {
+            return Ok(None);
+        }
+
+        let mut rendered = Vec::with_capacity(end - start);
+        for index in start..end {
+            rendered.push(self.prepare_static_task(&tasks[index], &planned[index], inherited)?);
+        }
+        let results = self.agent.run_batch(rendered, false).await?;
+        if results.is_empty() {
+            bail!("agent returned no results for static issue window");
+        }
+        let mut failed = false;
+        for (offset, result) in results.into_iter().enumerate() {
+            failed = self.finalize_result(&tasks[start + offset], result, out);
+            if failed {
+                break;
+            }
+        }
+        // A halted batch consumes every sent task from this host's schedule:
+        // later tasks were deliberately not executed and host processing ends.
+        Ok(Some((end - start, failed)))
+    }
+
+    fn prepare_static_task(
+        &mut self,
+        task: &Task,
+        planned: &PlanTask,
+        inherited: &InheritedCtx,
+    ) -> Result<v1::RenderedTask> {
+        let TaskBody::Module(call) = &task.body else {
+            unreachable!("static window excludes blocks")
+        };
+        let PlanBody::Module {
+            readiness:
+                Readiness::Static {
+                    params,
+                    free_form,
+                    loop_items: None,
+                },
+            ..
+        } = &planned.body
+        else {
+            unreachable!("static window requires static module")
+        };
+        let scope = self.scope(inherited, &task.vars);
+        let mut params_json = params
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), serde_json::to_value(value)?)))
+            .collect::<Result<serde_json::Map<String, serde_json::Value>>>()?;
+        ruxel_core::compiler::validate_rendered_enums(
+            call.module,
+            params,
+            &self.playbook_dir.to_string_lossy(),
+            &label(task),
+        )?;
+        let module = call.module.name;
+        if (module == "copy" || module == "template")
+            && !params_json.contains_key("content")
+            && let Some(src) = params_json.get("src").and_then(|value| value.as_str())
+        {
+            let path = self.playbook_dir.join(src);
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|error| anyhow!("{module} src {}: {error}", path.display()))?;
+            let content = if module == "template" {
+                self.engine.render_template_file(&raw, &scope)?
+            } else {
+                raw
+            };
+            params_json.remove("src");
+            params_json.insert("content".into(), serde_json::Value::String(content));
+        }
+        let params_bytes = serde_json::to_vec(&params_json)?;
+        let free_form = free_form.clone().unwrap_or_default();
+        let environment = self.render_environment(task, inherited, &scope)?;
+        let task_id = self.next_task_id;
+        self.next_task_id += 1;
+        let ledger_key = ledger_key(
+            &self.playbook_dir,
+            module,
+            &label(task),
+            "",
+            &params_bytes,
+            &free_form,
+        );
+        Ok(v1::RenderedTask {
+            task_id,
+            name: label(task),
+            module: module.to_string(),
+            rendered: true,
+            iterations: vec![v1::Iteration {
+                item_label: String::new(),
+                params_json: params_bytes,
+                free_form,
+                ledger_key,
+            }],
+            check_mode_override: task.check_mode == Some(false),
+            no_log: task.no_log,
+            become_user: if task.becomes.or(inherited.becomes) == Some(false) {
+                String::new()
+            } else {
+                task.become_user
+                    .clone()
+                    .or_else(|| inherited.become_user.clone())
+                    .unwrap_or_default()
+            },
+            environment,
+            halt_on_failure: !task.ignore_errors,
+        })
+    }
+
+    fn render_environment(
+        &self,
+        task: &Task,
+        inherited: &InheritedCtx,
+        scope: &Scope,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        let mut environment = std::collections::HashMap::new();
+        for (key, value) in inherited.environment.iter().chain(&task.environment) {
+            let rendered = self.engine.render_value(value, scope)?;
+            environment.insert(
+                key.clone(),
+                rendered
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| rendered.to_string()),
+            );
+        }
+        Ok(environment)
+    }
+
     /// Returns true when the host must stop (unrescued failure).
     /// `inherited_tags` are the tags of any enclosing block (SEMANTICS §4).
     async fn run_task_or_block(
         &mut self,
         task: &Task,
+        planned: &PlanTask,
         inherited_tags: &[String],
         inherited: &InheritedCtx,
         out: &mut impl Write,
@@ -254,6 +459,14 @@ impl<A: AgentExec> HostRun<'_, A> {
             always,
         } = &task.body
         {
+            let PlanBody::Block {
+                block: planned_block,
+                rescue: planned_rescue,
+                always: planned_always,
+            } = &planned.body
+            else {
+                bail!("compiled/source task shape mismatch for {}", label(task));
+            };
             // The block's own tags propagate to its contained tasks.
             let mut child_tags: Vec<String> = inherited_tags.to_vec();
             child_tags.extend(task.tags.iter().cloned());
@@ -271,8 +484,10 @@ impl<A: AgentExec> HostRun<'_, A> {
             }
             let child_ctx = inherited.for_block(task);
             let mut block_failed = false;
-            for sub in block {
-                if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out)).await? {
+            for (sub, planned_sub) in block.iter().zip(planned_block) {
+                if Box::pin(self.run_task_or_block(sub, planned_sub, &child_tags, &child_ctx, out))
+                    .await?
+                {
                     block_failed = true;
                     break;
                 }
@@ -283,9 +498,15 @@ impl<A: AgentExec> HostRun<'_, A> {
                     host_failed = true;
                 } else {
                     self.recap.rescued += 1;
-                    for sub in rescue {
-                        if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out))
-                            .await?
+                    for (sub, planned_sub) in rescue.iter().zip(planned_rescue) {
+                        if Box::pin(self.run_task_or_block(
+                            sub,
+                            planned_sub,
+                            &child_tags,
+                            &child_ctx,
+                            out,
+                        ))
+                        .await?
                         {
                             host_failed = true;
                             break;
@@ -293,8 +514,10 @@ impl<A: AgentExec> HostRun<'_, A> {
                     }
                 }
             }
-            for sub in always {
-                if Box::pin(self.run_task_or_block(sub, &child_tags, &child_ctx, out)).await? {
+            for (sub, planned_sub) in always.iter().zip(planned_always) {
+                if Box::pin(self.run_task_or_block(sub, planned_sub, &child_tags, &child_ctx, out))
+                    .await?
+                {
                     host_failed = true;
                     break;
                 }
@@ -309,17 +532,21 @@ impl<A: AgentExec> HostRun<'_, A> {
             return Ok(false);
         }
 
-        self.run_module_task(task, inherited, out).await
+        self.run_module_task(task, planned, inherited, out).await
     }
 
     async fn run_module_task(
         &mut self,
         task: &Task,
+        planned: &PlanTask,
         inherited: &InheritedCtx,
         out: &mut impl Write,
     ) -> Result<bool> {
         let TaskBody::Module(call) = &task.body else {
             unreachable!("blocks handled by caller")
+        };
+        let PlanBody::Module { readiness, .. } = &planned.body else {
+            bail!("compiled/source task shape mismatch for {}", label(task));
         };
         let scope = self.scope(inherited, &task.vars);
 
@@ -354,8 +581,15 @@ impl<A: AgentExec> HostRun<'_, A> {
                         return Ok(false);
                     }
                 }
-                self.execute_iterations(task, call, vec![(None, scope.clone())], inherited, out)
-                    .await?
+                self.execute_iterations(
+                    task,
+                    call,
+                    readiness,
+                    vec![(None, scope.clone())],
+                    inherited,
+                    out,
+                )
+                .await?
             }
             Some(items) => {
                 if items.is_empty() {
@@ -372,11 +606,15 @@ impl<A: AgentExec> HostRun<'_, A> {
                         scope.with_layer(vec![("item".to_string(), VarValue::Final(item.clone()))]);
                     iterations.push((Some(item), item_scope));
                 }
-                self.execute_iterations(task, call, iterations, inherited, out)
+                self.execute_iterations(task, call, readiness, iterations, inherited, out)
                     .await?
             }
         };
 
+        Ok(self.finalize_result(task, result, out))
+    }
+
+    fn finalize_result(&mut self, task: &Task, result: Value, out: &mut impl Write) -> bool {
         let failed = result_failed(&result);
         let changed = result_truthy(&result, "changed");
         let skipped = result_truthy(&result, "skipped");
@@ -401,8 +639,7 @@ impl<A: AgentExec> HostRun<'_, A> {
             "ok"
         };
         self.finish_task(task, out, result, status, failed && task.ignore_errors);
-
-        Ok(failed && !task.ignore_errors)
+        failed && !task.ignore_errors
     }
 
     /// Execute the task's iterations (single or per-item), including
@@ -412,6 +649,7 @@ impl<A: AgentExec> HostRun<'_, A> {
         &mut self,
         task: &Task,
         call: &ruxel_core::playbook::ModuleCall,
+        readiness: &Readiness,
         iterations: Vec<(Option<Value>, Scope)>,
         inherited: &InheritedCtx,
         _out: &mut impl Write,
@@ -438,7 +676,7 @@ impl<A: AgentExec> HostRun<'_, A> {
             let raw = loop {
                 attempts += 1;
                 let raw = self
-                    .execute_once(task, call, &item_scope, item.as_ref(), inherited)
+                    .execute_once(task, call, readiness, &item_scope, item.as_ref(), inherited)
                     .await?;
                 let Some(until) = &task.until else { break raw };
                 // The until expression sees the candidate result under the
@@ -496,6 +734,7 @@ impl<A: AgentExec> HostRun<'_, A> {
         &mut self,
         task: &Task,
         call: &ruxel_core::playbook::ModuleCall,
+        readiness: &Readiness,
         scope: &Scope,
         item: Option<&Value>,
         inherited: &InheritedCtx,
@@ -606,13 +845,32 @@ impl<A: AgentExec> HostRun<'_, A> {
 
         // Agent-side execution: render params + free-form with the item
         // scope, ship one iteration, await its result.
-        let mut params = serde_json::Map::new();
-        let mut rendered_params = Vec::new();
-        for (k, v) in &call.params {
-            let rendered = self.engine.render_value(v, scope)?;
-            params.insert(k.clone(), serde_json::to_value(&rendered)?);
-            rendered_params.push((k.clone(), rendered));
-        }
+        let (mut params, rendered_params, compiled_free_form) = if item.is_none()
+            && let Readiness::Static {
+                params,
+                free_form,
+                loop_items: None,
+            } = readiness
+        {
+            let json = params
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), serde_json::to_value(value)?)))
+                .collect::<Result<serde_json::Map<String, serde_json::Value>>>()?;
+            (
+                json,
+                params.clone(),
+                Some(free_form.clone().unwrap_or_default()),
+            )
+        } else {
+            let mut json = serde_json::Map::new();
+            let mut rendered = Vec::new();
+            for (key, value) in &call.params {
+                let value = self.engine.render_value(value, scope)?;
+                json.insert(key.clone(), serde_json::to_value(&value)?);
+                rendered.push((key.clone(), value));
+            }
+            (json, rendered, None)
+        };
         ruxel_core::compiler::validate_rendered_enums(
             call.module,
             &rendered_params,
@@ -640,14 +898,17 @@ impl<A: AgentExec> HostRun<'_, A> {
             params.remove("src");
             params.insert("content".into(), serde_json::Value::String(content));
         }
-        let free_form = match &call.free_form {
-            Some(body) => self
-                .engine
-                .render_str(body, scope)?
-                .as_str()
-                .map(str::to_string)
-                .unwrap_or_default(),
-            None => String::new(),
+        let free_form = match compiled_free_form {
+            Some(rendered) => rendered,
+            None => match &call.free_form {
+                Some(body) => self
+                    .engine
+                    .render_str(body, scope)?
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_default(),
+                None => String::new(),
+            },
         };
         let item_label = item
             .map(|i| {
@@ -706,31 +967,39 @@ impl<A: AgentExec> HostRun<'_, A> {
             h.finalize().to_hex().to_string()
         };
 
+        let rendered_task = v1::RenderedTask {
+            task_id,
+            name: label(task),
+            module: module.to_string(),
+            rendered: true,
+            iterations: vec![v1::Iteration {
+                item_label,
+                params_json: params_bytes,
+                free_form,
+                ledger_key,
+            }],
+            check_mode_override: task.check_mode == Some(false),
+            no_log: task.no_log,
+            become_user: if task.becomes.or(inherited.becomes) == Some(false) {
+                String::new()
+            } else {
+                task.become_user
+                    .clone()
+                    .or_else(|| inherited.become_user.clone())
+                    .unwrap_or_default()
+            },
+            environment,
+            halt_on_failure: !task.ignore_errors,
+        };
         self.agent
-            .run_iteration(v1::RenderedTask {
-                task_id,
-                name: label(task),
-                module: module.to_string(),
-                rendered: true,
-                iterations: vec![v1::Iteration {
-                    item_label,
-                    params_json: params_bytes,
-                    free_form,
-                    ledger_key,
-                }],
-                check_mode_override: task.check_mode == Some(false),
-                no_log: task.no_log,
-                become_user: if task.becomes.or(inherited.becomes) == Some(false) {
-                    String::new()
-                } else {
-                    task.become_user
-                        .clone()
-                        .or_else(|| inherited.become_user.clone())
-                        .unwrap_or_default()
-                },
-                environment,
-            })
-            .await
+            .run_batch(
+                vec![rendered_task],
+                matches!(readiness, Readiness::Deferred { .. }),
+            )
+            .await?
+            .into_iter()
+            .next()
+            .context("agent returned no result for iteration")
     }
 
     /// Recap accounting mirrors Ansible's: `ok` includes changed tasks;
@@ -810,6 +1079,54 @@ fn label(task: &Task) -> String {
     task.name.clone().unwrap_or_else(|| "(unnamed)".into())
 }
 
+fn static_batch_candidate(task: &Task, planned: &PlanTask) -> bool {
+    let TaskBody::Module(call) = &task.body else {
+        return false;
+    };
+    let PlanBody::Module {
+        readiness: Readiness::Static {
+            loop_items: None, ..
+        },
+        ..
+    } = &planned.body
+    else {
+        return false;
+    };
+    !matches!(
+        call.module.name,
+        "assert" | "debug" | "fail" | "pause" | "set_fact"
+    ) && task.loop_.is_none()
+        && task.when.is_none()
+        && task.until.is_none()
+        && task.retries.is_none()
+        && task.delay.is_none()
+        && task.changed_when.is_none()
+        && task.failed_when.is_none()
+}
+
+fn ledger_key(
+    playbook_dir: &std::path::Path,
+    module: &str,
+    task_label: &str,
+    item_label: &str,
+    params: &[u8],
+    free_form: &str,
+) -> String {
+    let mut hash = blake3::Hasher::new();
+    hash.update(playbook_dir.to_string_lossy().as_bytes());
+    hash.update(b"\x1f");
+    hash.update(module.as_bytes());
+    hash.update(b"\x1f");
+    hash.update(task_label.as_bytes());
+    hash.update(b"\x1f");
+    hash.update(item_label.as_bytes());
+    hash.update(b"\x1f");
+    hash.update(params);
+    hash.update(b"\x1f");
+    hash.update(free_form.as_bytes());
+    hash.finalize().to_hex().to_string()
+}
+
 fn eval_when_parts(engine: &Engine, when: &Condition, scope: &Scope) -> Result<Vec<bool>> {
     Ok(match when {
         Condition::Literal(b) => vec![*b],
@@ -873,6 +1190,8 @@ mod tests {
     struct FakeAgent {
         scripted: VecDeque<serde_json::Value>,
         calls: Vec<v1::RenderedTask>,
+        batches: Vec<Vec<u64>>,
+        patches: Vec<bool>,
     }
 
     impl FakeAgent {
@@ -880,16 +1199,36 @@ mod tests {
             Self {
                 scripted: results.into_iter().collect(),
                 calls: Vec::new(),
+                batches: Vec::new(),
+                patches: Vec::new(),
             }
         }
     }
 
     impl AgentExec for FakeAgent {
-        async fn run_iteration(&mut self, task: v1::RenderedTask) -> Result<Value> {
-            self.calls.push(task);
-            Ok(to_mj(self.scripted.pop_front().unwrap_or_else(
-                || serde_json::json!({"changed": true, "failed": false}),
-            )))
+        async fn run_batch(
+            &mut self,
+            tasks: Vec<v1::RenderedTask>,
+            patch: bool,
+        ) -> Result<Vec<Value>> {
+            self.batches
+                .push(tasks.iter().map(|task| task.task_id).collect());
+            self.patches.push(patch);
+            let mut results = Vec::new();
+            for task in tasks {
+                let result = self
+                    .scripted
+                    .pop_front()
+                    .unwrap_or_else(|| serde_json::json!({"changed": true, "failed": false}));
+                let failed = result.get("failed").and_then(|value| value.as_bool()) == Some(true);
+                let halt = task.halt_on_failure;
+                self.calls.push(task);
+                results.push(to_mj(result));
+                if failed && halt {
+                    break;
+                }
+            }
+            Ok(results)
         }
     }
 
@@ -899,10 +1238,12 @@ mod tests {
     ) -> (Recap, FakeAgent, String) {
         let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
         let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
         let mut agent = FakeAgent::with_results(results);
         let mut output = Vec::new();
         let recap = run_play(
             &playbook.plays[0],
+            &compiled.plays[0],
             "test-host",
             &v1::Facts::default(),
             &engine,
@@ -927,6 +1268,62 @@ mod tests {
         assert_eq!(recap.ok, 1);
         assert_eq!(recap.changed, 1);
         assert_eq!(agent.calls.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn consecutive_static_tasks_share_one_issue_window() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: one\n      command: echo one\n    - name: two\n      command: echo two\n    - name: three\n      command: echo three\n";
+        let (recap, agent, _) = run(yaml, []).await;
+        assert_eq!(recap.ok, 3);
+        assert_eq!(recap.changed, 3);
+        assert_eq!(agent.batches, vec![vec![1, 2, 3]]);
+        assert_eq!(
+            agent
+                .calls
+                .iter()
+                .map(|task| task.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two", "three"]
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_static_task_halts_remaining_issue_window() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: one\n      command: echo one\n    - name: two\n      command: 'false'\n    - name: three\n      command: echo three\n";
+        let results = [
+            serde_json::json!({"changed": false, "failed": false}),
+            serde_json::json!({"changed": false, "failed": true}),
+            serde_json::json!({"changed": false, "failed": false}),
+        ];
+        let (recap, agent, _) = run(yaml, results).await;
+        assert_eq!(recap.ok, 1);
+        assert_eq!(recap.failed, 1);
+        assert_eq!(agent.batches, vec![vec![1, 2, 3]]);
+        assert_eq!(
+            agent
+                .calls
+                .iter()
+                .map(|task| task.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two"]
+        );
+    }
+
+    #[tokio::test]
+    async fn deferred_task_uses_register_and_streams_plan_patch() {
+        let yaml = "- hosts: all\n  tasks:\n    - name: probe\n      stat:\n        path: /tmp/example\n      register: probe\n    - name: consume\n      command: echo {{ probe.stat.exists }}\n";
+        let results = [
+            serde_json::json!({
+                "changed": false,
+                "failed": false,
+                "stat": {"exists": true}
+            }),
+            serde_json::json!({"changed": true, "failed": false}),
+        ];
+        let (recap, agent, _) = run(yaml, results).await;
+        assert_eq!(recap.ok, 2);
+        assert_eq!(agent.patches, vec![false, true]);
+        assert_eq!(agent.calls[1].iterations[0].free_form, "echo True");
     }
 
     #[tokio::test]
@@ -1051,15 +1448,20 @@ mod tests {
 
     #[tokio::test]
     async fn apply_revalidates_templated_enum_values() {
-        let yaml = "- hosts: all\n  vars:\n    selected_fs: btrfs\n  tasks:\n    - name: invalid rendered enum\n      filesystem:\n        dev: /dev/synthetic\n        fstype: '{{ selected_fs }}'\n";
+        let yaml = "- hosts: all\n  tasks:\n    - name: invalid rendered enum\n      filesystem:\n        dev: /dev/synthetic\n        fstype: '{{ ansible_architecture }}'\n";
         let playbook = ruxel_core::playbook::parse("test.yml", yaml).unwrap();
         let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+        let compiled = ruxel_core::compiler::compile(&playbook, &engine).unwrap();
         let mut agent = FakeAgent::default();
         let mut output = Vec::new();
         let error = run_play(
             &playbook.plays[0],
+            &compiled.plays[0],
             "test-host",
-            &v1::Facts::default(),
+            &v1::Facts {
+                architecture: "btrfs".into(),
+                ..Default::default()
+            },
             &engine,
             &mut agent,
             std::path::Path::new("."),

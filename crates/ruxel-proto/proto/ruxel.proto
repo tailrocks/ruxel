@@ -71,6 +71,9 @@ message RenderedTask {
   bool no_log = 7;
   string become_user = 8;    // empty = run as connection user (root)
   map<string, string> environment = 9;
+  // Batch safety: stop draining this Plan after this task fails. The
+  // controller clears it for ignore_errors tasks.
+  bool halt_on_failure = 10;
 }
 
 message Iteration {

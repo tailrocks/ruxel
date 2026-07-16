@@ -400,3 +400,53 @@ fn malformed_params_fail_without_killing_agent() {
     finish_agent(&mut agent, &mut stdin);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn failed_task_halts_remaining_batch_when_requested() {
+    let dir = temp_dir("halt-batch");
+    let dest = dir.join("must-not-exist");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("halt-batch", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+
+    let copy_params = serde_json::to_vec(&serde_json::json!({
+        "dest": dest,
+        "content": "wrong"
+    }))
+    .unwrap();
+    let task = |task_id, params_json, halt_on_failure| v1::RenderedTask {
+        task_id,
+        name: format!("task {task_id}"),
+        module: "copy".into(),
+        rendered: true,
+        iterations: vec![v1::Iteration {
+            params_json,
+            ledger_key: format!("halt-key-{task_id}"),
+            ..Default::default()
+        }],
+        halt_on_failure,
+        ..Default::default()
+    };
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![task(61, b"{".to_vec(), true), task(62, copy_params, true)],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+    let failed = read_task_result(&mut stdout);
+    assert_eq!(failed.task_id, 61);
+    assert_eq!(failed.status, "failed");
+
+    finish_agent(&mut agent, &mut stdin);
+    assert!(
+        !dest.exists(),
+        "task after failed batch member must not run"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

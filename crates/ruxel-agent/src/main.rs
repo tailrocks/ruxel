@@ -162,14 +162,16 @@ fn serve() -> i32 {
             Some(Msg::Plan(v1::Plan { tasks, .. }))
             | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
-                    execute_task(
+                    if execute_task(
                         &mut stdout,
                         task,
                         check_mode,
                         diff_mode,
                         no_cache,
                         &mut ledger,
-                    );
+                    ) {
+                        break;
+                    }
                 }
             }
             Some(Msg::Resume(_)) => {
@@ -202,7 +204,7 @@ fn execute_task(
     diff_mode: bool,
     no_cache: bool,
     ledger: &mut ledger::Ledger,
-) {
+) -> bool {
     let task_check_mode = check_mode && !task.check_mode_override;
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
@@ -231,6 +233,9 @@ fn execute_task(
                         &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
                         start,
                     );
+                    if task.halt_on_failure {
+                        return true;
+                    }
                     continue;
                 }
             }
@@ -307,7 +312,11 @@ fn execute_task(
             &outcome.result,
             start,
         );
+        if outcome.status == "failed" && task.halt_on_failure {
+            return true;
+        }
     }
+    false
 }
 
 fn send_result(

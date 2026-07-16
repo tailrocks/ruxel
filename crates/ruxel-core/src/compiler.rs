@@ -193,11 +193,29 @@ fn compile_task(task: &Task, ctx: &mut PlayCtx<'_>) -> Result<PlanTask, Box<Comp
             block,
             rescue,
             always,
-        } => PlanBody::Block {
-            block: compile_tasks(block, ctx)?,
-            rescue: compile_tasks(rescue, ctx)?,
-            always: compile_tasks(always, ctx)?,
-        },
+        } => {
+            let child_scope = if task.vars.is_empty() {
+                ctx.scope.clone()
+            } else {
+                ctx.scope.with_layer(
+                    task.vars
+                        .iter()
+                        .map(|(key, value)| (key.clone(), VarValue::Raw(value.clone())))
+                        .collect(),
+                )
+            };
+            let mut child_ctx = PlayCtx {
+                playbook: ctx.playbook,
+                engine: ctx.engine,
+                providers: ctx.providers,
+                scope: child_scope,
+            };
+            PlanBody::Block {
+                block: compile_tasks(block, &mut child_ctx)?,
+                rescue: compile_tasks(rescue, &mut child_ctx)?,
+                always: compile_tasks(always, &mut child_ctx)?,
+            }
+        }
         TaskBody::Module(call) => {
             if call.module.name == "set_fact" {
                 for (k, _) in &call.params {
