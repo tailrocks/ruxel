@@ -30,8 +30,16 @@ def normalize_diff(value):
         for item in value:
             if not isinstance(item, dict) or "before" not in item or "after" not in item:
                 continue
-            before = str(item["before"]).splitlines()
-            after = str(item["after"]).splitlines()
+            before = (
+                item["before"]
+                if isinstance(item["before"], list)
+                else str(item["before"]).splitlines()
+            )
+            after = (
+                item["after"]
+                if isinstance(item["after"], list)
+                else str(item["after"]).splitlines()
+            )
             if before or after:
                 changes.append({"before": before, "after": after})
     return changes
@@ -65,6 +73,10 @@ def normalize_value(value, module=None, include_diff=True):
         allowed.add("ansible_facts")
     normalized = {}
     if "censored" in value:
+        normalized["redacted"] = True
+    elif value.get("redacted") is True:
+        # Durable oracle captures are normalized more than once by validation
+        # and promotion workflows. Preserve the canonical marker.
         normalized["redacted"] = True
     for key, child in value.items():
         if key not in allowed:

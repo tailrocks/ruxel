@@ -14,6 +14,7 @@ FORBIDDEN_KEYS = {
 }
 FORBIDDEN_VALUES = re.compile(
     r"/var/folders/|/Users/|(?:[0-9a-f]{2}:){5}[0-9a-f]{2}|"
+    r"/\.ansible/tmp/ansible-tmp-|ActiveEnterTimestamp|ExecMainPID|"
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
     re.IGNORECASE,
 )

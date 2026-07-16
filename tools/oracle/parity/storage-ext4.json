@@ -12,17 +12,17 @@
   },
   "modes": {
     "check_diff": {
-      "capture_sha256": "ba5e67dd448e537ebf641dabb5c2614625c43ed7f42a2502c8e5353eafbe4eca",
+      "capture_sha256": "87e71683a3e30b8b73ae3209d6089c8c005ab35132cf82cb8da9dd274b8f46e5",
       "result_parity": true,
       "state_contract": true
     },
     "converged": {
-      "capture_sha256": "ba5e67dd448e537ebf641dabb5c2614625c43ed7f42a2502c8e5353eafbe4eca",
+      "capture_sha256": "87e71683a3e30b8b73ae3209d6089c8c005ab35132cf82cb8da9dd274b8f46e5",
       "result_parity": true,
       "state_parity": true
     },
     "fresh": {
-      "capture_sha256": "9dd7c76c05c02c182a9ec7be41f9e225a0f27133d0ed53586c85b547b212f47e",
+      "capture_sha256": "ced041d5635f158b00616ca2223bfe323976c107893554ba91c3e87a34d2741b",
       "result_parity": true,
       "state_parity": true
     }

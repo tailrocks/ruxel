@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+from compare_results import module_name, normalize_value
+
 DROP = {
     "delta", "start", "end", "stop", "warnings", "invocation", "exception",
     "before_header", "after_header",
@@ -28,11 +30,16 @@ def scrub(value):
 
 
 def normalize(record):
+    action = module_name(record["action"])
     normalized = {
         "task_name": record["task_name"],
         "action": record["action"],
         "status": record["status"],
-        "result": scrub(record.get("result") or {}),
+        # Captures are durable semantic evidence, not raw Ansible diagnostics.
+        # Keep exactly the result surface compared with Ruxel; module temp
+        # paths, timestamps, PIDs, inodes, and systemd runtime counters are
+        # deliberately excluded.
+        "result": normalize_value(scrub(record.get("result") or {}), action),
     }
     if record.get("ignore_errors"):
         normalized["ignore_errors"] = True
