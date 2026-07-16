@@ -28,10 +28,10 @@ def normalize_diff(value):
         for item in value:
             if not isinstance(item, dict) or "before" not in item or "after" not in item:
                 continue
-            changes.append({
-                "before": str(item["before"]).splitlines(),
-                "after": str(item["after"]).splitlines(),
-            })
+            before = str(item["before"]).splitlines()
+            after = str(item["after"]).splitlines()
+            if before or after:
+                changes.append({"before": before, "after": after})
     return changes
 
 

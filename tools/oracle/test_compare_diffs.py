@@ -30,6 +30,16 @@ changed: [fixture]
             ansible_diffs("TASK [T] ****\n--- a\n+++ b\n-b\n-a\n+c\n"),
         )
 
+    def test_full_snapshot_matches_ansible_added_line_delta(self):
+        stdout = "TASK [T] ****\n--- a\n+++ b\n+new\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ruxel.jsonl"
+            path.write_text(json.dumps({
+                "event": "task", "task": "T",
+                "result": {"diff": "--- a\n+++ b\n old\n-old\n+old\n+new\n"},
+            }) + "\n")
+            self.assertEqual(ruxel_diffs(path), ansible_diffs(stdout))
+
 
 if __name__ == "__main__":
     unittest.main()

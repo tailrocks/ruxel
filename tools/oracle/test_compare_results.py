@@ -44,6 +44,10 @@ class ResultParityTests(unittest.TestCase):
             }, "lineinfile"),
             {"changed": True},
         )
+        self.assertEqual(
+            normalize_value({"changed": True, "diff": [{"before": "", "after": ""}]}),
+            {"changed": True},
+        )
 
     def test_structured_and_unified_content_diffs_match(self):
         structured = [{"before": "old\n", "after": "new\n",

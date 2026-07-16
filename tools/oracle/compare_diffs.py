@@ -4,9 +4,36 @@
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 TASK = re.compile(r"^(?:TASK|RUNNING HANDLER) \[(.+)] \*+$")
+
+
+def canonical_change(change):
+    """Reduce full snapshots and unified deltas to ordered removed/added lines."""
+    before = change["before"]
+    after = change["after"]
+    common = Counter(before) & Counter(after)
+
+    def without_common(lines):
+        remaining = common.copy()
+        result = []
+        for line in lines:
+            if remaining[line]:
+                remaining[line] -= 1
+            else:
+                result.append(line)
+        return result
+
+    return {"before": without_common(before), "after": without_common(after)}
+
+
+def canonical_diffs(result):
+    return {
+        task: [canonical_change(change) for change in changes]
+        for task, changes in result.items()
+    }
 
 
 def ansible_diffs(text):
@@ -25,8 +52,10 @@ def ansible_diffs(text):
             current["before"].append(line[1:])
         elif current is not None and line.startswith("+") and not line.startswith("+++"):
             current["after"].append(line[1:])
-    return {task: changes for task, changes in result.items()
-            if any(change["before"] or change["after"] for change in changes)}
+    return canonical_diffs({
+        task: changes for task, changes in result.items()
+        if any(change["before"] or change["after"] for change in changes)
+    })
 
 
 def ruxel_diffs(path):
@@ -47,7 +76,7 @@ def ruxel_diffs(path):
         if before or after:
             result.setdefault(record["task"].split(" : ")[-1], []).append(
                 {"before": before, "after": after})
-    return result
+    return canonical_diffs(result)
 
 
 def main():
