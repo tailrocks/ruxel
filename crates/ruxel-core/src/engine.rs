@@ -18,12 +18,12 @@ use std::sync::{Arc, Mutex};
 pub enum EngineError {
     #[error("template error: {0}")]
     Template(#[from] minijinja::Error),
-    #[error("variable cycle while rendering {0:?}")]
-    VarCycle(String),
     #[error("undefined variable in {0:?}")]
     Undefined(String),
-    #[error("lookup {0:?} failed: {1}")]
-    Lookup(String, String),
+    #[error("variable cycle while rendering {0:?}")]
+    VarCycle(String),
+    #[error("failed to render variable {0:?}: {1}")]
+    LazyVar(String, String),
     #[error("unsupported YAML value (tagged) in template scope")]
     TaggedValue,
 }
@@ -60,6 +60,37 @@ fn dry_value(key: &str) -> String {
     let digest = Sha256::digest(key.as_bytes());
     let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
     format!("dry-secret-{hex}")
+}
+
+fn python_display(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "None".into(),
+        serde_json::Value::Bool(value) => if *value { "True" } else { "False" }.into(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => {
+            format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+        }
+        serde_json::Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(python_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        serde_json::Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    python_display(&key.clone().into()),
+                    python_display(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// Deterministic fake secrets: stable across runs and languages so parity
@@ -151,17 +182,37 @@ impl<R: LookupResolver> LookupResolver for MemoizedResolver<R> {
 /// One variable binding: either a raw (possibly template-bearing) YAML value
 /// rendered lazily on first reference (play vars), or an already-final value
 /// (facts, register results, loop `item`).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum VarValue {
     Raw(Yaml),
     Final(Value),
 }
 
+impl std::fmt::Debug for VarValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raw(_) => f.write_str("Raw(<redacted>)"),
+            Self::Final(_) => f.write_str("Final(<redacted>)"),
+        }
+    }
+}
+
 /// Layered variable scope, lowest→highest precedence (SEMANTICS §2: play
 /// vars → set_fact → register; loop `item` and task vars on top).
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct Scope {
     layers: Vec<Arc<Vec<(String, VarValue)>>>,
+}
+
+impl std::fmt::Debug for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scope")
+            .field(
+                "layers",
+                &format_args!("<redacted; {} layers>", self.layers.len()),
+            )
+            .finish()
+    }
 }
 
 impl Scope {
@@ -201,12 +252,22 @@ impl Scope {
 /// raw values through the engine at first access (Ansible's lazy semantics —
 /// an unused broken var is never an error) and memoizing per evaluation
 /// context.
-#[derive(Debug)]
 struct ScopeObject {
     engine: Arc<EngineInner>,
     scope: Scope,
     memo: Mutex<HashMap<String, Value>>,
     in_flight: Mutex<HashSet<String>>,
+}
+
+impl std::fmt::Debug for ScopeObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScopeObject")
+            .field("engine", &"<redacted>")
+            .field("scope", &"<redacted>")
+            .field("memo", &"<redacted>")
+            .field("in_flight", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Object for ScopeObject {
@@ -220,7 +281,11 @@ impl Object for ScopeObject {
             VarValue::Final(v) => v,
             VarValue::Raw(yaml) => {
                 if !self.in_flight.lock().unwrap().insert(name.to_string()) {
-                    return Some(Value::from(format!("[ruxel: variable cycle at {name}]")));
+                    return Some(Value::from_object(ScopeRenderError {
+                        name: name.to_string(),
+                        message: "variable cycle".into(),
+                        cycle: true,
+                    }));
                 }
                 let result = render_yaml(&self.engine, &yaml, self);
                 self.in_flight.lock().unwrap().remove(name);
@@ -230,9 +295,11 @@ impl Object for ScopeObject {
                     // lazy templating does: the error message becomes the
                     // failure when the variable is actually consumed.
                     Err(e) => {
+                        let cycle = matches!(e, EngineError::VarCycle(_));
                         return Some(Value::from_object(ScopeRenderError {
                             name: name.to_string(),
                             message: e.to_string(),
+                            cycle,
                         }));
                     }
                 }
@@ -258,6 +325,7 @@ impl Object for ScopeObject {
 struct ScopeRenderError {
     name: String,
     message: String,
+    cycle: bool,
 }
 
 impl Object for ScopeRenderError {
@@ -269,11 +337,8 @@ impl Object for ScopeRenderError {
     where
         Self: Sized + 'static,
     {
-        write!(
-            f,
-            "[ruxel: error rendering {}: {}]",
-            self.name, self.message
-        )
+        let _ = f;
+        Err(std::fmt::Error)
     }
 }
 
@@ -313,6 +378,22 @@ impl Engine {
                     write!(out, "{}", if value.is_true() { "True" } else { "False" })
                 }
                 minijinja::value::ValueKind::None => write!(out, "None"),
+                minijinja::value::ValueKind::Seq => {
+                    let json = serde_json::to_value(value).map_err(|error| {
+                        minijinja::Error::new(MjErrorKind::InvalidOperation, error.to_string())
+                    })?;
+                    write!(out, "{}", python_display(&json))
+                }
+                minijinja::value::ValueKind::Map => {
+                    let json = serde_json::to_value(value).map_err(|error| {
+                        minijinja::Error::new(MjErrorKind::InvalidOperation, error.to_string())
+                    })?;
+                    if json.as_object().is_some_and(|map| !map.is_empty()) {
+                        write!(out, "{}", python_display(&json))
+                    } else {
+                        write!(out, "{value}")
+                    }
+                }
                 _ => write!(out, "{value}"),
             }
             .map_err(minijinja::Error::from)
@@ -320,6 +401,9 @@ impl Engine {
         // The template module's keep_trailing_newline=True default
         // (SEMANTICS §6 template). ⚠ pinned by the 22-template parity gate.
         env.set_keep_trailing_newline(true);
+        // Ansible uses trim_blocks=True and lstrip_blocks=False. Remove the
+        // first newline after block tags while preserving leading indentation.
+        env.set_trim_blocks(true);
 
         env.add_filter("bool", filter_bool);
         env.add_filter("hash", filter_hash);
@@ -411,7 +495,19 @@ fn eval_expr_bool(inner: &EngineInner, expr: &str, ctx: &Value) -> Result<bool, 
     if value.is_undefined() {
         return Err(EngineError::Undefined(expr.to_string()));
     }
+    if let Some(error) = poison_error(&value) {
+        return Err(error);
+    }
     Ok(value.is_true())
+}
+
+fn poison_error(value: &Value) -> Option<EngineError> {
+    let error = value.downcast_object_ref::<ScopeRenderError>()?;
+    Some(if error.cycle {
+        EngineError::VarCycle(error.name.clone())
+    } else {
+        EngineError::LazyVar(error.name.clone(), error.message.clone())
+    })
 }
 
 /// `"{{ expr }}"` (exactly one expression, nothing else) → Some(expr).
@@ -439,6 +535,9 @@ fn render_str_inner(
         // template must not silently *produce* it.
         if value.is_undefined() {
             return Err(EngineError::Undefined(template.to_string()));
+        }
+        if let Some(error) = poison_error(&value) {
+            return Err(error);
         }
         return Ok(value);
     }
@@ -643,6 +742,27 @@ fn lookup_fn(
 mod tests {
     use super::*;
     use crate::playbook::Condition;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountingResolver(Arc<AtomicUsize>);
+
+    impl LookupResolver for CountingResolver {
+        fn onepassword(
+            &self,
+            item: &str,
+            _field: Option<&str>,
+            _vault: Option<&str>,
+            _section: Option<&str>,
+        ) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(item.to_string())
+        }
+
+        fn pipe(&self, cmd: &str) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(cmd.to_string())
+        }
+    }
 
     fn engine() -> Engine {
         Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
@@ -672,6 +792,22 @@ mod tests {
                 })
                 .collect(),
         )
+    }
+
+    #[test]
+    fn scope_debug_redacts_values() {
+        let marker = "synthetic-debug-marker";
+        let scope = scope(&[("credential", serde_json::json!(marker))]);
+        let object = engine().scope_object(&scope);
+        object
+            .memo
+            .lock()
+            .unwrap()
+            .insert("credential".into(), Value::from(marker));
+
+        assert!(!format!("{scope:?}").contains(marker));
+        assert!(!format!("{object:?}").contains(marker));
+        assert!(!format!("{:?}", VarValue::Final(Value::from(marker))).contains(marker));
     }
 
     #[test]
@@ -829,13 +965,19 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn lookup_dry_secrets_deterministic_and_memoized() {
-        let e = engine();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let e = Engine::new(Arc::new(MemoizedResolver::new(CountingResolver(
+            calls.clone(),
+        ))));
         let s = Scope::new();
         let t = "{{ lookup('community.general.onepassword', 'titan SSH', field='private key', vault='ChainArgos') }}";
         let a = e.render_str(t, &s).unwrap();
         let b = e.render_str(t, &s).unwrap();
         assert_eq!(a.as_str(), b.as_str());
-        assert!(a.as_str().unwrap().starts_with("dry-secret-"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        e.render_str("{{ lookup('pipe', 'printf distinct') }}", &s)
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
@@ -886,10 +1028,27 @@ broken: "{{ undefined_thing.attr.deep }}"
     }
 
     #[test]
-    fn variable_cycle_is_contained() {
+    fn variable_cycle_is_a_hard_error() {
         let s = raw_scope("a: \"{{ b }}\"\nb: \"{{ a }}\"\n");
-        let v = engine().render_str("{{ a }}", &s).unwrap();
-        assert!(v.as_str().unwrap().contains("cycle"));
+        let result = engine().render_str("{{ a }}", &s);
+        assert!(
+            matches!(result, Err(EngineError::VarCycle(_))),
+            "unexpected cycle result: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failed_lazy_variable_is_not_truthy_or_rendered() {
+        let s = raw_scope("bad: \"{{ missing }}\"\n");
+        assert!(matches!(
+            engine().eval_condition(&Condition::Expr("bad".into()), &s),
+            Err(EngineError::LazyVar(_, _))
+        ));
+        assert!(
+            engine()
+                .render_template_file("value={{ bad }}", &s)
+                .is_err()
+        );
     }
 
     #[test]
@@ -907,6 +1066,15 @@ broken: "{{ undefined_thing.attr.deep }}"
         let s = scope(&[("x", serde_json::json!("v"))]);
         let out = engine().render_template_file("key={{ x }}\n", &s).unwrap();
         assert_eq!(out, "key=v\n");
+    }
+
+    #[test]
+    fn template_file_matches_ansible_block_trimming() {
+        let s = scope(&[("items", serde_json::json!(["a", "b"]))]);
+        let out = engine()
+            .render_template_file("{% for item in items %}\n{{ item }}\n{% endfor %}\n", &s)
+            .unwrap();
+        assert_eq!(out, "a\nb\n");
     }
 
     #[test]

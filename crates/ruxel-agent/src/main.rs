@@ -9,6 +9,7 @@
 mod facts;
 mod ledger;
 mod modules;
+mod system_state;
 
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
@@ -45,16 +46,28 @@ fn main() {
 fn state_dir() -> std::path::PathBuf {
     std::env::var_os("RUXEL_STATE_DIR")
         .map(Into::into)
-        .unwrap_or_else(|| "/var/lib/ruxel".into())
+        .unwrap_or_else(|| ruxel_proto::constants::STATE_ROOT.into())
 }
 
 fn serve() -> i32 {
+    struct ModuleGuard;
+    impl Drop for ModuleGuard {
+        fn drop(&mut self) {
+            modules::shutdown();
+        }
+    }
+    let _module_guard = ModuleGuard;
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
     // Single-run guard (ARCHITECTURE §8): one agent per host at a time.
     let dir = state_dir();
     let _ = std::fs::create_dir_all(&dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
     let lock_path = dir.join("agent.lock");
     let lock_file = match std::fs::OpenOptions::new()
         .create(true)
@@ -89,7 +102,9 @@ fn serve() -> i32 {
     {
         let handshaken = handshaken.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(30));
+            std::thread::sleep(std::time::Duration::from_secs(
+                ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS,
+            ));
             if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
                 std::process::exit(67);
             }
@@ -100,6 +115,7 @@ fn serve() -> i32 {
     let mut diff_mode = false;
     let mut no_cache = false;
     let mut ledger = ledger::Ledger::load(&dir);
+    let mut system_state = system_state::SystemState::default();
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -107,9 +123,15 @@ fn serve() -> i32 {
             // Clean EOF: controller went away (Ctrl-C, connection loss).
             // The current task always completes before the next frame read,
             // so exiting here leaves the host reusable (ARCHITECTURE §8).
-            Ok(None) => return 0,
+            Ok(None) => {
+                ledger.flush();
+                return 0;
+            }
             Err(e) => {
                 log_event(&mut stdout, v1::log::Level::Error, format!("frame: {e}"));
+                // Completed-task fingerprints remain valid even when a later
+                // frame is corrupt.
+                ledger.flush();
                 return 64;
             }
         };
@@ -149,14 +171,17 @@ fn serve() -> i32 {
             Some(Msg::Plan(v1::Plan { tasks, .. }))
             | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
-                    execute_task(
+                    if execute_task(
                         &mut stdout,
                         task,
                         check_mode,
                         diff_mode,
                         no_cache,
                         &mut ledger,
-                    );
+                        &mut system_state,
+                    ) {
+                        break;
+                    }
                 }
             }
             Some(Msg::Resume(_)) => {
@@ -189,8 +214,10 @@ fn execute_task(
     diff_mode: bool,
     no_cache: bool,
     ledger: &mut ledger::Ledger,
-) {
-    let task_check_mode = check_mode && !task.check_mode_override;
+    system_state: &mut system_state::SystemState,
+) -> bool {
+    let task_check_mode =
+        effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
         let _ = write_frame(
@@ -211,13 +238,16 @@ fn execute_task(
                 Err(e) => {
                     send_result(
                         out,
-                        task.task_id,
+                        task,
                         iteration,
                         "failed",
                         true,
                         &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
                         start,
                     );
+                    if task.halt_on_failure {
+                        return true;
+                    }
                     continue;
                 }
             }
@@ -231,35 +261,18 @@ fn execute_task(
         // modules have no fingerprints and never reach here cached.
         if !no_cache
             && !task_check_mode
+            && !task.no_log
             && !iteration.ledger_key.is_empty()
-            && let Some(cached) = ledger.cached_ok(&iteration.ledger_key)
+            && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
         {
-            send_result(out, task.task_id, iteration, "ok", false, &cached, start);
-            continue;
-        }
-
-        // check-mode skip for command/shell (SEMANTICS §3.5) — predicted
-        // as "skipped" by the agent so timing stays honest.
-        if task_check_mode && matches!(task.module.as_str(), "command" | "shell") {
-            send_result(
-                out,
-                task.task_id,
-                iteration,
-                "skipped",
-                false,
-                &serde_json::json!({
-                    "changed": false,
-                    "skipped": true,
-                    "msg": "remote module (command/shell) does not support check mode",
-                }),
-                start,
-            );
+            send_result(out, task, iteration, "ok", false, &cached, start);
             continue;
         }
 
         let ctx = modules::ExecContext {
             check_mode: task_check_mode,
             diff_mode,
+            no_log: task.no_log,
             environment: task
                 .environment
                 .iter()
@@ -271,33 +284,48 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
-        let outcome = modules::execute(&task.module, &params, &iteration.free_form, &ctx);
+        let outcome = modules::execute(
+            &task.module,
+            &params,
+            &iteration.free_form,
+            &ctx,
+            system_state,
+        );
         // Record the converged fingerprint (real applies only — check mode
         // didn't change the system, so its state isn't authoritative).
-        if !task_check_mode {
-            ledger.record(
+        if !task_check_mode && !task.no_log {
+            ledger.record_with_state(
                 &iteration.ledger_key,
                 &task.module,
                 &params,
                 outcome.status,
                 &outcome.result,
+                system_state,
             );
         }
         send_result(
             out,
-            task.task_id,
+            task,
             iteration,
             outcome.status,
             outcome.changed,
             &outcome.result,
             start,
         );
+        if outcome.status == "failed" && task.halt_on_failure {
+            return true;
+        }
     }
+    false
+}
+
+fn effective_check_mode(global: bool, force: bool, override_off: bool) -> bool {
+    (global || force) && !override_off
 }
 
 fn send_result(
     out: &mut impl std::io::Write,
-    task_id: u64,
+    task: &v1::RenderedTask,
     iteration: &v1::Iteration,
     status: &str,
     changed: bool,
@@ -308,15 +336,19 @@ fn send_result(
         out,
         &v1::Event {
             msg: Some(v1::event::Msg::TaskResult(v1::TaskResult {
-                task_id,
+                task_id: task.task_id,
                 status: status.to_string(),
                 changed,
                 result_json: serde_json::to_vec(result).unwrap_or_default(),
-                diff: result
-                    .get("diff")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                diff: if task.no_log {
+                    String::new()
+                } else {
+                    result
+                        .get("diff")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                },
                 elapsed_ms: start.elapsed().as_millis() as u64,
                 item_label: iteration.item_label.clone(),
             })),
@@ -332,4 +364,16 @@ fn log_event(out: &mut impl std::io::Write, level: v1::log::Level, message: Stri
         })),
     };
     let _ = write_frame(out, &event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_check_mode;
+
+    #[test]
+    fn task_check_mode_yes_forces_prediction_and_no_forces_execution() {
+        assert!(effective_check_mode(false, true, false));
+        assert!(effective_check_mode(true, false, false));
+        assert!(!effective_check_mode(true, false, true));
+    }
 }

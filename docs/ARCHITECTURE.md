@@ -60,12 +60,12 @@ Question asked: is SSH right at all? gRPC over SSH? Something else?
 - **Bootstrap is free**: the same connection uploads the agent binary the
   first time (and never again until the version hash changes).
 
-Implementation: the `openssh` crate over the system OpenSSH with
-**ControlMaster native-mux** — operator's `~/.ssh/config`, agent auth, and
-known_hosts behave byte-identically to their `ansible-playbook` runs today.
-The transport sits behind a small trait; pure-Rust `russh` is the swap-in
-if controlling the SSH stack ever becomes necessary (capability choice, not
-a now-decision).
+Implementation: system OpenSSH driven directly through `tokio::process`, with
+**ControlMaster native-mux** for the protocol stream and
+`openssh-sftp-client` for blob transfer. The former `openssh` crate was
+dropped. Operator `~/.ssh/config`, agent auth, and known_hosts therefore
+behave like their `ansible-playbook` runs today. Pure-Rust `russh` remains the
+swap-in if controlling the SSH stack ever becomes necessary.
 
 ### The protocol: "gRPC minus the g"
 
@@ -78,6 +78,10 @@ pipe that already has both) is dropped. If the warm-daemon tier ever wants
 a network protocol, the same `.proto` lifts into tonic unchanged.
 
 Message flow per host per run:
+
+> **Build status (2026-07):** controller-sent `PlanPatch`, blob negotiation,
+> task results, logs, and non-zero ledger generations are built. `ProbeResult`,
+> `PauseRequest`, and `Resume` remain reserved design protocol.
 
 ```
 controller → agent   Hello{proto_ver, agent_b3sum_expected, run_id, flags(check, diff, no_cache)}
@@ -131,6 +135,11 @@ the controller.
 
 ## 4. Register-dependency pipelining
 
+> **Build status (2026-07): BUILT.** `apply` consumes the compiler plan,
+> dispatches maximal runs of dependency-free agent tasks as one issue window,
+> and sends register-dependent tasks as `PlanPatch` messages. Controller-side
+> tasks and complex controls remain ordering boundaries.
+
 The workload's pattern: `stat` a set of disks → `register` → `when`/`loop`
 over results → `readlink` → `register` → LVM tasks templated from that.
 Ansible handles this by being fully sequential. Ruxel keeps **templating on
@@ -139,14 +148,19 @@ round-trip stalls becoming the bottleneck:
 
 - The compiler splits the task list into **issue windows**: maximal runs of
   consecutive tasks whose params/conditions are already rendered.
-- Window N is streaming results while the controller renders window N+1
-  from arriving `register_payload`s. The added latency per dependency edge
-  is one controller round-trip (~RTT, tens of ms to Hetzner) — paid only at
-  true data dependencies, of which the playbooks have a handful, not 65.
+- The controller consumes each window's ordered result stream, binds arriving
+  register payloads, then renders and patches the next ready window. Added
+  latency is one controller round-trip per true dependency boundary, not per
+  task.
 - `assert`, `set_fact`, `debug`, `fail` and `when`-only evaluation execute
   entirely on the controller (no agent round-trip at all).
 
 ## 5. The agent: native modules over batched system caches
+
+> **Build status (2026-07): PARTIAL.** Package and systemd reads use lazy
+> per-run snapshots shared by modules and ledger verification. PostgreSQL reuses
+> one `psql` session per become-user/port/database tuple. Other listed snapshots
+> remain future work.
 
 One process per run (or resident, §9), tokio runtime, panic=abort with a
 structured crash report event. Module implementations follow SEMANTICS §6
@@ -155,9 +169,9 @@ tasks" stops meaning "65 interrogations":
 
 | Cache | Built | Serves |
 |---|---|---|
-| dpkg status snapshot (one parse of `/var/lib/dpkg/status` + `apt-cache policy` batch for `latest`) | once per run, invalidated on any apt write | all 24 `apt` + 6 `apt_repository` checks |
-| systemd: one D-Bus connection, `ListUnits`+`unit file state` batch | once | all 21 `systemd` + 8 `service` checks; `daemon_reload` coalesced to ≤1 per run window |
-| PostgreSQL: one connection (unix socket, peer auth as postgres, port 40000) | lazily | all 44 `postgresql_*` checks/changes |
+| dpkg status snapshot (one parse of `/var/lib/dpkg/status` + `apt-cache policy` batch for `latest`) | **built**; lazy once per run, invalidated on apt writes | all `apt` checks and package ledger probes |
+| systemd: batched `list-units` + `list-unit-files` snapshot | **built**; lazy, invalidated on unit writes | all `systemd`/`service` checks and unit ledger probes |
+| PostgreSQL: one `psql` connection per become-user/port/database tuple | **built**; lazy, closed at agent shutdown | all `postgresql_*` checks/changes |
 | `/proc/mounts` + `blkid` + `vgs/lvs --reportformat json` snapshot | once, invalidated on storage writes | mount/lvg/lvol/filesystem |
 | `getent passwd/group` snapshot | once, invalidated on user/group writes | user/group/authorized_key |
 | `iptables-save` parse | once per table, invalidated on writes | all 8 iptables checks |
@@ -176,8 +190,9 @@ Shell/command tasks run exactly as written (`/bin/bash -c`, `chdir`,
 
 ## 6. The convergence ledger (why no-op is seconds)
 
-Per-host store: `/var/lib/ruxel/ledger/` — an append-compacted redb (or
-equivalent single-writer) keyed by **task identity**:
+Per-host store: `/var/lib/ruxel/ledger/ledger.json` — currently an atomically
+replaced JSON map protected by a single-writer lock, keyed by **task identity**.
+An append-compacted database remains a future storage option:
 
 ```
 task_id  = blake3(playbook_rel_path ‖ play_name ‖ task_name ‖ module ‖ canonical(params))
@@ -241,6 +256,9 @@ the playbook says happen every run.
   — forensics ("what exactly changed last Tuesday"), timing history, and
   the raw material for future drift dashboards. Pruned by count, never a
   dependency of execution.
+
+> **Build status (2026-07): BUILT.** `--detailed-exitcode`, persistent pruned
+> JSON run logs, normal exit codes, and `--output json` are implemented.
 - Inventory vs `~/.ssh/config` precedence: `ansible_ssh_host`/
   `ansible_ssh_user` from `hosts.ini` always win (passed explicitly to the
   connection); everything else (keys, agent, ciphers, ControlMaster paths)
@@ -290,5 +308,7 @@ already know everything is correct."
 
 Edit-one-task rerun = the same + that one task's real work. Fresh-server
 first run = real work (apt/mkfs/initdb) + seconds of overhead, hosts in
-parallel. These budgets become measured benchmarks in M3/M5
-([PLAN.md](PLAN.md)); the numbers above are targets, not claims.
+parallel. These budgets are measured by the committed synthetic evidence in
+[`benchmarks/results/`](benchmarks/results/). The 65-task/52-lookup case has a
+1.785 s Ruxel median; the table remains a design budget, not a production
+workload claim.

@@ -1,0 +1,37 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "fixture_source_sha256": "9cf99db29ee6c190a65d60648511a215b66e2eb7eca017e75d21740dfc63bdd4",
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "1e6208cd9e61eb032add428de13f7caecbaa124cba10e17a02f50e3fce9a3a36",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "1e6208cd9e61eb032add428de13f7caecbaa124cba10e17a02f50e3fce9a3a36",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "46a7f0adeb0a8bb18b0c9fe94f607598a4c1cc3785c77ce62ac58d49cc8b4905",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "storage-xfs",
+  "schema": 1,
+  "versions": {
+    "ansible": "ansible-playbook [core 2.21.2]",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+}

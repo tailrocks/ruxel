@@ -19,22 +19,15 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // argv flag-smuggling defense: positional values must not look like
     // flags (`--` placement is subcommand-sensitive in git — `checkout --
     // x` means path x — so validation, not separators, is the guard).
-    for (label, v) in [
+    validate_positionals(&[
         ("repo", Some(repo)),
         ("dest", Some(dest)),
         ("version", version),
-    ] {
-        if let Some(v) = v
-            && v.starts_with('-')
-        {
-            return Err(format!(
-                "git: refusing {label} that looks like a flag: {v:?}"
-            ));
-        }
-    }
+    ])?;
 
     let dest_git = Path::new(dest).join(".git");
     let exists = dest_git.is_dir();
+    let action = repo_action(exists, update, ctx.check_mode);
 
     let mut env_ssh = String::new();
     if accept_hostkey {
@@ -61,12 +54,12 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         ))
     };
 
-    if !exists {
+    if action == "clone" {
         if ctx.check_mode {
             return Ok(json!({"changed": true, "failed": false, "before": null, "after": null}));
         }
         let mut args: Vec<&str> = vec!["clone"];
-        if let Some(v) = version {
+        if let Some(v) = clone_branch(version) {
             args.push("--branch");
             args.push(v);
         }
@@ -77,16 +70,23 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if !ok {
             return Err(format!("git clone {repo} failed"));
         }
+        // Ansible's git module resets the new worktree to the selected
+        // revision after cloning. Besides enforcing a clean checkout, this
+        // records ORIG_HEAD; preserve that observable repository state.
+        let (_, ok) = git(&["reset", "--hard", "HEAD"], Some(dest))?;
+        if !ok {
+            return Err("git reset --hard HEAD after clone failed".into());
+        }
         let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
     }
 
     let (before, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
-    if !update {
+    if action == "unchanged" {
         return Ok(json!({"changed": false, "failed": false, "before": before, "after": before}));
     }
 
-    if ctx.check_mode {
+    if action == "compare" {
         // Compare remote HEAD for the branch without touching the tree.
         let branch = version.unwrap_or("HEAD");
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
@@ -124,4 +124,49 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         "before": before,
         "after": after,
     }))
+}
+
+fn clone_branch(version: Option<&str>) -> Option<&str> {
+    version.filter(|version| *version != "HEAD")
+}
+
+fn validate_positionals(values: &[(&str, Option<&str>)]) -> Result<(), String> {
+    for (label, value) in values {
+        if value.is_some_and(|value| value.starts_with('-')) {
+            return Err(format!(
+                "git: refusing {label} that looks like a flag: {value:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn repo_action(exists: bool, update: bool, check_mode: bool) -> &'static str {
+    match (exists, update, check_mode) {
+        (false, _, _) => "clone",
+        (true, false, _) => "unchanged",
+        (true, true, true) => "compare",
+        (true, true, false) => "update",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn positional_flags_are_rejected() {
+        assert!(super::validate_positionals(&[("repo", Some("https://example.test/x"))]).is_ok());
+        for field in ["repo", "dest", "version"] {
+            assert!(super::validate_positionals(&[(field, Some("--evil"))]).is_err());
+        }
+    }
+
+    #[test]
+    fn chooses_clone_update_compare_or_noop() {
+        assert_eq!(super::repo_action(false, false, false), "clone");
+        assert_eq!(super::repo_action(true, false, false), "unchanged");
+        assert_eq!(super::repo_action(true, true, true), "compare");
+        assert_eq!(super::repo_action(true, true, false), "update");
+        assert_eq!(super::clone_branch(Some("HEAD")), None);
+        assert_eq!(super::clone_branch(Some("main")), Some("main"));
+    }
 }

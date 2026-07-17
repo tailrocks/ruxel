@@ -9,28 +9,22 @@ pub fn timezone(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let name = str_param(obj, "name").ok_or("timezone: name required")?;
     let current = std::fs::read_link("/etc/localtime")
         .ok()
-        .and_then(|p| {
-            p.to_string_lossy()
-                .split("/zoneinfo/")
-                .nth(1)
-                .map(str::to_string)
-        })
+        .and_then(|path| timezone_from_link(&path))
         .unwrap_or_default();
     let changed = current != name;
     if changed && !ctx.check_mode {
-        let out = std::process::Command::new("timedatectl")
-            .arg("set-timezone")
-            .arg(name)
-            .output()
-            .map_err(|e| format!("timedatectl: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "timedatectl set-timezone {name}: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
+        let mut command = std::process::Command::new("timedatectl");
+        command.args(["set-timezone", name]);
+        super::run_checked(command)?;
     }
     Ok(json!({"changed": changed, "failed": false}))
+}
+
+fn timezone_from_link(path: &std::path::Path) -> Option<String> {
+    path.to_string_lossy()
+        .split("/zoneinfo/")
+        .nth(1)
+        .map(str::to_string)
 }
 
 /// `group` (SEMANTICS §6): name, gid, state via getent/groupadd/groupdel.
@@ -85,6 +79,10 @@ pub fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 fn group_entry(name: &str) -> Result<Option<(String, u64)>, String> {
     let content = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    group_entry_from(&content, name)
+}
+
+fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, String> {
     for line in content.lines() {
         let mut f = line.split(':');
         if f.next() == Some(name) {
@@ -99,16 +97,29 @@ fn group_entry(name: &str) -> Result<Option<(String, u64)>, String> {
 }
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("exec {cmd}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{cmd} {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_group_entry_from_canned_content() {
+        assert_eq!(
+            super::group_entry_from("wheel:x:10:a,b\n", "wheel").unwrap(),
+            Some(("wheel".into(), 10))
+        );
+        assert_eq!(
+            super::group_entry_from("wheel:x:10:a,b\n", "missing").unwrap(),
+            None
+        );
+        assert!(super::group_entry_from("broken:x:nope:\n", "broken").is_err());
+        assert_eq!(
+            super::timezone_from_link(std::path::Path::new("/usr/share/zoneinfo/Asia/Tokyo"))
+                .as_deref(),
+            Some("Asia/Tokyo")
+        );
+    }
 }

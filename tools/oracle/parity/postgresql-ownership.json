@@ -1,0 +1,37 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "fixture_source_sha256": "b70a5883b21d419d7404a67fe60bb448030eb72c1d0585f047c7fb824592fd8f",
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "b8420127400ebea17daff89ab00f025d3f74cfe23c6e98a7d5811be41bb1d803",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "b8420127400ebea17daff89ab00f025d3f74cfe23c6e98a7d5811be41bb1d803",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "25ae2c5976832d942d2bc66af0aa418baaf85b04e4a3cff3860f97fabc47c392",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "postgresql-ownership",
+  "schema": 1,
+  "versions": {
+    "ansible": "ansible-playbook [core 2.21.2]",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+}

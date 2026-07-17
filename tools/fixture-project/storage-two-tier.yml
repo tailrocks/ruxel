@@ -1,0 +1,61 @@
+- name: Fixture two-tier storage
+  hosts: storage
+  become: true
+  vars:
+    fixture_data_disks:
+      - /dev/disk/by-id/ruxel-fixture-data-1
+      - /dev/disk/by-id/ruxel-fixture-data-2
+    fixture_hot_disks:
+      - /dev/disk/by-id/ruxel-fixture-hot-1
+  tasks:
+    - name: Resolve synthetic data disks
+      command:
+        argv: [readlink, -f, "{{ item }}"]
+      loop: "{{ fixture_data_disks }}"
+      register: fixture_data_devices
+      changed_when: false
+      check_mode: false
+
+    - name: Create synthetic data volume group
+      community.general.lvg:
+        vg: ruxel_fixture_data
+        pvs: "{{ fixture_data_devices.results | map(attribute='stdout') | list }}"
+
+    - name: Create synthetic data logical volume
+      community.general.lvol:
+        lv: data
+        vg: ruxel_fixture_data
+        size: +100%FREE
+        resizefs: true
+
+    - name: Format synthetic data volume
+      filesystem:
+        fstype: xfs
+        dev: /dev/ruxel_fixture_data/data
+        resizefs: true
+
+    - name: Resolve synthetic hot disks
+      command:
+        argv: [readlink, -f, "{{ item }}"]
+      loop: "{{ fixture_hot_disks }}"
+      register: fixture_hot_devices
+      changed_when: false
+      check_mode: false
+
+    - name: Create synthetic hot volume group
+      community.general.lvg:
+        vg: ruxel_fixture_hot
+        pvs: "{{ fixture_hot_devices.results | map(attribute='stdout') | list }}"
+
+    - name: Create synthetic hot logical volume
+      community.general.lvol:
+        lv: hot
+        vg: ruxel_fixture_hot
+        size: +100%FREE
+        resizefs: true
+
+    - name: Format synthetic hot volume
+      filesystem:
+        fstype: xfs
+        dev: /dev/ruxel_fixture_hot/hot
+        resizefs: true

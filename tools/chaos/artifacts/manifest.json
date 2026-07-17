@@ -1,0 +1,123 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "cases": [
+    {
+      "case": "upload-start",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 9480,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    },
+    {
+      "case": "partial-hello-ack",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 10771,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    },
+    {
+      "case": "large-plan",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 10296,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    },
+    {
+      "case": "large-task-result",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 8928,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    },
+    {
+      "case": "long-subprocess",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 16655,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    },
+    {
+      "case": "controlmaster-sigint",
+      "converged": true,
+      "converged_changed": 0,
+      "converged_failed": 0,
+      "flock_free": true,
+      "injection_sentinel": true,
+      "interrupted_status": 1,
+      "no_process_leak": true,
+      "no_socket_leak": true,
+      "no_temp_leak": true,
+      "reconnect": true,
+      "recovery_elapsed_ms": 8704,
+      "recovery_timeout_ms": 120000,
+      "state_equal": true
+    }
+  ],
+  "fixture": {
+    "kind": "disposable-provider",
+    "specification": {
+      "image": "debian-12",
+      "location": "sin",
+      "primary_disk_size": 40,
+      "server_type": "cpx12",
+      "volume_count": 0
+    }
+  },
+  "fixture_source": "tools/fixture-project/chaos/chaos.yml",
+  "fixture_source_sha256": "926d2838c21c359c7022149a016ee5f9a2f1dc92a2ad4b0ff78c72029d02c091",
+  "generated_playbook_sha256": "fbce4efc369fd4fe814d14aef1a0c835f91f54c1129d349c6921e6ba48dd81c5",
+  "schema_version": 1,
+  "target": "<fixture>",
+  "versions": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "ruxel": "ruxel 0.1.0"
+  }
+}

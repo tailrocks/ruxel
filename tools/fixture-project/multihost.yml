@@ -1,0 +1,6 @@
+- name: Synthetic six-host scheduling workload
+  hosts: multihost
+  tasks:
+    - name: Run one-second independent host work
+      command: /bin/sleep 1
+      changed_when: false

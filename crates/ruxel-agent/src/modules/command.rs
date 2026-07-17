@@ -27,6 +27,13 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
         return Err("empty command".into());
     }
 
+    if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
+        return Ok(result);
+    }
+    if let Some(result) = check_mode_guard(obj, Value::from(argv.clone()), ctx.check_mode) {
+        return Ok(result);
+    }
+
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let mut cmd = super::become_command(ctx, argv_refs[0], &argv_refs[1..]);
     if let Some(chdir) = str_param(obj, "chdir") {
@@ -37,6 +44,49 @@ pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, 
     }
     let output = cmd.output().map_err(|e| format!("exec {}: {e}", argv[0]))?;
     Ok(command_result(Value::from(argv), &output))
+}
+
+pub(super) fn check_mode_guard(
+    params: &serde_json::Map<String, Value>,
+    cmd: Value,
+    check_mode: bool,
+) -> Option<Value> {
+    check_mode.then(|| {
+        if str_param(params, "creates").is_some() {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": true, "failed": false,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        } else {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": false, "failed": false,
+                "skipped": true,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        }
+    })
+}
+
+pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value) -> Option<Value> {
+    let creates = str_param(params, "creates")?;
+    std::path::Path::new(creates).exists().then(|| {
+        json!({
+            "cmd": cmd,
+            "rc": 0,
+            "changed": false,
+            "failed": false,
+            "msg": format!("Did not run command since '{creates}' exists"),
+            "stdout": format!("skipped, since {creates} exists"),
+            "stderr": "",
+            "stdout_lines": [format!("skipped, since {creates} exists")],
+            "stderr_lines": [],
+            "start": null,
+            "end": null,
+            "delta": null,
+        })
+    })
 }
 
 /// Result fields shared with shell (SEMANTICS §3.8).
@@ -79,18 +129,27 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
         match c {
             '\'' => {
                 in_word = true;
+                let mut closed = false;
                 for q in chars.by_ref() {
                     if q == '\'' {
+                        closed = true;
                         break;
                     }
                     current.push(q);
                 }
+                if !closed {
+                    return Err("No closing quotation".into());
+                }
             }
             '"' => {
                 in_word = true;
+                let mut closed = false;
                 while let Some(q) = chars.next() {
                     match q {
-                        '"' => break,
+                        '"' => {
+                            closed = true;
+                            break;
+                        }
                         '\\' => {
                             if let Some(&n) = chars.peek()
                                 && (n == '"' || n == '\\' || n == '$' || n == '`')
@@ -103,6 +162,9 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
                         }
                         other => current.push(other),
                     }
+                }
+                if !closed {
+                    return Err("No closing quotation".into());
                 }
             }
             '\\' => {
@@ -132,6 +194,7 @@ fn shlex_split(input: &str) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::ExitStatusExt;
 
     #[test]
     fn shlex_matches_golden_e15() {
@@ -147,5 +210,57 @@ mod tests {
             shlex_split(r#"sh -c "echo \"x\" y""#).unwrap(),
             vec!["sh", "-c", r#"echo "x" y"#]
         );
+    }
+
+    #[test]
+    fn shlex_rejects_unclosed_quotes() {
+        assert_eq!(
+            shlex_split("echo 'unterminated").unwrap_err(),
+            "No closing quotation"
+        );
+        assert_eq!(
+            shlex_split("echo \"unterminated").unwrap_err(),
+            "No closing quotation"
+        );
+    }
+
+    #[test]
+    fn result_shape_tracks_rc_and_output_lines() {
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(7 << 8),
+            stdout: b"one\ntwo\n".to_vec(),
+            stderr: b"bad\n".to_vec(),
+        };
+        let result = command_result(json!(["synthetic"]), &output);
+        assert_eq!(result["rc"], 7);
+        assert_eq!(result["failed"], true);
+        assert_eq!(result["stdout_lines"], json!(["one", "two"]));
+        assert_eq!(result["stderr_lines"], json!(["bad"]));
+    }
+
+    #[test]
+    fn creates_guard_matches_ansible_skip_shape() {
+        let marker =
+            std::env::temp_dir().join(format!("ruxel-command-creates-{}", std::process::id()));
+        std::fs::write(&marker, b"").unwrap();
+        let params = json!({"creates": marker});
+        let result = creates_guard(
+            params.as_object().unwrap(),
+            json!(["/usr/bin/touch", "synthetic"]),
+        )
+        .unwrap();
+        std::fs::remove_file(marker).unwrap();
+
+        assert_eq!(result["changed"], false);
+        assert_eq!(result["rc"], 0);
+        assert_eq!(result["cmd"], json!(["/usr/bin/touch", "synthetic"]));
+        assert!(
+            result["stdout"]
+                .as_str()
+                .unwrap()
+                .starts_with("skipped, since ")
+        );
+        assert!(result["start"].is_null());
+        assert!(result["delta"].is_null());
     }
 }

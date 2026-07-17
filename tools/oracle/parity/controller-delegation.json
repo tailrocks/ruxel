@@ -1,0 +1,37 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "fixture_source_sha256": "b477f969493d98af8dc4b89fd0d01643c9aa6bd558036f58292aba0302d6104b",
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "afc95e99e87c2ff9c41d3282166877e450cb5901c78e7823931d43db32beabe7",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "e136470e1fa93dfc355573bc4d384c2004eed7bd4ed612221983e62b9af390cb",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "e136470e1fa93dfc355573bc4d384c2004eed7bd4ed612221983e62b9af390cb",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "controller-delegation",
+  "schema": 1,
+  "versions": {
+    "ansible": "ansible-playbook [core 2.21.2]",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+}

@@ -2,13 +2,17 @@
 # Run the M2 transport gate against a fixture VM: two single-connect
 # processes — cold (may upload), then warm (must skip upload, < 1 s).
 #
-# Usage: tools/fixtures/gate.sh <dest> <keyfile> <agent-binary>
+# Usage: tools/fixtures/gate.sh <fixture-name> <keyfile> <agent-binary>
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+source tools/fixtures/lib.sh
 
-DEST="${1:?ssh destination}"
+FIXTURE="${1:?provider fixture name}"
 KEY="${2:?keyfile}"
 AGENT="${3:?agent binary}"
+resolve_fixture "$FIXTURE"
+require_fixture_key "$KEY"
+DEST="root@${FIXTURE_IP}"
 
 echo "== gate run 1 (cold)"
 RUXEL_TEST_SSH_DEST="$DEST" RUXEL_TEST_SSH_KEY="$KEY" RUXEL_TEST_AGENT_BIN="$AGENT" \

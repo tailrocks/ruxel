@@ -3,7 +3,7 @@
 //! content changed; update_cache refreshes lists after a change (cache
 //! refresh itself never reports changed — same pin as apt).
 
-use super::{ExecContext, bool_param, params_object, str_param};
+use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -22,9 +22,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     )?;
     let update_cache = bool_param(obj, "update_cache", true);
 
-    if filename.is_empty() || filename.contains('/') || filename.contains("..") {
-        return Err(format!("apt_repository: invalid filename {filename:?}"));
-    }
+    validate_filename(filename)?;
     let path = PathBuf::from(format!("/etc/apt/sources.list.d/{filename}.list"));
     let want = format!("{repo}\n");
     let current = std::fs::read_to_string(&path).unwrap_or_default();
@@ -34,7 +32,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let changed = current != want;
 
     if changed && !ctx.check_mode {
-        std::fs::write(&path, &want).map_err(|e| e.to_string())?;
+        write_atomic(&path, want.as_bytes())?;
         if update_cache {
             let out = std::process::Command::new("apt-get")
                 .arg("update")
@@ -50,10 +48,62 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
     }
 
-    Ok(json!({
+    let mut result = json!({
         "changed": changed,
         "failed": false,
         "repo": repo,
         "state": state,
-    }))
+    });
+    if changed && ctx.diff_mode && !ctx.no_log {
+        result["diff"] = json!(super::unified_diff(&current, &want));
+    }
+    Ok(result)
+}
+
+fn validate_filename(filename: &str) -> Result<(), String> {
+    if filename.is_empty() || filename.contains('/') || filename.contains("..") {
+        Err(format!("apt_repository: invalid filename {filename:?}"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filename_is_single_safe_component() {
+        assert!(super::validate_filename("vendor").is_ok());
+        for bad in ["", "../vendor", "a/b", "vendor..backup"] {
+            assert!(super::validate_filename(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn check_mode_diff_reports_repository_content() {
+        let name = format!("ruxel-test-{}", std::process::id());
+        let context = ExecContext {
+            check_mode: true,
+            diff_mode: true,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = run(
+            &json!({
+                "repo": "deb https://example.invalid stable main",
+                "filename": name,
+                "update_cache": false,
+            }),
+            &context,
+        )
+        .unwrap();
+        assert!(
+            result["diff"]
+                .as_str()
+                .unwrap()
+                .contains("+deb https://example.invalid")
+        );
+    }
 }

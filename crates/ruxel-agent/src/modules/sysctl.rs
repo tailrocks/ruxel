@@ -3,7 +3,7 @@
 //! comparison — runs of whitespace compare equal, exactly the rule
 //! multi-value keys like net.ipv4.ip_local_port_range need.
 
-use super::{ExecContext, bool_param, params_object, str_param};
+use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
 pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -15,6 +15,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Some(Value::Bool(b)) => if *b { "1" } else { "0" }.to_string(),
         other => return Err(format!("sysctl: invalid value {other:?}")),
     };
+    reject_newlines("sysctl", &[("name", name), ("value", &value)])?;
     let state = str_param(obj, "state").unwrap_or("present");
     if state != "present" {
         return Err(format!(
@@ -23,43 +24,16 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
-    let file = str_param(obj, "sysctl_file").unwrap_or("/etc/sysctl.conf");
+    let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
 
     let mut changed = false;
 
     // File state: a `name = value` line, replacing any existing entry.
     let current = std::fs::read_to_string(file).unwrap_or_default();
-    let mut found = false;
-    let mut out_lines: Vec<String> = Vec::new();
-    for line in current.lines() {
-        let trimmed = line.trim();
-        let is_entry = !trimmed.starts_with('#')
-            && trimmed
-                .split('=')
-                .next()
-                .map(|k| k.trim() == name)
-                .unwrap_or(false);
-        if is_entry {
-            found = true;
-            let existing = trimmed.split('=').nth(1).unwrap_or("").trim();
-            if normalized(existing) == normalized(&value) {
-                out_lines.push(line.to_string());
-            } else {
-                changed = true;
-                out_lines.push(format!("{name}={value}"));
-            }
-        } else {
-            out_lines.push(line.to_string());
-        }
-    }
-    if !found {
-        changed = true;
-        out_lines.push(format!("{name}={value}"));
-    }
-    if changed && !ctx.check_mode {
-        let mut content = out_lines.join("\n");
-        content.push('\n');
-        std::fs::write(file, content).map_err(|e| e.to_string())?;
+    let (content, file_changed) = rewrite_file(&current, name, &value);
+    changed |= file_changed;
+    if file_changed && !ctx.check_mode {
+        write_atomic(std::path::Path::new(file), content.as_bytes())?;
     }
 
     // Live value when sysctl_set.
@@ -82,9 +56,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
     }
-
     if changed && reload && !ctx.check_mode {
-        // Ansible reloads with `sysctl -p <file>` on change.
         let st = std::process::Command::new("sysctl")
             .arg("-p")
             .arg(file)
@@ -97,8 +69,45 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             ));
         }
     }
-
     Ok(json!({"changed": changed, "failed": false}))
+}
+
+fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
+    let mut found = false;
+    let mut changed = false;
+    let mut out_lines = Vec::new();
+    for line in current.lines() {
+        let trimmed = line.trim();
+        let is_entry = !trimmed.starts_with('#')
+            && trimmed
+                .split('=')
+                .next()
+                .map(|k| k.trim() == name)
+                .unwrap_or(false);
+        if is_entry {
+            found = true;
+            let existing = trimmed.split('=').nth(1).unwrap_or("").trim();
+            if normalized(existing) == normalized(value) {
+                out_lines.push(line.to_string());
+            } else {
+                changed = true;
+                out_lines.push(format!("{name}={value}"));
+            }
+        } else {
+            out_lines.push(line.to_string());
+        }
+    }
+    if !found {
+        changed = true;
+        out_lines.push(format!("{name}={value}"));
+    }
+    if changed {
+        let mut content = out_lines.join("\n");
+        content.push('\n');
+        (content, true)
+    } else {
+        (current.to_string(), false)
+    }
 }
 
 /// Whitespace-run normalization: "1\t2  3" == "1 2 3".
@@ -115,6 +124,7 @@ fn read_sysctl(name: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     #[test]
     fn whitespace_normalization() {
         assert_eq!(
@@ -122,5 +132,35 @@ mod tests {
             super::normalized("1024 65535")
         );
         assert_eq!(super::normalized(" 1 "), "1");
+    }
+
+    #[test]
+    fn rewrites_existing_key_or_appends_missing_key() {
+        let current = "# keep\nnet.test = old\n";
+        assert_eq!(
+            super::rewrite_file(current, "net.test", "new"),
+            ("# keep\nnet.test=new\n".into(), true)
+        );
+        assert_eq!(
+            super::rewrite_file("# keep\n", "net.test", "new"),
+            ("# keep\nnet.test=new\n".into(), true)
+        );
+        assert_eq!(
+            super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
+            ("net.test = 1  2\n".into(), false)
+        );
+    }
+
+    #[test]
+    fn rejects_newline_in_name_or_value_before_io() {
+        let ctx = super::ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        assert!(super::run(&json!({"name": "safe\ninjected", "value": "1"}), &ctx).is_err());
+        assert!(super::run(&json!({"name": "safe", "value": "1\rinjected"}), &ctx).is_err());
     }
 }

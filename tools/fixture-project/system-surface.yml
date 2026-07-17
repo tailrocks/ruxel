@@ -1,0 +1,219 @@
+- name: Synthetic operating-system surface
+  hosts: all
+  become: true
+  vars:
+    fixture_user: ruxelfixture
+    fixture_group: ruxelfixture
+    fixture_root: /tmp/ruxel-fixture-system
+    fixture_repo: deb http://deb.debian.org/debian bookworm main
+    fixture_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHpYv7vR9EwLmVQ2HxM0v1G1c3Xf9m2xk4n6p8q0r2s4 synthetic@fixture
+
+  tasks:
+    - name: Refresh package metadata and install fixture package
+      apt:
+        name:
+          - ca-certificates
+          - git
+        state: latest
+        update_cache: true
+        force: false
+        autoremove: false
+
+    - name: Exercise package upgrade shape without applying it
+      apt:
+        upgrade: dist
+        update_cache: false
+      check_mode: true
+
+    - name: Configure synthetic Debian repository
+      apt_repository:
+        repo: "{{ fixture_repo }}"
+        filename: ruxel-fixture
+        state: present
+        update_cache: false
+
+    - name: Create synthetic system fixture root
+      file:
+        path: "{{ fixture_root }}"
+        state: directory
+
+    - name: Create public synthetic payload source
+      copy:
+        content: synthetic-download
+        dest: "{{ fixture_root }}/payload-source.txt"
+
+    - name: Start disposable payload server
+      shell: |
+        nohup python3 -m http.server 18080 --bind 127.0.0.1 \
+          --directory {{ fixture_root }} </dev/null \
+          >/tmp/ruxel-fixture-http.log 2>&1 &
+        echo $! >/tmp/ruxel-fixture-http.pid
+        for attempt in 1 2 3 4 5 6 7 8 9 10; do
+          if /usr/bin/curl --fail --silent \
+            http://127.0.0.1:18080/payload-source.txt >/dev/null; then
+            exit 0
+          fi
+          sleep 0.1
+        done
+        exit 1
+      changed_when: false
+      check_mode: false
+
+    - name: Wait for disposable payload server
+      command: /usr/bin/curl --fail --silent http://127.0.0.1:18080/payload-source.txt
+      register: fixture_payload_ready
+      until: fixture_payload_ready.rc == 0
+      retries: 3
+      delay: 1
+      changed_when: false
+
+    - name: Download public synthetic payload
+      get_url:
+        url: http://127.0.0.1:18080/payload-source.txt
+        dest: "{{ fixture_root }}/payload.txt"
+
+    - name: Stop disposable payload server
+      shell: kill "$(cat /tmp/ruxel-fixture-http.pid)"
+      changed_when: false
+      check_mode: false
+
+    - name: Ensure fixture group
+      group:
+        name: "{{ fixture_group }}"
+        gid: 29871
+        state: present
+
+    - name: Ensure disposable absent group
+      group:
+        name: ruxelfixture-absent
+        state: absent
+
+    - name: Exercise closed absent-user surface
+      user:
+        name: ruxelfixture-absent
+        uid: 29871
+        group: "{{ fixture_group }}"
+        groups: adm
+        append: true
+        comment: Synthetic Ruxel Fixture
+        home: /var/lib/ruxelfixture
+        shell: /bin/sh
+        create_home: false
+        system: false
+        state: absent
+        remove: true
+
+    - name: Install synthetic authorized key
+      authorized_key:
+        user: root
+        key: "{{ fixture_key }}"
+        state: present
+
+    - name: Set sysctl through short module name
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "0"
+        state: present
+        reload: true
+        sysctl_set: true
+        sysctl_file: /etc/sysctl.d/99-ruxel-fixture.conf
+
+    - name: Set sysctl through collection name
+      ansible.posix.sysctl:
+        name: vm.swappiness
+        value: "60"
+        state: present
+        reload: "yes"
+        sysctl_set: "yes"
+
+    - name: Add isolated fixture firewall rule
+      iptables:
+        chain: OUTPUT
+        destination: 192.0.2.1
+        protocol: tcp
+        out_interface: eth0
+        jump: DROP
+        comment: ruxel synthetic fixture
+        ip_version: ipv4
+
+    - name: Exercise firewall policy shape in check mode
+      iptables:
+        chain: FORWARD
+        policy: DROP
+      check_mode: true
+
+    - name: Configure fixture timezone
+      community.general.timezone:
+        name: Etc/UTC
+
+    - name: Ensure SSH service is enabled and started
+      service:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Install disposable fixture service
+      copy:
+        content: |
+          [Unit]
+          Description=Ruxel synthetic fixture
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/true
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/ruxel-fixture.service
+
+    - name: Load stopped disposable fixture service
+      systemd:
+        name: ruxel-fixture.service
+        state: stopped
+        enabled: false
+        daemon_reload: true
+
+    - name: Exercise stopped service prediction
+      systemd:
+        name: ruxel-fixture.service
+        state: stopped
+        enabled: false
+      check_mode: true
+
+    - name: Exercise restarted systemd shape
+      systemd:
+        name: ssh
+        state: restarted
+        daemon_reload: false
+      check_mode: true
+
+    - name: Mount disposable tmpfs
+      ansible.posix.mount:
+        path: /mnt/ruxel-fixture
+        src: "{{ 'tmpfs' }}"
+        fstype: tmpfs
+        opts: size=16m
+        state: mounted
+
+    - name: Initialize synthetic source repository
+      shell: |
+        set -eu
+        mkdir -p {{ fixture_root }}/origin
+        git -C {{ fixture_root }}/origin init
+        git -C {{ fixture_root }}/origin config user.email synthetic@example.invalid
+        git -C {{ fixture_root }}/origin config user.name Synthetic
+        printf fixture > {{ fixture_root }}/origin/data.txt
+        git -C {{ fixture_root }}/origin add data.txt
+        GIT_AUTHOR_DATE=2020-01-01T00:00:00Z \
+        GIT_COMMITTER_DATE=2020-01-01T00:00:00Z \
+          git -C {{ fixture_root }}/origin commit -m fixture || true
+      args:
+        creates: "{{ fixture_root }}/origin/.git/HEAD"
+
+    - name: Clone synthetic repository
+      git:
+        repo: "file://{{ fixture_root }}/origin"
+        dest: "{{ fixture_root }}/checkout"
+        version: HEAD
+        update: true
+        force: false
+        accept_hostkey: false

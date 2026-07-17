@@ -1,0 +1,5 @@
+{"event":"task","host":"fixture","ignored":false,"item":null,"module":"file","result":{"changed":true,"failed":false,"path":"/tmp/ruxel-fixture-files","state":"directory"},"status":"changed","task":"Create benchmark root"}
+{"event":"task","host":"fixture","ignored":false,"item":null,"module":"copy","result":{"changed":true,"dest":"/tmp/ruxel-fixture-files/stable.txt","failed":false},"status":"changed","task":"Install stable benchmark content"}
+{"event":"task","host":"fixture","ignored":false,"item":null,"module":"blockinfile","result":{"changed":true,"failed":false,"msg":"Block inserted"},"status":"changed","task":"Exercise managed block"}
+{"event":"task","host":"fixture","ignored":false,"item":null,"module":"command","result":{"changed":true,"cmd":["/usr/bin/touch","/tmp/ruxel-fixture-files/created-by-command"],"failed":false,"msg":"","rc":0,"stderr":"","stderr_lines":[],"stdout":"","stdout_lines":[]},"status":"changed","task":"Exercise command mapping and creates"}
+{"changed":4,"event":"recap","failed":0,"host":"fixture","ignored":0,"ok":4,"rescued":0,"skipped":0,"unreachable":0}

@@ -1,0 +1,19 @@
+
+PLAY [Synthetic six-host scheduling workload] **********************************
+
+TASK [Run one-second independent host work] ************************************
+ok: [fixture-1]
+ok: [fixture-6]
+ok: [fixture-3]
+ok: [fixture-4]
+ok: [fixture-2]
+ok: [fixture-5]
+
+PLAY RECAP *********************************************************************
+fixture-1                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+fixture-2                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+fixture-3                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+fixture-4                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+fixture-5                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+fixture-6                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

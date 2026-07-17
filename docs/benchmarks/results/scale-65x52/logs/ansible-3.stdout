@@ -1,0 +1,201 @@
+
+PLAY [Synthetic 65-task and 52-lookup benchmark] *******************************
+
+TASK [Resolve synthetic benchmark secret 01] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 02] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 03] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 04] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 05] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 06] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 07] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 08] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 09] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 10] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 11] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 12] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 13] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 14] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 15] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 16] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 17] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 18] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 19] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 20] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 21] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 22] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 23] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 24] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 25] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 26] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 27] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 28] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 29] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 30] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 31] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 32] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 33] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 34] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 35] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 36] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 37] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 38] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 39] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 40] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 41] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 42] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 43] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 44] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 45] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 46] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 47] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 48] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 49] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 50] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 51] ***********************************
+ok: [fixture]
+
+TASK [Resolve synthetic benchmark secret 52] ***********************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 01] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 02] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 03] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 04] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 05] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 06] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 07] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 08] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 09] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 10] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 11] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 12] ****************************************
+ok: [fixture]
+
+TASK [Run synthetic mandatory probe 13] ****************************************
+ok: [fixture]
+
+PLAY RECAP *********************************************************************
+fixture                    : ok=65   changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

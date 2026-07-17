@@ -1,0 +1,33 @@
+---
+# Stable benchmark workload. Nested deliberately: compatibility coverage comes
+# from files-content.yml; this fixture isolates fresh/no-op/single-drift timing.
+- name: Synthetic stable file benchmark
+  hosts: all
+  tasks:
+    - name: Create benchmark root
+      file:
+        path: /tmp/ruxel-fixture-files
+        state: directory
+        mode: "0755"
+
+    - name: Install stable benchmark content
+      copy:
+        content: "synthetic benchmark\n"
+        dest: /tmp/ruxel-fixture-files/stable.txt
+        mode: "0644"
+
+    - name: Exercise managed block
+      blockinfile:
+        path: /tmp/ruxel-fixture-files/block.txt
+        create: true
+        mode: "0644"
+        block: |
+          synthetic benchmark block
+
+    - name: Exercise command mapping and creates
+      command:
+        argv:
+          - /usr/bin/touch
+          - /tmp/ruxel-fixture-files/created-by-command
+      args:
+        creates: /tmp/ruxel-fixture-files/created-by-command

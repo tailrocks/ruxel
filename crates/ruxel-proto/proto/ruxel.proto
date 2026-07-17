@@ -42,11 +42,13 @@ message Plan {
 }
 
 // Late-rendered continuation for deferred tasks.
+// Controller-sent continuation for register-dependent tasks (plan 020).
 message PlanPatch {
   repeated RenderedTask tasks = 1;
 }
 
 // Reply to PauseRequest: the operator pressed Enter (or aborted).
+// RESERVED: wire contract for planned pause work (plan 023); not yet sent by the controller.
 message Resume {
   uint64 task_id = 1;
   bool abort = 2;
@@ -69,6 +71,10 @@ message RenderedTask {
   bool no_log = 7;
   string become_user = 8;    // empty = run as connection user (root)
   map<string, string> environment = 9;
+  // Batch safety: stop draining this Plan after this task fails. The
+  // controller clears it for ignore_errors tasks.
+  bool halt_on_failure = 10;
+  bool force_check_mode = 11; // task-level `check_mode: yes`
 }
 
 message Iteration {
@@ -117,6 +123,7 @@ message Facts {
 
 // Content-addressed payloads the agent does not have yet; the controller
 // pushes them over the SFTP channel.
+// RESERVED: wire contract for planned blob work (plan 020); not yet sent by the controller.
 message BlobsNeeded {
   repeated string missing = 1; // b3sums
 }
@@ -137,6 +144,7 @@ message TaskResult {
 }
 
 // Interactive pause (SEMANTICS §4): relayed to the operator TTY.
+// RESERVED: wire contract for planned pause work (plan 023); not yet sent by the controller.
 message PauseRequest {
   uint64 task_id = 1;
   string prompt = 2;

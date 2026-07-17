@@ -1,0 +1,1 @@
+{"action": "command", "raw_args": {"_ansible_no_log": false, "_raw_params": "/bin/sleep 1"}, "result": {"changed": false, "rc": 0, "stderr": "", "stdout": "", "stdout_lines": []}, "status": "skipped", "task_name": "Run one-second independent host work"}

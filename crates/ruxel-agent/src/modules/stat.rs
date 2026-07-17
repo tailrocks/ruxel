@@ -40,3 +40,33 @@ pub fn run(params: &Value) -> Result<Value, String> {
     };
     Ok(json!({"stat": stat, "changed": false, "failed": false}))
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn maps_regular_missing_and_symlink_fields() {
+        let root = std::env::temp_dir().join(format!("ruxel-stat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("file");
+        let link = root.join("link");
+        std::fs::write(&file, "abc").unwrap();
+        symlink(&file, &link).unwrap();
+        assert_eq!(
+            super::run(&json!({"path": file})).unwrap()["stat"]["isreg"],
+            true
+        );
+        assert_eq!(
+            super::run(&json!({"path": link})).unwrap()["stat"]["islnk"],
+            true
+        );
+        assert_eq!(
+            super::run(&json!({"path": root.join("missing")})).unwrap()["stat"]["exists"],
+            false
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

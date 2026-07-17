@@ -5,24 +5,23 @@
 //! every channel (exec, sftp, the agent's stdio stream) is a plain
 //! `ssh -S <socket>` mux client whose pipes we own end to end.
 //!
-//! Known issue (2026-06-11, fixture-reproduced, also present with the
-//! openssh crate this replaced): the SECOND sequential connect inside one
-//! process stalls at the agent handshake — first connect and concurrent
-//! shell-driven repeats are fine. Real runs open one connection per host
-//! per process today; revisit before M5's multi-host parallelism (which
-//! needs concurrent, not sequential, sessions). Gate evidence therefore
-//! runs each connect in its own process (tools/fixtures/gate.sh).
+//! A 2026-06-11 second-connect stall could not be reproduced in later
+//! sequential, two-provider-host, or repeated six-container gates. Host
+//! sessions are bounded-concurrent and independently own collision-proof
+//! mux names; no speculative transport rewrite was made.
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
+use ruxel_proto::constants::{AGENT_DIR, HANDSHAKE_TIMEOUT_SECS};
 use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
+use sha2::{Digest, Sha256};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-
-const AGENT_DIR: &str = "/var/lib/ruxel/agent";
 
 /// Connection tuning beyond the operator's ssh config. Production runs use
 /// `Default` (config-driven, strict known_hosts, exactly like ansible);
@@ -49,16 +48,34 @@ struct Master {
     process: Child,
 }
 
+impl Drop for Master {
+    fn drop(&mut self) {
+        // Tokio kills the foreground master because kill_on_drop is set.
+        // Remove its private mux path even when a cancelled host future never
+        // reaches the async close handshake.
+        let _ = std::fs::remove_file(&self.socket);
+    }
+}
+
+static SOCKET_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn socket_name() -> String {
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = SOCKET_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("ruxel-mux-{}-{epoch:x}-{sequence:x}", std::process::id())
+}
+
 impl Master {
     async fn establish(destination: &str, options: &ConnectOptions) -> Result<Self> {
-        let socket = std::env::temp_dir().join(format!(
-            "ruxel-mux-{}-{:x}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos()
-        ));
+        let socket_dir = socket_dir()?;
+        std::fs::create_dir_all(&socket_dir)
+            .with_context(|| format!("create socket directory {}", socket_dir.display()))?;
+        std::fs::set_permissions(&socket_dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("secure socket directory {}", socket_dir.display()))?;
+        let socket = socket_dir.join(socket_name());
         let mut cmd = Command::new("ssh");
         cmd.arg("-M")
             .arg("-N")
@@ -138,6 +155,16 @@ impl Master {
         cmd.status().await.context("ssh exec")
     }
 
+    async fn exec_output(&self, argv: &[&str]) -> Result<std::process::Output> {
+        let mut cmd = self.client();
+        cmd.arg("--");
+        for arg in argv {
+            cmd.arg(arg);
+        }
+        cmd.stdin(Stdio::null()).stderr(Stdio::piped());
+        cmd.output().await.context("ssh exec output")
+    }
+
     async fn close(mut self) {
         let _ = Command::new("ssh")
             .arg("-S")
@@ -153,6 +180,21 @@ impl Master {
         let _ = self.process.kill().await;
         let _ = std::fs::remove_file(&self.socket);
     }
+}
+
+fn socket_dir() -> Result<PathBuf> {
+    socket_dir_from(
+        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn socket_dir_from(xdg_runtime: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(runtime) = xdg_runtime {
+        return Ok(runtime.join("ruxel"));
+    }
+    home.map(|home| home.join(".ruxel/cp"))
+        .context("neither XDG_RUNTIME_DIR nor HOME is set for SSH control socket")
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
@@ -183,25 +225,6 @@ pub struct AgentConnection {
 
 pub struct HostFacts {
     pub facts: v1::Facts,
-    pub agent_version: String,
-    pub ledger_generation: u64,
-}
-
-/// Connect, ensure the agent binary, spawn it, and complete the handshake.
-pub async fn connect(
-    destination: &str,
-    agent_binary: &Path,
-    run_id: &str,
-    check_mode: bool,
-) -> Result<(AgentConnection, HostFacts)> {
-    connect_with(
-        destination,
-        agent_binary,
-        run_id,
-        check_mode,
-        &ConnectOptions::default(),
-    )
-    .await
 }
 
 pub async fn connect_with(
@@ -247,7 +270,12 @@ pub async fn connect_with(
     .await?;
 
     let ack_read = read_frame::<v1::Event>(&mut stdout);
-    let event = match tokio::time::timeout(std::time::Duration::from_secs(30), ack_read).await {
+    let event = match tokio::time::timeout(
+        std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS),
+        ack_read,
+    )
+    .await
+    {
         Ok(result) => match result? {
             Some(ev) => ev,
             None => bail!("agent closed the stream before HelloAck"),
@@ -276,8 +304,6 @@ pub async fn connect_with(
         },
         HostFacts {
             facts: ack.facts.unwrap_or_default(),
-            agent_version: ack.agent_version,
-            ledger_generation: ack.ledger_generation,
         },
     ))
 }
@@ -315,12 +341,13 @@ impl AgentConnection {
 /// executable file, nothing moves; otherwise upload via an SFTP channel on
 /// the same master and mark executable. Returns whether an upload happened.
 async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Result<bool> {
-    if master
+    cleanup_stale_agent_temps(master, remote_path).await?;
+    let exists = master
         .exec_status(&["test", "-x", remote_path])
         .await?
-        .success()
-    {
-        return Ok(false); // already provisioned at this hash
+        .success();
+    if exists && remote_agent_hash_matches(master, remote_path, bytes).await? {
+        return Ok(false);
     }
 
     master
@@ -349,7 +376,7 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
     .context("sftp handshake")?;
 
     let tmp_path = format!("{remote_path}.tmp-{}", std::process::id());
-    {
+    let upload_result: Result<()> = async {
         let mut file = sftp
             .options()
             .write(true)
@@ -359,12 +386,18 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
             .context("sftp create tmp")?;
         file.write_all(bytes).await.context("sftp write agent")?;
         file.close().await.context("sftp close")?;
+        sftp.fs()
+            .rename(&tmp_path, remote_path)
+            .await
+            .context("rename agent into place")?;
+        sftp.close().await.context("sftp shutdown")?;
+        Ok(())
     }
-    sftp.fs()
-        .rename(&tmp_path, remote_path)
-        .await
-        .context("rename agent into place")?;
-    sftp.close().await.context("sftp shutdown")?;
+    .await;
+    if let Err(error) = upload_result {
+        let _ = master.exec_status(&["rm", "-f", &tmp_path]).await;
+        return Err(error);
+    }
 
     master
         .exec_status(&["chmod", "755", remote_path])
@@ -373,27 +406,87 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
         .then_some(())
         .context("chmod agent")?;
 
+    if !remote_agent_hash_matches(master, remote_path, bytes).await? {
+        bail!("uploaded agent failed remote content verification");
+    }
+
     Ok(true)
+}
+
+async fn cleanup_stale_agent_temps(master: &Master, remote_path: &str) -> Result<()> {
+    if !master
+        .exec_status(&["test", "-d", AGENT_DIR])
+        .await?
+        .success()
+    {
+        return Ok(());
+    }
+    let name = Path::new(remote_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("agent path has no UTF-8 file name")?;
+    let pattern = format!("{name}.tmp-*");
+    master
+        .exec_status(&[
+            "find",
+            AGENT_DIR,
+            "-maxdepth",
+            "1",
+            "-type",
+            "f",
+            "-name",
+            &pattern,
+            "-delete",
+        ])
+        .await?
+        .success()
+        .then_some(())
+        .context("clean stale agent upload files")
+}
+
+async fn remote_agent_hash_matches(
+    master: &Master,
+    remote_path: &str,
+    bytes: &[u8],
+) -> Result<bool> {
+    let output = master.exec_output(&["sha256sum", remote_path]).await?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    let remote = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let digest = Sha256::digest(bytes);
+    let mut expected = String::with_capacity(digest.len() * 2);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest {
+        expected.push(HEX[(byte >> 4) as usize] as char);
+        expected.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    Ok(remote == expected)
 }
 
 // -- Async framing (same wire format as ruxel_proto::frame) -----------------
 
 async fn write_frame<M: Message>(w: &mut (impl AsyncWrite + Unpin), msg: &M) -> Result<()> {
-    let mut buf = Vec::with_capacity(msg.encoded_len() + 5);
-    msg.encode_length_delimited(&mut buf)
-        .expect("Vec<u8> write is infallible");
+    let buf = ruxel_proto::frame::encode_frame(msg);
     w.write_all(&buf).await?;
     w.flush().await?;
     Ok(())
 }
 
 async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> Result<Option<M>> {
-    let mut len: u64 = 0;
-    let mut shift = 0u32;
+    let mut decoder = ruxel_proto::frame::VarintDecoder::default();
     let mut first = true;
-    loop {
+    let len = loop {
         let mut byte = [0u8; 1];
-        let n = r.read(&mut byte).await?;
+        let n = match r.read(&mut byte).await {
+            Ok(n) => n,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
         if n == 0 {
             if first {
                 return Ok(None);
@@ -401,19 +494,72 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
             bail!("EOF inside frame length");
         }
         first = false;
-        len |= u64::from(byte[0] & 0x7f) << shift;
-        if byte[0] & 0x80 == 0 {
-            break;
+        match decoder.push(byte[0]) {
+            Ok(Some(len)) => break len,
+            Ok(None) => {}
+            Err(message) => bail!(message),
         }
-        shift += 7;
-        if shift >= 64 {
-            bail!("frame length varint overflow");
-        }
-    }
+    };
     if len > ruxel_proto::frame::MAX_FRAME_LEN {
         bail!("frame of {len} bytes exceeds MAX_FRAME_LEN");
     }
     let mut body = vec![0u8; len as usize];
     r.read_exact(&mut body).await?;
     Ok(Some(M::decode(body.as_slice())?))
+}
+
+#[cfg(test)]
+mod transport_security_tests {
+    use super::{read_frame, socket_dir_from, socket_name, write_frame};
+    use ruxel_proto::v1;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn socket_directory_is_private_location_not_tmp() {
+        assert_eq!(
+            socket_dir_from(Some(PathBuf::from("/run/user/1000")), None).unwrap(),
+            PathBuf::from("/run/user/1000/ruxel")
+        );
+        assert_eq!(
+            socket_dir_from(None, Some(PathBuf::from("/home/operator"))).unwrap(),
+            PathBuf::from("/home/operator/.ruxel/cp")
+        );
+    }
+
+    #[test]
+    fn concurrent_mux_socket_names_are_unique() {
+        let names = std::thread::scope(|scope| {
+            (0..16)
+                .map(|_| scope.spawn(|| (0..1_000).map(|_| socket_name()).collect::<Vec<_>>()))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .flat_map(|thread| thread.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(names.iter().collect::<HashSet<_>>().len(), names.len());
+    }
+
+    #[tokio::test]
+    async fn async_and_sync_framing_are_byte_identical() {
+        let message = v1::Envelope {
+            msg: Some(v1::envelope::Msg::Hello(v1::Hello {
+                proto_version: ruxel_proto::PROTO_VERSION,
+                run_id: "codec-identity".into(),
+                ..Default::default()
+            })),
+        };
+        let sync = ruxel_proto::frame::encode_frame(&message);
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        write_frame(&mut writer, &message).await.unwrap();
+        let mut asynchronous = vec![0; sync.len()];
+        reader.read_exact(&mut asynchronous).await.unwrap();
+        assert_eq!(asynchronous, sync);
+
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        writer.write_all(&sync).await.unwrap();
+        let decoded: v1::Envelope = read_frame(&mut reader).await.unwrap().unwrap();
+        assert_eq!(decoded, message);
+    }
 }

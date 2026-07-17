@@ -1,0 +1,17 @@
+- name: Synthetic check-mode controller semantics
+  hosts: all
+  tasks:
+    - name: Predict a notifying file change
+      copy:
+        content: synthetic
+        dest: /tmp/ruxel-fixture-check-notify
+      notify: Record predicted handler
+
+    - name: Prompt during check mode
+      pause:
+        prompt: Synthetic check-mode pause
+
+  handlers:
+    - name: Record predicted handler
+      debug:
+        msg: predicted handler ran

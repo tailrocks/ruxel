@@ -1,0 +1,28 @@
+{
+  "algorithm": {
+    "p95": "nearest-rank",
+    "speedup": "ansible_median_ns/ruxel_median_ns",
+    "stdev": "population"
+  },
+  "case": "converged",
+  "executors": {
+    "ansible": {
+      "mean_ns": 19870302902.666668,
+      "median_ns": 19821734833,
+      "min_ns": 19785693125,
+      "n": 3,
+      "p95_ns": 20003480750,
+      "stdev_ns": 95313536.79355589
+    },
+    "ruxel": {
+      "mean_ns": 1158644694.6666667,
+      "median_ns": 1190015459,
+      "min_ns": 1082210250,
+      "n": 3,
+      "p95_ns": 1203708375,
+      "stdev_ns": 54335637.38942157
+    }
+  },
+  "schema": 1,
+  "speedup": 16.656703644553243
+}

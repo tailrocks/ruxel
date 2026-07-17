@@ -1,0 +1,474 @@
+# Scale-only benchmark input. Not part of the compatibility parity matrix.
+# Execute only with --dry-secrets; all lookup identities are synthetic.
+- name: Synthetic 65-task and 52-lookup benchmark
+  hosts: benchmark
+  become: true
+  vars:
+    benchmark_secret_01: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-01', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_02: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-02', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_03: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-03', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_04: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-04', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_05: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-05', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_06: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-06', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_07: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-07', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_08: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-08', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_09: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-09', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_10: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-10', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_11: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-11', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_12: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-12', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_13: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-13', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_14: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-14', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_15: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-15', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_16: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-16', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_17: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-17', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_18: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-18', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_19: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-19', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_20: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-20', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_21: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-21', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_22: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-22', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_23: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-23', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_24: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-24', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_25: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-25', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_26: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-26', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_27: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-27', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_28: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-28', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_29: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-29', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_30: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-30', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_31: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-31', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_32: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-32', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_33: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-33', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_34: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-34', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_35: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-35', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_36: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-36', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_37: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-37', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_38: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-38', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_39: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-39', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_40: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-40', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_41: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-41', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_42: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-42', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_43: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-43', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_44: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-44', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_45: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-45', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_46: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-46', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_47: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-47', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_48: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-48', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_49: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-49', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_50: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-50', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_51: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-51', field='value', vault='ruxel-benchmark') }}"
+    benchmark_secret_52: "{{ lookup('community.general.onepassword', 'ruxel-benchmark-item-52', field='value', vault='ruxel-benchmark') }}"
+  tasks:
+    - name: Resolve synthetic benchmark secret 01
+      assert:
+        that:
+          - benchmark_secret_01 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 02
+      assert:
+        that:
+          - benchmark_secret_02 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 03
+      assert:
+        that:
+          - benchmark_secret_03 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 04
+      assert:
+        that:
+          - benchmark_secret_04 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 05
+      assert:
+        that:
+          - benchmark_secret_05 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 06
+      assert:
+        that:
+          - benchmark_secret_06 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 07
+      assert:
+        that:
+          - benchmark_secret_07 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 08
+      assert:
+        that:
+          - benchmark_secret_08 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 09
+      assert:
+        that:
+          - benchmark_secret_09 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 10
+      assert:
+        that:
+          - benchmark_secret_10 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 11
+      assert:
+        that:
+          - benchmark_secret_11 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 12
+      assert:
+        that:
+          - benchmark_secret_12 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 13
+      assert:
+        that:
+          - benchmark_secret_13 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 14
+      assert:
+        that:
+          - benchmark_secret_14 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 15
+      assert:
+        that:
+          - benchmark_secret_15 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 16
+      assert:
+        that:
+          - benchmark_secret_16 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 17
+      assert:
+        that:
+          - benchmark_secret_17 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 18
+      assert:
+        that:
+          - benchmark_secret_18 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 19
+      assert:
+        that:
+          - benchmark_secret_19 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 20
+      assert:
+        that:
+          - benchmark_secret_20 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 21
+      assert:
+        that:
+          - benchmark_secret_21 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 22
+      assert:
+        that:
+          - benchmark_secret_22 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 23
+      assert:
+        that:
+          - benchmark_secret_23 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 24
+      assert:
+        that:
+          - benchmark_secret_24 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 25
+      assert:
+        that:
+          - benchmark_secret_25 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 26
+      assert:
+        that:
+          - benchmark_secret_26 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 27
+      assert:
+        that:
+          - benchmark_secret_27 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 28
+      assert:
+        that:
+          - benchmark_secret_28 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 29
+      assert:
+        that:
+          - benchmark_secret_29 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 30
+      assert:
+        that:
+          - benchmark_secret_30 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 31
+      assert:
+        that:
+          - benchmark_secret_31 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 32
+      assert:
+        that:
+          - benchmark_secret_32 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 33
+      assert:
+        that:
+          - benchmark_secret_33 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 34
+      assert:
+        that:
+          - benchmark_secret_34 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 35
+      assert:
+        that:
+          - benchmark_secret_35 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 36
+      assert:
+        that:
+          - benchmark_secret_36 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 37
+      assert:
+        that:
+          - benchmark_secret_37 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 38
+      assert:
+        that:
+          - benchmark_secret_38 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 39
+      assert:
+        that:
+          - benchmark_secret_39 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 40
+      assert:
+        that:
+          - benchmark_secret_40 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 41
+      assert:
+        that:
+          - benchmark_secret_41 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 42
+      assert:
+        that:
+          - benchmark_secret_42 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 43
+      assert:
+        that:
+          - benchmark_secret_43 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 44
+      assert:
+        that:
+          - benchmark_secret_44 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 45
+      assert:
+        that:
+          - benchmark_secret_45 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 46
+      assert:
+        that:
+          - benchmark_secret_46 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 47
+      assert:
+        that:
+          - benchmark_secret_47 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 48
+      assert:
+        that:
+          - benchmark_secret_48 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 49
+      assert:
+        that:
+          - benchmark_secret_49 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 50
+      assert:
+        that:
+          - benchmark_secret_50 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 51
+      assert:
+        that:
+          - benchmark_secret_51 | length > 0
+      no_log: true
+
+    - name: Resolve synthetic benchmark secret 52
+      assert:
+        that:
+          - benchmark_secret_52 | length > 0
+      no_log: true
+
+    - name: Run synthetic mandatory probe 01
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 02
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 03
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 04
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 05
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 06
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 07
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 08
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 09
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 10
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 11
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 12
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false
+
+    - name: Run synthetic mandatory probe 13
+      command:
+        argv:
+          - /usr/bin/test
+          - -f
+          - /etc/debian_version
+      changed_when: false

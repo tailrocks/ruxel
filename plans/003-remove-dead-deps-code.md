@@ -1,0 +1,205 @@
+# Plan 003: Remove dead dependencies and dead code
+
+> **Executor instructions**: Follow step by step; run every verify command.
+> Honor STOP conditions. Update this plan's row in `plans/README.md` when done.
+>
+> **Drift check (run first)**:
+> `git diff --stat b5f98ba..HEAD -- Cargo.toml crates/ruxel/Cargo.toml crates/ruxel-agent/Cargo.toml crates/ruxel/src/transport.rs crates/ruxel-core/src/engine.rs`
+> If any changed, re-verify the excerpts before editing; on mismatch, STOP.
+
+## Status
+
+- **Priority**: P2
+- **Effort**: S
+- **Risk**: LOW
+- **Depends on**: none
+- **Category**: tech-debt
+- **Planned at**: commit `b5f98ba`, 2026-07-03
+
+## Why this matters
+
+Dead entries mislead every reader and cost build time + supply-chain surface.
+The `openssh` crate (with its `native-mux` feature) is declared and compiled
+into the `ruxel` binary but **never used** — transport was rewritten to drive
+`ssh` via `tokio::process` (commit `bda9c13`), and the manifest was never
+cleaned. `anyhow` is declared in the agent but never imported. Several
+`pub`/error paths (`EngineError::VarCycle`, `EngineError::Lookup`,
+`transport::connect`, `HostFacts.{agent_version,ledger_generation}`) exist but
+are never constructed/called/read, so a reader can't tell live code from
+abandoned. Removing them shrinks the build and makes the remaining code
+honestly reflect what runs. This is mechanical and low-risk; the compiler
+verifies correctness.
+
+## Current state
+
+**Dead dependencies:**
+- `Cargo.toml:27` (workspace): `openssh = { version = "0.11", features = ["native-mux"] }`
+- `crates/ruxel/Cargo.toml`: `openssh.workspace = true`
+- **Verified unused**: `grep -rn "use openssh" crates/ruxel/src` → no matches;
+  the only mention is a comment at `crates/ruxel/src/transport.rs:9`. Transport
+  uses `tokio::process::Command` (`transport.rs:23,62`) and, separately, the
+  **different** crate `openssh-sftp-client` for blob upload — that one **stays**.
+- `crates/ruxel-agent/Cargo.toml:15`: `anyhow.workspace = true`. **Verified
+  unused**: `grep -rn "anyhow" crates/ruxel-agent/` matches only the manifest
+  line (the agent uses `Result<Value, String>` and i32 exit codes throughout).
+
+**Dead code:**
+- `crates/ruxel-core/src/engine.rs:22` `VarCycle(String)` and `:26`
+  `Lookup(String, String)` — variants of `pub enum EngineError` (`:18`) that
+  are **never constructed** (grep for `EngineError::VarCycle` / `EngineError::Lookup`
+  / bare `VarCycle(` / `Lookup(` outside the enum def → nothing). The cycle
+  path instead returns a placeholder string (`engine.rs:222-224`), and lookups
+  surface as `minijinja::Error`. (Note: fixing the *behavior* those variants
+  imply — erroring on a cycle — is plan 012's CORRECTNESS-14 item; here just
+  delete the unused variants, or leave them if plan 012 will wire them. See
+  Step 3 decision.)
+- `crates/ruxel/src/transport.rs:191` `pub async fn connect(...)` — **no
+  callers** (grep for `::connect(` / `transport::connect` → nothing; `apply.rs`
+  and the gate test use `connect_with`). Dead.
+- `crates/ruxel/src/transport.rs:186-187` `HostFacts.agent_version` and
+  `.ledger_generation` — assigned at `:279-280` from the `HelloAck` but never
+  **read** anywhere. The agent hardcodes `ledger_generation: 0`
+  (`crates/ruxel-agent/src/main.rs:138`), so the "honest degraded-run" signal
+  the proto documents is a no-op end to end.
+
+**Dead protocol surface (documentation, not deletion):** the proto messages
+`BlobsNeeded`, `PauseRequest` are never sent; `PlanPatch`/`Resume` are only
+received-and-ignored/rejected by the agent (`crates/ruxel-agent/src/main.rs:149-168`).
+These correspond to unbuilt ARCHITECTURE §4/§6 mechanisms (plan 020). Do NOT
+delete them — they are the wire contract for planned work. Just add a comment.
+
+**Convention**: errors are `thiserror` in `ruxel-core`, `anyhow` at the CLI
+boundary, `Result<_, String>` in the agent. Removing an unused `thiserror`
+variant is safe; the derive handles the rest.
+
+## Commands you will need
+
+| Purpose | Command | Expected |
+|---------|---------|----------|
+| Build (proves removals compile) | `cargo build --workspace` | exit 0 |
+| Clippy (dead-code warnings gate) | `cargo clippy --all-targets -- -D warnings` | exit 0 |
+| Tests | `cargo nextest run` (or `cargo test`) | pass (same as before) |
+| Confirm openssh gone | `cargo tree -i openssh 2>&1` | "package ID … not found" (removed) |
+| Confirm sftp stays | `grep -rn "openssh_sftp_client" crates/ruxel/src` | still present |
+
+## Scope
+
+**In scope**:
+- `Cargo.toml` (remove the `openssh` workspace dep line)
+- `crates/ruxel/Cargo.toml` (remove `openssh.workspace = true`)
+- `crates/ruxel-agent/Cargo.toml` (remove `anyhow.workspace = true`)
+- `crates/ruxel-core/src/engine.rs` (remove the two unused `EngineError` variants — see Step 3 caveat)
+- `crates/ruxel/src/transport.rs` (remove `connect`; decide on `HostFacts` fields)
+- `Cargo.lock` (regenerated by `cargo build`)
+
+**Out of scope**:
+- `openssh-sftp-client` — actively used; keep it.
+- The proto messages `BlobsNeeded`/`PlanPatch`/`Resume`/`PauseRequest` — keep
+  (wire contract for plan 020); only add a clarifying comment.
+- Wiring `ledger_generation` for real — that's plan 007/008 territory; here you
+  either delete the unread fields or leave them, per Step 4.
+- Any behavior change.
+
+## Git workflow
+
+- Branch: `advisor/003-remove-dead`
+- One commit: `chore: remove dead openssh/anyhow deps and unused code`
+- Do NOT push/PR unless instructed.
+
+## Steps
+
+### Step 1: Remove the `openssh` crate dependency
+
+Delete `Cargo.toml:27` (`openssh = { version = "0.11", ... }`) from
+`[workspace.dependencies]`, and the `openssh.workspace = true` line in
+`crates/ruxel/Cargo.toml`. Keep `openssh-sftp-client` in both places.
+
+**Verify**: `cargo build --workspace` → exit 0; `cargo tree -i openssh` →
+reports the package is no longer in the graph; `grep -rn "openssh_sftp_client"
+crates/ruxel/src` → still matches (sftp intact).
+
+### Step 2: Remove the unused `anyhow` agent dependency
+
+Delete `crates/ruxel-agent/Cargo.toml:15` (`anyhow.workspace = true`).
+
+**Verify**: `cargo build -p ruxel-agent` → exit 0 (proves nothing in the agent
+referenced it).
+
+### Step 3: Remove the unused `EngineError` variants
+
+**Decision gate**: check whether plan 012 (CORRECTNESS-14, lazy-var error
+surfacing) is already merged (`git log --oneline | grep -i "012\|lazy var"`).
+- If 012 is **not** merged (expected order): delete `VarCycle(String)` and
+  `Lookup(String, String)` from `pub enum EngineError` (`engine.rs:18-26`) and
+  any now-unused `#[error(...)]` attributes on them. They have no constructors.
+- If 012 **is** merged and now constructs one of these, **skip that variant**
+  (it's live) and only remove the still-unused one.
+
+**Verify**: `cargo build -p ruxel-core` → exit 0;
+`cargo clippy -p ruxel-core --all-targets -- -D warnings` → exit 0 (no
+dead-code or unused-variant warnings).
+
+### Step 4: Remove `transport::connect` and decide on the unread HostFacts fields
+
+Delete the unused `pub async fn connect(...)` at `transport.rs:191` (its body
+ends where `connect_with` begins at `:207`). For `HostFacts.agent_version` and
+`.ledger_generation` (`:186-187`, assigned `:279-280`, never read): the minimal
+honest move is to **delete both fields and their assignments** (they carry no
+signal today). Do this unless the drift check shows plan 007/008 already reads
+`ledger_generation` — in that case leave `ledger_generation`, delete only
+`agent_version`.
+
+**Verify**: `cargo build -p ruxel-cli` → exit 0;
+`cargo clippy --all-targets -- -D warnings` → exit 0.
+
+### Step 5: Comment the intentionally-dormant proto surface
+
+In `crates/ruxel-proto/proto/ruxel.proto`, above `PlanPatch` (`:45`), `Resume`
+(`:50`), `BlobsNeeded` (`:120`), and `PauseRequest` (`:140`), add a one-line
+comment: `// RESERVED: wire contract for planned pipelining/blob/pause work
+(plans 020/023); not yet sent by the controller.` Do not change the message
+shapes (that would force a prost regen and could break the agent's receive
+arms).
+
+**Verify**: `cargo build -p ruxel-proto` → exit 0 (proto still compiles).
+
+## Test plan
+
+No new tests — this is removal. The safety net is the compiler + existing
+suite:
+- `cargo build --workspace` → exit 0
+- `cargo nextest run` → the **same** test count passes as before your change
+  (record the count before and after; it must not drop).
+- `cargo clippy --all-targets -- -D warnings` → exit 0.
+
+## Done criteria
+
+ALL must hold:
+
+- [x] `cargo build --workspace` exits 0
+- [x] `cargo clippy --all-targets -- -D warnings` exits 0
+- [x] `cargo nextest run` passes with no drop in test count vs. before
+- [x] `cargo tree -i openssh` reports the crate is gone; `openssh-sftp-client` remains
+- [x] `grep -rn "anyhow" crates/ruxel-agent/` → no matches
+- [x] `grep -n "pub async fn connect(" crates/ruxel/src/transport.rs` → no matches
+- [x] `plans/README.md` row for 003 updated
+
+## STOP conditions
+
+Stop and report if:
+- Removing `openssh` breaks the build — it means something *does* use it; report
+  the exact `use`/path and do not force the removal.
+- Deleting a `HostFacts` field breaks compilation — a reader exists you didn't
+  find; keep the field and report where it's read.
+- `cargo nextest run` test count drops after removal — a removal was not
+  actually dead; revert and report.
+
+## Maintenance notes
+
+- If plan 007/008 later wires `ledger_generation` for real degraded-run
+  reporting, the field comes back deliberately — that's fine; this plan only
+  removes it *while* it's a no-op.
+- Reviewer: confirm `openssh-sftp-client` (the blob-upload crate) was **not**
+  removed alongside `openssh` — they are different crates and easy to conflate.
+- Add `cargo-machete` to CI (plan 019) so unused deps are caught automatically
+  next time instead of lingering.

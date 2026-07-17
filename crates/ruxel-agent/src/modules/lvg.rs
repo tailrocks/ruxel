@@ -45,7 +45,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
         Some(have) => {
-            let new_pvs: Vec<&String> = pvs.iter().filter(|p| !have.contains(*p)).collect();
+            let new_pvs = missing_pvs(&pvs, &have);
             if !new_pvs.is_empty() {
                 // Requested PVs the VG does not have yet → extend.
                 changed = true;
@@ -68,6 +68,10 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "vg": vg}))
 }
 
+fn missing_pvs<'a>(want: &'a [String], have: &BTreeSet<String>) -> Vec<&'a String> {
+    want.iter().filter(|pv| !have.contains(*pv)).collect()
+}
+
 /// PVs currently in the VG, or None when the VG does not exist.
 fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
     let out = std::process::Command::new("vgs")
@@ -87,6 +91,10 @@ fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("vgs json: {e}"))?;
+    Ok(Some(parse_pvs_report(&parsed)))
+}
+
+fn parse_pvs_report(parsed: &Value) -> BTreeSet<String> {
     // vgs nests the pv_name rows under the "vg" array (verified against
     // lvm2 reportformat json 2026-06-11), not a "pv" array.
     let mut set = BTreeSet::new();
@@ -103,20 +111,36 @@ fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
             }
         }
     }
-    Ok(Some(set))
+    set
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("exec {cmd}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "{cmd} {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pv_set_only_extends_for_missing_requested_devices() {
+        let have = BTreeSet::from(["/dev/a".to_string(), "/dev/b".to_string()]);
+        let subset = vec!["/dev/a".to_string()];
+        assert!(missing_pvs(&subset, &have).is_empty());
+        let superset = vec!["/dev/a".to_string(), "/dev/c".to_string()];
+        assert_eq!(missing_pvs(&superset, &have), vec![&"/dev/c".to_string()]);
+    }
+
+    #[test]
+    fn parses_canned_lvm_json_report() {
+        let report =
+            serde_json::json!({"report":[{"vg":[{"pv_name":" /dev/a "},{"pv_name":"/dev/b"}]}]});
+        assert_eq!(
+            parse_pvs_report(&report),
+            BTreeSet::from(["/dev/a".into(), "/dev/b".into()])
+        );
+    }
 }

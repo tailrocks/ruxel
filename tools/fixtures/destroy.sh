@@ -17,6 +17,13 @@ hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name | grep -qx "
   || die "refusing: ${name@Q} is not a labeled fixture in this project"
 
 hcloud server delete "$name" >/dev/null
+for _ in $(seq 1 30); do
+  hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name \
+    | grep -qx "$name" || break
+  sleep 1
+done
+hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name \
+  | grep -qx "$name" && die "fixture deletion was not confirmed: ${name@Q}"
 suffix="${name#ruxel-fixture-}"
 hcloud ssh-key delete "$(session_key_name "$suffix")" >/dev/null 2>&1 || true
 rm -f "${TMPDIR:-/tmp}/${name}-ssh" "${TMPDIR:-/tmp}/${name}-ssh.pub" \

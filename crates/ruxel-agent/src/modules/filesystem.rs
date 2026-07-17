@@ -50,6 +50,11 @@ fn blkid_type(dev: &str) -> Result<Option<String>, String> {
 }
 
 fn make(dev: &str, fstype: &str) -> Result<(), String> {
+    if !matches!(fstype, "xfs" | "ext4") {
+        return Err(format!(
+            "filesystem: fstype {fstype:?} outside the closed surface"
+        ));
+    }
     let bin = format!("mkfs.{fstype}");
     // xfs needs -f only when overwriting; on a blank dev it is harmless.
     let args: &[&str] = if fstype == "xfs" {
@@ -65,33 +70,67 @@ fn make(dev: &str, fstype: &str) -> Result<(), String> {
 fn grow(dev: &str, fstype: &str) -> Result<bool, String> {
     match fstype {
         "xfs" => {
-            // xfs_growfs needs a mountpoint; skip when unmounted (the
-            // workload grows after mount via the mount module path).
+            // xfs_growfs requires a mountpoint, but the closed filesystem
+            // surface carries only `dev`. Mounted XFS growth is handled by
+            // lvol's `resizefs` (`lvextend -r`); do not guess a mountpoint.
             Ok(false)
         }
         "ext4" => {
-            let out = std::process::Command::new("resize2fs")
-                .arg(dev)
-                .output()
-                .map_err(|e| format!("exec resize2fs: {e}"))?;
-            Ok(out.status.success()
-                && !String::from_utf8_lossy(&out.stdout).contains("Nothing to do"))
+            let before = ext4_block_count(dev)?;
+            let mut command = std::process::Command::new("resize2fs");
+            command.arg(dev);
+            super::run_checked(command)?;
+            Ok(ext4_block_count(dev)? > before)
         }
         _ => Ok(false),
     }
 }
 
-fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new(cmd)
-        .args(args)
+fn ext4_block_count(dev: &str) -> Result<u64, String> {
+    let out = std::process::Command::new("tune2fs")
+        .args(["-l", dev])
         .output()
-        .map_err(|e| format!("exec {cmd}: {e}"))?;
+        .map_err(|e| format!("exec tune2fs: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "{cmd} {}: {}",
-            args.join(" "),
+            "tune2fs -l {dev}: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
+    parse_ext4_block_count(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| format!("tune2fs -l {dev}: missing Block count"))
+}
+
+fn parse_ext4_block_count(output: &str) -> Option<u64> {
+    output.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        (key.trim() == "Block count").then(|| value.trim().parse().ok())?
+    })
+}
+
+fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_ext4_block_count_without_resize2fs_prose() {
+        assert_eq!(
+            super::parse_ext4_block_count("Filesystem volume name: x\nBlock count: 5240832\n"),
+            Some(5_240_832)
+        );
+        assert_eq!(super::parse_ext4_block_count("Block size: 4096\n"), None);
+    }
+
+    #[test]
+    fn mkfs_program_is_allowlisted() {
+        let error = super::make("/does/not/matter", "xfs;touch /tmp/pwn").unwrap_err();
+        assert!(error.contains("outside the closed surface"));
+        assert!(!super::grow("/does/not/matter", "xfs").unwrap());
+        assert!(!super::grow("/does/not/matter", "btrfs").unwrap());
+    }
 }

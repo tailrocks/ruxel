@@ -1,4 +1,9 @@
-# Benchmark — converged no-op (the "seconds on converged hosts" claim)
+# Historical benchmark — not acceptance evidence
+
+This 2026-06-12 measurement used a source playbook that is not committed as a
+synthetic fixture. It is retained only as historical context and does not
+support any current compatibility or performance claim. Current acceptance
+evidence must come from `tools/fixture-project` and disposable targets.
 
 Wall-clock of a re-run against an already-converged host: the case the
 operator hits constantly (nothing to change). Measured 2026-06-12 on a
@@ -29,7 +34,5 @@ release binaries against any fixture:
 `ruxel apply -i <inv> install-docker.yml` (cached) vs `--no-cache`, and
 `ansible-playbook -i <inv> install-docker.yml` under the pinned 2.21 venv.
 
-Next: per-playbook profile_tasks breakdown and the 65-task
-`setup-postgresql-nova` converged number (pending the setup-* fixture +
-private-repo deploy key — GOAL.md), plus a fresh-provision and
-6-hosts-parallel run for the full M5 report.
+Superseded by the committed repeated [acceptance matrix](README.md); no private
+repository or production follow-up is permitted.

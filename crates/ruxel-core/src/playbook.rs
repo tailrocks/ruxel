@@ -37,6 +37,7 @@ pub struct Task {
     pub notify: Vec<String>,
     pub becomes: Option<bool>,
     pub become_user: Option<String>,
+    pub delegate_to: Option<String>,
     pub changed_when: Option<Condition>,
     pub failed_when: Option<Condition>,
     pub ignore_errors: bool,
@@ -208,6 +209,7 @@ fn parse_task(value: Value) -> Result<Task> {
         notify: Vec::new(),
         becomes: None,
         become_user: None,
+        delegate_to: None,
         changed_when: None,
         failed_when: None,
         ignore_errors: false,
@@ -245,6 +247,7 @@ fn parse_task(value: Value) -> Result<Task> {
             "notify" => task.notify = string_list(v)?,
             "become" => task.becomes = Some(bool_value(&v)?),
             "become_user" => task.become_user = Some(string_value(v)?),
+            "delegate_to" => task.delegate_to = Some(string_value(v)?),
             "changed_when" => task.changed_when = Some(parse_condition(v)?),
             "failed_when" => task.failed_when = Some(parse_condition(v)?),
             "ignore_errors" => task.ignore_errors = bool_value(&v)?,
@@ -488,6 +491,7 @@ fn type_name(value: &Value) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn parse_ok(yaml: &str) -> Playbook {
         parse("test.yml", yaml).unwrap()
@@ -617,5 +621,34 @@ mod tests {
     fn unknown_play_keyword_is_error() {
         let kind = parse_err("- hosts: all\n  serial: 1\n  tasks: []\n");
         assert!(matches!(kind, ErrorKind::UnknownPlayKey(k) if k == "serial"));
+    }
+
+    proptest! {
+        #[test]
+        fn parse_never_panics(raw in ".{0,4096}") {
+            let _ = parse("property.yml", &raw);
+        }
+
+        #[test]
+        fn generated_unknown_modules_never_escape_closed_surface(
+            suffix in "[a-z0-9_]{0,32}"
+        ) {
+            let module = format!("ruxel_unknown_{suffix}");
+            let yaml = format!(
+                "- hosts: all\n  tasks:\n    - {module}:\n        synthetic: value\n"
+            );
+            prop_assert!(parse("property.yml", &yaml).is_err());
+        }
+
+        #[test]
+        fn generated_out_of_surface_enum_values_are_rejected(
+            suffix in "[a-z0-9_]{0,32}"
+        ) {
+            let state = format!("ruxel_unknown_{suffix}");
+            let yaml = format!(
+                "- hosts: all\n  tasks:\n    - file:\n        path: /tmp/x\n        state: {state}\n"
+            );
+            prop_assert!(parse("property.yml", &yaml).is_err());
+        }
     }
 }

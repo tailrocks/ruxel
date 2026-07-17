@@ -1,0 +1,14 @@
+- name: Fixture controller delegation
+  hosts: nodes
+  tasks:
+    - name: Read synthetic value on controller
+      become: false
+      delegate_to: localhost
+      command:
+        argv: [/usr/bin/printf, ruxel-fixture-controller]
+      register: fixture_controller_value
+      changed_when: false
+
+    - name: Assert delegated result shape
+      assert:
+        that: fixture_controller_value.stdout == 'ruxel-fixture-controller'

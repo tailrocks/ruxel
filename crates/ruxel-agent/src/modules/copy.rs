@@ -3,7 +3,10 @@
 //! when dest exists. The `src=` (controller-file) form arrives with the
 //! content-addressed blob channel.
 
-use super::{ExecContext, apply_attrs, bool_param, params_object, str_param};
+use super::{
+    ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode, str_param,
+    write_atomic_with,
+};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -26,22 +29,23 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut result = json!({"dest": dest, "changed": false, "failed": false});
 
-    if !exists || (force && !same) {
+    if copy_needs_write(exists, same, force) {
         changed = true;
         // Unified content diff under --diff (before = current dest bytes).
-        if ctx.diff_mode {
+        if ctx.diff_mode && !ctx.no_log {
             let before = String::from_utf8_lossy(&current);
             result["diff"] = json!(super::unified_diff(&before, content));
         }
         if !ctx.check_mode {
-            let tmp = p.with_file_name(format!(
-                ".{}.ruxel-tmp",
-                p.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "copy".into())
-            ));
-            std::fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
-            std::fs::rename(&tmp, p).map_err(|e| e.to_string())?;
+            let creation_mode = if exists {
+                None
+            } else if let Some(mode) = obj.get("mode") {
+                Some(parse_mode(mode)?)
+            } else {
+                let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+                Some(default_file_mode(&status))
+            };
+            write_atomic_with(p, content.as_bytes(), creation_mode, None)?;
         }
     }
     if p.exists() || !ctx.check_mode {
@@ -49,4 +53,21 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     result["changed"] = json!(changed);
     Ok(result)
+}
+
+fn copy_needs_write(exists: bool, same: bool, force: bool) -> bool {
+    !exists || (force && !same)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::copy_needs_write;
+
+    #[test]
+    fn force_and_content_equality_control_write() {
+        assert!(copy_needs_write(false, false, false));
+        assert!(!copy_needs_write(true, false, false));
+        assert!(!copy_needs_write(true, true, true));
+        assert!(copy_needs_write(true, false, true));
+    }
 }

@@ -123,12 +123,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let groups_s;
             if let Some(gs) = &groups {
                 let current_groups = supplementary_groups(name)?;
-                let missing: Vec<&String> =
-                    gs.iter().filter(|g| !current_groups.contains(*g)).collect();
-                let exact = !append
-                    && (current_groups.len() != gs.len()
-                        || gs.iter().any(|g| !current_groups.contains(g)));
-                if (append && !missing.is_empty()) || exact {
+                if groups_need_update(&current_groups, gs, append) {
                     groups_s = gs.join(",");
                     if append {
                         args.push("-a");
@@ -170,6 +165,10 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 fn passwd_entry(name: &str) -> Result<Option<PasswdEntry>, String> {
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    passwd_entry_from(&passwd, name)
+}
+
+fn passwd_entry_from(passwd: &str, name: &str) -> Result<Option<PasswdEntry>, String> {
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
         if f.first() == Some(&name) && f.len() >= 7 {
@@ -187,6 +186,10 @@ fn passwd_entry(name: &str) -> Result<Option<PasswdEntry>, String> {
 
 fn supplementary_groups(name: &str) -> Result<Vec<String>, String> {
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    Ok(supplementary_groups_from(&groups, name))
+}
+
+fn supplementary_groups_from(groups: &str, name: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in groups.lines() {
         let f: Vec<&str> = line.split(':').collect();
@@ -194,5 +197,63 @@ fn supplementary_groups(name: &str) -> Result<Vec<String>, String> {
             out.push(f[0].to_string());
         }
     }
-    Ok(out)
+    out
+}
+
+fn groups_need_update(current: &[String], want: &[String], append: bool) -> bool {
+    let missing = want.iter().any(|group| !current.contains(group));
+    (append && missing)
+        || (!append
+            && (current.len() != want.len() || want.iter().any(|group| !current.contains(group))))
+}
+
+#[cfg(test)]
+fn desired_groups(current: &[String], want: &[String], append: bool) -> Vec<String> {
+    let mut desired = if append { current.to_vec() } else { Vec::new() };
+    desired.extend(want.iter().cloned());
+    desired.sort();
+    desired.dedup();
+    desired
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn supplementary_group_reconciliation_is_set_based() {
+        assert_eq!(
+            desired_groups(&strings(&["a"]), &strings(&["b", "b"]), true),
+            strings(&["a", "b"])
+        );
+        assert!(groups_need_update(&strings(&["a"]), &strings(&["b"]), true));
+        assert!(!groups_need_update(
+            &strings(&["a", "b"]),
+            &strings(&["b", "a"]),
+            false
+        ));
+        assert_eq!(
+            desired_groups(&strings(&["a", "b"]), &strings(&["b"]), false),
+            strings(&["b"])
+        );
+    }
+
+    #[test]
+    fn parses_passwd_and_group_content() {
+        let entry = passwd_entry_from("alice:x:1001:1002:Alice:/home/alice:/bin/sh\n", "alice")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (entry.uid, entry.gid, entry.home.as_str()),
+            (1001, 1002, "/home/alice")
+        );
+        assert_eq!(
+            supplementary_groups_from("wheel:x:10:alice,bob\ndocker:x:20:bob\n", "alice"),
+            strings(&["wheel"])
+        );
+    }
 }

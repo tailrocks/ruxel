@@ -30,11 +30,14 @@ pub struct PlanArgs {
     /// Resolve secret lookups as deterministic fakes (no `op` calls)
     #[arg(long)]
     pub dry_secrets: bool,
+    /// Return 2 when the preview contains work (0 for an empty/converged preview)
+    #[arg(long)]
+    pub detailed_exitcode: bool,
     /// The playbook to plan
     pub playbook: std::path::PathBuf,
 }
 
-pub fn execute(args: PlanArgs) -> Result<()> {
+pub fn execute(args: PlanArgs) -> Result<u8> {
     let inv_content = std::fs::read_to_string(&args.inventory)
         .with_context(|| format!("read inventory {}", args.inventory.display()))?;
     let inventory = Inventory::parse(&inv_content)?;
@@ -53,6 +56,7 @@ pub fn execute(args: PlanArgs) -> Result<()> {
     let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
     let plan = compiler::compile(&playbook, &engine)?;
 
+    let mut has_work = false;
     for (play, play_plan) in playbook.plays.iter().zip(&plan.plays) {
         let hosts = inventory.select(&play.hosts, args.limit.as_deref())?;
         println!(
@@ -68,6 +72,7 @@ pub fn execute(args: PlanArgs) -> Result<()> {
         let mut stats = (0usize, 0usize);
         print_tasks(&play_plan.pre_tasks, &mut stats);
         print_tasks(&play_plan.tasks, &mut stats);
+        has_work |= stats.0 + stats.1 > 0;
         println!(
             "\n{} task(s): {} statically rendered, {} deferred to runtime data",
             stats.0 + stats.1,
@@ -76,7 +81,11 @@ pub fn execute(args: PlanArgs) -> Result<()> {
         );
         println!("(offline preview — probe-backed plan verdicts land in M3)");
     }
-    Ok(())
+    Ok(if args.detailed_exitcode && has_work {
+        2
+    } else {
+        0
+    })
 }
 
 fn print_tasks(tasks: &[PlanTask], stats: &mut (usize, usize)) {

@@ -1,0 +1,28 @@
+{
+  "algorithm": {
+    "p95": "nearest-rank",
+    "speedup": "ansible_median_ns/ruxel_median_ns",
+    "stdev": "population"
+  },
+  "case": "postgresql",
+  "executors": {
+    "ansible": {
+      "mean_ns": 39050659847.333336,
+      "median_ns": 38712801125,
+      "min_ns": 38557824375,
+      "n": 3,
+      "p95_ns": 39881354042,
+      "stdev_ns": 590787091.9656347
+    },
+    "ruxel": {
+      "mean_ns": 1415046000.0,
+      "median_ns": 1224153042,
+      "min_ns": 1161025708,
+      "n": 3,
+      "p95_ns": 1859959250,
+      "stdev_ns": 315654996.3632856
+    }
+  },
+  "schema": 1,
+  "speedup": 31.62415139021482
+}

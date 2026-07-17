@@ -1,0 +1,2 @@
+{"action": "copy", "raw_args": {"content": "synthetic", "dest": "/tmp/ruxel-fixture-check-notify"}, "result": {"changed": false}, "status": "ok", "task_name": "Predict a notifying file change"}
+{"action": "pause", "raw_args": {"prompt": "Synthetic check-mode pause"}, "result": {"changed": false}, "status": "ok", "task_name": "Prompt during check mode"}

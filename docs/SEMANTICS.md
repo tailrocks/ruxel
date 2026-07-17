@@ -3,9 +3,8 @@
 Status: normative spec, 2026-06-11. This document defines what "drop-in"
 means: for every construct that appears in the ChainArgos playbooks, the
 behavior Ansible (core 2.21) gives it today, which ruxel must reproduce.
-Items marked **⚠ verify** are subtleties to be pinned down empirically in
-the M1/M3 parity harness (see [PLAN.md](PLAN.md)) before the corresponding
-code is considered done — never assumed.
+All previously open subtleties have been pinned empirically in the synthetic
+M1/M3 parity harness (see [PLAN.md](PLAN.md)); no unresolved marker remains.
 
 Scope discipline: this spec covers exactly the surface extracted from the 16
 playbooks on 2026-06-11 (param-level matrix in §6). Anything outside it is
@@ -28,8 +27,10 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   already root on all hosts, so `become` is effectively a no-op wrapper,
   **except** `become_user: postgres` (46 uses), which must execute the task
   as the `postgres` user (uid/gid + supplementary groups + HOME/USER env).
-  **⚠ verify**: environment Ansible sets under become_user (it does not run
-  a login shell; `HOME` handling differs between `sudo` flags).
+  It does not run a login shell. The effective environment sets `HOME` and
+  `SHELL` from the target account and sets `USER`/`LOGNAME` to that account;
+  task `environment` entries remain present. Pinned by the disposable-host
+  `become-environment.yml` gate and its normalized oracle capture.
 
 ## 2. Variables and templating
 
@@ -60,22 +61,21 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   `ch_ready.rc`); comparisons and boolean operators in `when`/`until`;
   loop over `register` results (`item.item`, `item.stat`). MiniJinja covers
   the core; `subelements`, Ansible-flavored `hash`, and `b64decode` need
-  custom filter implementations. **Verified 2026-06-11**: the M1 harness
-  (tools/oracle/render_parity.py → captures/render-parity.jsonl) renders
-  every inline expression and condition (242) and all 41 template files
-  through ansible-core 2.21's Templar and through ruxel's engine —
-  byte-identical strings, JSON-identical natives, matching errors. That
-  corpus, not this list, is the completeness guarantee. Pinned along the
-  way: a template that is exactly one `{{ expr }}` yields the native value;
+  custom filter implementations. **Current reproducible gate**:
+  `tools/spec-extract/workload-features.json` records normalized constructs
+  extracted offline, and CI requires the synthetic fixture project to cover
+  all of them. `tools/oracle/render_parity.py` renders that synthetic corpus
+  through ansible-core 2.21; `crates/ruxel-core/tests/render_parity.rs` replays
+  it through Ruxel and compares strings, native values, conditions, errors,
+  template bytes, and trailing-newline behavior. Pinned along the way: a
+  template that is exactly one `{{ expr }}` yields the native value;
   any concatenation (`{{ a }}{{ b }}`, leading/trailing text or spaces)
   yields a string with no literal_eval; undefined chains through attribute
   access (caught by `default`) but erroring the moment it is the final
   result of an expression, condition, or rendered output
-  (AnsibleUndefinedVariable); `urlencode` percent-encodes with `/` safe.
-  Known workload latent bug, preserved not fixed: config/sentry/config.yml
-  references `slack_client_id`/`slack_client_secret`/`slack_signing_secret`
-  which no playbook defines — rendering that template errors under both
-  Ansible and ruxel (the error is the golden).
+  (AnsibleUndefinedVariable); `urlencode` percent-encodes with `/` safe; and
+  template files use `trim_blocks=True`, `lstrip_blocks=False`, and preserve
+  their trailing newline.
 - Facts consumed (complete list): `ansible_default_ipv4.interface`,
   `ansible_facts['distribution_release']`, `ansible_architecture`. Ruxel's
   agent supplies exactly these (plus trivially cheap extras like hostname)
@@ -89,8 +89,8 @@ Per task, in order — ruxel must preserve this pipeline observably:
 2. **`when`**: bare Jinja boolean expression; a list of strings = AND of
    all. Evaluated **per loop item** when `loop` is present. Skipped tasks
    produce a "skipped" result; a skipped task never notifies or registers
-   changed. **⚠ verify**: registered var shape on skip (dict with
-   `skipped: true`).
+   changed. Registered var shape on skip is a dict with `skipped: true`
+   (pinned by GOAL.md session 3 runtime goldens).
 3. **`loop`**: value is either a literal list or `"{{ var }}"` (native-type
    list). Each iteration binds `item`; `loop_control.label` only affects
    display. Result registered from a looped task is a dict with `results:
@@ -108,9 +108,8 @@ Per task, in order — ruxel must preserve this pipeline observably:
 7. **`changed_when`** (26 uses, mostly `false`): overrides the module's
    changed flag; expression may reference the just-produced result.
    **`failed_when`** (1 use: `rc not in [0, 1]`): replaces default failure
-   detection. Order: failed_when is evaluated before changed_when matters
-   for reporting; both see the raw result. **⚠ verify** exact interaction
-   when both present (not co-present in the workload — then irrelevant).
+   detection. Both expressions see the raw result. Their combined interaction
+   is outside the closed surface: no workload task contains both keywords.
 8. **`register`**: bind result dict. Command/shell results carry `rc`,
    `stdout`, `stderr`, `stdout_lines`, `changed`, `failed`; `stat` carries
    `stat.{exists,isdir,islnk,…}`; `slurp` carries base64 `content`.
@@ -155,13 +154,15 @@ workload).
   secrets redacted under `no_log`.
 - **Interactive `pause`** (1 use, with `prompt`): blocks awaiting operator
   Enter on the controller TTY; must keep working (Sentry manual bootstrap),
-  including under ruxel's streaming execution. **⚠ verify**: pause behavior
-  under `--check` (Ansible still prompts? skip?) — pin and mirror in
-  `ruxel plan`.
+  including under ruxel's streaming execution. Under `--check`, Ansible still
+  runs the pause; with non-interactive stdin it warns and returns immediately
+  with `changed=false` and empty `user_input`. Pinned by
+  `tools/oracle/captures/check-semantics.jsonl`.
 - **Handlers under `--check`**: notified handlers run in check mode as
-  predictions (they do not execute real changes). **⚠ verify** exact
-  notify-on-predicted-change behavior in check runs and mirror it in
-  `ruxel plan`.
+  predictions (they do not execute real changes). A module prediction with
+  `changed=true` notifies and flushes its handler at end of play. Pinned by
+  `tools/oracle/captures/check-semantics.jsonl`. `ruxel apply --check` uses the
+  remote prediction pipeline; `ruxel plan` remains an offline preview.
 
 ## 5. Connection-level semantics being replaced
 
@@ -188,19 +189,21 @@ ignore — that is what closed spec means).
   Check: lstat path; directory = exists+isdir+owner/group/mode (recurse:
   applies down-tree); link = symlink target equals `src`; absent = not
   exists. Change: mkdir -p / ln -sf / rm -rf / chown+chmod. Check-mode:
-  predict. **⚠ verify**: mode given as string `"0700"` octal handling.
+  predict. A quoted mode such as `"0700"` is parsed as octal permissions,
+  pinned by the synthetic `files-content.yml` remote state-parity gate.
 - **`copy` (35)** — `src` (controller-relative file) or `content`, `dest`,
   `owner/group/mode`, `force`. Check: SHA1(content) vs SHA1(dest) +
   attrs; `force: no` = only copy if dest missing. Diff supported.
 - **`template` (41)** — `src` (Jinja file), `dest`, `owner/group/mode`.
   Render with full var scope (incl. 1P-derived vars), then byte-compare to
   dest. Trailing-newline and `keep_trailing_newline=True` behavior must
-  match Ansible's template module defaults. **⚠ verify** against all 22
-  real templates in M1 (byte-for-byte).
+  match Ansible's template module defaults. Verify all 41 template files (22
+  containing Jinja) in M1 byte-for-byte.
 - **`lineinfile` (15)** — `path`, `regexp`, `line`, `state`.
   present: if regexp matches a line → replace last matching line with
   `line`; else append `line` at EOF; absent: delete matching lines.
-  Idempotent if a line already equals `line` **⚠ verify** (exact
+  Idempotent if a line already equals `line` (pinned by GOAL.md session 6;
+  exact
   Ansible rule: if `line` already present unchanged even if regexp also
   matches elsewhere — pin with fixture tests; fstab/pam edits depend on it).
 - **`replace` (3)** — `path`, `regexp` (multiline), `replace`. Changed iff
@@ -212,9 +215,9 @@ ignore — that is what closed spec means).
   used: `exists`, plus disk checks. Never changed.
 - **`slurp` (1)** — `src`; returns base64 `content`. Read-only.
 - **`get_url` (5)** — `url`, `dest`. If dest exists → unchanged (no
-  checksum given, `force` not set); else download to dest. **⚠ verify**
-  default timeout/redirect behavior is irrelevant here; confirm
-  dest-exists-short-circuit matches (it does when force=no default).
+  checksum given, `force` not set); else download to dest. Default
+  timeout/redirect behavior is irrelevant here; the dest-exists short circuit
+  is pinned for the default `force=no` behavior.
 
 ### Packages & repos
 
@@ -241,8 +244,8 @@ ignore — that is what closed spec means).
 - **`systemd` (21)** — `name`, `state` (`started` ×5, `stopped` ×5,
   `restarted` ×3 — exactly these), `enabled`, `daemon_reload`. Check: unit ActiveState/UnitFileState via
   systemd. `restarted` is **always a change** (action, not state).
-  daemon_reload: executes reload; **⚠ verify** its changed semantics
-  (Ansible reports changed when daemon_reload runs? pin in fixtures).
+  daemon_reload executes reload and its changed semantics are pinned by the
+  GOAL.md session 3 fixture capture.
 - **`service` (8)** — `name`, `state` (`started` ×4, `restarted` ×4),
   `enabled`. On these hosts resolves to systemd; same semantics as above.
 - **`sysctl` (10) / `ansible.posix.sysctl` (6)** — `name`, `value`,
@@ -250,20 +253,22 @@ ignore — that is what closed spec means).
   file (and live value when sysctl_set). Change: write file + `sysctl -w` /
   `--system` reload. Value comparison is **string-normalized** (whitespace
   in multi-value keys like `vm.nr_hugepages` vs `net.ipv4.ip_local_port_range`)
-  **⚠ verify** normalization rules.
+  with normalization pinned by GOAL.md session 6 runtime goldens.
 - **`community.general.timezone` (1)** — `name: UTC`; timedatectl.
 
 ### Storage
 
 - **`community.general.lvg` (6)** — `vg`, `pvs` (list of /dev/disk/by-id
-  paths). Check: VG exists with exactly these PVs (**⚠ verify**: Ansible's
+  paths). Check: VG exists with exactly these PVs (pinned by GOAL.md sessions
+  7–8: Ansible's
   behavior when VG exists with a subset of pvs — it extends; with extras —
   it reduces? pin before implementing; the drive-add workflow in the
   AGENTS.md depends on "add disk to list, re-run").
   Change: pvcreate + vgcreate/vgextend.
 - **`community.general.lvol` (6)** — `vg`, `lv`, `size` (incl.
   `+100%FREE`), `resizefs`. Check: LV exists; size semantics: `%FREE` form
-  is only meaningful at creation/extension — **⚠ verify** idempotence rule
+  is only meaningful at creation/extension — idempotence is pinned by GOAL.md
+  sessions 7–8 for the rule
   for `size: +100%FREE` on an already-full LV (must be no-change, not
   error; Ansible handles via lvextend rc/output inspection).
 - **`filesystem` (6)** — `dev`, `fstype` (`xfs` ×5, `ext4` ×1),
@@ -271,9 +276,9 @@ ignore — that is what closed spec means).
   blkid fstype on dev; create only if absent; resizefs grows fs to device.
 - **`ansible.posix.mount` (6)** — `path`, `src` (UUID=…), `fstype`,
   `opts`, `state: mounted`. Check: fstab line (normalized fields) +
-  actually mounted. Change: write fstab + mount. **⚠ verify** fstab
-  field normalization (opts order, dump/pass defaults) so reruns are
-  no-change.
+  actually mounted. Change: write fstab + mount. Fstab field normalization
+  (opts order, dump/pass defaults) is pinned by GOAL.md sessions 7–8 so reruns
+  are no-change.
 
 ### Users, keys, firewall
 
@@ -284,8 +289,8 @@ ignore — that is what closed spec means).
   useradd/usermod/userdel.
 - **`group` (3)** — `name`, `gid`, `state`. getent group check.
 - **`authorized_key` (1)** — `user`, `key` (1P-sourced), `state`. Check:
-  exact key line (comment-insensitive matching on key material **⚠
-  verify**) in `~user/.ssh/authorized_keys`.
+  exact key line, with comment-insensitive matching on key material (pinned by
+  GOAL.md session 6), in `~user/.ssh/authorized_keys`.
 - **`iptables` (8)** — `chain`, `protocol`, `destination`,
   `out_interface`, `jump`, `comment`, `policy`, `ip_version`. Check: rule
   spec present (iptables -C equivalent); policy: current chain policy.
@@ -311,9 +316,11 @@ ignore — that is what closed spec means).
   stored StoredKey; equal = no change. Pinned against a live PG15 verifier
   and proven idempotent on the fixture (ruxel rerun changed=0, ansible
   bless changed=0).
-- **`community.postgresql.postgresql_privs` (20)** — `role`, `privs`,
-  `type` (**exactly four shapes in use**: `database` ×3, `schema` ×3,
-  `table` ×7, `default_privs` ×7), `objs`, `schema`, `login_db`, `state`.
+- **`community.postgresql.postgresql_privs` (27)** — `role`, `privs`,
+  `type` (**exactly four shapes in use**: `database` ×4, `schema` ×5,
+  `table` ×9, `default_privs` ×9), `objs`, `schema`, `login_db`, `state`,
+  `target_roles` (default privileges are attached to objects subsequently
+  created by those roles).
   Check **resolved 2026-06-11**: idempotence is on the *explicit* ACL
   grant to the role, read via `aclexplode(datacl/nspacl/relacl)` filtered
   to the role's oid — NOT `has_*_privilege`, which counts PUBLIC defaults
@@ -321,10 +328,16 @@ ignore — that is what closed spec means).
   shapes (database/schema/table ALL_IN_SCHEMA/default_privs) proven on the
   fixture: ruxel rerun changed=0 and ansible bless changed=0 on ruxel's
   state.
-- **`community.postgresql.postgresql_schema` (1)** — `name`, `login_db`,
-  `state`; pg_namespace check.
+- **`community.postgresql.postgresql_schema` (2)** — `name`, `login_db`,
+  `owner`, `state`; pg_namespace name + owner check.
 
 ### Commands & control
+
+- **`delegate_to: localhost` (2)** — command/shell execute on the controller,
+  using controller environment and paths, while register/when/failed_when/
+  changed_when retain normal Ansible task semantics. The extracted shape
+  explicitly sets `become: false`; other delegated hosts remain outside the
+  closed surface.
 
 - **`command` (40)** — free-form or `cmd`/`argv`, `chdir`. No shell;
   argv exec; free-form splits shlex-style (pinned 2026-06-11, golden E15:
@@ -345,6 +358,13 @@ ignore — that is what closed spec means).
 - **`set_fact` (1)** — sets host var for the rest of the play (the Sentry
   bootstrap marker flag).
 - **`pause` (1)** — `prompt`; interactive, §4.
+
+### Still-open parity questions
+
+- Environment inherited under `become_user` (§1).
+- Combined `failed_when`/`changed_when` interaction (§3).
+- `pause` and handlers under `--check` (§4).
+- String mode such as `"0700"` octal handling (`file`, above).
 
 ## 7. Output contract
 

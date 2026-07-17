@@ -9,7 +9,11 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub fn run(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut crate::system_state::SystemState,
+) -> Result<Value, String> {
     let obj = params_object(params)?;
     let update_cache = bool_param(obj, "update_cache", false);
     let upgrade = str_param(obj, "upgrade");
@@ -38,6 +42,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if out.1 != 0 {
                 return Err(format!("apt update failed: {}", out.2));
             }
+            system_state.invalidate_packages();
         }
         // Pinned: cache refresh alone never reports changed.
         result["cache_updated"] = json!(!ctx.check_mode);
@@ -66,6 +71,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if rc != 0 {
                 return Err(format!("apt {action} failed: {stderr}"));
             }
+            system_state.invalidate_packages();
             changed |= summary_changed(&stdout);
             fill_exec_fields(&mut result, &stdout, &stderr, true);
         }
@@ -81,6 +87,9 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if rc != 0 {
             return Err(format!("apt autoremove failed: {stderr}"));
         }
+        if !ctx.check_mode {
+            system_state.invalidate_packages();
+        }
         changed |= summary_changed(&stdout);
         fill_exec_fields(&mut result, &stdout, &stderr, false);
         result["diff"] = json!({});
@@ -91,7 +100,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     if !names.is_empty() {
-        let missing = missing_packages(&names, state)?;
+        let missing = system_state.missing_packages(&names, state == "latest")?;
         if !missing.is_empty() {
             changed = true;
             if !ctx.check_mode {
@@ -108,6 +117,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 if rc != 0 {
                     return Err(format!("apt install failed: {stderr}"));
                 }
+                system_state.invalidate_packages();
                 fill_exec_fields(&mut result, &stdout, &stderr, false);
             }
         }
@@ -182,53 +192,6 @@ fn fill_exec_fields(result: &mut Value, stdout: &str, stderr: &str, with_msg: bo
 /// Which of the requested packages need an install action: for `present`,
 /// anything not currently installed; for `latest`, also anything with a
 /// newer candidate per apt policy.
-fn missing_packages(names: &[String], state: &str) -> Result<Vec<String>, String> {
-    let mut missing = Vec::new();
-    for name in names {
-        let out = std::process::Command::new("dpkg-query")
-            .arg("-W")
-            .arg("-f")
-            .arg("${Status}")
-            .arg(name)
-            .output()
-            .map_err(|e| format!("dpkg-query: {e}"))?;
-        let installed = out.status.success()
-            && String::from_utf8_lossy(&out.stdout).contains("install ok installed");
-        if !installed {
-            missing.push(name.clone());
-            continue;
-        }
-        if state == "latest" {
-            let policy = std::process::Command::new("apt-cache")
-                .arg("policy")
-                .arg(name)
-                .output()
-                .map_err(|e| format!("apt-cache policy: {e}"))?;
-            let text = String::from_utf8_lossy(&policy.stdout).to_string();
-            let grab = |key: &str| -> Option<String> {
-                text.lines()
-                    .find(|l| l.trim_start().starts_with(key))
-                    .map(|l| {
-                        l.split(':')
-                            .skip(1)
-                            .collect::<Vec<_>>()
-                            .join(":")
-                            .trim()
-                            .to_string()
-                    })
-            };
-            let installed_v = grab("Installed");
-            let candidate_v = grab("Candidate");
-            if let (Some(i), Some(c)) = (installed_v, candidate_v)
-                && i != c
-            {
-                missing.push(name.clone());
-            }
-        }
-    }
-    Ok(missing)
-}
-
 #[cfg(test)]
 mod tests {
     use super::summary_changed;

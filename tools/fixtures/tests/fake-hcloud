@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$1 $2" in
+  "context list") echo ruxel-fixtures ;;
+  "server-type list") echo cpx12 ;;
+  "server list") echo ruxel-fixture-valid ;;
+  "server ip")
+    [ "${3:-}" = "ruxel-fixture-valid" ] || exit 1
+    echo 192.0.2.10
+    ;;
+  *) echo "unexpected fake hcloud arguments: $*" >&2; exit 2 ;;
+esac

@@ -1,0 +1,42 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "case": "scale-65x52",
+  "correctness": {
+    "diff_parity": true,
+    "fixture_identity_verified": true,
+    "resources_reaped": true,
+    "result_parity": true,
+    "state_parity": true
+  },
+  "fixture": {
+    "kind": "disposable-provider-twin",
+    "specification": {
+      "image": "debian-12",
+      "location": "sin",
+      "primary_disk_size": 40,
+      "server_type": "cpx12",
+      "volume_count": 0
+    }
+  },
+  "fixture_source_sha256": "093b50185b989d0ce1e38e9ac637215ed4ad383ebd92d6284cb5473b404ca426",
+  "playbook": "tools/fixture-project/benchmarks/scale-65x52.yml",
+  "repetitions": 3,
+  "scale_gate": {
+    "dry_secrets": true,
+    "ruxel_median_limit_ns": 5000000000,
+    "synthetic_lookup_count": 52,
+    "task_count": 65
+  },
+  "schema": 1,
+  "versions": {
+    "agent": "0.1.0",
+    "ansible": "ansible-playbook [core 2.21.2]",
+    "kernel": "25.5.0",
+    "os": "Darwin 25.5.0 arm64",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "ruxel": "0.1.0"
+  }
+}

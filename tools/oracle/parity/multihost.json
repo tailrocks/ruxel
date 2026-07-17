@@ -1,0 +1,37 @@
+{
+  "binaries": {
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
+  },
+  "fixture_source_sha256": "fc4c1380887ea5a80faea1a4f0aecba293b19c1942bfe8e33ee194306ca586a7",
+  "fixture_spec": {
+    "image": "debian-12",
+    "location": "sin",
+    "primary_disk_size": 40,
+    "server_type": "cpx12",
+    "volume_count": 0
+  },
+  "modes": {
+    "check_diff": {
+      "capture_sha256": "ce877a7bb18a76ad2c7ae0b2adafbdb9d2fa03811e0741f4850a0745bee3fe25",
+      "result_parity": true,
+      "state_contract": true
+    },
+    "converged": {
+      "capture_sha256": "f024b35e670798d14ca22b395bf62a851508b1f1074c0ff331284a00677f49a0",
+      "result_parity": true,
+      "state_parity": true
+    },
+    "fresh": {
+      "capture_sha256": "f024b35e670798d14ca22b395bf62a851508b1f1074c0ff331284a00677f49a0",
+      "result_parity": true,
+      "state_parity": true
+    }
+  },
+  "playbook": "multihost",
+  "schema": 1,
+  "versions": {
+    "ansible": "ansible-playbook [core 2.21.2]",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+}

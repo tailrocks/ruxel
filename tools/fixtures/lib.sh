@@ -35,3 +35,51 @@ session_key_name() { echo "ruxel-fixture-key-$1"; }
 fixture_volumes() {
   hcloud volume list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null
 }
+
+# Resolve a provider identity to its address. Never accept an address from the
+# caller: this is the structural boundary preventing a gate typo from reaching
+# an arbitrary server.
+resolve_fixture() {
+  local name="${1:?fixture name required}"
+  case "$name" in
+    ruxel-fixture-*) ;;
+    *) die "refusing target ${name@Q}: expected ruxel-fixture-* provider identity" ;;
+  esac
+  require_context
+  local attempt found=0
+  for attempt in 1 2 3 4; do
+    if hcloud server list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null \
+      | grep -Fxq "$name"; then
+      found=1
+      break
+    fi
+    [ "$attempt" -eq 4 ] || sleep "$attempt"
+  done
+  [ "$found" -eq 1 ] \
+    || die "refusing target ${name@Q}: not a labeled fixture in ruxel-fixtures"
+  FIXTURE_NAME="$name"
+  FIXTURE_IP="$(hcloud server ip "$name")"
+  [ -n "$FIXTURE_IP" ] || die "fixture ${name@Q} has no provider address"
+  export FIXTURE_NAME FIXTURE_IP
+}
+
+require_fixture_key() {
+  local key="${1:?fixture key required}"
+  [ -f "$key" ] || die "fixture key ${key@Q} does not exist"
+  FIXTURE_KEY="$key"
+  export FIXTURE_KEY
+}
+
+# Stable provider topology used to prove two parity targets started equivalent.
+# Deliberately excludes identity, address, timestamps, and provider object IDs.
+fixture_spec() {
+  local name="${1:?fixture name required}"
+  resolve_fixture "$name"
+  hcloud server describe "$name" -o json | jq -S '{
+    image: .image.name,
+    location: .location.name,
+    primary_disk_size,
+    server_type: .server_type.name,
+    volume_count: (.volumes | length)
+  }'
+}

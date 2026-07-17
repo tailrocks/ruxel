@@ -45,7 +45,14 @@ pub static MODULES: &[ModuleSurface] = &[
         literal_enums: &[("state", &["present"])],
         ..surface(
             "ansible.posix.sysctl",
-            &["name", "reload", "state", "sysctl_set", "value"],
+            &[
+                "name",
+                "reload",
+                "state",
+                "sysctl_file",
+                "sysctl_set",
+                "value",
+            ],
         )
     },
     ModuleSurface {
@@ -80,6 +87,7 @@ pub static MODULES: &[ModuleSurface] = &[
     ),
     ModuleSurface {
         free_form: true,
+        args_params: &["chdir", "creates"],
         ..surface("command", &["argv", "chdir", "cmd"])
     },
     surface("community.general.lvg", &["pvs", "vg"]),
@@ -108,6 +116,7 @@ pub static MODULES: &[ModuleSurface] = &[
                 "role",
                 "schema",
                 "state",
+                "target_roles",
                 "type",
             ],
         )
@@ -116,7 +125,14 @@ pub static MODULES: &[ModuleSurface] = &[
         literal_enums: &[("state", &["present"])],
         ..surface(
             "community.postgresql.postgresql_schema",
-            &["login_db", "login_port", "login_user", "name", "state"],
+            &[
+                "login_db",
+                "login_port",
+                "login_user",
+                "name",
+                "owner",
+                "state",
+            ],
         )
     },
     ModuleSurface {

@@ -15,8 +15,11 @@ ever.
 
 ## Status
 
-Research and design phase. The CLI shape exists; the engine intentionally
-does not yet. Read the docs in order:
+Implementation is feature-complete: the closed-surface modules, the
+convergence ledger, the full `plan`/`apply` CLI, and the `op`-backed secret
+resolver are built and verified, with 6 of 16 workload playbooks gated
+three-way against pinned Ansible. Remaining work is verification breadth and
+the M5 performance proof. Read the docs in order:
 
 1. [docs/VISION.md](docs/VISION.md) — the problem, the vision, goals,
    non-goals, and the hard safety rule.
@@ -35,8 +38,11 @@ does not yet. Read the docs in order:
    transport decision (SSH as carrier, "gRPC minus the g" protocol),
    streaming execution, register-dependency pipelining, batched system
    caches, the convergence ledger, warm-daemon tier.
-7. [docs/PLAN.md](docs/PLAN.md) — milestones M1–M6 with acceptance gates
-   and the spec-drift CI watch.
+7. [docs/OPERATOR-SETUP.md](docs/OPERATOR-SETUP.md) — disposable fixture setup
+   and the operator-only production boundary.
+8. [docs/benchmarks/](docs/benchmarks/) — recorded benchmark evidence.
+9. [docs/PLAN.md](docs/PLAN.md) — milestones M0–M6 with acceptance gates and
+   the local spec-drift extractor (private-checkout CI wiring pending).
 
 ## Hard safety rule
 
@@ -60,9 +66,25 @@ tools are managed with [mise](https://mise.jdx.dev):
 ```bash
 mise install
 cargo build
-cargo nextest run    # or: cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --all --check
+just check
+```
+
+Releases are lightweight while the project remains a single-operator pilot:
+update the workspace version and changelog, commit, then create an annotated
+milestone tag (`git tag -a vX.Y.Z -m "ruxel X.Y.Z"`). `ruxel --version`
+embeds that workspace version, so a deployed binary has a provenance handle.
+Publishing to crates.io is intentionally unsupported; build a selected commit
+or tag locally. Release asset automation can be added if distribution becomes
+a project goal.
+
+The private workload checks are strictly offline parsers/spec extractors. They
+never invoke Ruxel or Ansible against workload files. Remote parity gates accept
+only synthetic playbooks under `tools/fixture-project/`.
+
+Run offline extraction locally with:
+
+```bash
+cargo run -p ruxel-spec-extract -- /path/to/ansible-configs
 ```
 
 ## License

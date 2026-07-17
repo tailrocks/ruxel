@@ -1,0 +1,5 @@
+{"action": "assert", "raw_args": {"that": ["fixture_secret_alpha | length > 0", "fixture_secret_beta | length > 0"]}, "result": {"changed": false, "redacted": true}, "status": "ok", "task_name": "Resolve multiple fields from one synthetic secret item"}
+{"action": "apt", "raw_args": {"name": ["curl", "git"], "state": "present"}, "result": {"changed": false}, "status": "ok", "task_name": "Verify fixture packages through one package snapshot"}
+{"action": "systemd", "raw_args": {"enabled": true, "name": "ssh", "state": "started"}, "result": {"changed": false}, "status": "ok", "task_name": "Verify fixture service through one systemd snapshot"}
+{"action": "community.postgresql.postgresql_user", "raw_args": {"login_port": 40000, "name": "ruxel_fixture_perf_a", "state": "present"}, "result": {"changed": false}, "status": "ok", "task_name": "Verify first PostgreSQL role through shared session"}
+{"action": "community.postgresql.postgresql_user", "raw_args": {"login_port": 40000, "name": "ruxel_fixture_perf_b", "state": "present"}, "result": {"changed": false}, "status": "ok", "task_name": "Verify second PostgreSQL role through shared session"}

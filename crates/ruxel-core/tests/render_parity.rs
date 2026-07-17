@@ -1,17 +1,10 @@
-//! The M1 render-parity gate: replay the committed oracle captures
-//! (tools/oracle/captures/render-parity.jsonl, produced by ansible-core
-//! 2.21's real Templar over the workload) through ruxel's engine and demand
-//! identical results — byte-identical strings, JSON-identical natives,
-//! matching error/boolean outcomes.
-//!
-//! Expression and condition entries replay fully offline (inputs and
-//! variable sets are embedded in the corpus). Template-file entries need
-//! the workload checkout and run only when RUXEL_WORKLOAD_DIR is set.
+//! Replay the synthetic Ansible 2.21 render corpus through Ruxel.
 
 use minijinja::value::Value;
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver, Scope, VarValue};
 use ruxel_core::playbook::Condition;
 use serde_json::Value as Json;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,25 +13,27 @@ fn oracle_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/oracle")
 }
 
-fn json_to_yaml(v: &Json) -> serde_norway::Value {
-    serde_norway::to_value(v).expect("JSON converts to YAML")
+fn fixture_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/fixture-project")
 }
 
-/// Layer of play vars: raw (lazily rendered — they may contain templates).
+fn json_to_yaml(value: &Json) -> serde_norway::Value {
+    serde_norway::to_value(value).expect("JSON converts to YAML")
+}
+
 fn raw_layer(vars: &Json) -> Vec<(String, VarValue)> {
     vars.as_object()
         .expect("vars object")
         .iter()
-        .map(|(k, v)| (k.clone(), VarValue::Raw(json_to_yaml(v))))
+        .map(|(key, value)| (key.clone(), VarValue::Raw(json_to_yaml(value))))
         .collect()
 }
 
-/// Layer of fakes / loop binds: final values (registered results, items).
 fn final_layer(vars: &Json) -> Vec<(String, VarValue)> {
     vars.as_object()
         .expect("vars object")
         .iter()
-        .map(|(k, v)| (k.clone(), VarValue::Final(Value::from_serialize(v))))
+        .map(|(key, value)| (key.clone(), VarValue::Final(Value::from_serialize(value))))
         .collect()
 }
 
@@ -50,27 +45,25 @@ struct Corpus {
 
 fn load_corpus() -> Corpus {
     let dir = oracle_dir();
-    let mut fakes: Json = serde_json::from_str(
-        &std::fs::read_to_string(dir.join("parity_vars.json")).expect("parity_vars.json"),
+    let fakes = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("parity_vars.json")).expect("parity vars"),
     )
-    .unwrap();
-    fakes.as_object_mut().unwrap().remove("_comment");
-
-    let corpus = std::fs::read_to_string(dir.join("captures/render-parity.jsonl"))
-        .expect("render-parity.jsonl — run tools/oracle/render_parity.py first");
-    let records: Vec<Json> = corpus
+    .expect("valid parity vars");
+    let records: Vec<Json> = std::fs::read_to_string(dir.join("captures/render-parity.jsonl"))
+        .expect("render parity capture")
         .lines()
-        .map(|l| serde_json::from_str(l).expect("valid JSONL"))
+        .map(|line| serde_json::from_str(line).expect("valid JSONL"))
         .collect();
-
-    let mut play_vars = HashMap::new();
-    for rec in &records {
-        if rec["kind"] == "playbook_vars" {
-            let pb = rec["playbook"].as_str().unwrap().to_string();
-            assert_eq!(rec["play"], 0, "workload playbooks are single-play");
-            play_vars.insert(pb, rec["vars"].clone());
-        }
-    }
+    let play_vars = records
+        .iter()
+        .filter(|record| record["kind"] == "playbook_vars")
+        .map(|record| {
+            (
+                record["playbook"].as_str().unwrap().to_owned(),
+                record["vars"].clone(),
+            )
+        })
+        .collect();
     Corpus {
         records,
         play_vars,
@@ -78,12 +71,12 @@ fn load_corpus() -> Corpus {
     }
 }
 
-fn scope_for(corpus: &Corpus, rec: &Json) -> Scope {
-    let pb = rec["playbook"].as_str().unwrap();
+fn scope_for(corpus: &Corpus, record: &Json) -> Scope {
+    let playbook = record["playbook"].as_str().unwrap();
     let mut scope = Scope::new()
-        .with_layer(raw_layer(&corpus.play_vars[pb]))
+        .with_layer(raw_layer(&corpus.play_vars[playbook]))
         .with_layer(final_layer(&corpus.fakes));
-    if let Some(bind) = rec.get("bind").filter(|b| !b.is_null()) {
+    if let Some(bind) = record.get("bind").filter(|bind| !bind.is_null()) {
         scope = scope.with_layer(final_layer(bind));
     }
     scope
@@ -93,58 +86,60 @@ fn engine() -> Engine {
     Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
 }
 
-/// Canonical JSON of a minijinja value for structural comparison.
-fn value_to_json(v: &Value) -> Json {
-    serde_json::to_value(v).expect("minijinja value serializes")
+fn value_to_json(value: &Value) -> Json {
+    serde_json::to_value(value).expect("MiniJinja value serializes")
+}
+
+fn matches_ansible_error(expected: &Json, error: &impl std::fmt::Display) -> bool {
+    expected["v"] == "AnsibleUndefinedVariable"
+        && format!("{error}")
+            .to_ascii_lowercase()
+            .contains("undefined")
 }
 
 #[test]
-fn expressions_and_conditions_match_oracle() {
+fn synthetic_expressions_and_conditions_match_ansible() {
     let corpus = load_corpus();
     let engine = engine();
     let mut checked = 0;
-    let mut failures: Vec<String> = Vec::new();
+    let mut failures = Vec::new();
 
-    for rec in &corpus.records {
-        match rec["kind"].as_str().unwrap() {
+    for record in &corpus.records {
+        match record["kind"].as_str().unwrap() {
             "expr" => {
-                let input = rec["input"].as_str().unwrap();
-                let scope = scope_for(&corpus, rec);
-                let expected = &rec["result"];
-                let got = engine.render_str(input, &scope);
-                let ok = match (expected["t"].as_str().unwrap(), &got) {
-                    ("str", Ok(v)) => v.as_str() == expected["v"].as_str(),
-                    ("native", Ok(v)) => value_to_json(v) == expected["v"],
-                    ("error", Err(_)) => true,
+                let input = record["input"].as_str().unwrap();
+                let expected = &record["result"];
+                let got = engine.render_str(input, &scope_for(&corpus, record));
+                let matches = match (expected["t"].as_str().unwrap(), &got) {
+                    ("str", Ok(value)) => value.as_str() == expected["v"].as_str(),
+                    ("native", Ok(value)) => value_to_json(value) == expected["v"],
+                    ("error", Err(error)) => matches_ansible_error(expected, error),
                     _ => false,
                 };
-                if !ok {
+                if !matches {
                     failures.push(format!(
-                        "{} / {} / {}: input {:?}\n  oracle: {}\n  ruxel:  {:?}",
-                        rec["playbook"],
-                        rec["task"],
-                        rec["field"],
-                        input,
-                        expected,
-                        got.map(|v| value_to_json(&v)),
+                        "{} / {} / {}: oracle={} ruxel={:?}",
+                        record["playbook"], record["task"], record["field"], expected, got
                     ));
                 }
                 checked += 1;
             }
             "condition" => {
-                let input = rec["input"].as_str().unwrap();
-                let scope = scope_for(&corpus, rec);
-                let expected = &rec["result"];
-                let got = engine.eval_condition(&Condition::Expr(input.to_string()), &scope);
-                let ok = match (expected["t"].as_str().unwrap(), &got) {
-                    ("bool", Ok(b)) => Some(*b) == expected["v"].as_bool(),
-                    ("error", Err(_)) => true,
+                let input = record["input"].as_str().unwrap();
+                let expected = &record["result"];
+                let got = engine.eval_condition(
+                    &Condition::Expr(input.to_owned()),
+                    &scope_for(&corpus, record),
+                );
+                let matches = match (expected["t"].as_str().unwrap(), &got) {
+                    ("bool", Ok(value)) => Some(*value) == expected["v"].as_bool(),
+                    ("error", Err(error)) => matches_ansible_error(expected, error),
                     _ => false,
                 };
-                if !ok {
+                if !matches {
                     failures.push(format!(
-                        "{} / {} / {}: condition {:?}\n  oracle: {}\n  ruxel:  {:?}",
-                        rec["playbook"], rec["task"], rec["field"], input, expected, got,
+                        "{} / {} / {}: oracle={} ruxel={got:?}",
+                        record["playbook"], record["task"], record["field"], expected
                     ));
                 }
                 checked += 1;
@@ -153,69 +148,58 @@ fn expressions_and_conditions_match_oracle() {
         }
     }
 
-    assert!(checked > 200, "corpus suspiciously small: {checked}");
+    assert!(
+        checked >= 100,
+        "synthetic corpus suspiciously small: {checked}"
+    );
     assert!(
         failures.is_empty(),
-        "{} of {checked} render-parity entries diverge from the oracle:\n\n{}",
+        "{} of {checked} entries diverged:\n{}",
         failures.len(),
-        failures.join("\n\n")
+        failures.join("\n")
     );
-    eprintln!("render parity: {checked} expression/condition entries match the 2.21 oracle");
 }
 
 #[test]
-fn template_files_match_oracle() {
-    let Ok(workload) = std::env::var("RUXEL_WORKLOAD_DIR") else {
-        eprintln!("RUXEL_WORKLOAD_DIR not set — skipping template-file parity");
-        return;
-    };
+fn synthetic_template_files_match_ansible() {
     let corpus = load_corpus();
     let engine = engine();
     let mut checked = 0;
-    let mut failures: Vec<String> = Vec::new();
+    let mut failures = Vec::new();
 
-    for rec in &corpus.records {
-        if rec["kind"] != "template_file" {
+    for record in &corpus.records {
+        if record["kind"] != "template_file" {
             continue;
         }
-        let src = rec["src"].as_str().unwrap();
-        let content = std::fs::read_to_string(Path::new(&workload).join(src))
-            .expect("template file readable");
-        let scope = scope_for(&corpus, rec);
-        let expected = &rec["result"];
-        let got = engine.render_template_file(&content, &scope);
-        let ok = match (expected["t"].as_str().unwrap(), &got) {
+        let source = record["src"].as_str().unwrap();
+        let content =
+            std::fs::read_to_string(fixture_dir().join(source)).expect("fixture template");
+        let expected = &record["result"];
+        let got = engine.render_template_file(&content, &scope_for(&corpus, record));
+        let matches = match (expected["t"].as_str().unwrap(), &got) {
             ("file", Ok(rendered)) => {
-                let bytes = rendered.as_bytes();
-                let sha = sha2::Sha256::digest(bytes);
-                let sha_hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
-                sha_hex == expected["sha256"].as_str().unwrap()
-                    && bytes.len() as u64 == expected["len"].as_u64().unwrap()
+                let digest = Sha256::digest(rendered.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                digest == expected["sha256"].as_str().unwrap()
+                    && rendered.len() as u64 == expected["len"].as_u64().unwrap()
+                    && rendered.ends_with('\n') == expected["tail_nl"].as_bool().unwrap()
             }
             ("error", Err(_)) => true,
             _ => false,
         };
-        if !ok {
-            failures.push(format!(
-                "{src}: oracle {expected} vs ruxel {:?}",
-                got.as_ref().map(|r| {
-                    let sha = sha2::Sha256::digest(r.as_bytes());
-                    let hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
-                    format!("sha256={hex} len={}", r.len())
-                })
-            ));
+        if !matches {
+            failures.push(format!("{source}: oracle={expected} ruxel={got:?}"));
         }
         checked += 1;
     }
 
-    assert_eq!(checked, 41, "expected all 41 distinct template srcs");
+    assert!(checked > 0, "no synthetic template files captured");
     assert!(
         failures.is_empty(),
-        "{} of {checked} template files diverge from the oracle:\n{}",
+        "{} template files diverged:\n{}",
         failures.len(),
         failures.join("\n")
     );
-    eprintln!("render parity: {checked} template files byte-match the 2.21 oracle");
 }
-
-use sha2::Digest;

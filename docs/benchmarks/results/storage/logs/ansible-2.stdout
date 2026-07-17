@@ -1,0 +1,19 @@
+
+PLAY [Fixture ext4 storage] ****************************************************
+
+TASK [Resolve fixture disks] ***************************************************
+ok: [fixture] => (item=/dev/disk/by-id/ruxel-fixture-disk-1)
+ok: [fixture] => (item=/dev/disk/by-id/ruxel-fixture-disk-2)
+
+TASK [Create fixture volume group] *********************************************
+ok: [fixture]
+
+TASK [Create fixture logical volume] *******************************************
+ok: [fixture]
+
+TASK [Format fixture ext4 volume] **********************************************
+ok: [fixture]
+
+PLAY RECAP *********************************************************************
+fixture                    : ok=4    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

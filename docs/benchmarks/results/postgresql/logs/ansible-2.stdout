@@ -1,0 +1,33 @@
+
+PLAY [Fixture PostgreSQL ownership and default privileges] *********************
+
+TASK [Create fixture owner] ****************************************************
+ok: [fixture]
+
+TASK [Create fixture reader] ***************************************************
+ok: [fixture]
+
+TASK [Create fixture database] *************************************************
+ok: [fixture]
+
+TASK [Create owned fixture schema] *********************************************
+ok: [fixture]
+
+TASK [Exercise literal PostgreSQL schema names] ********************************
+changed: [fixture]
+
+TASK [Grant fixture default table reads] ***************************************
+ok: [fixture]
+
+TASK [Grant fixture database access] *******************************************
+ok: [fixture]
+
+TASK [Grant fixture schema access] *********************************************
+ok: [fixture]
+
+TASK [Grant fixture table access shape] ****************************************
+ok: [fixture]
+
+PLAY RECAP *********************************************************************
+fixture                    : ok=9    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

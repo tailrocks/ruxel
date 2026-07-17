@@ -15,6 +15,13 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     match state {
+        "file" => {
+            if p.symlink_metadata().is_err() {
+                return Err(format!("file: {path} does not exist"));
+            }
+            apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
+            Ok(json!({"path": path, "state": "file", "changed": changed, "failed": false}))
+        }
         "directory" => {
             if !p.is_dir() {
                 if p.exists() {
@@ -82,4 +89,44 @@ fn apply_attrs_recursive(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn context() -> ExecContext {
+        ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        }
+    }
+
+    #[test]
+    fn default_file_state_applies_attrs_and_rejects_missing() {
+        let dir = std::env::temp_dir().join(format!("ruxel-file-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("existing");
+        std::fs::write(&path, b"content").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let result = run(&json!({"path": path, "mode": "0600"}), &context()).unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let missing = dir.join("missing");
+        assert!(
+            run(&json!({"path": missing}), &context())
+                .unwrap_err()
+                .contains("does not exist")
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
