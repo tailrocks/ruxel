@@ -1127,15 +1127,15 @@
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Download public synthetic payload",
@@ -1175,9 +1175,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Start disposable payload server",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "jinja-expression-count:2": [
@@ -11944,6 +11944,18 @@
         "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
         "ruxel_assertion": "tools/oracle/compare_results.py",
         "state_assertion": "tools/fixtures/state-snapshot.sh"
+      },
+      {
+        "fixture_task": "system-surface.yml#Start disposable payload server",
+        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
+        "ruxel_assertion": "tools/oracle/compare_results.py",
+        "state_assertion": "tools/fixtures/state-snapshot.sh"
+      },
+      {
+        "fixture_task": "system-surface.yml#Stop disposable payload server",
+        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
+        "ruxel_assertion": "tools/oracle/compare_results.py",
+        "state_assertion": "tools/fixtures/state-snapshot.sh"
       }
     ],
     "task-key:delay": [
@@ -13303,9 +13315,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "template:module.debug.value:expression": [
@@ -13373,9 +13385,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "template:module.git.value:expression": [
@@ -13435,9 +13447,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Start disposable payload server",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "template:module.stat.value:expression": [
@@ -13687,9 +13699,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "template:param.copy.src:expression": [
@@ -13765,9 +13777,9 @@
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
-        "oracle": "tools/oracle/captures/bless-system-surface.jsonl",
-        "ruxel_assertion": "tools/oracle/compare_results.py",
-        "state_assertion": "tools/fixtures/state-snapshot.sh"
+        "oracle": "tools/oracle/captures/render-parity.jsonl",
+        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "state_assertion": "not-applicable: controller rendering"
       }
     ],
     "template:param.git.version:expression": [

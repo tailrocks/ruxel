@@ -3773,7 +3773,9 @@
       "system-surface.yml#Exercise firewall policy shape in check mode",
       "system-surface.yml#Exercise package upgrade shape without applying it",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server"
     ],
     "shape:task-key.check_mode=string": [
       "control-flow.yml#Execute mapped loop with label and environment",
@@ -4153,7 +4155,9 @@
       "system-surface.yml#Exercise firewall policy shape in check mode",
       "system-surface.yml#Exercise package upgrade shape without applying it",
       "system-surface.yml#Exercise restarted systemd shape",
-      "system-surface.yml#Exercise stopped service prediction"
+      "system-surface.yml#Exercise stopped service prediction",
+      "system-surface.yml#Start disposable payload server",
+      "system-surface.yml#Stop disposable payload server"
     ],
     "task-key:delay": [
       "control-flow.yml#Exercise retries and until",
