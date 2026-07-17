@@ -1,5 +1,8 @@
 # Repeated restart-action benchmark
 
+> Historical one-shot auxiliary measurement, not acceptance-grade performance
+> evidence. See the repeated [acceptance matrix](README.md).
+
 Captured 2026-07-16 on a disposable x86_64 Debian 12 Hetzner fixture in the
 isolated `ruxel-fixtures` project. The repository-owned synthetic playbook
 `tools/fixture-project/restart-actions.yml` executes 36 always-changed shell

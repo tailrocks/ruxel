@@ -160,11 +160,11 @@ containers=()
 fixture_sha="$(shasum -a 256 tools/fixture-project/multihost.yml | awk '{print $1}')"
 controller_sha="$(shasum -a 256 "$CONTROLLER" | awk '{print $1}')"
 agent_sha="$(shasum -a 256 "$AGENT" | awk '{print $1}')"
-ansible_version="$(tools/oracle/.venv/bin/ansible-playbook --version | head -1 | sed -E 's/.*core ([^]]+).*/\1/')"
+ansible_version="$(tools/oracle/.venv/bin/ansible-playbook --version | head -1)"
 ruxel_version="$("$CONTROLLER" --version | awk '{print $2}')"
-rustc_version="$(rustc --version)"
+rustc_version="$(mise exec -- rustc --version)"
 python3 - "$case_dir/manifest.json" "$fixture_sha" "$controller_sha" "$agent_sha"   "$ansible_version" "$ruxel_version" "$rustc_version" "$kernel" "$REPETITIONS"   "$unreachable_stdout_sha" "$unreachable_stderr_sha" <<'PY'
-import json, sys
+import hashlib, json, pathlib, sys
 (path, fixture_sha, controller_sha, agent_sha, ansible, ruxel, rustc, kernel,
  repetitions, unreachable_stdout, unreachable_stderr) = sys.argv[1:]
 manifest = {
@@ -172,6 +172,10 @@ manifest = {
     "case": "six-host",
     "playbook": "tools/fixture-project/multihost.yml",
     "fixture_source_sha256": fixture_sha,
+    "parity_manifest": "tools/oracle/parity/multihost.json",
+    "parity_manifest_sha256": hashlib.sha256(
+        pathlib.Path("tools/oracle/parity/multihost.json").read_bytes()
+    ).hexdigest(),
     "binaries": {
         "controller_sha256": controller_sha,
         "agent_sha256": agent_sha,

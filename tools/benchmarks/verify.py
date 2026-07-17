@@ -13,6 +13,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from summarize import EXECUTORS, EvidenceError, load_json, load_samples, summarize_samples  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "oracle"))
+from compare_results import compare as compare_results  # noqa: E402
 
 REQUIRED_CASES = {
     "fresh",
@@ -97,15 +99,57 @@ def verify_case(case_dir: Path, expected_case: str) -> None:
     require_nonempty_strings(manifest, {"playbook", "fixture_source_sha256"}, "manifest")
     if not SHA256.fullmatch(manifest["fixture_source_sha256"]):
         raise EvidenceError(f"invalid fixture source hash in {case_dir}")
+    repository = Path(__file__).resolve().parents[2]
+    fixture_source = repository / manifest["playbook"]
+    try:
+        fixture_source.resolve(strict=True).relative_to(
+            (repository / "tools/fixture-project").resolve(strict=True)
+        )
+    except (OSError, ValueError) as error:
+        raise EvidenceError(
+            f"fixture source is absent or outside tools/fixture-project in {case_dir}"
+        ) from error
+    if not fixture_source.is_file() or fixture_source.is_symlink():
+        raise EvidenceError(f"fixture source is not a regular file in {case_dir}")
+    if digest(fixture_source) != manifest["fixture_source_sha256"]:
+        raise EvidenceError(f"fixture source hash mismatch in {case_dir}")
+    if expected_case != "scale-65x52":
+        parity_relative = manifest.get("parity_manifest")
+        if not isinstance(parity_relative, str):
+            raise EvidenceError(f"parity manifest link missing in {case_dir}")
+        parity_path = repository / parity_relative
+        try:
+            parity_path.resolve(strict=True).relative_to(
+                (repository / "tools/oracle/parity").resolve(strict=True)
+            )
+        except (OSError, ValueError) as error:
+            raise EvidenceError(f"invalid parity manifest link in {case_dir}") from error
+        if manifest.get("parity_manifest_sha256") != digest(parity_path):
+            raise EvidenceError(f"parity manifest hash mismatch in {case_dir}")
+        parity = require_object(load_json(parity_path), "parity manifest")
+        if parity.get("binaries") != manifest.get("binaries"):
+            raise EvidenceError(f"parity binary hashes mismatch in {case_dir}")
+        for mode in ("fresh", "converged", "check_diff"):
+            proof = require_object(parity.get("modes", {}).get(mode), f"parity.{mode}")
+            if proof.get("result_parity") is not True:
+                raise EvidenceError(f"parity result proof incomplete in {case_dir}")
+            state_key = "state_contract" if mode == "check_diff" else "state_parity"
+            if proof.get(state_key) is not True:
+                raise EvidenceError(f"parity state proof incomplete in {case_dir}")
     binaries = require_object(manifest.get("binaries"), "manifest.binaries")
     require_nonempty_strings(binaries, REQUIRED_BINARIES, "manifest.binaries")
     if any(not SHA256.fullmatch(binaries[name]) for name in REQUIRED_BINARIES):
         raise EvidenceError(f"invalid binary hash in {case_dir}")
+    versions = require_object(manifest.get("versions"), "manifest.versions")
     require_nonempty_strings(
-        require_object(manifest.get("versions"), "manifest.versions"),
+        versions,
         REQUIRED_VERSIONS,
         "manifest.versions",
     )
+    if not versions["rustc"].startswith("rustc 1.97.1 "):
+        raise EvidenceError(f"stale Rust toolchain in {case_dir}")
+    if versions["ansible"] != "ansible-playbook [core 2.21.2]":
+        raise EvidenceError(f"stale Ansible oracle in {case_dir}")
     fixture = require_object(manifest.get("fixture"), "manifest.fixture")
     require_nonempty_strings(fixture, {"kind"}, "manifest.fixture")
     if not require_object(fixture.get("specification"), "manifest.fixture.specification"):
@@ -206,6 +250,13 @@ def verify_case(case_dir: Path, expected_case: str) -> None:
             raise EvidenceError("scale-65x52 fixture/threshold gate is incomplete")
         if expected_summary["executors"]["ruxel"]["median_ns"] >= 5_000_000_000:
             raise EvidenceError("scale-65x52 Ruxel median is not below 5 seconds")
+        for repetition in range(1, declared_repetitions + 1):
+            capture = safe_file(case_dir, f"correctness/ansible-{repetition}.jsonl")
+            ruxel = safe_file(case_dir, f"logs/ruxel-{repetition}.stdout")
+            if compare_results(ruxel, capture) != 0:
+                raise EvidenceError(
+                    f"scale-65x52 committed result parity failed at repetition {repetition}"
+                )
 
     for path in case_dir.rglob("*"):
         if path.is_file():

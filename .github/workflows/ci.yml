@@ -94,7 +94,7 @@ jobs:
           ANSIBLE_DEPRECATION_WARNINGS: "False"
         run: >-
           tools/oracle/.venv/bin/ansible-playbook -i 'localhost,' --syntax-check
-          tools/fixture-project/*.yml
+          tools/fixture-project/*.yml tools/fixture-project/benchmarks/*.yml
 
       - name: Verify render oracle is reproducible
         run: git diff --exit-code -- tools/oracle/captures/render-parity.jsonl
@@ -107,6 +107,14 @@ jobs:
 
       - name: Verify committed oracle capture schema
         run: python3 tools/oracle/verify_captures.py
+
+      - name: Verify benchmark and chaos evidence
+        run: |
+          python3 -m unittest discover -s tools/benchmarks -p 'test*.py'
+          python3 -m unittest discover -s tools/chaos -p 'test*.py'
+          python3 tools/benchmarks/verify.py docs/benchmarks/results
+          python3 tools/chaos/verify.py
+          tools/chaos/test_safety.sh
 
       - name: Test fixture target safety
         run: tools/fixtures/tests/safety.sh

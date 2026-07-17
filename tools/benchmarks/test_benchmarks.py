@@ -31,17 +31,20 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         directory = self.root / case
         logs = directory / "logs"
         logs.mkdir(parents=True)
+        fixture = Path(__file__).parents[2] / "tools/fixture-project/benchmarks/files.yml"
+        parity_path = Path(__file__).parents[2] / "tools/oracle/parity/files-content.json"
+        parity = json.loads(parity_path.read_text())
         manifest = {
             "schema": 1,
             "case": case,
-            "playbook": f"{case}.yml",
-            "fixture_source_sha256": "a" * 64,
-            "binaries": {"controller_sha256": "b" * 64, "agent_sha256": "c" * 64},
+            "playbook": "tools/fixture-project/benchmarks/files.yml",
+            "fixture_source_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+            "binaries": parity["binaries"],
             "versions": {
-                "ansible": "2.21.2",
+                "ansible": "ansible-playbook [core 2.21.2]",
                 "ruxel": "0.1.0",
                 "agent": "0.1.0",
-                "rustc": "1.88.0",
+                "rustc": "rustc 1.97.1 (test fixture)",
                 "os": "Debian 12",
                 "kernel": "6.1",
             },
@@ -52,6 +55,11 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             "repetitions": 3,
             "correctness": {name: True for name in verify.REQUIRED_CORRECTNESS},
         }
+        if case != "scale-65x52":
+            manifest["parity_manifest"] = "tools/oracle/parity/files-content.json"
+            manifest["parity_manifest_sha256"] = hashlib.sha256(
+                parity_path.read_bytes()
+            ).hexdigest()
         if case == "six-host":
             gate_hashes = {}
             for stream in ("stdout", "stderr"):
@@ -90,12 +98,32 @@ class BenchmarkEvidenceTests(unittest.TestCase):
                 for stream in ("stdout", "stderr"):
                     relative = f"logs/{executor}-{repetition}.{stream}"
                     data = f"{executor} {repetition} {stream}\n".encode()
+                    if case == "scale-65x52" and stream == "stdout":
+                        if executor == "ruxel":
+                            data = (
+                                b'{"event":"task","task":"T","module":"assert",'
+                                b'"status":"ok","ignored":false,"result":{"changed":false}}\n'
+                                b'{"event":"recap","host":"fixture","ok":1,"changed":0,'
+                                b'"failed":0,"unreachable":0,"skipped":0,"rescued":0,"ignored":0}\n'
+                            )
+                        else:
+                            data = (
+                                b'{"task_name":"T","action":"assert","status":"ok",'
+                                b'"result":{"changed":false},"ignore_errors":false,"raw_args":{}}\n'
+                            )
                     (directory / relative).write_bytes(data)
                     sample[stream] = {
                         "path": relative,
                         "sha256": hashlib.sha256(data).hexdigest(),
                     }
                 samples.append(sample)
+        if case == "scale-65x52":
+            correctness = directory / "correctness"
+            correctness.mkdir()
+            for repetition in range(1, 4):
+                (correctness / f"ansible-{repetition}.jsonl").write_bytes(
+                    (logs / f"ansible-{repetition}.stdout").read_bytes()
+                )
         (directory / "samples.jsonl").write_text(
             "".join(json.dumps(sample, sort_keys=True) + "\n" for sample in samples),
             encoding="utf-8",
@@ -141,6 +169,22 @@ class BenchmarkEvidenceTests(unittest.TestCase):
     def test_raw_log_hash_mismatch_fails(self) -> None:
         (self.root / "fresh" / "logs" / "ansible-1.stdout").write_text("changed\n")
         with self.assertRaisesRegex(summarize.EvidenceError, "hash mismatch"):
+            verify.verify_case(self.root / "fresh", "fresh")
+
+    def test_fixture_source_hash_mismatch_fails(self) -> None:
+        path = self.root / "fresh" / "manifest.json"
+        manifest = summarize.load_json(path)
+        manifest["fixture_source_sha256"] = "a" * 64
+        self.write_json(path, manifest)
+        with self.assertRaisesRegex(summarize.EvidenceError, "fixture source hash mismatch"):
+            verify.verify_case(self.root / "fresh", "fresh")
+
+    def test_parity_manifest_hash_mismatch_fails(self) -> None:
+        path = self.root / "fresh" / "manifest.json"
+        manifest = summarize.load_json(path)
+        manifest["parity_manifest_sha256"] = "a" * 64
+        self.write_json(path, manifest)
+        with self.assertRaisesRegex(summarize.EvidenceError, "parity manifest hash mismatch"):
             verify.verify_case(self.root / "fresh", "fresh")
 
     def test_secret_ip_and_controller_path_fail(self) -> None:

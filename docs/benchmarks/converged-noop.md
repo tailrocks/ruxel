@@ -34,7 +34,5 @@ release binaries against any fixture:
 `ruxel apply -i <inv> install-docker.yml` (cached) vs `--no-cache`, and
 `ansible-playbook -i <inv> install-docker.yml` under the pinned 2.21 venv.
 
-Next: per-playbook profile_tasks breakdown and the 65-task
-`setup-postgresql-nova` converged number (pending the setup-* fixture +
-private-repo deploy key — GOAL.md), plus a fresh-provision and
-6-hosts-parallel run for the full M5 report.
+Superseded by the committed repeated [acceptance matrix](README.md); no private
+repository or production follow-up is permitted.

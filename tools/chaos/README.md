@@ -17,9 +17,9 @@ cargo nextest run -p ruxel-agent chaos
 
 ## Fixture-only states
 
-Real network failure behavior still needs an operator-provided disposable VM.
-Never use production targets. For each fixture, record `Safety check: <target>`
-before contact, then inject SSH transport loss at these boundaries:
+Real network failure behavior is covered on a provider-created disposable VM.
+Never use production targets. The gate records `Safety check: <target>` before
+contact, then injects SSH transport loss at these boundaries:
 
 1. while the controller uploads/starts the agent;
 2. after `Hello` but before the complete `HelloAck` reaches the controller;
@@ -34,8 +34,8 @@ probe, or contact hosts listed in `AGENTS.md`.
 
 ## Acceptance artifact
 
-The future remote gate must write `tools/chaos/artifacts/manifest.json`, then
-run:
+The remote gate writes the committed `tools/chaos/artifacts/manifest.json`.
+Verify it with:
 
 ```sh
 python3 tools/chaos/verify.py
@@ -65,13 +65,17 @@ fixture; `run.sh` is preferred because its exit trap destroys the labeled
 fixture on success, failure, and interruption.
 
 `make_payload.py` materializes the ignored deterministic 2 MiB copy source
-immediately before the run; the gate trap removes it. This makes the large
-`Plan` boundary real without committing a generated binary-sized fixture.
+immediately before the run; the gate trap removes it. The large-Plan case
+uses equally large deterministic task metadata because copy content travels
+over the separate blob channel. This exercises a genuinely large `Plan`
+without committing a generated binary-sized fixture.
 
 The committed manifest is normalized: `target` is exactly `<fixture>` and it
 contains no IP addresses, secrets, controller paths, raw logs, or arbitrary
-extra fields. Runtime-only logs may retain fixture connection details outside
-the committed artifact.
+extra fields. It binds the fixture and generated playbook hashes, disposable
+provider fixture spec, controller and agent hashes, tool versions, and the
+six case records. Runtime-only logs may retain fixture connection details
+outside the committed artifact.
 
 Schema version 1 requires six independently injected boundaries. Splitting
 the two wire directions prevents a partial large `Plan` from being mistaken

@@ -458,7 +458,13 @@ async fn remote_agent_hash_matches(
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let expected = format!("{:x}", Sha256::digest(bytes));
+    let digest = Sha256::digest(bytes);
+    let mut expected = String::with_capacity(digest.len() * 2);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest {
+        expected.push(HEX[(byte >> 4) as usize] as char);
+        expected.push(HEX[(byte & 0x0f) as usize] as char);
+    }
     Ok(remote == expected)
 }
 

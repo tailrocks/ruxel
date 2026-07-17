@@ -1,16 +1,33 @@
 import copy
+import hashlib
+import json
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from verify import REQUIRED_CASES, validate
+from make_payload import payload_bytes
+from make_playbook import render_playbook
 
 
 def valid_manifest():
+    source = Path("tools/fixture-project/chaos/chaos.yml")
+    parity = json.loads(Path("tools/oracle/parity/control-flow.json").read_text())
     return {
         "schema_version": 1,
         "target": "<fixture>",
+        "fixture_source": str(source),
+        "fixture_source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "generated_playbook_sha256": hashlib.sha256(
+            render_playbook(source.read_text(), payload_bytes()).encode()
+        ).hexdigest(),
+        "binaries": parity["binaries"],
+        "versions": {"ruxel": "ruxel 0.1.0", "rustc": "rustc 1.97.1"},
+        "fixture": {
+            "kind": "disposable-provider",
+            "specification": {"image": "debian-12", "server_type": "cpx12"},
+        },
         "cases": [
             {
                 "case": name,
@@ -36,6 +53,12 @@ def valid_manifest():
 class ChaosEvidenceTests(unittest.TestCase):
     def test_complete_manifest_passes(self):
         validate(valid_manifest())
+
+    def test_generated_playbook_hash_is_recomputed(self):
+        data = valid_manifest()
+        data["generated_playbook_sha256"] = "a" * 64
+        with self.assertRaisesRegex(ValueError, "generated playbook hash mismatch"):
+            validate(data)
 
     def test_every_case_is_required_exactly_once(self):
         missing = valid_manifest()

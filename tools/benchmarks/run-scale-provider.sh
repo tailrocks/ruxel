@@ -14,7 +14,7 @@ case "$REPS" in ''|*[!0-9]*) echo "scale benchmark: repetitions must be an integ
 [ -x "$AGENT" ] || { echo "scale benchmark: agent is not executable" >&2; exit 2; }
 CONTROLLER="$(realpath "$CONTROLLER")"
 AGENT="$(realpath "$AGENT")"
-PLAYBOOK="$(realpath tools/benchmarks/fixtures/scale-65x52.yml)"
+PLAYBOOK="$(realpath tools/fixture-project/benchmarks/scale-65x52.yml)"
 python3 tools/benchmarks/validate_scale.py "$PLAYBOOK"
 
 final_dir="$RESULTS_ROOT/scale-65x52"
@@ -109,6 +109,7 @@ for repetition in $(seq 1 "$REPS"); do
   fi
   python3 tools/oracle/normalize_capture.py "$capture"
   tools/oracle/compare_results.py "$rstdout" "$capture"
+  cp "$capture" "$case_dir/correctness/ansible-$repetition.jsonl"
   tools/fixtures/state-snapshot.sh "$RFIXTURE" "$RKEY" "$stage/state-ruxel"
   tools/fixtures/state-snapshot.sh "$AFIXTURE" "$AKEY" "$stage/state-ansible"
   diff -u "$stage/state-ruxel" "$stage/state-ansible" >"$case_dir/correctness/state-$repetition.diff"
@@ -127,9 +128,9 @@ fixture_sha="$(sha256sum "$PLAYBOOK" | cut -d' ' -f1)"
 crate_version="$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name=="ruxel-cli") | .version')"
 jq -n -S --arg fixture_sha "$fixture_sha" --arg controller_sha "$controller_sha" --arg agent_sha "$agent_sha" \
   --arg ansible "$(tools/oracle/.venv/bin/ansible-playbook --version | head -1)" --arg ruxel "$crate_version" \
-  --arg rustc "$(rustc --version)" --arg os "$(uname -srm)" --arg kernel "$(uname -r)" --argjson repetitions "$REPS" \
+  --arg rustc "$(mise exec -- rustc --version)" --arg os "$(uname -srm)" --arg kernel "$(uname -r)" --argjson repetitions "$REPS" \
   --slurpfile specification "$stage/spec-ruxel.json" \
-  '{schema:1,case:"scale-65x52",playbook:"tools/benchmarks/fixtures/scale-65x52.yml",fixture_source_sha256:$fixture_sha,
+  '{schema:1,case:"scale-65x52",playbook:"tools/fixture-project/benchmarks/scale-65x52.yml",fixture_source_sha256:$fixture_sha,
     binaries:{controller_sha256:$controller_sha,agent_sha256:$agent_sha},
     versions:{ansible:$ansible,ruxel:$ruxel,agent:$ruxel,rustc:$rustc,os:$os,kernel:$kernel},
     fixture:{kind:"disposable-provider-twin",specification:$specification[0]},repetitions:$repetitions,

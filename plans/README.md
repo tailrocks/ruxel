@@ -1,56 +1,36 @@
 # Active implementation plan
 
-Only unfinished work required for the ChainArgos-extracted closed surface is
-listed here. Ansible-core 2.21 is the behavioral oracle. Real reference files
-are offline extraction input only; every executable comparison uses committed
-synthetic fixtures on provider-verified disposable targets. Production contact
-is forbidden.
+No required implementation work remains for the ChainArgos-extracted closed
+surface. Plans 001–025 are implemented and their acceptance evidence passes.
 
-## 1. Finish executable fixture parity
+## Completion proof
 
-- For every fixture, compare equivalent fresh Ansible and Ruxel targets, first
-  apply, converged rerun, check/diff results, normalized per-task fields, and
-  final state.
-- Extend state snapshots for repository definitions, service enabled/active
-  state, filesystem signatures, full Git state, PostgreSQL extensions/tables/
-  ownership/ACL/default ACL, and every other observable used by the workload.
-- Exercise storage and PostgreSQL fixtures on appropriately provisioned
-  disposable targets; never substitute production configuration or devices.
+- 675/675 extracted feature identities have a CI-enforced
+  fixture/oracle/Ruxel/state evidence chain.
+- All 14 synthetic fixtures pass current-binary fresh, converged, check/diff,
+  normalized per-task result, and final-state parity.
+- All 36 closed-surface modules and mapped interactions are executable.
+- The complete ten-case correctness-coupled benchmark matrix passes, including
+  storage, PostgreSQL, simulated RTT, six-host, and 65-task/52-lookup scale.
+- The six-case deterministic SSH chaos matrix passes bounded recovery and
+  process/socket/flock/temp-file leak checks.
+- Provider identity is verified before remote execution. Benchmark manifests
+  record disposable-resource reaping; the chaos owner always reaps through its
+  exit trap after artifact creation.
 
-Done when all 36 modules and all mapped interactions pass every run mode and
-state comparison from committed synthetic sources.
+Ansible-core 2.21 remains the behavioral oracle. Real ChainArgos files remain
+offline extraction input only and production contact remains forbidden. Scope
+does not include Ansible features absent from `docs/WORKLOAD.md`.
 
-## 2. Complete performance and resilience proof
+Newest stable dependencies and configuration are adopted deliberately, then
+exact versions are pinned for reproducibility. Backward compatibility is not a
+project requirement.
 
-- Benchmark Ansible and Ruxel on equivalent synthetic fresh, converged,
-  one-task-drift, check/diff, secret, storage, PostgreSQL, simulated-RTT, and
-  six-host cases.
-- Store raw logs, exact versions, fixture specification, repetitions, summary
-  statistics, and passing correctness results beside each report.
-- Complete disconnect/kill chaos at every protocol state and prove the target
-  is reusable afterward.
-- Remove or relabel historical benchmark claims that used absent/private
-  fixture sources.
+Evidence locations:
 
-Done when every required benchmark and chaos class is reproducible and remains
-Ansible-equivalent.
+- `tools/oracle/captures/`
+- `docs/benchmarks/results/`
+- `tools/chaos/artifacts/`
 
-## Already complete; not active work
-
-- 675/675 extracted feature names exist in the fixture corpus.
-- Synthetic render parity covers every fixture loop item, native/string
-  rendering, templates, lookup behavior, and matching error classes.
-- All semantic verification markers are measured and closed.
-- Result comparison and server-state bless checks exist.
-- Remote gates structurally accept only labeled fixture identities.
-- Bounded six-way host orchestration passed a two-host real-fixture gate.
-- All 675 extracted features have a CI-enforced fixture/oracle/Ruxel/state
-  evidence chain.
-- Six-host disposable-container concurrency, ordered recaps, unreachable
-  output, and repeated transport-resource cleanup pass reproducibly.
-- Every committed non-render oracle capture uses a CI-enforced normalized,
-  machine-independent schema; control-flow, shape-variant, system-surface, and
-  check-semantics captures exist.
-
-Ruxel status remains: **core implemented; closed-workload compatibility proof
-incomplete** until both active sections pass.
+Any future item belongs here only after the operator explicitly expands the
+closed workload or requests a new project goal.

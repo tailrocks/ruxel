@@ -428,7 +428,7 @@ fn password_changed(
 /// StoredKey = base64( SHA256( HMAC-SHA256(SaltedPassword, "Client Key") ) ),
 /// SaltedPassword = PBKDF2-HMAC-SHA256(password, base64decode(salt), iter).
 fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<String, String> {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::{Digest, Sha256};
     type H = Hmac<Sha256>;
 
@@ -437,7 +437,7 @@ fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<St
     let mut salted = [0u8; 32];
     pbkdf2::pbkdf2::<H>(password.as_bytes(), &salt, iterations, &mut salted)
         .map_err(|_| "pbkdf2".to_string())?;
-    let mut mac = <H as Mac>::new_from_slice(&salted).map_err(|_| "hmac key")?;
+    let mut mac = H::new_from_slice(&salted).map_err(|_| "hmac key")?;
     mac.update(b"Client Key");
     let client_key = mac.finalize().into_bytes();
     let stored_key = Sha256::digest(client_key);

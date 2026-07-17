@@ -1,7 +1,7 @@
 {
   "binaries": {
-    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
-    "controller_sha256": "2fbcad07e6d716421fac14b68db62a5f78886f2da399e18d48cfbeb3e642d781"
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
   },
   "case": "six-host",
   "correctness": {
@@ -28,15 +28,17 @@
     "unreachable_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "unreachable_stdout_sha256": "181605f117b66b35af32e342453c2850d3d595d9960556dcdfaaf17b805abe65"
   },
+  "parity_manifest": "tools/oracle/parity/multihost.json",
+  "parity_manifest_sha256": "7ed437c4c95d6efb8a8c8634cfc0fcdc1a06dd32862681652560466bd643114c",
   "playbook": "tools/fixture-project/multihost.yml",
   "repetitions": 3,
   "schema": 1,
   "versions": {
     "agent": "0.1.0",
-    "ansible": "2.21.0",
+    "ansible": "ansible-playbook [core 2.21.2]",
     "kernel": "7.0.11-orbstack-00360-gc9bc4d96ac70",
     "os": "Debian 12 local SSH containers",
-    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
     "ruxel": "0.1.0"
   }
 }

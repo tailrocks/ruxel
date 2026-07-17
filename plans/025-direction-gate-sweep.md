@@ -1,5 +1,9 @@
 # Plan 025: Sweep the available-now parity gates
 
+> Historical execution plan, completed 2026-07-17. Early blocked/private-key
+> language below is superseded by repository-owned synthetic coverage and the
+> resolution note under Done criteria. Real workload execution is forbidden.
+
 > **Executor instructions**: Follow step by step; verify each. Honor STOP
 > conditions. Update this plan's row in `plans/README.md` when done. This plan
 > runs **against disposable fixtures only** — never a production host. Record
@@ -169,11 +173,10 @@ ALL must hold:
 - [x] Coverage count updated in `RESTORE.md`/`GOAL.md`
 - [x] `plans/README.md` row for 025 updated
 
-Synthetic replacement gates landed 2026-07-16 for ext4 storage, controller
-delegation, and PostgreSQL schema ownership/default-privilege target roles.
-Each passed Ruxel fresh apply, Ruxel converged rerun, and Ansible bless; all
-resources were reaped. Remaining storage shapes and restart semantics stay
-open.
+Resolution (2026-07-17): all repository-owned synthetic storage, controller,
+PostgreSQL, and restart shapes pass fresh, converged, check/diff, normalized
+result, and final-state parity. Current manifests are under
+`tools/oracle/parity/`; every disposable resource was reaped.
 
 2026-07-16 precondition attempt: active context was confirmed as
 `ruxel-fixtures`, but both `hcloud server list` and `hcloud volume list` failed
@@ -202,8 +205,8 @@ Stop and report if:
 
 ## Maintenance notes
 
-- The six `setup-*` gates remain blocked on the operator's read-only ChainArgos
-  deploy key — the natural next sweep once that lands (a separate plan).
+- Real `setup-*` playbooks are permanently excluded from executable gates.
+  Their extracted shapes are covered by repository-owned synthetic fixtures.
 - Reviewer: confirm the goldens were captured with `--dry-secrets`/synthetic
   values where any secret is involved, and that no real secret entered a fixture
   or capture.

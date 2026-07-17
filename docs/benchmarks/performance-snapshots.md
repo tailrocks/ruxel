@@ -1,5 +1,8 @@
 # Secret and system snapshot benchmark
 
+> Historical auxiliary measurement. Superseded by the current repeated
+> [secret evidence](results/secret/) and [acceptance matrix](README.md).
+
 Captured 2026-07-16 on a disposable x86_64 Debian 12 Hetzner fixture in the
 isolated `ruxel-fixtures` project. The synthetic playbook exercises two fields
 from one dry-secret item, apt package checks, systemd state, and two PostgreSQL

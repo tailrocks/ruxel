@@ -8,8 +8,12 @@ from pathlib import Path
 SIZE = 2 * 1024 * 1024
 
 
+def payload_bytes():
+    return b"P" * SIZE
+
+
 def write_payload(path):
-    Path(path).write_bytes(b"P" * SIZE)
+    Path(path).write_bytes(payload_bytes())
 
 
 if __name__ == "__main__":

@@ -117,9 +117,18 @@ def process_task(records, loader, playbook, base_vars, task):
             bound_vars.update(bind)
         bound = Templar(loader=loader, variables=bound_vars)
         for key in CONDITION_KEYS:
+            condition_bind = dict(bind or {})
+            if key in ("changed_when", "failed_when", "until") and task.get("register"):
+                condition_bind[str(task["register"])] = {
+                    "changed": False, "failed": False, "rc": 0,
+                }
+            condition_vars = dict(bound_vars)
+            condition_vars.update(condition_bind)
+            condition_templar = Templar(loader=loader, variables=condition_vars)
             for index, expression in enumerate(listify(task.get(key, []))):
-                capture_condition(records, bound, playbook, task_name,
-                                  f"{key}[{index}]", expression, bind)
+                capture_condition(records, condition_templar, playbook, task_name,
+                                  f"{key}[{index}]", expression,
+                                  condition_bind or None)
         for module in (key for key in task if key not in TASK_CONTROL_KEYS):
             body = task[module]
             if module == "assert" and isinstance(body, dict):

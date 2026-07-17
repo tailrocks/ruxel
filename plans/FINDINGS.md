@@ -1,5 +1,8 @@
 # Ruxel — Deep Audit Findings Inventory
 
+> Historical audit input. All routed plans are complete; current status and
+> safety policy are authoritative in `plans/README.md` and `GOAL.md`.
+
 Complete inventory of everything the deep audit surfaced, against commit
 `b5f98ba` (2026-07-03). Eight parallel read-only auditors (correctness,
 security, performance, tests, tech-debt, deps/DX, docs, direction) swept the

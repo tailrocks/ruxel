@@ -40,15 +40,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 python3 tools/chaos/make_payload.py "$PAYLOAD"
-python3 - "$SOURCE_PLAYBOOK" "$PAYLOAD" "$PLAYBOOK" <<'PY'
-import json, pathlib, sys
-source, payload, output = map(pathlib.Path, sys.argv[1:])
-text = source.read_text()
-needle = "    - name: Large Plan payload"
-assert text.count(needle) == 1
-text = text.replace(needle, "    - name: " + json.dumps("Large Plan payload " + payload.read_text()))
-output.write_text(text)
-PY
+python3 tools/chaos/make_playbook.py "$SOURCE_PLAYBOOK" "$PAYLOAD" "$PLAYBOOK"
+fixture_spec "$FIXTURE" >"$work/fixture-spec.json"
 
 DEST="root@${FIXTURE_IP}"
 KNOWN_HOSTS="${KEY}.known_hosts"
@@ -177,11 +170,29 @@ for case_name in "${cases[@]}"; do
 done
 
 mkdir -p tools/chaos/artifacts
-python3 - "$results" >tools/chaos/artifacts/manifest.json <<'PY'
-import json, sys
+python3 - "$results" "$SOURCE_PLAYBOOK" "$PLAYBOOK" "$RUXEL" "$AGENT" \
+  "$work/fixture-spec.json" >tools/chaos/artifacts/manifest.json <<'PY'
+import hashlib, json, pathlib, subprocess, sys
+results, source, generated, controller, agent, fixture_spec = sys.argv[1:]
+digest = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 print(json.dumps({
     "schema_version": 1,
     "target": "<fixture>",
+    "fixture_source": "tools/fixture-project/chaos/chaos.yml",
+    "fixture_source_sha256": digest(source),
+    "generated_playbook_sha256": digest(generated),
+    "binaries": {
+        "controller_sha256": digest(controller),
+        "agent_sha256": digest(agent),
+    },
+    "versions": {
+        "ruxel": subprocess.check_output([controller, "--version"], text=True).strip(),
+        "rustc": subprocess.check_output(["mise", "exec", "--", "rustc", "--version"], text=True).strip(),
+    },
+    "fixture": {
+        "kind": "disposable-provider",
+        "specification": json.loads(pathlib.Path(fixture_spec).read_text()),
+    },
     "cases": [json.loads(line) for line in open(sys.argv[1])],
 }, indent=2, sort_keys=True))
 PY

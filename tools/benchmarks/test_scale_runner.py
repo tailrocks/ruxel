@@ -23,7 +23,7 @@ class ScaleRunnerSafetyTests(unittest.TestCase):
 
     def test_fixed_synthetic_fixture_and_safety_boundaries(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("tools/benchmarks/fixtures/scale-65x52.yml", source)
+        self.assertIn("tools/fixture-project/benchmarks/scale-65x52.yml", source)
         self.assertIn("--dry-secrets", source)
         self.assertIn("collection-overlay", source)
         self.assertIn("onepassword.py", source)

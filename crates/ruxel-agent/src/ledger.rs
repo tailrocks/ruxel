@@ -237,7 +237,7 @@ impl Ledger {
     }
 
     fn storage_key(&self, controller_key: &str) -> Option<String> {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
         let key = self.host_key?;

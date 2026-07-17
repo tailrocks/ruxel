@@ -1,5 +1,8 @@
 # Six-host disposable-container benchmark
 
+> Historical auxiliary measurement. Superseded by the current repeated
+> [six-host evidence](results/six-host/) and [acceptance matrix](README.md).
+
 Measured 2026-07-16 with `tools/fixtures/local-six-host-gate.sh` against six
 fresh Debian 12 SSH containers labeled `ruxel=local-fixture`. The synthetic
 workload is `tools/fixture-project/multihost.yml`: one independent one-second

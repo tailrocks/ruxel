@@ -33,6 +33,10 @@ has** — same playbook files, same `hosts.ini`, same `--check`/`--diff`/
 
 **Never repeat work that is already done, and prove it in seconds.**
 
+Committed synthetic evidence achieves this target: the 65-task/52-lookup
+scale case records a 1.785 s Ruxel median versus 64.912 s for Ansible, with
+task-result and final-state parity ([results](benchmarks/results/scale-65x52/)).
+
 ```
 ruxel plan  -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml   # seconds: full diff
 ruxel apply -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml  # applies only the diff

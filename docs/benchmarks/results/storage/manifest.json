@@ -1,7 +1,7 @@
 {
   "binaries": {
-    "agent_sha256": "1b767eda9892d1406ea57a22b8f3082e73800bad491496d326b02343e9833c67",
-    "controller_sha256": "2fbcad07e6d716421fac14b68db62a5f78886f2da399e18d48cfbeb3e642d781"
+    "agent_sha256": "9ea997b8d0b930e92b2eac52487b41098f3976effffa720d4f23b742a4f7520e",
+    "controller_sha256": "513257ee1cb6fac94c9009f51def091e479d2a187cf90c0139240a0ff80f4260"
   },
   "case": "storage",
   "correctness": {
@@ -22,7 +22,8 @@
     }
   },
   "fixture_source_sha256": "46491b0169f5e902218790a386ec4f5504423edb4588c6222f87bbe607b5417b",
-  "parity_manifest_sha256": "bf426c508ab2f157b16d54c4bc1c2a18bd3b6179127a3ff964149b2488c146da",
+  "parity_manifest": "tools/oracle/parity/storage-ext4.json",
+  "parity_manifest_sha256": "c470d3000af9bd67175ef56ddafa6afbb15061e1ae5387ccd1d07f5d74d4fa92",
   "playbook": "tools/fixture-project/storage-ext4.yml",
   "preparation": "storage-ext4",
   "repetitions": 3,
@@ -30,10 +31,10 @@
   "schema": 1,
   "versions": {
     "agent": "0.1.0",
-    "ansible": "ansible-playbook [core 2.21.0]",
+    "ansible": "ansible-playbook [core 2.21.2]",
     "kernel": "25.5.0",
     "os": "Darwin 25.5.0 arm64",
-    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
     "ruxel": "0.1.0"
   }
 }

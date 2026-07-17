@@ -178,7 +178,10 @@ fn synthetic_template_files_match_ansible() {
         let got = engine.render_template_file(&content, &scope_for(&corpus, record));
         let matches = match (expected["t"].as_str().unwrap(), &got) {
             ("file", Ok(rendered)) => {
-                let digest = format!("{:x}", Sha256::digest(rendered.as_bytes()));
+                let digest = Sha256::digest(rendered.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
                 digest == expected["sha256"].as_str().unwrap()
                     && rendered.len() as u64 == expected["len"].as_u64().unwrap()
                     && rendered.ends_with('\n') == expected["tail_nl"].as_bool().unwrap()

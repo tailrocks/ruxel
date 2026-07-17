@@ -79,10 +79,9 @@ a network protocol, the same `.proto` lifts into tonic unchanged.
 
 Message flow per host per run:
 
-> **Build status (2026-07): NOT YET BUILT.** `ProbeResult`, non-zero
-> `ledger_gen`, `BlobsNeeded`, `PauseRequest`, and controller-sent
-> `PlanPatch`/`Resume` are design protocol. The current protocol streams task
-> results and logs; the agent reports ledger generation zero.
+> **Build status (2026-07):** controller-sent `PlanPatch`, blob negotiation,
+> task results, logs, and non-zero ledger generations are built. `ProbeResult`,
+> `PauseRequest`, and `Resume` remain reserved design protocol.
 
 ```
 controller → agent   Hello{proto_ver, agent_b3sum_expected, run_id, flags(check, diff, no_cache)}
@@ -309,5 +308,7 @@ already know everything is correct."
 
 Edit-one-task rerun = the same + that one task's real work. Fresh-server
 first run = real work (apt/mkfs/initdb) + seconds of overhead, hosts in
-parallel. These budgets become measured benchmarks in M3/M5
-([PLAN.md](PLAN.md)); the numbers above are targets, not claims.
+parallel. These budgets are measured by the committed synthetic evidence in
+[`benchmarks/results/`](benchmarks/results/). The 65-task/52-lookup case has a
+1.785 s Ruxel median; the table remains a design budget, not a production
+workload claim.

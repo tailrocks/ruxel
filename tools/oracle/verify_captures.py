@@ -71,6 +71,17 @@ def main():
         if manifest.stem != stem:
             print(f"{manifest}: playbook stem mismatch", file=sys.stderr)
             return 1
+        fixture_source = Path("tools/fixture-project") / f"{stem}.yml"
+        fixture_digest = hashlib.sha256(fixture_source.read_bytes()).hexdigest()
+        if data.get("fixture_source_sha256") != fixture_digest:
+            print(f"{manifest}: stale fixture source hash", file=sys.stderr)
+            return 1
+        if data.get("versions") != {
+            "ansible": "ansible-playbook [core 2.21.2]",
+            "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+        }:
+            print(f"{manifest}: stale oracle tool versions", file=sys.stderr)
+            return 1
         names = {
             "fresh": f"fresh-{stem}.jsonl",
             "converged": f"converged-{stem}.jsonl",

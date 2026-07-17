@@ -42,7 +42,7 @@ message Plan {
 }
 
 // Late-rendered continuation for deferred tasks.
-// RESERVED: wire contract for planned pipelining work (plan 020); not yet sent by the controller.
+// Controller-sent continuation for register-dependent tasks (plan 020).
 message PlanPatch {
   repeated RenderedTask tasks = 1;
 }

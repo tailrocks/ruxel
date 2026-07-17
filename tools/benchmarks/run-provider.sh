@@ -282,15 +282,17 @@ ansible_version="$(tools/oracle/.venv/bin/ansible-playbook --version | head -1)"
 jq -n -S --arg case "$CASE" --arg playbook "tools/fixture-project/$playbook" \
   --arg fixture_sha "$fixture_sha" --arg controller_sha "$controller_sha" --arg agent_sha "$agent_sha" \
   --arg ansible "$ansible_version" --arg ruxel "$crate_version" --arg agent "$crate_version" \
-  --arg rustc "$(rustc --version)" --arg os "$(uname -srm)" --arg kernel "$(uname -r)" \
+  --arg rustc "$(mise exec -- rustc --version)" --arg os "$(uname -srm)" --arg kernel "$(uname -r)" \
   --arg kind 'disposable-provider-twin' --arg scenario "$scenario" --arg prepare "$prepare" \
-  --arg parity_sha "$(sha256sum "$PARITY" | cut -d' ' -f1)" --argjson repetitions "$REPS" \
+  --arg parity "$PARITY" --arg parity_sha "$(sha256sum "$PARITY" | cut -d' ' -f1)" \
+  --argjson repetitions "$REPS" \
   --slurpfile specification "$stage/spec-ruxel.json" \
   '{schema:1,case:$case,playbook:$playbook,fixture_source_sha256:$fixture_sha,
     binaries:{controller_sha256:$controller_sha,agent_sha256:$agent_sha},
     versions:{ansible:$ansible,ruxel:$ruxel,agent:$agent,rustc:$rustc,os:$os,kernel:$kernel},
     fixture:{kind:$kind,specification:$specification[0]},repetitions:$repetitions,
-    scenario:$scenario,preparation:$prepare,parity_manifest_sha256:$parity_sha,
+    scenario:$scenario,preparation:$prepare,parity_manifest:$parity,
+    parity_manifest_sha256:$parity_sha,
     correctness:{fixture_identity_verified:true,result_parity:true,diff_parity:true,state_parity:true,resources_reaped:true}}' \
   >"$case_dir/manifest.json"
 python3 tools/benchmarks/summarize.py "$case_dir"

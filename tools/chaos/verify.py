@@ -2,10 +2,14 @@
 """Verify committed synthetic SSH-chaos acceptance evidence."""
 
 import ipaddress
+import hashlib
 import json
 import re
 import sys
 from pathlib import Path
+
+from make_payload import payload_bytes
+from make_playbook import render_playbook
 
 
 REQUIRED_CASES = {
@@ -16,7 +20,11 @@ REQUIRED_CASES = {
     "long-subprocess",
     "controlmaster-sigint",
 }
-TOP_LEVEL_KEYS = {"schema_version", "target", "cases"}
+TOP_LEVEL_KEYS = {
+    "schema_version", "target", "fixture_source", "fixture_source_sha256",
+    "generated_playbook_sha256", "binaries", "versions", "fixture", "cases",
+}
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 CASE_KEYS = {
     "case",
     "injection_sentinel",
@@ -88,6 +96,37 @@ def validate(data) -> None:
         raise ValueError("schema_version must be 1")
     if data["target"] != "<fixture>":
         raise ValueError("target must be normalized as <fixture>")
+    if data["fixture_source"] != "tools/fixture-project/chaos/chaos.yml":
+        raise ValueError("fixture source must be the committed chaos fixture")
+    source = Path(data["fixture_source"])
+    source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if data["fixture_source_sha256"] != source_digest:
+        raise ValueError("fixture source hash mismatch")
+    generated_digest = hashlib.sha256(
+        render_playbook(source.read_text(), payload_bytes()).encode()
+    ).hexdigest()
+    if data["generated_playbook_sha256"] != generated_digest:
+        raise ValueError("generated playbook hash mismatch")
+    binaries = data["binaries"]
+    if not isinstance(binaries, dict) or set(binaries) != {
+        "controller_sha256", "agent_sha256"
+    } or any(not SHA256.fullmatch(str(value)) for value in binaries.values()):
+        raise ValueError("binary hashes must be exact SHA-256 fields")
+    parity = json.loads(Path("tools/oracle/parity/control-flow.json").read_text())
+    if binaries != parity.get("binaries"):
+        raise ValueError("chaos binaries do not match current parity evidence")
+    versions = data["versions"]
+    if not isinstance(versions, dict) or set(versions) != {"ruxel", "rustc"} or any(
+        not isinstance(value, str) or not value for value in versions.values()
+    ):
+        raise ValueError("versions must contain non-empty ruxel and rustc strings")
+    fixture = data["fixture"]
+    if not isinstance(fixture, dict) or set(fixture) != {"kind", "specification"}:
+        raise ValueError("fixture metadata fields are invalid")
+    if fixture["kind"] != "disposable-provider" or not isinstance(
+        fixture["specification"], dict
+    ) or not fixture["specification"]:
+        raise ValueError("fixture specification must identify a disposable provider target")
     if not isinstance(data["cases"], list):
         raise ValueError("cases must be an array")
 

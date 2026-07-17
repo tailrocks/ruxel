@@ -5,7 +5,7 @@ from pathlib import Path
 from validate_scale import validate
 
 
-FIXTURE = Path(__file__).parent / "fixtures" / "scale-65x52.yml"
+FIXTURE = Path(__file__).parents[1] / "fixture-project" / "benchmarks" / "scale-65x52.yml"
 
 
 class ScaleFixtureTests(unittest.TestCase):

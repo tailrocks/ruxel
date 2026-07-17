@@ -21,8 +21,8 @@ ruxel-proto = { path = "crates/ruxel-proto", version = "0.1.0" }
 
 anyhow = "1.0"
 base64 = "0.22"
-hmac = "0.12"
-pbkdf2 = { version = "0.12", default-features = false }
+hmac = "0.13"
+pbkdf2 = { version = "0.13", default-features = false }
 blake3 = "1"
 clap = { version = "4.5", features = ["derive", "color", "env", "help", "usage"] }
 futures = "0.3"
@@ -36,7 +36,7 @@ protoc-bin-vendored = "3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_norway = "0.9"
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = "2.0"
 
 [profile.release]

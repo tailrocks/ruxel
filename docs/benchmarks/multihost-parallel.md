@@ -1,5 +1,8 @@
 # Two-host parallel execution
 
+> Historical auxiliary measurement. Superseded by the current repeated
+> [six-host evidence](results/six-host/) and [acceptance matrix](README.md).
+
 Measured 2026-07-16 on two provider-labeled disposable Debian 12 fixtures in
 the isolated fixture project. Source was the repository-owned
 `tools/fixture-project/files-content.yml`; no production or reference-workload

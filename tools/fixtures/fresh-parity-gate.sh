@@ -93,14 +93,19 @@ diff -u "$work/converged-ansible" "$work/check-ansible"
 
 jq -n -S \
   --arg playbook "$stem" \
+  --arg fixture_source_sha256 "$(sha256sum "$PLAYBOOK" | cut -d' ' -f1)" \
   --arg controller_sha256 "$(sha256sum "$RUXEL" | cut -d' ' -f1)" \
   --arg agent_sha256 "$(sha256sum "$AGENT" | cut -d' ' -f1)" \
+  --arg ansible "$(tools/oracle/.venv/bin/ansible-playbook --version | head -1)" \
+  --arg rustc "$(mise exec -- rustc --version)" \
   --arg fresh_capture_sha256 "$(sha256sum "$work/captures/fresh-$stem.jsonl" | cut -d' ' -f1)" \
   --arg converged_capture_sha256 "$(sha256sum "$work/captures/converged-$stem.jsonl" | cut -d' ' -f1)" \
   --arg check_capture_sha256 "$(sha256sum "$work/captures/check-$stem.jsonl" | cut -d' ' -f1)" \
   --slurpfile fixture_spec "$work/spec-ruxel.json" \
-  '{schema: 1, playbook: $playbook, fixture_spec: $fixture_spec[0],
+  '{schema: 1, playbook: $playbook, fixture_source_sha256: $fixture_source_sha256,
+    fixture_spec: $fixture_spec[0],
     binaries: {controller_sha256: $controller_sha256, agent_sha256: $agent_sha256},
+    versions: {ansible: $ansible, rustc: $rustc},
     modes: {
       fresh: {capture_sha256: $fresh_capture_sha256, result_parity: true, state_parity: true},
       converged: {capture_sha256: $converged_capture_sha256, result_parity: true, state_parity: true},
