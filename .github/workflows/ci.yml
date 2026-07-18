@@ -74,9 +74,9 @@ jobs:
             ~/.local/share/uv/python
             tools/oracle/.venv
             tools/oracle/galaxy
-          key: oracle-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('tools/oracle/uv.lock', 'tools/oracle/galaxy-requirements.yml') }}
+          key: oracle-v2-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('tools/oracle/uv.lock', 'tools/oracle/galaxy-requirements.yml') }}
           restore-keys: |
-            oracle-${{ matrix.config.lane }}-${{ runner.os }}-
+            oracle-v2-${{ matrix.config.lane }}-${{ runner.os }}-
 
       # Revisit --no-tests=pass after plans 016/017 add tests to every crate.
       - run: cargo nextest run --all-features --color=always --no-tests=pass
