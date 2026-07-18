@@ -66,6 +66,17 @@ jobs:
           restore-keys: |
             cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
 
+      - name: Cache oracle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/uv
+            tools/oracle/.venv
+            tools/oracle/galaxy
+          key: oracle-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('tools/oracle/uv.lock', 'tools/oracle/galaxy-requirements.yml') }}
+          restore-keys: |
+            oracle-${{ matrix.config.lane }}-${{ runner.os }}-
+
       # Revisit --no-tests=pass after plans 016/017 add tests to every crate.
       - run: cargo nextest run --all-features --color=always --no-tests=pass
 
