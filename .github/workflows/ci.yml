@@ -71,6 +71,7 @@ jobs:
         with:
           path: |
             ~/.cache/uv
+            ~/.local/share/uv/python
             tools/oracle/.venv
             tools/oracle/galaxy
           key: oracle-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('tools/oracle/uv.lock', 'tools/oracle/galaxy-requirements.yml') }}
