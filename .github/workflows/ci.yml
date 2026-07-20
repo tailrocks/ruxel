@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  rust:
     name: Test (${{ matrix.config.lane }})
     timeout-minutes: 20
     strategy:
@@ -136,9 +136,6 @@ jobs:
       - name: Test fixture target safety
         run: tools/fixtures/tests/safety.sh
 
-      - name: sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
 
   fmt:
     name: Format (${{ matrix.config.lane }})
@@ -211,9 +208,6 @@ jobs:
 
       - run: cargo clippy --all-targets -- -D warnings
 
-      - name: sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
 
   agent-cross:
     name: Agent cross-build (${{ matrix.config.lane }})
@@ -268,9 +262,6 @@ jobs:
         run: |
           file target/x86_64-unknown-linux-musl/release/ruxel-agent | grep -E "ELF 64-bit.*x86-64.*statically linked"
 
-      - name: sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
 
   deny:
     name: Deny (${{ matrix.config.lane }})
