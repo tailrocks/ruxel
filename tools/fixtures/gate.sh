@@ -16,11 +16,11 @@ DEST="root@${FIXTURE_IP}"
 
 echo "== gate run 1 (cold)"
 RUXEL_TEST_SSH_DEST="$DEST" RUXEL_TEST_SSH_KEY="$KEY" RUXEL_TEST_AGENT_BIN="$AGENT" \
-  cargo test -p ruxel-cli --test transport_gate -- --ignored --nocapture
+  cargo nextest run -p ruxel-cli --test transport_gate --run-ignored ignored-only --nocapture
 
 echo "== gate run 2 (warm: no re-upload, < 1 s)"
 RUXEL_TEST_SSH_DEST="$DEST" RUXEL_TEST_SSH_KEY="$KEY" RUXEL_TEST_AGENT_BIN="$AGENT" \
 RUXEL_TEST_EXPECT_NO_UPLOAD=1 RUXEL_TEST_EXPECT_FAST=1 \
-  cargo test -p ruxel-cli --test transport_gate -- --ignored --nocapture
+  cargo nextest run -p ruxel-cli --test transport_gate --run-ignored ignored-only --nocapture
 
 echo "gate: PASS"
