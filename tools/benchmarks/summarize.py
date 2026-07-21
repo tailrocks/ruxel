@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 EXECUTORS = ("ansible", "ruxel")
+NANOSECOND_STAT_DECIMALS = 6
+RATIO_DECIMALS = 12
 
 
 class EvidenceError(ValueError):
@@ -52,9 +54,9 @@ def stats(values: list[int]) -> dict[str, int | float]:
         "n": len(ordered),
         "min_ns": ordered[0],
         "median_ns": statistics.median(ordered),
-        "mean_ns": statistics.fmean(ordered),
+        "mean_ns": round(statistics.fmean(ordered), NANOSECOND_STAT_DECIMALS),
         "p95_ns": ordered[p95_index],
-        "stdev_ns": statistics.pstdev(ordered),
+        "stdev_ns": round(statistics.pstdev(ordered), NANOSECOND_STAT_DECIMALS),
     }
 
 
@@ -83,7 +85,7 @@ def summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
             "speedup": "ansible_median_ns/ruxel_median_ns",
         },
         "executors": executors,
-        "speedup": speedup,
+        "speedup": round(speedup, RATIO_DECIMALS),
     }
 
 
