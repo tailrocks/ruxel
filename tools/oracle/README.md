@@ -37,7 +37,7 @@ facts/registers/lookups. The committed JSONL is replayed through Ruxel by
 cd tools/oracle
 uv run python render_parity.py
 git diff --exit-code captures/render-parity.jsonl
-cargo test -p ruxel-core --test render_parity
+cargo nextest run -p ruxel-core --test render_parity
 ```
 
 The corpus contains synthetic fixture names and values only. Regeneration from

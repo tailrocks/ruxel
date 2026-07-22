@@ -4,7 +4,7 @@
 //! service account) or have a desktop `op` session:
 //!
 //!   set -a; source ~/.config/ruxel/op-ci.env; set +a
-//!   cargo test -p ruxel-cli --test op_resolver -- --ignored --nocapture
+//!   cargo nextest run -p ruxel-cli --test op_resolver --run-ignored all --no-capture
 
 use ruxel_cli::secrets::OpResolver;
 use ruxel_core::engine::LookupResolver;

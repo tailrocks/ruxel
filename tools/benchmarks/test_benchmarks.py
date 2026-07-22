@@ -153,6 +153,20 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.assertEqual(summary["executors"]["ansible"]["p95_ns"], 100)
         self.assertEqual(summary["speedup"], 2.0)
 
+    def test_floating_statistics_have_canonical_precision(self) -> None:
+        summary = summarize.summarize_samples(
+            [
+                {"executor": executor, "accepted": True, "elapsed_ns": value}
+                for executor in summarize.EXECUTORS
+                for value in (18_317_303_333, 18_817_153_583, 20_069_549_833)
+            ]
+        )
+        self.assertEqual(
+            summary["executors"]["ansible"]["stdev_ns"],
+            737_014_581.206684,
+        )
+        self.assertEqual(summary["speedup"], 1.0)
+
     def test_missing_case_fails(self) -> None:
         (self.root / "fresh").rename(self.root / "fresh-missing")
         with self.assertRaisesRegex(summarize.EvidenceError, "case set mismatch"):
