@@ -101,7 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.metadata.outputs.version }}
-        run: gh release create "v${VERSION}" --verify-tag --title "Ruxel ${VERSION}" --generate-notes artifacts/ruxel-*
+        run: gh release create "v${VERSION}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Ruxel ${VERSION}" --generate-notes artifacts/ruxel-*
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tailrocks/homebrew-ruxel

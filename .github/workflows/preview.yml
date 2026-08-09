@@ -141,11 +141,11 @@ jobs:
           SHA: ${{ needs.metadata.outputs.sha }}
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
-          if gh release view preview >/dev/null 2>&1; then
-            gh release edit preview --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}."
-            gh release upload preview artifacts/ruxel-* --clobber
+          if gh release view preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit preview --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}."
+            gh release upload preview --repo "$GITHUB_REPOSITORY" artifacts/ruxel-* --clobber
           else
-            gh release create preview --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}." artifacts/ruxel-*
+            gh release create preview --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}." artifacts/ruxel-*
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
