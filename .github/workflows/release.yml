@@ -56,15 +56,15 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
-          install_args: ${{ matrix.builder == 'zigbuild' && 'rust zig cargo:cargo-zigbuild' || 'rust' }}
+          install_args: ${{ matrix.builder == 'zigbuild' && 'rust zig cargo-binstall cargo:cargo-zigbuild' || 'rust' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
       - name: Build
         if: matrix.builder == 'cargo'
-        run: cargo build --release --locked -p ruxel --target ${{ matrix.target }}
+        run: cargo build --release --locked -p ruxel-cli --target ${{ matrix.target }}
       - name: Build with Zig
         if: matrix.builder == 'zigbuild'
-        run: cargo zigbuild --release --locked -p ruxel --target ${{ matrix.target }}
+        run: cargo zigbuild --release --locked -p ruxel-cli --target ${{ matrix.target }}
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
