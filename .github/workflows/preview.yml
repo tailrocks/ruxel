@@ -1,0 +1,211 @@
+name: Publish Homebrew Preview
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-preview-publish
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-26.04
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: source
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: version
+        env:
+          SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          base=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          count=$(git rev-list --count "$SHA")
+          echo "version=${base}-preview.${count}+${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-26
+            builder: cargo
+          - target: x86_64-apple-darwin
+            os: macos-26
+            builder: cargo
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: zigbuild
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: zigbuild
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+          persist-credentials: false
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install_args: ${{ matrix.builder == 'zigbuild' && 'rust zig cargo:cargo-zigbuild' || 'rust' }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+      - name: Build
+        if: matrix.builder == 'cargo'
+        run: cargo build --release --locked -p ruxel --target ${{ matrix.target }}
+      - name: Build with Zig
+        if: matrix.builder == 'zigbuild'
+        run: cargo zigbuild --release --locked -p ruxel --target ${{ matrix.target }}
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          archive="ruxel-${TARGET}.tar.gz"
+          tar -czf "$archive" -C "target/${TARGET}/release" ruxel
+          shasum -a 256 "$archive" | awk '{print $1}' > "$archive.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ruxel-${{ matrix.target }}
+          path: ruxel-${{ matrix.target }}.tar.gz*
+
+  publish:
+    needs: [metadata, build]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Require complete platform set
+        run: |
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+            test -f "artifacts/ruxel-${target}.tar.gz"
+            test -f "artifacts/ruxel-${target}.tar.gz.sha256"
+          done
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.metadata.outputs.sha }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          if gh release view preview >/dev/null 2>&1; then
+            gh release edit preview --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}."
+            gh release upload preview artifacts/ruxel-* --clobber
+          else
+            gh release create preview --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}." artifacts/ruxel-*
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tailrocks/homebrew-ruxel
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Rewrite preview formula
+        env:
+          SHA: ${{ needs.metadata.outputs.sha }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          arm_macos=$(cat artifacts/ruxel-aarch64-apple-darwin.tar.gz.sha256)
+          x86_macos=$(cat artifacts/ruxel-x86_64-apple-darwin.tar.gz.sha256)
+          arm_linux=$(cat artifacts/ruxel-aarch64-unknown-linux-gnu.tar.gz.sha256)
+          x86_linux=$(cat artifacts/ruxel-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          cat > tap/Formula/ruxel-preview.rb <<EOF
+          # source-sha: ${SHA}
+          class RuxelPreview < Formula
+            desc "Fast Rust executor for a closed Ansible workload"
+            homepage "https://github.com/tailrocks/ruxel"
+            version "${VERSION}"
+            license "Apache-2.0"
+            on_macos do
+              on_arm do
+                url "https://github.com/tailrocks/ruxel/releases/download/preview/ruxel-aarch64-apple-darwin.tar.gz"
+                sha256 "${arm_macos}"
+              end
+              on_intel do
+                url "https://github.com/tailrocks/ruxel/releases/download/preview/ruxel-x86_64-apple-darwin.tar.gz"
+                sha256 "${x86_macos}"
+              end
+            end
+            on_linux do
+              on_arm do
+                url "https://github.com/tailrocks/ruxel/releases/download/preview/ruxel-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${arm_linux}"
+              end
+              on_intel do
+                url "https://github.com/tailrocks/ruxel/releases/download/preview/ruxel-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${x86_linux}"
+              end
+            end
+            conflicts_with "tailrocks/ruxel/ruxel", because: "preview and stable install same binary"
+            def install
+              bin.install "ruxel"
+            end
+            test do
+              system "#{bin}/ruxel", "--version"
+            end
+          end
+          EOF
+      - name: Update tap
+        working-directory: tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          git add Formula/ruxel-preview.rb
+          git diff --cached --quiet && exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ruxel@preview ${VERSION}"
+          git push
