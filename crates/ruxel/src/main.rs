@@ -6,7 +6,7 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(
     name = "ruxel",
-    version,
+    version = env!("RUXEL_VERSION"),
     about = "Rust-native automation without the YAML archaeology"
 )]
 struct Cli {
