@@ -103,9 +103,13 @@ jobs:
           restore-keys: cargo-registry-${{ runner.os }}-
       - name: Build
         if: matrix.builder == 'cargo'
+        env:
+          RUXEL_VERSION_OVERRIDE: ${{ needs.metadata.outputs.version }}
         run: cargo build --release --locked -p ruxel-cli --target ${{ matrix.target }}
       - name: Build with Zig
         if: matrix.builder == 'zigbuild'
+        env:
+          RUXEL_VERSION_OVERRIDE: ${{ needs.metadata.outputs.version }}
         run: cargo zigbuild --release --locked -p ruxel-cli --target ${{ matrix.target }}
       - name: Package
         env:
