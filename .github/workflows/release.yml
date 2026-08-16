@@ -145,6 +145,7 @@ jobs:
         if: matrix.config.writer
         with:
           repository: tailrocks/homebrew-ruxel
+          ref: main
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
       - name: Rewrite stable formula
