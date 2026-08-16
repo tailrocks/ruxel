@@ -17,7 +17,8 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-26.04
+    runs-on: ${{ 'ubuntu-26.04' }}
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.source.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
@@ -50,10 +51,10 @@ jobs:
             os: macos-26
             builder: cargo
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-26.04
+            os: ${{ 'ubuntu-26.04' }}
             builder: zigbuild
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-26.04
+            os: ${{ 'ubuntu-26.04' }}
             builder: zigbuild
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -61,7 +62,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +88,12 @@ jobs:
             ~/.cargo/git/db
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-preview-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-preview-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Build
         if: matrix.builder == 'cargo'
         env:
@@ -111,7 +118,8 @@ jobs:
 
   publish:
     needs: [metadata, build]
-    runs-on: ubuntu-26.04
+    runs-on: ${{ 'ubuntu-26.04' }}
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

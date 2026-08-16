@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   metadata:
-    runs-on: ubuntu-26.04
+    runs-on: ${{ 'ubuntu-26.04' }}
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -37,15 +38,15 @@ jobs:
         include:
           - {target: aarch64-apple-darwin, os: macos-26, builder: cargo}
           - {target: x86_64-apple-darwin, os: macos-26, builder: cargo}
-          - {target: aarch64-unknown-linux-gnu, os: ubuntu-26.04, builder: zigbuild}
-          - {target: x86_64-unknown-linux-gnu, os: ubuntu-26.04, builder: zigbuild}
+          - {target: aarch64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04' }}", builder: zigbuild}
+          - {target: x86_64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04' }}", builder: zigbuild}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,6 +60,22 @@ jobs:
           install_args: ${{ matrix.builder == 'zigbuild' && 'rust zig cargo-binstall cargo:cargo-zigbuild' || 'rust' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-release-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-release-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Build
         if: matrix.builder == 'cargo'
         env:
@@ -84,7 +101,8 @@ jobs:
 
   publish:
     needs: [metadata, build]
-    runs-on: ubuntu-26.04
+    runs-on: ${{ 'ubuntu-26.04' }}
+    timeout-minutes: 20
     environment: stable-release
     permissions:
       contents: write
