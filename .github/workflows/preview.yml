@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: velnor (default) | github | both
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   contents: read
@@ -17,7 +23,12 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ${{ 'ubuntu-26.04' }}
+    name: Metadata (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     outputs:
       sha: ${{ steps.source.outputs.sha }}
@@ -118,7 +129,12 @@ jobs:
 
   publish:
     needs: [metadata, build]
-    runs-on: ${{ 'ubuntu-26.04' }}
+    name: Publish (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -134,6 +150,7 @@ jobs:
             test -f "artifacts/ruxel-${target}.tar.gz.sha256"
           done
       - name: Publish rolling release
+        if: matrix.config.writer
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.metadata.outputs.sha }}
@@ -146,11 +163,13 @@ jobs:
             gh release create preview --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "Preview build from ${SHA}." artifacts/ruxel-*
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.config.writer
         with:
           repository: tailrocks/homebrew-ruxel
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
       - name: Rewrite preview formula
+        if: matrix.config.writer
         env:
           SHA: ${{ needs.metadata.outputs.sha }}
           VERSION: ${{ needs.metadata.outputs.version }}
@@ -196,6 +215,7 @@ jobs:
           end
           EOF
       - name: Update tap
+        if: matrix.config.writer
         working-directory: tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

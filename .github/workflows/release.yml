@@ -4,6 +4,12 @@ on:
   push:
     tags: ['v[0-9]*']
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: velnor (default) | github | both
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   contents: read
@@ -14,7 +20,12 @@ concurrency:
 
 jobs:
   metadata:
-    runs-on: ${{ 'ubuntu-26.04' }}
+    name: Metadata (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -101,7 +112,12 @@ jobs:
 
   publish:
     needs: [metadata, build]
-    runs-on: ${{ 'ubuntu-26.04' }}
+    name: Publish (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 20
     environment: stable-release
     permissions:
@@ -120,16 +136,19 @@ jobs:
             test -f "artifacts/ruxel-${VERSION}-${target}.tar.gz.sha256"
           done
       - name: Publish immutable release
+        if: matrix.config.writer
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.metadata.outputs.version }}
         run: gh release create "v${VERSION}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Ruxel ${VERSION}" --generate-notes artifacts/ruxel-*
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.config.writer
         with:
           repository: tailrocks/homebrew-ruxel
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
       - name: Rewrite stable formula
+        if: matrix.config.writer
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
@@ -173,6 +192,7 @@ jobs:
           end
           EOF
       - name: Update tap
+        if: matrix.config.writer
         working-directory: tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
