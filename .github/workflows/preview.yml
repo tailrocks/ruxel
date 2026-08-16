@@ -191,11 +191,16 @@ jobs:
         working-directory: tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SHA: ${{ needs.metadata.outputs.sha }}
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           git add Formula/ruxel-preview.rb
           git diff --cached --quiet && exit 0
+          branch="automation/ruxel-preview-${SHA}"
+          git switch -c "$branch"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git commit -m "ruxel@preview ${VERSION}"
-          git push
+          git commit -s -m "ruxel@preview ${VERSION}" -m "Co-authored-by: Codex <codex@openai.com>"
+          git push --set-upstream origin "$branch"
+          gh pr create --repo tailrocks/homebrew-ruxel --base main --head "$branch" --title "ruxel@preview ${VERSION}" --body "Automated rolling preview update from tailrocks/ruxel@${SHA}."
+          gh pr merge --repo tailrocks/homebrew-ruxel "$branch" --auto --squash --delete-branch
