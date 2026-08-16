@@ -157,10 +157,16 @@ jobs:
       - name: Update tap
         working-directory: tap
         env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           git add Formula/ruxel.rb
+          git diff --cached --quiet && exit 0
+          branch="automation/ruxel-${VERSION}"
+          git switch -c "$branch"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git commit -m "ruxel ${VERSION}"
-          git push
+          git commit -s -m "ruxel ${VERSION}" -m "Co-authored-by: Codex <codex@openai.com>"
+          git push --set-upstream origin "$branch"
+          gh pr create --repo tailrocks/homebrew-ruxel --base main --head "$branch" --title "ruxel ${VERSION}" --body "Automated stable release update from tailrocks/ruxel v${VERSION}."
+          gh pr merge --repo tailrocks/homebrew-ruxel "$branch" --auto --squash --delete-branch
