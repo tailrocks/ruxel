@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+        config: ${{ fromJSON(github.event_name == 'push' && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
     runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     outputs:
@@ -49,9 +49,9 @@ jobs:
         include:
           - {target: aarch64-apple-darwin, os: macos-26, builder: cargo}
           - {target: x86_64-apple-darwin, os: macos-26, builder: cargo}
-          - {target: aarch64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04' }}", builder: zigbuild}
-          - {target: x86_64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04' }}", builder: zigbuild}
-    runs-on: ${{ matrix.os }}
+          - {target: aarch64-unknown-linux-gnu, os: "${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github')) && 'github-linux' || 'velnor-linux' }}", builder: zigbuild}
+          - {target: x86_64-unknown-linux-gnu, os: "${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github')) && 'github-linux' || 'velnor-linux' }}", builder: zigbuild}
+    runs-on: ${{ matrix.os == 'github-linux' && 'ubuntu-26.04' || matrix.os == 'velnor-linux' && fromJSON('["self-hosted","velnor-target-mvp"]') || matrix.os }}
     timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: "0"
@@ -116,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+        config: ${{ fromJSON(github.event_name == 'push' && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
     runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 20
     environment: stable-release
