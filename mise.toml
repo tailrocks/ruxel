@@ -14,7 +14,10 @@ cargo.binstall_only = true
 cargo.binstall_quickinstall = true
 
 [tasks.ci]
-run = "cargo check --all-targets --all-features --locked"
+depends = ["build", "test", "lint", "fmt"]
+
+[tasks.build]
+run = "cargo build --all-targets --all-features --locked"
 
 [tasks.test]
 run = "cargo nextest run --all-features --color=always --no-tests=pass"
