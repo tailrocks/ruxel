@@ -24,3 +24,6 @@ run = "cargo clippy --all-targets -- -D warnings"
 
 [tasks.fmt]
 run = "cargo fmt --all --check"
+
+[tasks."fmt-fix"]
+run = "cargo fmt --all"

@@ -12,8 +12,5 @@ check:
     python3 tools/chaos/verify.py
     tools/chaos/test_safety.sh
 
-fmt:
-    mise exec -- cargo fmt --all
-
 agent:
     mise exec -- cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release
