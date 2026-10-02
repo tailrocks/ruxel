@@ -1,5 +1,5 @@
 //! `apt_repository` (SEMANTICS §6): exact sources line in
-//! /etc/apt/sources.list.d/<filename>.list. Changed iff the file's
+//! `/etc/apt/sources.list.d/<filename>.list`. Changed iff the file's
 //! content changed; update_cache refreshes lists after a change (cache
 //! refresh itself never reports changed — same pin as apt).
 
