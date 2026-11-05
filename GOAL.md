@@ -16,7 +16,7 @@ time. The 65-task/52-lookup scale case measured a 1.785 s Ruxel median versus
 
 1. Never connect to, resolve, probe, scan, or execute against the six production
    hosts or addresses from their inventory. This includes check mode.
-2. Real ChainArgos configuration is read-only offline feature-extraction input.
+2. Real operator configuration is read-only offline feature-extraction input.
    Never execute or render-compare it, even on fixtures.
 3. Executable parity uses only committed synthetic sources under
    `tools/fixture-project/` and disposable local or Hetzner demo servers.
@@ -42,11 +42,11 @@ Production pilot work is outside this implementation goal.
 - Correctness parity gates every performance claim.
 - Commit and push completed changes on the current branch. Never create another
   branch.
-- Before each commit run `just check`.
+- Before each commit run `mise run check`.
 
 ## Completion evidence
 
-**The implementation plan is complete for the closed ChainArgos workload.**
+**The implementation plan is complete for the closed reference workload.**
 
 - All 675 extracted feature identities have fixture/oracle/Ruxel/state evidence.
 - All 14 executable fixtures pass fresh, converged, check/diff, normalized
