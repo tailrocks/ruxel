@@ -23,6 +23,7 @@ zig = "0.17.1"
 hk = "2.11.1"
 gitleaks = "8.30.1"
 rumdl = "0.3.2"
+"cargo:alint" = "0.21.0"
 
 [settings]
 cargo.binstall = true
@@ -69,9 +70,13 @@ run = ["python3 tools/ci/check-deny-inputs.py", "cargo deny --locked check"]
 description = "Unused dependencies"
 run = "cargo machete"
 
+[tasks.policy]
+description = "Repository policy (alint, rust-strict-v1)"
+run = ["alint validate-config", "alint check --fail-on-warning"]
+
 [tasks.check]
 description = "Every local check; run before each commit"
-depends = ["fmt", "lint", "test", "doctest", "deny", "machete"]
+depends = ["fmt", "lint", "test", "doctest", "deny", "machete", "policy"]
 
 [tasks.ci]
 description = "Fresh-checkout aggregate: install, build, check"
