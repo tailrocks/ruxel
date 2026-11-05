@@ -31,6 +31,7 @@ exit 2.
 ## Current state
 
 - `crates/ruxel/src/main.rs:25-31`:
+
   ```rust
   fn main() -> Result<()> {
       let cli = Cli::parse();          // clap usage errors → exit 2 (clap default)
@@ -40,6 +41,7 @@ exit 2.
       }                                 // any Err → anyhow prints, exit 1
   }
   ```
+
 - Parse/inventory error sites (all currently produce an `anyhow::Error` → exit 1):
   - `crates/ruxel/src/commands/apply.rs:71` `Inventory::parse(&inv_content)?`
   - `apply.rs:79` `ruxel_core::playbook::parse(&pb_name, &pb_content)?`
@@ -73,12 +75,14 @@ specific code from `main`.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/main.rs` — return `ExitCode`; map parse/compile errors to 2.
 - Possibly `crates/ruxel/src/commands/{apply,plan}.rs` — if you choose to have
   `execute` return a typed error instead of `anyhow` (optional; downcasting in
   `main` avoids touching them).
 
 **Out of scope**:
+
 - Host-failure exit (already 1) — leave it.
 - `--detailed-exitcode` (terraform-style 0/2) — that's plan 023, a different
   flag; do not conflate.
@@ -103,6 +107,7 @@ if it is one of those, `return ExitCode::from(2)`; otherwise return
 
 Concretely (adjust type names to the actual ones you find in `playbook.rs` /
 `inventory.rs`):
+
 ```rust
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse(); // clap exits 2 on usage errors itself
@@ -119,6 +124,7 @@ fn main() -> std::process::ExitCode {
     }
 }
 ```
+
 where `is_parse_error` checks `e.downcast_ref::<ruxel_core::playbook::ParseError>()`,
 `::<ruxel_core::inventory::…>()`, and `::<ruxel_core::compiler::CompileError>()`
 (use the real names). Read the three modules to get the exact types and whether
@@ -173,6 +179,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - The parse error types aren't reachable/downcastable from `ruxel-cli` (e.g.
   they're private) — you may need a small `pub` re-export in `ruxel-core`;
   report the change before making a public API wider than necessary.

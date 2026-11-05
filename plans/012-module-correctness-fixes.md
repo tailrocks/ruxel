@@ -25,18 +25,21 @@ provisioning** with `size: +100%FREE`, and `replace` **corrupts content**
 containing `$`. The rest are lower-confidence "investigate" items found by
 reading — each is a genuine divergence but its workload incidence is
 unconfirmed (the private playbooks aren't in-repo), so each gets a targeted fix
-+ test, and a STOP hatch if reality differs.
+
+- test, and a STOP hatch if reality differs.
 
 ## Current state (per fix)
 
 **A. CORRECTNESS-12 — `lvol` create with `+100%FREE` (MED confidence, HIGH
 impact):** `crates/ruxel-agent/src/modules/lvol.rs:83-87`:
+
 ```rust
 fn create(vg: &str, lv: &str, size: &str) -> Result<(), String> {
     let flag = if size.contains('%') { "-l" } else { "-L" };
     run_cmd("lvcreate", &[flag, size, "-n", lv, vg])   // e.g. lvcreate -l +100%FREE ...
 }
 ```
+
 `lvcreate -l` expects `100%FREE`, **not** `+100%FREE` — the `+` is an
 `lvextend`/`lvresize` relative operator. `SEMANTICS.md §6` lists `size: +100%FREE`
 in use. On a **fresh** disk (LV absent) this fails at `lvcreate`. The extend
@@ -44,9 +47,11 @@ path (`:31-49`) handles `+`; only `create` forwards it raw.
 
 **B. CORRECTNESS-09 — `replace` regex `$` semantics (MED confidence):**
 `crates/ruxel-agent/src/modules/replace.rs:17`:
+
 ```rust
 let next = re.replace_all(&current, replacement).to_string();
 ```
+
 `regex_lite`'s `replace_all` interprets `$name`/`${n}` in `replacement` as
 capture references (like the `regex` crate). Ansible's `replace` uses Python
 `re.sub`, where `$` is **literal** and backrefs are `\1`. A `replace:` value
@@ -55,11 +60,13 @@ mangled; Ansible-style `\1` backrefs are emitted literally. 3 `replace` sites.
 
 **C. CORRECTNESS-13 — `file` with no `state` errors at runtime (MED confidence):**
 `crates/ruxel-agent/src/modules/file.rs:13,67`:
+
 ```rust
 let state = str_param(obj, "state").unwrap_or("file");   // default "file"
 // ...
 other => Err(format!("file: state {other:?} outside the closed surface")),  // "file" hits this
 ```
+
 The parser only validates `state` when present, so a `file:` task that manages
 only `owner`/`mode` on an existing path (Ansible's default `state: file`) parses
 fine then **hard-fails at execution**. SEMANTICS §6 counts 46 `file` uses but
@@ -67,6 +74,7 @@ only 42 explicit states (directory 30 + absent 11 + link 1) — ~4 may omit
 `state`.
 
 **D. Low-confidence investigate cluster (each real, incidence unconfirmed):**
+
 - **`command` swallows unclosed quotes** — `command.rs:80-88`: an unterminated
   `'`/`"` is consumed to EOL silently; Python `shlex.split` raises "No closing
   quotation". A malformed templated command mis-parses instead of failing.
@@ -114,6 +122,7 @@ filesystem,blockinfile,sysctl,iptables}.rs`, `crates/ruxel-core/src/modules.rs`
 and only if confirmed).
 
 **Out of scope**:
+
 - Ledger probe changes (plan 006), no_log (008), pg (011).
 - Adding modules/params beyond the closed surface — the sysctl_file fix aligns
   the registry to SEMANTICS, it does not add new surface.
@@ -144,6 +153,7 @@ ruxel-agent lvol` → pass. (Live LVM behavior is an on-VM gate.)
 
 Make `replace_all` treat the `replace:` value as a **literal** string (Ansible's
 `re.sub` treats `$` as literal). Two options with `regex_lite`:
+
 - If `regex_lite` exposes a `NoExpand`/literal replacer, use it.
 - Otherwise, escape `$` → `$$` in `replacement` before `replace_all` (regex
   replacement syntax uses `$` for groups; doubling escapes it).
@@ -173,6 +183,7 @@ the closed surface"). `cargo nextest run -p ruxel-agent file` → pass.
 ### Step D: Low-confidence cluster (fix the confirmed, guard the rest)
 
 For each, **confirm against the code first**, then fix:
+
 - **command unclosed quote**: in `shlex_split` (`command.rs:73-130`), track
   whether a quote opened and never closed; at end, if still inside a quote,
   return `Err("No closing quotation")` (match Python). Unit test:
@@ -244,6 +255,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Adding `sysctl_file` to `ansible.posix.sysctl` breaks the workload parse gate
   (means the bare `sysctl` spelling is the sysctl_file user — revert and report).
 - The `replace` workload values contain `\`-backrefs (literal-only would break

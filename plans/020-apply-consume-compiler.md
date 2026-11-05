@@ -28,6 +28,7 @@ Two problems share one root cause: **`apply` never uses the compiler.**
 scheduler re-renders each task just-in-time and sends **one task per `Plan`**,
 then blocks on that task's `TaskResult` before the next (`scheduler.rs` has a
 single `.send` site). Consequences:
+
 1. **Perf (PERF-01)**: wall-clock grows linearly as (tasks + loop-items) ×
    SSH-mux RTT, fully serialized. For a 65-task setup-* playbook with per-item
    loops (100+ dispatches) at 15–40 ms RTT, that's ~1.5–4 s of pure round-trip
@@ -83,6 +84,7 @@ tests — those are the CONTROL for "behavior preserved."
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/scheduler.rs` — consume `compiler::Plan`; batch consecutive
   `Static` tasks into one wire `Plan`; render `Deferred` nodes from arriving
   registers and send `PlanPatch`; add the concurrent-receive side.
@@ -92,6 +94,7 @@ tests — those are the CONTROL for "behavior preserved."
   additional accessor (keep changes minimal; the DAG exists).
 
 **Out of scope**:
+
 - The separate `ProbeResult` probe-phase event (ARCHITECTURE §6) — not built;
   this plan pipelines *execution*, keeping the ledger fast-path on the agent as
   is.
@@ -211,6 +214,7 @@ Ansible changed behavior.
 ## STOP conditions
 
 Stop and report if:
+
 - Any golden or 009 scheduler test changes result — behavior drifted; the
   pipelining must be observably identical. Revert the offending step and report.
 - Failure-stop semantics can't be preserved with batched tasks (the agent

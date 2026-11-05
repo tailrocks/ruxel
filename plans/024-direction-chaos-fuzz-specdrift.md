@@ -36,7 +36,7 @@ Two of the closed spec's own safety mechanisms are promised but absent:
 2. **Spec-drift watch** (`PLAN.md:158-162`, README item 7): claimed to "live in
    `tools/spec-extract/` and run in CI" — it **doesn't exist**. This is the
    closed spec's *enforcement* mechanism. The workload is a live daily-driver
-   (`SKEPTIC.md` shows setup-sentry/setup-delorean change several times a week);
+   (`SKEPTIC.md` shows setup-example-host/setup-example-host change several times a week);
    without the watch, a workload edit introducing a new module/param/value
    silently outruns SEMANTICS and the implementation (ruxel fails safe at
    runtime, but the operator discovers it mid-run and the normative doc drifts).
@@ -53,7 +53,7 @@ Two of the closed spec's own safety mechanisms are promised but absent:
 - `tools/` contains only `fixtures/` and `oracle/` — no `spec-extract`. The
   closed surface is `crates/ruxel-core/src/modules.rs` `MODULES` (36 surfaces
   with `params` + `literal_enums`). The workload lives in the **private**
-  `ChainArgos/ansible-configs` repo (referenced via `RUXEL_WORKLOAD_DIR`).
+  `example-org/ansible-configs` repo (referenced via `RUXEL_WORKLOAD_DIR`).
 
 **Convention**: tests are std + inline `#[cfg(test)]`. Adding `proptest` as a
 **dev-dependency** (to `ruxel-core`/`ruxel-proto` `[dev-dependencies]`) is
@@ -73,6 +73,7 @@ the parser/frame in the crates that own them.
 ## Scope
 
 **In scope**:
+
 - Property/fuzz tests for `playbook::parse` and `frame::read_frame` (dev-dep
   `proptest`).
 - A chaos harness (design + prototype) that injects disconnects at protocol
@@ -83,6 +84,7 @@ the parser/frame in the crates that own them.
   registry.
 
 **Out of scope**:
+
 - Fixing any re-entrancy bug the chaos tests find — report it as a separate
   finding/plan.
 - Wiring the extractor into CI against the private repo (needs an operator
@@ -100,6 +102,7 @@ the parser/frame in the crates that own them.
 ### Step 1: Property tests for the parser and framing
 
 Add `proptest` as a dev-dependency to `ruxel-core` and `ruxel-proto`. Write:
+
 - `parse_never_panics`: `proptest` generating structurally-plausible-but-arbitrary
   YAML (and raw strings) — `playbook::parse` must return either a typed model or
   a clean error, **never panic** and never accept a value outside the closed
@@ -117,6 +120,7 @@ tests pass (or, if one **finds a panic**, STOP and report it — that's a real b
 Design a harness that, against a **disposable fixture** (operator-provided;
 record `Safety check: target`), injects a disconnect at each protocol state
 (after Hello, mid-Plan, after a TaskStart, mid-TaskResult, etc.) and asserts:
+
 - the agent's flock is released (a subsequent run acquires it — no wedged lock),
 - a rerun **converges** (idempotent — the half-applied task is re-applied
   cleanly), and
@@ -185,6 +189,7 @@ not run because `RUXEL_WORKLOAD_DIR` was unavailable.
 ## STOP conditions
 
 Stop and report if:
+
 - A property test finds a parser panic or a closed-surface escape — real bug;
   report it (blocks the "unknown = hard error" guarantee).
 - A local chaos test finds a non-recoverable protocol state — **critical**; this

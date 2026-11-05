@@ -73,6 +73,7 @@ commits.
 (point at `just check`). Optionally a release workflow (Step 4 — scope-gated).
 
 **Out of scope**:
+
 - Bumping the rust toolchain or any dep version (only the *mechanism*).
 - Publishing to crates.io (off by design).
 - CI cache/deny changes — plan 004.
@@ -90,6 +91,7 @@ commits.
 ### Step 1: Add a `justfile` wrapping the quality gates + `.editorconfig`
 
 Create a `justfile` at repo root with recipes:
+
 - `check`: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D
   warnings`, `cargo nextest run` (or `cargo test`), and (once added) `cargo
   machete`.
@@ -175,6 +177,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - The correct oracle Python pin is ambiguous (venv 3.13 vs lock cp312) and you
   can't determine what the operator's real Ansible controller uses — pin to the
   `uv.lock`'s resolved version (cp312 → 3.12) and note the assumption for the

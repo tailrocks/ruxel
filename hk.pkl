@@ -1,0 +1,72 @@
+amends "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Builtins.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Config.pkl"
+
+// Git hooks run only these: they pass on every intermediate branch.
+// Workspace-wide compile and advisory steps run in `hk check`,
+// `mise run check` and CI.
+local hookSteps = new Mapping<String, Step> {
+  ["mise"] = Builtins.mise
+  ["gitleaks"] = Builtins.gitleaks
+  ["cargo_fmt"] = (Builtins.cargo_fmt) {
+    check = (Builtins.cargo_fmt.check as Config.CommandSpec) {
+      command = "cargo fmt --all --check"
+    }
+    check_list_files = (Builtins.cargo_fmt.check_list_files as Config.CommandSpec) {
+      command = "cargo fmt --all --check -- --files-with-diff"
+    }
+    fix = (Builtins.cargo_fmt.fix as Config.CommandSpec) {
+      command = "cargo fmt --all"
+    }
+  }
+  ["rumdl"] = Builtins.rumdl
+}
+
+local linters = (hookSteps) {
+  ["cargo_check"] = (Builtins.cargo_check) {
+    glob = null
+    check = (Builtins.cargo_check.check as Config.CommandSpec) {
+      command = "cargo check --workspace --all-targets --all-features --locked --quiet"
+    }
+  }
+  ["cargo_clippy"] = (Builtins.cargo_clippy) {
+    glob = null
+    workspace_indicator = null
+    fix = (Builtins.cargo_clippy.fix as Config.CommandSpec) {
+      command = "cargo clippy --workspace --fix --allow-dirty --allow-staged --quiet"
+    }
+    check = (Builtins.cargo_clippy.check as Config.CommandSpec) {
+      command = "cargo clippy --workspace --all-targets --all-features --locked --quiet -- -D warnings"
+    }
+  }
+  ["cargo_deny"] = (Builtins.cargo_deny) {
+    glob = null
+    workspace_indicator = null
+    dir = null
+    check = (Builtins.cargo_deny.check as Config.CommandSpec) {
+      command = "cargo deny --locked check"
+    }
+  }
+}
+
+fail_fast = false
+
+hooks {
+  // The repository's commit-msg guard scans the message before chaining here.
+  ["commit-msg"] {}
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps = hookSteps
+  }
+  ["pre-push"] {
+    steps = hookSteps
+  }
+  ["fix"] {
+    fix = true
+    steps = linters
+  }
+  ["check"] {
+    steps = linters
+  }
+}

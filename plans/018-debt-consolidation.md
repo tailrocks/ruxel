@@ -21,6 +21,7 @@
 ## Why this matters
 
 Four duplication/drift hazards, built up across fast sessions:
+
 1. **DEBT-02**: ~14–20 hand-rolled `Command::new(...).output()` + stderr-capture
    copies across agent modules. Fixing one behavior (surface exit code, capture
    stdout on failure) is a ~14-site change.
@@ -42,10 +43,12 @@ Four duplication/drift hazards, built up across fast sessions:
 **A. Command runner:** repeated block across
 `crates/ruxel-agent/src/modules/{iptables,sysctl,get_url,filesystem,lvg,lvol,
 mount,apt,apt_repository,misc,systemd,postgresql}.rs`:
+
 ```rust
 let out = std::process::Command::new(bin).args(args).output().map_err(...)?;
 if !out.status.success() { return Err(format!("... {}", String::from_utf8_lossy(&out.stderr).trim())); }
 ```
+
 Counts (grep): `String::from_utf8_lossy(&*.stderr)` ~14×, `Command::new` ~26×,
 `map_err(|e| e.to_string())` ~35×. `become_command` (`modules/mod.rs:147-169`)
 builds a `Command` but never runs/captures — so every site re-rolls run+check.
@@ -88,6 +91,7 @@ for a shared varint state machine.
 in `ruxel-proto`; a registry cross-check test; shared constants.
 
 **Out of scope**:
+
 - Behavior changes (pure consolidation). The varint unification especially must
   produce byte-identical wire output.
 - The dead proto surface (plan 003 Step 5 handles the comment).
@@ -105,10 +109,12 @@ in `ruxel-proto`; a registry cross-check test; shared constants.
 ### Step A: Shared command runner
 
 Add to `modules/mod.rs`:
+
 ```rust
 pub(super) fn run_checked(mut cmd: std::process::Command) -> Result<std::process::Output, String> { ... }
 pub(super) fn run_ok(cmd: std::process::Command) -> Result<bool, String> { ... } // status.success()
 ```
+
 `run_checked` runs `.output()`, and on non-zero returns
 `Err(format!("{program} {args}: {stderr}"))` — matching the current message
 shape (so no output changes). Route the ~14 raw sites through it. Keep
@@ -199,6 +205,7 @@ Disposable Hetzner fixture gate passed 2026-07-16: cold upload + handshake
 ## STOP conditions
 
 Stop and report if:
+
 - The varint unification changes any wire byte (the byte-identity test fails, or
   the on-VM gate breaks) — revert and report; wire compatibility is
   non-negotiable.

@@ -13,8 +13,8 @@ Git history of `ansible-configs` since 2026-01-01 (~5.3 months, 68 commits):
 
 | File | Commits | Share | What the changes are |
 |---|---|---|---|
-| `setup-sentry.yml` | 30 | 44% | CI-host iteration: Velnor runners, GARM removal, runner slots, sccache, CI image fixes, inotify limits |
-| `setup-delorean.yml` + `config/` | 23 | 34% | App deployment: new env files, nginx/platform deploys, readiness configs, Docker Hub setup |
+| `setup-example-host.yml` | 30 | 44% | CI-host iteration: Velnor runners, GARM removal, runner slots, sccache, CI image fixes, inotify limits |
+| `setup-example-host.yml` + `config/` | 23 | 34% | App deployment: new env files, nginx/platform deploys, readiness configs, Docker Hub setup |
 | All other 14 playbooks | 15 | 22% | Genuine server config, mostly single-digit touches |
 
 Two conclusions that change the whole analysis:
@@ -48,7 +48,7 @@ into one slow tool** —
 performance-relevant setting is at its default: no pipelining, default
 `forks=5`, full fact gathering each play, no fact caching, no callback
 profiling, `ControlPersist=60s`. The 1Password lookups are re-evaluated on
-every template reference (13 declared lookups in `setup-postgresql-nova.yml`
+every template reference (13 declared lookups in `setup-example-host.yml`
 alone, multiplied by every task/loop iteration that references them).
 
 Two corrections to DIRECTION.md's interim-relief idea:
@@ -89,6 +89,7 @@ unchanged config. This is the most credible "you are using the wrong tool"
 argument, so it was researched in depth (2026-06-11, all claims sourced):
 
 **For it:**
+
 - Hetzner dedicated installs are a solved path: `nixos-anywhere` (kexec from
   rescue) + `disko` declarative LVM/XFS — both actively maintained.
 - The stack is mostly packageable: PostgreSQL 18 is in nixpkgs 25.11;
@@ -100,13 +101,14 @@ argument, so it was researched in depth (2026-06-11, all claims sourced):
   integrates 1Password via service-account token at activation.
 
 **Against it (decisive for this fleet, today):**
+
 - **The headline metric fails.** Real-world no-op `nixos-rebuild switch` is
   **10–20 seconds locally** (eval cost grows with config size) — before
   remote-deploy overhead. NixOS does not beat the ruxel target; it roughly
   ties tuned-Ansible's *per-change* latency and loses to a fingerprint
   ledger on verification.
-- **The hottest workload is NixOS-hostile.** `setup-sentry.yml` is 44% of
-  all churn, and Sentry upstream explicitly **refuses to support NixOS**
+- **The hottest workload is NixOS-hostile.** `setup-example-host.yml` is 44% of
+  all churn, and example-host upstream explicitly **refuses to support NixOS**
   (getsentry/self-hosted #2160: "we do not plan to support NixOS"); the only
   community attempt is abandoned at "not fully working". The Velnor/CI
   iteration loop would still be imperative work around a compose installer.
@@ -167,6 +169,7 @@ exist. But stage it to kill risk early:
   needed.*
 
 **Ambitious options on top (operator's appetite):**
+
 - **Pull-mode daemon / GitOps**: the 2a verify engine running as a tiny
   daemon per host, continuously probing and reporting state to a dashboard
   or Slack — "is everything correct?" becomes a glance, zero seconds, and

@@ -32,7 +32,9 @@ fix is a few lines.
 ## Current state
 
 `crates/ruxel-agent/src/main.rs`:
+
 - `serve()` main loop (`:104-178`). The EOF branch (`:104-115`):
+
   ```rust
   let envelope: v1::Envelope = match read_frame(&mut stdin) {
       Ok(Some(env)) => env,
@@ -41,10 +43,13 @@ fix is a few lines.
       Err(e) => { log_event(...); return 64; }   // <-- also not flushed
   };
   ```
+
 - The `Done` branch **does** flush (`:145-147`):
+
   ```rust
   Some(Msg::Done(_)) => { ledger.flush(); return 0; }
   ```
+
 - `ledger` is created at `:102` (`let mut ledger = ledger::Ledger::load(&dir);`)
   and mutated by `execute_task` via `ledger.record(...)` (`:278`), setting
   `dirty`.
@@ -68,10 +73,12 @@ codes, no async. Flushing is idempotent and cheap.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-agent/src/main.rs` — the `serve()` EOF/error exit paths.
 - `crates/ruxel-agent/tests/protocol.rs` — add a test proving flush-on-EOF.
 
 **Out of scope**:
+
 - The panic path (`:20-39`) — deliberately does **not** flush (untrustworthy
   state after a panic). Do not change it.
 - Any probe/record logic (plans 005/006).
@@ -90,6 +97,7 @@ codes, no async. Flushing is idempotent and cheap.
 ### Step 1: Flush on clean EOF
 
 Change the `Ok(None) => return 0` branch (`main.rs:110`) to flush first:
+
 ```rust
 Ok(None) => { ledger.flush(); return 0; }
 ```
@@ -110,6 +118,7 @@ untouched.
 In `crates/ruxel-agent/tests/protocol.rs` (which already spawns the real agent
 over pipes and manages `RUXEL_STATE_DIR`), add a test:
 `ledger_flushes_on_eof_not_just_done`:
+
 1. Spawn the agent with a temp `RUXEL_STATE_DIR`.
 2. Send `Hello`, then a **cacheable** one-task `Plan` (e.g. a `copy` with
    `content:` writing to a scratch file under the temp dir — pick a module whose
@@ -156,6 +165,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - The protocol test harness can't send a `Plan` without substantial new
   scaffolding and plan 017 hasn't landed — implement the minimal helper, or if
   that balloons, land Step 1 alone (the fix) with a `// TODO(plan 017): EOF

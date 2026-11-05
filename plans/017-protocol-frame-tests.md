@@ -44,6 +44,7 @@ stdin and writes `Event` frames to stdout; the test already has framing helpers
 
 **Frame edge cases (`crates/ruxel-proto/src/frame.rs`):** `read_frame`
 (`:23-65`) has:
+
 - `:30` `Ok(0) if first_byte => return Ok(None)` (clean EOF at boundary — tested)
 - `:31-36` `Ok(0) => Err(UnexpectedEof "EOF inside frame length")` — the
   **mid-varint EOF** branch, **untested** (the existing truncation test cuts the
@@ -74,12 +75,14 @@ style (build byte buffers, feed a `&[u8]` reader).
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-proto/src/frame.rs` — add edge-case tests to the existing
   `#[cfg(test)] mod tests`.
 - `crates/ruxel-agent/tests/protocol.rs` — add a Plan-executing test and a
   ledger-replay test; extend the framing helper minimally if needed.
 
 **Out of scope**:
+
 - Changing `frame.rs`/`main.rs` behavior. If a test reveals a real bug (e.g. a
   varint edge mis-decodes), **STOP and report** — the fix is a separate change.
 - The controller-side transport framing (`transport.rs`) — its own tests are
@@ -96,6 +99,7 @@ style (build byte buffers, feed a `&[u8]` reader).
 ### Step 1: Frame edge-case tests
 
 Add to `frame.rs` tests:
+
 - `mid_varint_eof_is_error`: feed a buffer that is a single byte with the
   high-bit set (0x80, "more bytes follow") then EOF; `read_frame` → `Err` with
   `ErrorKind::UnexpectedEof`.
@@ -110,6 +114,7 @@ Add to `frame.rs` tests:
 ### Step 2: Agent executes a Plan (dispatch + result)
 
 In `protocol.rs`, add `plan_executes_and_returns_result`:
+
 1. Spawn the agent with a temp `RUXEL_STATE_DIR`.
 2. Send `Hello`, read `HelloAck`.
 3. Send a one-task `Plan` for a **cacheable, side-effect-local** module — e.g. a
@@ -128,6 +133,7 @@ minimally to build a `Plan{RenderedTask{iterations:[Iteration{...}]}}`.
 ### Step 3: Ledger replay on a second identical run
 
 Add `ledger_replays_converged_task`:
+
 1. As Step 2, send a cacheable `copy` Plan; read the `changed:true` result;
    send `Done` (agent flushes ledger). (If plan 007 landed, EOF also flushes;
    either is fine — use `Done` for determinism.)
@@ -172,6 +178,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - A frame edge-case test reveals a real decode bug (e.g. overflow not caught) —
   that's a genuine finding; report it as a fix candidate, don't fold the fix
   into this tests-only plan.

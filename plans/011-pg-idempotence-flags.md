@@ -48,22 +48,26 @@ claim:
 ## Current state
 
 `crates/ruxel-agent/src/modules/postgresql.rs`:
+
 - SQL runs via `psql(ctx, port, db, sql)` (`:25-55`) feeding the statement on
   **stdin** (`-f -`) — good, no secret in argv. `psql -tA` returns tuples-only.
 - `validate_privs` (`:60-86`) — the allowlist template: uppercases each
   comma-split token, rejects anything not in `ALLOWED`. Called at `:375`.
 - `lit`/`ident` (`:89-96`) — SQL literal/identifier quoting.
 - `flags_to_sql` (`:295-302`):
+
   ```rust
   fn flags_to_sql(flags: &str) -> String {
       flags.split([',', ' ']).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
   }
   ```
+
   Called unquoted into `CREATE ROLE ... {flags_to_sql}` (`:187-189`) and
   `ALTER ROLE ... {flags_to_sql}` (`:204`).
 - `flags_changed` (`:304-320`): SELECTs `rolsuper,rolcreaterole,rolcreatedb,
   rolreplication`, compares only `cols.first()` (`rolsuper`).
 - `privs` dispatch (`:378-398`):
+
   ```rust
   let needed = match typ {
       "database" => privs_missing_database(...)?,
@@ -73,6 +77,7 @@ claim:
       other => return Err(...),
   };
   ```
+
   There is **no** "compare below" — `needed` is used directly at `:401`.
 - `privs_missing_database`/`_schema`/`_table` (`:419+`) implement the
   aclexplode-based comparison (the comment at `:412-417` explains: idempotence
@@ -102,6 +107,7 @@ builds); the live catalog behavior is proven by the on-VM bless-gate.
 new unit tests for the pure functions).
 
 **Out of scope**:
+
 - Changing the `psql`-on-stdin transport, `lit`/`ident`, or the SCRAM password
   idempotence path (all correct).
 - The other three privs shapes (database/schema/table) — they work; only add
@@ -121,6 +127,7 @@ new unit tests for the pure functions).
 Replace `"default_privs" => true` (`:392`) with a call to a new
 `privs_missing_default(ctx, &port, login_db, role, schema, privs_list)?` that
 mirrors `privs_missing_table` but reads `pg_default_acl`:
+
 - Query `pg_default_acl` joined to resolve the role's oid and the target schema
   (`defaclnamespace`), for the relevant `defaclobjtype` (the workload's
   default_privs are on tables — object type `'r'`; confirm against the actual
@@ -210,6 +217,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - The workload uses a value-bearing role attribute (`CONNECTION LIMIT n`,
   `VALID UNTIL`, `PASSWORD`) that a boolean-only allowlist would reject — report
   it and widen the allowlist deliberately for exactly that attribute (parse its

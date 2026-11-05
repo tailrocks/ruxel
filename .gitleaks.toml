@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+# Velnor's generated CI matrix identifiers are deterministic, not credentials.
+# Both the exact file and the complete matched field must agree; other fields
+# in this file and the same field elsewhere remain subject to normal scanning.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Velnor generated matrix identifiers"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^\.github/velnor/task-execution-manifest-v1\.json$''']
+regexes = ['''^matrix_key":"m-[a-f0-9]{16}"$''']

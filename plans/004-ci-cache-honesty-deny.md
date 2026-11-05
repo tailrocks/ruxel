@@ -33,6 +33,7 @@ transitive crate would enter undetected.
 ## Current state
 
 `.github/workflows/ci.yml` (full file is short; key facts):
+
 - Jobs: `test` (line 18), `fmt` (73), `clippy` (87), `agent-cross` (116).
 - `test` job: sets up sccache (`:26-36`, `RUSTC_WRAPPER=sccache`), caches the
   cargo registry (`:43-53`) **and** `target/` (`:55-63`), then runs
@@ -50,24 +51,28 @@ transitive crate would enter undetected.
   the trailing `cargo build` (`:67`) recompiles the non-test profile.
 
 Silent-skip gates:
+
 - `crates/ruxel-core/tests/workload.rs:14-17` and `:80-82`:
+
   ```rust
   let Ok(dir) = std::env::var("RUXEL_WORKLOAD_DIR") else {
       eprintln!("… skipping workload compile gate");
       return;   // <-- counts as PASSED
   };
   ```
+
 - `crates/ruxel-core/tests/render_parity.rs:168-171`: same early-`return` for
   the 41-template parity gate. (The 242-expression gate,
   `expressions_and_conditions_match_oracle`, replays committed goldens and
   **does** run in CI — that one is genuinely covered.)
 - `RUXEL_WORKLOAD_DIR` points at a **private** repo checkout
-  (`~/Projects/ChainArgos/java-monorepo/ansible-configs`), so CI cannot set it
+  (`~/Projects/example-org/java-monorepo/ansible-configs`), so CI cannot set it
   without a deploy key. This plan makes the skip **honest** (visible as
   skipped, not passed) and documents the variable — it does **not** wire the
   private checkout into CI (that needs an operator secret; note it for later).
 
 Tooling absence:
+
 - `cargo audit`: not installed locally; no CI step. `cargo-deny`: installed on
   the dev machine but no `deny.toml` and no CI step.
 - `--no-tests=pass` (`:65`) greens a binary that discovers zero tests; the
@@ -91,6 +96,7 @@ YAML-parse + careful diff against the `test` job's working cache block.
 ## Scope
 
 **In scope**:
+
 - `.github/workflows/ci.yml` (add caches to `clippy`/`agent-cross`, fix the
   cache key, add a `deny` job, reconsider the redundant build)
 - `crates/ruxel-core/tests/workload.rs` and `tests/render_parity.rs` (convert
@@ -99,6 +105,7 @@ YAML-parse + careful diff against the `test` job's working cache block.
 - `README.md` dev section (document `RUXEL_WORKLOAD_DIR`)
 
 **Out of scope**:
+
 - Wiring the private `ansible-configs` checkout into CI (needs an operator
   secret; leave a `# TODO(operator)` note in ci.yml instead).
 - Changing what clippy/fmt check, or the toolchain pins.
@@ -120,6 +127,7 @@ YAML-parse + careful diff against the `test` job's working cache block.
 Mirror the `test` job's sccache enable block (`ci.yml:26-36`) and its `target/`
 cache step (`:55-63`) into both `clippy` and `agent-cross`, with **distinct
 cache keys per job** so they don't collide:
+
 - clippy key suffix: `-clippy-` instead of `-test-`
 - agent-cross key suffix: `-musl-` (and include the target triple)
 
@@ -147,6 +155,7 @@ In `crates/ruxel-core/tests/workload.rs` (both tests) and
 `tests/render_parity.rs::template_files_match_oracle`, replace the "read env or
 silently `return`" pattern with an **explicit skip that is visible in test
 output**. Two acceptable approaches — pick the one that fits the runner:
+
 - Add `#[ignore = "requires RUXEL_WORKLOAD_DIR (private ansible-configs checkout)"]`
   so the test shows as *ignored* rather than passed, and document that CI runs
   it via a separate opt-in step when the checkout is available; **or**
@@ -221,6 +230,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - `cargo deny check advisories` surfaces a HIGH/critical vuln in a runtime
   dependency — report it to the operator; do **not** add a blanket
   `ignore` to make CI pass.
