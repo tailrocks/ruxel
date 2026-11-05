@@ -3,6 +3,12 @@
 //! parse, select hosts, compile, and show what is statically known and
 //! what defers to runtime. The probe-backed live plan lands in M3.
 
+#![expect(
+    clippy::struct_excessive_bools,
+    clippy::needless_pass_by_value,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use anyhow::{Context, Result};
 use clap::Args;
 use ruxel_core::compiler::{self, PlanBody, PlanTask, Readiness};

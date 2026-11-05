@@ -61,6 +61,7 @@ fn exit_code_for_error(error: &anyhow::Error) -> u8 {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")]
 mod tests {
     use super::*;
     use clap::CommandFactory;

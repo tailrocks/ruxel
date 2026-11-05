@@ -1,3 +1,12 @@
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
