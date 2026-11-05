@@ -14,7 +14,7 @@ fn every_synthetic_fixture_parses_and_compiles() {
         .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
         .collect();
     playbooks.sort();
-    assert!(!playbooks.is_empty());
+    assert_ne!(playbooks, [] as [std::path::PathBuf; 0]);
 
     let engine = Engine::new(std::sync::Arc::new(MemoizedResolver::new(DrySecrets)));
     for path in playbooks {

@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Workspace lints from the operator's repository standard, clippy configuration.
 - Crates moved to `crates/<group>/<package>` (repository policy).
 - Dependencies updated to their newest versions.
 - Toolchain: Rust 1.99.1, operator mise layout with mbx as the cargo wrapper, lockfile v4; uv removed.

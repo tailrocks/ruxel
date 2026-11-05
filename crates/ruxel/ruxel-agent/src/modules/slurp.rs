@@ -3,7 +3,7 @@
 use super::{params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value) -> Result<Value, String> {
+pub(super) fn run(params: &Value) -> Result<Value, String> {
     let obj = params_object(params)?;
     let src = str_param(obj, "src").ok_or("slurp: src required")?;
     let bytes = std::fs::read(src).map_err(|e| format!("slurp {src}: {e}"))?;

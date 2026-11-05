@@ -108,7 +108,7 @@ fn handshake_facts_clean_shutdown() {
     assert_eq!(ack.proto_version, PROTO_VERSION);
     assert_eq!(ack.agent_version, env!("CARGO_PKG_VERSION"));
     let facts = ack.facts.expect("facts present");
-    assert!(!facts.architecture.is_empty());
+    assert_ne!(facts.architecture, "");
 
     write_frame(
         &mut stdin,
@@ -197,7 +197,7 @@ fn ledger_flushes_on_eof_not_just_done() {
     assert_eq!(agent.wait().unwrap().code(), Some(0));
     let ledger = dir.join("ledger/ledger.json");
     assert!(ledger.exists());
-    assert!(!std::fs::read(&ledger).unwrap().is_empty());
+    assert_ne!(std::fs::read(&ledger).unwrap(), [] as [u8; 0]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -252,7 +252,7 @@ fn no_log_copy_emits_no_diff_and_leaves_no_ledger_record() {
     let Some(v1::event::Msg::TaskResult(result)) = event.msg else {
         panic!("expected TaskResult");
     };
-    assert!(result.diff.is_empty());
+    assert_eq!(result.diff, "");
     assert!(!String::from_utf8_lossy(&result.result_json).contains(SYNTHETIC_CONTENT));
 
     drop(stdin);

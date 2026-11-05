@@ -1,5 +1,5 @@
 //! `apt` (SEMANTICS §6): the workload's exact surface — name install
-//! (present/latest), update_cache, upgrade: dist, autoremove, force.
+//! (present/latest), `update_cache`, upgrade: dist, autoremove, force.
 //! Changed semantics pinned 2026-06-11 by fixture captures
 //! (update-packages run1/run2): update_cache-only is never changed;
 //! upgrade/autoremove are changed iff apt actually did work (parsed from
@@ -9,7 +9,7 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(
+pub(super) fn run(
     params: &Value,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
@@ -49,8 +49,7 @@ pub fn run(
         result["cache_update_time"] = json!(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
+                .map_or(0, |d| d.as_secs())
         );
     }
 
@@ -129,7 +128,7 @@ pub fn run(
 }
 
 /// `apt-get -y` with Ansible's default dpkg options and the workload's
-/// DEBIAN_FRONTEND, plus task environment.
+/// `DEBIAN_FRONTEND`, plus task environment.
 fn apt_get(args: &[&str], ctx: &ExecContext) -> Result<(String, i32, String), String> {
     let mut cmd = std::process::Command::new("apt-get");
     cmd.arg("-y")

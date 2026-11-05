@@ -1,6 +1,6 @@
 //! `user` (SEMANTICS §6): passwd/group entries field-by-field via
 //! useradd/usermod/userdel. The workload's surface: name, uid, group,
-//! groups, append, home, create_home, shell, comment, system, state
+//! groups, append, home, `create_home`, shell, comment, system, state
 //! (absent ×1), remove.
 
 use super::misc::run_cmd;
@@ -16,7 +16,7 @@ struct PasswdEntry {
     shell: String,
 }
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("user: name required")?;
     let state = str_param(obj, "state").unwrap_or("present");

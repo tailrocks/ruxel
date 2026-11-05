@@ -39,7 +39,7 @@ pub struct PlanTask {
     pub body: PlanBody,
     /// Registered/fact names read anywhere in this task's templates.
     pub reads: BTreeSet<String>,
-    /// Names this task provides to later tasks (register, set_fact keys).
+    /// Names this task provides to later tasks (register, `set_fact` keys).
     pub provides: Vec<String>,
     pub no_log: bool,
 }
@@ -105,7 +105,10 @@ fn compile_play(
 ) -> Result<PlayPlan, Box<CompileError>> {
     // The provider universe: every register/set_fact name any task in the
     // play introduces, plus the handshake facts.
-    let mut providers: BTreeSet<String> = FACT_NAMES.iter().map(|s| s.to_string()).collect();
+    let mut providers: BTreeSet<String> = FACT_NAMES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     for task in play
         .pre_tasks
         .iter()
@@ -299,8 +302,7 @@ fn render_static(task: &Task, ctx: &PlayCtx<'_>) -> Result<RenderedParts, Engine
                 ctx.engine
                     .render_str(body, scope)?
                     .as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| body.clone()),
+                    .map_or_else(|| body.clone(), str::to_string),
             ),
             None => None,
         };
@@ -347,7 +349,10 @@ pub fn validate_rendered_enums(
                     module: module.name.into(),
                     param: param.to_string(),
                     value: s.to_string(),
-                    allowed: values.iter().map(|v| v.to_string()).collect(),
+                    allowed: values
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
                 },
             }));
         }
@@ -507,7 +512,7 @@ mod tests {
     #[test]
     fn register_consumer_is_deferred_and_annotated() {
         let plan = compile_yaml(
-            r#"
+            r"
 - hosts: all
   tasks:
     - name: probe
@@ -519,7 +524,7 @@ mod tests {
         path: /etc/thing
         state: absent
       when: thing_stat.stat.exists
-"#,
+",
         );
         let t = &plan.plays[0].tasks[1];
         assert!(t.reads.contains("thing_stat"));

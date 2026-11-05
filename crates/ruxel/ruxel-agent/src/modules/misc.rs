@@ -4,7 +4,7 @@ use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
 /// `community.general.timezone` (1 use: name=UTC) via timedatectl.
-pub fn timezone(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn timezone(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("timezone: name required")?;
     let current = std::fs::read_link("/etc/localtime")
@@ -28,7 +28,7 @@ fn timezone_from_link(path: &std::path::Path) -> Option<String> {
 }
 
 /// `group` (SEMANTICS §6): name, gid, state via getent/groupadd/groupdel.
-pub fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("group: name required")?;
     let state = str_param(obj, "state").unwrap_or("present");
@@ -38,8 +38,8 @@ pub fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     match state {
-        "present" => match entry {
-            Some((_, current_gid)) => {
+        "present" => {
+            if let Some((_, current_gid)) = entry {
                 if let Some(want) = gid
                     && current_gid != want
                 {
@@ -48,8 +48,7 @@ pub fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
                     }
                 }
-            }
-            None => {
+            } else {
                 changed = true;
                 if !ctx.check_mode {
                     let gid_s;
@@ -63,7 +62,7 @@ pub fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     run_cmd("groupadd", &args)?;
                 }
             }
-        },
+        }
         "absent" => {
             if entry.is_some() {
                 changed = true;

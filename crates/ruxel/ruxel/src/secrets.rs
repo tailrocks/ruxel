@@ -158,6 +158,7 @@ impl LookupResolver for OpResolver {
     }
 }
 
+#[must_use]
 pub fn discover_items(source: &str) -> BTreeSet<ItemRef> {
     let mut items = BTreeSet::new();
     for (start, _) in source.match_indices("op://") {

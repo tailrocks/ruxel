@@ -1,13 +1,13 @@
 //! `apt_repository` (SEMANTICS §6): exact sources line in
 //! `/etc/apt/sources.list.d/<filename>.list`. Changed iff the file's
-//! content changed; update_cache refreshes lists after a change (cache
+//! content changed; `update_cache` refreshes lists after a change (cache
 //! refresh itself never reports changed — same pin as apt).
 
 use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let repo = str_param(obj, "repo").ok_or("apt_repository: repo required")?;
     let state = str_param(obj, "state").unwrap_or("present");

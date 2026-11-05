@@ -1,5 +1,5 @@
 //! `systemd` + `service` (SEMANTICS §6): states started/stopped/restarted,
-//! enabled, daemon_reload. On these hosts `service` resolves to systemd —
+//! enabled, `daemon_reload`. On these hosts `service` resolves to systemd —
 //! one implementation serves both. Pinned 2026-06-11 (fixture captures):
 //! `daemon_reload: true` executes the reload but reports changed: false,
 //! result {changed, name: null, status: {}}. `restarted` is always a
@@ -8,7 +8,7 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(
+pub(super) fn run(
     params: &Value,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,

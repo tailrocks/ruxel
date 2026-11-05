@@ -7,7 +7,7 @@
 
 use ruxel_proto::v1::Facts;
 
-pub fn gather() -> Facts {
+pub(crate) fn gather() -> Facts {
     Facts {
         default_ipv4_interface: default_ipv4_interface().unwrap_or_default(),
         distribution_release: distribution_release().unwrap_or_default(),
@@ -17,7 +17,7 @@ pub fn gather() -> Facts {
 }
 
 /// The interface of the default route: first /proc/net/route entry with
-/// destination 00000000 (what ansible_default_ipv4.interface reports).
+/// destination 00000000 (what `ansible_default_ipv4.interface` reports).
 fn default_ipv4_interface() -> Option<String> {
     let table = std::fs::read_to_string("/proc/net/route").ok()?;
     for line in table.lines().skip(1) {
@@ -31,8 +31,8 @@ fn default_ipv4_interface() -> Option<String> {
     None
 }
 
-/// VERSION_CODENAME from /etc/os-release ("bookworm" on Debian 12) — the
-/// value ansible_facts['distribution_release'] carries on these hosts.
+/// `VERSION_CODENAME` from /etc/os-release ("bookworm" on Debian 12) — the
+/// value `ansible_facts`['`distribution_release`'] carries on these hosts.
 fn distribution_release() -> Option<String> {
     let os_release = std::fs::read_to_string("/etc/os-release").ok()?;
     for line in os_release.lines() {

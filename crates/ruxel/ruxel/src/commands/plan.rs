@@ -11,7 +11,7 @@ use ruxel_core::inventory::Inventory;
 use std::sync::Arc;
 
 #[derive(Args)]
-pub struct PlanArgs {
+pub(crate) struct PlanArgs {
     /// Inventory file (INI)
     #[arg(short = 'i', long = "inventory")]
     pub inventory: std::path::PathBuf,
@@ -37,18 +37,17 @@ pub struct PlanArgs {
     pub playbook: std::path::PathBuf,
 }
 
-pub fn execute(args: PlanArgs) -> Result<u8> {
+pub(crate) fn execute(args: PlanArgs) -> Result<u8> {
     let inv_content = std::fs::read_to_string(&args.inventory)
         .with_context(|| format!("read inventory {}", args.inventory.display()))?;
     let inventory = Inventory::parse(&inv_content)?;
 
     let pb_content = std::fs::read_to_string(&args.playbook)
         .with_context(|| format!("read playbook {}", args.playbook.display()))?;
-    let pb_name = args
-        .playbook
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| args.playbook.display().to_string());
+    let pb_name = args.playbook.file_name().map_or_else(
+        || args.playbook.display().to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
     let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
 
     // M2 preview always renders with dry secrets; the real `op`-backed

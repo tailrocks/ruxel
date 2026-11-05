@@ -262,6 +262,7 @@ pub static MODULES: &[ModuleSurface] = &[
     },
 ];
 
+#[must_use]
 pub fn lookup(name: &str) -> Option<&'static ModuleSurface> {
     MODULES.iter().find(|m| m.name == name)
 }

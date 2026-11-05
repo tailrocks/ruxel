@@ -4,10 +4,10 @@
 //! asserts the content-addressed upload was skipped and the warm
 //! connect+handshake stays under the 1 s budget.
 //!
-//!   RUXEL_TEST_SSH_DEST=<dest> RUXEL_TEST_AGENT_BIN=<agent> \
-//!   [RUXEL_TEST_SSH_KEY=<keyfile>] \
-//!   [RUXEL_TEST_EXPECT_NO_UPLOAD=1] [RUXEL_TEST_EXPECT_FAST=1] \
-//!   cargo nextest run -p ruxel-cli --test transport_gate --run-ignored all --no-capture
+//!   `RUXEL_TEST_SSH_DEST`=<dest> `RUXEL_TEST_AGENT_BIN`=<agent> \
+//!   [`RUXEL_TEST_SSH_KEY`=<keyfile>] \
+//!   [`RUXEL_TEST_EXPECT_NO_UPLOAD=1`] [`RUXEL_TEST_EXPECT_FAST=1`] \
+//!   cargo nextest run -p ruxel-cli --test `transport_gate` --run-ignored all --no-capture
 
 use std::time::Instant;
 
@@ -50,9 +50,9 @@ async fn connect_handshake_facts_shutdown() {
         host.facts.architecture,
         host.facts.hostname,
     );
-    assert!(!host.facts.architecture.is_empty());
+    assert_ne!(host.facts.architecture, "");
     assert!(!host.facts.distribution_release.is_empty(), "Debian target");
-    assert!(!host.facts.default_ipv4_interface.is_empty());
+    assert_ne!(host.facts.default_ipv4_interface, "");
 
     if std::env::var("RUXEL_TEST_EXPECT_NO_UPLOAD").is_ok() {
         assert!(

@@ -106,6 +106,7 @@ impl Inventory {
         Ok(inv)
     }
 
+    #[must_use]
     pub fn host(&self, name: &str) -> Option<&Host> {
         self.hosts.iter().find(|h| h.name == name)
     }

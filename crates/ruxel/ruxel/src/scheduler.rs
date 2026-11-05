@@ -1,9 +1,9 @@
 //! The linear per-host scheduler (M3): walk the play's tasks in order,
 //! render each one just-in-time with the full variable scope (play vars,
 //! facts, registered results), evaluate when/loop per SEMANTICS §3,
-//! execute — controller-side for assert/fail/debug/set_fact, on the agent
+//! execute — controller-side for `assert/fail/debug/set_fact`, on the agent
 //! for everything else — then build the registered envelope with
-//! task_eval and report ansible-shaped lines. Pipelined issue windows
+//! `task_eval` and report ansible-shaped lines. Pipelined issue windows
 //! (ARCHITECTURE §4) replace this walk once the ledger lands; observable
 //! semantics stay identical.
 
@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 
 /// Scheduler boundary for one fully rendered agent iteration.
-#[allow(async_fn_in_trait)]
+#[expect(async_fn_in_trait)]
 pub trait AgentExec {
     async fn run_batch(&mut self, tasks: Vec<v1::RenderedTask>, patch: bool) -> Result<Vec<Value>>;
 
@@ -53,7 +53,7 @@ impl AgentExec for AgentConnection {
         loop {
             let event = self.next_event().await?.context("agent closed mid-batch")?;
             match event.msg {
-                Some(EvMsg::TaskStart(_)) | Some(EvMsg::Log(_)) => continue,
+                Some(EvMsg::TaskStart(_) | EvMsg::Log(_)) => continue,
                 Some(EvMsg::TaskResult(res)) => {
                     let expected = tasks
                         .get(results.len())
@@ -71,7 +71,7 @@ impl AgentExec for AgentConnection {
                         serde_json::from_slice(&res.result_json)?
                     };
                     let failed = res.status == "failed"
-                        || json.get("failed").and_then(|value| value.as_bool()) == Some(true);
+                        || json.get("failed").and_then(serde_json::Value::as_bool) == Some(true);
                     results.push(to_mj(json));
                     if results.len() == tasks.len() || (failed && expected.halt_on_failure) {
                         return Ok(results);
@@ -165,7 +165,7 @@ impl<A, L> HostRun<'_, A, L> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn run_play<A: AgentExec, L: Write>(
     play: &Play,
     compiled: &PlayPlan,
@@ -443,8 +443,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 key.clone(),
                 rendered
                     .as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| rendered.to_string()),
+                    .map_or_else(|| rendered.to_string(), str::to_string),
             );
         }
         Ok(environment)
@@ -683,7 +682,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             }
 
             let mut attempts: u64 = 0;
-            let max_attempts = task.retries.map(|r| r + 1).unwrap_or(1);
+            let max_attempts = task.retries.map_or(1, |r| r + 1);
             let raw = loop {
                 attempts += 1;
                 let raw = self
@@ -922,11 +921,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             },
         };
         let item_label = item
-            .map(|i| {
-                i.as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| i.to_string())
-            })
+            .map(|i| i.as_str().map_or_else(|| i.to_string(), str::to_string))
             .unwrap_or_default();
 
         let task_id = self.next_task_id;
@@ -939,8 +934,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                     k.clone(),
                     rendered
                         .as_str()
-                        .map(str::to_string)
-                        .unwrap_or_else(|| rendered.to_string()),
+                        .map_or_else(|| rendered.to_string(), str::to_string),
                 );
             }
             for (k, v) in &task.environment {
@@ -949,8 +943,7 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                     k.clone(),
                     rendered
                         .as_str()
-                        .map(str::to_string)
-                        .unwrap_or_else(|| rendered.to_string()),
+                        .map_or_else(|| rendered.to_string(), str::to_string),
                 );
             }
             env
@@ -1147,15 +1140,16 @@ fn task_event(
     ignored: bool,
 ) -> serde_json::Value {
     let event_result = if task.no_log {
-        result
-            .map(|result| {
-                serde_json::to_value(censored_task_result(result, status == "changed"))
-                    .unwrap_or_default()
-            })
-            .unwrap_or_else(|| {
+        result.map_or_else(
+            || {
                 serde_json::to_value(task_eval::censored_result(status == "changed", None))
                     .unwrap_or_default()
-            })
+            },
+            |result| {
+                serde_json::to_value(censored_task_result(result, status == "changed"))
+                    .unwrap_or_default()
+            },
+        )
     } else if let Some(result) = result {
         serde_json::to_value(result).unwrap_or_default()
     } else {
@@ -1181,7 +1175,7 @@ fn censored_task_result(result: &Value, changed: bool) -> Value {
                 .iter()
                 .map(|item| {
                     item.get("changed")
-                        .and_then(|value| value.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false)
                 })
                 .collect::<Vec<_>>()
@@ -1437,8 +1431,7 @@ fn merge_failed(result: &Value) -> Value {
 fn result_truthy(result: &Value, key: &str) -> bool {
     result
         .get_attr(key)
-        .map(|v| !v.is_undefined() && v.is_true())
-        .unwrap_or(false)
+        .is_ok_and(|v| !v.is_undefined() && v.is_true())
 }
 
 fn result_failed(result: &Value) -> bool {
@@ -1486,7 +1479,8 @@ mod tests {
                     .scripted
                     .pop_front()
                     .unwrap_or_else(|| serde_json::json!({"changed": true, "failed": false}));
-                let failed = result.get("failed").and_then(|value| value.as_bool()) == Some(true);
+                let failed =
+                    result.get("failed").and_then(serde_json::Value::as_bool) == Some(true);
                 let halt = task.halt_on_failure;
                 self.calls.push(task);
                 results.push(to_mj(result));
@@ -1683,7 +1677,7 @@ mod tests {
         )
         .await;
         assert_eq!(recap.skipped, 1);
-        assert!(agent.calls.is_empty());
+        assert_eq!(agent.calls, [] as [ruxel_proto::v1::RenderedTask; 0]);
     }
 
     #[tokio::test]
@@ -1760,7 +1754,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!((recap.skipped, recap.ok, recap.failed), (1, 1, 0));
-        assert!(agent.calls.is_empty());
+        assert_eq!(agent.calls, [] as [ruxel_proto::v1::RenderedTask; 0]);
     }
 
     #[test]
@@ -1802,7 +1796,7 @@ mod tests {
         let (recap, agent, _) = run(yaml, []).await;
         assert_eq!(recap.skipped, 1);
         assert_eq!(recap.ok, 1);
-        assert!(agent.calls.is_empty());
+        assert_eq!(agent.calls, [] as [ruxel_proto::v1::RenderedTask; 0]);
     }
 
     #[tokio::test]
@@ -1811,7 +1805,7 @@ mod tests {
         let (recap, agent, _) = run(yaml, []).await;
         assert_eq!(recap.skipped, 1);
         assert_eq!(recap.ok, 1);
-        assert!(agent.calls.is_empty());
+        assert_eq!(agent.calls, [] as [ruxel_proto::v1::RenderedTask; 0]);
     }
 
     #[tokio::test]
@@ -1891,6 +1885,6 @@ mod tests {
             error.to_string().contains("outside the observed value set"),
             "{error:#}"
         );
-        assert!(agent.calls.is_empty());
+        assert_eq!(agent.calls, [] as [ruxel_proto::v1::RenderedTask; 0]);
     }
 }

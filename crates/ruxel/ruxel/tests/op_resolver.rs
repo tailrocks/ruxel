@@ -1,10 +1,10 @@
 //! Verifies the op-backed resolver against the synthetic `ruxel-test`
 //! vault (never a real exampleorg secret). Runs only when a 1Password
-//! session is available — set OP_SERVICE_ACCOUNT_TOKEN (the ruxel-ci
+//! session is available — set `OP_SERVICE_ACCOUNT_TOKEN` (the ruxel-ci
 //! service account) or have a desktop `op` session:
 //!
 //!   set -a; source ~/.config/ruxel/op-ci.env; set +a
-//!   cargo nextest run -p ruxel-cli --test op_resolver --run-ignored all --no-capture
+//!   cargo nextest run -p ruxel-cli --test `op_resolver` --run-ignored all --no-capture
 
 use ruxel_cli::secrets::OpResolver;
 use ruxel_core::engine::LookupResolver;
@@ -22,7 +22,7 @@ fn resolves_synthetic_vault_item() {
         )
         .expect("op read password");
     eprintln!("resolved password field: {pw}");
-    assert!(!pw.is_empty());
+    assert_ne!(pw, "");
     assert!(!pw.contains('\n'), "value must be newline-trimmed");
 
     let user = r

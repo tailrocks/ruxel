@@ -1,5 +1,5 @@
 //! `authorized_key` (SEMANTICS §6): exact key present in
-//! ~user/.ssh/authorized_keys. Matching is comment-insensitive on the key
+//! ~`user/.ssh/authorized_keys`. Matching is comment-insensitive on the key
 //! material (type + base64), Ansible's rule.
 
 use super::{ExecContext, params_object, str_param, write_atomic_with};
@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let user = str_param(obj, "user").ok_or("authorized_key: user required")?;
     let key = str_param(obj, "key").ok_or("authorized_key: key required")?;

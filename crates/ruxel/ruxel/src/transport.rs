@@ -1,7 +1,7 @@
-//! Controller-side transport (ARCHITECTURE §2): one SSH ControlMaster
+//! Controller-side transport (ARCHITECTURE §2): one SSH `ControlMaster`
 //! connection per host for the whole run, driven directly through the
-//! system OpenSSH via tokio::process — the operator's ~/.ssh/config, keys,
-//! and known_hosts behave exactly like their ansible-playbook runs, and
+//! system OpenSSH via `tokio::process` — the operator's ~/.ssh/config, keys,
+//! and `known_hosts` behave exactly like their ansible-playbook runs, and
 //! every channel (exec, sftp, the agent's stdio stream) is a plain
 //! `ssh -S <socket>` mux client whose pipes we own end to end.
 //!
@@ -24,13 +24,13 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 /// Connection tuning beyond the operator's ssh config. Production runs use
-/// `Default` (config-driven, strict known_hosts, exactly like ansible);
+/// `Default` (config-driven, strict `known_hosts`, exactly like ansible);
 /// fixture/test runs point at an ephemeral keyfile and accept new hosts.
 #[derive(Default, Clone)]
 pub struct ConnectOptions {
     pub keyfile: Option<PathBuf>,
     pub accept_new_host_key: bool,
-    /// Dedicated known_hosts (fixtures: isolates ephemeral host keys from
+    /// Dedicated `known_hosts` (fixtures: isolates ephemeral host keys from
     /// the operator's global file, which recycled cloud IPs poison).
     pub known_hosts_file: Option<PathBuf>,
     /// `--diff`: ask the agent to emit unified content diffs.
@@ -39,7 +39,7 @@ pub struct ConnectOptions {
     pub no_cache: bool,
 }
 
-/// The per-host ControlMaster: a foreground `ssh -M -N` child owning the
+/// The per-host `ControlMaster`: a foreground `ssh -M -N` child owning the
 /// TCP connection; every command/channel is a mux client on its socket.
 struct Master {
     destination: String,

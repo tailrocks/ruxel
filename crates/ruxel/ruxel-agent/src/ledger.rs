@@ -102,7 +102,7 @@ struct Record {
     probes: Vec<Probe>,
 }
 
-pub struct Ledger {
+pub(crate) struct Ledger {
     path: PathBuf,
     host_key: Option<[u8; 32]>,
     records: HashMap<String, Record>,
@@ -110,7 +110,7 @@ pub struct Ledger {
 }
 
 impl Ledger {
-    pub fn load(state_dir: &Path) -> Self {
+    pub(crate) fn load(state_dir: &Path) -> Self {
         let ledger_dir = state_dir.join("ledger");
         let _ = std::fs::create_dir_all(&ledger_dir);
         set_mode(&ledger_dir, 0o700);
@@ -136,7 +136,7 @@ impl Ledger {
         }
     }
 
-    pub fn flush(&self) {
+    pub(crate) fn flush(&self) {
         if !self.dirty {
             return;
         }
@@ -154,15 +154,15 @@ impl Ledger {
         }
     }
 
-    /// CachedOk verdict: a record for this key, same agent version, and
+    /// `CachedOk` verdict: a record for this key, same agent version, and
     /// every fingerprint still verifies. Returns the result to replay
     /// (changed forced false — the task is converged).
     #[cfg(test)]
-    pub fn cached_ok(&self, key: &str) -> Option<Value> {
+    pub(crate) fn cached_ok(&self, key: &str) -> Option<Value> {
         self.cached_ok_with_state(key, &mut crate::system_state::SystemState::default())
     }
 
-    pub fn cached_ok_with_state(
+    pub(crate) fn cached_ok_with_state(
         &self,
         key: &str,
         system_state: &mut crate::system_state::SystemState,
@@ -183,9 +183,9 @@ impl Ledger {
     }
 
     /// Record a freshly-executed task's fingerprints, if its module is
-    /// cacheable. No-op for always-execute modules (probe_for → None).
+    /// cacheable. No-op for always-execute modules (`probe_for` → None).
     #[cfg(test)]
-    pub fn record(
+    pub(crate) fn record(
         &mut self,
         key: &str,
         module: &str,
@@ -203,7 +203,7 @@ impl Ledger {
         );
     }
 
-    pub fn record_with_state(
+    pub(crate) fn record_with_state(
         &mut self,
         key: &str,
         module: &str,
@@ -314,7 +314,7 @@ fn probe_for(
         "file" | "copy" | "template" | "lineinfile" | "replace" | "blockinfile" => {
             let path = s("path").or_else(|| s("dest"))?;
             // `state: absent` / `link` aren't content — skip caching them.
-            if matches!(s("state"), Some("absent") | Some("link")) {
+            if matches!(s("state"), Some("absent" | "link")) {
                 return None;
             }
             let (mode, uid, gid, is_dir) = file_attrs(Path::new(path))?;

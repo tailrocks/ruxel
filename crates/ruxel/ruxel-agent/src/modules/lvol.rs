@@ -8,7 +8,7 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let vg = str_param(obj, "vg").ok_or("lvol: vg required")?;
     let lv = str_param(obj, "lv").ok_or("lvol: lv required")?;
@@ -18,15 +18,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let exists = lv_exists(vg, lv)?;
     let mut changed = false;
 
-    if !exists {
-        changed = true;
-        if !ctx.check_mode {
-            create(vg, lv, size)?;
-            if resizefs {
-                run_cmd("lvextend", &["-r", &lv_path(vg, lv)]).ok();
-            }
-        }
-    } else {
+    if exists {
         // Existing LV: only the percent-of-free / +size forms can extend.
         let is_extend = size.starts_with('+');
         if is_extend && free_extents(vg)? > 0 {
@@ -47,6 +39,14 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     }
                     Err(e) => return Err(e),
                 }
+            }
+        }
+    } else {
+        changed = true;
+        if !ctx.check_mode {
+            create(vg, lv, size)?;
+            if resizefs {
+                run_cmd("lvextend", &["-r", &lv_path(vg, lv)]).ok();
             }
         }
     }

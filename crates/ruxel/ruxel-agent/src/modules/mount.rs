@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 const FSTAB: &str = "/etc/fstab";
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("mount: path required")?;
     let src = str_param(obj, "src").ok_or("mount: src required")?;
@@ -61,7 +61,7 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
     let mut lines: Vec<String> = current.lines().map(str::to_string).collect();
     let mut found = false;
     let mut changed = false;
-    for line in lines.iter_mut() {
+    for line in &mut lines {
         let t = line.trim();
         if t.is_empty() || t.starts_with('#') {
             continue;

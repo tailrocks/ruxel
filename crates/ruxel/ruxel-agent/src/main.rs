@@ -23,7 +23,7 @@ fn main() {
         let message = info
             .payload()
             .downcast_ref::<&str>()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .or_else(|| info.payload().downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "panic with non-string payload".into());
         let location = info
@@ -45,8 +45,7 @@ fn main() {
 
 fn state_dir() -> std::path::PathBuf {
     std::env::var_os("RUXEL_STATE_DIR")
-        .map(Into::into)
-        .unwrap_or_else(|| ruxel_proto::constants::STATE_ROOT.into())
+        .map_or_else(|| ruxel_proto::constants::STATE_ROOT.into(), Into::into)
 }
 
 fn serve() -> i32 {
@@ -168,8 +167,7 @@ fn serve() -> i32 {
                 ledger.flush();
                 return 0;
             }
-            Some(Msg::Plan(v1::Plan { tasks, .. }))
-            | Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
+            Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
                     if execute_task(
                         &mut stdout,
@@ -203,10 +201,10 @@ fn serve() -> i32 {
     }
 }
 
-/// Execute one rendered task: per iteration, TaskStart then TaskResult.
+/// Execute one rendered task: per iteration, `TaskStart` then `TaskResult`.
 /// Aggregation, register binding, and status envelopes are controller-side
-/// (task_eval) — the agent reports raw per-iteration module outcomes.
-#[allow(clippy::too_many_arguments)]
+/// (`task_eval`) — the agent reports raw per-iteration module outcomes.
+#[expect(clippy::too_many_arguments)]
 fn execute_task(
     out: &mut impl std::io::Write,
     task: &v1::RenderedTask,

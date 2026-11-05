@@ -1,8 +1,8 @@
 //! Replay the runtime-semantics goldens (tools/oracle/captures/
 //! runtime-semantics.jsonl, a real local ansible-core 2.21 run of
-//! tools/oracle/runtime_semantics.yml): every registered-result envelope
+//! `tools/oracle/runtime_semantics.yml)`: every registered-result envelope
 //! ruxel's task evaluator builds — skip shape, loop aggregation, per-item
-//! when placement, until attempts, changed_when — must equal what Ansible
+//! when placement, until attempts, `changed_when` — must equal what Ansible
 //! registered, field for field.
 
 use minijinja::value::Value;
@@ -215,7 +215,7 @@ fn e11_empty_loop_aggregate_matches() {
     assert_eq!(to_json(&loop_aggregate(vec![])), dumps["E11"]);
 }
 
-/// no_log censoring applies to *output* records (the capture callback saw
+/// `no_log` censoring applies to *output* records (the capture callback saw
 /// censored dicts) while the registered variable keeps the real data (the
 /// dumps printed it).
 #[test]

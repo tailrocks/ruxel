@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 
 const KEEP_RUNS: usize = 50;
 
-pub struct RunLog {
+pub(crate) struct RunLog {
     writer: Option<BufWriter<std::fs::File>>,
 }
 
 impl RunLog {
-    pub fn open(run_id: &str) -> Self {
+    pub(crate) fn open(run_id: &str) -> Self {
         let root = std::env::var_os("XDG_STATE_HOME")
             .map(PathBuf::from)
             .or_else(|| {
@@ -17,8 +17,7 @@ impl RunLog {
             .unwrap_or_else(|| PathBuf::from(".local/state"));
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |duration| duration.as_secs());
         match Self::open_in(&root, run_id, timestamp) {
             Ok(log) => log,
             Err(error) => {
@@ -50,7 +49,7 @@ impl RunLog {
         })
     }
 
-    pub fn record_recap(&mut self, host: &str, recap: ruxel_cli::scheduler::Recap) {
+    pub(crate) fn record_recap(&mut self, host: &str, recap: ruxel_cli::scheduler::Recap) {
         let _ = writeln!(
             self,
             "{}",
@@ -63,7 +62,7 @@ impl RunLog {
         );
     }
 
-    pub fn record_unreachable(&mut self, host: &str, error: &str) {
+    pub(crate) fn record_unreachable(&mut self, host: &str, error: &str) {
         let _ = writeln!(self, "{}", unreachable_record(host, error));
     }
 }

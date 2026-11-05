@@ -7,7 +7,7 @@ pub mod constants {
     pub const STATE_ROOT: &str = "/var/lib/ruxel";
     pub const AGENT_DIR: &str = "/var/lib/ruxel/agent";
     pub const DEFAULT_SYSCTL_FILE: &str = "/etc/sysctl.conf";
-    /// Controller HelloAck deadline and agent orphan guard stay coupled.
+    /// Controller `HelloAck` deadline and agent orphan guard stay coupled.
     pub const HANDSHAKE_TIMEOUT_SECS: u64 = 30;
 }
 

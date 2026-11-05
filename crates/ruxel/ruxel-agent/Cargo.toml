@@ -23,3 +23,6 @@ sha2.workspace = true
 
 [dev-dependencies]
 ruxel-core.workspace = true
+
+[lints]
+workspace = true

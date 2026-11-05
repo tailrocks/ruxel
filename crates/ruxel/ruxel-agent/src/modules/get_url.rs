@@ -2,14 +2,14 @@
 //! checksum and force unset, an existing dest short-circuits to unchanged;
 //! otherwise download and report changed. Fetching shells out to curl
 //! (falling back to wget) — the workload installs curl before its only
-//! get_url uses, and a static-musl HTTP+TLS stack inside the agent buys
+//! `get_url` uses, and a static-musl HTTP+TLS stack inside the agent buys
 //! nothing but binary size until a playbook needs it.
 
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let url = str_param(obj, "url").ok_or("get_url: url required")?;
     validate_url(url)?;
@@ -44,8 +44,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let tmp = p.with_file_name(format!(
         ".{}.ruxel-dl",
         p.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "get_url".into())
+            .map_or_else(|| "get_url".into(), |n| n.to_string_lossy().to_string())
     ));
     let fetched = fetch(url, &tmp)?;
     if !fetched {

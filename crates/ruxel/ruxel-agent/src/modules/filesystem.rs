@@ -4,7 +4,7 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let dev = str_param(obj, "dev").ok_or("filesystem: dev required")?;
     let fstype = str_param(obj, "fstype").ok_or("filesystem: fstype required")?;

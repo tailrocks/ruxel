@@ -1,11 +1,11 @@
 //! `iptables` (SEMANTICS §6): rule-spec presence via `iptables -C`
 //! (append when missing — the module's append semantics preserved), and
-//! chain policy. ip_version=ipv6 routes to ip6tables.
+//! chain policy. `ip_version=ipv6` routes to ip6tables.
 
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let chain = str_param(obj, "chain").ok_or("iptables: chain required")?;
     let binary = match str_param(obj, "ip_version") {

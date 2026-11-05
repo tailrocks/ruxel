@@ -7,7 +7,7 @@ use super::command::{check_mode_guard, command_result, creates_guard};
 use super::{ExecContext, params_object, str_param};
 use serde_json::Value;
 
-pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     if free_form.is_empty() {
         return Err("shell needs a free-form body".into());

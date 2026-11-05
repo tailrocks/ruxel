@@ -35,7 +35,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub struct ExecContext {
+pub(crate) struct ExecContext {
     pub check_mode: bool,
     /// `--diff`: content modules embed a unified diff in their result.
     pub diff_mode: bool,
@@ -70,7 +70,7 @@ pub(super) fn unified_diff(before: &str, after: &str) -> String {
     out
 }
 
-pub struct Outcome {
+pub(crate) struct Outcome {
     /// ok | changed | failed | skipped (status the controller reports).
     pub status: &'static str,
     pub changed: bool,
@@ -99,7 +99,7 @@ impl Outcome {
     }
 }
 
-pub fn execute(
+pub(crate) fn execute(
     module: &str,
     params: &Value,
     free_form: &str,
@@ -155,7 +155,7 @@ pub fn execute(
     }
 }
 
-pub fn is_implemented(module: &str) -> bool {
+pub(crate) fn is_implemented(module: &str) -> bool {
     matches!(
         module,
         "ansible.posix.mount"
@@ -192,7 +192,7 @@ pub fn is_implemented(module: &str) -> bool {
     )
 }
 
-pub fn shutdown() {
+pub(crate) fn shutdown() {
     postgresql::shutdown();
 }
 
@@ -217,7 +217,9 @@ pub(super) fn write_atomic_with(
     let name = path
         .file_name()
         .ok_or_else(|| format!("{} has no file name", path.display()))?;
-    let existing = std::fs::symlink_metadata(path).ok().filter(|m| m.is_file());
+    let existing = std::fs::symlink_metadata(path)
+        .ok()
+        .filter(std::fs::Metadata::is_file);
     let final_mode = mode
         .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
         .unwrap_or(0o600);
@@ -302,7 +304,7 @@ fn command_display(command: &std::process::Command) -> String {
         .join(" ")
 }
 
-/// Build a std::process::Command, wrapped in `runuser -u <user> --` when the
+/// Build a `std::process::Command`, wrapped in `runuser -u <user> --` when the
 /// task set `become_user` (SEMANTICS §1: the task runs as that uid/gid with
 /// its environment). Used by command/shell and the postgresql modules
 /// (peer auth as the postgres OS user).
@@ -311,32 +313,29 @@ pub(super) fn become_command(
     program: &str,
     args: &[&str],
 ) -> std::process::Command {
-    match &ctx.become_user {
-        Some(user) => {
-            let mut cmd = std::process::Command::new("runuser");
-            cmd.arg("-u").arg(user).arg("--");
-            if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
-                && let Some((home, shell)) = user_environment_from(&passwd, user)
-            {
-                cmd.arg("/usr/bin/env")
-                    .arg(format!("HOME={home}"))
-                    .arg(format!("USER={user}"))
-                    .arg(format!("LOGNAME={user}"))
-                    .arg(format!("SHELL={shell}"));
-            }
-            cmd.arg(program);
-            for a in args {
-                cmd.arg(a);
-            }
-            cmd
+    if let Some(user) = &ctx.become_user {
+        let mut cmd = std::process::Command::new("runuser");
+        cmd.arg("-u").arg(user).arg("--");
+        if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
+            && let Some((home, shell)) = user_environment_from(&passwd, user)
+        {
+            cmd.arg("/usr/bin/env")
+                .arg(format!("HOME={home}"))
+                .arg(format!("USER={user}"))
+                .arg(format!("LOGNAME={user}"))
+                .arg(format!("SHELL={shell}"));
         }
-        None => {
-            let mut cmd = std::process::Command::new(program);
-            for a in args {
-                cmd.arg(a);
-            }
-            cmd
+        cmd.arg(program);
+        for a in args {
+            cmd.arg(a);
         }
+        cmd
+    } else {
+        let mut cmd = std::process::Command::new(program);
+        for a in args {
+            cmd.arg(a);
+        }
+        cmd
     }
 }
 

@@ -1,12 +1,12 @@
 //! `sysctl` / `ansible.posix.sysctl` (SEMANTICS §6): value in the target
-//! file (and the live kernel value when sysctl_set), string-normalized
+//! file (and the live kernel value when `sysctl_set`), string-normalized
 //! comparison — runs of whitespace compare equal, exactly the rule
-//! multi-value keys like net.ipv4.ip_local_port_range need.
+//! multi-value keys like `net.ipv4.ip_local_port_range` need.
 
 use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("sysctl: name required")?;
     let value = match obj.get("value") {
@@ -79,11 +79,7 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
     for line in current.lines() {
         let trimmed = line.trim();
         let is_entry = !trimmed.starts_with('#')
-            && trimmed
-                .split('=')
-                .next()
-                .map(|k| k.trim() == name)
-                .unwrap_or(false);
+            && trimmed.split('=').next().is_some_and(|k| k.trim() == name);
         if is_entry {
             found = true;
             let existing = trimmed.split('=').nth(1).unwrap_or("").trim();

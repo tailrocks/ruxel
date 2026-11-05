@@ -1,10 +1,10 @@
-//! The templating engine: MiniJinja configured to reproduce ansible-core
+//! The templating engine: `MiniJinja` configured to reproduce ansible-core
 //! 2.21's observable rendering semantics for the closed surface in
 //! docs/SEMANTICS.md §2 — native types, the workload's filter set, lazy
 //! variable resolution, and controller-side lookups with a dry-secrets mode.
 //!
 //! Every semantic choice here is provisional until the render-parity harness
-//! (tools/oracle/render_parity.py) confirms it byte-for-byte against the
+//! (`tools/oracle/render_parity.py`) confirms it byte-for-byte against the
 //! pinned oracle; the goldens, not this file's comments, are the contract.
 
 use minijinja::value::{Kwargs, Object, Value};
@@ -198,7 +198,7 @@ impl std::fmt::Debug for VarValue {
 }
 
 /// Layered variable scope, lowest→highest precedence (SEMANTICS §2: play
-/// vars → set_fact → register; loop `item` and task vars on top).
+/// vars → `set_fact` → register; loop `item` and task vars on top).
 #[derive(Clone, Default)]
 pub struct Scope {
     layers: Vec<Arc<Vec<(String, VarValue)>>>,
@@ -216,11 +216,13 @@ impl std::fmt::Debug for Scope {
 }
 
 impl Scope {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Push a higher-precedence layer; later layers shadow earlier ones.
+    #[must_use]
     pub fn with_layer(&self, vars: Vec<(String, VarValue)>) -> Self {
         let mut layers = self.layers.clone();
         layers.push(Arc::new(vars));

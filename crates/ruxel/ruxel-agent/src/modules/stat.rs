@@ -6,7 +6,7 @@ use super::{params_object, str_param};
 use serde_json::{Value, json};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 
-pub fn run(params: &Value) -> Result<Value, String> {
+pub(super) fn run(params: &Value) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("stat: path required")?;
     let follow = super::bool_param(obj, "follow", false);

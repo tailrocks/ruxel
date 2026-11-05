@@ -9,7 +9,7 @@ use std::path::Path;
 const BEGIN: &str = "# BEGIN ANSIBLE MANAGED BLOCK";
 const END: &str = "# END ANSIBLE MANAGED BLOCK";
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("blockinfile: path required")?;
     let block = str_param(obj, "block").ok_or("blockinfile: block required")?;

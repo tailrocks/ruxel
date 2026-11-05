@@ -1,12 +1,12 @@
 //! `command` (SEMANTICS §6): argv exec, no shell. Free-form bodies split
 //! shlex-style (pinned by golden E15: `echo 'a b' c` → ["echo","a b","c"]).
-//! Always changed (the controller's changed_when normally overrides);
+//! Always changed (the controller's `changed_when` normally overrides);
 //! failure = rc≠0.
 
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let argv: Vec<String> = if !free_form.is_empty() {
         shlex_split(free_form)?
@@ -90,7 +90,7 @@ pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value)
 }
 
 /// Result fields shared with shell (SEMANTICS §3.8).
-pub fn command_result(cmd: Value, output: &std::process::Output) -> Value {
+pub(super) fn command_result(cmd: Value, output: &std::process::Output) -> Value {
     let rc = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout)
         .trim_end_matches('\n')

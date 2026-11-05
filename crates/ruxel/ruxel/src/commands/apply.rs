@@ -1,5 +1,5 @@
 //! `ruxel apply -i hosts.ini [--limit pattern] playbook.yml` — the full
-//! pipeline: parse → connect (ControlMaster + agent) → linear scheduler →
+//! pipeline: parse → connect (`ControlMaster` + agent) → linear scheduler →
 //! recap. `--check` executes the same remote pipeline with module prediction
 //! enabled, matching Ansible check-mode semantics.
 
@@ -14,7 +14,7 @@ use std::sync::Arc;
 const MAX_HOST_CONCURRENCY: usize = 6;
 
 #[derive(Args)]
-pub struct ApplyArgs {
+pub(crate) struct ApplyArgs {
     /// Inventory file (INI)
     #[arg(short = 'i', long = "inventory")]
     pub inventory: std::path::PathBuf,
@@ -31,10 +31,10 @@ pub struct ApplyArgs {
     #[arg(long, value_delimiter = ',')]
     pub tags: Vec<String>,
     /// Agent binary to provision (built for the target's arch);
-    /// defaults to $RUXEL_AGENT_BIN
+    /// defaults to $`RUXEL_AGENT_BIN`
     #[arg(long, env = "RUXEL_AGENT_BIN")]
     pub agent_bin: Option<std::path::PathBuf>,
-    /// SSH identity for fixture/test targets (forces IdentitiesOnly)
+    /// SSH identity for fixture/test targets (forces `IdentitiesOnly`)
     #[arg(long, env = "RUXEL_SSH_KEY")]
     pub ssh_key: Option<std::path::PathBuf>,
     /// Accept new host keys (fixture/test targets)
@@ -57,7 +57,7 @@ pub struct ApplyArgs {
     pub playbook: std::path::PathBuf,
 }
 
-pub fn execute(args: ApplyArgs) -> Result<u8> {
+pub(crate) fn execute(args: ApplyArgs) -> Result<u8> {
     let agent_bin = args.agent_bin.clone().context(
         "--agent-bin or RUXEL_AGENT_BIN required (cross-built ruxel-agent for the target)",
     )?;
@@ -136,7 +136,7 @@ fn apply_exit_code(totals: RunTotals, detailed: bool) -> u8 {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn run(
     playbook: &ruxel_core::playbook::Playbook,
     compiled: &ruxel_core::compiler::Plan,
@@ -169,8 +169,7 @@ async fn run(
         let playbook_dir = args
             .playbook
             .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| ".".into());
+            .map_or_else(|| ".".into(), std::path::Path::to_path_buf);
         let tags = (!args.tags.is_empty()).then(|| args.tags.clone());
         let mut outcomes = stream::iter(hosts.into_iter().enumerate().map(|(index, host)| {
             let host = host.clone();
@@ -228,7 +227,7 @@ fn sort_outcomes(outcomes: &mut [HostOutcome]) {
     outcomes.sort_by_key(|outcome| outcome.index);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn run_host(
     index: usize,
     host: ruxel_core::inventory::Host,

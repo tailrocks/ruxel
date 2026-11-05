@@ -1,5 +1,5 @@
 //! `git` (SEMANTICS §6): repo/dest/version(branch)/update/force/
-//! accept_hostkey. update=false → clone only if absent. Changed = fresh
+//! `accept_hostkey`. update=false → clone only if absent. Changed = fresh
 //! clone or HEAD sha moved; `force` discards local modifications before
 //! update. Network-truth class (ARCHITECTURE §6).
 
@@ -7,7 +7,7 @@ use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let repo = str_param(obj, "repo").ok_or("git: repo required")?;
     let dest = str_param(obj, "dest").ok_or("git: dest required")?;

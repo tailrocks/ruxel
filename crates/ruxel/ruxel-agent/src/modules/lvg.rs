@@ -9,7 +9,7 @@ use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let vg = str_param(obj, "vg").ok_or("lvg: vg required")?;
     let pvs: Vec<String> = match obj.get("pvs") {
@@ -129,7 +129,7 @@ mod tests {
     fn pv_set_only_extends_for_missing_requested_devices() {
         let have = BTreeSet::from(["/dev/a".to_string(), "/dev/b".to_string()]);
         let subset = vec!["/dev/a".to_string()];
-        assert!(missing_pvs(&subset, &have).is_empty());
+        assert_eq!(missing_pvs(&subset, &have), [] as [&std::string::String; 0]);
         let superset = vec!["/dev/a".to_string(), "/dev/c".to_string()];
         assert_eq!(missing_pvs(&superset, &have), vec![&"/dev/c".to_string()]);
     }

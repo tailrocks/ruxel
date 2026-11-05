@@ -5,7 +5,7 @@ use super::{ExecContext, apply_attrs, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path")
         .or_else(|| str_param(obj, "dest"))

@@ -7,7 +7,7 @@ use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("lineinfile: path required")?;
     let state = str_param(obj, "state").unwrap_or("present");
@@ -49,15 +49,12 @@ fn rewrite_lines(
                 // matches a different line.
             } else if let Some(re) = regexp {
                 let last_match = lines.iter().rposition(|l| re.is_match(l));
-                match last_match {
-                    Some(idx) => {
-                        lines[idx] = line.to_string();
-                        changed = true;
-                    }
-                    None => {
-                        lines.push(line.to_string());
-                        changed = true;
-                    }
+                if let Some(idx) = last_match {
+                    lines[idx] = line.to_string();
+                    changed = true;
+                } else {
+                    lines.push(line.to_string());
+                    changed = true;
                 }
             } else {
                 lines.push(line.to_string());

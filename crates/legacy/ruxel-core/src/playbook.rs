@@ -371,7 +371,10 @@ fn validate_param(
                 module: surface.name.into(),
                 param: param.into(),
                 value: s.clone(),
-                allowed: values.iter().map(|v| v.to_string()).collect(),
+                allowed: values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             });
         }
     }
@@ -576,7 +579,7 @@ mod tests {
     #[test]
     fn block_rescue_parses() {
         let pb = parse_ok(
-            r#"
+            r"
 - hosts: all
   tasks:
     - name: Guarded
@@ -585,7 +588,7 @@ mod tests {
       rescue:
         - debug:
             msg: failed
-"#,
+",
         );
         let TaskBody::Block {
             block,

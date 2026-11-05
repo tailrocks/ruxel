@@ -1,0 +1,5 @@
+too-many-lines-threshold = 80
+allow-unwrap-in-tests = false
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+check-incompatible-msrv-in-tests = true

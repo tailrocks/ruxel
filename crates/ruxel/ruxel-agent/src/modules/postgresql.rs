@@ -1,6 +1,6 @@
 //! `community.postgresql.postgresql_{db,user,schema,privs}` (SEMANTICS §6).
 //! Connection: psql over the unix socket as the `become_user` (peer auth as
-//! postgres) on `login_port`. Idempotence is decided in SQL — pg_catalog
+//! postgres) on `login_port`. Idempotence is decided in SQL — `pg_catalog`
 //! state and explicit-ACL inspection via aclexplode — so "changed"
 //! reflects a real catalog delta, never a blind re-grant.
 
@@ -13,13 +13,14 @@ use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 use std::sync::{Arc, Mutex};
 
 fn login_port(obj: &serde_json::Map<String, Value>) -> String {
-    obj.get("login_port")
-        .map(|v| match v {
+    obj.get("login_port").map_or_else(
+        || "5432".into(),
+        |v| match v {
             Value::Number(n) => n.to_string(),
             Value::String(s) => s.clone(),
             _ => "5432".into(),
-        })
-        .unwrap_or_else(|| "5432".into())
+        },
+    )
 }
 
 /// Run SQL, returning trimmed stdout (psql -tA: tuples-only, unaligned).
@@ -67,7 +68,7 @@ thread_local! {
     static SESSIONS: RefCell<HashMap<SessionKey, PsqlSession>> = RefCell::new(HashMap::new());
 }
 
-pub fn shutdown() {
+pub(super) fn shutdown() {
     SESSIONS.with(|sessions| sessions.borrow_mut().clear());
 }
 
@@ -114,18 +115,18 @@ impl PsqlSession {
         );
         self.stdin
             .write_all(sql.as_bytes())
-            .and_then(|_| {
+            .and_then(|()| {
                 if sql.trim_end().ends_with(';') {
                     self.stdin.write_all(b"\n")
                 } else {
                     self.stdin.write_all(b";\n")
                 }
             })
-            .and_then(|_| {
+            .and_then(|()| {
                 self.stdin
                     .write_all(format!("\\echo {marker}\n").as_bytes())
             })
-            .and_then(|_| self.stdin.flush())
+            .and_then(|()| self.stdin.flush())
             .map_err(|error| format!("psql stdin: {error}"))?;
 
         let mut output = String::new();
@@ -227,7 +228,7 @@ fn role_flag_tokens(flags: &str) -> Vec<String> {
     flags
         .split([',', ' '])
         .filter(|token| !token.is_empty())
-        .map(|token| token.to_uppercase())
+        .map(str::to_uppercase)
         .collect()
 }
 
@@ -243,7 +244,7 @@ fn ident(s: &str) -> String {
 
 // -- postgresql_db ----------------------------------------------------------
 
-pub fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("postgresql_db: name required")?;
     let owner = str_param(obj, "owner");
@@ -301,7 +302,7 @@ pub fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 // -- postgresql_user --------------------------------------------------------
 
-pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("postgresql_user: name required")?;
     let password = str_param(obj, "password");
@@ -326,23 +327,7 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
 
-    if !exists {
-        changed = true;
-        if !ctx.check_mode {
-            let mut sql = format!("CREATE ROLE {}", ident(name));
-            let flags = role_attr_flags
-                .map(flags_to_sql)
-                .unwrap_or_else(|| "LOGIN".into());
-            if !flags.is_empty() {
-                sql.push(' ');
-                sql.push_str(&flags);
-            }
-            if let Some(p) = password {
-                sql.push_str(&format!(" PASSWORD {}", lit(p)));
-            }
-            psql(ctx, &port, None, &sql)?;
-        }
-    } else {
+    if exists {
         // Attr-flag drift (SUPERUSER etc.).
         if let Some(f) = role_attr_flags
             && flags_changed(ctx, &port, name, f)?
@@ -376,6 +361,20 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     &format!("ALTER ROLE {} PASSWORD {}", ident(name), lit(p)),
                 )?;
             }
+        }
+    } else {
+        changed = true;
+        if !ctx.check_mode {
+            let mut sql = format!("CREATE ROLE {}", ident(name));
+            let flags = role_attr_flags.map_or_else(|| "LOGIN".into(), flags_to_sql);
+            if !flags.is_empty() {
+                sql.push(' ');
+                sql.push_str(&flags);
+            }
+            if let Some(p) = password {
+                sql.push_str(&format!(" PASSWORD {}", lit(p)));
+            }
+            psql(ctx, &port, None, &sql)?;
         }
     }
 
@@ -425,8 +424,8 @@ fn password_changed(
     Ok(computed != stored_stored_key)
 }
 
-/// StoredKey = base64( SHA256( HMAC-SHA256(SaltedPassword, "Client Key") ) ),
-/// SaltedPassword = PBKDF2-HMAC-SHA256(password, base64decode(salt), iter).
+/// `StoredKey` = base64( SHA256( HMAC-SHA256(SaltedPassword, "Client Key") ) ),
+/// `SaltedPassword` = PBKDF2-HMAC-SHA256(password, base64decode(salt), iter).
 fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<String, String> {
     use hmac::{Hmac, KeyInit, Mac};
     use sha2::{Digest, Sha256};
@@ -502,7 +501,7 @@ fn wanted_flag(flags: &str, positive: &str) -> Option<bool> {
 
 // -- postgresql_schema ------------------------------------------------------
 
-pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_schema: login_db required")?;
@@ -557,7 +556,7 @@ pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 // -- postgresql_privs -------------------------------------------------------
 
-pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_privs: login_db required")?;
     let role = str_param(obj, "role").ok_or("postgresql_privs: role required")?;
@@ -764,9 +763,10 @@ fn default_priv_query(
     privilege: &str,
     target_role: Option<&str>,
 ) -> String {
-    let owner = target_role
-        .map(|role| format!("(SELECT oid FROM pg_roles WHERE rolname={})", lit(role)))
-        .unwrap_or_else(|| "(SELECT oid FROM pg_roles WHERE rolname=current_user)".into());
+    let owner = target_role.map_or_else(
+        || "(SELECT oid FROM pg_roles WHERE rolname=current_user)".into(),
+        |role| format!("(SELECT oid FROM pg_roles WHERE rolname={})", lit(role)),
+    );
     format!(
         "SELECT 1 FROM pg_default_acl d \
          JOIN pg_namespace n ON n.oid=d.defaclnamespace, \

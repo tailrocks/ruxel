@@ -216,7 +216,7 @@ mod tests {
 
         #[test]
         fn oversized_lengths_are_rejected_before_body_read(
-            extra in 1_u64..(u32::MAX as u64)
+            extra in 1_u64..u64::from(u32::MAX)
         ) {
             let mut bytes = Vec::new();
             encode_varint(MAX_FRAME_LEN + extra, &mut bytes);

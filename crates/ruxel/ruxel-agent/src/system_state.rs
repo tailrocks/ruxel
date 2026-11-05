@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 #[derive(Default)]
-pub struct SystemState {
+pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
     candidates: HashMap<String, String>,
@@ -12,18 +12,18 @@ pub struct SystemState {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct UnitState {
+pub(crate) struct UnitState {
     pub active: bool,
     pub enabled: bool,
 }
 
 impl SystemState {
-    pub fn package_version(&mut self, name: &str) -> Option<String> {
+    pub(crate) fn package_version(&mut self, name: &str) -> Option<String> {
         self.ensure_packages().ok()?;
         self.packages.as_ref()?.get(name).cloned()
     }
 
-    pub fn missing_packages(
+    pub(crate) fn missing_packages(
         &mut self,
         names: &[String],
         latest: bool,
@@ -47,7 +47,7 @@ impl SystemState {
             .collect())
     }
 
-    pub fn unit(&mut self, name: &str) -> Result<UnitState, String> {
+    pub(crate) fn unit(&mut self, name: &str) -> Result<UnitState, String> {
         self.ensure_units()?;
         let units = self.units.as_ref().expect("units initialized");
         Ok(units
@@ -62,12 +62,12 @@ impl SystemState {
             .unwrap_or_default())
     }
 
-    pub fn invalidate_packages(&mut self) {
+    pub(crate) fn invalidate_packages(&mut self) {
         self.packages = None;
         self.candidates.clear();
     }
 
-    pub fn invalidate_units(&mut self) {
+    pub(crate) fn invalidate_units(&mut self) {
         self.units = None;
     }
 

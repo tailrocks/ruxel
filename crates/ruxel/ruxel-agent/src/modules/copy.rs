@@ -10,7 +10,7 @@ use super::{
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let dest = str_param(obj, "dest").ok_or("copy: dest required")?;
     let content = str_param(obj, "content")
