@@ -11,7 +11,7 @@ test_runner = "cargo_nextest"
 [[checks]]
 id = "cargo-deny"
 task = "deny"
-inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/legacy/ruxel-core/Cargo.toml", "crates/legacy/ruxel-spec-extract/Cargo.toml", "deny.toml", "mise.toml", "mise.lock"]
+inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/legacy/ruxel-core/Cargo.toml", "crates/legacy/ruxel-spec-extract/Cargo.toml", "tools/ci/check-deny-inputs.py", "deny.toml", "mise.toml", "mise.lock"]
 tools = ["rust", "cargo-deny"]
 timeout_minutes = 10
 [checks.runner]
