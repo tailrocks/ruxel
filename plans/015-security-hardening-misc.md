@@ -74,7 +74,7 @@ filename — reconnaissance metadata, not secret values. **Do not open the file
 to read the value; do not reproduce it anywhere.**
 
 **Operator resolution (2026-07-03):** the operator confirmed this capture was
-made against a disposable **test server** (`91.99.37.240`) used to verify the
+made against a disposable **test server** used to verify the
 workflow, not a production host — so the 9-char `looker` value is a
 test-server credential, **not** a production secret. **No rotation required.**
 SECURITY-09 therefore downgrades to a **hygiene** note only: prefer capturing
@@ -164,7 +164,7 @@ ruxel-core` → pass.
 ### Step 4 (D): Surface the committed capture credential to the operator
 
 Do **not** read or reproduce the value. **Status: operator-resolved
-(2026-07-03) — the capture is from a disposable test server (`91.99.37.240`),
+(2026-07-03) — the capture is from a disposable test server,
 so no rotation is required** (see item D above). The remaining action is
 hygiene only: when re-capturing PG bless goldens, run with
 `RUXEL_DRY_SECRETS=1` so the fake-lookup plugins render a `dry-secret-*` value
