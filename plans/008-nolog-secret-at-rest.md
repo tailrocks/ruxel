@@ -42,37 +42,44 @@ recommend the operator rotate affected credentials and wipe stale ledgers
 ## Current state
 
 **Agent ignores `no_log`:**
+
 - `crates/ruxel-proto/proto/ruxel.proto:69` defines `RenderedTask.no_log`
   (field 7); the controller sets it (`crates/ruxel/src/scheduler.rs:598`
   `no_log: task.no_log`).
 - `crates/ruxel-agent/src/main.rs:185-296` `execute_task` receives `task:
   &v1::RenderedTask` (so `task.no_log` is available) but **never reads it**.
 - `crates/ruxel-agent/src/main.rs:277-285` records unconditionally:
+
   ```rust
   if !task_check_mode {
       ledger.record(&iteration.ledger_key, &task.module, &params,
                     outcome.status, &outcome.result);
   }
   ```
+
 - `crates/ruxel-agent/src/modules/copy.rs:31-35` embeds full content under
   `--diff`:
+
   ```rust
   if ctx.diff_mode {
       let before = String::from_utf8_lossy(&current);
       result["diff"] = json!(super::unified_diff(&before, content));
   }
   ```
+
   (`copy::run` also backs `template`, per `modules/mod.rs:114`.) `send_result`
   (`main.rs:298-325`) additionally puts `result["diff"]` into the wire
   `TaskResult.diff`.
 
 **Ledger file permissions:**
+
 - `crates/ruxel-agent/src/ledger.rs:90-103` `flush` writes via `std::fs::write`
   then `rename` with **no `set_permissions`** → default umask (0644,
   world-readable). `main.rs:56-57` and `ledger.rs:95` create the dirs with
   default 0755.
 
 **Unkeyed ledger identity:**
+
 - `crates/ruxel/src/scheduler.rs:566-581` builds `ledger_key` as a plain
   `blake3` over `playbook_dir ‖ module ‖ label ‖ item_label ‖ params_bytes ‖
   free_form`. `params_bytes = serde_json::to_vec(&params)` includes rendered
@@ -81,6 +88,7 @@ recommend the operator rotate affected credentials and wipe stale ledgers
   does not exist.
 
 **Dead redaction helper:**
+
 - `crates/ruxel-core/src/task_eval.rs:123-141` `censored_result` is tested
   (goldens E12/E13) but has **no production caller** (grep). The scheduler
   instead blanks the display string (`scheduler.rs:652-658`) and suppresses
@@ -101,6 +109,7 @@ recommend the operator rotate affected credentials and wipe stale ledgers
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-agent/src/main.rs` — thread `task.no_log` into the record/diff
   decision.
 - `crates/ruxel-agent/src/modules/mod.rs` — add `no_log` to `ExecContext` (or
@@ -115,6 +124,7 @@ recommend the operator rotate affected credentials and wipe stale ledgers
 - Tests in `ledger.rs` / a new agent test.
 
 **Out of scope**:
+
 - The controller-side printed-output redaction (`scheduler.rs:652-672`) — it
   already works; don't regress it.
 - Keeping the registered variable **uncensored** — that is deliberate Ansible
@@ -176,6 +186,7 @@ then assert `symlink_metadata(ledger.json).permissions().mode() & 0o777 ==
 The ledger key is stored as a JSON object key in the (now 0600, but still
 on-disk) ledger. For content modules it currently equals `blake3(context ‖
 secret-bearing content)`. Implement **one** of:
+
 - **(Preferred, matches §6)** Derive a per-host `host_ledger_key` (32 random
   bytes) stored at `/var/lib/ruxel/ledger/key` mode 0600, created on first use.
   Replace the plain `blake3` in `scheduler.rs:566-581` with a keyed hash — but
@@ -248,6 +259,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Step 4's preferred keyed-identity design turns out to require moving ledger-key
   computation across the wire boundary in a way that risks the ledger fast path
   — defer Step 4 (explicitly), land Steps 1–3, and report.

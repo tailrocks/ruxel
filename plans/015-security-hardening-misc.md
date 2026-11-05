@@ -35,6 +35,7 @@ verify/rotate action this plan surfaces without reproducing the value.
 
 **A. Mux socket in `/tmp` (SECURITY-06):**
 `crates/ruxel/src/transport.rs:54-61`:
+
 ```rust
 let socket = std::env::temp_dir().join(format!(
     "ruxel-mux-{}-{:x}",
@@ -42,6 +43,7 @@ let socket = std::env::temp_dir().join(format!(
     ...subsec_nanos()
 ));
 ```
+
 `temp_dir()` is `/tmp` absent `$TMPDIR`. Ansible uses `~/.ansible/cp/` (0700).
 On a multi-user controller the predictable path in a shared dir invites
 pre-creation/DoS races against the socket carrying root SSH sessions.
@@ -69,7 +71,7 @@ content-addressing *implies* a check that isn't performed.
 is a 9-character literal that is **not** a `dry-secret-*` fake and **not**
 `s3cr3t-ruxel` (the known synthetic test value used in `postgresql.rs` tests).
 It corresponds to a PG role (the `looker` role in the capture). Other captures
-contain real `op://ChainArgos/...` item references and a GCP service-account key
+contain real `op://example-org/...` item references and a GCP service-account key
 filename — reconnaissance metadata, not secret values. **Do not open the file
 to read the value; do not reproduce it anywhere.**
 
@@ -95,11 +97,13 @@ for the operator, unrelated to the test-server credential.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/transport.rs` — socket location (A), agent re-hash (B).
 - `crates/ruxel-core/src/engine.rs` — redacting `Debug` impls (C).
 - The PR description + `plans/README.md` — surface D for the operator (no code).
 
 **Out of scope**:
+
 - Reading or reproducing the capture's credential value (D is a *report*, not an
   edit — unless the operator confirms it's real and asks for a scrub).
 - Rewriting git history to scrub the capture (operator decision; needs
@@ -204,6 +208,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Moving the socket off `/tmp` breaks the on-VM transport gate (path length
   limits for unix sockets are ~104 chars — a long `$HOME` could overflow; if so,
   fall back to a short `/run/user/<uid>/ruxel/` path and report).

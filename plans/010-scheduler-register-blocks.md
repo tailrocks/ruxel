@@ -46,7 +46,9 @@ Reading the untested scheduler surfaced three real divergences from Ansible:
 `crates/ruxel/src/scheduler.rs`:
 
 **Register-on-skip** — `run_module_task` (`:221-300`):
+
 - Single-shot `when` false (`:245-254`):
+
   ```rust
   if let Some(when) = &task.when {
       let outcomes = eval_when_parts(self.engine, when, &scope)?;
@@ -58,14 +60,17 @@ Reading the untested scheduler surfaced three real divergences from Ansible:
       }
   }
   ```
+
 - Empty loop (`:258-263`): builds `task_eval::loop_aggregate(vec![])`,
   `finish_task(..., "skipped", ...)`, `return Ok(false)` — also before the bind.
 - The register bind is at `:284-286`:
+
   ```rust
   if let Some(reg) = &task.register {
       self.register(reg, result.clone());
   }
   ```
+
 - `finish_task` (`:634-673`) does **not** register (confirmed: it only updates
   recap + prints).
 - `task_eval::skipped_result` (`crates/ruxel-core/src/task_eval.rs:14-27`) and
@@ -73,6 +78,7 @@ Reading the untested scheduler surfaced three real divergences from Ansible:
   — they're just never bound in these two paths.
 
 **Block inheritance** — `run_task_or_block` (`:163-219`):
+
 ```rust
 if let TaskBody::Block { block, rescue, always: _ } = &task.body {
     let mut child_tags: Vec<String> = inherited_tags.to_vec();
@@ -82,6 +88,7 @@ if let TaskBody::Block { block, rescue, always: _ } = &task.body {
     // NEVER runs `always`; NEVER propagates become/become_user/vars/environment
 }
 ```
+
 - Child tasks read only their own `task.become_user` when building the wire task
   (`:599`). There is no inherited-context threading.
 - The `Task`/`TaskBody::Block` shapes are in `crates/ruxel-core/src/playbook.rs`
@@ -105,6 +112,7 @@ than the task's own values.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/scheduler.rs` — the two early-return paths and the block arm.
 - `crates/ruxel/src/scheduler.rs` `#[cfg(test)] mod tests` (from plan 009) — add
   the bug-fix tests.
@@ -113,6 +121,7 @@ than the task's own values.
   keep it minimal).
 
 **Out of scope**:
+
 - The compiler-side block handling (`compiler.rs`) beyond what's needed for
   parity — plan 020 owns the compiler path.
 - Reworking `become_user` semantics generally — only propagate block→child.
@@ -132,15 +141,18 @@ than the task's own values.
 
 In `run_module_task`, before **each** early `return Ok(false)` in the skip
 (`:251-252`) and empty-loop (`:261-262`) branches, bind the register if present:
+
 ```rust
 if let Some(reg) = &task.register {
     self.register(reg, /* the skip/aggregate Value */ .clone());
 }
 ```
+
 Use the same `skip`/`agg` Value that `finish_task` already received, so the
 registered variable is the exact Ansible skip dict (`skipped: true`, etc.).
 
 **Verify**: add scheduler tests (using the 009 `FakeAgent`):
+
 - `skipped_single_task_registers_skip_dict`: a `when: false` task with
   `register: r`; a following `debug`/`assert` reading `r.skipped` sees `true`
   (not undefined). Assert via a subsequent task whose `when: r is skipped`
@@ -154,6 +166,7 @@ registered variable is the exact Ansible skip dict (`skipped: true`, etc.).
 First **read `playbook.rs`** to confirm which keywords a `TaskBody::Block` node
 parses (become/become_user/vars/environment/when/tags). For each that exists,
 thread it into the children:
+
 - Extend `run_task_or_block`'s block arm to build an inherited context (the
   block's `become_user`, `become`, merged `vars` as a scope layer, merged
   `environment`) and pass it down through the recursive `run_task_or_block`
@@ -184,6 +197,7 @@ block/rescue sequence, regardless of whether the block failed or was rescued
 (mirror Ansible: `always` runs in both success and failure paths). Preserve the
 host-failed propagation: if the block failed and there is no rescue, `always`
 still runs, then the host stops. Sequence:
+
 1. run block; if a task fails → jump to rescue (existing).
 2. run `always` (new) — always, after 1.
 3. return the appropriate host-failed signal.
@@ -200,6 +214,7 @@ warnings` → 0; `cargo nextest run` → green.
 ## Test plan
 
 New scheduler tests (on plan 009's seam):
+
 - register-on-skip (single + empty loop) — the CORRECTNESS-04 regression guard.
 - block `become_user` inheritance — CORRECTNESS-05 guard.
 - block `always` runs on success and after rescue — the latent-bug guard.
@@ -220,6 +235,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - `playbook.rs` shows a block node parses **no** become/vars/environment (only
   when/tags) — then CORRECTNESS-05's worst case (become_user under a block)
   can't occur through the parser; implement inheritance for what *is* parsed and

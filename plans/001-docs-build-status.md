@@ -38,22 +38,26 @@ reader too. This is a two-file text edit with outsized leverage.
 
 - `AGENTS.md` — the agent rules file, loaded every session via `CLAUDE.md`.
   Lines 20–25 read:
-  ```
+
+  ```text
   ## Project phase
 
   Research and design. Do not start building the execution engine until the
   operator explicitly moves the project to implementation. The current
   deliverables are the documents in `docs/` and the CLI skeleton.
   ```
+
   The surrounding sections — "Hard rule: never touch the production servers",
   "Scope discipline", "Conventions" — are **correct and must stay verbatim**.
 - `README.md` — repo front page. Lines 16–19 read:
-  ```
+
+  ```text
   ## Status
 
   Research and design phase. The CLI shape exists; the engine intentionally
   does not yet. Read the docs in order:
   ```
+
 - `CLAUDE.md` — one line, `@AGENTS.md`. No change needed (it inherits 001's
   fix automatically). Do not edit it.
 - Ground-truth state, to mirror in the new wording (from `RESTORE.md:13-25`):
@@ -61,7 +65,6 @@ reader too. This is a two-file text edit with outsized leverage.
   `plan`/`apply` CLI, `op` secret resolver, SSH transport); 6 of 16 playbooks
   are gated three-way against real Ansible; milestones M0–M3 done, M4/M5
   partial, M6 (operator-driven production pilot) deliberately untouched.
-
 - **Convention**: these are prose docs; match the existing terse, declarative
   tone. Keep the exact markdown heading levels already in each file.
 
@@ -76,10 +79,12 @@ reader too. This is a two-file text edit with outsized leverage.
 ## Scope
 
 **In scope** (only files you may modify):
+
 - `AGENTS.md` (the "## Project phase" section only)
 - `README.md` (the "## Status" section only)
 
 **Out of scope** (do NOT touch):
+
 - `CLAUDE.md` — inherits the fix; editing it is unnecessary.
 - The "Hard rule", "Scope discipline", "Conventions" sections of `AGENTS.md` —
   they are correct.

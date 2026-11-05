@@ -18,6 +18,7 @@ apt_repository, get_url, file, copy+handler, service started+enabled).
 | ansible-playbook (converged no-op)   | 15.16 s | 1.0× (baseline) |
 
 Reading:
+
 - **Ledger path (1.04 s):** ~0.5 s is SSH ControlMaster connect + agent
   handshake; the actual convergence verdict over the task set is sub-second
   (cached fingerprints re-verify in parallel, modules not invoked).

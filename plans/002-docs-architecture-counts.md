@@ -77,7 +77,7 @@ confirm). Read the cited code lines first; they are the source of truth.
 - `docs/WORKLOAD.md:12` "## 1. Module inventory (29 distinct modules)";
   `docs/VISION.md:8` and `docs/DIRECTION.md` also say "29". `GOAL.md`/`RESTORE.md`
   and the code say **36**. WORKLOAD's own two tables total 33 rows (24 built-in
-  + 9 collection) and omit `apt_repository`, `fail`, `set_fact`.
+  - 9 collection) and omit `apt_repository`, `fail`, `set_fact`.
 - Per-module use-count mismatches WORKLOAD ↔ SEMANTICS: `WORKLOAD.md:25`
   `group | 39` vs `docs/SEMANTICS.md:285` `group (3)`; `WORKLOAD.md:32`
   `user | 6` vs `SEMANTICS.md:280` `user (5)`; `WORKLOAD.md:31` `replace | 6`
@@ -93,19 +93,21 @@ confirm). Read the cited code lines first; they are the source of truth.
 **C. Stale ⚠-verify markers in `docs/SEMANTICS.md`** (governance:
 `docs/PLAN.md:15-18` "a milestone is not done while one of its ⚠ items is
 unresolved"). These carry ⚠ but are recorded closed in `GOAL.md`:
-  - skip register shape `SEMANTICS.md:92` → closed `GOAL.md:249`
-  - lineinfile idempotence `:205` → `GOAL.md:338`
-  - systemd `daemon_reload` changed `:245` → `GOAL.md:315`
-  - sysctl normalization `:253` → `GOAL.md:338`
-  - authorized_key key-material `:288` → `GOAL.md:341`
-  - get_url dest short-circuit `:217` → resolved inline at `:217` itself
-  - lvg `:258`, lvol `+100%FREE` `:266`, mount fstab `:275` → `GOAL.md:353-354`
 
-  **Genuinely still open (keep ⚠):** pause under `--check` `:160`, handlers
+- skip register shape `SEMANTICS.md:92` → closed `GOAL.md:249`
+- lineinfile idempotence `:205` → `GOAL.md:338`
+- systemd `daemon_reload` changed `:245` → `GOAL.md:315`
+- sysctl normalization `:253` → `GOAL.md:338`
+- authorized_key key-material `:288` → `GOAL.md:341`
+- get_url dest short-circuit `:217` → resolved inline at `:217` itself
+- lvg `:258`, lvol `+100%FREE` `:266`, mount fstab `:275` → `GOAL.md:353-354`
+
+**Genuinely still open (keep ⚠):** pause under `--check` `:160`, handlers
   under `--check` `:164` (live `--check` is unbuilt), `become_user` env `:32`,
   file `mode "0700"` octal `:192` (not pinned in GOAL/RESTORE).
 
 **D. Broken claims in `docs/PLAN.md` / `README.md`:**
+
 - `PLAN.md:158-162` "Spec drift watch: the param/value extractor … lives in
   `tools/spec-extract/` and runs in CI." — `tools/spec-extract/` does not exist
   (`tools/` has only `fixtures/` and `oracle/`); no CI job references it.
@@ -140,6 +142,7 @@ so the *design intent* is preserved while the *build state* is honest.
 001's).
 
 **Out of scope**:
+
 - Any `crates/**` file, `Cargo.toml`, CI config — docs only.
 - Building `tools/spec-extract/` — that's plan 024/025; here only correct the
   claim that it already exists.
@@ -238,6 +241,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - A cited code line no longer matches (e.g. `ProbeResult` now exists, or the
   openssh crate is back in `transport.rs`) — the code changed since `b5f98ba`;
   the doc reconciliation direction may be wrong.

@@ -31,7 +31,7 @@ setup-* workload:
    no upfront/concurrent/grouped phase. Because the controller renders every
    task's params on **every** run (to compute the ledger key and ship the Plan),
    every `op read` fires every run, **including a converged no-op**. For
-   setup-postgresql-nova's ~52 lookups that's up to ~52 serial `op` spawns
+   setup-example-host's ~52 lookups that's up to ~52 serial `op` spawns
    (process + session + network each), realistically **~15–30 s** — versus §10's
    "52 lookups, deduplicated, ‖, warm `op` session ~1–3 s." This single gap can
    make a converged setup-* run slower than the 15-min Ansible baseline it
@@ -49,6 +49,7 @@ setup-* workload:
 ## Current state
 
 **Secrets:**
+
 - `crates/ruxel/src/secrets.rs:59-74` `op_read` — one `op read op://vault/item/field`
   per reference. An SSH item's private+public key = two subprocesses (§3.2 wanted
   **one** `op item get <item> --format json` serving both).
@@ -88,6 +89,7 @@ goldens). The agent stays dependency-light — prefer a threadpool via std
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/secrets.rs`, `crates/ruxel/src/commands/apply.rs`,
   `crates/ruxel-core/src/engine.rs` (the resolver + a pre-resolve phase).
 - `crates/ruxel-agent/src/modules/{apt,systemd,postgresql}.rs`,
@@ -95,6 +97,7 @@ goldens). The agent stays dependency-light — prefer a threadpool via std
 - A new agent `SystemState`/snapshot module.
 
 **Out of scope**:
+
 - apt adjacency batching (a separate ARCHITECTURE §5.3 optimization — not here).
 - The content-addressed blob channel.
 - Changing any module's **reported status** — snapshots are an internal speedup.
@@ -133,6 +136,7 @@ gate): converged setup-* wall-clock drops from tens of seconds to the §10 budge
 ### Step 2 (snapshots): Build a per-run `SystemState` in the agent
 
 Add an agent `SystemState` struct built lazily once per run:
+
 - **dpkg**: parse `/var/lib/dpkg/status` once (installed name→version) instead of
   forking `dpkg-query` per package; for `state: latest`, one batched
   `apt-cache policy <names...>` (or parse `/var/lib/apt/lists`) instead of per
@@ -213,6 +217,7 @@ Ruxel 4.41 s vs Ansible 24.67 s (5.59×), both `changed=0`.
 ## STOP conditions
 
 Stop and report if:
+
 - Grouping lookups by item changes any resolved value (a section/field edge case)
   — render parity would break; report the exact reference and preserve semantics.
 - A snapshot-backed read produces a **different status** than the per-name fork

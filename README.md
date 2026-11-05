@@ -67,6 +67,8 @@ mise run install
 mise run check
 ```
 
+Git hooks: `mise exec -- hk install --mise`.
+
 Releases are lightweight while the project remains a single-operator pilot:
 update the workspace version and changelog, commit, then create an annotated
 milestone tag (`git tag -a vX.Y.Z -m "ruxel X.Y.Z"`). `ruxel --version`

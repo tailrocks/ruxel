@@ -81,6 +81,7 @@ tests`; extract pure helpers (parse/build/compare) from the `run()` bodies where
 they're currently inline, keeping behavior identical.
 
 **Out of scope**:
+
 - Any behavior change (pure extraction only — the extracted fn must produce the
   same value the inline code did).
 - Testing live dpkg/systemctl/psql/mkfs/lvm — those are on-VM gates.
@@ -100,6 +101,7 @@ they're currently inline, keeping behavior identical.
 
 Start with the highest-risk pure logic (a wrong decision here re-grants
 privileges or touches partitions):
+
 - **postgresql.rs**: factor and test `validate_privs` (accept/reject),
   `lit`/`ident` quoting (embedded quotes escaped), the SQL string a
   `privs_missing_*`/`grant_sql` builds (assert it references the right catalog
@@ -190,6 +192,7 @@ exercise privileged external tools.
 ## STOP conditions
 
 Stop and report if:
+
 - Extracting a pure helper would change behavior (e.g. the inline code has a
   side effect entangled with the decision) — leave it, note it, and test what
   you safely can.

@@ -66,7 +66,6 @@ that is intentional; plan 006 flips those assertions when it fixes the bug.
   and could touch package/unit state). Test the file-backed probes end-to-end
   and the record/replay bookkeeping for all; treat dpkg/systemctl probes as
   out of scope for unit tests (they belong to the on-VM bless-gate).
-
 - **Test conventions in this repo**: inline `#[cfg(test)] mod tests` with
   `#[test]` fns (see `crates/ruxel-agent/src/modules/command.rs:132-151` and
   `sysctl.rs:116-126` for the pattern). No external test framework beyond std +
@@ -88,12 +87,14 @@ that is intentional; plan 006 flips those assertions when it fixes the bug.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-agent/src/ledger.rs` — add a `#[cfg(test)] mod tests` at the
   bottom. You MAY add narrowly-scoped `#[cfg(test)]` test helpers or make one
   or two private items `pub(crate)`/`pub(super)` **only if strictly needed** to
   test them (prefer testing through `load`/`record`/`cached_ok`/`flush`).
 
 **Out of scope**:
+
 - Any behavior change to `ledger.rs` (that's 006/007/008). If you notice a bug,
   write a test that pins the **current** (buggy) behavior and add a
   `// BUG(plan 006): current behavior; will flip when attrs are probed` comment.
@@ -123,6 +124,7 @@ string passed in.
 ### Step 2: Pin the load/flush round-trip
 
 Tests:
+
 - `load_missing_ledger_is_empty`: `Ledger::load` on a fresh dir yields a ledger
   whose `cached_ok(any)` is `None`.
 - `flush_noop_when_not_dirty`: `load` then `flush` writes **no** file (assert
@@ -139,6 +141,7 @@ Tests:
 ### Step 3: Pin the `cached_ok` verdict logic (File probe)
 
 Using a scratch file with known content:
+
 - `cached_ok_hits_when_content_unchanged`: record a `copy`/`file` task pointing
   at the scratch file; `cached_ok(key)` → `Some`, and the returned JSON has
   `changed == false`.
@@ -180,6 +183,7 @@ BUG-pinning one (which documents today's behavior).
 ### Step 5: Confirm full gates stay green
 
 **Verify**:
+
 - `cargo fmt --all --check` → exit 0
 - `cargo clippy -p ruxel-agent --all-targets -- -D warnings` → exit 0
 - `cargo nextest run` → whole suite passes, with N new ledger tests visible.
@@ -209,6 +213,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Testing the file-backed probes requires making more than ~2 private items
   visible, or requires an external crate — reconsider the approach and report.
 - A "current behavior" test you expected to pass actually fails — the code may
