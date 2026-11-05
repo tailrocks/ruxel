@@ -361,7 +361,7 @@ impl Engine {
         // pattern). ⚠ pinned by the parity harness.
         env.set_undefined_behavior(UndefinedBehavior::Chainable);
         // …but *emitting* an undefined into rendered output is
-        // AnsibleUndefinedVariable (pinned 2026-06-11: config/sentry/
+        // AnsibleUndefinedVariable (pinned 2026-06-11: config/fixture_3/
         // config.yml's slack_* refs error under the oracle).
         env.set_formatter(|out, _state, value| {
             if value.is_undefined() {
@@ -649,7 +649,7 @@ fn filter_hash(value: Value, algorithm: String) -> Result<String, minijinja::Err
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Ansible's `b64decode` filter (setup-sentry.yml's bootstrap-marker
+/// Ansible's `b64decode` filter (setup-fixture_3.yml's bootstrap-marker
 /// compare). UTF-8 output only — the workload decodes a slurped text file.
 fn filter_b64decode(value: Value) -> Result<String, minijinja::Error> {
     use base64::Engine as _;
@@ -970,7 +970,7 @@ broken: "{{ undefined_thing.attr.deep }}"
             calls.clone(),
         ))));
         let s = Scope::new();
-        let t = "{{ lookup('community.general.onepassword', 'titan SSH', field='private key', vault='ChainArgos') }}";
+        let t = "{{ lookup('community.general.onepassword', 'fixture_10 SSH', field='private key', vault='exampleorg') }}";
         let a = e.render_str(t, &s).unwrap();
         let b = e.render_str(t, &s).unwrap();
         assert_eq!(a.as_str(), b.as_str());

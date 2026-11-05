@@ -548,13 +548,13 @@
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -562,7 +562,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -570,7 +570,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -578,25 +578,25 @@
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -604,25 +604,25 @@
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -630,7 +630,7 @@
       {
         "fixture_task": "control-flow.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -638,13 +638,13 @@
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -652,7 +652,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -660,61 +660,61 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise indexed equality and boolean conjunction",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect templated registered path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "performance-snapshots.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -722,13 +722,13 @@
       {
         "fixture_task": "control-flow.yml#Exercise indexed equality and boolean conjunction",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -736,61 +736,61 @@
       {
         "fixture_task": "control-flow.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect templated registered path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "performance-snapshots.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -798,385 +798,385 @@
       {
         "fixture_task": "control-flow.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise exact expression nested in a literal loop",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise indexed equality and boolean conjunction",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy synthetic source asset",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Create synthetic fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise absent path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise assertion message shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise command mapping and creates",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise destination alias",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise line replacement",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise managed block",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise multiline replacement",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise recursive directory attributes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise shell arguments",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise symbolic link",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect path with follow",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Read synthetic content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Render synthetic template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "performance-snapshots.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture database",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture owner",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture reader",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create owned fixture schema",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture database access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture schema access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture table access shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "restart-actions.yml#Restart synthetic workload units",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise exact copy source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise exact stat path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise literal copy source and mixed source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise literal git flags and exact version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed apt package template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed git version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed mount source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed repository template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed systemd name",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise scalar loop and nested task shapes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise templated systemd fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-ext4.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic data disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic hot disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Clone synthetic repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Configure synthetic Debian repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Download public synthetic payload",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Ensure fixture group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Exercise closed absent-user surface",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Initialize synthetic source repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Install synthetic authorized key",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Mount disposable tmpfs",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Start disposable payload server",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1184,31 +1184,31 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise always tag scalar",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect templated registered path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Report mixed template shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1216,13 +1216,13 @@
       {
         "fixture_task": "system-surface.yml#Initialize synthetic source repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1230,7 +1230,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1238,7 +1238,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1246,7 +1246,7 @@
       {
         "fixture_task": "performance-snapshots.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -1254,37 +1254,37 @@
       {
         "fixture_task": "control-flow.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise always tag scalar",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Validate synthetic controller lookup",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13132,7 +13132,7 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13140,13 +13140,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed mount source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Mount disposable tmpfs",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13154,7 +13154,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed apt package template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13162,13 +13162,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed repository template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Configure synthetic Debian repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13176,7 +13176,7 @@
       {
         "fixture_task": "files-content.yml#Exercise assertion message shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13184,7 +13184,7 @@
       {
         "fixture_task": "system-surface.yml#Install synthetic authorized key",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13192,25 +13192,25 @@
       {
         "fixture_task": "storage-ext4.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic data disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic hot disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13218,25 +13218,25 @@
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13244,7 +13244,7 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture database",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13252,19 +13252,19 @@
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture database access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture schema access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture table access shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13272,13 +13272,13 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture owner",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture reader",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13286,37 +13286,37 @@
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy synthetic source asset",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise exact copy source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise literal copy source and mixed source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13324,31 +13324,31 @@
       {
         "fixture_task": "control-flow.yml#Exercise always tag scalar",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise exact expression nested in a literal loop",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise indexed equality and boolean conjunction",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Report mixed template shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise scalar loop and nested task shapes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13356,37 +13356,37 @@
       {
         "fixture_task": "files-content.yml#Create synthetic fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise absent path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise destination alias",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise recursive directory attributes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise symbolic link",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13394,19 +13394,19 @@
       {
         "fixture_task": "shape-variants.yml#Exercise literal git flags and exact version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed git version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Clone synthetic repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13414,7 +13414,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13422,7 +13422,7 @@
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13430,25 +13430,25 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "restart-actions.yml#Restart synthetic workload units",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Initialize synthetic source repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Start disposable payload server",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13456,19 +13456,19 @@
       {
         "fixture_task": "files-content.yml#Inspect path with follow",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect templated registered path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise exact stat path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13476,13 +13476,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed systemd name",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise templated systemd fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13490,7 +13490,7 @@
       {
         "fixture_task": "files-content.yml#Render synthetic template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13498,13 +13498,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed mount source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Mount disposable tmpfs",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13512,7 +13512,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed apt package template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13520,13 +13520,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed repository template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Configure synthetic Debian repository",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13534,7 +13534,7 @@
       {
         "fixture_task": "files-content.yml#Exercise assertion message shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13542,7 +13542,7 @@
       {
         "fixture_task": "system-surface.yml#Install synthetic authorized key",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13550,25 +13550,25 @@
       {
         "fixture_task": "storage-ext4.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic data disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic hot disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13576,25 +13576,25 @@
       {
         "fixture_task": "storage-ext4.yml#Create fixture volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic data volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Create synthetic hot volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Create synthetic XFS volume group",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13602,7 +13602,7 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture database",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13610,7 +13610,7 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture database",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13618,13 +13618,13 @@
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture database access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture schema access",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13632,7 +13632,7 @@
       {
         "fixture_task": "postgresql-ownership.yml#Grant fixture table access shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13640,13 +13640,13 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture owner",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture reader",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13654,7 +13654,7 @@
       {
         "fixture_task": "postgresql-ownership.yml#Create fixture owner",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13662,19 +13662,19 @@
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise literal copy source and mixed source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13682,25 +13682,25 @@
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy literal content",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Copy synthetic source asset",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create public synthetic payload source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13708,13 +13708,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise exact copy source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise literal copy source and mixed source",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13722,31 +13722,31 @@
       {
         "fixture_task": "control-flow.yml#Exercise always tag scalar",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise exact expression nested in a literal loop",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise indexed equality and boolean conjunction",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Report mixed template shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise scalar loop and nested task shapes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13754,31 +13754,31 @@
       {
         "fixture_task": "files-content.yml#Create synthetic fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise absent path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise recursive directory attributes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Exercise symbolic link",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "system-surface.yml#Create synthetic system fixture root",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13786,13 +13786,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise literal git flags and exact version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise mixed git version",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13800,7 +13800,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13808,7 +13808,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13816,7 +13816,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13824,7 +13824,7 @@
       {
         "fixture_task": "shape-variants.yml#Exercise templated firewall fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13832,7 +13832,7 @@
       {
         "fixture_task": "files-content.yml#Preserve decoded fact shape",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13840,19 +13840,19 @@
       {
         "fixture_task": "files-content.yml#Inspect path with follow",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "files-content.yml#Inspect templated registered path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise exact stat path",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13860,13 +13860,13 @@
       {
         "fixture_task": "shape-variants.yml#Exercise mixed systemd name",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise templated systemd fields",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13874,7 +13874,7 @@
       {
         "fixture_task": "files-content.yml#Render synthetic template",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13882,13 +13882,13 @@
       {
         "fixture_task": "control-flow.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "performance-snapshots.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13896,7 +13896,7 @@
       {
         "fixture_task": "shape-variants.yml#(play vars)",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13904,7 +13904,7 @@
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13912,7 +13912,7 @@
       {
         "fixture_task": "control-flow.yml#Exercise block inheritance and list condition",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13920,7 +13920,7 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13928,31 +13928,31 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-ext4.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic data disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-two-tier.yml#Resolve synthetic hot disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "storage-xfs.yml#Resolve fixture disks",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13960,19 +13960,19 @@
       {
         "fixture_task": "control-flow.yml#Exercise exact expression nested in a literal loop",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "control-flow.yml#Exercise nested mapping scalar variants",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       },
       {
         "fixture_task": "shape-variants.yml#Exercise scalar loop and nested task shapes",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13980,7 +13980,7 @@
       {
         "fixture_task": "control-flow.yml#Execute mapped loop with label and environment",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ],
@@ -13988,12 +13988,12 @@
       {
         "fixture_task": "template.j2",
         "oracle": "tools/oracle/captures/render-parity.jsonl",
-        "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+        "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
         "state_assertion": "not-applicable: controller rendering"
       }
     ]
   },
   "missing": [],
-  "required_manifest": "tools/spec-extract/workload-features.json",
+  "required_manifest": "crates/legacy/ruxel-spec-extract/workload-features.json",
   "schema": 1
 }

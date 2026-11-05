@@ -1,5 +1,5 @@
 //! Verifies the op-backed resolver against the synthetic `ruxel-test`
-//! vault (never a real ChainArgos secret). Runs only when a 1Password
+//! vault (never a real exampleorg secret). Runs only when a 1Password
 //! session is available — set OP_SERVICE_ACCOUNT_TOKEN (the ruxel-ci
 //! service account) or have a desktop `op` session:
 //!

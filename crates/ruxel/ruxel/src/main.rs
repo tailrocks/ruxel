@@ -78,16 +78,16 @@ mod tests {
             "-i",
             "hosts.ini",
             "--limit",
-            "titan",
-            "setup-titan.yml",
+            "fixture_10",
+            "setup-fixture_10.yml",
         ])
         .unwrap();
         let Command::Plan(args) = cli.command else {
             panic!("expected plan subcommand");
         };
         assert_eq!(args.inventory.to_str(), Some("hosts.ini"));
-        assert_eq!(args.limit.as_deref(), Some("titan"));
-        assert_eq!(args.playbook.to_str(), Some("setup-titan.yml"));
+        assert_eq!(args.limit.as_deref(), Some("fixture_10"));
+        assert_eq!(args.playbook.to_str(), Some("setup-fixture_10.yml"));
     }
 
     #[test]
@@ -105,15 +105,15 @@ mod tests {
             "hosts.ini",
             "--check",
             "--tags",
-            "sentry,velnor",
-            "setup-sentry.yml",
+            "fixture_3,velnor",
+            "setup-fixture_3.yml",
         ])
         .unwrap();
         let Command::Apply(args) = cli.command else {
             panic!("expected apply subcommand");
         };
         assert!(args.check);
-        assert_eq!(args.tags, vec!["sentry", "velnor"]);
+        assert_eq!(args.tags, vec!["fixture_3", "velnor"]);
     }
 
     #[test]

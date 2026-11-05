@@ -168,9 +168,9 @@ mod tests {
 
     const WORKLOAD_SHAPE: &str = "\
 [nodes]
-pegasus ansible_ssh_host=192.0.2.10 ansible_ssh_user=root
-delorean ansible_ssh_host=192.0.2.11 ansible_ssh_user=root
-titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
+fixture_8 ansible_ssh_host=192.0.2.10 ansible_ssh_user=root
+fixture_9 ansible_ssh_host=192.0.2.11 ansible_ssh_user=root
+fixture_10 ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
 ";
 
     #[test]
@@ -178,9 +178,9 @@ titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
         assert_eq!(inv.hosts.len(), 3);
         assert_eq!(inv.groups["nodes"].len(), 3);
-        let pegasus = inv.host("pegasus").unwrap();
-        assert_eq!(pegasus.ssh_host, "192.0.2.10");
-        assert_eq!(pegasus.ssh_user.as_deref(), Some("root"));
+        let fixture_8 = inv.host("fixture_8").unwrap();
+        assert_eq!(fixture_8.ssh_host, "192.0.2.10");
+        assert_eq!(fixture_8.ssh_user.as_deref(), Some("root"));
     }
 
     #[test]
@@ -188,15 +188,15 @@ titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
         assert_eq!(inv.select("all", None).unwrap().len(), 3);
         assert_eq!(inv.select("nodes", None).unwrap().len(), 3);
-        assert_eq!(inv.select("titan", None).unwrap().len(), 1);
+        assert_eq!(inv.select("fixture_10", None).unwrap().len(), 1);
     }
 
     #[test]
     fn select_with_limit_intersects() {
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
-        let picked = inv.select("nodes", Some("delorean")).unwrap();
+        let picked = inv.select("nodes", Some("fixture_9")).unwrap();
         assert_eq!(picked.len(), 1);
-        assert_eq!(picked[0].name, "delorean");
+        assert_eq!(picked[0].name, "fixture_9");
     }
 
     #[test]

@@ -5,7 +5,8 @@ use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};
 
 #[test]
 fn every_synthetic_fixture_parses_and_compiles() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/fixture-project");
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/fixture-project");
     let mut playbooks: Vec<_> = std::fs::read_dir(&root)
         .unwrap()
         .filter_map(Result::ok)

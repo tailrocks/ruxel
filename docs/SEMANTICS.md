@@ -62,10 +62,10 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
   loop over `register` results (`item.item`, `item.stat`). MiniJinja covers
   the core; `subelements`, Ansible-flavored `hash`, and `b64decode` need
   custom filter implementations. **Current reproducible gate**:
-  `tools/spec-extract/workload-features.json` records normalized constructs
+  `crates/legacy/ruxel-spec-extract/workload-features.json` records normalized constructs
   extracted offline, and CI requires the synthetic fixture project to cover
   all of them. `tools/oracle/render_parity.py` renders that synthetic corpus
-  through ansible-core 2.21; `crates/ruxel-core/tests/render_parity.rs` replays
+  through ansible-core 2.21; `crates/legacy/ruxel-core/tests/render_parity.rs` replays
   it through Ruxel and compares strings, native values, conditions, errors,
   template bytes, and trailing-newline behavior. Pinned along the way: a
   template that is exactly one `{{ expr }}` yields the native value;

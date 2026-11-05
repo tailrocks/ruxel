@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 fn load_dumps() -> HashMap<String, Json> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/oracle/captures/runtime-semantics.jsonl");
+        .join("../../../tools/oracle/captures/runtime-semantics.jsonl");
     let content = std::fs::read_to_string(&path)
         .expect("runtime-semantics.jsonl — run tools/oracle/capture_runtime.sh first");
     let mut dumps = HashMap::new();
@@ -221,7 +221,7 @@ fn e11_empty_loop_aggregate_matches() {
 #[test]
 fn e12_e13_no_log_censors_output_not_register() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/oracle/captures/runtime-semantics.jsonl");
+        .join("../../../tools/oracle/captures/runtime-semantics.jsonl");
     let content = std::fs::read_to_string(&path).unwrap();
     let mut e12_output = None;
     let mut e13_output = None;

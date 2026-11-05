@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn oracle_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/oracle")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/oracle")
 }
 
 fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/fixture-project")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/fixture-project")
 }
 
 fn json_to_yaml(value: &Json) -> serde_norway::Value {

@@ -68,7 +68,7 @@ def build(required_path: Path, fixture_path: Path, capture_root: Path):
                 candidates.append({
                     "fixture_task": f"{fixture}#(play vars)",
                     "oracle": "tools/oracle/captures/render-parity.jsonl",
-                    "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+                    "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
                     "state_assertion": "not-applicable: controller rendering",
                 })
                 continue
@@ -76,7 +76,7 @@ def build(required_path: Path, fixture_path: Path, capture_root: Path):
                 candidates.append({
                     "fixture_task": location,
                     "oracle": "tools/oracle/captures/render-parity.jsonl",
-                    "ruxel_assertion": "crates/ruxel-core/tests/render_parity.rs",
+                    "ruxel_assertion": "crates/legacy/ruxel-core/tests/render_parity.rs",
                     "state_assertion": "not-applicable: controller rendering",
                 })
                 continue
