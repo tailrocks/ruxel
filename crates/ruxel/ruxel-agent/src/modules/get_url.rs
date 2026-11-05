@@ -5,6 +5,11 @@
 //! `get_url` uses, and a static-musl HTTP+TLS stack inside the agent buys
 //! nothing but binary size until a playbook needs it.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;

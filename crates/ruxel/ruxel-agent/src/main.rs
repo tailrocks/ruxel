@@ -18,6 +18,10 @@ use std::io::Write as _;
 
 /// Exit codes: 0 clean, 64 protocol error, 65 version mismatch,
 /// 66 lock held (another run in flight), 70 panic.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let message = info
@@ -48,6 +52,11 @@ fn state_dir() -> std::path::PathBuf {
         .map_or_else(|| ruxel_proto::constants::STATE_ROOT.into(), Into::into)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
 fn serve() -> i32 {
     struct ModuleGuard;
     impl Drop for ModuleGuard {
@@ -204,7 +213,11 @@ fn serve() -> i32 {
 /// Execute one rendered task: per iteration, `TaskStart` then `TaskResult`.
 /// Aggregation, register binding, and status envelopes are controller-side
 /// (`task_eval`) — the agent reports raw per-iteration module outcomes.
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
 fn execute_task(
     out: &mut impl std::io::Write,
     task: &v1::RenderedTask,
@@ -321,6 +334,11 @@ fn effective_check_mode(global: bool, force: bool, override_off: bool) -> bool {
     (global || force) && !override_off
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
 fn send_result(
     out: &mut impl std::io::Write,
     task: &v1::RenderedTask,
@@ -354,6 +372,10 @@ fn send_result(
     );
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "replaced by the Ruxel rewrite"
+)]
 fn log_event(out: &mut impl std::io::Write, level: v1::log::Level, message: String) {
     let event = v1::Event {
         msg: Some(v1::event::Msg::Log(v1::Log {

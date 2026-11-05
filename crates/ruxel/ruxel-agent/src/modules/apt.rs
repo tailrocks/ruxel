@@ -6,6 +6,8 @@
 //! the "N upgraded, N newly installed, N to remove" summary); installs
 //! are changed iff a requested package was missing.
 
+#![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
+
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 

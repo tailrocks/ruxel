@@ -4,6 +4,17 @@
 //! time on the controller; the agent still rejects unknown params loudly
 //! rather than ignoring them (defense in depth, same closed-surface rule).
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+#![expect(
+    clippy::let_underscore_must_use,
+    clippy::match_same_arms,
+    clippy::similar_names,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 mod apt;
 mod apt_repository;
 mod authorized_key;

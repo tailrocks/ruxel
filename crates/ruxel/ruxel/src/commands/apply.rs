@@ -3,6 +3,13 @@
 //! recap. `--check` executes the same remote pipeline with module prediction
 //! enabled, matching Ansible check-mode semantics.
 
+#![expect(
+    clippy::allow_attributes_without_reason,
+    clippy::struct_excessive_bools,
+    clippy::needless_pass_by_value,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use anyhow::{Context, Result};
 use clap::Args;
 use futures::{StreamExt, stream};

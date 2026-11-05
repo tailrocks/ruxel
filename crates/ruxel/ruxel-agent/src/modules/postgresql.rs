@@ -4,6 +4,15 @@
 //! state and explicit-ACL inspection via aclexplode — so "changed"
 //! reflects a real catalog delta, never a blind re-grant.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::format_push_string,
+    clippy::let_underscore_must_use,
+    clippy::unwrap_used,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use super::{ExecContext, become_command, params_object, str_param};
 use serde_json::{Value, json};
 use std::cell::RefCell;

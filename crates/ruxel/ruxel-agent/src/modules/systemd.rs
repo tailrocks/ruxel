@@ -5,6 +5,11 @@
 //! result {changed, name: null, status: {}}. `restarted` is always a
 //! change (an action, not a state).
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 

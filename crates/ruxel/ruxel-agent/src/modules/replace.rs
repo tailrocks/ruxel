@@ -1,6 +1,8 @@
 //! `replace` (SEMANTICS §6): multiline regexp substitution over the whole
 //! file; changed iff the substitution altered content.
 
+#![expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")]
+
 use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};

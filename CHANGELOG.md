@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
 - `hk.pkl` git hooks (mise, gitleaks, cargo fmt, check, clippy, deny, rumdl).
 - Initial research implementation and closed-workload CLI/agent surface.
 

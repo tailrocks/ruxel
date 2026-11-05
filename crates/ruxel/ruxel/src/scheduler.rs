@@ -7,6 +7,29 @@
 //! (ARCHITECTURE §4) replace this walk once the ledger lands; observable
 //! semantics stay identical.
 
+#![expect(
+    clippy::allow_attributes_without_reason,
+    clippy::similar_names,
+    clippy::needless_continue,
+    clippy::assigning_clones,
+    clippy::missing_errors_doc,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::too_many_lines,
+    clippy::items_after_statements,
+    clippy::let_underscore_must_use,
+    clippy::needless_pass_by_value,
+    clippy::match_same_arms,
+    reason = "replaced by the Ruxel rewrite"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::unused_async_trait_impl,
+        reason = "replaced by the Ruxel rewrite"
+    )
+)]
+
 use crate::transport::AgentConnection;
 use anyhow::{Context, Result, anyhow, bail};
 use minijinja::value::Value;

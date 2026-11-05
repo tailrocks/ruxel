@@ -10,6 +10,20 @@
 //! sessions are bounded-concurrent and independently own collision-proof
 //! mux names; no speculative transport rewrite was made.
 
+#![expect(
+    clippy::let_underscore_must_use,
+    clippy::expect_used,
+    clippy::missing_errors_doc,
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation,
+    missing_debug_implementations,
+    reason = "replaced by the Ruxel rewrite"
+)]
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;

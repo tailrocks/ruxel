@@ -2,6 +2,14 @@
 //! field/section lookup from that item; apply prefetches discovered items on a
 //! bounded worker pool before compilation.
 
+#![expect(
+    clippy::missing_errors_doc,
+    clippy::unwrap_used,
+    clippy::missing_panics_doc,
+    missing_debug_implementations,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use ruxel_core::engine::LookupResolver;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};

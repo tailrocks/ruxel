@@ -38,6 +38,25 @@ concurrency:
   group: velnor-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  alint:
+    name: Alint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      VELNOR_RUN_KEY_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: "false"
+      - name: Run Alint
+        uses: asamarts/alint@d61e4c802b02ac811224b35c59a62cfe5176f4d0
+        with:
+          config: .alint.yml
+          fail-on-warning: "true"
+          format: github
+          path: .
+          version: v0.21.0
   check-cargo-deny:
     name: Check / cargo-deny
     runs-on: ubuntu-26.04
@@ -303,6 +322,7 @@ jobs:
       - rust-ruxel-proto
       - rust-ruxel-spec-extract
       - jactionlint
+      - alint
     if: ${{ !cancelled() }}
     steps:
       - name: Checkout
@@ -349,7 +369,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel-agent\",\"rust-ruxel-cli\",\"rust-ruxel-core\",\"rust-ruxel-proto\",\"rust-ruxel-spec-extract\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel-agent\",\"rust-ruxel-cli\",\"rust-ruxel-core\",\"rust-ruxel-proto\",\"rust-ruxel-spec-extract\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.74'"
       - name: Merge reports
@@ -357,7 +377,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel-agent\",\"rust-ruxel-cli\",\"rust-ruxel-core\",\"rust-ruxel-proto\",\"rust-ruxel-spec-extract\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel-agent\",\"rust-ruxel-cli\",\"rust-ruxel-core\",\"rust-ruxel-proto\",\"rust-ruxel-spec-extract\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.74'"
       - name: Publish final report

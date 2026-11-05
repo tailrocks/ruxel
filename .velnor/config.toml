@@ -4,6 +4,9 @@ schema = 1
 policy = "consumer-v1"
 default_branch = "main"
 
+[workflow.verify]
+jobs = ["alint"]
+
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
