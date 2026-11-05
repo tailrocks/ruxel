@@ -1,10 +1,10 @@
 # RESTORE — Current Handoff
 
-Updated: 2026-07-17. Authoritative status: `GOAL.md` and `docs/PLAN.md`.
+Updated: 2026-07-17. Authoritative status: `docs/GOAL.md` and `docs/PLAN.md`.
 
 ## Status
 
-The implementation plan is complete for the closed ChainArgos-extracted
+The implementation plan is complete for the closed extracted
 Ansible surface. Current binaries passed the full 14-fixture parity suite, the
 ten-case correctness-coupled performance matrix, six-host and scale gates, and
 all six deterministic SSH chaos boundaries. `plans/README.md` has no active
@@ -13,7 +13,7 @@ required items.
 ## Safety remains permanent
 
 - Never contact, resolve, probe, or execute against production hosts.
-- Real ChainArgos configuration is offline extraction input only.
+- Real deployment configuration is offline extraction input only.
 - Never execute or render-compare real workload files, even on fixtures.
 - Remote parity uses only repository synthetic fixtures and provider-verified
   disposable targets.

@@ -90,7 +90,7 @@ Per task, in order — ruxel must preserve this pipeline observably:
    all. Evaluated **per loop item** when `loop` is present. Skipped tasks
    produce a "skipped" result; a skipped task never notifies or registers
    changed. Registered var shape on skip is a dict with `skipped: true`
-   (pinned by GOAL.md session 3 runtime goldens).
+   (pinned by docs/GOAL.md session 3 runtime goldens).
 3. **`loop`**: value is either a literal list or `"{{ var }}"` (native-type
    list). Each iteration binds `item`; `loop_control.label` only affects
    display. Result registered from a looped task is a dict with `results:
@@ -202,7 +202,7 @@ ignore — that is what closed spec means).
 - **`lineinfile` (15)** — `path`, `regexp`, `line`, `state`.
   present: if regexp matches a line → replace last matching line with
   `line`; else append `line` at EOF; absent: delete matching lines.
-  Idempotent if a line already equals `line` (pinned by GOAL.md session 6;
+  Idempotent if a line already equals `line` (pinned by docs/GOAL.md session 6;
   exact
   Ansible rule: if `line` already present unchanged even if regexp also
   matches elsewhere — pin with fixture tests; fstab/pam edits depend on it).
@@ -245,7 +245,7 @@ ignore — that is what closed spec means).
   `restarted` ×3 — exactly these), `enabled`, `daemon_reload`. Check: unit ActiveState/UnitFileState via
   systemd. `restarted` is **always a change** (action, not state).
   daemon_reload executes reload and its changed semantics are pinned by the
-  GOAL.md session 3 fixture capture.
+  docs/GOAL.md session 3 fixture capture.
 - **`service` (8)** — `name`, `state` (`started` ×4, `restarted` ×4),
   `enabled`. On these hosts resolves to systemd; same semantics as above.
 - **`sysctl` (10) / `ansible.posix.sysctl` (6)** — `name`, `value`,
@@ -253,13 +253,13 @@ ignore — that is what closed spec means).
   file (and live value when sysctl_set). Change: write file + `sysctl -w` /
   `--system` reload. Value comparison is **string-normalized** (whitespace
   in multi-value keys like `vm.nr_hugepages` vs `net.ipv4.ip_local_port_range`)
-  with normalization pinned by GOAL.md session 6 runtime goldens.
+  with normalization pinned by docs/GOAL.md session 6 runtime goldens.
 - **`community.general.timezone` (1)** — `name: UTC`; timedatectl.
 
 ### Storage
 
 - **`community.general.lvg` (6)** — `vg`, `pvs` (list of /dev/disk/by-id
-  paths). Check: VG exists with exactly these PVs (pinned by GOAL.md sessions
+  paths). Check: VG exists with exactly these PVs (pinned by docs/GOAL.md sessions
   7–8: Ansible's
   behavior when VG exists with a subset of pvs — it extends; with extras —
   it reduces? pin before implementing; the drive-add workflow in the
@@ -267,7 +267,7 @@ ignore — that is what closed spec means).
   Change: pvcreate + vgcreate/vgextend.
 - **`community.general.lvol` (6)** — `vg`, `lv`, `size` (incl.
   `+100%FREE`), `resizefs`. Check: LV exists; size semantics: `%FREE` form
-  is only meaningful at creation/extension — idempotence is pinned by GOAL.md
+  is only meaningful at creation/extension — idempotence is pinned by docs/GOAL.md
   sessions 7–8 for the rule
   for `size: +100%FREE` on an already-full LV (must be no-change, not
   error; Ansible handles via lvextend rc/output inspection).
@@ -277,7 +277,7 @@ ignore — that is what closed spec means).
 - **`ansible.posix.mount` (6)** — `path`, `src` (UUID=…), `fstype`,
   `opts`, `state: mounted`. Check: fstab line (normalized fields) +
   actually mounted. Change: write fstab + mount. Fstab field normalization
-  (opts order, dump/pass defaults) is pinned by GOAL.md sessions 7–8 so reruns
+  (opts order, dump/pass defaults) is pinned by docs/GOAL.md sessions 7–8 so reruns
   are no-change.
 
 ### Users, keys, firewall
@@ -290,7 +290,7 @@ ignore — that is what closed spec means).
 - **`group` (3)** — `name`, `gid`, `state`. getent group check.
 - **`authorized_key` (1)** — `user`, `key` (1P-sourced), `state`. Check:
   exact key line, with comment-insensitive matching on key material (pinned by
-  GOAL.md session 6), in `~user/.ssh/authorized_keys`.
+  docs/GOAL.md session 6), in `~user/.ssh/authorized_keys`.
 - **`iptables` (8)** — `chain`, `protocol`, `destination`,
   `out_interface`, `jump`, `comment`, `policy`, `ip_version`. Check: rule
   spec present (iptables -C equivalent); policy: current chain policy.

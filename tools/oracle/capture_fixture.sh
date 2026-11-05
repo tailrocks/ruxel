@@ -2,7 +2,7 @@
 # Capture a real ansible-core 2.21 run of a workload playbook against a
 # ruxel fixture VM (tools/fixtures/create.sh output), writing golden
 # records. Targets come exclusively from the fixture scripts — never the
-# production inventory (GOAL.md rule 2).
+# production inventory (docs/GOAL.md rule 2).
 #
 # Usage:
 #   tools/oracle/capture_fixture.sh <fixture-name> <keyfile> <playbook-path> <capture-name> [group]

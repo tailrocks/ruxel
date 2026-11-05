@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for ruxel fixture VMs (GOAL.md safety rules 2 & 3).
+# Shared helpers for ruxel fixture VMs (docs/GOAL.md safety rules 2 & 3).
 #
 # Every fixture resource lives in the Hetzner Cloud project behind the local
 # `ruxel-fixtures` hcloud context and carries the label ruxel=fixture. These
@@ -10,7 +10,7 @@ set -euo pipefail
 
 export HCLOUD_CONTEXT="ruxel-fixtures"
 
-# Hard caps (GOAL.md rule 3).
+# Hard caps (docs/GOAL.md rule 3).
 readonly MAX_FIXTURES=2
 readonly SERVER_TYPE="${RUXEL_FIXTURE_TYPE:-cpx12}"  # smallest x86_64 available (no cx-line in this account)
 readonly IMAGE="${RUXEL_FIXTURE_IMAGE:-debian-12}"
