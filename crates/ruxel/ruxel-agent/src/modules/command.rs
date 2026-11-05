@@ -3,6 +3,12 @@
 //! Always changed (the controller's `changed_when` normally overrides);
 //! failure = rc≠0.
 
+#![expect(
+    clippy::doc_link_with_quotes,
+    clippy::needless_pass_by_value,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 

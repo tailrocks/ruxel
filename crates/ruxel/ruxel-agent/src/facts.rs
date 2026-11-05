@@ -5,6 +5,8 @@
 //! Linux sources; on non-Linux dev hosts the network/distro facts are
 //! empty strings (the agent's production targets are Debian).
 
+#![expect(clippy::doc_link_with_quotes, reason = "replaced by the Ruxel rewrite")]
+
 use ruxel_proto::v1::Facts;
 
 pub(crate) fn gather() -> Facts {

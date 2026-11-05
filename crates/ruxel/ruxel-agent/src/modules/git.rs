@@ -3,6 +3,8 @@
 //! clone or HEAD sha moved; `force` discards local modifications before
 //! update. Network-truth class (ARCHITECTURE §6).
 
+#![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
+
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
