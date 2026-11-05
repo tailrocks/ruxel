@@ -34,7 +34,8 @@ fn default_ipv4_interface() -> Option<String> {
 }
 
 /// `VERSION_CODENAME` from /etc/os-release ("bookworm" on Debian 12) — the
-/// value `ansible_facts`['`distribution_release`'] carries on these hosts.
+/// The `distribution_release` entry in `ansible_facts` carries this value on
+/// these hosts.
 fn distribution_release() -> Option<String> {
     let os_release = std::fs::read_to_string("/etc/os-release").ok()?;
     for line in os_release.lines() {
