@@ -34,6 +34,7 @@ unit-testable. It changes no observable behavior; it unblocks plan 010's fixes
 ## Current state
 
 `crates/ruxel/src/scheduler.rs`:
+
 - `HostRun<'a>` (`:38-54`) holds `conn: &'a mut AgentConnection` (the real
   transport) plus engine, scope vectors, recap, etc.
 - `run_play(...)` (`:71-123`) builds a `HostRun` and walks
@@ -71,6 +72,7 @@ process`; `macros` gives `#[tokio::test]`. Confirm before relying on it.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/scheduler.rs` — introduce a trait for the agent round-trip;
   make `HostRun` generic over it (or hold a `&mut dyn Trait`); add a
   `#[cfg(test)] mod tests` with a fake implementation.
@@ -78,6 +80,7 @@ process`; `macros` gives `#[tokio::test]`. Confirm before relying on it.
   `AgentConnection` (thin wrapper over existing `send`/`next_event`).
 
 **Out of scope**:
+
 - Any change to what the scheduler *computes* (behavior must be identical — this
   is the CONTROL: existing goldens and bless-gates must still pass).
 - The register-on-skip / block-inheritance **fixes** — those are plan 010,
@@ -97,6 +100,7 @@ process`; `macros` gives `#[tokio::test]`. Confirm before relying on it.
 Define a trait capturing exactly the scheduler↔agent interaction. Minimal shape
 — it must cover "send a one-task Plan and collect its TaskResult events." Two
 viable granularities:
+
 - **Coarse (recommended)**: a trait method that takes the rendered task/iteration
   data the scheduler assembles in `execute_once` (`:583-605`) and returns the
   parsed result `Value`(s). This keeps all the send/recv/`TaskResult`-parsing
@@ -105,6 +109,7 @@ viable granularities:
   the fake must speak the event protocol.
 
 Choose coarse. Define e.g.:
+
 ```rust
 #[async_trait::async_trait]  // OR hand-roll with a boxed future if async_trait
                              // isn't a dep — check Cargo.toml first; prefer no new dep
@@ -112,6 +117,7 @@ pub(crate) trait AgentExec {
     async fn run_iteration(&mut self, req: &IterationRequest) -> anyhow::Result<minijinja::value::Value>;
 }
 ```
+
 where `IterationRequest` bundles what `execute_once` currently builds (module,
 params_json, free_form, ledger_key, item_label, no_log, become_user,
 environment, check_mode_override). **Do not add `async_trait` as a dependency
@@ -157,6 +163,7 @@ In `#[cfg(test)] mod tests` in `scheduler.rs`, implement `AgentExec` for a
 `FakeAgent` that returns scripted results keyed by call order or module (e.g. a
 `VecDeque<Value>` of canned results, or a closure). Write **characterization
 tests that pin current behavior** (these are the CONTROL for plan 010):
+
 - a single `command` task → recap `ok=1 changed=1` (bare command always changed)
 - a `when: false` single task → recap `skipped=1`
 - a loop over 2 items, one item `when` false → recap reflects per-item skip
@@ -201,6 +208,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Making the trait async cleanly requires a new dependency (`async_trait`) —
   first try the generic-`HostRun<A>` approach (no boxing, no dep); only if that
   fails should you report and ask before adding a dep.

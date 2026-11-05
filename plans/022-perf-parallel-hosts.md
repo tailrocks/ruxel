@@ -23,6 +23,7 @@
 ## Why this matters
 
 Two coupled facts block fleet-wide runs and the last M5 benchmark:
+
 1. **Documented transport stall (DIRECTION-03)**: "the SECOND sequential connect
    inside one process stalls at the agent handshake"
    (`transport.rs:8-15` header). `apply.rs`'s host loop opens each host's
@@ -45,6 +46,7 @@ it after the correctness (P1) and single-host perf work.
   present with the old openssh crate — points at ControlMaster/stdio ownership
   under concurrent/sequential sessions in one process). Not root-caused.
 - **Sequential hosts**: `apply.rs:124-193`:
+
   ```rust
   for host in hosts {
       let (mut conn, ack) = connect_with(&dest, agent_bin, run_id, false, &options).await?;
@@ -53,6 +55,7 @@ it after the correctness (P1) and single-host perf work.
       // print recap; track any_failed
   }
   ```
+
   Awaits each host fully before the next; no `join_all`/task spawning.
 - **Socket name**: `transport.rs:54-61` uses `ruxel-mux-{pid}-{subsec_nanos:x}` —
   two concurrent connects in the same nanosecond could collide on the socket
@@ -79,12 +82,14 @@ needs per-host buffering.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel/src/transport.rs` — root-cause + fix the 2nd-connect stall;
   ensure per-host socket/master isolation; unique socket names.
 - `crates/ruxel/src/commands/apply.rs` — spawn one task per host, join, aggregate
   recaps, serialize output.
 
 **Out of scope**:
+
 - Any host contact outside operator-provided fixtures (never production).
 - The scheduler/pipelining internals (plan 020) — this is about the *host* loop,
   not the task loop.
@@ -116,6 +121,7 @@ understood.
 ### Step 2: Fix the transport so concurrent per-host sessions are independent
 
 Based on the root cause, give each host **fully independent** transport state:
+
 - A **unique** mux socket per host+connection (add host identity + more entropy
   to the `transport.rs:54-61` name so two concurrent connects can't collide).
 - Ensure each `Master`/`AgentConnection` owns its own child process and pipes
@@ -197,6 +203,7 @@ reproduction command: `docs/benchmarks/six-host-local.md`.
 ## STOP conditions
 
 Stop and report if:
+
 - You cannot reproduce or root-cause the stall within a reasonable effort —
   **do not** ship a speculative fix to the core transport; report the hang point
   and diagnostics and stop.

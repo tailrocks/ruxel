@@ -4,7 +4,7 @@
 
 ## The problem
 
-ChainArgos provisions and maintains 6 dedicated Debian servers with Ansible
+example-org provisions and maintains 6 dedicated Debian servers with Ansible
 (16 playbooks, 452 tasks, 36 closed-surface module spellings). The playbooks work, but every
 run is slow — and the worst case is the most common one: **re-running a
 playbook against a server that is already fully converged takes ~15 minutes to
@@ -27,7 +27,7 @@ every run.
 
 ## The vision
 
-Ruxel is a **drop-in executor for exactly the Ansible workload ChainArgos
+Ruxel is a **drop-in executor for exactly the Ansible workload example-org
 has** — same playbook files, same `hosts.ini`, same `--check`/`--diff`/
 `--limit` invocation shape — rebuilt around one goal:
 
@@ -37,9 +37,9 @@ Committed synthetic evidence achieves this target: the 65-task/52-lookup
 scale case records a 1.785 s Ruxel median versus 64.912 s for Ansible, with
 task-result and final-state parity ([results](benchmarks/results/scale-65x52/)).
 
-```
-ruxel plan  -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml   # seconds: full diff
-ruxel apply -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml  # applies only the diff
+```text
+ruxel plan  -i hosts.ini --limit example-host setup-example-host.yml   # seconds: full diff
+ruxel apply -i hosts.ini --limit example-host setup-example-host.yml  # applies only the diff
 ```
 
 A converged server answers "0 changed, verified" in seconds. A drifted server
@@ -59,7 +59,7 @@ instead of trusted from a state file.
    No Python on the targets, ever. No interpreter startup, no module upload
    per task.
 3. **Closed scope, total fidelity.** Ruxel implements exactly the module set
-   and language features the ChainArgos playbooks use ([WORKLOAD.md](WORKLOAD.md)
+   and language features the example-org playbooks use ([WORKLOAD.md](WORKLOAD.md)
    is the closed spec) — and implements them with exact semantics. It is not a
    general Ansible replacement and does not accept features outside the spec.
 4. **A full rerun must always be cheap.** No selection mechanisms as a
@@ -73,7 +73,7 @@ instead of trusted from a state file.
    secret lookups in parallel, verification probes in parallel. Sequential
    only where ordering is semantically required.
 7. **Extract features; never execute the real workload in development.** The
-   live ChainArgos configuration is read-only input to offline surface
+   live example-org configuration is read-only input to offline surface
    extraction. Every Ruxel/Ansible execution comparison uses repository-owned
    synthetic playbooks in `tools/fixture-project/` and disposable targets in
    the isolated `ruxel-fixtures` project. Real playbooks, inventory, templates,
@@ -81,9 +81,9 @@ instead of trusted from a state file.
 
 ## Goals
 
-- Parse and execute the existing ChainArgos playbooks, inventory, templates,
+- Parse and execute the existing example-org playbooks, inventory, templates,
   and 1Password lookups **without changing a single file**.
-- Converged no-op rerun of the largest playbook (`setup-postgresql-nova.yml`,
+- Converged no-op rerun of the largest playbook (`setup-example-host.yml`,
   65 tasks): **under 5 seconds** end-to-end, against ~15 minutes today.
 - First-run provisioning time dominated by actual work (apt downloads, LVM
   operations), not by executor overhead.
@@ -95,7 +95,7 @@ instead of trusted from a state file.
 ## Non-goals
 
 - General-purpose Ansible compatibility, Galaxy, roles, collections as a
-  plugin ecosystem, or any module/feature not present in the ChainArgos
+  plugin ecosystem, or any module/feature not present in the example-org
   workload.
 - Multi-tenancy, RBAC, web UI, or anything aimed at "everyone". This tool is
   for this workload.
@@ -111,7 +111,7 @@ against disposable targets (local VMs / containers / throwaway cloud hosts)
 that the operator provides explicitly. This rule has no exceptions and no
 expiry until the operator lifts it per-occasion.
 
-This also forbids running real ChainArgos playbooks against disposable hosts.
+This also forbids running real example-org playbooks against disposable hosts.
 Tests reproduce their feature shapes in the synthetic fixture project, then
 compare Ruxel with current Ansible there. Offline extraction may identify a
 module, parameter, literal, or control-flow shape; it must not execute it.
@@ -119,6 +119,6 @@ module, parameter, literal, or control-flow shape; it must not execute it.
 ## Related documents
 
 - [WORKLOAD.md](WORKLOAD.md) — the closed compatibility spec: every module,
-  feature, and pattern the ChainArgos playbooks use, with counts.
+  feature, and pattern the example-org playbooks use, with counts.
 - [DIRECTION.md](DIRECTION.md) — problem analysis, prior art, recommended
   architecture, and alternatives considered.

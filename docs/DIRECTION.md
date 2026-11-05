@@ -34,7 +34,7 @@ recursively scanned `module_utils`), opens an SSH session (multiplexed, but
 still a session), creates a remote temp dir, SFTPs the payload, **starts a
 fresh Python interpreter on the target**, imports the module machinery,
 executes, returns JSON, cleans up. This is 1–3 s per task even when the task
-changes nothing. `setup-postgresql-nova.yml` has 65 tasks; the whole
+changes nothing. `setup-example-host.yml` has 65 tasks; the whole
 repository has 452. At ~1.5–2.5 s of pure overhead per task, a 65-task no-op
 run pays **2–4 minutes for zero work** — before any module logic runs.
 
@@ -46,14 +46,14 @@ network roundtrips for a file transfer from 57 to ~4
 
 ### 1.2 The 1Password lookup multiplier (the hidden layer)
 
-`setup-postgresql-nova.yml` alone declares **13 `community.general.onepassword`
+`setup-example-host.yml` alone declares **13 `community.general.onepassword`
 lookups** in play vars. Ansible evaluates lookups **lazily, on every template
 reference** — a var used by five tasks spawns five `op` subprocesses, and
 `postgres_readiness_users` (a list built from 8 lookup-vars, iterated by
 loops over users/databases/privileges) re-renders on each loop iteration.
 Each `op` call is ~0.3–2 s. Across the repo there are 40+ distinct lookups
 but the *effective* subprocess count per run is far higher. This layer alone
-plausibly accounts for **several minutes** of a nova/titan/delorean run, and
+plausibly accounts for **several minutes** of a example-host/example-host/example-host run, and
 it is paid identically on no-op runs.
 
 ### 1.3 Module work that re-verifies from scratch every run
@@ -61,7 +61,7 @@ it is paid identically on no-op runs.
 Even with a perfect transport, Ansible's idempotence model is "re-interrogate
 the system every time": the `apt` module loads the apt cache per task (24 apt
 tasks in the repo), each `postgresql_*` task opens its own DB connection
-(44 such tasks on nova), `systemd` shells out per unit, `iptables` lists
+(44 such tasks on example-host), `systemd` shells out per unit, `iptables` lists
 rules per rule. Nothing remembers that the last run already verified this
 exact state. This is the layer no existing tool fixes — and it is precisely
 the "never repeat work that is already done" requirement.
@@ -111,7 +111,7 @@ requirements that matter here:
   semantics.
 - **Migration cost:** all 16 playbooks rewritten to HCL — the opposite of
   the drop-in requirement.
-- **Imperative sequences** (drive init, Sentry's pause-for-manual-bootstrap,
+- **Imperative sequences** (drive init, example-host's pause-for-manual-bootstrap,
   36 container restarts) map terribly to CRUD resources.
 
 Where Tofu *is* right: the layer **above** ruxel — ordering Hetzner servers,
@@ -150,7 +150,7 @@ all. Build ruxel.**
 
 ## 3. Recommended architecture
 
-```
+```text
 laptop (controller)                         each target host
 ┌─────────────────────────────┐            ┌──────────────────────────────┐
 │ ruxel CLI                   │            │ ruxel-agent (static musl bin)│
@@ -214,7 +214,7 @@ amortizes system interrogation across the whole plan:
   as-is.
 - `user/group/get_url/git/sysctl/authorized_key/timezone/assert/pause/debug`
   → straightforward native implementations; `pause` keeps the interactive
-  Sentry bootstrap flow working.
+  example-host bootstrap flow working.
 - Facts: the agent reports the **3 fact paths the workload uses** in
   milliseconds; no general fact system.
 
@@ -250,10 +250,10 @@ check. The ledger makes no-op cheap; correctness always has the last word.
 ### 3.5 CLI surface
 
 ```bash
-ruxel plan  -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml   # trustworthy --check --diff, in seconds
-ruxel apply -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml  # applies exactly the diff
+ruxel plan  -i hosts.ini --limit example-host setup-example-host.yml   # trustworthy --check --diff, in seconds
+ruxel apply -i hosts.ini --limit example-host setup-example-host.yml  # applies exactly the diff
 ruxel apply -i hosts.ini install-base.yml                                    # all hosts, parallel
-ruxel apply ... --tags velnor                                                # parses & works (sentry), but reruns are cheap enough not to need it
+ruxel apply ... --tags velnor                                                # parses & works (example-host), but reruns are cheap enough not to need it
 ruxel apply ... --no-cache                                                   # ledger bypass
 ```
 
@@ -266,7 +266,7 @@ agent already meets the <5 s target, and a daemon adds lifecycle, upgrade,
 and security surface. The architecture leaves the door open (same binary,
 same ledger, same protocol over a local socket).
 
-### 3.7 Performance budget (converged `setup-postgresql-nova.yml`)
+### 3.7 Performance budget (converged `setup-example-host.yml`)
 
 | Step | Cost |
 |---|---|
@@ -312,7 +312,7 @@ executor overhead drops from minutes to seconds, and hosts parallelize.
   against **local Debian 12 VMs/containers** replicating `install-base.yml`.
   First benchmark numbers.
 - **Phase 3 — Full module set.** postgresql (against a VM with PG 18), LVM
-  (loop devices), iptables, the Sentry pause flow, tags, handlers,
+  (loop devices), iptables, the example-host pause flow, tags, handlers,
   block/rescue.
 - **Phase 4 — Acceptance.** Fresh VM: `ansible-playbook` vs `ruxel apply`,
   byte-compare resulting state (packages, files, units, mounts, DB objects);

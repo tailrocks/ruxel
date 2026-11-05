@@ -1,7 +1,7 @@
 # SEMANTICS — What Ansible Does With These Files, Exactly
 
 Status: normative spec, 2026-06-11. This document defines what "drop-in"
-means: for every construct that appears in the ChainArgos playbooks, the
+means: for every construct that appears in the example-org playbooks, the
 behavior Ansible (core 2.21) gives it today, which ruxel must reproduce.
 All previously open subtleties have been pinned empirically in the synthetic
 M1/M3 parity harness (see [PLAN.md](PLAN.md)); no unresolved marker remains.
@@ -55,7 +55,7 @@ out of scope by definition ([WORKLOAD.md](WORKLOAD.md)).
 - Jinja constructs in use (closed list): filters `default`, `bool`,
   `urlencode`, `map`, `list`, `length`, `hash('sha256')`, `subelements`,
   `b64decode`, `trim` (the latter two found by the M1 harness in
-  setup-sentry.yml's bootstrap-marker compare, 2026-06-11 — the original
+  setup-example-host.yml's bootstrap-marker compare, 2026-06-11 — the original
   extraction missed them);
   attribute/index access on registered results (`x.stat.exists`,
   `ch_ready.rc`); comparisons and boolean operators in `when`/`until`;
@@ -137,11 +137,11 @@ workload).
   the host is not marked failed. (`always` not used.) Keywords on the block
   (become, when, tags) are inherited by contained tasks.
 - **`pre_tasks`** run before `tasks` (1 use: secret-validation asserts on
-  sentry). Handlers notified in pre_tasks flush before `tasks` in Ansible;
+  example-host). Handlers notified in pre_tasks flush before `tasks` in Ansible;
   the workload never notifies from pre_tasks, so the only flush point that
   matters is end-of-play. **Handlers**: run once each at flush, in
   handler-definition order, only if notified by a changed task.
-- **`tags`** (sentry only: `always`, `sentry`, `velnor`, `garm-remove`):
+- **`tags`** (example-host only: `always`, `example-host`, `velnor`, `garm-remove`):
   with `--tags X`, run tasks tagged X plus tasks tagged `always`; all
   others report skipped. Without `--tags`, everything runs. Tags on a block
   apply to its tasks.
@@ -153,7 +153,7 @@ workload).
   lineinfile/replace/blockinfile/file; ruxel renders unified diffs with
   secrets redacted under `no_log`.
 - **Interactive `pause`** (1 use, with `prompt`): blocks awaiting operator
-  Enter on the controller TTY; must keep working (Sentry manual bootstrap),
+  Enter on the controller TTY; must keep working (example-host manual bootstrap),
   including under ruxel's streaming execution. Under `--check`, Ansible still
   runs the pause; with non-interactive stdin it warns and returns immediately
   with `changed=false` and empty `user_input`. Pinned by
@@ -338,7 +338,6 @@ ignore — that is what closed spec means).
   changed_when retain normal Ansible task semantics. The extracted shape
   explicitly sets `become: false`; other delegated hosts remain outside the
   closed surface.
-
 - **`command` (40)** — free-form or `cmd`/`argv`, `chdir`. No shell;
   argv exec; free-form splits shlex-style (pinned 2026-06-11, golden E15:
   `echo 'a b' c` → `["echo", "a b", "c"]`). Failure = rc≠0. Always
@@ -355,7 +354,7 @@ ignore — that is what closed spec means).
   side evaluation in ruxel (pure expression over vars/facts).
 - **`fail` (2)** — `msg`; unconditional failure (guarded by `when`).
 - **`debug` (1)** — `msg`; print rendered value.
-- **`set_fact` (1)** — sets host var for the rest of the play (the Sentry
+- **`set_fact` (1)** — sets host var for the rest of the play (the example-host
   bootstrap marker flag).
 - **`pause` (1)** — `prompt`; interactive, §4.
 

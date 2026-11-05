@@ -22,6 +22,7 @@
 The ledger replays a cached `changed:false` result and **skips invoking the
 module** when its probes still verify. Three probes under-capture state, so a
 drifted server reports `ok (ledger)` and is never re-converged:
+
 1. **CORRECTNESS-01**: the `File` probe records only content hash + length, not
    `mode`/`owner`/`group`. A converged `copy`/`template`/`file` task with
    `mode: "0600"` that someone `chmod 0644`s re-verifies the content hash → cache
@@ -46,6 +47,7 @@ verification.
 `crates/ruxel-agent/src/ledger.rs`:
 
 - The probe enum + verify (`:18-59`):
+
   ```rust
   enum Probe {
       File { path: String, sha256: String, len: u64 },
@@ -56,6 +58,7 @@ verification.
   // verify(): File → file_fingerprint(path) matches sha256 && len;
   //           SysctlKV → sysctl_file_value(file,name) == value; etc.
   ```
+
 - `probe_for` (`:157-211`):
   - File modules arm (`:160-172`): for `file|copy|template|lineinfile|replace|
     blockinfile`, returns `None` for `state: absent|link`, else
@@ -92,12 +95,14 @@ empty map (`:79-83`), old ledgers degrade gracefully to "re-check everything"
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-agent/src/ledger.rs` — the `Probe` enum, `verify`, `probe_for`,
   and helpers.
 - `crates/ruxel-agent/src/ledger.rs`'s `#[cfg(test)] mod tests` — flip the two
   `BUG(plan 006 ...)` assertions from plan 005 and add new positive tests.
 
 **Out of scope**:
+
 - The `Pkg`/`Unit` probe internals (dpkg/systemctl) — only the apt `state`
   guard changes, not how versions are read.
 - `no_log`/at-rest concerns — plan 008.
@@ -119,6 +124,7 @@ Add `mode: u32`, `uid: u32`, `gid: u32` fields to `Probe::File` (keep
 see below). Update `verify()` for `File` to also compare
 `symlink_metadata(path)`'s `mode() & 0o7777`, `uid()`, `gid()` against the
 recorded values, in addition to content. In `probe_for`'s file-modules arm:
+
 - Compute mode/uid/gid from `symlink_metadata` for every path.
 - For `state: directory` (currently falls through to `file_fingerprint` which
   fails on a dir → `None`): record a directory-appropriate probe. Simplest:
@@ -190,6 +196,7 @@ passes (no panic; treated as miss).
 
 Flip the two `BUG(plan 006 ...)` tests from plan 005 to assert the corrected
 behavior, and add:
+
 - `cached_ok_misses_when_mode_changed` (File attr drift → re-check)
 - directory attr hit/miss tests (`#[cfg(unix)]`)
 - `apt_latest_is_not_cached` (probe_for returns None)
@@ -212,6 +219,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Making `File` content optional forces a large ripple through `verify`/record
   that risks the `Pkg`/`Unit` paths — reconsider (a separate `Dir` variant may
   be cleaner) and report your chosen shape.

@@ -40,6 +40,7 @@ allowlist. Note: tasks legitimately run arbitrary root actions **by design**
 
 **A. `authorized_key` symlink-follow (SECURITY-05, highest):**
 `crates/ruxel-agent/src/modules/authorized_key.rs:33-51`:
+
 ```rust
 if !ssh_dir.exists() {
     std::fs::create_dir_all(&ssh_dir)...;
@@ -51,12 +52,14 @@ std::fs::write(&auth_file, next)...;               // follows a symlink at auth_
 std::fs::set_permissions(&auth_file, 0o600)...;    // follows
 std::os::unix::fs::chown(&auth_file, uid, gid)...; // chown (not lchown) → follows
 ```
+
 The `!ssh_dir.exists()` guard is skipped entirely when `.ssh` already exists, and
 the write/chown follow any symlink at `authorized_keys`. Ansible writes a temp
 file in-dir and atomically renames (replacing the link, not following it).
 
 **B. Content modules `std::fs::write` (symlink-follow) + newline injection
 (SECURITY-11):**
+
 - `copy.rs:43-44` (temp+rename already — copy is actually the *good* pattern:
   `.ruxel-tmp` then `rename`; confirm and use it as the model), but the tmp name
   is predictable and it does not refuse a symlinked final path.
@@ -68,10 +71,12 @@ file in-dir and atomically renames (replacing the link, not following it).
 
 **C. `filesystem` mkfs from rendered param (SECURITY-07):**
 `filesystem.rs:52-53`:
+
 ```rust
 fn make(dev: &str, fstype: &str) -> Result<(), String> {
     let bin = format!("mkfs.{fstype}");   // fstype is a rendered param → program name
 ```
+
 No allowlist; the workload uses only `xfs`/`ext4`.
 
 **Convention**: `copy.rs` already demonstrates the atomic in-dir temp+rename
@@ -94,6 +99,7 @@ blockinfile,replace,sysctl,mount,filesystem}.rs`, and a shared safe-write helper
 in `crates/ruxel-agent/src/modules/mod.rs`.
 
 **Out of scope**:
+
 - `shell`/`command` executing arbitrary root actions — that's the product, not a
   bug.
 - The `apply_attrs` `chown`→`lchown` question for non-authorized_key modules —
@@ -112,6 +118,7 @@ in `crates/ruxel-agent/src/modules/mod.rs`.
 ### Step 1 (A, highest): Make `authorized_key` writes symlink-safe
 
 Rewrite the write in `authorized_key.rs:41-51` to:
+
 - Refuse to operate if `~user/.ssh` or `authorized_keys` is a **symlink** or the
   `.ssh` dir is not owned by the target user (check via `symlink_metadata` +
   `MetadataExt::uid`). Return an error rather than following.
@@ -124,6 +131,7 @@ Rewrite the write in `authorized_key.rs:41-51` to:
   absent.
 
 **Verify**: add `#[cfg(unix)]` tests (using a scratch dir):
+
 - `authorized_key_refuses_symlinked_target`: pre-create `authorized_keys` as a
   symlink to another file; the module returns an error and the pointed-to file
   is **unchanged** (not truncated/chowned).
@@ -191,6 +199,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - Ansible's `authorized_key`/content-module behavior on an existing symlink
   turns out to *require* following (some configs symlink `authorized_keys`
   intentionally) — the safest parity is still temp+rename replacing the link;

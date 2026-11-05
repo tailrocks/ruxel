@@ -24,8 +24,9 @@
 Three small, self-contained features that make the cautious M6 production pilot
 (run `ruxel plan`, compare, graduate host-by-host) practical — all promised in
 `ARCHITECTURE.md §7` but absent:
+
 1. **Run log** (`~/.local/state/ruxel/runs/<ts>-<run_id>.jsonl`, secrets
-   redacted) — the forensic artifact answering "what did ruxel do on titan last
+   redacted) — the forensic artifact answering "what did ruxel do on example-host last
    Tuesday" during the pilot, and the substrate the deferred drift dashboard
    (§9) will need. The `--output json` event stream is already serialized;
    this tees it to a pruned file.
@@ -70,6 +71,7 @@ diffs for `no_log` (`scheduler.rs:663-672`) — the run log must do the same.
 ## Scope
 
 **In scope**:
+
 - `crates/ruxel-agent/src/modules/{lineinfile,replace,blockinfile}.rs` — emit
   `diff` under `diff_mode`.
 - `crates/ruxel/src/scheduler.rs` and/or `commands/apply.rs` — the run-log writer.
@@ -77,6 +79,7 @@ diffs for `no_log` (`scheduler.rs:663-672`) — the run log must do the same.
   flag and exit mapping.
 
 **Out of scope**:
+
 - The warm-daemon drift dashboard (§9) — the run log is the substrate; don't
   build the dashboard.
 - Changing the default exit-code contract (plan 013) — `--detailed-exitcode` is
@@ -161,6 +164,7 @@ ALL must hold:
 ## STOP conditions
 
 Stop and report if:
+
 - The `--output json` event stream is found to leak a secret under `no_log`
   (plan 008 should have fixed this) — do **not** persist the run log until that
   leak is closed; report and depend on 008.

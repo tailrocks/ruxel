@@ -16,11 +16,11 @@ from Hetzner Cloud projects. A Cloud API token is scoped to **one project**
 and can only see resources inside it. A token for a fresh, empty project
 can create/destroy VMs there and nothing else, anywhere.
 
-Steps (≈2 minutes, in https://console.hetzner.cloud):
+Steps (≈2 minutes, in <https://console.hetzner.cloud>):
 
 0. **Account check (the only moment it can be verified):** log in as
-   **alexey@chainargos.com** — the ChainArgos Hetzner account (credentials
-   in the ChainArgos vault's existing `Hetzner` item), not a personal
+   **<alexey@example-org.com>** — the example-org Hetzner account (credentials
+   in the example-org vault's existing `Hetzner` item), not a personal
    account. The Cloud API has no account-identity endpoint, so a token's
    owning account cannot be verified after creation; this console glance
    is the verification.
@@ -42,7 +42,7 @@ Steps (≈2 minutes, in https://console.hetzner.cloud):
    keys, acceptable here because the token's blast radius is one empty
    project with no path to production (Robot and Cloud are separate APIs).
 4. Optional, recommended: keep a backup copy in 1Password (vault
-   `ChainArgos`, item `ruxel Hetzner Cloud`, field `token`). Runtime never
+   `example-org`, item `ruxel Hetzner Cloud`, field `token`). Runtime never
    reads it.
 
 `tools/fixtures/` scripts (M0) use the `hcloud` context to create a
@@ -56,11 +56,11 @@ list+reap leftovers on every run).
 Why this exists: the playbooks' secrets all come from
 `lookup('community.general.onepassword', …)`. Ruxel's resolver must be
 tested against a real `op`, including in CI — but CI must never be able to
-read the real `ChainArgos` vault, and your local `op` uses biometric
+read the real `example-org` vault, and your local `op` uses biometric
 unlock, which CI cannot do. The fix is 1Password's **service account**:
 a token-authenticated identity granted access to exactly one vault.
 
-Steps (≈3 minutes, on https://my.1password.com):
+Steps (≈3 minutes, on <https://my.1password.com>):
 
 1. **New vault** → name `ruxel-test`. (Leave it empty — the agent will
    populate it with synthetic items that mirror the *shapes* of the real

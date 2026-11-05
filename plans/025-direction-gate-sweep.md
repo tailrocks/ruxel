@@ -3,7 +3,7 @@
 > Historical execution plan, completed 2026-07-17. Early blocked/private-key
 > language below is superseded by repository-owned synthetic coverage and the
 > resolution note under Done criteria. Real workload execution is forbidden.
-
+>
 > **Executor instructions**: Follow step by step; verify each. Honor STOP
 > conditions. Update this plan's row in `plans/README.md` when done. This plan
 > runs **against disposable fixtures only** — never a production host. Record
@@ -29,22 +29,22 @@
 Only **6 of 16** workload playbooks are gated three-way (ruxel apply → ruxel
 rerun `changed=0` → real Ansible blesses the state). M4's bar is "every one of
 the 16 playbooks converges on its fixture with end-state equivalence." The
-**drive-variant** playbooks (`init-{titan,delorean,pegasus,nova,selene}-drives`)
+**drive-variant** playbooks (`init-{example-host,example-host,example-host,example-host,example-host}-drives`)
 and **restart-blockchain-nodes** need **no operator credential** — only fixture
 VMs + volumes (operator pre-approved per `RESTORE.md:113-114`), and the storage
 shape is already proven. Each gated playbook is one more piece of committed
 evidence backing the "run ruxel instead of Ansible" claim, and it's the
 highest-confidence, lowest-risk, zero-operator-dependency progress available.
 (The six `setup-*` gates are **not** here — they're blocked on the operator
-dropping a read-only ChainArgos deploy key, `RESTORE.md:84-93`; out of scope.)
+dropping a read-only example-org deploy key, `RESTORE.md:84-93`; out of scope.)
 
 ## Current state
 
 - Gated so far (`RESTORE.md:64-70`): `update-packages`, `upgrade-debian`,
   `install-docker`, drives (lvg/lvol/filesystem/mount), postgresql, `install-base`.
-- Ungated, no-key-needed (`WORKLOAD.md:137-148`): `init-titan-drives`,
-  `init-delorean-drives`, `init-pegasus-drives`, `init-postgresql-nova-drives`,
-  `init-clickhouse-selene-drives` (two-tier), and `restart-blockchain-nodes`
+- Ungated, no-key-needed (`WORKLOAD.md:137-148`): `init-example-host-drives`,
+  `init-example-host-drives`, `init-example-host-drives`, `init-example-host-drives`,
+  `init-example-host-drives` (two-tier), and `restart-blockchain-nodes`
   (36 identical `containerctl` shell restarts — always-execute by design, a good
   honest datapoint on whether ruxel's one-connection path helps the workload's
   worst duplication case, `WORKLOAD.md:174-177`).
@@ -57,7 +57,7 @@ dropping a read-only ChainArgos deploy key, `RESTORE.md:84-93`; out of scope.)
   counts / VG names / filesystem (xfs vs ext4) — near-identical shape.
 
 **Safety (absolute, `GOAL.md`/`AGENTS.md`)**: never contact the six production
-hosts (pegasus, delorean, titan, sentry, postgresql-nova, clickhouse-selene, or
+hosts (example-host, example-host, example-host, example-host, example-host, example-host, or
 any IP in the real `hosts.ini`). Only targets are self-created `ruxel-fixtures`
 VMs; verify each target IP ≠ all six production IPs before the first remote
 command. Real secrets never enter fixtures/captures/commits (synthetic vault +
@@ -78,6 +78,7 @@ end.
 ## Scope
 
 **In scope**:
+
 - Modeling the five drive variants and repeated restart flow with repository-
   owned synthetic playbooks, then running `bless-gate.sh` against fresh
   fixtures and committing goldens to `tools/oracle/captures/`.
@@ -85,6 +86,7 @@ end.
   gate is data-driven; prefer configuration over code).
 
 **Out of scope**:
+
 - The six `setup-*` gates (blocked on the operator deploy key).
 - Any production contact.
 - Fixing module bugs found during the sweep — if a gate fails because of a code
@@ -114,10 +116,11 @@ exists.
 
 ### Step 2: Gate the drive-variants (one fixture + matching volumes each)
 
-For each of `init-titan-drives` (2×NVMe→data→XFS), `init-delorean-drives`
-(2×SATA→backup→ext4), `init-pegasus-drives` (7×NVMe→blockchain→XFS),
-`init-postgresql-nova-drives` (3×NVMe→data→XFS), `init-clickhouse-selene-drives`
+For each of `init-example-host-drives` (2×NVMe→data→XFS), `init-example-host-drives`
+(2×SATA→backup→ext4), `init-example-host-drives` (7×NVMe→blockchain→XFS),
+`init-example-host-drives` (3×NVMe→data→XFS), `init-example-host-drives`
 (two-tier data + clickhouse-hot):
+
 1. Create a fixture; attach the matching **count** of volumes (`hcloud volume
    create ... --label ruxel=fixture`) to stand in for the NVMe/SATA disks.
 2. Run `bless-gate.sh` for that playbook. The gate must show: ruxel fresh apply
@@ -193,6 +196,7 @@ all parity gates must use repository-owned synthetic playbooks going forward.
 ## STOP conditions
 
 Stop and report if:
+
 - A gate fails because of a **code** bug (e.g. lvol `+100%FREE` fails on a fresh
   disk — plan 012's CORRECTNESS-12) — STOP, route it to the owning plan, and
   re-run the gate after the fix. Do not hand-patch the module here.

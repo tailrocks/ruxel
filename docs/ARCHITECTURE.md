@@ -12,7 +12,7 @@ acceptance.
 
 ## 1. Shape of the system
 
-```
+```text
 controller (operator laptop)                    target host (Debian 12, root)
 ┌──────────────────────────────────┐           ┌─────────────────────────────────┐
 │ ruxel CLI                        │           │ ruxel-agent                     │
@@ -83,7 +83,7 @@ Message flow per host per run:
 > task results, logs, and non-zero ledger generations are built. `ProbeResult`,
 > `PauseRequest`, and `Resume` remain reserved design protocol.
 
-```
+```text
 controller → agent   Hello{proto_ver, agent_b3sum_expected, run_id, flags(check, diff, no_cache)}
 agent → controller   HelloAck{agent_ver, facts{default_ipv4_iface, distro_release, arch}, ledger_gen}
 controller → agent   Plan{tasks: [RenderedTask], handlers: [...], blobs_referenced: [b3sums]}
@@ -194,7 +194,7 @@ Per-host store: `/var/lib/ruxel/ledger/ledger.json` — currently an atomically
 replaced JSON map protected by a single-writer lock, keyed by **task identity**.
 An append-compacted database remains a future storage option:
 
-```
+```text
 task_id  = blake3(playbook_rel_path ‖ play_name ‖ task_name ‖ module ‖ canonical(params))
            where every secret-derived param value is replaced by
            HMAC(host_ledger_key, value) — identity changes when a secret
@@ -291,11 +291,11 @@ and ledger in memory, watches fingerprinted paths with inotify, and
 listens on a **unix socket only** — the controller reaches it through SSH
 unix-socket forwarding (`direct-streamlocal`), so the no-new-listener
 security posture is preserved. Effect: connect → verdicts in one RTT, and
-proactive drift reporting becomes possible (push to Slack/Sentry).
+proactive drift reporting becomes possible (push to Slack/example-host).
 Protocol identical (§2). This is the path to "I glance at a dashboard and
 already know everything is correct."
 
-## 10. Performance budget (converged `setup-postgresql-nova.yml`, 65 tasks)
+## 10. Performance budget (converged `setup-example-host.yml`, 65 tasks)
 
 | Step | Cost |
 |---|---|
