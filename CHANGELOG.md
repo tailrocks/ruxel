@@ -11,4 +11,5 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Toolchain: Rust 1.99.1, operator mise layout with mbx as the cargo wrapper, lockfile v4; uv removed.
 - CI regenerated with velnor-actions 0.1.74; tool versions now come from `mise.toml`.
