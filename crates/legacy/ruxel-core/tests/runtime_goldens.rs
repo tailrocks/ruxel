@@ -5,6 +5,12 @@
 //! when placement, until attempts, `changed_when` — must equal what Ansible
 //! registered, field for field.
 
+#![expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "removed with the YAML front-end"
+)]
+
 use minijinja::value::Value;
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver, Scope, VarValue};
 use ruxel_core::playbook::Condition;

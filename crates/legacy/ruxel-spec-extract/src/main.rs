@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used, reason = "removed with the YAML front-end")]
+
 use ruxel_core::modules::{self, ModuleSurface};
 use serde::{Deserialize, Serialize};
 use serde_norway::Value;

@@ -1,5 +1,12 @@
 //! Replay the synthetic Ansible 2.21 render corpus through Ruxel.
 
+#![expect(
+    clippy::expect_used,
+    clippy::format_collect,
+    clippy::unwrap_used,
+    reason = "removed with the YAML front-end"
+)]
+
 use minijinja::value::Value;
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver, Scope, VarValue};
 use ruxel_core::playbook::Condition;
