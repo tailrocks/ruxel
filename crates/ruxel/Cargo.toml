@@ -5,6 +5,7 @@
 name = "ruxel-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Rust-native automation without the YAML archaeology"
 license.workspace = true
 repository.workspace = true

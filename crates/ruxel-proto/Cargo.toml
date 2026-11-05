@@ -2,6 +2,7 @@
 name = "ruxel-proto"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Ruxel controller↔agent protocol messages (protobuf via prost, framed over SSH stdio)"
 license.workspace = true
 repository.workspace = true
