@@ -8,3 +8,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Initial research implementation and closed-workload CLI/agent surface.
+
+### Changed
+
+- CI regenerated with velnor-actions 0.1.74; tool versions now come from `mise.toml`.
