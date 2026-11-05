@@ -9,17 +9,36 @@
   "recreateWhen": "always",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["at any time"]
+    "schedule": [
+      "at any time"
+    ]
   },
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update the pinned Rust toolchain",
-      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
-      "matchStrings": ["channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "description": "Rust toolchain pin and the mise rust entry move together",
+      "managerFilePatterns": [
+        "/^rust-toolchain\\.toml$/",
+        "/^mise\\.toml$/"
+      ],
+      "matchStrings": [
+        "channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "rust\\s*=\\s*\\{\\s*version\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
       "depNameTemplate": "rust",
       "datasourceTemplate": "rust-version",
       "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDepNames": [
+        "rust"
+      ],
+      "groupName": "rust toolchain",
+      "prBodyNotes": [
+        "Also set `rust-version` in Cargo.toml to the new minor version (for example \"1.100\")."
+      ]
     }
   ]
 }
