@@ -98,7 +98,7 @@ the **code is ground truth**, not the docs.
 | F-SEC-09 | `tools/oracle/captures/pg-bless.jsonl` embeds a 9-char literal `looker` password (not a `dry-secret` fake); other captures embed real `op://ChainArgos/...` item refs + a GCP key filename (reconnaissance metadata) | LOW-MED | MED | (value never reproduced) | 015 |
 
 **F-SEC-09 — operator-resolved (2026-07-03):** the operator confirmed the
-`pg-bless` capture was made against a disposable **test server** (`91.99.37.240`)
+`pg-bless` capture was made against a disposable **test server**
 used to verify the workflow, not a production host → the `looker` value is a
 test-server credential, **not** a production secret. **No rotation required.**
 Downgraded to hygiene: capture with `RUXEL_DRY_SECRETS=1` going forward. The
@@ -181,7 +181,7 @@ M5); autonomous setup-* gate sweep (blocked on operator deploy key — see below
 ## Operator actions (not autonomous)
 
 1. **`pg-bless.jsonl` credential — RESOLVED (2026-07-03):** operator confirmed
-   the capture is from a disposable test server (`91.99.37.240`), not
+   the capture is from a disposable test server, not
    production. No rotation required. Hygiene only: capture future PG bless
    goldens with `RUXEL_DRY_SECRETS=1`.
 2. **setup-* gate sweep — BLOCKED:** needs a read-only ChainArgos deploy key in
