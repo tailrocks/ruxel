@@ -7,3 +7,14 @@ default_branch = "main"
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
+
+[[checks]]
+id = "qualification-probe"
+task = "qualification-probe"
+inputs = ["mise.toml"]
+tools = []
+timeout_minutes = 10
+[checks.runner]
+label = "ubuntu-26.04"
+platform = "linux_x64"
+executor = "hosted"

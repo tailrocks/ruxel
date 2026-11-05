@@ -77,3 +77,17 @@ run = ["mise run install", "mise run build", "mise run check"]
 [tasks.agent]
 description = "Static musl ruxel-agent for x86_64 Linux hosts"
 run = "cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"
+
+[tasks.qualification-probe]
+run = '''
+set -eu
+work=$(mktemp -d)
+url=https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz
+curl -fsSL "$url" -o "$work/archive.tar.gz"
+printf '%s  %s\n' 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f "$work/archive.tar.gz" | sha256sum -c -
+cat > "$work/request.json" <<JSON
+{"schema_version":1,"platform":"linux_x64","timeout_seconds":300,"tools":[{"recipe":{"id":"cargo-deny","backend":{"kind":"aqua","package":"EmbarkStudios/cargo-deny"},"version":"0.20.2","options":{"kind":"default"},"depends_on":[],"platforms":[{"platform":"linux_x64","artifacts":[{"url":"$url"}],"dependency_artifacts":[],"executables":[{"name":"cargo-deny","path":"cargo-deny","probe":{"kind":"version","expected":"cargo-deny 0.20.2"}}]}]},"archives":[{"path":"$work/archive.tar.gz","url":"$url","sha256":"9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"}]}]}
+JSON
+mise exec github:tailrocks/velnor-new@0.1.74 -- velnor-actions qualify-tools --request "$work/request.json" --work-dir "$work/stage" --output "$work/candidate.json"
+cat "$work/candidate.json"
+'''
