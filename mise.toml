@@ -88,6 +88,6 @@ printf '%s  %s\n' 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d
 cat > "$work/request.json" <<JSON
 {"schema_version":1,"platform":"linux_x64","timeout_seconds":300,"tools":[{"recipe":{"id":"cargo-deny","backend":{"kind":"aqua","package":"EmbarkStudios/cargo-deny"},"version":"0.20.2","options":{"kind":"default"},"depends_on":[],"platforms":[{"platform":"linux_x64","artifacts":[{"url":"$url"}],"dependency_artifacts":[],"executables":[{"name":"cargo-deny","path":"cargo-deny","probe":{"kind":"version","expected":"cargo-deny 0.20.2"}}]}]},"archives":[{"path":"$work/archive.tar.gz","url":"$url","sha256":"9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"}]}]}
 JSON
-mise exec github:tailrocks/velnor-new@0.1.74 -- velnor-actions qualify-tools --request "$work/request.json" --work-dir "$work/stage" --output "$work/candidate.json"
+/home/runner/work/_temp/velnor/bin/velnor-actions-0.1.74 qualify-tools --request "$work/request.json" --work-dir "$work/stage" --output "$work/candidate.json"
 cat "$work/candidate.json"
 '''
