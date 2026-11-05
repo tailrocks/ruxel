@@ -4,7 +4,6 @@
 //! enabled, matching Ansible check-mode semantics.
 
 #![expect(
-    clippy::allow_attributes_without_reason,
     clippy::struct_excessive_bools,
     clippy::needless_pass_by_value,
     reason = "replaced by the Ruxel rewrite"
@@ -143,7 +142,10 @@ fn apply_exit_code(totals: RunTotals, detailed: bool) -> u8 {
     }
 }
 
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "execution needs the current run context"
+)]
 async fn run(
     playbook: &ruxel_core::playbook::Playbook,
     compiled: &ruxel_core::compiler::Plan,
@@ -234,7 +236,10 @@ fn sort_outcomes(outcomes: &mut [HostOutcome]) {
     outcomes.sort_by_key(|outcome| outcome.index);
 }
 
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "execution needs the current run context"
+)]
 async fn run_host(
     index: usize,
     host: ruxel_core::inventory::Host,

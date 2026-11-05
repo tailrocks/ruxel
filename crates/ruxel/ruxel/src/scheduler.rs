@@ -8,7 +8,6 @@
 //! semantics stay identical.
 
 #![expect(
-    clippy::allow_attributes_without_reason,
     clippy::similar_names,
     clippy::needless_continue,
     clippy::assigning_clones,
@@ -42,7 +41,10 @@ use std::collections::BTreeSet;
 use std::io::Write;
 
 /// Scheduler boundary for one fully rendered agent iteration.
-#[expect(async_fn_in_trait)]
+#[expect(
+    async_fn_in_trait,
+    reason = "agent execution is not used through dynamic dispatch"
+)]
 pub trait AgentExec {
     async fn run_batch(&mut self, tasks: Vec<v1::RenderedTask>, patch: bool) -> Result<Vec<Value>>;
 
@@ -188,7 +190,10 @@ impl<A, L> HostRun<'_, A, L> {
     }
 }
 
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "play execution needs the current host context"
+)]
 pub async fn run_play<A: AgentExec, L: Write>(
     play: &Play,
     compiled: &PlayPlan,

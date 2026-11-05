@@ -64,6 +64,10 @@ run = "cargo test --workspace --doc --all-features --locked"
 
 [tasks.deny]
 description = "Licenses, bans, sources and advisories"
+run = "cargo deny --locked check"
+
+[tasks."deny-ci"]
+description = "Verify cargo-deny CI inputs and run cargo-deny"
 run = ["python3 tools/ci/check-deny-inputs.py", "cargo deny --locked check"]
 
 [tasks.machete]
