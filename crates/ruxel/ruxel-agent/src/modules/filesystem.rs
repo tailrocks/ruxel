@@ -1,6 +1,11 @@
 //! `filesystem` (SEMANTICS §6): blkid fstype on dev; create only if
 //! absent; resizefs grows the fs to the device. xfs ×5, ext4 ×1.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 

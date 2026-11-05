@@ -2,6 +2,11 @@
 //! ~`user/.ssh/authorized_keys`. Matching is comment-insensitive on the key
 //! material (type + base64), Ansible's rule.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, params_object, str_param, write_atomic_with};
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};

@@ -1,6 +1,11 @@
 //! `file` (SEMANTICS §6): states directory / absent / link, plus
 //! owner/group/mode and recurse. Check-mode predicts without writing.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, apply_attrs, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;

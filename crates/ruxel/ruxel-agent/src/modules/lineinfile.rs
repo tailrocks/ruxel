@@ -3,6 +3,11 @@
 //! also matches elsewhere); else replace the LAST regexp match; else
 //! append at EOF. absent = delete matching lines.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};

@@ -45,13 +45,15 @@ fn parses_batched_policy_and_systemd_snapshots() {
 
 #[test]
 fn single_threaded_snapshot_lookup_scale() {
-    let source = (0..10_000)
-        .map(|index| {
-            format!(
-                "Package: package-{index}\nStatus: install ok installed\nVersion: 1.{index}\n\n"
-            )
-        })
-        .collect::<String>();
+    use std::fmt::Write as _;
+    let mut source = String::new();
+    for index in 0..10_000 {
+        write!(
+            source,
+            "Package: package-{index}\nStatus: install ok installed\nVersion: 1.{index}\n\n"
+        )
+        .expect("write to string");
+    }
     let started = std::time::Instant::now();
     let packages = parse_dpkg_status(&source);
     for index in 0..10_000 {

@@ -3,6 +3,11 @@
 //! content changed; `update_cache` refreshes lists after a change (cache
 //! refresh itself never reports changed — same pin as apt).
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
 use serde_json::{Value, json};
 use std::path::PathBuf;

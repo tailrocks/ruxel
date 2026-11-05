@@ -12,7 +12,7 @@ impl Scratch {
             "ruxel-ledger-test-{}-{name}-{id}",
             std::process::id()
         ));
-        let _ = std::fs::remove_dir_all(&path);
+        drop(std::fs::remove_dir_all(&path));
         std::fs::create_dir_all(&path).expect("operation succeeds");
         Self(path)
     }
@@ -26,7 +26,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        drop(std::fs::remove_dir_all(&self.0));
     }
 }
 

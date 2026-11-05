@@ -3,6 +3,10 @@
 //! Always changed (the controller's `changed_when` normally overrides);
 //! failure = rc≠0.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
 #![expect(
     clippy::doc_link_with_quotes,
     clippy::needless_pass_by_value,

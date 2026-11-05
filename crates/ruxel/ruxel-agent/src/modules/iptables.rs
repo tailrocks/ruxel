@@ -2,6 +2,11 @@
 //! (append when missing — the module's append semantics preserved), and
 //! chain policy. `ip_version=ipv6` routes to ip6tables.
 
+#![cfg_attr(
+    test,
+    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
+)]
+
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 

@@ -3,6 +3,14 @@
 //! version mismatch, EOF resilience, the single-run lock, and kill -9
 //! leaving the state dir reusable.
 
+#![expect(
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
