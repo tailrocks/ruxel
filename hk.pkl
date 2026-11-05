@@ -31,12 +31,18 @@ local linters = (hookSteps) {
   }
   ["cargo_clippy"] = (Builtins.cargo_clippy) {
     glob = null
+    workspace_indicator = null
+    fix = (Builtins.cargo_clippy.fix as Config.CommandSpec) {
+      command = "cargo clippy --workspace --fix --allow-dirty --allow-staged --quiet"
+    }
     check = (Builtins.cargo_clippy.check as Config.CommandSpec) {
       command = "cargo clippy --workspace --all-targets --all-features --locked --quiet -- -D warnings"
     }
   }
   ["cargo_deny"] = (Builtins.cargo_deny) {
     glob = null
+    workspace_indicator = null
+    dir = null
     check = (Builtins.cargo_deny.check as Config.CommandSpec) {
       command = "cargo deny --locked check"
     }
