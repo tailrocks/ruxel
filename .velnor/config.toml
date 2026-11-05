@@ -7,3 +7,57 @@ default_branch = "main"
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
+
+[[checks]]
+id = "cargo-deny"
+task = "deny"
+inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel-proto/Cargo.toml", "crates/ruxel/Cargo.toml", "crates/ruxel-agent/Cargo.toml", "crates/ruxel-core/Cargo.toml", "tools/spec-extract/Cargo.toml", "deny.toml", "mise.toml", "mise.lock"]
+tools = ["rust", "cargo-deny"]
+timeout_minutes = 10
+[checks.runner]
+label = "ubuntu-26.04"
+platform = "linux_x64"
+executor = "hosted"
+
+[[qualified_tools]]
+id = "cargo-deny"
+backend = { kind = "aqua", package = "EmbarkStudios/cargo-deny" }
+version = "0.20.2"
+options = { kind = "default" }
+depends_on = []
+[[qualified_tools.platforms]]
+platform = "linux_x64"
+artifacts = [ { url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz", sha256 = "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f" } ]
+dependency_artifacts = []
+install_tree_sha256 = "9974db6df328c16cf4b9703be40659c42dc5fd04279f07b4b473feab0109cd72"
+[[qualified_tools.platforms.executables]]
+name = "cargo-deny"
+path = "cargo-deny"
+sha256 = "b329e25933d01c36dd7c47d84ea5716694f9b7caf53a5003d45674703a8ed54a"
+probe = { kind = "version", expected = "cargo-deny 0.20.2" }
+[[qualified_tools]]
+
+id = "rust"
+backend = { kind = "core", tool = "rust" }
+version = "1.99.1"
+options = { kind = "rust", components = [], targets = [] }
+depends_on = []
+[[qualified_tools.platforms]]
+platform = "linux_x64"
+artifacts = [
+  { url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "53f3521949404d595efb06a55c12c5658d4ed1c75566f33d3d514eaebe70bd8a" },
+  { url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958" },
+  { url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "2ff05ff9c08a90861e7f6e4065b40a8b87463b4576186fd613871c3e37f2091f" },
+]
+dependency_artifacts = []
+install_tree_sha256 = "baa8089f830b6c49980b5c2274a0863d963d2eae8ef7f8ece56b90dfae8a8625"
+[[qualified_tools.platforms.executables]]
+name = "cargo"
+path = "bin/cargo"
+sha256 = "a670e02cfa39ac2e53f77a2d911ca1fc9e2c479b0603ec956625be1daf24e3af"
+probe = { kind = "version", expected = "cargo 1.99.1 (5f94df478 2026-08-27)" }
+[[qualified_tools.platforms.executables]]
+name = "rustc"
+path = "bin/rustc"
+sha256 = "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853"
+probe = { kind = "rustc_verbose", expected = "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1" }

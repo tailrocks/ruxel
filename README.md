@@ -3,7 +3,7 @@
 > Rust-native automation without the YAML archaeology.
 
 Ruxel is a drop-in, performance-first executor for the exact Ansible workload
-that provisions and maintains the ChainArgos dedicated servers. Same playbook
+that provisions and maintains a dedicated-server workload. Same playbook
 files, same inventory, same check/diff/limit invocation shape — rebuilt in
 Rust around one goal: **never repeat work that is already done, and prove it
 in seconds.**
@@ -54,19 +54,17 @@ provided by the operator. See [AGENTS.md](AGENTS.md).
 ## Usage (target shape)
 
 ```bash
-ruxel plan  -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml
-ruxel apply -i hosts.ini --limit postgresql-nova setup-postgresql-nova.yml
+ruxel plan  -i hosts.ini --limit fixture-host setup-fixture.yml
+ruxel apply -i hosts.ini --limit fixture-host setup-fixture.yml
 ```
 
 ## Development
 
-Toolchain is pinned via [`rust-toolchain.toml`](rust-toolchain.toml); extra dev
-tools are managed with [mise](https://mise.jdx.dev):
+Tools and tasks come from `mise.toml`:
 
 ```bash
-mise install
-cargo build
-just check
+mise run install
+mise run check
 ```
 
 Releases are lightweight while the project remains a single-operator pilot:

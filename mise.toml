@@ -1,38 +1,79 @@
+min_version = "2026.11.2"
+
 [tools]
-cargo-binstall = "1.21.0"
-"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
+# Operator repository standard. rust-toolchain.toml mirrors this rust
+# entry exactly; generated CI reads every version in this table.
+mr-boxington = { version = "1.29.2", workflow = "release.yml@refs/heads/main" }
+# Targets: the standard's gnu pair plus x86_64-unknown-linux-musl, because
+# the ruxel-agent binary pushed to servers must be static.
+rust = { version = "1.99.1", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], targets = [
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+], mr_boxington = true }
+cargo-binstall = "1.26.2"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
 "cargo:cargo-machete" = "0.9.2"
 "cargo:cargo-deny" = "0.20.2"
-"cargo:cargo-zigbuild" = "0.23.0"
-uv = "0.11.14"
-zig = "0.16.0"
+"cargo:cargo-zigbuild" = "0.24.1"
+zig = "0.17.1"
 
 [settings]
-lockfile = true
+cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
-cargo.binstall_only = true
-cargo.binstall_quickinstall = true
+lockfile = true
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
 
 [tasks.install]
 description = "Provision every pinned tool from mise.lock"
 run = "mise install --locked"
 
 [tasks.build]
-description = "Compile every workspace target with a real codegen build"
-run = "cargo build --all-targets --all-features --locked"
-
-[tasks.test]
-run = "cargo nextest run --all-features --color=always --no-tests=pass"
-
-[tasks.lint]
-run = "cargo clippy --all-targets -- -D warnings"
+description = "Compile every workspace target"
+run = "cargo build --workspace --all-targets --all-features --locked"
 
 [tasks.fmt]
+description = "Check formatting"
 run = "cargo fmt --all --check"
 
 [tasks."fmt-fix"]
+description = "Apply formatting"
 run = "cargo fmt --all"
 
+[tasks.lint]
+description = "Clippy, warnings are errors"
+run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings"
+
+[tasks.test]
+description = "Unit and integration tests"
+run = "cargo nextest run --workspace --all-features --locked --no-tests=pass"
+
+[tasks.doctest]
+description = "Doctests (nextest does not run them)"
+run = "cargo test --workspace --doc --all-features --locked"
+
+[tasks.deny]
+description = "Licenses, bans, sources and advisories"
+run = "cargo deny --locked check"
+
+[tasks.machete]
+description = "Unused dependencies"
+run = "cargo machete"
+
+[tasks.check]
+description = "Every local check; run before each commit"
+depends = ["fmt", "lint", "test", "doctest", "deny", "machete"]
+
 [tasks.ci]
-description = "Local aggregate of install, build, test, lint, and fmt"
-depends = ["install", "build", "test", "lint", "fmt"]
+description = "Fresh-checkout aggregate: install, build, check"
+run = ["mise run install", "mise run build", "mise run check"]
+
+[tasks.agent]
+description = "Static musl ruxel-agent for x86_64 Linux hosts"
+run = "cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"

@@ -2,6 +2,7 @@
 name = "ruxel-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Ruxel controller core: inventory/playbook model, parser, templating, plan compiler"
 license.workspace = true
 repository.workspace = true
