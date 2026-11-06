@@ -1,6 +1,5 @@
-use super::RemoteHost;
+use super::{RemoteHost, cache};
 use anyhow::{Context, Result, bail};
-use ruxel_proto::constants::{AGENT_DIR, STATE_ROOT};
 use sha2::{Digest, Sha256};
 use std::process::Stdio;
 
@@ -11,12 +10,14 @@ pub(super) async fn ensure_agent(
     remote_path: &str,
     bytes: &[u8],
 ) -> Result<bool> {
-    prepare_cache(remote).await?;
-    let exists = remote
-        .exec_status(&["test", "-x", remote_path])
-        .await?
-        .success();
-    if exists && remote_agent_hash_matches(remote, remote_path, bytes).await? {
+    let uid = cache::prepare(remote).await?;
+    let trusted = cache::trusted_file(remote, remote_path, uid).await?;
+    let exists = trusted
+        && remote
+            .exec_status(&["test", "-x", remote_path])
+            .await?
+            .success();
+    if trusted && exists && remote_agent_hash_matches(remote, remote_path, bytes).await? {
         return Ok(false);
     }
 
@@ -51,6 +52,9 @@ pub(super) async fn ensure_agent(
             .open(&tmp_path)
             .await
             .context("sftp create tmp")?;
+        file.set_permissions(0o600_u16.into())
+            .await
+            .context("protect uploaded agent")?;
         file.write_all(bytes).await.context("sftp write agent")?;
         file.close().await.context("sftp close")?;
         sftp.fs()
@@ -72,6 +76,9 @@ pub(super) async fn ensure_agent(
         return Err(error);
     }
 
+    if !cache::trusted_file(remote, remote_path, uid).await? {
+        bail!("uploaded agent has unsafe ownership, type, permissions or links");
+    }
     if !remote_agent_hash_matches(remote, remote_path, bytes).await? {
         bail!("uploaded agent failed remote content verification");
     }
@@ -109,30 +116,4 @@ async fn remote_agent_hash_matches(
         expected.push(HEX[(byte & 0x0f) as usize] as char);
     }
     Ok(remote == expected)
-}
-
-async fn prepare_cache(remote: &RemoteHost) -> Result<()> {
-    for directory in [STATE_ROOT, AGENT_DIR] {
-        remote
-            .exec_status(&["test", "!", "-L", directory])
-            .await?
-            .success()
-            .then_some(())
-            .context("agent cache must not be a symlink")?;
-    }
-    remote
-        .exec_status(&["mkdir", "-p", AGENT_DIR])
-        .await?
-        .success()
-        .then_some(())
-        .context("mkdir agent dir")?;
-
-    remote
-        .exec_status(&["chmod", "700", AGENT_DIR])
-        .await?
-        .success()
-        .then_some(())
-        .context("protect agent cache directory")?;
-
-    Ok(())
 }

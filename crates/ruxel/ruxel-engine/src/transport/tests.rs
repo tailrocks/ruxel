@@ -82,7 +82,11 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
     let args = String::from_utf8(output.stdout)?;
     assert!(args.contains("StrictHostKeyChecking=accept-new\n"));
     assert!(args.contains("synthetic identity\n"));
-    assert!(args.contains("synthetic known hosts\n"));
+    assert!(args.lines().any(|line| line
+        == format!(
+            "UserKnownHostsFile=\"{}\"",
+            root.join("synthetic known hosts").display()
+        )));
     assert!(args.ends_with("fixture.invalid\n"));
     std::fs::remove_dir_all(root)?;
     Ok(())
@@ -90,3 +94,9 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
 
 #[path = "tests/deployment.rs"]
 mod deployment;
+
+#[test]
+fn known_hosts_filename_is_one_quoted_ssh_config_value() {
+    let value = super::known_hosts_option(std::path::Path::new("pins ' \" \\ file"));
+    assert_eq!(value, r#"UserKnownHostsFile="pins ' \" \\ file""#);
+}

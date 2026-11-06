@@ -1,3 +1,4 @@
+mod cache;
 mod deploy;
 mod local;
 pub use local::LocalConnection;
@@ -91,14 +92,37 @@ fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
             .arg("IdentitiesOnly=yes");
     }
     if let Some(kh) = &options.known_hosts_file {
-        cmd.arg("-o")
-            .arg(format!("UserKnownHostsFile={}", kh.display()));
+        cmd.arg("-o").arg(known_hosts_option(kh));
     }
     cmd.arg("-o").arg(if options.accept_new_host_key {
         "StrictHostKeyChecking=accept-new"
     } else {
         "StrictHostKeyChecking=yes"
     });
+}
+
+fn known_hosts_option(path: &Path) -> std::ffi::OsString {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let mut value = b"UserKnownHostsFile=\"".to_vec();
+        for byte in path.as_os_str().as_bytes() {
+            if matches!(byte, b'\\' | b'"') {
+                value.push(b'\\');
+            }
+            value.push(*byte);
+        }
+        value.push(b'"');
+        std::ffi::OsString::from_vec(value)
+    }
+    #[cfg(not(unix))]
+    {
+        let value = path
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        std::ffi::OsString::from(format!("UserKnownHostsFile=\"{value}\""))
+    }
 }
 
 #[derive(Debug)]

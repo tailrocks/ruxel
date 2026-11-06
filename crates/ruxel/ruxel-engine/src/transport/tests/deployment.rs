@@ -101,3 +101,6 @@ async fn failed_upload_and_cleanup_are_both_reported_without_launch() -> anyhow:
     assert!(!fixture.calls()?.iter().any(|event| event[0] == "launch"));
     Ok(())
 }
+
+#[path = "deployment_trust.rs"]
+mod trust;

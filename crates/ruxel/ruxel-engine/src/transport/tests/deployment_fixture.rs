@@ -16,6 +16,10 @@ impl Fixture {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("ruxel-sftp-{}-{stamp}", std::process::id()));
         std::fs::create_dir_all(root.join("bin"))?;
+        std::fs::create_dir_all(root.join("remote/var/lib"))?;
+        for directory in ["remote", "remote/var", "remote/var/lib"] {
+            std::fs::set_permissions(root.join(directory), std::fs::Permissions::from_mode(0o755))?;
+        }
         let ssh = root.join("bin/ssh");
         std::fs::write(&ssh, include_str!("fake_ssh.py"))?;
         std::fs::set_permissions(ssh, std::fs::Permissions::from_mode(0o700))?;

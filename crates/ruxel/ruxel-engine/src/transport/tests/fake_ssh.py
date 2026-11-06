@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shlex
 from pathlib import Path
 import struct
 import sys
@@ -17,7 +18,8 @@ assert 'StrictHostKeyChecking=yes' in OPTIONS
 assert 'IdentitiesOnly=yes' in OPTIONS and OPTIONS[OPTIONS.index('-p') + 1] == '2222'
 assert not set(OPTIONS) & {'-F', '-M', '-S', '-O', '-A', '-J'}
 assert str(ROOT / 'identity key') in OPTIONS
-assert 'UserKnownHostsFile=' + str(ROOT / 'known hosts') in OPTIONS
+pins = [value.split('=', 1)[1] for value in OPTIONS if value.startswith('UserKnownHostsFile=')]
+assert len(pins) == 1 and shlex.split(pins[0]) == [str(ROOT / 'known hosts')]
 REMOTE = ARGV[SEPARATOR + 2:]
 
 
@@ -27,7 +29,7 @@ def record(event):
 
 
 def local(path):
-    assert path.startswith('/var/lib/ruxel') and '..' not in Path(path).parts
+    assert (path in ('/', '/var', '/var/lib') or path.startswith('/var/lib/ruxel')) and '..' not in Path(path).parts
     return ROOT / 'remote' / path.removeprefix('/')
 
 
@@ -81,6 +83,12 @@ def sftp():
                 continue
             handles[handle].seek(offset)
             handles[handle].write(content)
+        elif kind == 10:
+            handle, data = take(data)
+            attrs, mode = struct.unpack('>II', data)
+            assert attrs == 4 and mode == 0o600
+            os.fchmod(handles[handle].fileno(), mode)
+            record(['permissions', mode])
         elif kind == 4:
             handle, rest = take(data)
             assert not rest
@@ -114,6 +122,22 @@ record(['ssh', ARGV])
 if '-s' in OPTIONS:
     assert REMOTE == ['sftp']
     sftp()
+elif REMOTE == ['id', '-u']:
+    print(os.geteuid())
+elif REMOTE[:2] == ['stat', '-c']:
+    assert REMOTE[2:4] == ['%u:%f:%h', '--']
+    try:
+        metadata = local(REMOTE[4]).lstat()
+    except FileNotFoundError:
+        sys.exit(1)
+    overrides = json.loads((ROOT / 'metadata.json').read_text()) if (ROOT / 'metadata.json').exists() else {}
+    override = overrides.get(REMOTE[4], {})
+    owner = override.get('uid', metadata.st_uid) if override.get('inode', metadata.st_ino) == metadata.st_ino else metadata.st_uid
+    print(f'{owner}:{metadata.st_mode:x}:{metadata.st_nlink}')
+elif REMOTE[:2] == ['test', '-e']:
+    sys.exit(not local(REMOTE[2]).exists())
+elif REMOTE[:3] == ['mkdir', '-m', '700']:
+    local(REMOTE[3]).mkdir(mode=0o700)
 elif REMOTE[:3] == ['test', '!', '-L']:
     sys.exit(local(REMOTE[3]).is_symlink())
 elif REMOTE[:2] == ['test', '-x']:
