@@ -19,6 +19,9 @@ struct PasswdEntry {
 pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("group: name required")?;
+    if name.starts_with('-') {
+        return Err("group: name must not start with a hyphen".into());
+    }
     let state = str_param(obj, "state").unwrap_or("present");
     let gid = obj.get("gid").and_then(Value::as_u64);
 
@@ -296,6 +299,29 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn rejects_option_like_group_names_before_running_utilities() {
+        for check_mode in [true, false] {
+            let ctx = ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: Vec::new(),
+                become_user: None,
+            };
+            for state in ["present", "absent"] {
+                for name in ["--help", "-g"] {
+                    let error = group(&json!({"name":name, "state":state}), &ctx)
+                        .expect_err("option-like group name must be rejected");
+                    assert!(error.contains("group") && error.contains("name"));
+                }
+            }
+            if check_mode {
+                assert!(group(&json!({"name":"ruxel-synthetic-group"}), &ctx).is_ok());
+            }
+        }
     }
 
     #[test]
