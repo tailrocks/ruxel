@@ -2,6 +2,7 @@
 """Prove local host isolation, bounded overlap, and a barrier between plays."""
 import argparse
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -93,7 +94,31 @@ output { value = new Ruxel.Config {
                 require(phase == 'end' and pid in active, 'unmatched process end')
                 active.remove(pid)
         require(not active and peak == 2, f'expected overlap bounded by two jobs; observed peak {peak}')
-    print('PASS host isolation: distinct facts, observed peak two jobs, play barrier')
+        # Both real agents exit non-zero only after normal protocol shutdown.
+        # The controller must drain and report every connection, even on failure.
+        closed = base / 'closed.log'
+        wrapper = base / 'agent-wrapper'
+        wrapper.write_text('#!/bin/sh\n' + shlex.quote(str(agent)) + ' "$@"\n'
+                           + 'printf \"%s\\n\" \"$RUXEL_STATE_DIR\" >> ' + shlex.quote(str(closed))
+                           + '\nexit 23\n')
+        wrapper.chmod(0o700)
+        shutdown_module = base / 'fixtures/shutdown.pkl'
+        shutdown_module.write_text('''import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture-a"] { address = "127.0.0.1" }; ["fixture-b"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture-a"; "fixture-b" } } } }
+ plays { new { name = "shutdown"; targets { "all" }; tasks { new { name = "debug"; operation = new Ruxel.Debug { msg = "synthetic" } } } } }
+} }
+''')
+        shutdown = subprocess.run([str(cli), 'apply', str(shutdown_module), '--local', '--agent', str(wrapper),
+                                   '--state-dir', str(base / 'shutdown-state'), '--jobs', '2'],
+                                  stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+        require(shutdown.returncode == 1, f'expected shutdown error exit, got {shutdown.returncode}')
+        require(all(f'{host}: local agent exited unsuccessfully' in shutdown.stderr
+                    for host in ('fixture-a', 'fixture-b')), 'missing host shutdown errors')
+        closed_states = closed.read_text().splitlines() if closed.exists() else []
+        require(len(closed_states) == 2 and len(set(closed_states)) == 2,
+                'both distinct local agents did not complete shutdown')
+    print('PASS host isolation: distinct facts, bounded overlap, play barrier, drained shutdown errors')
 
 
 if __name__ == '__main__':
