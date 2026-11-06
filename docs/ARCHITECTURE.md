@@ -35,6 +35,16 @@ complete platform coverage.
    non-mutating checks where the operation supports them; a task with
    `checkMode = false` can execute changes in either mode. Apply performs changes.
 
+Controller and agent use protocol version 2 and reject version 1 peers during
+handshake. `Copy.src` is read as bytes on the controller and sent in an optional
+binary iteration payload; an empty source differs from an absent source. Text
+`Copy.content` and rendered native templates retain their text representation.
+Source bytes are accepted only for Copy and cannot accompany explicit content.
+Binary diffs report sizes and SHA-256 hashes; `noLog` suppresses those results.
+The entire encoded request remains limited to 64 MiB, including all iterations
+and parameters. A streaming file channel is not implemented, so larger copies
+remain unsupported by this transport.
+
 The CLI supports JSON and human-readable output. Optional JSONL event logs are
 created as new private files. Treat generated output as sensitive: configuration
 dumps can contain values supplied directly in Pkl, and secret redaction must be
