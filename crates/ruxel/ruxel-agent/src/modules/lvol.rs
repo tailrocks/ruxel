@@ -212,9 +212,15 @@ fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
         let name = volume
             .get("lv_name")
             .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
             .ok_or("lvol: invalid lvs volume name")?;
-        found |= name == lv || name.strip_prefix('[').and_then(|v| v.strip_suffix(']')) == Some(lv);
+        let normalized = name
+            .strip_prefix('[')
+            .and_then(|v| v.strip_suffix(']'))
+            .unwrap_or(name);
+        if normalized.trim().is_empty() {
+            return Err("lvol: invalid lvs volume name".into());
+        }
+        found |= normalized == lv;
     }
     Ok(found)
 }
