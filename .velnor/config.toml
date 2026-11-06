@@ -26,8 +26,9 @@ executor = "hosted"
 id = "acceptance-local"
 task = "acceptance-local"
 inputs = [
-  "Cargo.toml",
+  ".cargo/config.toml",
   "Cargo.lock",
+  "Cargo.toml",
   "mise.toml",
   "schema/Ruxel.pkl",
   "testdata/workloads/pr66/README.md",
@@ -62,6 +63,9 @@ inputs = [
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
   "tests/acceptance/pr66/test_coverage.py",
+  "tools/build-libblkid",
+  "tools/build-libblkid-source",
+  "tools/pkg-config-libblkid",
 ]
 tools = ["rust"]
 timeout_minutes = 30
