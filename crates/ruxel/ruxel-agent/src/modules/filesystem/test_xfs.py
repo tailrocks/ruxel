@@ -30,6 +30,7 @@ class Kernel:
         if request == h.GEOMETRY:
             assert len(data) == 112
             struct.pack_into('=I', data, 0, 4096)
+            struct.pack_into('=I', data, 8, 1024)
             struct.pack_into('=I', data, 28, 25)
             struct.pack_into('=4Q', data, 32, self.blocks, self.rtblocks, 0, self.logstart)
         else:
@@ -68,6 +69,14 @@ class Tests(unittest.TestCase):
         self.assertEqual([c[1] for c in self.kernel.calls],
                          [h.GEOMETRY, h.GROW, h.GEOMETRY, h.GEOMETRY])
         self.assertTrue(all(c[0] == 0 for c in self.kernel.calls))
+
+    def test_rounds_small_final_allocation_group_and_converges(self):
+        self.assertTrue(self.run_helper('check', 1034 * 4096)['changed'])
+        self.assertTrue(self.run_helper('grow', 1034 * 4096)['changed'])
+        self.assertEqual(self.kernel.blocks, 1024)
+        self.assertFalse(self.run_helper('check', 1034 * 4096)['changed'])
+        self.assertFalse(self.run_helper('grow', 1034 * 4096)['changed'])
+        self.assertTrue(self.run_helper('check', 1088 * 4096)['changed'])
 
     def test_shrink_refused(self):
         with self.assertRaisesRegex(ValueError, 'shrink'):

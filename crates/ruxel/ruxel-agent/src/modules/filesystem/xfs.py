@@ -20,13 +20,14 @@ def geometry(ioctl):
     data = bytearray(112)
     ioctl(0, GEOMETRY, data, True)
     blocksize = struct.unpack_from('=I', data, 0)[0]
+    agblocks = struct.unpack_from('=I', data, 8)[0]
     imaxpct = struct.unpack_from('=I', data, 28)[0]
     blocks, rtblocks, rtextents, logstart = struct.unpack_from('=4Q', data, 32)
-    if blocksize < 512 or blocksize & (blocksize - 1) or not blocks or imaxpct > 100:
+    if blocksize < 512 or blocksize & (blocksize - 1) or agblocks < 64 or not blocks or imaxpct > 100:
         raise ValueError('invalid XFS geometry')
     if rtblocks or rtextents or not logstart:
         raise ValueError('XFS realtime or external-log layout unsupported')
-    return blocksize, imaxpct, blocks
+    return blocksize, imaxpct, blocks, agblocks
 
 
 def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat):
@@ -37,10 +38,15 @@ def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat
     identity = fstat(0)
     if not stat.S_ISDIR(identity.st_mode) or identity.st_dev != expected_rdev:
         raise ValueError('mount descriptor identity mismatch')
-    blocksize, imaxpct, before = geometry(ioctl)
+    blocksize, imaxpct, before, agblocks = geometry(ioctl)
     if mode == 'preflight':
         return {'changed': False, 'blocks': before, 'blocksize': blocksize}
     target = target_bytes // blocksize
+    groups, remainder = divmod(target, agblocks)
+    if groups >= (1 << 32) - 1:
+        raise ValueError('XFS allocation group limit exceeded')
+    if remainder and remainder < 64:
+        target -= remainder
     if target < before:
         raise ValueError('refusing XFS shrink')
     if target > (1 << 64) - 1:
@@ -48,8 +54,8 @@ def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat
     if mode == 'check' or target == before:
         return {'changed': target > before, 'blocks': before, 'blocksize': blocksize}
     ioctl(0, GROW, struct.pack('=QI4x', target, imaxpct))
-    after_blocksize, after_imaxpct, after = geometry(ioctl)
-    if after_blocksize != blocksize or after_imaxpct != imaxpct or after != target:
+    after_blocksize, after_imaxpct, after, after_agblocks = geometry(ioctl)
+    if after_blocksize != blocksize or after_imaxpct != imaxpct or after_agblocks != agblocks or after != target:
         raise ValueError('XFS growth postcondition failed')
     return {'changed': after > before, 'blocks': after, 'blocksize': blocksize}
 
