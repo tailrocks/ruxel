@@ -16,7 +16,7 @@ class Lookup {
   section: String? = null
   field: String? = null
   reference: String? = null
-  argv: Listing<String>
+  argv: Listing<String>(provider != "command" && provider != "pipe" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
 typealias Text = String|Expr
@@ -24,7 +24,7 @@ typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
 typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
 typealias TextList = String|Listing<String>|Expr
-typealias CommandArgs = String(this.length > 0)|Listing<String>(!this.isEmpty)|Expr
+typealias CommandArgs = Listing<String>(!this.isEmpty)|Expr
 typealias Port = Int(this >= 1 && this <= 65535)|Expr
 
 class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
@@ -76,7 +76,7 @@ class Apt {
   name: TextList? = null
   state: ("present"|"latest"|Expr)? = null
   update_cache: Flag? = null
-  upgrade: Text? = null
+  upgrade: ("dist"|Expr)? = null
 }
 
 class AptRepository {
@@ -130,7 +130,7 @@ class File {
   group: Text? = null
   mode: FileMode? = null
   owner: Text? = null
-  path: Text?(this != null || dest != null) = null
+  path: Text?((this != null && dest == null || this == null && dest != null) && (state != "link" || src != null)) = null
   recurse: Flag? = null
   src: Text? = null
   state: ("file"|"directory"|"absent"|"link"|Expr)? = null
@@ -270,10 +270,10 @@ class Timezone {
 
 class Mount {
   fixed kind = "ansible.posix.mount"
-  fstype: Text? = null
+  fstype: Text
   opts: Text? = null
   path: Text
-  src: Text? = null
+  src: Text
   state: ("mounted"|Expr)? = null
 }
 
@@ -324,7 +324,6 @@ class PostgresPrivileges {
 
 class Template {
   fixed kind = "template"
-  content: Text? = null
   dest: Text
   force: Flag? = null
   group: Text? = null
@@ -336,7 +335,7 @@ class Template {
 class Assert {
   fixed kind = "assert"
   fail_msg: Text? = null
-  that: TextList? = null
+  that: TextList
 }
 
 class Debug {

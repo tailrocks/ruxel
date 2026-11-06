@@ -22,15 +22,23 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
         self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
-        self.assertEqual(tasks[3]["operation"]["content"], "data")
+        self.assertEqual(tasks[5]["operation"]["content"], "data")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
-        self.assertEqual(tasks[4]["operation"]["password"]["provider"], "synthetic")
+        self.assertEqual(tasks[6]["operation"]["password"]["provider"], "synthetic")
 
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.Command { argv = "echo hello" }',
+            'new R.Apt { upgrade = "garbage" }',
+            'new R.File { path = "/tmp/link"; state = "link" }',
+            'new R.File { path = "a"; dest = "b" }',
+            'new R.Mount { path = "/tmp/mount" }',
+            'new R.Template { src = "a"; dest = "b"; content = "c" }',
+            'new R.Assert {}',
+            'new R.Lookup { provider = "command" }',
             'new R.Command { argv = new Listing<String> {} }',
             'new R.Ref {}',
             'new R.Call { `function` = "eq" }',
