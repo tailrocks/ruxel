@@ -228,12 +228,13 @@ impl<B: Backend> Runner<'_, B> {
         let key = ledger_key(&request.task, &request.task.iterations[0])?;
         request.task.iterations[0].ledger_key = key;
         if self.options.mode == Mode::Plan {
-            let visible_params = if layer.no_log {
+            let visible_params = if sensitive {
                 json!({"censored":true})
             } else {
                 tracked_params.redacted()
             };
-            self.backend.event(&json!({"host":request.host,"task":request.task.name,"module":kind,"params":visible_params,"planned":true}))?;
+            let visible_host = if sensitive { &self.host } else { &request.host };
+            self.backend.event(&json!({"host":visible_host,"task":request.task.name,"module":kind,"params":visible_params,"planned":true}))?;
             return Ok(if sensitive {
                 TrackedValue::secret(json!({"changed":false,"planned":true}))
             } else {
