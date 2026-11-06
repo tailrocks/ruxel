@@ -1,6 +1,7 @@
 use super::{parse_mode, resolve_gid, resolve_uid, str_param};
 use rustix::fs::{AtFlags, FileType, Mode, OFlags};
 use serde_json::{Map, Value};
+use std::os::unix::ffi::OsStrExt;
 use std::{
     os::fd::{AsFd, OwnedFd},
     path::Path,
@@ -28,7 +29,6 @@ fn parent_and_name(path: &Path) -> Result<(OwnedFd, &Path), String> {
     }
     // Initial parent resolution accepts the author's existing aliases and `..`.
     // All subsequent attribute operations use this held directory descriptor.
-    use std::os::unix::ffi::OsStrExt;
     let raw = path.as_os_str().as_bytes();
     let directory_suffix = raw.ends_with(b"/") || raw.ends_with(b"/.");
     let (parent, name) = match path.file_name().filter(|_| !directory_suffix) {
