@@ -46,37 +46,120 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         changed = true;
     }
     if !ctx.check_mode {
+        let desired = Mounted {
+            source: src.to_string(),
+            fstype: fstype.to_string(),
+            options: opts.to_string(),
+        };
         if action == MountAction::Replace {
             let old = current_mount
                 .as_ref()
                 .ok_or("mount: missing existing mount")?;
-            let desired = Mounted {
-                source: src.to_string(),
-                fstype: fstype.to_string(),
-                options: opts.to_string(),
-            };
-            replace_mount(path, old, &desired, &mut run_mount_command, &mut || {
+            let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
+                .map_err(|e| format!("mount: cannot inspect existing mount: {e}"))?;
+            ensure_replaceable(path, old, &mountinfo)?;
+        }
+        if action == MountAction::Mount {
+            std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
+        }
+        apply_mount(
+            path,
+            current_mount.as_ref(),
+            &desired,
+            action,
+            &mut run_mount_command,
+            &mut || {
                 if fstab_changed {
                     write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
                 }
                 Ok(())
-            })?;
-        } else {
-            if fstab_changed {
-                write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
-            }
-            if action != MountAction::None {
-                std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
-                if action == MountAction::Remount {
-                    run_mount_command("mount", &["-o", "remount", path])?;
-                } else {
-                    run_mount_command("mount", &[path])?;
-                }
-            }
-        }
+            },
+        )?;
     }
 
     Ok(json!({"changed": changed, "failed": false, "name": path, "src": src, "fstype": fstype}))
+}
+
+fn ensure_replaceable(path: &str, old: &Mounted, mountinfo: &str) -> Result<(), String> {
+    if !matches!(old.fstype.as_str(), "ext4" | "xfs") || !old.source.starts_with("/dev/") {
+        return Err("mount: cannot safely restore this existing mount type or source".into());
+    }
+    let root = mountinfo
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            (fields.len() >= 6 && unescape_mount(fields[4]) == path)
+                .then(|| unescape_mount(fields[3]))
+        })
+        .next_back()
+        .ok_or("mount: existing mount missing from mountinfo")?;
+    if root != "/" {
+        return Err("mount: cannot safely restore a subtree mount".into());
+    }
+    Ok(())
+}
+
+fn apply_mount(
+    path: &str,
+    old: Option<&Mounted>,
+    desired: &Mounted,
+    action: MountAction,
+    command: &mut impl FnMut(&str, &[&str]) -> Result<(), String>,
+    persist: &mut impl FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    match action {
+        MountAction::None => persist(),
+        MountAction::Replace => replace_mount(
+            path,
+            old.ok_or("mount: missing existing mount")?,
+            desired,
+            command,
+            persist,
+        ),
+        MountAction::Mount => {
+            mount_explicit(path, desired, command)?;
+            if let Err(error) = persist() {
+                return match command("umount", &[path]) {
+                    Ok(()) => Err(format!(
+                        "mount: fstab update failed; new mount removed: {error}"
+                    )),
+                    Err(rollback) => Err(format!(
+                        "mount: fstab update failed: {error}; new mount removal failed: {rollback}"
+                    )),
+                };
+            }
+            Ok(())
+        }
+        MountAction::Remount => {
+            let old = old.ok_or("mount: missing existing mount")?;
+            if let Err(error) =
+                remount(path, old, &desired.options, command).and_then(|()| persist())
+            {
+                return match remount(path, old, &old.options, command) {
+                    Ok(()) => Err(format!(
+                        "mount: remount or fstab update failed; previous options restored: {error}"
+                    )),
+                    Err(restore) => Err(format!(
+                        "mount: remount or fstab update failed: {error}; previous options restoration failed: {restore}"
+                    )),
+                };
+            }
+            Ok(())
+        }
+    }
+}
+
+fn remount(
+    path: &str,
+    old: &Mounted,
+    options: &str,
+    command: &mut impl FnMut(&str, &[&str]) -> Result<(), String>,
+) -> Result<(), String> {
+    let options = format!("remount,{options}");
+    command(
+        "mount",
+        &["-t", &old.fstype, "-o", &options, "--", &old.source, path],
+    )
 }
 
 fn run_mount_command(program: &str, args: &[&str]) -> Result<(), String> {
@@ -180,7 +263,7 @@ fn opts_eq(a: &str, b: &str) -> bool {
     sa == sb
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MountAction {
     None,
     Mount,
