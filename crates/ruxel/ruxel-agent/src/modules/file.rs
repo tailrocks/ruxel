@@ -36,6 +36,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
             if p.exists() || !ctx.check_mode {
                 if super::bool_param(obj, "recurse", false) {
+                    if p.is_symlink() {
+                        return Err("file: recursive directory root must not be a symlink".into());
+                    }
                     apply_attrs_recursive(p, obj, &mut changed, ctx.check_mode)?;
                 } else {
                     apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
@@ -83,8 +86,12 @@ fn apply_attrs_recursive(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(root).map_err(|e| e.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Ok(());
+    }
     apply_attrs(root, obj, changed, check_mode)?;
-    if root.is_dir() {
+    if metadata.is_dir() {
         for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             apply_attrs_recursive(&entry.path(), obj, changed, check_mode)?;
@@ -155,5 +162,31 @@ mod tests {
         );
         assert_eq!(run(&params, &context()).unwrap()["changed"], false);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn recursive_attributes_do_not_follow_symlinks() {
+        let base = std::env::temp_dir().join(format!("ruxel-file-symlink-{}", std::process::id()));
+        let root = base.join("root");
+        let external = base.join("external");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let target = external.join("file");
+        std::fs::write(&target, b"safe").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::set_permissions(&external, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::os::unix::fs::symlink(&external, root.join("dirlink")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("filelink")).unwrap();
+        let params = json!({"path": root, "state": "directory", "mode": "0755", "recurse": true});
+        run(&params, &context()).unwrap();
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(&external).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert!(run(&json!({"path": root.join("dirlink"), "state":"directory", "mode":"0755", "recurse":true}), &context()).is_err());
+        std::fs::remove_dir_all(base).unwrap();
     }
 }
