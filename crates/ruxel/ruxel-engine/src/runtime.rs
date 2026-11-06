@@ -19,11 +19,12 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct RuntimeOptions {
     pub agent: PathBuf,
+    pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
 }
 
 enum Connection {
-    Local(LocalConnection),
+    Local(Box<LocalConnection>),
     Remote(Box<AgentConnection>),
 }
 impl Connection {
@@ -139,7 +140,7 @@ impl Execution {
             let (c, f) =
                 LocalConnection::connect(&self.runtime.agent, &path, "pkl-local", check, diff)
                     .await?;
-            (Connection::Local(c), f)
+            (Connection::Local(Box::new(c)), f)
         } else {
             let address = spec
                 .get("address")
@@ -274,7 +275,11 @@ pub async fn run(
         mode: options.mode,
         connections: BTreeMap::new(),
         lookups: Lookups {
-            resolver: Resolver::new(Arc::new(ProcessBackend)),
+            resolver: if runtime.synthetic_secrets {
+                Resolver::synthetic()
+            } else {
+                Resolver::new(Arc::new(ProcessBackend))
+            },
             values: Mutex::new(Vec::new()),
         },
     };
