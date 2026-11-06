@@ -128,10 +128,20 @@
         },
         "diff": {
           "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
         }
       },
       "pending": [
-        "drift injection and repair expectations"
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_ext4/data",
+          "requires": "verified_disposable_fixture_volume"
+        }
       ]
     },
     "storage-xfs": {
@@ -165,10 +175,20 @@
         },
         "diff": {
           "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
         }
       },
       "pending": [
-        "drift injection and repair expectations"
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_xfs/data",
+          "requires": "verified_disposable_fixture_volume"
+        }
       ]
     },
     "storage-two-tier": {
@@ -217,10 +237,20 @@
         },
         "diff": {
           "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
         }
       },
       "pending": [
-        "drift injection and repair expectations"
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_hot/hot",
+          "requires": "verified_disposable_fixture_volume"
+        }
       ]
     },
     "postgresql-ownership": {
@@ -291,10 +321,31 @@
         },
         "diff": {
           "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
         }
       },
       "pending": [
-        "drift injection and repair expectations"
+        "database drift injection and repair execution"
+      ],
+      "drift": [
+        {
+          "kind": "postgres_schema_owner",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "postgres"
+        },
+        {
+          "kind": "postgres_revoke",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "schema",
+          "object": "ruxel_fixture_schema",
+          "role": "ruxel_fixture_reader",
+          "privilege": "USAGE"
+        }
       ]
     },
     "become-environment": {
@@ -332,10 +383,20 @@
         },
         "diff": {
           "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
         }
       },
       "pending": [
-        "drift injection and repair expectations"
+        "account drift injection and repair execution"
+      ],
+      "drift": [
+        {
+          "kind": "account_shell",
+          "name": "ruxelbecome",
+          "shell": "/bin/false"
+        }
       ]
     },
     "restart-actions": {
@@ -444,8 +505,25 @@
         }
       },
       "pending": [
-        "synthetic lookup controller integration and same-item dedup",
-        "package, service and PostgreSQL snapshot call counts"
+        "controller integration and independently instrumented snapshot counts",
+        "same-item secret deduplication requires a fake backend or enforced synthetic mode; never invoke 1Password"
+      ],
+      "snapshot_expectations": [
+        {
+          "provider": "apt",
+          "scope": "fixture",
+          "maximum_queries": 1
+        },
+        {
+          "provider": "systemd",
+          "scope": "fixture",
+          "maximum_queries": 1
+        },
+        {
+          "provider": "postgresql",
+          "scope": "fixture",
+          "maximum_sessions": 1
+        }
       ]
     },
     "control-flow": {
@@ -677,9 +755,12 @@
         }
       },
       "pending": [
-        "typed schema negative cases in invalid/ (path+dest currently accepted)",
         "scalar-to-string interpolation of mapping loop item",
         "controller-side template loading and rendering"
+      ],
+      "schema_rejections": [
+        "invalid/file-path-and-dest.pkl",
+        "invalid/copy-source-and-content.pkl"
       ]
     },
     "system-surface": {

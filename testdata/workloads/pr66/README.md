@@ -27,10 +27,14 @@ on a real server.
 
 `shape-variants.pkl` omits two frozen tasks that were permanently skipped but
 provide conflicting operation fields. Their original shapes are retained in
-`invalid/` as schema rejection cases. Copy source plus content is rejected;
-file path plus destination still incorrectly evaluates and remains pending.
+`invalid/` as schema rejection cases. Both are rejected by the current schema.
 
 `system-surface.pkl` changes root authorized keys, firewall, mounts, services,
 accounts and host configuration. It is permitted only on dedicated disposable
 fixture VMs, never on local or real servers. Its forced check-mode HTTP server
 may change PID and log files; the nonmutation requirement is not yet proven.
+
+Storage drift specifications erase filesystem signatures. A harness must prove
+the exact target is a disposable fixture volume before applying them; no drift
+injection has been executed. Snapshot call-count expectations require separate
+instrumentation and have not been measured.
