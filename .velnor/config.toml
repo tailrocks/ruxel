@@ -29,6 +29,8 @@ inputs = [
   ".cargo/config.toml",
   "Cargo.lock",
   "Cargo.toml",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/test_xfs.py",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.py",
   "mise.toml",
   "schema/Ruxel.pkl",
   "testdata/workloads/pr66/README.md",
