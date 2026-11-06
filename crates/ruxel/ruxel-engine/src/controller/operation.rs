@@ -1,6 +1,6 @@
 use super::{
     Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, Value, bail, failed, json,
-    result_scope, snake, string, truth, v1,
+    ledger_key, result_scope, snake, string, truth, v1,
 };
 
 impl<B: Backend> Runner<'_, B> {
@@ -144,7 +144,7 @@ impl<B: Backend> Runner<'_, B> {
         } else {
             String::new()
         };
-        let request = Request {
+        let mut request = Request {
             host: destination,
             task: v1::RenderedTask {
                 task_id: id,
@@ -167,6 +167,8 @@ impl<B: Backend> Runner<'_, B> {
                     || task.get("checkMode").and_then(Value::as_bool) == Some(true),
             },
         };
+        let key = ledger_key(&request.task, &request.task.iterations[0])?;
+        request.task.iterations[0].ledger_key = key;
         if self.options.mode == Mode::Plan {
             let visible_params = if layer.no_log {
                 json!({"censored":true})
