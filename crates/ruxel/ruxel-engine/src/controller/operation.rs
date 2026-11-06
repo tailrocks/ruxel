@@ -1,6 +1,6 @@
 use super::{
-    Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, Value, bail, failed, json,
-    ledger_key, result_scope, snake, string, truth, v1,
+    Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, TrackedValue, Value, bail,
+    failed, json, ledger_key, result_scope, snake, string, truth, v1,
 };
 
 impl<B: Backend> Runner<'_, B> {
@@ -12,9 +12,9 @@ impl<B: Backend> Runner<'_, B> {
         &mut self,
         task: &Value,
         layer: &ContextLayer,
-        scope: &Map<String, Value>,
-        item: &Value,
-    ) -> Result<Value> {
+        scope: &TrackedValue,
+        item: &TrackedValue,
+    ) -> Result<TrackedValue> {
         let operation = task
             .get("operation")
             .filter(|v| !v.is_null())
@@ -29,20 +29,58 @@ impl<B: Backend> Runner<'_, B> {
                 params.insert(snake(key), value.clone());
             }
         }
-        self.backend.prepare_operation(kind, &mut params, scope)?;
-        let params = self.backend.evaluate(&Value::Object(params), scope)?;
-        let params = params
+        let mut source_sensitive = false;
+        if kind == "template"
+            && params.get("content").is_none_or(Value::is_null)
+            && let Some(source) = params.get("src")
+        {
+            let source = self.backend.evaluate_tracked(source, scope)?;
+            source_sensitive = source.is_secret();
+            params.insert("src".into(), source.value);
+        }
+        self.backend
+            .prepare_operation(
+                kind,
+                &mut params,
+                scope.value.as_object().context("scope must be an object")?,
+            )
+            .map_err(|e| {
+                if source_sensitive {
+                    anyhow::anyhow!("sensitive operation preparation failed")
+                } else {
+                    e
+                }
+            })?;
+        let tracked_params = self
+            .backend
+            .evaluate_tracked(&Value::Object(params), scope)?;
+        let mut sensitive = layer.no_log || source_sensitive || tracked_params.is_secret();
+        let params = tracked_params
+            .value
             .as_object()
             .context("operation parameters must evaluate to an object")?
             .clone();
-        crate::model::validate_operation(kind, &params)?;
+        crate::model::validate_operation(kind, &params).map_err(|e| {
+            if sensitive {
+                anyhow::anyhow!("sensitive operation validation failed")
+            } else {
+                e
+            }
+        })?;
+        let result_value = |value| {
+            if sensitive {
+                TrackedValue::secret(value)
+            } else {
+                TrackedValue::public(value)
+            }
+        };
         match kind {
             "pause" => {
                 if (matches!(self.options.mode, Mode::Check | Mode::Diff)
                     || task.get("checkMode").and_then(Value::as_bool) == Some(true))
                     && task.get("checkMode").and_then(Value::as_bool) != Some(false)
                 {
-                    return Ok(json!({"changed":false,"skipped":true}));
+                    return Ok(result_value(json!({"changed":false,"skipped":true})));
                 }
                 let seconds = params.get("seconds").and_then(Value::as_u64).unwrap_or(0);
                 let minutes = params.get("minutes").and_then(Value::as_u64).unwrap_or(0);
@@ -58,7 +96,7 @@ impl<B: Backend> Runner<'_, B> {
                         .and_then(Value::as_str)
                         .unwrap_or("Press Enter to continue");
                     self.backend
-                        .event(&json!({"host":self.host,"pause":if layer.no_log { "[censored]" } else { prompt }}))?;
+                        .event(&json!({"host":self.host,"pause":if layer.no_log || sensitive { "[censored]" } else { prompt }}))?;
                     if std::io::stdin().is_terminal() {
                         let _ = tokio::task::spawn_blocking(|| {
                             let mut line = String::new();
@@ -67,17 +105,17 @@ impl<B: Backend> Runner<'_, B> {
                         .await??;
                     }
                 }
-                return Ok(json!({"changed":false,"user_input":""}));
+                return Ok(result_value(json!({"changed":false,"user_input":""})));
             }
             "debug" => {
-                return Ok(
+                return Ok(result_value(
                     json!({"changed":false, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Hello world!"))}),
-                );
+                ));
             }
             "fail" => {
-                return Ok(
+                return Ok(result_value(
                     json!({"changed":false, "failed":true, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Failed as requested"))}),
-                );
+                ));
             }
             "assert" => {
                 let assertion = params.get("that").context("assert requires that")?;
@@ -85,39 +123,54 @@ impl<B: Backend> Runner<'_, B> {
                     Value::Array(values) => values.iter().all(truth),
                     value => truth(value),
                 };
-                return Ok(
+                return Ok(result_value(
                     json!({"changed":false,"failed":!pass,"msg":if pass { json!("All assertions passed") } else { params.get("fail_msg").cloned().unwrap_or_else(|| json!("Assertion failed")) }}),
-                );
+                ));
             }
             "set_fact" => {
                 let values = params
                     .get("values")
                     .and_then(Value::as_object)
                     .context("set_fact requires values")?;
-                self.scope
-                    .entry("setFacts")
-                    .or_insert_with(|| json!({}))
-                    .as_object_mut()
-                    .context("results scope is not an object")?
-                    .extend(values.clone());
-                return Ok(json!({"changed":false,"facts":values}));
+                let mut tracked_values = tracked_params
+                    .get("values")
+                    .context("set_fact requires values")?;
+                if layer.no_log {
+                    tracked_values.provenance = crate::expression::provenance::Provenance::Secret;
+                }
+                let mut facts = self
+                    .scope
+                    .get("setFacts")
+                    .unwrap_or_else(|| TrackedValue::public(json!({})));
+                for key in values.keys() {
+                    facts.insert(
+                        key.clone(),
+                        tracked_values.get(key).context("fact missing")?,
+                    )?;
+                }
+                self.scope.insert("setFacts".into(), facts)?;
+                return Ok(result_value(json!({"changed":false,"facts":values})));
             }
             _ => {}
         }
         let mut environment = std::collections::HashMap::new();
         for (key, value) in &layer.environment {
-            let value = self.backend.evaluate(value, scope)?;
+            let value = self.backend.evaluate_tracked(value, scope)?;
+            sensitive |= value.is_secret();
             environment.insert(
                 key.clone(),
                 value
+                    .value
                     .as_str()
                     .context("environment value must be a string")?
                     .to_owned(),
             );
         }
         let destination = if let Some(delegate) = task.get("delegateTo").filter(|v| !v.is_null()) {
-            self.backend
-                .evaluate(delegate, scope)?
+            let value = self.backend.evaluate_tracked(delegate, scope)?;
+            sensitive |= value.is_secret();
+            value
+                .value
                 .as_str()
                 .context("delegateTo must evaluate to a host name")?
                 .to_owned()
@@ -129,14 +182,17 @@ impl<B: Backend> Runner<'_, B> {
         let item_label = if layer.no_log {
             "[censored]".to_owned()
         } else if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
-            let value = self.backend.evaluate(label, scope)?;
+            let value = self.backend.evaluate_tracked(label, scope)?;
+            sensitive |= value.is_secret();
             value
+                .value
                 .as_str()
-                .map_or_else(|| value.to_string(), str::to_owned)
-        } else if item.is_null() {
+                .map_or_else(|| value.value.to_string(), str::to_owned)
+        } else if item.value.is_null() {
             String::new()
         } else {
-            item.to_string()
+            sensitive |= item.is_secret();
+            item.value.to_string()
         };
         let free_form = if kind == "shell" {
             params
@@ -162,7 +218,7 @@ impl<B: Backend> Runner<'_, B> {
                     source_content: None,
                 }],
                 check_mode_override: task.get("checkMode").and_then(Value::as_bool) == Some(false),
-                no_log: layer.no_log,
+                no_log: sensitive,
                 become_user: layer.become_user.clone().unwrap_or_default(),
                 environment,
                 halt_on_failure: true,
@@ -176,10 +232,14 @@ impl<B: Backend> Runner<'_, B> {
             let visible_params = if layer.no_log {
                 json!({"censored":true})
             } else {
-                Value::Object(params)
+                tracked_params.redacted()
             };
             self.backend.event(&json!({"host":request.host,"task":request.task.name,"module":kind,"params":visible_params,"planned":true}))?;
-            return Ok(json!({"changed":false,"planned":true}));
+            return Ok(if sensitive {
+                TrackedValue::secret(json!({"changed":false,"planned":true}))
+            } else {
+                TrackedValue::public(json!({"changed":false,"planned":true}))
+            });
         }
         let attempts = task
             .get("retries")
@@ -188,13 +248,27 @@ impl<B: Backend> Runner<'_, B> {
             .max(1);
         let mut result = Value::Null;
         for attempt in 0..attempts {
-            result = self.backend.execute(request.clone()).await?;
+            result = self.backend.execute(request.clone()).await.map_err(|e| {
+                if sensitive {
+                    anyhow::anyhow!("sensitive operation failed")
+                } else {
+                    e
+                }
+            })?;
             if !result.is_object() {
                 bail!("operation result must be an object");
             }
-            let result_scope = result_scope(scope, task, &result)?;
+            let result_scope = result_scope(
+                scope,
+                task,
+                &if sensitive {
+                    TrackedValue::secret(result.clone())
+                } else {
+                    TrackedValue::public(result.clone())
+                },
+            )?;
             let done = match task.get("until").filter(|v| !v.is_null()) {
-                Some(expr) => truth(&self.backend.evaluate(expr, &result_scope)?),
+                Some(expr) => truth(&self.backend.evaluate_tracked(expr, &result_scope)?.value),
                 None => !failed(&result),
             };
             if done {
@@ -212,6 +286,10 @@ impl<B: Backend> Runner<'_, B> {
                 .await;
             }
         }
-        Ok(result)
+        Ok(if sensitive {
+            TrackedValue::secret(result)
+        } else {
+            TrackedValue::public(result)
+        })
     }
 }

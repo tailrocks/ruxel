@@ -1,12 +1,12 @@
 use super::{
-    Backend, Context, ContextLayer, Future, Map, Pin, Result, Runner, Value, array, bail, failed,
-    flag, json, object, result_scope, string, truth,
+    Backend, Context, ContextLayer, Future, Map, Pin, Result, Runner, TrackedValue, Value, array,
+    bail, failed, flag, json, object, result_scope, string, truth,
 };
 
 impl<B: Backend> Runner<'_, B> {
     pub(super) fn extend_vars(
         &mut self,
-        vars: &mut Map<String, Value>,
+        vars: &mut std::collections::BTreeMap<String, TrackedValue>,
         incoming: &Map<String, Value>,
     ) -> Result<()> {
         let mut pending: Vec<_> = incoming.iter().collect();
@@ -22,7 +22,7 @@ impl<B: Backend> Runner<'_, B> {
                     },
                     None,
                 );
-                match self.backend.evaluate(value, &scope) {
+                match self.backend.evaluate_tracked(value, &scope) {
                     Ok(value) => {
                         vars.insert(key.clone(), value);
                     }
@@ -63,19 +63,32 @@ impl<B: Backend> Runner<'_, B> {
     pub(super) fn scope(
         &self,
         layer: &ContextLayer,
-        item: Option<(&str, &Value)>,
-    ) -> Map<String, Value> {
-        let mut scope = self.scope.clone();
+        item: Option<(&str, &TrackedValue)>,
+    ) -> TrackedValue {
+        let mut fields = std::collections::BTreeMap::new();
+        if let Some(existing) = self.scope.value.as_object() {
+            for key in existing.keys() {
+                if let Some(value) = self.scope.get(key) {
+                    fields.insert(key.clone(), value);
+                }
+            }
+        }
         let mut vars = layer.vars.clone();
-        if let Some(facts) = self.scope.get("setFacts").and_then(Value::as_object) {
-            vars.extend(facts.clone());
+        if let Some(facts) = self.scope.get("setFacts")
+            && let Some(map) = facts.value.as_object()
+        {
+            for key in map.keys() {
+                if let Some(value) = facts.get(key) {
+                    vars.insert(key.clone(), value);
+                }
+            }
         }
-        scope.insert("vars".into(), Value::Object(vars));
+        fields.insert("vars".into(), TrackedValue::object(vars));
         if let Some((name, value)) = item {
-            scope.insert(name.to_owned(), value.clone());
-            scope.insert("item".into(), value.clone());
+            fields.insert(name.to_owned(), value.clone());
+            fields.insert("item".into(), value.clone());
         }
-        scope
+        TrackedValue::object(fields)
     }
 
     pub(super) fn tasks<'a>(
@@ -112,7 +125,7 @@ impl<B: Backend> Runner<'_, B> {
             if !array(task, "block").is_empty() {
                 let scope = self.scope(&layer, None);
                 if let Some(condition) = task.get("when").filter(|v| !v.is_null())
-                    && !truth(&self.backend.evaluate(condition, &scope)?)
+                    && !truth(&self.backend.evaluate_tracked(condition, &scope)?.value)
                 {
                     self.recap.skipped += 1;
                     return Ok(true);
@@ -139,13 +152,16 @@ impl<B: Backend> Runner<'_, B> {
     pub(super) async fn operation(&mut self, task: &Value, layer: &ContextLayer) -> Result<bool> {
         let scope = self.scope(layer, None);
         let items = if let Some(expr) = task.get("loop").filter(|v| !v.is_null()) {
-            self.backend
-                .evaluate(expr, &scope)?
+            let value = self.backend.evaluate_tracked(expr, &scope)?;
+            let items = value
+                .value
                 .as_array()
-                .cloned()
-                .context("loop must evaluate to a list")?
+                .context("loop must evaluate to a list")?;
+            (0..items.len())
+                .map(|i| value.get(&i.to_string()).context("loop item missing"))
+                .collect::<Result<Vec<_>>>()?
         } else {
-            vec![Value::Null]
+            vec![TrackedValue::public(Value::Null)]
         };
         let looped = task.get("loop").is_some_and(|v| !v.is_null());
         let mut results = Vec::new();
@@ -155,52 +171,73 @@ impl<B: Backend> Runner<'_, B> {
                 looped.then_some((string(task, "loopVar").unwrap_or("item"), item)),
             );
             if let Some(condition) = task.get("when").filter(|v| !v.is_null())
-                && !truth(&self.backend.evaluate(condition, &scope)?)
+                && !truth(&self.backend.evaluate_tracked(condition, &scope)?.value)
             {
-                let mut skipped = json!({"skipped":true,"changed":false});
+                let mut skipped = TrackedValue::public(json!({"skipped":true,"changed":false}));
                 if looped {
-                    skipped["item"] = item.clone();
+                    skipped.insert("item".into(), item.clone())?;
                 }
                 results.push(skipped);
                 continue;
             }
             let mut result = self.execute(task, layer, &scope, item).await?;
-            if !result.is_object() {
+            if !result.value.is_object() {
                 bail!("operation result must be an object");
             }
             if looped {
-                result["item"] = item.clone();
+                result.insert("item".into(), item.clone())?;
             }
             let mut current_scope = result_scope(&scope, task, &result)?;
             if let Some(expr) = task.get("failedWhen").filter(|v| !v.is_null()) {
-                result["failed"] =
-                    Value::Bool(truth(&self.backend.evaluate(expr, &current_scope)?));
+                let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
+                result.insert(
+                    "failed".into(),
+                    if condition.is_secret() {
+                        TrackedValue::secret(Value::Bool(truth(&condition.value)))
+                    } else {
+                        TrackedValue::public(Value::Bool(truth(&condition.value)))
+                    },
+                )?;
             }
             if let Some(expr) = task.get("changedWhen").filter(|v| !v.is_null()) {
                 current_scope = result_scope(&scope, task, &result)?;
-                result["changed"] =
-                    Value::Bool(truth(&self.backend.evaluate(expr, &current_scope)?));
+                let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
+                result.insert(
+                    "changed".into(),
+                    if condition.is_secret() {
+                        TrackedValue::secret(Value::Bool(truth(&condition.value)))
+                    } else {
+                        TrackedValue::public(Value::Bool(truth(&condition.value)))
+                    },
+                )?;
             }
             results.push(result);
         }
         let result = if looped {
-            json!({"changed":results.iter().any(|v| flag(v,"changed")), "failed":results.iter().any(failed), "skipped":results.iter().all(|v| flag(v,"skipped")), "results":results})
+            let sensitive = results.iter().any(TrackedValue::is_secret);
+            let result = json!({"changed":results.iter().any(|v| flag(&v.value,"changed")), "failed":results.iter().any(|v| failed(&v.value)), "skipped":results.iter().all(|v| flag(&v.value,"skipped")), "results":results.into_iter().map(|v| v.value).collect::<Vec<_>>()});
+            if sensitive {
+                TrackedValue::secret(result)
+            } else {
+                TrackedValue::public(result)
+            }
         } else {
             results
                 .into_iter()
                 .next()
-                .unwrap_or_else(|| json!({"skipped":true,"changed":false}))
+                .unwrap_or_else(|| TrackedValue::public(json!({"skipped":true,"changed":false})))
         };
         if let Some(name) = string(task, "register") {
-            let results = self.scope.entry("results").or_insert_with(|| json!({}));
-            results
-                .as_object_mut()
-                .context("results scope is not an object")?
-                .insert(name.to_owned(), result.clone());
+            let mut results = self
+                .scope
+                .get("results")
+                .unwrap_or_else(|| TrackedValue::public(json!({})));
+            results.insert(name.to_owned(), result.clone())?;
+            self.scope.insert("results".into(), results)?;
         }
-        let is_failed = failed(&result);
+        let is_failed = failed(&result.value);
         let ignored = is_failed && flag(task, "ignoreErrors");
-        if flag(&result, "skipped") {
+        if flag(&result.value, "skipped") {
             self.recap.skipped += 1;
         } else if is_failed && !ignored {
             self.recap.failed += 1;
@@ -210,7 +247,7 @@ impl<B: Backend> Runner<'_, B> {
                 self.recap.ignored += 1;
             }
         }
-        if flag(&result, "changed") {
+        if flag(&result.value, "changed") {
             self.recap.changed += 1;
             if !is_failed {
                 self.notified.extend(
@@ -221,10 +258,10 @@ impl<B: Backend> Runner<'_, B> {
                 );
             }
         }
-        let visible = if layer.no_log {
-            json!({"censored":true,"changed":flag(&result,"changed"),"failed":is_failed})
+        let visible = if layer.no_log || result.is_secret() {
+            json!({"censored":true,"changed":flag(&result.value,"changed"),"failed":is_failed})
         } else {
-            result
+            result.value
         };
         self.backend.event(
             &json!({"host":self.host,"task":string(task,"name").unwrap_or(""),"result":visible}),

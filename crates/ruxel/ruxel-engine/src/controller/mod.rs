@@ -4,6 +4,7 @@
 //! per-host scope and issues one iteration at a time so that later expressions
 //! can observe prior results.
 
+use crate::expression::provenance::TrackedValue;
 use anyhow::{Context, Result, bail};
 use ruxel_proto::v1;
 use serde_json::{Map, Value, json};
@@ -115,7 +116,7 @@ impl Default for Options {
 
 #[derive(Clone, Default)]
 struct ContextLayer {
-    vars: Map<String, Value>,
+    vars: BTreeMap<String, TrackedValue>,
     environment: Map<String, Value>,
     become_user: Option<String>,
     tags: Vec<String>,
@@ -126,7 +127,7 @@ struct Runner<'a, B> {
     backend: &'a mut B,
     options: &'a Options,
     host: String,
-    scope: Map<String, Value>,
+    scope: TrackedValue,
     handlers: Vec<Value>,
     notified: BTreeSet<String>,
     handling: bool,
@@ -179,19 +180,15 @@ fn snake(name: &str) -> String {
     out
 }
 
-fn result_scope(
-    scope: &Map<String, Value>,
-    task: &Value,
-    result: &Value,
-) -> Result<Map<String, Value>> {
+fn result_scope(scope: &TrackedValue, task: &Value, result: &TrackedValue) -> Result<TrackedValue> {
     let mut next = scope.clone();
-    next.insert("result".into(), result.clone());
+    next.insert("result".into(), result.clone())?;
     if let Some(name) = string(task, "register") {
-        next.entry("results")
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-            .context("results scope is not an object")?
-            .insert(name.to_owned(), result.clone());
+        let mut results = next
+            .get("results")
+            .unwrap_or_else(|| TrackedValue::public(json!({})));
+        results.insert(name.to_owned(), result.clone())?;
+        next.insert("results".into(), results)?;
     }
     Ok(next)
 }
@@ -267,7 +264,7 @@ pub async fn run<B: Backend>(
                 backend,
                 options,
                 host: host.clone(),
-                scope,
+                scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
                 notified: BTreeSet::new(),
                 handling: false,
