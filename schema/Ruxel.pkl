@@ -43,7 +43,7 @@ class Play {
 }
 class Task {
   name: String
-  operation: Operation?(this != null && block.isEmpty && rescue.isEmpty && always.isEmpty || this == null && !block.isEmpty) = null
+  operation: Operation?(this != null && block.isEmpty && rescue.isEmpty && always.isEmpty || this == null && !block.isEmpty && `loop` == null && loopLabel == null && loopVar == "item") = null
   `when`: Expr? = null
   `loop`: Expr? = null
   loopVar: String(!List("vars", "variables", "facts", "results", "inventoryHost", "setFacts").contains(this)) = "item"

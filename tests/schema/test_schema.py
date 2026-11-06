@@ -66,6 +66,16 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["value"]["values"]["answer"]["value"], 42)
 
+    def test_blocks_reject_loop_controls(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        child = 'new R.Task { name = "child"; operation = new R.Debug {} }'
+        for control in ('`loop` = new R.ListExpr {}', 'loopLabel = new R.Literal { value = "label" }', 'loopVar = "entry"'):
+            with self.subTest(control=control):
+                task = f'new R.Task {{ name = "block"; {control}; block {{ {child} }} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+        task = 'new R.Task { name = "operation"; `loop` = new R.ListExpr {}; loopVar = "entry"; loopLabel = new R.Literal { value = "label" }; operation = new R.Debug {} }'
+        self.assertEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [

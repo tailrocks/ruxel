@@ -72,3 +72,22 @@ fn set_fact_requires_values_mapping() {
         .is_ok()
     );
 }
+
+#[test]
+fn blocks_reject_loop_controls() {
+    let child = json!({"name":"child", "operation":{"kind":"debug"}});
+    for (field, control) in [
+        ("loop", json!({"kind":"list", "items":[]})),
+        ("loopVar", json!("entry")),
+        ("loopLabel", json!({"kind":"literal", "value":"label"})),
+    ] {
+        let mut value = config(json!({"kind":"debug"}));
+        value["plays"][0]["tasks"][0]["operation"] = Value::Null;
+        value["plays"][0]["tasks"][0]["block"] = json!([child.clone()]);
+        value["plays"][0]["tasks"][0][field] = control.clone();
+        assert!(validate_config(&value).is_err(), "block with {field}");
+        value["plays"][0]["tasks"][0]["operation"] = json!({"kind":"debug"});
+        value["plays"][0]["tasks"][0]["block"] = json!([]);
+        assert!(validate_config(&value).is_ok(), "operation with {field}");
+    }
+}

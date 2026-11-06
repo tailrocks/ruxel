@@ -135,6 +135,13 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             ),
             "loop variable shadows a reserved scope root"
         );
+        ensure!(
+            task.block.is_empty()
+                || (task.loop_expr.is_none()
+                    && task.loop_label.is_none()
+                    && task.loop_var == "item"),
+            "loop controls require an operation task"
+        );
         ensure!(task.retries >= 1, "retries must be positive");
         if let Some(destination) = &task.delegate_to {
             if destination.is_object() {
