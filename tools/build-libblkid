@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+version=2.41.6
+source_sha256=e596083744e746be7d2823b62b43f4418dd7bf56303b4dc09e6fe8112fe3d7ed
+image=alpine:3.23@sha256:f3d55900449227ae9e237ede521e7b665d53a253b42065ba90b9db9275e198ad
+mode=musl
+if test "${1:-}" = --native; then mode=native; shift; fi
+if test -n "${XDG_CACHE_HOME:-}"; then
+    cache_root=$XDG_CACHE_HOME
+elif test "$(uname -s)" = Darwin; then
+    cache_root="$HOME/Library/Caches"
+else
+    cache_root="$HOME/.cache"
+fi
+if test "$mode" = native; then
+    test "$(uname -s)" = Linux || { echo 'Native libblkid builds require Linux.' >&2; exit 1; }
+    target="native-$(uname -m)-$(getconf GNU_LIBC_VERSION 2>/dev/null || echo musl)"
+    target=${target// /-}
+else
+    target=x86_64-unknown-linux-musl
+fi
+output="$cache_root/ruxel/native/libblkid/$version/$target"
+worker="$repo_root/tools/build-libblkid-source"
+die() { printf '%s\n' "$*" >&2; exit 1; }
+checksum() {
+    if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+recipe=$(checksum "${BASH_SOURCE[0]}"); recipe=${recipe%% *}
+worker_recipe=$(checksum "$worker"); worker_recipe=${worker_recipe%% *}
+recipe="$recipe:$worker_recipe"
+mkdir -p "$output"
+valid_cache() {
+    test -f "$output/recipe.sha256" && test "$(cat "$output/recipe.sha256")" = "$recipe" &&
+        (cd "$output" && checksum -c artifacts.sha256 >/dev/null 2>&1)
+}
+if ! valid_cache; then
+    for ((attempt = 0; attempt < 60; attempt++)); do
+        if mkdir "$output/build.lock" 2>/dev/null; then break; fi
+        sleep 1
+    done
+    test "$attempt" -lt 60 || die 'Another native dependency build holds the cache lock; retry after it finishes.'
+    trap 'rmdir "$output/build.lock"' EXIT
+    if ! valid_cache; then
+        rm -f "$output/recipe.sha256"
+        if test "$mode" = native; then
+            for tool in cc make pkg-config tar; do command -v "$tool" >/dev/null || die "Missing native build tool: $tool"; done
+            env -u PKG_CONFIG -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+                -u PKG_CONFIG_ALL_STATIC -u C_INCLUDE_PATH \
+                sh "$worker" "$output" "$version" "$source_sha256" no >&2
+        else
+            command -v docker >/dev/null || die 'Install Docker through Homebrew or mise and start its local Linux engine.'
+            if test -n "${DOCKER_CONTEXT:-}"; then
+                endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
+            else
+                endpoint=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
+            fi
+            case "$endpoint" in unix://*) ;; *) die 'Native dependency builds require a local Docker Unix socket.' ;; esac
+            env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host "$endpoint" run --rm --interactive --platform linux/amd64 \
+                --mount "type=bind,source=$output,target=/build" \
+                --mount "type=bind,source=$worker,target=/recipe/build-source,readonly" \
+                "$image" sh -c 'apk add --no-cache build-base linux-headers xz pkgconf >/build/packages.log 2>&1 && sh /recipe/build-source /build "$1" "$2" yes' \
+                sh "$version" "$source_sha256" >&2
+        fi
+        printf '%s\n' "$recipe" >"$output/recipe.sha256"
+    fi
+    rmdir "$output/build.lock"
+    trap - EXIT
+fi
+command -v pkg-config >/dev/null || die 'Install pkgconf through Homebrew or mise.'
+if test "$mode" = musl; then
+    export PKG_CONFIG_SYSROOT_DIR="$output/sysroot"
+    export PKG_CONFIG_LIBDIR="$output/sysroot/usr/lib/pkgconfig"
+    unset PKG_CONFIG_PATH
+    export PKG_CONFIG_ALLOW_CROSS=1
+    export PKG_CONFIG_ALL_STATIC=1
+    export CFLAGS_x86_64_unknown_linux_musl="-I$output/sysroot/usr/include"
+    export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$output/sysroot --target=x86_64-unknown-linux-musl -I$output/sysroot/usr/include"
+    if test "$(uname -s)" = Darwin; then
+        export LIBCLANG_PATH="${LIBCLANG_PATH:-$(dirname "$(xcrun --find clang)")/../lib}"
+    fi
+else
+    export PKG_CONFIG_PATH="$output/sysroot/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+fi
+pkg-config --exact-version="$version" blkid || die 'Unexpected libblkid version in the build sysroot.'
+case "${1:-}" in
+    --sysroot) printf '%s\n' "$output/sysroot" ;;
+    --print-env)
+        for name in PKG_CONFIG_ALLOW_CROSS PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR PKG_CONFIG_PATH PKG_CONFIG_ALL_STATIC \
+            CFLAGS_x86_64_unknown_linux_musl BINDGEN_EXTRA_CLANG_ARGS LIBCLANG_PATH; do
+            if test -n "${!name:-}"; then printf 'export %s=%q\n' "$name" "${!name}"; fi
+        done
+        ;;
+    --) shift; test "$#" -gt 0 || die 'Expected a command after --.'; exec "$@" ;;
+    '') printf 'libblkid %s sysroot ready: %s\n' "$version" "$output/sysroot" ;;
+    *) die 'Usage: tools/build-libblkid [--native] [--sysroot | --print-env | -- command args...]' ;;
+esac

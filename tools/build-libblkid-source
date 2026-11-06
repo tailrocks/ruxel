@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+output=$1
+version=$2
+source_sha256=$3
+copy_system_headers=$4
+cd "$output"
+archive="util-linux-$version.tar.xz"
+checksum() {
+    if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+if ! test -f "$archive" || ! echo "$source_sha256  $archive" | checksum -c - >/dev/null 2>&1; then
+    url="https://www.kernel.org/pub/linux/utils/util-linux/v${version%.*}/$archive"
+    if command -v curl >/dev/null; then
+        curl --fail --silent --show-error --location --proto '=https' -o "$archive.new" "$url"
+    else
+        wget -q -O "$archive.new" "$url"
+    fi
+    echo "$source_sha256  $archive.new" | checksum -c -
+    mv "$archive.new" "$archive"
+fi
+echo "$source_sha256  $archive" | checksum -c -
+rm -rf "util-linux-$version" sysroot
+tar -xf "$archive"
+cc --version >compiler.txt
+if command -v apk >/dev/null; then
+    apk info -v >packages.txt
+elif command -v dpkg-query >/dev/null; then
+    dpkg-query -W gcc make libc6-dev >packages.txt
+fi
+cd "util-linux-$version"
+./configure --prefix=/usr --disable-all-programs --enable-libblkid \
+    --disable-shared --enable-static --disable-nls --disable-asciidoc \
+    --without-econf --without-python >../configure.log 2>&1
+make -j8 libblkid.la libblkid/blkid.pc >../build.log 2>&1
+mkdir -p ../sysroot/usr/lib/pkgconfig ../sysroot/usr/include/blkid ../sysroot/usr/share/licenses/libblkid
+if test "$copy_system_headers" = yes; then cp -R /usr/include ../sysroot/usr/; fi
+cp libblkid/src/blkid.h ../sysroot/usr/include/blkid/blkid.h
+cp .libs/libblkid.a ../sysroot/usr/lib/
+cp libblkid/blkid.pc ../sysroot/usr/lib/pkgconfig/
+if test "$copy_system_headers" = no; then
+    sed "s|=/usr|=$output/sysroot/usr|g" ../sysroot/usr/lib/pkgconfig/blkid.pc >../sysroot/usr/lib/pkgconfig/blkid.pc.new
+    mv ../sysroot/usr/lib/pkgconfig/blkid.pc.new ../sysroot/usr/lib/pkgconfig/blkid.pc
+fi
+cp libblkid/COPYING Documentation/licenses/COPYING.LGPL-2.1-or-later ../sysroot/usr/share/licenses/libblkid/
+cd ..
+PKG_CONFIG_LIBDIR="$output/sysroot/usr/lib/pkgconfig" pkg-config --exact-version="$version" blkid
+printf 'source=https://www.kernel.org/pub/linux/utils/util-linux/v%s/%s\nsha256=%s\nlicense=LGPL-2.1-or-later\n' \
+    "${version%.*}" "$archive" "$source_sha256" >provenance.txt
+find sysroot -type f -exec sha256sum {} + >artifacts.sha256
+checksum "$archive" >>artifacts.sha256

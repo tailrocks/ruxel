@@ -1,0 +1,11 @@
+The Linux ruxel-agent uses libblkid from util-linux 2.41.6.
+Upstream: https://www.kernel.org/pub/linux/utils/util-linux/v2.41/util-linux-2.41.6.tar.xz
+Source SHA-256: e596083744e746be7d2823b62b43f4418dd7bf56303b4dc09e6fe8112fe3d7ed
+
+libblkid is free software under GNU Lesser General Public License version 2.1
+or, at your option, any later version. Its use and redistribution are covered
+by that license. The complete license text accompanies this notice in
+LGPL-2.1-or-later.txt. The original source contains the individual authors'
+copyright notices and libblkid/COPYING.
+
+See docs/building-libblkid.md for source distribution and relinking instructions.
