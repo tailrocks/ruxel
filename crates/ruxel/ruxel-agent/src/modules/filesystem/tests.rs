@@ -67,12 +67,6 @@ fn blank_and_filesystem_are_the_only_accepted_probe_states() {
 }
 
 #[test]
-fn refuses_xfs_growth_in_check_and_apply() {
-    assert!(super::ensure_safe_resize("xfs").is_err());
-    assert!(super::ensure_safe_resize("ext4").is_ok());
-}
-
-#[test]
 fn predicts_resize_from_geometry() {
     assert!(!super::has_growth_space(4096 * 100, 4096, 100));
     assert!(super::has_growth_space(4096 * 101, 4096, 100));

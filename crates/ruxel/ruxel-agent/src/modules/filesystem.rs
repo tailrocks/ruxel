@@ -3,6 +3,9 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
+#[cfg(target_os = "linux")]
+mod xfs;
+
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -24,10 +27,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     match current.as_deref() {
         Some(t) if t == fstype => {
             if resizefs {
-                ensure_safe_resize(fstype)?;
                 #[cfg(target_os = "linux")]
                 {
-                    if ctx.check_mode {
+                    if fstype == "xfs" {
+                        let mount = xfs::prepare(&file)?;
+                        changed |= xfs::resize(&file, &mount, ctx.check_mode)?;
+                    } else if ctx.check_mode {
                         changed |= can_grow(&file, fstype)?;
                     } else {
                         changed |= grow(&file, fstype)?;
@@ -67,6 +72,8 @@ pub(super) struct ResizeTarget {
     file: std::fs::File,
     #[cfg(target_os = "linux")]
     fstype: String,
+    #[cfg(target_os = "linux")]
+    mount: Option<std::fs::File>,
 }
 
 pub(super) fn prepare_resize(dev: &str) -> Result<ResizeTarget, String> {
@@ -75,8 +82,16 @@ pub(super) fn prepare_resize(dev: &str) -> Result<ResizeTarget, String> {
         let file = open_locked_device(dev)?;
         let fstype = probe_file(&file)?.ok_or("filesystem: no filesystem to resize")?;
         mkfs_program(&fstype)?;
-        ensure_safe_resize(&fstype)?;
-        Ok(ResizeTarget { file, fstype })
+        let mount = if fstype == "xfs" {
+            Some(xfs::prepare(&file)?)
+        } else {
+            None
+        };
+        Ok(ResizeTarget {
+            file,
+            fstype,
+            mount,
+        })
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -90,8 +105,9 @@ pub(super) fn resize_existing(target: &ResizeTarget, ctx: &ExecContext) -> Resul
     {
         let current = probe_file(&target.file)?;
         check_resize_signature(&target.fstype, current.as_deref())?;
-        ensure_safe_resize(&target.fstype)?;
-        if ctx.check_mode {
+        if let Some(mount) = &target.mount {
+            xfs::resize(&target.file, mount, ctx.check_mode)
+        } else if ctx.check_mode {
             can_grow(&target.file, &target.fstype)
         } else {
             grow(&target.file, &target.fstype)
@@ -108,16 +124,6 @@ pub(super) fn resize_existing(target: &ResizeTarget, ctx: &ExecContext) -> Resul
 fn check_resize_signature(expected: &str, current: Option<&str>) -> Result<(), String> {
     if current != Some(expected) {
         return Err("filesystem: filesystem changed before resize".into());
-    }
-    Ok(())
-}
-
-pub(super) fn ensure_safe_resize(fstype: &str) -> Result<(), String> {
-    if fstype == "xfs" {
-        return Err(
-            "filesystem: XFS resize unavailable because xfs_growfs reopens a mutable mount path"
-                .into(),
-        );
     }
     Ok(())
 }
