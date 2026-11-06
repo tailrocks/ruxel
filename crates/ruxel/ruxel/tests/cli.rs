@@ -76,3 +76,18 @@ fn unwritable_stdout_is_internal_error() -> Result<(), Box<dyn std::error::Error
     assert_eq!(output.status.code(), Some(1));
     Ok(())
 }
+
+#[test]
+fn execution_rejects_untyped_output_as_config_error() -> Result<(), Box<dyn std::error::Error>> {
+    let root = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../ruxel-config/testdata/eval/minimal.pkl"
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+        .args(["plan", root])
+        .output()?;
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8(output.stderr)?.contains("invalid configuration shape"));
+    Ok(())
+}

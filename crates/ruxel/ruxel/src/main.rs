@@ -54,6 +54,15 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
             return ExitCode::Config;
         }
     };
+    let value = match ruxel_engine::model::validate_config(&value) {
+        Ok(value) => value,
+        Err(error) => {
+            if writeln!(std::io::stderr().lock(), "{error}").is_err() {
+                return ExitCode::Internal;
+            }
+            return ExitCode::Config;
+        }
+    };
     let options = ruxel_engine::controller::Options {
         mode,
         hosts: args.hosts,
