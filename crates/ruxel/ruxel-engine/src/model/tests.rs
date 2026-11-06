@@ -74,3 +74,29 @@ fn rejects_ssh_option_injection_before_transport() {
     value["inventory"]["hosts"]["synthetic"]["user"] = json!("bad user");
     assert!(validate_config(&value).is_err());
 }
+
+#[test]
+fn unsupported_surface_fields_are_rejected_before_execution() -> anyhow::Result<()> {
+    for (kind, value) in [
+        ("command", json!({"cmd":"fixture", "removes":"fixture"})),
+        ("shell", json!({"cmd":"fixture", "removes":"fixture"})),
+        (
+            "community.general.timezone",
+            json!({"name":"UTC", "state":"present"}),
+        ),
+        (
+            "community.postgresql.postgresql_db",
+            json!({"name":"fixture", "login_db":"fixture"}),
+        ),
+        (
+            "community.postgresql.postgresql_user",
+            json!({"name":"fixture", "login_db":"fixture"}),
+        ),
+    ] {
+        let params = value
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("fixture operation params"))?;
+        assert!(validate_operation(kind, params).is_err(), "{kind}");
+    }
+    Ok(())
+}

@@ -39,7 +39,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "chdir" => false, FieldType::Text;
         "cmd" => false, FieldType::Text;
         "creates" => false, FieldType::Text;
-        "removes" => false, FieldType::Text;
     ),
     operation!("copy";
         "content" => false, FieldType::Text;
@@ -108,7 +107,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "cmd" => true, FieldType::Text;
         "creates" => false, FieldType::Text;
         "executable" => false, FieldType::Text;
-        "removes" => false, FieldType::Text;
     ),
     operation!("slurp";
         "src" => true, FieldType::Text;
@@ -157,7 +155,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
     ),
     operation!("community.general.timezone";
         "name" => true, FieldType::Text;
-        "state" => false, FieldType::Text;
     ),
     operation!("ansible.posix.mount";
         "fstype" => true, FieldType::Text;
@@ -167,7 +164,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["mounted"]);
     ),
     operation!("community.postgresql.postgresql_db";
-        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;
@@ -175,7 +171,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["present"]);
     ),
     operation!("community.postgresql.postgresql_user";
-        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;
