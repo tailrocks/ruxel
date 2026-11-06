@@ -4,7 +4,14 @@ use super::*;
 async fn child_group_variables_override_parents_regardless_of_names() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{"a-child":{"hosts":["h"],"vars":{"value":{"kind":"literal","value":"child"}}},"z-parent":{"children":["a-child"],"vars":{"value":{"kind":"literal","value":"parent"}}}}},"plays":[{"targets":["all"],"tasks":[{"name":"test","operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","value"]}}}]}]});
     let mut backend = Fake::default();
-    run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
     let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
     assert_eq!(params["cmd"], "child");
     Ok(())
@@ -19,7 +26,14 @@ async fn plan_counts_selected_operations_without_evaluating_them() -> Result<()>
         tags: vec!["chosen".into()],
         ..Options::default()
     };
-    let recaps = run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+    let recaps = run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
     assert_eq!(recaps["h"].planned, 3);
     assert_eq!(recaps["h"].changed, 0);
     assert_eq!(backend.calls.len(), 0);
@@ -42,7 +56,14 @@ async fn task_check_mode_override_is_forwarded_for_check_and_diff() -> Result<()
             ..Options::default()
         };
         let mut backend = Fake::default();
-        run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+        run(
+            &config,
+            &BTreeMap::new(),
+            &options,
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await?;
         assert!(backend.calls.iter().all(|call| call.task.force_check_mode));
         assert!(!backend.calls[0].task.check_mode_override);
         assert!(!backend.calls[1].task.check_mode_override);

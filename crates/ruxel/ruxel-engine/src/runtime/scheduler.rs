@@ -12,6 +12,7 @@ pub(super) async fn run_plays(
     execution: &Execution,
 ) -> Result<BTreeMap<String, Recap>> {
     let mut totals: BTreeMap<String, Recap> = BTreeMap::new();
+    let mut set_facts = BTreeMap::new();
     for play in config
         .get("plays")
         .and_then(Value::as_array)
@@ -24,14 +25,20 @@ pub(super) async fn run_plays(
             .filter(|host| totals.get(host).is_none_or(|recap| recap.failed == 0))
             .collect();
         let runs = hosts.into_iter().map(|host| {
+            let mut host_facts = BTreeMap::new();
+            if let Some(facts) = set_facts.remove(&host) {
+                host_facts.insert(host.clone(), facts);
+            }
             let mut backend = execution.clone();
             let mut options = options.clone();
             options.hosts = vec![host.clone()];
             let config = &play_config;
             async move {
-                controller::run(config, facts, &options, &mut backend)
-                    .await
-                    .map_err(|error| anyhow::anyhow!("{host}: {error}"))
+                let result =
+                    controller::run(config, facts, &options, &mut backend, &mut host_facts)
+                        .await
+                        .map_err(|error| anyhow::anyhow!("{host}: {error}"));
+                (result, host_facts)
             }
         });
         // Collect every result before returning an error so sibling work cannot be cancelled halfway.
@@ -40,7 +47,8 @@ pub(super) async fn run_plays(
             .collect()
             .await;
         let mut errors = Vec::new();
-        for result in completed {
+        for (result, host_facts) in completed {
+            set_facts.extend(host_facts);
             match result {
                 Err(failure) => {
                     errors.push(failure.to_string());

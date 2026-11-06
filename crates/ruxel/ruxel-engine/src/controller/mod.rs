@@ -233,7 +233,8 @@ fn result_scope(scope: &TrackedValue, task: &Value, result: &TrackedValue) -> Re
 }
 
 /// Expand explicit host and group targets and execute each play in order.
-/// Facts are supplied by the caller, keyed by inventory host name.
+/// Facts are supplied by the caller, keyed by inventory host name. Set facts
+/// persist across plays through `set_facts`, including their provenance.
 ///
 /// # Errors
 /// Returns an error if inventory, expression evaluation, or execution fails.
@@ -246,6 +247,7 @@ pub async fn run<B: Backend>(
     facts: &BTreeMap<String, Value>,
     options: &Options,
     backend: &mut B,
+    set_facts: &mut BTreeMap<String, TrackedValue>,
 ) -> Result<BTreeMap<String, Recap>> {
     // Validate every target before the first backend call.
     selected_hosts(config, options)?;
@@ -310,6 +312,9 @@ pub async fn run<B: Backend>(
                 recap: Recap::default(),
                 next_id: 1,
             };
+            if let Some(persisted) = set_facts.get(&host) {
+                runner.scope.insert("setFacts".into(), persisted.clone())?;
+            }
             let mut layer = ContextLayer::default();
             for name in ordered_groups(&groups)? {
                 if group_hosts(&name, &groups, &mut BTreeSet::new())?.contains(&host) {
@@ -329,6 +334,9 @@ pub async fn run<B: Backend>(
                 && runner.tasks(array(play, "tasks"), &layer).await?;
             if success {
                 runner.run_handlers(&layer).await?;
+            }
+            if let Some(persisted) = runner.scope.get("setFacts") {
+                set_facts.insert(host.clone(), persisted);
             }
             let recap = totals.entry(host).or_insert_with(Recap::default);
             recap.ok += runner.recap.ok;
