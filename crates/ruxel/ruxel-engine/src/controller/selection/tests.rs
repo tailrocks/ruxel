@@ -30,6 +30,6 @@ fn wildcard_play_target_and_disjoint_filter_are_checked() -> Result<()> {
         hosts: vec!["db".into()],
         ..Options::default()
     };
-    assert!(selected_hosts(&config, &options)?.is_empty());
+    assert_eq!(selected_hosts(&config, &options)?, Vec::<String>::new());
     Ok(())
 }

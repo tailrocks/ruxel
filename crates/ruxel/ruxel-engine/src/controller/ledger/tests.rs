@@ -38,6 +38,6 @@ fn key_is_stable_for_reordered_maps_and_tracks_inputs() -> Result<()> {
 fn no_log_never_produces_a_key() -> Result<()> {
     let mut task = task();
     task.no_log = true;
-    assert!(ledger_key(&task, &iteration(b"secret"))?.is_empty());
+    assert_eq!(ledger_key(&task, &iteration(b"secret"))?, "");
     Ok(())
 }

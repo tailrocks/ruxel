@@ -65,6 +65,7 @@ pub struct Recap {
     pub skipped: u64,
     pub rescued: u64,
     pub ignored: u64,
+    pub planned: u64,
 }
 
 /// Options for a run. `hosts` restricts the play's targets when nonempty.
@@ -167,34 +168,15 @@ fn result_scope(
     Ok(next)
 }
 
-fn visible_plan(task: &Value) -> Value {
-    if flag(task, "noLog") {
-        return json!({"name":string(task,"name"),"noLog":true,"censored":true});
-    }
-    let mut visible = task.clone();
-    for key in ["block", "rescue", "always"] {
-        if let Some(children) = visible.get_mut(key).and_then(Value::as_array_mut) {
-            for child in children {
-                *child = visible_plan(child);
-            }
-        }
-    }
-    visible
-}
-
-fn plan_tasks<B: Backend>(backend: &mut B, host: &str, tasks: &[Value], phase: &str) -> Result<()> {
-    for task in tasks {
-        backend
-            .event(&json!({"host":host,"phase":phase,"planned":true,"task":visible_plan(task)}))?;
-    }
-    Ok(())
-}
-
 /// Expand explicit host and group targets and execute each play in order.
 /// Facts are supplied by the caller, keyed by inventory host name.
 ///
 /// # Errors
 /// Returns an error if inventory, expression evaluation, or execution fails.
+#[expect(
+    clippy::too_many_lines,
+    reason = "host execution preserves play order and shared scope"
+)]
 pub async fn run<B: Backend>(
     config: &Value,
     facts: &BTreeMap<String, Value>,
@@ -222,10 +204,29 @@ pub async fn run<B: Backend>(
                 continue;
             }
             if options.mode == Mode::Plan {
-                plan_tasks(backend, &host, array(play, "preTasks"), "preTask")?;
-                plan_tasks(backend, &host, array(play, "tasks"), "task")?;
-                plan_tasks(backend, &host, array(play, "handlers"), "handler")?;
-                totals.entry(host).or_insert_with(Recap::default);
+                let inherited: Vec<String> = array(play, "tags")
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                let mut planned = plan::plan_tasks(
+                    backend,
+                    &host,
+                    array(play, "preTasks"),
+                    "preTask",
+                    &options.tags,
+                    &inherited,
+                )?;
+                planned += plan::plan_tasks(
+                    backend,
+                    &host,
+                    array(play, "tasks"),
+                    "task",
+                    &options.tags,
+                    &inherited,
+                )?;
+                plan::plan_handlers(backend, &host, array(play, "handlers"))?;
+                totals.entry(host).or_insert_with(Recap::default).planned += planned;
                 continue;
             }
             let mut scope = Map::new();
@@ -283,6 +284,7 @@ pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
 mod operation;
+mod plan;
 mod runner;
 
 #[cfg(test)]
