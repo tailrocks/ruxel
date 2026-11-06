@@ -143,7 +143,7 @@ fn find_mount(mounts: &str, path: &str) -> Option<Mounted> {
                 options: fields[3].into(),
             })
         })
-        .last()
+        .next_back()
 }
 
 fn resolve_source(src: &str) -> Result<String, String> {
@@ -177,11 +177,15 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
         return MountAction::Replace;
     }
     let actual_opts: Vec<_> = current.options.split(',').collect();
-    let mut flags: [Option<bool>; 5] = [None; 5];
+    let mut flags: [Option<bool>; 5] = if opts.split(',').any(|option| option == "defaults") {
+        [Some(true); 5]
+    } else {
+        [None; 5]
+    };
     let mut other_drift = false;
     for option in opts.split(',') {
         match option {
-            "defaults" => flags = [Some(true); 5],
+            "defaults" => {}
             "rw" => flags[0] = Some(true),
             "ro" => flags[0] = Some(false),
             "suid" => flags[1] = Some(true),
@@ -269,7 +273,7 @@ mod tests {
         );
         assert_eq!(
             mount_action(restricted.as_ref(), "/dev/a", "xfs", "noexec,defaults"),
-            MountAction::Remount
+            MountAction::None
         );
         assert_eq!(
             mount_action(current.as_ref(), "/dev/b", "xfs", "rw"),
