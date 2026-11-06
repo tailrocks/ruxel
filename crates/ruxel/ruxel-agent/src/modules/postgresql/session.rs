@@ -85,10 +85,14 @@ impl PsqlSession {
             args.push(user);
         }
         let database_arg = key.database.as_ref().map(|database| {
-            format!(
-                "dbname='{}'",
-                database.replace('\\', "\\\\").replace('\'', "\\'")
-            )
+            if database.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "dbname='{}'",
+                    database.replace('\\', "\\\\").replace('\'', "\\'")
+                )
+            }
         });
         if let Some(database) = &database_arg {
             args.push("-d");
