@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "schema/Ruxel.pkl"
 AGENT = ROOT / "crates/ruxel/ruxel-agent/src/modules/mod.rs"
 CONTROLLER = ROOT / "crates/ruxel/ruxel-engine/src/controller/operation.rs"
+CONTROLLER_LOCAL = ROOT / "crates/ruxel/ruxel-engine/src/controller/local.rs"
 
 
 def operation_kinds(source):
@@ -35,14 +36,26 @@ def operation_kinds(source):
     return set(kinds)
 
 
-def controller_kinds(source):
-    match = re.search(r"match kind\s*\{(.*?)\n\s*_\s*=>", source, re.S)
-    if not match:
-        raise ValueError("controller dispatch match not found")
-    kinds = set(re.findall(r'^\s*"([^"]+)"\s*=>', match.group(1), re.M))
-    if not kinds:
-        raise ValueError("controller dispatch contains no recognizable arms")
-    return kinds
+def controller_kinds(operation, local):
+    """Require admission, retry route, and actual local dispatch to agree."""
+    admission = re.findall(
+        r'if\s+matches!\s*\(\s*kind\s*,\s*((?:"[a-z_]+"\s*(?:\|\s*)?)+)\)'
+        r'\s*\{\s*return\s+self\s*\.\s*local_retry\s*\(', operation, re.S)
+    if len(admission) != 1:
+        raise ValueError("controller local admission route not found or ambiguous")
+    admitted_list = re.findall(r'"([a-z_]+)"', admission[0])
+    if not admitted_list or len(set(admitted_list)) != len(admitted_list):
+        raise ValueError("invalid controller local admission")
+    functions = re.search(r'async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>'
+                          r'.*?async\s+fn\s+local_retry\s*\(.*?\.\s*local_once\s*\(', local, re.S)
+    if not functions:
+        raise ValueError("controller local dispatch or retry route not found")
+    arms = re.findall(r'^\s*"([a-z_]+)"\s*=>', functions.group(1), re.M)
+    if not arms or len(set(arms)) != len(arms):
+        raise ValueError("invalid controller local dispatch")
+    if set(admitted_list) != set(arms):
+        raise ValueError("controller local admission/dispatch mismatch")
+    return set(arms)
 
 
 def dispatch_kinds(source):
@@ -79,7 +92,7 @@ def main():
         agent = AGENT.read_text()
         implemented = dispatch_kinds(agent)
         admitted = admission_kinds(agent)
-        controller = controller_kinds(CONTROLLER.read_text())
+        controller = controller_kinds(CONTROLLER.read_text(), CONTROLLER_LOCAL.read_text())
     except (OSError, ValueError) as error:
         print(f"coverage error: {error}", file=sys.stderr)
         return 1

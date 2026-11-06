@@ -16,10 +16,19 @@ class File { fixed kind = "file" }'''
             operation_kinds(source.replace('Copy|File', 'Copy|Missing'))
 
     def test_controller_dispatch(self):
-        source = 'match kind {\n "assert" => {},\n "debug" => {},\n _ => {}\n }'
-        self.assertEqual(controller_kinds(source), {"assert", "debug"})
-        with self.assertRaises(ValueError):
-            controller_kinds('fn other() { "assert"; }')
+        operation = 'if matches!(kind, "assert" | "debug") { return self.local_retry('
+        local = 'async fn local_once() { match kind {\n "assert" => {},\n "debug" => {},\n _ => {}\n } } async fn local_retry() { self.local_once('
+        self.assertEqual(controller_kinds(operation, local), {"assert", "debug"})
+        for bad_operation, bad_local in [
+            (operation.replace(' | "debug"', ''), local),
+            (operation.replace('local_retry', 'other'), local),
+            (operation + operation, local),
+            (operation, local.replace('"debug" =>', '"other" =>')),
+            (operation, local.replace('self.local_once(', 'self.other(')),
+            (operation, local.replace('async fn local_once', 'async fn other')),
+        ]:
+            with self.assertRaises(ValueError):
+                controller_kinds(bad_operation, bad_local)
 
     def test_dispatch_admission_is_extracted_and_missing_guard_is_allowed(self):
         source = 'fn is_implemented(module: &str) -> bool { matches!(module, "copy" | "file") }'
