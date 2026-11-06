@@ -40,14 +40,3 @@ async fn empty_loop_does_not_resolve_item_variables() -> Result<()> {
     assert_eq!(recap["h"].skipped, 1);
     Ok(())
 }
-
-#[test]
-fn dependency_analysis_respects_map_item_scope() -> Result<()> {
-    let vars = json!({"mapped":{"kind":"call","function":"map","args":[{"kind":"list","items":[]},{"kind":"ref","path":["item"]}]},"dependent":{"kind":"ref","path":["entry"]},"indirect":{"kind":"ref","path":["vars","dependent"]}});
-    let dependent =
-        super::super::loop_vars::item_dependent(vars.as_object().context("vars")?, "entry");
-    assert!(!dependent.contains("mapped"));
-    assert!(dependent.contains("dependent"));
-    assert!(dependent.contains("indirect"));
-    Ok(())
-}

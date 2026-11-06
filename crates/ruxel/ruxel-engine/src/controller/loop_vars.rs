@@ -1,6 +1,44 @@
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
+pub(super) fn required(vars: &Map<String, Value>, expression: &Value) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    dependencies(expression, "item", false, &mut false, &mut names);
+    if references_all_vars(expression) {
+        names.extend(vars.keys().cloned());
+    }
+    loop {
+        let previous = names.len();
+        for name in names.clone() {
+            if let Some(value) = vars.get(&name) {
+                dependencies(value, "item", false, &mut false, &mut names);
+                if references_all_vars(value) {
+                    names.extend(vars.keys().cloned());
+                }
+            }
+        }
+        if previous == names.len() {
+            return names;
+        }
+    }
+}
+
+fn references_all_vars(value: &Value) -> bool {
+    match value {
+        Value::Object(object) if object.get("kind").and_then(Value::as_str) == Some("ref") => {
+            object
+                .get("path")
+                .and_then(Value::as_array)
+                .is_some_and(|path| {
+                    path.len() == 1 && matches!(path[0].as_str(), Some("vars" | "variables"))
+                })
+        }
+        Value::Object(object) => object.values().any(references_all_vars),
+        Value::Array(items) => items.iter().any(references_all_vars),
+        _ => false,
+    }
+}
+
 fn dependencies(
     value: &Value,
     loop_var: &str,
@@ -51,34 +89,5 @@ fn dependencies(
             }
         }
         _ => {}
-    }
-}
-
-/// Variables depending on the current item, including transitive dependencies.
-pub(super) fn item_dependent(vars: &Map<String, Value>, loop_var: &str) -> BTreeSet<String> {
-    let mut dependent = BTreeSet::new();
-    let mut graph = std::collections::BTreeMap::new();
-    for (name, value) in vars {
-        let mut direct = false;
-        let mut names = BTreeSet::new();
-        dependencies(value, loop_var, false, &mut direct, &mut names);
-        if direct {
-            dependent.insert(name.clone());
-        }
-        graph.insert(name.clone(), names);
-    }
-    loop {
-        let previous = dependent.len();
-        for (name, names) in &graph {
-            if names
-                .iter()
-                .any(|dependency| dependent.contains(dependency))
-            {
-                dependent.insert(name.clone());
-            }
-        }
-        if dependent.len() == previous {
-            return dependent;
-        }
     }
 }

@@ -52,26 +52,11 @@ impl<B: Backend> Runner<'_, B> {
         Ok(())
     }
 
-    pub(super) fn layer(&mut self, task: &Value, parent: &ContextLayer) -> Result<ContextLayer> {
+    fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
         let task_vars = object(task, "vars");
-        if task.get("loop").is_some_and(|value| !value.is_null()) && array(task, "block").is_empty()
-        {
-            let dependent = super::loop_vars::item_dependent(
-                &task_vars,
-                string(task, "loopVar").unwrap_or("item"),
-            );
-            let independent = task_vars
-                .iter()
-                .filter(|(name, _)| !dependent.contains(*name))
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect();
-            for name in task_vars.keys() {
-                layer.vars.remove(name);
-            }
-            self.extend_vars(&mut layer.vars, &independent)?;
-        } else {
-            self.extend_vars(&mut layer.vars, &task_vars)?;
+        for name in task_vars.keys() {
+            layer.vars.remove(name);
         }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
@@ -84,7 +69,29 @@ impl<B: Backend> Runner<'_, B> {
                 .filter_map(Value::as_str)
                 .map(str::to_owned),
         );
-        Ok(layer)
+        layer
+    }
+
+    fn resolve_task_vars(
+        &mut self,
+        task: &Value,
+        layer: &mut ContextLayer,
+        item: Option<(&str, &TrackedValue)>,
+        expression: Option<&Value>,
+        resolved: &mut std::collections::BTreeSet<String>,
+    ) -> Result<()> {
+        let vars = object(task, "vars");
+        let required = expression.map(|expr| super::loop_vars::required(&vars, expr));
+        let pending = vars
+            .into_iter()
+            .filter(|(name, _)| {
+                !resolved.contains(name)
+                    && required.as_ref().is_none_or(|names| names.contains(name))
+            })
+            .collect::<Map<_, _>>();
+        self.extend_vars_for_item(&mut layer.vars, &pending, item)?;
+        resolved.extend(pending.into_iter().map(|(key, _)| key));
+        Ok(())
     }
 
     pub(super) fn scope(
@@ -146,19 +153,25 @@ impl<B: Backend> Runner<'_, B> {
         parent: &'a ContextLayer,
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
-            let mut layer = self.layer(task, parent)?;
             if !self.handling
                 && !self.options.tags.is_empty()
-                && !layer
+                && !parent
                     .tags
                     .iter()
-                    .any(|tag| tag == "always" || self.options.tags.contains(tag))
+                    .map(String::as_str)
+                    .chain(array(task, "tags").iter().filter_map(Value::as_str))
+                    .any(|tag| {
+                        tag == "always" || self.options.tags.iter().any(|selected| selected == tag)
+                    })
             {
                 return Ok(true);
             }
+            let mut layer = Self::layer(task, parent);
             if !array(task, "block").is_empty() {
-                let scope = self.scope(&layer, None);
+                let mut resolved = std::collections::BTreeSet::new();
                 if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
+                    self.resolve_task_vars(task, &mut layer, None, Some(condition), &mut resolved)?;
+                    let scope = self.scope(&layer, None);
                     let condition = self.backend.evaluate_tracked(condition, &scope)?;
                     layer.control_sensitive |= condition.is_secret();
                     if !truth(&condition.value) {
@@ -166,6 +179,7 @@ impl<B: Backend> Runner<'_, B> {
                         return Ok(true);
                     }
                 }
+                self.resolve_task_vars(task, &mut layer, None, None, &mut resolved)?;
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
                     success = self.tasks(array(task, "rescue"), &layer).await?;
@@ -186,8 +200,16 @@ impl<B: Backend> Runner<'_, B> {
         reason = "iteration and recap form one task execution"
     )]
     pub(super) async fn operation(&mut self, task: &Value, layer: &ContextLayer) -> Result<bool> {
-        let scope = self.scope(layer, None);
+        let mut loop_layer = layer.clone();
         let items = if let Some(expr) = task.get("loop").filter(|v| !v.is_null()) {
+            self.resolve_task_vars(
+                task,
+                &mut loop_layer,
+                None,
+                Some(expr),
+                &mut std::collections::BTreeSet::new(),
+            )?;
+            let scope = self.scope(&loop_layer, None);
             let value = self.backend.evaluate_tracked(expr, &scope)?;
             let items = value
                 .value
@@ -204,15 +226,16 @@ impl<B: Backend> Runner<'_, B> {
         for item in &items {
             let binding = looped.then_some((string(task, "loopVar").unwrap_or("item"), item));
             let mut iteration_layer = layer.clone();
-            if looped {
-                let task_vars = object(task, "vars");
-                for name in task_vars.keys() {
-                    iteration_layer.vars.remove(name);
-                }
-                self.extend_vars_for_item(&mut iteration_layer.vars, &task_vars, binding)?;
-            }
-            let scope = self.scope(&iteration_layer, binding);
+            let mut resolved = std::collections::BTreeSet::new();
             if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
+                self.resolve_task_vars(
+                    task,
+                    &mut iteration_layer,
+                    binding,
+                    Some(condition),
+                    &mut resolved,
+                )?;
+                let scope = self.scope(&iteration_layer, binding);
                 let condition = self.backend.evaluate_tracked(condition, &scope)?;
                 iteration_layer.control_sensitive |= condition.is_secret();
                 if !truth(&condition.value) {
@@ -229,6 +252,8 @@ impl<B: Backend> Runner<'_, B> {
                     continue;
                 }
             }
+            self.resolve_task_vars(task, &mut iteration_layer, binding, None, &mut resolved)?;
+            let scope = self.scope(&iteration_layer, binding);
             let mut result = self
                 .execute(task, &iteration_layer, &scope, item)
                 .await

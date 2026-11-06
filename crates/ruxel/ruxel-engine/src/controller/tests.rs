@@ -1,6 +1,7 @@
 use super::*;
 
 mod cases;
+mod excluded_vars;
 mod failures;
 mod flows;
 mod inventory;
