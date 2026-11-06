@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
     let host = RemoteHost {
         destination: "synthetic.invalid".into(),
+        test_path: None,
         options: ConnectOptions::default(),
     };
     let command = host.client();
@@ -68,6 +69,7 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))?;
     let host = RemoteHost {
         destination: "fixture.invalid".into(),
+        test_path: None,
         options: ConnectOptions {
             keyfile: Some(root.join("synthetic identity")),
             known_hosts_file: Some(root.join("synthetic known hosts")),
@@ -85,3 +87,6 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
+
+#[path = "tests/deployment.rs"]
+mod deployment;
