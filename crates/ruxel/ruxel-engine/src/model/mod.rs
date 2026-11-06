@@ -205,3 +205,12 @@ pub fn validate_config(value: &Value) -> Result<Value> {
 
 #[cfg(test)]
 mod tests;
+
+/// Validate a typed template expression before evaluating it against runtime scope.
+pub(crate) fn validate_template(value: &Value) -> Result<()> {
+    if value.is_string() {
+        Ok(())
+    } else {
+        expression(value)
+    }
+}

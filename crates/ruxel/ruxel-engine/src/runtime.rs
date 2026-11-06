@@ -157,7 +157,17 @@ impl Execution {
         }
     }
 }
+mod templates;
+
 impl Backend for Execution {
+    fn prepare_operation(
+        &mut self,
+        kind: &str,
+        params: &mut Map<String, Value>,
+        scope: &Map<String, Value>,
+    ) -> Result<()> {
+        templates::prepare(self, kind, params, scope)
+    }
     fn evaluate(&mut self, value: &Value, map: &Map<String, Value>) -> Result<Value> {
         // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
         fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
