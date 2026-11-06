@@ -330,15 +330,36 @@ impl<B: Backend> Runner<'_, B> {
         vars: &mut Map<String, Value>,
         incoming: &Map<String, Value>,
     ) -> Result<()> {
-        for (key, value) in incoming {
-            let scope = self.scope(
-                &ContextLayer {
-                    vars: vars.clone(),
-                    ..ContextLayer::default()
-                },
-                None,
-            );
-            vars.insert(key.clone(), self.backend.evaluate(value, &scope)?);
+        let mut pending: Vec<_> = incoming.iter().collect();
+        let mut previous_count = pending.len();
+        while !pending.is_empty() {
+            let mut unresolved = Vec::new();
+            let mut last_error = None;
+            for (key, value) in pending {
+                let scope = self.scope(
+                    &ContextLayer {
+                        vars: vars.clone(),
+                        ..ContextLayer::default()
+                    },
+                    None,
+                );
+                match self.backend.evaluate(value, &scope) {
+                    Ok(value) => {
+                        vars.insert(key.clone(), value);
+                    }
+                    Err(error) => {
+                        unresolved.push((key, value));
+                        last_error = Some(error);
+                    }
+                }
+            }
+            if unresolved.len() == incoming.len()
+                || (!unresolved.is_empty() && unresolved.len() == previous_count)
+            {
+                return Err(last_error.context("variable evaluation failed")?);
+            }
+            previous_count = unresolved.len();
+            pending = unresolved;
         }
         Ok(())
     }
@@ -920,6 +941,17 @@ mod tests {
     #[tokio::test]
     async fn set_fact_is_available_to_task_variables() -> Result<()> {
         let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"set","operation":{"kind":"set_fact","values":{"answer":{"kind":"literal","value":"ready"}}}},{"name":"use","vars":{"derived":{"kind":"ref","path":["vars","answer"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","derived"]}}}]}]});
+        let mut backend = Fake::default();
+        run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        let params: Value =
+            serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
+        assert_eq!(params["cmd"], "ready");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn play_variables_resolve_forward_references() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"first":{"kind":"ref","path":["vars","second"]},"second":{"kind":"literal","value":"ready"}},"tasks":[{"name":"use","operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","first"]}}}]}]});
         let mut backend = Fake::default();
         run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
         let params: Value =
