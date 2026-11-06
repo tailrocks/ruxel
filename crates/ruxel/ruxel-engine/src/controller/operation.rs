@@ -38,7 +38,10 @@ impl<B: Backend> Runner<'_, B> {
         crate::model::validate_operation(kind, &params)?;
         match kind {
             "pause" => {
-                if matches!(self.options.mode, Mode::Check | Mode::Diff) {
+                if (matches!(self.options.mode, Mode::Check | Mode::Diff)
+                    || task.get("checkMode").and_then(Value::as_bool) == Some(true))
+                    && task.get("checkMode").and_then(Value::as_bool) != Some(false)
+                {
                     return Ok(json!({"changed":false,"skipped":true}));
                 }
                 let seconds = params.get("seconds").and_then(Value::as_u64).unwrap_or(0);
@@ -157,8 +160,7 @@ impl<B: Backend> Runner<'_, B> {
                     free_form,
                     ledger_key: String::new(),
                 }],
-                check_mode_override: !matches!(self.options.mode, Mode::Check | Mode::Diff)
-                    && task.get("checkMode").and_then(Value::as_bool) == Some(false),
+                check_mode_override: task.get("checkMode").and_then(Value::as_bool) == Some(false),
                 no_log: layer.no_log,
                 become_user: layer.become_user.clone().unwrap_or_default(),
                 environment,

@@ -32,3 +32,21 @@ async fn plan_counts_selected_operations_without_evaluating_them() -> Result<()>
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn task_check_mode_override_is_forwarded_for_check_and_diff() -> Result<()> {
+    for mode in [Mode::Check, Mode::Diff] {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["all"],"tasks":[{"name":"default","operation":{"kind":"command","cmd":"true"}},{"name":"forced","checkMode":true,"operation":{"kind":"command","cmd":"true"}},{"name":"override","checkMode":false,"operation":{"kind":"command","cmd":"true"}}]}]});
+        let options = Options {
+            mode,
+            ..Options::default()
+        };
+        let mut backend = Fake::default();
+        run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+        assert!(backend.calls.iter().all(|call| call.task.force_check_mode));
+        assert!(!backend.calls[0].task.check_mode_override);
+        assert!(!backend.calls[1].task.check_mode_override);
+        assert!(backend.calls[2].task.check_mode_override);
+    }
+    Ok(())
+}
