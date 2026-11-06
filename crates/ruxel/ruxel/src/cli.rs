@@ -36,6 +36,8 @@ pub(crate) struct RunArgs {
     pub(crate) hosts: Vec<String>,
     #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..=128))]
     pub(crate) jobs: u16,
+    #[arg(long)]
+    pub(crate) no_cache: bool,
     #[arg(long, value_delimiter = ',')]
     pub(crate) tags: Vec<String>,
     #[arg(long, default_value = "ruxel-agent")]

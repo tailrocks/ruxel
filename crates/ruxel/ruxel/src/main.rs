@@ -71,6 +71,7 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
         jobs: usize::from(args.jobs),
+        no_cache: args.no_cache,
         source_dir: args
             .root
             .parent()

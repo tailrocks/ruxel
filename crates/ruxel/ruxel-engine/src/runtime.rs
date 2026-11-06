@@ -20,6 +20,7 @@ use std::{
 pub struct RuntimeOptions {
     pub agent: PathBuf,
     pub jobs: usize,
+    pub no_cache: bool,
     pub source_dir: PathBuf,
     pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
@@ -94,7 +95,15 @@ impl Execution {
             };
             // Host names are inventory keys, never accepted as filesystem paths.
             let path = state.join(blake3::hash(host.as_bytes()).to_hex().as_str());
-            let (c, f) = LocalConnection::connect(binary, &path, "pkl-local", check, diff).await?;
+            let (c, f) = LocalConnection::connect(
+                binary,
+                &path,
+                "pkl-local",
+                check,
+                diff,
+                self.runtime.no_cache,
+            )
+            .await?;
             (Connection::Local(Box::new(c)), f)
         } else {
             let spec = spec.context("selected host is missing")?;
@@ -113,6 +122,7 @@ impl Execution {
                 .transpose()?;
             let transport_options = transport::ConnectOptions {
                 diff_mode: diff,
+                no_cache: self.runtime.no_cache,
                 port,
                 ..Default::default()
             };
@@ -231,6 +241,10 @@ impl Backend for Execution {
                     iteration.params_json = serde_json::to_vec(&params)?;
                 }
             }
+        }
+        for index in 0..request.task.iterations.len() {
+            let key = controller::ledger_key(&request.task, &request.task.iterations[index])?;
+            request.task.iterations[index].ledger_key = key;
         }
         if !self.connections.lock().await.contains_key(&request.host) {
             self.connect(&request.host).await?;

@@ -30,6 +30,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
             agent: PathBuf::from("unused"),
             source_dir: directory.clone(),
             jobs: 1,
+            no_cache: false,
             synthetic_secrets: true,
             local_state: None,
             local_agent: None,

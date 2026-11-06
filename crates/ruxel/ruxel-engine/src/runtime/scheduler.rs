@@ -19,7 +19,10 @@ pub(super) async fn run_plays(
     {
         let mut play_config = config.clone();
         play_config["plays"] = Value::Array(vec![play.clone()]);
-        let hosts = controller::selected_hosts(&play_config, options)?;
+        let hosts: Vec<_> = controller::selected_hosts(&play_config, options)?
+            .into_iter()
+            .filter(|host| totals.get(host).is_none_or(|recap| recap.failed == 0))
+            .collect();
         let runs = hosts.into_iter().map(|host| {
             let mut backend = execution.clone();
             let mut options = options.clone();
