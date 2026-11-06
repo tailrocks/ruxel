@@ -26,6 +26,13 @@ fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
     );
     assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
     assert_eq!(args.last().map(String::as_str), Some("synthetic.invalid"));
+    assert_eq!(args[args.len() - 2], "--");
+    let subsystem = host.subsystem();
+    let args: Vec<_> = subsystem.as_std().get_args().collect();
+    assert_eq!(
+        &args[args.len() - 4..],
+        ["-s", "--", "synthetic.invalid", "sftp"]
+    );
 }
 
 #[tokio::test]

@@ -28,7 +28,7 @@ struct RemoteHost {
 }
 
 impl RemoteHost {
-    fn client(&self) -> Command {
+    fn options(&self) -> Command {
         let mut command = Command::new("ssh");
         command.args([
             "-o",
@@ -41,12 +41,20 @@ impl RemoteHost {
             "ServerAliveCountMax=4",
         ]);
         apply_options(&mut command, &self.options);
-        command.arg(&self.destination);
+        command
+    }
+    fn client(&self) -> Command {
+        let mut command = self.options();
+        command.arg("--").arg(&self.destination);
+        command
+    }
+    fn subsystem(&self) -> Command {
+        let mut command = self.options();
+        command.args(["-s", "--", &self.destination, "sftp"]);
         command
     }
     async fn exec_status(&self, argv: &[&str]) -> Result<std::process::ExitStatus> {
         let mut cmd = self.client();
-        cmd.arg("--");
         for a in argv {
             cmd.arg(a);
         }
@@ -58,7 +66,6 @@ impl RemoteHost {
 
     async fn exec_output(&self, argv: &[&str]) -> Result<std::process::Output> {
         let mut cmd = self.client();
-        cmd.arg("--");
         for arg in argv {
             cmd.arg(arg);
         }
@@ -126,7 +133,6 @@ pub async fn connect_with(
 
     let mut agent_cmd = remote.client();
     agent_cmd
-        .arg("--")
         .arg(&remote_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -243,10 +249,8 @@ async fn ensure_agent(remote: &RemoteHost, remote_path: &str, bytes: &[u8]) -> R
         .then_some(())
         .context("mkdir agent dir")?;
 
-    let mut sftp_cmd = remote.client();
+    let mut sftp_cmd = remote.subsystem();
     sftp_cmd
-        .arg("-s")
-        .arg("sftp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
