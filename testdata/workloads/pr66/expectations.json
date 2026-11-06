@@ -447,6 +447,92 @@
         "synthetic lookup controller integration and same-item dedup",
         "package, service and PostgreSQL snapshot call counts"
       ]
+    },
+    "control-flow": {
+      "fixture": "control-flow.pkl",
+      "observations": [
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/nested-literal",
+          "content": "nested-literal",
+          "owner": "root"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/nested-mixed-synthetic",
+          "content": "nested-mixed-synthetic",
+          "owner": "root"
+        },
+        {
+          "kind": "file_exists",
+          "path": "__RUN_ROOT__/retry-marker"
+        },
+        {
+          "kind": "task_loop_stdout",
+          "host": "fixture",
+          "task": "Execute mapped loop with label and environment",
+          "values": [
+            "alpha:one",
+            "alpha:two",
+            "beta:three"
+          ]
+        },
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Exercise retries and until",
+          "field": "rc",
+          "equals": 0
+        },
+        {
+          "kind": "fact",
+          "host": "fixture",
+          "name": "fixture_rescued",
+          "equals": true
+        },
+        {
+          "kind": "output_excludes",
+          "values": [
+            "nested-literal",
+            "nested-mixed-synthetic"
+          ]
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/nested-literal",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_file",
+          "path": "__RUN_ROOT__/retry-marker"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true,
+          "retry_attempts": 2
+        },
+        "converged": {
+          "observations_match": true,
+          "retry_attempts": 1
+        },
+        "drift_repair": {
+          "observations_match": true,
+          "retry_attempts": 2
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "controller execution, including pause, block rescue, loop registration, and no-log redaction",
+        "scalar-to-string expression conversion for length interpolation"
+      ]
     }
   }
 }

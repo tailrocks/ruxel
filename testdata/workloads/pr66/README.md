@@ -15,7 +15,7 @@ not necessarily the entire play (pause and handlers have separate semantics).
 
 Pkl evaluation has been checked against the in-development `schema/Ruxel.pkl`.
 These fixtures have not been run through the controller or an acceptance
-harness. The other four matrix workloads and their state expectations remain
+harness. The other three matrix workloads and their state expectations remain
 unported; in particular this directory does not establish full PR 66 parity.
 
 Storage scenarios require isolated disposable fixture disks at their declared
