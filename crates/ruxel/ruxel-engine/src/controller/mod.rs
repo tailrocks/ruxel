@@ -636,7 +636,9 @@ impl<B: Backend> Runner<'_, B> {
         };
         let id = self.next_id;
         self.next_id += 1;
-        let item_label = if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
+        let item_label = if layer.no_log {
+            "[censored]".to_owned()
+        } else if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
             let value = self.backend.evaluate(label, scope)?;
             value
                 .as_str()
