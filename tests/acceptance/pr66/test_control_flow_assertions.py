@@ -76,6 +76,21 @@ class ControlFlowAssertionsTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 assert_retry_attempts(2, count)
 
+    def test_censored_results_cannot_pass_with_retained_fields(self):
+        for flag in ('censored', 'redacted'):
+            for index in (0, 1, 2):
+                with self.subTest(flag=flag, result=index):
+                    self.events[index]['result'][flag] = True
+                    with self.assertRaises(RuntimeError):
+                        self.check()
+                    del self.events[index]['result'][flag]
+            for item in self.events[0]['result']['results']:
+                with self.subTest(flag=flag, item=item['stdout']):
+                    item[flag] = True
+                    with self.assertRaises(RuntimeError):
+                        self.check()
+                    del item[flag]
+
     def test_owner_and_paths_are_checked(self):
         self.observations[0]['owner'] = 'missing-user-pr66-fixture'
         with self.assertRaises(KeyError):

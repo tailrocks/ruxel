@@ -12,6 +12,8 @@ def task_result(events, host, task):
     matches = [event['result'] for event in events
                if event.get('host') == host and event.get('task') == task and 'result' in event]
     require(len(matches) == 1 and isinstance(matches[0], dict), f'{task}: missing or duplicate result')
+    require(matches[0].get('censored') is not True and matches[0].get('redacted') is not True,
+            f'{task}: result is censored')
     return matches[0]
 
 
@@ -44,7 +46,9 @@ def assert_observations(root, observations, events, outputs):
             result = task_result(events, item['host'], item['task'])
             values = result.get('results')
             require(isinstance(values, list) and len(values) == len(item['values'])
-                    and all(isinstance(value, dict) and isinstance(value.get('stdout'), str) for value in values),
+                    and all(isinstance(value, dict) and value.get('censored') is not True
+                            and value.get('redacted') is not True and isinstance(value.get('stdout'), str)
+                            for value in values),
                     'loop stdout missing, censored, or wrong cardinality')
             require([value['stdout'] for value in values] == item['values'], 'loop stdout mismatch')
         elif kind == 'fact':
