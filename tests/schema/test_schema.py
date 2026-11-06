@@ -22,15 +22,30 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
         self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
-        self.assertEqual(tasks[5]["operation"]["content"], "data")
+        self.assertTrue(tasks[5]["operation"]["that"])
+        self.assertEqual(tasks[6]["operation"]["content"]["function"], "string")
+        self.assertEqual(tasks[7]["operation"]["content"], "data")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
-        self.assertEqual(tasks[6]["operation"]["password"]["provider"], "synthetic")
+        self.assertEqual(tasks[8]["operation"]["password"]["provider"], "synthetic")
 
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.BlockInFile { path = "/tmp/x" }',
+            'new R.LineInFile { path = "/tmp/x" }',
+            'new R.LineInFile { path = "/tmp/x"; state = "absent" }',
+            'new R.PostgresSchema { name = "a" }',
+            'new R.PostgresPrivileges { role = "a"; type = "table" }',
+            'new R.PostgresPrivileges { login_db = "db"; role = "a"; type = "database" }',
+            'new R.PostgresPrivileges { login_db = "db"; role = "a"; type = "table"; target_roles = "a" }',
+            'new R.VolumeGroup { vg = "a" }',
+            'new R.Sysctl { name = "a" }',
+            'new R.Service { state = "started" }',
+            'new R.Service { enabled = true }',
+            'new R.Firewall { chain = "INPUT"; policy = "DROP"; jump = "ACCEPT" }',
+            'new R.Lookup { provider = "pipe" }',
             'new R.Command { argv = "echo hello" }',
             'new R.Apt { upgrade = "garbage" }',
             'new R.File { path = "/tmp/link"; state = "link" }',

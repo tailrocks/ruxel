@@ -4,19 +4,19 @@ module Ruxel
 typealias Expr = Literal|Ref|Call|ListExpr|MapExpr|Lookup
 class Literal { fixed kind = "literal"; value: Scalar? = null }
 class Ref { fixed kind = "ref"; path: Listing<String>(!this.isEmpty) }
-class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"subelements"|"mapAttribute"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup>(`function` == "concat" || (List("not", "length", "sha256", "base64Encode", "base64Decode", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 1) || (!List("concat", "not", "length", "sha256", "base64Encode", "base64Decode", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 2)) }
+class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"subelements"|"mapAttribute"|"string"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup>(`function` == "concat" || (List("not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 1) || (!List("concat", "not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 2)) }
 class ListExpr { fixed kind = "list"; items: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
 class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
 class Lookup {
   fixed kind = "lookup"
   provider: "fnox"|"op"|"command"|"pipe"|"synthetic"
-  key: String? = null
+  key: String?(provider != "pipe" || this != null) = null
   vault: String? = null
   item: String? = null
   section: String? = null
   field: String? = null
   reference: String? = null
-  argv: Listing<String>(provider != "command" && provider != "pipe" || !this.isEmpty)
+  argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
 typealias Text = String|Expr
@@ -51,7 +51,7 @@ class Task {
   register: String? = null
   notify: Listing<String>
   tags: Listing<String>
-  delegateTo: String? = null
+  delegateTo: Text? = null
   becomeUser: String? = null
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
@@ -96,7 +96,7 @@ class AuthorizedKey {
 
 class BlockInFile {
   fixed kind = "blockinfile"
-  block: Text? = null
+  block: Text
   create: Flag? = null
   group: Text? = null
   mode: FileMode? = null
@@ -174,13 +174,13 @@ class Firewall {
   ip_version: ("ipv4"|"ipv6"|Expr)? = null
   jump: Text? = null
   out_interface: Text? = null
-  policy: Text? = null
+  policy: Text?(this == null || protocol == null && destination == null && out_interface == null && jump == null && comment == null) = null
   protocol: Text? = null
 }
 
 class LineInFile {
   fixed kind = "lineinfile"
-  line: Text? = null
+  line: Text?((state == "absent" && (this != null || regexp != null)) || (state != "absent" && this != null)) = null
   path: Text
   regexp: Text? = null
   state: ("present"|"absent"|Expr)? = null
@@ -221,14 +221,14 @@ class Sysctl {
   state: ("present"|Expr)? = null
   sysctl_file: Text? = null
   sysctl_set: Flag? = null
-  value: Text? = null
+  value: Scalar|Expr
 }
 
 class Service {
   fixed kind = "systemd"
   daemon_reload: Flag? = null
   enabled: Flag? = null
-  name: Text? = null
+  name: Text?(this != null || state == null && enabled == null) = null
   state: ("started"|"stopped"|"restarted"|Expr)? = null
 }
 
@@ -250,7 +250,7 @@ class User {
 
 class VolumeGroup {
   fixed kind = "community.general.lvg"
-  pvs: TextList? = null
+  pvs: TextList
   vg: Text
 }
 
@@ -300,7 +300,7 @@ class PostgresRole {
 
 class PostgresSchema {
   fixed kind = "community.postgresql.postgresql_schema"
-  login_db: Text? = null
+  login_db: Text
   login_port: Port? = null
   login_user: Text? = null
   name: Text
@@ -310,32 +310,33 @@ class PostgresSchema {
 
 class PostgresPrivileges {
   fixed kind = "community.postgresql.postgresql_privs"
-  login_db: Text? = null
+  login_db: Text
   login_port: Port? = null
   login_user: Text? = null
-  objs: TextList? = null
+  objs: TextList?(type != "database" || this != null) = null
   privs: TextList? = null
   role: Text
   schema: Text? = null
   state: ("present"|Expr)? = null
-  target_roles: TextList? = null
+  target_roles: TextList?(this == null || type == "default_privs") = null
   type: "database"|"schema"|"table"|"default_privs"|Expr
 }
 
 class Template {
   fixed kind = "template"
+  content: Text?(this != null && src == null || this == null && src != null) = null
   dest: Text
   force: Flag? = null
   group: Text? = null
   mode: FileMode? = null
   owner: Text? = null
-  src: Text
+  src: Text? = null
 }
 
 class Assert {
   fixed kind = "assert"
   fail_msg: Text? = null
-  that: TextList
+  that: Boolean|Listing<Boolean|Expr>|Expr
 }
 
 class Debug {
