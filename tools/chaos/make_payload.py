@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Materialize the deterministic large-Plan fixture payload."""
 
 import sys
 from pathlib import Path

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Compare observable Ruxel JSON events with an Ansible callback capture."""
 
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ GIT_COMMIT_SUMMARY = re.compile(r"(?<=\[master \(root-commit\) )[0-9a-f]{7,40}(?
 
 
 def normalize_diff(value):
-    """Represent Ansible structured and Ruxel unified diffs identically."""
     changes = []
     if isinstance(value, str):
         before, after = [], []

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Compare Ruxel JSON diffs with diffs Ansible actually printed."""
 
 import json
 import re
@@ -11,7 +10,6 @@ TASK = re.compile(r"^(?:TASK|RUNNING HANDLER) \[(.+)] \*+$")
 
 
 def canonical_change(change):
-    """Reduce full snapshots and unified deltas to ordered removed/added lines."""
     before = change["before"]
     after = change["after"]
     common = Counter(before) & Counter(after)

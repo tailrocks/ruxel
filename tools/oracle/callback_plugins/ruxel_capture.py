@@ -1,18 +1,3 @@
-"""Ansible callback plugin that captures per-task oracle data for ruxel.
-
-Records one JSON line per task/item result to the file named by
-RUXEL_CAPTURE_FILE (default: ./ruxel-capture.jsonl): play, task name, action,
-raw task args (pre-template), resolved module args (post-template, from the
-module invocation when the module reports it), the full result dict, status,
-and diff. no_log tasks arrive already censored by Ansible core - the capture
-stores exactly what Ansible itself would log.
-
-Enable with:
-    ANSIBLE_CALLBACK_PLUGINS=tools/oracle/callback_plugins \
-    ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
-    RUXEL_CAPTURE_FILE=/tmp/capture.jsonl \
-    ansible-playbook ...
-"""
 
 from __future__ import annotations
 
@@ -34,7 +19,6 @@ DOCUMENTATION = """
 
 
 def _jsonable(value):
-    """Coerce Ansible's internal types (AnsibleUnicode, wrappers) to plain JSON."""
     try:
         return json.loads(json.dumps(value, default=str))
     except (TypeError, ValueError):

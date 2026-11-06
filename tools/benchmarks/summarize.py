@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Recompute benchmark summaries from committed raw samples."""
 
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ RATIO_DECIMALS = 12
 
 
 class EvidenceError(ValueError):
-    """Benchmark evidence is malformed."""
+    pass
 
 
 def load_json(path: Path) -> Any:

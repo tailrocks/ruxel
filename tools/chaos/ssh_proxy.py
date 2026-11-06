@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""OpenSSH shim that cuts selected controller/agent frames deterministically."""
 
 import os
 import subprocess

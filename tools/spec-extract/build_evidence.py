@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Build/verify closed-surface feature -> executable evidence traceability."""
 
 from __future__ import annotations
 

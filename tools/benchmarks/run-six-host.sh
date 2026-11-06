@@ -117,6 +117,7 @@ kernel="$(docker exec "${containers[0]}" uname -r)"
 docker stop "${containers[5]}" >/dev/null
 set +e
 run_ruxel >"$case_dir/logs/unreachable.stdout" 2>"$case_dir/logs/unreachable.stderr"
+# One stopped host must yield five ordered recaps.
 unreachable_status=$?
 set -e
 [ "$unreachable_status" -eq 1 ]

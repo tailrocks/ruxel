@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Remove machine/run-specific fields from an Ansible JSONL capture."""
 
 import json
 import sys

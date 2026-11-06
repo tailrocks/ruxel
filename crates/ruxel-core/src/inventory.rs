@@ -1,25 +1,19 @@
-//! INI inventory parsing for the workload's `hosts.ini` shape
-//! (docs/SEMANTICS.md §1): named hosts in groups, with
-//! `ansible_ssh_host` / `ansible_ssh_user` connection variables.
-
 use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Host {
     pub name: String,
-    /// `ansible_ssh_host` — connection address (falls back to `name`).
+
     pub ssh_host: String,
-    /// `ansible_ssh_user` — login user (falls back to the current convention,
-    /// which the workload always sets explicitly).
+
     pub ssh_user: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Inventory {
-    /// Hosts in file order.
     pub hosts: Vec<Host>,
-    /// Group name → member host names, in file order.
+
     pub groups: BTreeMap<String, Vec<String>>,
 }
 
@@ -38,9 +32,6 @@ pub enum InventoryError {
 }
 
 impl Inventory {
-    /// Parse the INI inventory dialect the workload uses. Anything outside
-    /// it — `[group:children]`, `[group:vars]`, host ranges, quoting — is a
-    /// hard error by design.
     pub fn parse(content: &str) -> Result<Self, InventoryError> {
         let mut inv = Inventory::default();
         let mut current_group: Option<String> = None;
@@ -110,10 +101,6 @@ impl Inventory {
         self.hosts.iter().find(|h| h.name == name)
     }
 
-    /// Resolve a play `hosts:` pattern intersected with an optional
-    /// `--limit` pattern. Supported pattern forms (the closed surface):
-    /// `all`, a group name, a host name, or a comma/colon-separated list of
-    /// those.
     pub fn select(&self, pattern: &str, limit: Option<&str>) -> Result<Vec<&Host>, PatternError> {
         let base = self.expand(pattern)?;
         let selected: Vec<&Host> = match limit {
@@ -168,9 +155,9 @@ mod tests {
 
     const WORKLOAD_SHAPE: &str = "\
 [nodes]
-pegasus ansible_ssh_host=192.0.2.10 ansible_ssh_user=root
-delorean ansible_ssh_host=192.0.2.11 ansible_ssh_user=root
-titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
+synthetic_host_0 ansible_ssh_host=192.0.2.10 ansible_ssh_user=root
+synthetic_host_1 ansible_ssh_host=192.0.2.11 ansible_ssh_user=root
+synthetic_host_2 ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
 ";
 
     #[test]
@@ -178,9 +165,9 @@ titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
         assert_eq!(inv.hosts.len(), 3);
         assert_eq!(inv.groups["nodes"].len(), 3);
-        let pegasus = inv.host("pegasus").unwrap();
-        assert_eq!(pegasus.ssh_host, "192.0.2.10");
-        assert_eq!(pegasus.ssh_user.as_deref(), Some("root"));
+        let synthetic_host_0 = inv.host("synthetic_host_0").unwrap();
+        assert_eq!(synthetic_host_0.ssh_host, "192.0.2.10");
+        assert_eq!(synthetic_host_0.ssh_user.as_deref(), Some("root"));
     }
 
     #[test]
@@ -188,15 +175,15 @@ titan ansible_ssh_host=192.0.2.12 ansible_ssh_user=root
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
         assert_eq!(inv.select("all", None).unwrap().len(), 3);
         assert_eq!(inv.select("nodes", None).unwrap().len(), 3);
-        assert_eq!(inv.select("titan", None).unwrap().len(), 1);
+        assert_eq!(inv.select("synthetic_host_2", None).unwrap().len(), 1);
     }
 
     #[test]
     fn select_with_limit_intersects() {
         let inv = Inventory::parse(WORKLOAD_SHAPE).unwrap();
-        let picked = inv.select("nodes", Some("delorean")).unwrap();
+        let picked = inv.select("nodes", Some("synthetic_host_1")).unwrap();
         assert_eq!(picked.len(), 1);
-        assert_eq!(picked[0].name, "delorean");
+        assert_eq!(picked[0].name, "synthetic_host_1");
     }
 
     #[test]

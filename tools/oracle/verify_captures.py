@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Reject stale/non-normalized or machine-specific committed oracle captures."""
 
 import json
 import hashlib
