@@ -64,6 +64,7 @@ inputs = [
   "tests/acceptance/pr66/expectations_runner.py",
   "tests/acceptance/pr66/files_lifecycle.py",
   "tests/acceptance/pr66/handler_failure.py",
+  "tests/acceptance/pr66/handshake_isolation.py",
   "tests/acceptance/pr66/host_isolation.py",
   "tests/acceptance/pr66/local_scenarios.py",
   "tests/acceptance/pr66/nested_loops.py",
