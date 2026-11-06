@@ -1,0 +1,129 @@
+use super::*;
+
+mod cases;
+
+#[derive(Default)]
+struct Fake {
+    calls: Vec<Request>,
+    events: Vec<Value>,
+    results: std::collections::VecDeque<Value>,
+}
+impl Backend for Fake {
+    fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
+        if value.get("kind").and_then(Value::as_str) == Some("ref") {
+            let mut current = Value::Object(scope.clone());
+            for key in value["path"].as_array().context("path")? {
+                current = current
+                    .get(key.as_str().context("key")?)
+                    .cloned()
+                    .context("missing reference")?;
+            }
+            Ok(current)
+        } else if value.get("kind").and_then(Value::as_str) == Some("literal") {
+            Ok(value["value"].clone())
+        } else if let Some(map) = value.as_object() {
+            let mut result = Map::new();
+            for (key, item) in map {
+                result.insert(key.clone(), self.evaluate(item, scope)?);
+            }
+            Ok(Value::Object(result))
+        } else {
+            Ok(value.clone())
+        }
+    }
+    fn execute(&mut self, request: Request) -> impl Future<Output = Result<Value>> {
+        self.calls.push(request);
+        std::future::ready(Ok(self
+            .results
+            .pop_front()
+            .unwrap_or_else(|| json!({"changed":true}))))
+    }
+    fn event(&mut self, event: &Value) -> Result<()> {
+        self.events.push(event.clone());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn nested_targets_loop_and_registered_result() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"host":{}},"groups":{"outer":{"children":["inner"]},"inner":{"hosts":["host"]}}},"plays":[{"targets":["outer"],"tasks":[{"name":"loop","loop":["a","b"],"operation":{"kind":"command","cmd":{"kind":"ref","path":["item"]}},"register":"first"},{"name":"next","when":{"kind":"ref","path":["results","first","changed"]},"operation":{"kind":"command","cmd":"next"}}]}]});
+    let mut backend = Fake::default();
+    let recaps = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    assert_eq!(backend.calls.len(), 3);
+    assert_eq!(recaps["host"].changed, 2);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&backend.calls[0].task.iterations[0].params_json)?["cmd"],
+        "a"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn rescue_always_and_handler_run_in_order() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"bad","operation":{"kind":"fail"}}],"rescue":[{"name":"recovered","operation":{"kind":"command","cmd":"rescue"},"notify":["handler"]}],"always":[{"name":"cleanup","operation":{"kind":"command","cmd":"always"}}]}],"handlers":[{"name":"handler","operation":{"kind":"command","cmd":"handler"}}]}]});
+    let mut backend = Fake::default();
+    let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    let names: Vec<_> = backend
+        .calls
+        .iter()
+        .map(|call| call.task.name.as_str())
+        .collect();
+    assert_eq!(names, ["recovered", "cleanup", "handler"]);
+    assert_eq!(recap["h"].rescued, 1);
+    assert_eq!(recap["h"].failed, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn no_log_censors_events_and_diff_checks() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"secret","noLog":true,"operation":{"kind":"command","cmd":"private"}}]}]});
+    let mut backend = Fake::default();
+    let options = Options {
+        mode: Mode::Diff,
+        ..Options::default()
+    };
+    run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+    assert!(backend.calls[0].task.force_check_mode);
+    assert_eq!(backend.events[0]["result"]["censored"], true);
+    assert!(!backend.events[0].to_string().contains("private"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn retry_delegation_and_unrescued_always() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","retries":2,"operation":{"kind":"command","cmd":"try"}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","cmd":"never"}}]}]});
+    let mut backend = Fake {
+        results: [
+            json!({"failed":true}),
+            json!({"failed":true}),
+            json!({"changed":false}),
+        ]
+        .into(),
+        ..Fake::default()
+    };
+    let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    assert_eq!(backend.calls.len(), 3);
+    assert_eq!(backend.calls[0].host, "other");
+    assert_eq!(backend.calls[1].host, "other");
+    assert_eq!(backend.calls[2].task.name, "cleanup");
+    assert_eq!(backend.calls[2].task.iterations[0].free_form, "cleanup");
+    assert_eq!(recap["h"].failed, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ignored_failure_continues_and_block_censors_children() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","noLog":true,"block":[{"name":"bad","operation":{"kind":"fail","msg":"private"},"ignoreErrors":true},{"name":"next","operation":{"kind":"command","cmd":"private"}}]}]}]});
+    let mut backend = Fake::default();
+    let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    assert_eq!(recap["h"].ignored, 1);
+    assert_eq!(backend.calls.len(), 1);
+    assert!(backend.calls[0].task.no_log);
+    assert!(
+        !backend
+            .events
+            .iter()
+            .any(|event| event.to_string().contains("private"))
+    );
+    Ok(())
+}
