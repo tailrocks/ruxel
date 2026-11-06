@@ -62,7 +62,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "dev": dev, "fstype": fstype}))
 }
 
-fn ensure_safe_resize(fstype: &str) -> Result<(), String> {
+pub(super) fn ensure_safe_resize(fstype: &str) -> Result<(), String> {
     if fstype == "xfs" {
         return Err(
             "filesystem: XFS resize unavailable because xfs_growfs reopens a mutable mount path"

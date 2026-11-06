@@ -12,6 +12,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     if exists {
+        let filesystem_type = if resizefs {
+            let fstype = super::filesystem::blkid_type(&lv_path(vg, lv))?
+                .ok_or("lvol: filesystem type unavailable for resize")?;
+            super::filesystem::ensure_safe_resize(&fstype)?;
+            Some(fstype)
+        } else {
+            None
+        };
         let relative = size.starts_with('+');
         let needs_resize = if relative {
             if size != "+100%FREE" {
@@ -25,7 +33,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         };
         if !needs_resize && resizefs {
             let path = lv_path(vg, lv);
-            let fstype = super::filesystem::blkid_type(&path)?
+            let fstype = filesystem_type
+                .as_deref()
                 .ok_or("lvol: filesystem type unavailable for resize")?;
             let result = super::filesystem::run(
                 &json!({"dev": path, "fstype": fstype, "resizefs": true}),
