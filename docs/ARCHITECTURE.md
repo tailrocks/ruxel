@@ -32,7 +32,8 @@ complete platform coverage.
    mode exists for disposable local testing.
 4. The controller handles task outcomes, conditions, retries, blocks and
    handlers, and reports per-host results. Plan lists selected operations without connecting. Check and diff use
-   non-mutating checks where the operation supports them; apply performs changes.
+   non-mutating checks where the operation supports them; a task with
+   `checkMode = false` can execute changes in either mode. Apply performs changes.
 
 The CLI supports JSON and human-readable output. Optional JSONL event logs are
 created as new private files. Treat generated output as sensitive: configuration

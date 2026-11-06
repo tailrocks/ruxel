@@ -84,13 +84,16 @@ ruxel apply example.pkl --agent /path/to/ruxel-agent
 
 `plan` lists selected operations without connecting or resolving runtime values.
 `check` and `diff` connect to targets and request non-mutating operation checks;
-`apply` executes changes. Operation support for check and diff varies, so verify a new
-workflow on disposable targets first. `--hosts` and `--tags` select hosts and
+`apply` executes changes. A task with `checkMode = false` overrides check mode
+and can execute changes during `check` or `diff`; the default and `true` request
+a non-mutating check. Operation support for check and diff varies, so verify a
+new workflow on disposable targets first. `--hosts` and `--tags` select hosts and
 tasks, `--jobs` controls concurrency, and `--output human` selects readable
 progress. `--known-hosts` and `--ssh-key` configure SSH; strict host-key
 checking is the default. Use `--accept-new-host-key` only when the applicable
 SSH policy permits it. `--synthetic-secrets` supplies deterministic synthetic
-lookup values for tests.
+lookup values for tests. `--log-file` writes redacted JSONL events to a new
+private file and refuses to overwrite an existing file.
 
 The local agent mode is for disposable local workloads only. It requires both
 `--local` and `--state-dir`; operations can modify the local machine. Do not
@@ -99,7 +102,8 @@ have applied the guard policy required by your environment. `check` and `diff` s
 
 Exit status is `0` on success, `2` for command-line usage, `4` for invalid
 configuration, and `8` for failed tasks. `--detailed-exitcode` returns `3` when
-successful execution reports changes. Internal errors return `1`. Other
+successful execution reports changes; in plan mode, selected potential
+operations also produce `3`. Internal errors return `1`. Other
 reserved codes are defined in `crates/ruxel/ruxel/src/exit.rs`.
 
 ## Development
