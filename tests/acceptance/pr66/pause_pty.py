@@ -23,6 +23,30 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def read_prompt(stream, timeout):
+    deadline = time.monotonic() + timeout
+    pending = b''
+    lines = []
+    os.set_blocking(stream.fileno(), False)
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, 'pause prompt timed out')
+            ready, _, _ = select.select([stream], [], [], remaining)
+            require(ready, 'pause prompt timed out')
+            chunk = os.read(stream.fileno(), 65536)
+            require(chunk, 'process ended before pause')
+            pending += chunk
+            while b'\n' in pending:
+                line, pending = pending.split(b'\n', 1)
+                event = json.loads(line)
+                lines.append(event)
+                if event.get('pause') == 'synthetic pause prompt':
+                    return lines, pending
+    finally:
+        os.set_blocking(stream.fileno(), True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ruxel', type=Path, required=True)
@@ -61,25 +85,7 @@ output { value = new Ruxel.Config {
             pending = b''
             try:
                 if mode == 'apply':
-                    deadline = time.monotonic() + PROMPT_TIMEOUT
-                    os.set_blocking(process.stdout.fileno(), False)
-                    prompted = False
-                    while not prompted:
-                        remaining = deadline - time.monotonic()
-                        require(remaining > 0, f'{case}: pause prompt timed out')
-                        ready, _, _ = select.select([process.stdout], [], [], remaining)
-                        require(ready, f'{case}: pause prompt timed out')
-                        chunk = os.read(process.stdout.fileno(), 65536)
-                        require(chunk, f'{case}: process ended before pause')
-                        pending += chunk
-                        while b'\n' in pending:
-                            line, pending = pending.split(b'\n', 1)
-                            event = json.loads(line)
-                            lines.append(event)
-                            if event.get('pause') == 'synthetic pause prompt':
-                                prompted = True
-                                break
-                    os.set_blocking(process.stdout.fileno(), True)
+                    lines, pending = read_prompt(process.stdout, PROMPT_TIMEOUT)
                     time.sleep(0.2)
                     require(process.poll() is None and not marker.exists(), f'{case}: pause did not block')
                     if case == 'interrupt':
