@@ -130,7 +130,7 @@ class File {
   group: Text? = null
   mode: FileMode? = null
   owner: Text? = null
-  path: Text?((this != null && dest == null || this == null && dest != null) && (state != "link" || src != null)) = null
+  path: Text?((this != null && dest == null || this == null && dest != null) && (state is Expr || state != "link" || src != null)) = null
   recurse: Flag? = null
   src: Text? = null
   state: ("file"|"directory"|"absent"|"link"|Expr)? = null
@@ -180,7 +180,7 @@ class Firewall {
 
 class LineInFile {
   fixed kind = "lineinfile"
-  line: Text?((state == "absent" && (this != null || regexp != null)) || (state != "absent" && this != null)) = null
+  line: Text?(state is Expr || (state == "absent" && (this != null || regexp != null)) || (state != "absent" && this != null)) = null
   path: Text
   regexp: Text? = null
   state: ("present"|"absent"|Expr)? = null
@@ -313,12 +313,12 @@ class PostgresPrivileges {
   login_db: Text
   login_port: Port? = null
   login_user: Text? = null
-  objs: TextList?(type != "database" || this != null) = null
+  objs: TextList?(type is Expr || type != "database" || this != null) = null
   privs: TextList? = null
   role: Text
   schema: Text? = null
   state: ("present"|Expr)? = null
-  target_roles: TextList?(this == null || type == "default_privs") = null
+  target_roles: TextList?(this == null || type is Expr || type == "default_privs") = null
   type: "database"|"schema"|"table"|"default_privs"|Expr
 }
 

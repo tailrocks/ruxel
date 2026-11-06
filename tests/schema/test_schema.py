@@ -22,12 +22,14 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
         self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
-        self.assertTrue(tasks[5]["operation"]["that"])
-        self.assertEqual(tasks[6]["operation"]["content"]["function"], "string")
-        self.assertEqual(tasks[7]["operation"]["content"], "data")
+        self.assertEqual(tasks[5]["operation"]["state"]["value"], "absent")
+        self.assertEqual(tasks[6]["operation"]["type"]["value"], "default_privs")
+        self.assertTrue(tasks[7]["operation"]["that"])
+        self.assertEqual(tasks[8]["operation"]["content"]["function"], "string")
+        self.assertEqual(tasks[9]["operation"]["content"], "data")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
-        self.assertEqual(tasks[8]["operation"]["password"]["provider"], "synthetic")
+        self.assertEqual(tasks[10]["operation"]["password"]["provider"], "synthetic")
 
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'

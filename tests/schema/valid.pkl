@@ -24,6 +24,8 @@ config = new R.Config {
         new R.Task { name = "block"; block { new R.Task { name = "file"; operation = new R.File { path = "/tmp/example"; mode = "0644" } } } }
         new R.Task { name = "link"; operation = new R.File { dest = "/tmp/link"; state = "link"; src = "/tmp/source" } }
         new R.Task { name = "mount"; operation = new R.Mount { path = "/tmp/mount"; src = "/dev/example"; fstype = "ext4" } }
+        new R.Task { name = "dynamic line"; operation = new R.LineInFile { path = "/tmp/example"; state = new R.Literal { value = "absent" }; regexp = "^a" } }
+        new R.Task { name = "dynamic privileges"; operation = new R.PostgresPrivileges { login_db = "db"; role = "reader"; type = new R.Literal { value = "default_privs" }; target_roles = "creator" } }
         new R.Task { name = "assert"; operation = new R.Assert { that = true } }
         new R.Task { name = "template"; operation = new R.Template { dest = "/tmp/template"; content = new R.Call { `function` = "string"; args { new R.Literal { value = 42 } } } } }
         new R.Task { name = "copy"; operation = new R.Copy { dest = "/tmp/copy"; content = "data" } }
