@@ -516,10 +516,44 @@ impl<B: Backend> Runner<'_, B> {
             .context("operation must be an object")?
         {
             if key != "kind" && !value.is_null() {
-                params.insert(snake(key), self.backend.evaluate(value, scope)?);
+                params.insert(snake(key), value.clone());
             }
         }
+        let params = self.backend.evaluate(&Value::Object(params), scope)?;
+        let params = params
+            .as_object()
+            .context("operation parameters must evaluate to an object")?
+            .clone();
         match kind {
+            "pause" => {
+                if matches!(self.options.mode, Mode::Check | Mode::Diff) {
+                    return Ok(json!({"changed":false,"skipped":true}));
+                }
+                let seconds = params.get("seconds").and_then(Value::as_u64).unwrap_or(0);
+                let minutes = params.get("minutes").and_then(Value::as_u64).unwrap_or(0);
+                let duration = seconds
+                    .checked_add(minutes.checked_mul(60).context("pause duration overflow")?)
+                    .context("pause duration overflow")?;
+                if duration > 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(duration)).await;
+                } else {
+                    use std::io::IsTerminal;
+                    let prompt = params
+                        .get("prompt")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Press Enter to continue");
+                    self.backend
+                        .event(&json!({"host":self.host,"pause":prompt}))?;
+                    if std::io::stdin().is_terminal() {
+                        let _ = tokio::task::spawn_blocking(|| {
+                            let mut line = String::new();
+                            std::io::stdin().read_line(&mut line)
+                        })
+                        .await??;
+                    }
+                }
+                return Ok(json!({"changed":false,"user_input":""}));
+            }
             "debug" => {
                 return Ok(
                     json!({"changed":false, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Hello world!"))}),
@@ -680,6 +714,12 @@ mod tests {
                 Ok(current)
             } else if value.get("kind").and_then(Value::as_str) == Some("literal") {
                 Ok(value["value"].clone())
+            } else if let Some(map) = value.as_object() {
+                let mut result = Map::new();
+                for (key, item) in map {
+                    result.insert(key.clone(), self.evaluate(item, scope)?);
+                }
+                Ok(Value::Object(result))
             } else {
                 Ok(value.clone())
             }
@@ -736,6 +776,20 @@ mod tests {
         assert!(backend.calls[0].task.force_check_mode);
         assert_eq!(backend.events[0]["result"]["censored"], true);
         assert!(!backend.events[0].to_string().contains("private"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn check_mode_skips_pause() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"pause","operation":{"kind":"pause","seconds":30}}]}]});
+        let mut backend = Fake::default();
+        let options = Options {
+            mode: Mode::Check,
+            ..Options::default()
+        };
+        let recap = run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+        assert!(backend.calls.is_empty());
+        assert_eq!(recap["h"].skipped, 1);
         Ok(())
     }
 
