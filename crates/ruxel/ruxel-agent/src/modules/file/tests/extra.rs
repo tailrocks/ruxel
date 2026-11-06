@@ -87,3 +87,37 @@ fn recursive_attributes_repair_unreadable_directory() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn recursive_restrictive_modes_apply_after_children() {
+    for mode in [0o000, 0o600] {
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("ruxel-dir-postorder-{}-{mode}", std::process::id()));
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("nested/file"), b"safe").unwrap();
+        let params = json!({"path": root, "state": "directory", "mode": format!("{mode:04o}"), "recurse": true});
+        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let nested = root.join("nested");
+        assert_eq!(
+            std::fs::metadata(&nested).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            std::fs::metadata(nested.join("file"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            mode
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

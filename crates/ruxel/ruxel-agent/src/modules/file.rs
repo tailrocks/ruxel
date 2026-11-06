@@ -145,17 +145,18 @@ fn apply_directory(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    super::apply_attrs_at(&fd, Path::new("."), obj, changed, check_mode)?;
-    #[cfg(not(target_os = "macos"))]
-    apply_attrs_fd(&fd, obj, changed, check_mode)?;
-    let readable = openat(
-        &fd,
-        ".",
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|e| e.to_string())?;
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let readable = match openat(&fd, ".", flags, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::ACCESS) if !check_mode => {
+            #[cfg(target_os = "macos")]
+            super::apply_attrs_at(&fd, Path::new("."), obj, changed, false)?;
+            #[cfg(not(target_os = "macos"))]
+            apply_attrs_fd(&fd, obj, changed, false)?;
+            openat(&fd, ".", flags, Mode::empty()).map_err(|e| e.to_string())?
+        }
+        Err(e) => return Err(e.to_string()),
+    };
     apply_attrs_recursive(&readable, obj, changed, check_mode)
 }
 
@@ -165,7 +166,6 @@ fn apply_attrs_recursive(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    apply_attrs_fd(&fd, obj, changed, check_mode)?;
     let stat = fstat(&fd).map_err(|e| e.to_string())?;
     if FileType::from_raw_mode(stat.st_mode) == FileType::Directory {
         let dir = Dir::read_from(&fd).map_err(|e| e.to_string())?;
@@ -178,7 +178,7 @@ fn apply_attrs_recursive(
             apply_entry(&fd, name, obj, changed, check_mode)?;
         }
     }
-    Ok(())
+    apply_attrs_fd(&fd, obj, changed, check_mode)
 }
 
 #[cfg(target_os = "linux")]
@@ -222,9 +222,15 @@ fn apply_entry(
         }
         FileType::Directory => {
             let path = Path::new(std::ffi::OsStr::from_bytes(name.to_bytes()));
-            super::apply_attrs_at(&dir, path, obj, changed, check_mode)?;
             let flags = directory_anchor_flags() | OFlags::NOFOLLOW;
-            let child = openat(&dir, name, flags, Mode::empty()).map_err(|e| e.to_string())?;
+            let child = match openat(&dir, name, flags, Mode::empty()) {
+                Ok(fd) => fd,
+                Err(rustix::io::Errno::ACCESS) if !check_mode => {
+                    super::apply_attrs_at(&dir, path, obj, changed, false)?;
+                    openat(&dir, name, flags, Mode::empty()).map_err(|e| e.to_string())?
+                }
+                Err(e) => return Err(e.to_string()),
+            };
             apply_directory(&child, obj, changed, check_mode)
         }
         _ => Ok(()),
