@@ -11,16 +11,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let exists = lv_exists(vg, lv)?;
     let changed = if exists {
         let relative = size.starts_with('+');
-        let needs_resize = if relative {
-            if size != "+100%FREE" {
-                return Err("lvol: only +100%FREE is supported for relative growth".into());
-            }
-            free_extents(vg)? > 0
-        } else {
-            let requested = size_bytes(size)?;
-            let (current, extent) = lv_geometry(vg, lv)?;
-            needs_absolute_resize(current, extent, requested)?
-        };
+        let needs_resize = needs_resize(size, || free_extents(vg), || lv_geometry(vg, lv))?;
         reconcile_existing(
             resizefs,
             needs_resize,
@@ -44,6 +35,27 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     };
 
     Ok(json!({"changed": changed, "failed": false, "lv": lv, "vg": vg}))
+}
+
+fn needs_resize(
+    size: &str,
+    free: impl FnOnce() -> Result<u64, String>,
+    geometry: impl FnOnce() -> Result<(u64, u64), String>,
+) -> Result<bool, String> {
+    if size.starts_with('+') {
+        if size != "+100%FREE" {
+            return Err("lvol: only +100%FREE is supported for relative growth".into());
+        }
+        Ok(free()? > 0)
+    } else if size.contains('%') {
+        // Creation consumes the original free-space baseline, so a later run
+        // cannot derive the same absolute target from a percentage of it.
+        Ok(false)
+    } else {
+        let requested = size_bytes(size)?;
+        let (current, extent) = geometry()?;
+        needs_absolute_resize(current, extent, requested)
+    }
 }
 
 fn reconcile_existing<T>(
@@ -279,6 +291,76 @@ mod tests {
         assert!(!super::needs_absolute_resize(16, 4, 13).unwrap());
         assert!(super::needs_absolute_resize(16, 4, 17).unwrap());
         assert!(super::needs_absolute_resize(16, 4, 8).is_err());
+    }
+
+    #[test]
+    fn percentage_creation_converges_without_reinterpreting_free_space() {
+        for check in [false, true] {
+            let needs = super::needs_resize(
+                "100%FREE",
+                || panic!("must not recalculate free-space percentage"),
+                || panic!("must not treat percentage as absolute size"),
+            )
+            .unwrap();
+            let changed = super::reconcile_existing(
+                false,
+                needs,
+                check,
+                || -> Result<Option<()>, String> { panic!("unexpected filesystem probe") },
+                || panic!("unexpected volume resize"),
+                |()| -> Result<bool, String> { panic!("unexpected filesystem resize") },
+            )
+            .unwrap();
+            assert!(!changed);
+        }
+        assert!(super::needs_resize("+100%FREE", || Ok(2), || unreachable!()).unwrap());
+        assert!(!super::needs_resize("+100%FREE", || Ok(0), || unreachable!()).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn percentage_volume_create_then_reapply() {
+        use std::os::unix::fs::PermissionsExt;
+        if std::env::var_os("RUXEL_LVOL_TEST_CHILD").is_some() {
+            let mut ctx = super::ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            };
+            let params = serde_json::json!({"vg": "synthetic", "lv": "data", "size": "100%FREE"});
+            assert_eq!(super::run(&params, &ctx).unwrap()["changed"], true);
+            assert_eq!(super::run(&params, &ctx).unwrap()["changed"], false);
+            ctx.check_mode = true;
+            assert_eq!(super::run(&params, &ctx).unwrap()["changed"], false);
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("ruxel-lvol-percent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, script) in [
+            (
+                "lvs",
+                "#!/bin/sh\n[ -f \"$RUXEL_LVOL_TEST_STATE\" ] || exit 1\nprintf 'data\\n'\n",
+            ),
+            (
+                "lvcreate",
+                "#!/bin/sh\n[ \"$1\" = -l ] && [ \"$2\" = 100%FREE ] || exit 1\n: > \"$RUXEL_LVOL_TEST_STATE\"\n",
+            ),
+        ] {
+            let path = dir.join(name);
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("percentage_volume_create_then_reapply")
+            .env("RUXEL_LVOL_TEST_CHILD", "1")
+            .env("RUXEL_LVOL_TEST_STATE", dir.join("created"))
+            .env("PATH", &dir)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
