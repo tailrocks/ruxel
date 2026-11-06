@@ -52,6 +52,7 @@ inputs = [
   "testdata/workloads/pr66/storage-xfs.pkl",
   "testdata/workloads/pr66/system-surface.pkl",
   "tests/acceptance/pr66/cache.py",
+  "tests/acceptance/pr66/check_overrides.py",
   "tests/acceptance/pr66/check_semantics.py",
   "tests/acceptance/pr66/coverage.py",
   "tests/acceptance/pr66/files_lifecycle.py",
