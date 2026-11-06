@@ -5,6 +5,8 @@ fixture matrix. Their loopback inventory is a placeholder: a harness must
 replace it with its isolated disposable hosts before any remote execution.
 The harness must replace `__RUN_ROOT__` in evaluated configurations and
 expectations with one isolated temporary directory for each run.
+Replace `__FIXTURE_ROOT__` with the absolute local path of this directory
+when evaluating source assets; never resolve it as a remote host path.
 The files only describe workloads; they do not create hosts or run commands.
 
 `expectations.json` specifies file observations, a drift injection and phase
@@ -15,7 +17,7 @@ not necessarily the entire play (pause and handlers have separate semantics).
 
 Pkl evaluation has been checked against the in-development `schema/Ruxel.pkl`.
 These fixtures have not been run through the controller or an acceptance
-harness. The other three matrix workloads and their state expectations remain
+harness. The other two matrix workloads and their state expectations remain
 unported; in particular this directory does not establish full PR 66 parity.
 
 Storage scenarios require isolated disposable fixture disks at their declared

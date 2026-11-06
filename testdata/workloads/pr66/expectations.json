@@ -533,6 +533,111 @@
         "controller execution, including pause, block rescue, loop registration, and no-log redaction",
         "scalar-to-string expression conversion for length interpolation"
       ]
+    },
+    "files-content": {
+      "fixture": "files-content.pkl",
+      "observations": [
+        {
+          "kind": "directory",
+          "path": "__RUN_ROOT__/files/tree",
+          "mode": "0700",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "directory",
+          "path": "__RUN_ROOT__/files/dest-dir"
+        },
+        {
+          "kind": "symlink",
+          "path": "__RUN_ROOT__/files/tree-link",
+          "target": "__RUN_ROOT__/files/tree"
+        },
+        {
+          "kind": "absent",
+          "path": "__RUN_ROOT__/files/absent"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/copied.txt",
+          "content": "replaced\n",
+          "mode": "0644",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/source.txt",
+          "content": "synthetic source\n"
+        },
+        {
+          "kind": "file_contains",
+          "path": "__RUN_ROOT__/files/rendered.txt",
+          "values": [
+            "alpha",
+            "beta",
+            "joined=alpha,beta",
+            "optional=fallback",
+            "encoded=synthetic%20value",
+            "conditional=enabled"
+          ]
+        },
+        {
+          "kind": "file_contains",
+          "path": "__RUN_ROOT__/files/block.txt",
+          "values": [
+            "alpha\nbeta"
+          ]
+        },
+        {
+          "kind": "file_exists",
+          "path": "__RUN_ROOT__/files/created-by-command"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/created-by-shell",
+          "content": "synthetic"
+        },
+        {
+          "kind": "fact",
+          "host": "fixture",
+          "name": "fixture_decoded",
+          "equals": "replaced"
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/files/copied.txt",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_file",
+          "path": "__RUN_ROOT__/files/source.txt"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "controller-side local source loading and template rendering",
+        "scalar-to-string interpolation",
+        "independent handler notification observation"
+      ]
     }
   }
 }
