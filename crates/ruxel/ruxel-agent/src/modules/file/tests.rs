@@ -93,3 +93,32 @@ fn recursive_attributes_do_not_follow_symlinks() {
     );
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn recursive_attributes_repair_unreadable_root() {
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(format!("ruxel-root-unreadable-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("file"), b"safe").unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
+    let mut check = context();
+    check.check_mode = true;
+    assert!(run(&params, &check).is_err());
+    assert_eq!(
+        std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+        0o000
+    );
+    assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+    assert_eq!(
+        std::fs::metadata(root.join("file"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

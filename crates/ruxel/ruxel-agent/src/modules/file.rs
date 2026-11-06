@@ -31,8 +31,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         "directory" => {
             if super::bool_param(obj, "recurse", false) {
-                let (fd, created) = open_directory_path(p, !ctx.check_mode)?;
-                changed = created;
+                let (fd, created) = open_directory_path(p, !ctx.check_mode, obj, &mut changed)?;
+                changed |= created;
                 if let Some(fd) = fd {
                     apply_directory(&fd, obj, &mut changed, ctx.check_mode)?;
                 }
@@ -90,18 +90,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 fn path_start(path: &Path) -> Result<OwnedFd, String> {
     let start = if path.is_absolute() { "/" } else { "." };
-    open(
-        start,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|e| e.to_string())
+    open(start, directory_anchor_flags(), Mode::empty()).map_err(|e| e.to_string())
 }
 
-fn open_directory_path(path: &Path, create: bool) -> Result<(Option<OwnedFd>, bool), String> {
+fn open_directory_path(
+    path: &Path,
+    create: bool,
+    obj: &serde_json::Map<String, Value>,
+    changed: &mut bool,
+) -> Result<(Option<OwnedFd>, bool), String> {
     let mut current = path_start(path)?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = (&obj, &changed);
     let mut created = false;
-    for part in path.components() {
+    let mut parts = path.components().peekable();
+    while let Some(part) = parts.next() {
         let name = match part {
             Component::RootDir | Component::CurDir => continue,
             Component::Normal(name) => name,
@@ -111,6 +114,11 @@ fn open_directory_path(path: &Path, create: bool) -> Result<(Option<OwnedFd>, bo
         let flags = directory_anchor_flags();
         current = match openat(&current, name, flags, Mode::empty()) {
             Ok(fd) => fd,
+            #[cfg(target_os = "macos")]
+            Err(rustix::io::Errno::ACCESS) if create && parts.peek().is_none() => {
+                super::apply_attrs_at(&current, Path::new(name), obj, changed, false)?;
+                openat(&current, name, flags, Mode::empty()).map_err(|e| e.to_string())?
+            }
             Err(rustix::io::Errno::NOENT) if !create => return Ok((None, true)),
             Err(rustix::io::Errno::NOENT) => {
                 mkdirat(&current, name, Mode::from_raw_mode(0o777)).map_err(|e| e.to_string())?;
