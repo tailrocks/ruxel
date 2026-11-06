@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 rustix.workspace = true
 pbkdf2.workspace = true
-md-5.workspace = true
+md5.workspace = true
 regex-lite.workspace = true
 hmac.workspace = true
 ruxel-proto.workspace = true
