@@ -45,16 +45,24 @@ impl fmt::Debug for Lookup {
 
 /// Inject a backend to run lookups. Backend errors are deliberately not surfaced.
 pub trait Backend: Send + Sync {
+    /// # Errors
+    /// Returns an error if the backend cannot resolve the key.
     fn fnox(&self, key: &str) -> Result<String, String>;
+    /// # Errors
+    /// Returns an error if the backend cannot fetch the item.
     fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String>;
+    /// # Errors
+    /// Returns an error if the command fails.
     fn command(&self, argv: &[String]) -> Result<String, String>;
+    /// # Errors
+    /// Returns an error if the pipe fails.
     fn pipe(&self, command: &str) -> Result<String, String>;
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ProcessBackend;
 
-fn output(mut command: Command) -> Result<String, String> {
+fn process_output(mut command: Command) -> Result<String, String> {
     let result = command
         .output()
         .map_err(|_| "process could not start".to_owned())?;
@@ -87,36 +95,43 @@ impl Backend for ProcessBackend {
             "sh",
             key,
         ]);
-        output(cmd)
+        process_output(cmd)
     }
     fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String> {
         let mut cmd = Command::new("op");
         cmd.args([
             "item", "get", "--vault", vault, "--format", "json", "--", item,
         ]);
-        serde_json::from_str(&output(cmd)?).map_err(|_| "invalid item response".into())
+        serde_json::from_str(&process_output(cmd)?).map_err(|_| "invalid item response".into())
     }
     fn command(&self, argv: &[String]) -> Result<String, String> {
-        let (program, args) = argv.split_first().ok_or("empty command")?;
+        let (program, arguments) = argv.split_first().ok_or("empty command")?;
         let mut cmd = Command::new(program);
-        cmd.args(args);
-        output(cmd)
+        cmd.args(arguments);
+        process_output(cmd)
     }
     fn pipe(&self, command: &str) -> Result<String, String> {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", command]);
-        output(cmd)
+        process_output(cmd)
     }
 }
 
 type Cell<T> = Arc<OnceLock<Result<T, String>>>;
+type ItemCache = Arc<Mutex<HashMap<(String, String), Cell<serde_json::Value>>>>;
 
 #[derive(Clone)]
 pub struct Resolver {
     backend: Arc<dyn Backend>,
     synthetic: bool,
     values: Arc<Mutex<HashMap<Lookup, Cell<String>>>>,
-    items: Arc<Mutex<HashMap<(String, String), Cell<serde_json::Value>>>>,
+    items: ItemCache,
+}
+
+impl fmt::Debug for Resolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Resolver([REDACTED])")
+    }
 }
 
 impl Resolver {
@@ -139,6 +154,9 @@ impl Resolver {
     }
 
     /// Resolve a lookup; concurrent requests for the same value share one fetch.
+    ///
+    /// # Errors
+    /// Returns a redacted error if the lookup fails.
     pub fn resolve(&self, lookup: &Lookup) -> Result<String, String> {
         let cell = self
             .values
@@ -170,10 +188,10 @@ impl Resolver {
             }
             Lookup::Command { argv } => self.backend.command(argv).map_err(|_| generic()),
             Lookup::Pipe { command } => {
-                if let Some(reference) = pipe_op_reference(command) {
-                    if let Some((vault, item, section, field)) = parse_op_reference(reference) {
-                        return self.op_field(vault, item, field, section);
-                    }
+                if let Some(reference) = pipe_op_reference(command)
+                    && let Some((vault, item, section, field)) = parse_op_reference(reference)
+                {
+                    return self.op_field(vault, item, field, section);
                 }
                 self.backend.pipe(command).map_err(|_| generic())
             }
@@ -207,6 +225,9 @@ impl Resolver {
     }
 
     /// Fetch distinct lookups concurrently, with at most eight workers.
+    ///
+    /// # Errors
+    /// Returns a redacted error if any lookup fails.
     pub fn prefetch(&self, lookups: &[Lookup]) -> Result<(), String> {
         let unique: HashSet<_> = lookups.iter().cloned().collect();
         let queue = Mutex::new(unique.into_iter().collect::<Vec<_>>());
@@ -217,10 +238,10 @@ impl Resolver {
                     loop {
                         let next = queue.lock().ok().and_then(|mut q| q.pop());
                         let Some(lookup) = next else { break };
-                        if self.resolve(&lookup).is_err() {
-                            if let Ok(mut value) = failed.lock() {
-                                *value = true;
-                            }
+                        if self.resolve(&lookup).is_err()
+                            && let Ok(mut value) = failed.lock()
+                        {
+                            *value = true;
                         }
                     }
                 });
@@ -244,10 +265,12 @@ fn parse_op_reference(reference: &str) -> Option<(&str, &str, Option<&str>, &str
 }
 
 fn pipe_op_reference(command: &str) -> Option<&str> {
-    let rest = command.trim().strip_prefix("op")?;
-    let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
+    let rest = command.trim_matches([' ', '\t']).strip_prefix("op")?;
+    let rest = rest
+        .strip_prefix([' ', '\t'])?
+        .trim_start_matches([' ', '\t']);
     let rest = rest.strip_prefix("read")?;
-    let rest = rest.strip_prefix(char::is_whitespace)?.trim();
+    let rest = rest.strip_prefix([' ', '\t'])?.trim_matches([' ', '\t']);
     let reference = if let Some(quote) = rest.chars().next().filter(|c| *c == '\'' || *c == '"') {
         let inner = rest.strip_prefix(quote)?.strip_suffix(quote)?;
         if inner.contains(quote) || (quote == '"' && inner.contains(['$', '`', '\\'])) {
@@ -289,7 +312,11 @@ fn synthetic_value(lookup: &Lookup) -> String {
         key.push_str(part);
     }
     let digest = Sha256::digest(key.as_bytes());
-    let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+    let hex = digest[..8].iter().fold(String::new(), |mut hex, byte| {
+        use std::fmt::Write;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    });
     format!("dry-secret-{hex}")
 }
 
@@ -318,6 +345,7 @@ fn select_field(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -406,6 +434,8 @@ mod tests {
             "printf '%s' 'op://vault/item/username'",
             "op read 'op://vault/item/username' | base64",
             "op read \"op://vault/item/$name\"",
+            "op\nread 'op://vault/item/username'",
+            "op read\n'op://vault/item/username'",
         ] {
             assert_eq!(
                 resolver
