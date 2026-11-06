@@ -92,17 +92,39 @@ impl Lookups {
         })
     }
     fn redact(&self, value: &Value) -> Result<Value> {
+        fn scrub(value: &Value, secrets: &[String]) -> Value {
+            match value {
+                Value::String(text) => Value::String(
+                    secrets
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .fold(text.clone(), |text, secret| {
+                            text.replace(secret, "[REDACTED]")
+                        }),
+                ),
+                Value::Array(items) => {
+                    Value::Array(items.iter().map(|v| scrub(v, secrets)).collect())
+                }
+                Value::Object(items) => Value::Object(
+                    items
+                        .iter()
+                        .map(|(key, value)| {
+                            let key = secrets
+                                .iter()
+                                .filter(|s| !s.is_empty())
+                                .fold(key.clone(), |key, secret| key.replace(secret, "[REDACTED]"));
+                            (key, scrub(value, secrets))
+                        })
+                        .collect(),
+                ),
+                _ => value.clone(),
+            }
+        }
         let secrets = self
             .values
             .lock()
             .map_err(|_| anyhow::anyhow!("redactor unavailable"))?;
-        let mut encoded = serde_json::to_string(value)?;
-        for secret in secrets.iter().filter(|v| !v.is_empty()) {
-            // JSON escaping is applied before replacement so quotes and control bytes cannot bypass it.
-            let quoted = serde_json::to_string(secret)?;
-            encoded = encoded.replace(&quoted[1..quoted.len() - 1], "[REDACTED]");
-        }
-        Ok(serde_json::from_str(&encoded)?)
+        Ok(scrub(value, &secrets))
     }
 }
 impl LookupResolver for Lookups {
@@ -200,6 +222,40 @@ impl Execution {
 }
 impl Backend for Execution {
     fn evaluate(&mut self, value: &Value, map: &Map<String, Value>) -> Result<Value> {
+        // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
+        fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
+            if let Some(kind) = value.get("kind").and_then(Value::as_str) {
+                if kind == "lookup" {
+                    found.push(Lookups::lookup(&serde_json::from_value::<Expr>(
+                        value.clone(),
+                    )?)?);
+                    return Ok(());
+                }
+                if ["literal", "ref", "call", "list", "map"].contains(&kind) {
+                    return Ok(());
+                }
+            }
+            match value {
+                Value::Array(items) => {
+                    for item in items {
+                        direct_lookups(item, found)?;
+                    }
+                }
+                Value::Object(items) => {
+                    for item in items.values() {
+                        direct_lookups(item, found)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        let mut lookups = Vec::new();
+        direct_lookups(value, &mut lookups)?;
+        self.lookups
+            .resolver
+            .prefetch(&lookups)
+            .map_err(anyhow::Error::msg)?;
         let scope = Scope {
             facts: map.get("facts").cloned().unwrap_or(Value::Null),
             results: map.get("results").cloned().unwrap_or(Value::Null),
@@ -315,5 +371,24 @@ pub async fn run(
             }
             Ok(recap)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redaction_preserves_json_structure_for_short_and_escaped_secrets() -> Result<()> {
+        let lookups = Lookups {
+            resolver: Resolver::synthetic(),
+            values: Mutex::new(vec!["true".into(), "quoted\"secret".into()]),
+        };
+        let result = lookups
+            .redact(&json!({"value":true,"nested":["true","quoted\"secret"],"true-key":1}))?;
+        assert_eq!(result["value"], true);
+        assert_eq!(result["nested"], json!(["[REDACTED]", "[REDACTED]"]));
+        assert_eq!(result["[REDACTED]-key"], 1);
+        Ok(())
     }
 }

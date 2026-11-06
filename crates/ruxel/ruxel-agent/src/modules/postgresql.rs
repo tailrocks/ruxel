@@ -197,7 +197,13 @@ fn acl_privileges(privs: &str, object_type: &str, server_version: u32) -> Vec<St
         "database" => &["CREATE", "CONNECT", "TEMPORARY"],
         "schema" => &["CREATE", "USAGE"],
         "table" | "default_privs" => &[
-            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
         ],
         _ => &[],
     };
@@ -567,9 +573,10 @@ pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     }
 
     let needs_version = matches!(typ, "table" | "default_privs")
-        && privs_list.split(',').map(str::trim).any(|p| {
-            p.eq_ignore_ascii_case("ALL") || p.eq_ignore_ascii_case("ALL PRIVILEGES")
-        });
+        && privs_list
+            .split(',')
+            .map(str::trim)
+            .any(|p| p.eq_ignore_ascii_case("ALL") || p.eq_ignore_ascii_case("ALL PRIVILEGES"));
     let server_version = if needs_version {
         psql(ctx, &port, Some(login_db), "SHOW server_version_num")?
             .parse::<u32>()
@@ -587,9 +594,7 @@ pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             role,
             &probes,
         )?,
-        "schema" => {
-            privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), &probes)?
-        }
+        "schema" => privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), &probes)?,
         "table" => privs_missing_table(
             ctx,
             &port,
@@ -942,17 +947,50 @@ mod tests {
         for (kind, held) in [
             ("database", vec!["CONNECT", "CREATE", "TEMPORARY"]),
             ("schema", vec!["CREATE", "USAGE"]),
-            ("table", vec!["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]),
-            ("default_privs", vec!["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]),
+            (
+                "table",
+                vec![
+                    "DELETE",
+                    "INSERT",
+                    "REFERENCES",
+                    "SELECT",
+                    "TRIGGER",
+                    "TRUNCATE",
+                    "UPDATE",
+                ],
+            ),
+            (
+                "default_privs",
+                vec![
+                    "DELETE",
+                    "INSERT",
+                    "REFERENCES",
+                    "SELECT",
+                    "TRIGGER",
+                    "TRUNCATE",
+                    "UPDATE",
+                ],
+            ),
         ] {
             for requested in ["ALL", "all privileges"] {
                 let probes = super::acl_privileges(requested, kind, 160_000);
                 assert_eq!(probes, held);
-                assert!(probes.iter().all(|privilege| held.contains(&privilege.as_str())));
-                assert!(probes.iter().any(|privilege| !held[1..].contains(&privilege.as_str())));
+                assert!(
+                    probes
+                        .iter()
+                        .all(|privilege| held.contains(&privilege.as_str()))
+                );
+                assert!(
+                    probes
+                        .iter()
+                        .any(|privilege| !held[1..].contains(&privilege.as_str()))
+                );
             }
         }
-        assert_eq!(super::acl_privileges("temp, TEMPORARY", "database", 180_000), ["TEMPORARY"]);
+        assert_eq!(
+            super::acl_privileges("temp, TEMPORARY", "database", 180_000),
+            ["TEMPORARY"]
+        );
     }
 
     #[test]
