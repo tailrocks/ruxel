@@ -104,3 +104,29 @@ async fn failed_upload_and_cleanup_are_both_reported_without_launch() -> anyhow:
 
 #[path = "deployment_trust.rs"]
 mod trust;
+
+#[tokio::test]
+async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    let ack = ruxel_proto::v1::Event {
+        msg: Some(ruxel_proto::v1::event::Msg::HelloAck(
+            ruxel_proto::v1::HelloAck {
+                proto_version: 1,
+                ..Default::default()
+            },
+        )),
+    };
+    std::fs::write(
+        fixture.root.join("ack"),
+        ruxel_proto::frame::encode_frame(&ack),
+    )?;
+    let error = tokio::time::timeout(std::time::Duration::from_secs(15), fixture.connect())
+        .await?
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("agent speaks proto v1, controller v2")
+    );
+    Ok(())
+}
