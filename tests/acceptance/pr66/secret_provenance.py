@@ -142,7 +142,7 @@ output { value = new Ruxel.Config {
         if template_run.returncode != 0 or template_dest.read_bytes() != encoded.encode():
             raise RuntimeError(f'template readback fixture failed: {template_run.stderr}')
         for label, text in [('stdout', template_run.stdout), ('stderr', template_run.stderr), ('log', template_log.read_text())]:
-            if encoded in text or encoded_twice in text:
+            if FAKE_VALUE in text or encoded in text or encoded_twice in text:
                 raise RuntimeError(f'{label}: template readback exposed synthetic data')
         for text in (template_run.stdout, template_log.read_text()):
             events = [json.loads(line) for line in text.splitlines() if line]
@@ -150,6 +150,11 @@ output { value = new Ruxel.Config {
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{name} was not censored')
+        for path in (base / 'template-state').rglob('*'):
+            if path.is_file():
+                data = path.read_bytes()
+                if any(value.encode() in data for value in (FAKE_VALUE, encoded, encoded_twice)):
+                    raise RuntimeError('synthetic template data was persisted in local agent state')
         failing = base / 'failure.pkl'
         failing.write_text('''import "Ruxel.pkl"
 output { value = new Ruxel.Config {
