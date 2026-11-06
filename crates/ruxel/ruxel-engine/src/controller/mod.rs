@@ -31,8 +31,16 @@ pub struct Request {
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
 #[expect(async_fn_in_trait, reason = "the backend is statically dispatched")]
 pub trait Backend {
+    /// Evaluate an expression in the current scope.
+    ///
+    /// # Errors
+    /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
     async fn execute(&mut self, request: Request) -> Result<Value>;
+    /// Emit a structured execution event.
+    ///
+    /// # Errors
+    /// Returns an error if the event cannot be written.
     fn event(&mut self, event: &Value) -> Result<()>;
 }
 
@@ -159,6 +167,9 @@ fn group_hosts(
 }
 
 /// Resolve and validate play targets without contacting any host.
+///
+/// # Errors
+/// Returns an error for unknown targets or invalid inventory groups.
 pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> {
     let inventory = config.get("inventory").context("missing inventory")?;
     let hosts = object(inventory, "hosts");
@@ -189,8 +200,34 @@ pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> 
     Ok(selected.into_iter().collect())
 }
 
+fn visible_plan(task: &Value) -> Value {
+    if flag(task, "noLog") {
+        return json!({"name":string(task,"name"),"noLog":true,"censored":true});
+    }
+    let mut visible = task.clone();
+    for key in ["block", "rescue", "always"] {
+        if let Some(children) = visible.get_mut(key).and_then(Value::as_array_mut) {
+            for child in children {
+                *child = visible_plan(child);
+            }
+        }
+    }
+    visible
+}
+
+fn plan_tasks<B: Backend>(backend: &mut B, host: &str, tasks: &[Value], phase: &str) -> Result<()> {
+    for task in tasks {
+        backend
+            .event(&json!({"host":host,"phase":phase,"planned":true,"task":visible_plan(task)}))?;
+    }
+    Ok(())
+}
+
 /// Expand explicit host and group targets and execute each play in order.
 /// Facts are supplied by the caller, keyed by inventory host name.
+///
+/// # Errors
+/// Returns an error if inventory, expression evaluation, or execution fails.
 pub async fn run<B: Backend>(
     config: &Value,
     facts: &BTreeMap<String, Value>,
@@ -224,6 +261,13 @@ pub async fn run<B: Backend>(
             if !options.hosts.is_empty() && !options.hosts.contains(&host) {
                 continue;
             }
+            if options.mode == Mode::Plan {
+                plan_tasks(backend, &host, array(play, "preTasks"), "preTask")?;
+                plan_tasks(backend, &host, array(play, "tasks"), "task")?;
+                plan_tasks(backend, &host, array(play, "handlers"), "handler")?;
+                totals.entry(host).or_insert_with(Recap::default);
+                continue;
+            }
             let mut scope = Map::new();
             scope.insert("inventoryHost".into(), Value::String(host.clone()));
             scope.insert(
@@ -250,7 +294,8 @@ pub async fn run<B: Backend>(
             runner.extend_vars(&mut layer.vars, &object(play, "vars"))?;
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
-            let success = runner.tasks(array(play, "tasks"), &layer).await?;
+            let success = runner.tasks(array(play, "preTasks"), &layer).await?
+                && runner.tasks(array(play, "tasks"), &layer).await?;
             if success {
                 runner.run_handlers(&layer).await?;
             }
@@ -339,11 +384,11 @@ impl<B: Backend> Runner<'_, B> {
             }
             if !array(task, "block").is_empty() {
                 let scope = self.scope(&layer, None);
-                if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
-                    if !truth(&self.backend.evaluate(condition, &scope)?) {
-                        self.recap.skipped += 1;
-                        return Ok(true);
-                    }
+                if let Some(condition) = task.get("when").filter(|v| !v.is_null())
+                    && !truth(&self.backend.evaluate(condition, &scope)?)
+                {
+                    self.recap.skipped += 1;
+                    return Ok(true);
                 }
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
@@ -360,6 +405,10 @@ impl<B: Backend> Runner<'_, B> {
         })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "iteration and recap form one task execution"
+    )]
     async fn operation(&mut self, task: &Value, layer: &ContextLayer) -> Result<bool> {
         let scope = self.scope(layer, None);
         let items = if let Some(expr) = task.get("loop").filter(|v| !v.is_null()) {
@@ -378,11 +427,11 @@ impl<B: Backend> Runner<'_, B> {
                 layer,
                 looped.then_some((string(task, "loopVar").unwrap_or("item"), item)),
             );
-            if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
-                if !truth(&self.backend.evaluate(condition, &scope)?) {
-                    results.push(json!({"skipped":true,"changed":false}));
-                    continue;
-                }
+            if let Some(condition) = task.get("when").filter(|v| !v.is_null())
+                && !truth(&self.backend.evaluate(condition, &scope)?)
+            {
+                results.push(json!({"skipped":true,"changed":false}));
+                continue;
             }
             let mut result = self.execute(task, layer, &scope, item).await?;
             let mut result_scope = scope.clone();
@@ -445,6 +494,10 @@ impl<B: Backend> Runner<'_, B> {
         Ok(!is_failed || ignored)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "operation preparation and retry share scope"
+    )]
     async fn execute(
         &mut self,
         task: &Value,
@@ -516,6 +569,16 @@ impl<B: Backend> Runner<'_, B> {
         let destination = string(task, "delegateTo").unwrap_or(&self.host).to_owned();
         let id = self.next_id;
         self.next_id += 1;
+        let item_label = if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
+            let value = self.backend.evaluate(label, scope)?;
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned)
+        } else if item.is_null() {
+            String::new()
+        } else {
+            item.to_string()
+        };
         let request = Request {
             host: destination,
             task: v1::RenderedTask {
@@ -524,11 +587,7 @@ impl<B: Backend> Runner<'_, B> {
                 module: kind.to_owned(),
                 rendered: true,
                 iterations: vec![v1::Iteration {
-                    item_label: if item.is_null() {
-                        String::new()
-                    } else {
-                        item.to_string()
-                    },
+                    item_label,
                     params_json: serde_json::to_vec(&params)?,
                     free_form: String::new(),
                     ledger_key: String::new(),
@@ -625,9 +684,9 @@ mod tests {
                 Ok(value.clone())
             }
         }
-        async fn execute(&mut self, request: Request) -> Result<Value> {
+        fn execute(&mut self, request: Request) -> impl Future<Output = Result<Value>> {
             self.calls.push(request);
-            Ok(json!({"changed":true}))
+            std::future::ready(Ok(json!({"changed":true})))
         }
         fn event(&mut self, event: &Value) -> Result<()> {
             self.events.push(event.clone());
@@ -681,8 +740,16 @@ mod tests {
     }
 
     #[test]
-    fn group_cycles_are_rejected() {
+    fn group_cycles_are_rejected() -> Result<()> {
         let groups = json!({"a":{"children":["b"]},"b":{"children":["a"]}});
-        assert!(group_hosts("a", groups.as_object().unwrap(), &mut BTreeSet::new()).is_err());
+        assert!(
+            group_hosts(
+                "a",
+                groups.as_object().context("groups")?,
+                &mut BTreeSet::new()
+            )
+            .is_err()
+        );
+        Ok(())
     }
 }
