@@ -91,7 +91,9 @@ impl Backend for ProcessBackend {
     }
     fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String> {
         let mut cmd = Command::new("op");
-        cmd.args(["item", "get", item, "--vault", vault, "--format", "json"]);
+        cmd.args([
+            "item", "get", "--vault", vault, "--format", "json", "--", item,
+        ]);
         serde_json::from_str(&output(cmd)?).map_err(|_| "invalid item response".into())
     }
     fn command(&self, argv: &[String]) -> Result<String, String> {
