@@ -92,7 +92,13 @@ the pinned upstream source with native `cc` and make into the platform cache,
 checks the exact version, and delegates to the system pkg-config. Other package
 queries are delegated unchanged. Native pkg-config metadata uses absolute
 cache paths and is prepended to the ordinary search path, preserving other
-packages' discovery. Supplied cross sysroots are used without a native build.
+packages' discovery. Native compiler/linker flags quote the complete path,
+including apostrophes. Supplied cross sysroots are used without a native build.
+
+Upstream Autoconf rejects some characters in its working directory. Compilation
+therefore runs in a disposable directory below `/tmp`; the trap removes it after
+success or failure. The extracted source tree is moved into the cache after a
+successful build, alongside the original archive and logs.
 
 The wrapper atomically publishes `.cache/native/include` as a symlink to the
 cached headers. `C_INCLUDE_PATH` makes these headers visible both to the C
