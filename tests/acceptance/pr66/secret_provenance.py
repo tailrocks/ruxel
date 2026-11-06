@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,7 @@ def main():
         base = Path(temp)
         shutil.copyfile(ROOT / 'schema/Ruxel.pkl', base / 'Ruxel.pkl')
         module = base / 'test.pkl'
+        executed = base / 'command-executed'
         module.write_text('''import "Ruxel.pkl"
 function secret(): Ruxel.Lookup = new { provider = "synthetic"; key = FAKE_VALUE }
 function ref(a: String, b: String): Ruxel.Ref = new { path { a; b } }
@@ -37,12 +39,12 @@ output { value = new Ruxel.Config {
   new { name = "fact-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private")) } }
   new { name = "no-log-fact"; noLog = true; operation = new Ruxel.SetFact { values { ["private_no_log"] = lit(NO_LOG_VALUE) } } }
   new { name = "no-log-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private_no_log")) } }
-  new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(" | base64") } } } }
+  new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(COMMAND_SUFFIX) } } } }
   new { name = "registered"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cmd"; "stdout" } } } }
   new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
  } } }
 } }
-'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)))
+'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('COMMAND_SUFFIX', json.dumps(' | base64; touch ' + shlex.quote(str(executed)))))
         event_log = base / 'events.jsonl'
         result = subprocess.run([str(cli), 'apply', str(module), '--local', '--agent', str(agent),
                                  '--state-dir', str(base / 'state'), '--synthetic-secrets',
@@ -50,9 +52,12 @@ output { value = new Ruxel.Config {
                                 capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             raise RuntimeError(f'run failed: exit {result.returncode}, stderr={result.stderr}')
+        if not executed.is_file():
+            raise RuntimeError('sensitive command did not execute')
         encoded = base64.b64encode(FAKE_VALUE.encode()).decode()
+        encoded_no_log = base64.b64encode(NO_LOG_VALUE.encode()).decode()
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text()), ('stderr', result.stderr)]:
-            if FAKE_VALUE in text or encoded in text or NO_LOG_VALUE in text or base64.b64encode(NO_LOG_VALUE.encode()).decode() in text:
+            if FAKE_VALUE in text or encoded in text or NO_LOG_VALUE in text or encoded_no_log in text:
                 raise RuntimeError(f'{label} contains a synthetic secret or its encoding')
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text())]:
             events = [json.loads(line) for line in text.splitlines() if line]
@@ -66,7 +71,7 @@ output { value = new Ruxel.Config {
         for path in (base / 'state').rglob('*'):
             if path.is_file():
                 data = path.read_bytes()
-                if FAKE_VALUE.encode() in data or encoded.encode() in data or NO_LOG_VALUE.encode() in data:
+                if FAKE_VALUE.encode() in data or encoded.encode() in data or NO_LOG_VALUE.encode() in data or encoded_no_log.encode() in data:
                     raise RuntimeError('synthetic secret was persisted in local agent state')
         print('PASS: synthetic lookup, transforms, facts and command results are redacted in stdout and JSONL; public diagnostic remains visible')
 
