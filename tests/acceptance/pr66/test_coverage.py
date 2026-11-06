@@ -17,7 +17,7 @@ class File { fixed kind = "file" }'''
 
     def test_controller_dispatch(self):
         operation = 'if matches!(kind, "assert" | "debug") { return self.local_retry('
-        local = 'async fn local_once() { match kind {\n "assert" => {},\n "debug" => {},\n _ => {}\n } } async fn local_retry() { self.local_once('
+        local = 'async fn local_once() { match kind {\n "assert" => {},\n "debug" => {},\n _ => {}\n } } async fn local_retry() { self.local_once(); for attempt in 1..=attempts { self.local_once(); let scope = result_scope('
         self.assertEqual(controller_kinds(operation, local), {"assert", "debug"})
         for bad_operation, bad_local in [
             (operation.replace(' | "debug"', ''), local),
@@ -25,6 +25,10 @@ class File { fixed kind = "file" }'''
             (operation + operation, local),
             (operation, local.replace('"debug" =>', '"other" =>')),
             (operation, local.replace('self.local_once(', 'self.other(')),
+            (operation, local.replace('for attempt in 1..=attempts { self.local_once(', 'for attempt in 1..=attempts { self.other(')),
+            ('/* ' + operation + ' */', local),
+            ('/* outer /* nested */ ' + operation + ' */', local),
+            (operation, local.replace('for attempt in 1..=attempts { self.local_once(', 'for attempt in 1..=attempts { /* self.local_once( */ self.other(')),
             (operation, local.replace('async fn local_once', 'async fn other')),
         ]:
             with self.assertRaises(ValueError):
