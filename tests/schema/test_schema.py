@@ -22,9 +22,10 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
         self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
+        self.assertEqual(tasks[3]["operation"]["content"], "data")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
-        self.assertEqual(tasks[3]["operation"]["password"]["provider"], "synthetic")
+        self.assertEqual(tasks[4]["operation"]["password"]["provider"], "synthetic")
 
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
@@ -44,7 +45,7 @@ class SchemaTests(unittest.TestCase):
             'new R.Command { cmd = "x"; argv = new Listing<String> { "x" } }',
             'new R.Service { state = "unsupported" }',
             'new R.User { name = "test"; uid = -1 }',
-            'new R.File { mode = "not-octal" }',
+            'new R.File { path = "/tmp/file"; mode = "not-octal" }',
             'new R.Task { name = "bad"; operation = new R.Debug {}; block { new R.Task { name = "inner"; operation = new R.Debug {} } } }',
             'new R.Operation { kind = "unsupported" }',
             'new R.Apt { kind = "unsupported"; name = "hello" }',

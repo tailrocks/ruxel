@@ -22,6 +22,7 @@ config = new R.Config {
         }
         new R.Task { name = "logical volume"; operation = new R.LogicalVolume { vg = "vg"; lv = "data"; size = "1G" } }
         new R.Task { name = "block"; block { new R.Task { name = "file"; operation = new R.File { path = "/tmp/example"; mode = "0644" } } } }
+        new R.Task { name = "copy"; operation = new R.Copy { dest = "/tmp/copy"; content = "data" } }
         new R.Task { name = "secret"; operation = new R.PostgresRole { name = "app"; password = new R.Lookup { provider = "synthetic"; key = "password" } } }
       }
     }
