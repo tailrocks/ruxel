@@ -115,4 +115,4 @@ run = ["mise run install", "mise run build", "mise run check"]
 
 [tasks.agent]
 description = "Static musl ruxel-agent for x86_64 Linux hosts"
-run = "cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"
+run = "tools/build-libblkid -- cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"
