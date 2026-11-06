@@ -66,6 +66,8 @@ pub trait Backend {
         })
     }
     /// Evaluate a task expression while resolving task variables as needed.
+    /// The default conservatively resolves referenced variables; backends may
+    /// override it to preserve short-circuit evaluation within expressions.
     ///
     /// # Errors
     /// Returns an error if an accessed variable or expression cannot be evaluated.
@@ -78,13 +80,7 @@ pub trait Backend {
         crate::expression::provenance::TrackedValue,
         std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
     )> {
-        if !vars.is_empty() {
-            bail!("backend does not support lazy task variables");
-        }
-        Ok((
-            self.evaluate_tracked(value, scope)?,
-            std::collections::BTreeMap::new(),
-        ))
+        fallback::evaluate(self, value, scope, vars)
     }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
@@ -385,7 +381,7 @@ mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
-#[cfg(test)]
+mod fallback;
 mod loop_vars;
 mod operation;
 mod plan;

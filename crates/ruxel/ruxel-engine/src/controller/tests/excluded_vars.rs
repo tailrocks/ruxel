@@ -60,3 +60,20 @@ async fn set_fact_takes_precedence_over_task_vars_in_condition() -> Result<()> {
     assert_eq!(recap["h"].skipped, 1);
     Ok(())
 }
+
+#[test]
+fn custom_backend_fallback_resolves_referenced_task_variable() -> Result<()> {
+    let mut backend = Fake::default();
+    let vars = json!({"value":{"kind":"literal","value":"ready"},"unused":{"kind":"ref","path":["results","missing"]}});
+    let expr = json!({"kind":"ref","path":["vars","value"]});
+    let scope = TrackedValue::public(json!({"vars":{},"results":{}}));
+    let (value, resolved) = super::super::fallback::evaluate(
+        &mut backend,
+        &expr,
+        &scope,
+        vars.as_object().context("vars")?,
+    )?;
+    assert_eq!(value.value, "ready");
+    assert_eq!(resolved.len(), 1);
+    Ok(())
+}
