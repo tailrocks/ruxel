@@ -159,6 +159,7 @@ impl<B: Backend> Runner<'_, B> {
                     params_json: serde_json::to_vec(&params)?,
                     free_form,
                     ledger_key: String::new(),
+                    source_content: None,
                 }],
                 check_mode_override: task.get("checkMode").and_then(Value::as_bool) == Some(false),
                 no_log: layer.no_log,

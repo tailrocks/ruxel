@@ -85,6 +85,7 @@ message Iteration {
 
 
   string ledger_key = 4;
+  optional bytes source_content = 5;
 }
 
 

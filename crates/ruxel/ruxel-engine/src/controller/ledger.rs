@@ -29,8 +29,12 @@ pub fn ledger_key(task: &v1::RenderedTask, iteration: &v1::Iteration) -> Result<
     let params: Value =
         serde_json::from_slice(&iteration.params_json).context("invalid iteration parameters")?;
     let environment: BTreeMap<_, _> = task.environment.iter().collect();
+    let source_hash = iteration
+        .source_content
+        .as_ref()
+        .map(|bytes| blake3::hash(bytes).to_hex().to_string());
     let identity = canonical(
-        json!({"version":1,"module":task.module,"name":task.name,"params":params,"freeForm":iteration.free_form,"becomeUser":task.become_user,"environment":environment}),
+        json!({"version":2,"module":task.module,"name":task.name,"params":params,"freeForm":iteration.free_form,"becomeUser":task.become_user,"environment":environment,"sourceHash":source_hash}),
     );
     let bytes = serde_json::to_vec(&identity)?;
     Ok(blake3::hash(&bytes).to_hex().to_string())

@@ -41,3 +41,17 @@ fn no_log_never_produces_a_key() -> Result<()> {
     assert_eq!(ledger_key(&task, &iteration(b"secret"))?, "");
     Ok(())
 }
+
+#[test]
+fn key_distinguishes_source_bytes_and_empty_source() -> Result<()> {
+    let task = task();
+    let mut item = iteration(br#"{"dest":"/tmp/x"}"#);
+    let absent = ledger_key(&task, &item)?;
+    item.source_content = Some(Vec::new());
+    let empty = ledger_key(&task, &item)?;
+    item.source_content = Some(vec![0xff, 0x80, 0]);
+    let binary = ledger_key(&task, &item)?;
+    assert_ne!(absent, empty);
+    assert_ne!(empty, binary);
+    Ok(())
+}
