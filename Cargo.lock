@@ -773,15 +773,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pbkdf2"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "112d82ceb8c5bf524d9af484d4e4970c9fd5a0cc15ba14ad93dccd28873b0629"
-dependencies = [
- "digest",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1066,12 +1057,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "regex-lite"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
-
-[[package]]
 name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,9 +1098,6 @@ name = "ruxel-agent"
 version = "0.1.0"
 dependencies = [
  "hmac",
- "pbkdf2",
- "regex-lite",
- "ruxel-core",
  "ruxel-proto",
  "serde",
  "serde_json",
@@ -1162,16 +1144,6 @@ dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
-]
-
-[[package]]
-name = "ruxel-spec-extract"
-version = "0.1.0"
-dependencies = [
- "ruxel-core",
- "serde",
- "serde_json",
- "serde_norway",
 ]
 
 [[package]]

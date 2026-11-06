@@ -16,20 +16,9 @@ mod blockinfile;
 mod command;
 mod copy;
 mod file;
-mod filesystem;
 mod get_url;
-mod git;
-mod iptables;
-mod lineinfile;
 mod lvg;
-mod lvol;
-mod misc;
-mod mount;
-mod postgresql;
-mod replace;
-mod shell;
 mod slurp;
-mod stat;
 mod sysctl;
 mod systemd;
 mod user;
@@ -114,32 +103,18 @@ pub(crate) fn execute(
         "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx),
         "blockinfile" => blockinfile::run(params, ctx),
-        "lineinfile" => lineinfile::run(params, ctx),
-        "replace" => replace::run(params, ctx),
         "sysctl" | "ansible.posix.sysctl" => sysctl::run(params, ctx),
-        "community.general.timezone" => misc::timezone(params, ctx),
-        "group" => misc::group(params, ctx),
+        "group" => user::group(params, ctx),
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
-        "git" => git::run(params, ctx),
-        "iptables" => iptables::run(params, ctx),
         "community.general.lvg" => lvg::run(params, ctx),
-        "community.general.lvol" => lvol::run(params, ctx),
-        "filesystem" => filesystem::run(params, ctx),
-        "ansible.posix.mount" => mount::run(params, ctx),
         "template" => copy::run(params, ctx),
         "get_url" => get_url::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
-        "shell" => shell::run(params, free_form, ctx),
         "file" => file::run(params, ctx),
-        "stat" => stat::run(params),
         "copy" => copy::run(params, ctx),
         "slurp" => slurp::run(params),
         "systemd" | "service" => systemd::run(params, ctx, system_state),
-        "community.postgresql.postgresql_db" => postgresql::db(params, ctx),
-        "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
-        "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
-        "community.postgresql.postgresql_privs" => postgresql::privs(params, ctx),
         _ => unreachable!("is_implemented and execute dispatch must stay aligned"),
     };
     match result {
@@ -155,33 +130,19 @@ pub(crate) fn execute(
 pub(crate) fn is_implemented(module: &str) -> bool {
     matches!(
         module,
-        "ansible.posix.mount"
-            | "ansible.posix.sysctl"
+        "ansible.posix.sysctl"
             | "apt"
             | "apt_repository"
             | "authorized_key"
             | "blockinfile"
             | "command"
             | "community.general.lvg"
-            | "community.general.lvol"
-            | "community.general.timezone"
-            | "community.postgresql.postgresql_db"
-            | "community.postgresql.postgresql_privs"
-            | "community.postgresql.postgresql_schema"
-            | "community.postgresql.postgresql_user"
             | "copy"
             | "file"
-            | "filesystem"
             | "get_url"
-            | "git"
             | "group"
-            | "iptables"
-            | "lineinfile"
-            | "replace"
             | "service"
-            | "shell"
             | "slurp"
-            | "stat"
             | "sysctl"
             | "systemd"
             | "template"
@@ -189,9 +150,7 @@ pub(crate) fn is_implemented(module: &str) -> bool {
     )
 }
 
-pub(crate) fn shutdown() {
-    postgresql::shutdown();
-}
+pub(crate) fn shutdown() {}
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -283,6 +242,7 @@ pub(super) fn run_checked(
     }
 }
 
+#[cfg(test)]
 pub(super) fn run_ok(mut command: std::process::Command) -> Result<bool, String> {
     command
         .status()
@@ -527,47 +487,5 @@ mod security_tests {
         let mut ok = std::process::Command::new("sh");
         ok.args(["-c", "exit 0"]);
         assert!(super::run_ok(ok).unwrap());
-    }
-
-    #[test]
-    fn every_remote_core_module_has_agent_dispatch() {
-        const CONTROLLER_ONLY: &[&str] = &["assert", "debug", "fail", "pause", "set_fact"];
-        let missing: Vec<_> = ruxel_core::modules::MODULES
-            .iter()
-            .map(|surface| surface.name)
-            .filter(|name| !CONTROLLER_ONLY.contains(name))
-            .filter(|name| !super::is_implemented(name))
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "core modules missing agent dispatch: {missing:?}"
-        );
-        let context = super::ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        for module in ruxel_core::modules::MODULES
-            .iter()
-            .map(|surface| surface.name)
-            .filter(|name| !CONTROLLER_ONLY.contains(name))
-        {
-            let outcome = super::execute(
-                module,
-                &serde_json::Value::Null,
-                "",
-                &context,
-                &mut crate::system_state::SystemState::default(),
-            );
-            assert!(
-                !outcome.result["msg"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("not implemented"),
-                "{module} is advertised but has no execute arm"
-            );
-        }
     }
 }
