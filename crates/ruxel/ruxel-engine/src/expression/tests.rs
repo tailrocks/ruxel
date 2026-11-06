@@ -12,9 +12,17 @@ impl LookupResolver for NoLookups {
 fn run(value: Value, scope: &Scope) -> Result<Value> {
     evaluate(&serde_json::from_value(value)?, scope, &NoLookups)
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "test builders consume their input"
+)]
 fn lit(value: Value) -> Value {
     json!({"kind":"literal", "value":value})
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "test builders consume their input"
+)]
 fn call(name: &str, args: Vec<Value>) -> Value {
     json!({"kind":"call", "function":name, "args":args})
 }
@@ -137,8 +145,8 @@ fn maps_loop_results_and_compares_large_integers() -> Result<()> {
             call(
                 "gt",
                 vec![
-                    lit(json!(9007199254740993_u64)),
-                    lit(json!(9007199254740992_u64))
+                    lit(json!(9_007_199_254_740_993_u64)),
+                    lit(json!(9_007_199_254_740_992_u64))
                 ]
             ),
             &scope
@@ -162,7 +170,7 @@ fn transformations_and_invalid_calls() -> Result<()> {
     );
     assert_eq!(
         run(call("urlencode", vec![lit(json!("a b/~"))]), &scope)?,
-        json!("a%20b%2F~")
+        json!("a%20b/~")
     );
     assert_eq!(
         run(
@@ -189,6 +197,41 @@ fn transformations_and_invalid_calls() -> Result<()> {
             .context("expected invalid call")?
             .to_string()
             .contains("expects 2 arguments")
+    );
+    Ok(())
+}
+
+#[test]
+fn runtime_parity() -> Result<()> {
+    let scope = Scope::default();
+    assert_eq!(
+        run(call("urlencode", vec![lit(json!("a b/c+d&e=f"))]), &scope)?,
+        json!("a%20b/c%2Bd%26e%3Df")
+    );
+    assert_eq!(
+        run(call("base64Decode", vec![lit(json!(" YQ== \n"))]), &scope)?,
+        json!("a")
+    );
+    assert_eq!(
+        run(
+            call(
+                "gt",
+                vec![
+                    lit(json!(9_007_199_254_740_993_u64)),
+                    lit(json!(9_007_199_254_740_992.0_f64))
+                ]
+            ),
+            &scope
+        )?,
+        json!(true)
+    );
+    assert_eq!(
+        run(call("string", vec![lit(json!(42))]), &scope)?,
+        json!("42")
+    );
+    assert_eq!(
+        run(call("string", vec![lit(json!(true))]), &scope)?,
+        json!("true")
     );
     Ok(())
 }

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, fmt::Write as _};
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -8,7 +8,8 @@ const URL_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'_')
     .remove(b'.')
-    .remove(b'~');
+    .remove(b'~')
+    .remove(b'/');
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -65,9 +66,15 @@ pub struct Scope {
 
 /// Resolve external lookups at the boundary; implementations must avoid logging secrets.
 pub trait LookupResolver {
+    /// # Errors
+    /// Returns an error if the lookup cannot be resolved.
     fn resolve(&self, lookup: &Expr) -> Result<Value>;
 }
 
+/// Evaluate an expression in the supplied scope.
+///
+/// # Errors
+/// Returns an error for invalid expressions, missing values, or failed lookups.
 pub fn evaluate(expr: &Expr, scope: &Scope, resolver: &impl LookupResolver) -> Result<Value> {
     match expr {
         Expr::Literal { value } => Ok(value.clone()),
@@ -127,7 +134,7 @@ fn call(
     match function {
         "concat" => {}
         "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "bool" | "trim"
-        | "urlencode" | "list" => arity(function, args, 1)?,
+        | "urlencode" | "list" | "string" => arity(function, args, 1)?,
         "default" | "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains"
         | "mapAttribute" | "subelements" | "join" => arity(function, args, 2)?,
         _ => bail!("unknown expression function {function}"),
@@ -208,12 +215,11 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
         "sha256" => {
             arity(function, args, 1)?;
             let text = values[0].as_str().context("sha256 expects a string")?;
-            Ok(json!(
-                Sha256::digest(text.as_bytes())
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
-            ))
+            let mut digest = String::new();
+            for byte in Sha256::digest(text.as_bytes()) {
+                write!(&mut digest, "{byte:02x}")?;
+            }
+            Ok(json!(digest))
         }
         "base64Encode" => {
             arity(function, args, 1)?;
@@ -227,7 +233,7 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
             let text = values[0]
                 .as_str()
                 .context("base64Decode expects a string")?;
-            Ok(json!(String::from_utf8(STANDARD.decode(text)?)?))
+            Ok(json!(String::from_utf8(STANDARD.decode(text.trim())?)?))
         }
         _ => evaluate_transform(function, args, values),
     }
@@ -235,6 +241,11 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
 
 fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result<Value> {
     match function {
+        "string" => Ok(json!(match &values[0] {
+            Value::String(value) => value.clone(),
+            Value::Bool(_) | Value::Number(_) | Value::Null => values[0].to_string(),
+            _ => bail!("string expects a scalar"),
+        })),
         "bool" => Ok(json!(match &values[0] {
             Value::Bool(value) => *value,
             Value::Number(value) => value.as_f64().is_some_and(|n| n != 0.0),
@@ -307,16 +318,45 @@ fn compare(left: &Value, right: &Value) -> Result<std::cmp::Ordering> {
                     .map(i128::from)
                     .or_else(|| n.as_u64().map(i128::from))
             };
-            if let Some((a, b)) = integer(a).zip(integer(b)) {
-                return Ok(a.cmp(&b));
+            match (integer(a), integer(b)) {
+                (Some(a), Some(b)) => Ok(a.cmp(&b)),
+                (Some(a), None) => compare_int_float(a, b.as_f64().context("invalid number")?),
+                (None, Some(b)) => compare_int_float(b, a.as_f64().context("invalid number")?)
+                    .map(std::cmp::Ordering::reverse),
+                (None, None) => a
+                    .as_f64()
+                    .zip(b.as_f64())
+                    .and_then(|(a, b)| a.partial_cmp(&b))
+                    .context("numbers cannot be compared"),
             }
-            a.as_f64()
-                .zip(b.as_f64())
-                .and_then(|(a, b)| a.partial_cmp(&b))
-                .context("numbers cannot be compared")
         }
         _ => bail!("comparison expects two strings or two numbers"),
     }
+}
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the fractional part is compared separately after range checks"
+)]
+fn compare_int_float(integer: i128, float: f64) -> Result<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    ensure!(float.is_finite(), "numbers cannot be compared");
+    // JSON integers fit in u64/i64, so values at or beyond 2^64 are outside their range.
+    if float >= 18_446_744_073_709_551_616.0 {
+        return Ok(Ordering::Less);
+    }
+    if float <= -18_446_744_073_709_551_616.0 {
+        return Ok(Ordering::Greater);
+    }
+    let truncated = float.trunc() as i128;
+    Ok(integer.cmp(&truncated).then_with(|| {
+        if float.fract() > 0.0 {
+            Ordering::Less
+        } else if float.fract() < 0.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }))
 }
 fn is_missing_reference(error: &anyhow::Error) -> bool {
     error.downcast_ref::<MissingReference>().is_some()
