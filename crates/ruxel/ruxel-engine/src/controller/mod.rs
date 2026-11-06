@@ -382,6 +382,7 @@ pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
 mod fallback;
+mod local;
 mod loop_vars;
 mod operation;
 mod plan;

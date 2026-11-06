@@ -7,6 +7,7 @@ mod flows;
 mod handler_failure;
 mod inventory;
 mod layer_vars;
+mod local_retry;
 mod loop_vars;
 mod more;
 mod persistence;
