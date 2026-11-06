@@ -1,0 +1,355 @@
+module Ruxel
+
+// Runtime expressions are data: evaluation happens against each host's facts and results.
+open class Expr { kind: String }
+class Literal extends Expr { kind = "literal"; value: Scalar? = null }
+class Ref extends Expr { kind = "ref"; path: Listing<String> }
+class Call extends Expr { kind = "call"; `function`: String; args: Listing<Expr> }
+class ListExpr extends Expr { kind = "list"; items: Listing<Expr> }
+class MapExpr extends Expr { kind = "map"; entries: Mapping<String, Expr> }
+class Lookup extends Expr {
+  kind = "lookup"
+  provider: "fnox"|"op"|"command"|"pipe"|"synthetic"
+  key: String? = null
+  vault: String? = null
+  item: String? = null
+  section: String? = null
+  field: String? = null
+  reference: String? = null
+  argv: Listing<String>
+}
+typealias Scalar = String|Boolean|Int|Float
+typealias Text = String|Expr
+typealias Flag = Boolean|Expr
+typealias NumberValue = Int|Expr
+typealias TextList = String|Listing<String>|Expr
+
+class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
+class Group { hosts: Listing<String>; children: Listing<String>; vars: Mapping<String, Expr> }
+class Inventory { hosts: Mapping<String, Host>; groups: Mapping<String, Group> }
+class Config { inventory: Inventory; plays: Listing<Play> }
+class Play {
+  name: String
+  targets: Listing<String>
+  tasks: Listing<Task>
+  handlers: Listing<Task>
+  vars: Mapping<String, Expr>
+  environment: Mapping<String, Expr>
+  becomeUser: String? = null
+}
+class Task {
+  name: String
+  operation: Operation? = null
+  `when`: Expr? = null
+  `loop`: Expr? = null
+  loopVar: String = "item"
+  register: String? = null
+  notify: Listing<String>
+  tags: Listing<String>
+  delegateTo: String? = null
+  becomeUser: String? = null
+  vars: Mapping<String, Expr>
+  environment: Mapping<String, Expr>
+  retries: Int(this >= 1) = 1
+  delaySeconds: Int(this >= 0) = 0
+  until: Expr? = null
+  changedWhen: Expr? = null
+  failedWhen: Expr? = null
+  ignoreErrors: Boolean = false
+  checkMode: Boolean? = null
+  block: Listing<Task>
+  rescue: Listing<Task>
+  always: Listing<Task>
+  noLog: Boolean = false
+}
+open class Operation { kind: String }
+
+class Apt extends Operation {
+  kind = "apt"
+  autoremove: Flag? = null
+  force: Flag? = null
+  name: Text? = null
+  state: Text? = null
+  update_cache: Flag? = null
+  upgrade: Text? = null
+}
+
+class AptRepository extends Operation {
+  kind = "apt_repository"
+  filename: Text? = null
+  repo: Text
+  state: Text? = null
+  update_cache: Flag? = null
+}
+
+class AuthorizedKey extends Operation {
+  kind = "authorized_key"
+  key: Text
+  state: Text? = null
+  user: Text
+}
+
+class BlockInFile extends Operation {
+  kind = "blockinfile"
+  block: Text? = null
+  create: Flag? = null
+  group: Text? = null
+  mode: Text? = null
+  owner: Text? = null
+  path: Text
+}
+
+class Command extends Operation {
+  kind = "command"
+  argv: TextList? = null
+  chdir: Text? = null
+  cmd: Text? = null
+  creates: Text? = null
+  removes: Text? = null
+}
+
+class Copy extends Operation {
+  kind = "copy"
+  content: Text? = null
+  dest: Text
+  force: Flag? = null
+  group: Text? = null
+  mode: Text? = null
+  owner: Text? = null
+  src: Text? = null
+}
+
+class File extends Operation {
+  kind = "file"
+  dest: Text? = null
+  group: Text? = null
+  mode: Text? = null
+  owner: Text? = null
+  path: Text? = null
+  recurse: Flag? = null
+  src: Text? = null
+  state: Text? = null
+}
+
+class Filesystem extends Operation {
+  kind = "filesystem"
+  dev: Text
+  fstype: "ext4"|"xfs"|Expr
+  resizefs: Flag? = null
+}
+
+class GetUrl extends Operation {
+  kind = "get_url"
+  dest: Text
+  url: Text
+}
+
+class Git extends Operation {
+  kind = "git"
+  accept_hostkey: Flag? = null
+  dest: Text
+  force: Flag? = null
+  repo: Text
+  update: Flag? = null
+  version: Text? = null
+}
+
+class SystemGroup extends Operation {
+  kind = "group"
+  gid: NumberValue? = null
+  name: Text
+  state: Text? = null
+}
+
+class Firewall extends Operation {
+  kind = "iptables"
+  chain: Text
+  comment: Text? = null
+  destination: Text? = null
+  ip_version: ("ipv4"|"ipv6"|Expr)? = null
+  jump: Text? = null
+  out_interface: Text? = null
+  policy: Text? = null
+  protocol: Text? = null
+}
+
+class LineInFile extends Operation {
+  kind = "lineinfile"
+  line: Text? = null
+  path: Text
+  regexp: Text? = null
+  state: Text? = null
+}
+
+class Replace extends Operation {
+  kind = "replace"
+  path: Text
+  regexp: Text
+  replace: Text? = null
+}
+
+class Shell extends Operation {
+  kind = "shell"
+  argv: TextList? = null
+  chdir: Text? = null
+  cmd: Text? = null
+  creates: Text? = null
+  executable: Text? = null
+  removes: Text? = null
+}
+
+class Slurp extends Operation {
+  kind = "slurp"
+  src: Text
+}
+
+class Stat extends Operation {
+  kind = "stat"
+  follow: Flag? = null
+  path: Text
+}
+
+class Sysctl extends Operation {
+  kind = "sysctl"
+  name: Text
+  reload: Flag? = null
+  state: Text? = null
+  sysctl_file: Text? = null
+  sysctl_set: Flag? = null
+  value: Text? = null
+}
+
+class Service extends Operation {
+  kind = "systemd"
+  daemon_reload: Flag? = null
+  enabled: Flag? = null
+  name: Text? = null
+  state: Text? = null
+}
+
+class User extends Operation {
+  kind = "user"
+  append: Flag? = null
+  comment: Text? = null
+  create_home: Flag? = null
+  group: Text? = null
+  groups: TextList? = null
+  home: Text? = null
+  name: Text
+  remove: Flag? = null
+  shell: Text? = null
+  state: Text? = null
+  system: Flag? = null
+  uid: NumberValue? = null
+}
+
+class VolumeGroup extends Operation {
+  kind = "community.general.lvg"
+  pvs: TextList? = null
+  vg: Text
+}
+
+class LogicalVolume extends Operation {
+  kind = "community.general.lvol"
+  lv: Text
+  resizefs: Flag? = null
+  size: Text
+  vg: Text
+}
+
+class Timezone extends Operation {
+  kind = "community.general.timezone"
+  name: Text
+  state: Text? = null
+}
+
+class Mount extends Operation {
+  kind = "ansible.posix.mount"
+  fstype: Text? = null
+  opts: Text? = null
+  path: Text
+  src: Text? = null
+  state: Text? = null
+}
+
+class PostgresDatabase extends Operation {
+  kind = "community.postgresql.postgresql_db"
+  login_db: Text? = null
+  login_port: NumberValue? = null
+  login_user: Text? = null
+  name: Text
+  owner: Text? = null
+  state: Text? = null
+}
+
+class PostgresRole extends Operation {
+  kind = "community.postgresql.postgresql_user"
+  login_db: Text? = null
+  login_port: NumberValue? = null
+  login_user: Text? = null
+  name: Text
+  password: Text? = null
+  role_attr_flags: Text? = null
+  state: Text? = null
+}
+
+class PostgresSchema extends Operation {
+  kind = "community.postgresql.postgresql_schema"
+  login_db: Text? = null
+  login_port: NumberValue? = null
+  login_user: Text? = null
+  name: Text
+  owner: Text? = null
+  state: Text? = null
+}
+
+class PostgresPrivileges extends Operation {
+  kind = "community.postgresql.postgresql_privs"
+  login_db: Text? = null
+  login_port: NumberValue? = null
+  login_user: Text? = null
+  objs: TextList? = null
+  privs: TextList? = null
+  role: Text
+  schema: Text? = null
+  state: Text? = null
+  target_roles: TextList? = null
+  type: Text
+}
+
+class Template extends Operation {
+  kind = "template"
+  content: Text? = null
+  dest: Text
+  force: Flag? = null
+  group: Text? = null
+  mode: Text? = null
+  owner: Text? = null
+  src: Text
+}
+
+class Assert extends Operation {
+  kind = "assert"
+  fail_msg: Text? = null
+  that: TextList? = null
+}
+
+class Debug extends Operation {
+  kind = "debug"
+  msg: Text? = null
+}
+
+class Fail extends Operation {
+  kind = "fail"
+  msg: Text? = null
+}
+
+class Pause extends Operation {
+  kind = "pause"
+  prompt: Text? = null
+}
+
+class SetFact extends Operation {
+  kind = "set_fact"
+  values: Mapping<String, Expr>? = null
+}

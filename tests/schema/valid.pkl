@@ -1,0 +1,23 @@
+import "../../schema/Ruxel.pkl" as R
+config = new R.Config {
+  inventory {
+    hosts { ["node"] = new R.Host { address = "localhost" } }
+    groups { ["all"] = new R.Group { hosts { "node" } } }
+  }
+  plays {
+    new R.Play {
+      name = "exercise"
+      targets { "all" }
+      tasks {
+        new R.Task {
+          name = "create database"
+          operation = new R.PostgresDatabase { name = "app"; owner = new R.Ref { path { "vars"; "owner" } } }
+          `when` = new R.Call { `function` = "equals"; args { new R.Literal { value = true }; new R.Literal { value = true } } }
+          register = "result"
+        }
+        new R.Task { name = "logical volume"; operation = new R.LogicalVolume { vg = "vg"; lv = "data"; size = "1G" } }
+        new R.Task { name = "secret"; operation = new R.PostgresRole { name = "app"; password = new R.Lookup { provider = "synthetic"; key = "password" } } }
+      }
+    }
+  }
+}
