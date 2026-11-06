@@ -124,11 +124,16 @@ fn open_directory_from(
         return Err("file: too many root symlink expansions".into());
     }
     let mut created = false;
-    let mut parts = path
+    let parts = path
         .components()
-        .filter(|part| !matches!(part, Component::RootDir | Component::CurDir))
-        .peekable();
-    while let Some(part) = parts.next() {
+        .filter(|part| !matches!(part, Component::RootDir | Component::CurDir));
+    #[cfg(target_os = "macos")]
+    let mut remaining = parts.clone().count();
+    for part in parts {
+        #[cfg(target_os = "macos")]
+        {
+            remaining -= 1;
+        }
         let name = match part {
             Component::RootDir | Component::CurDir => continue,
             Component::Normal(name) => name,
@@ -139,7 +144,7 @@ fn open_directory_from(
         current = match openat(&current, name, flags, Mode::empty()) {
             Ok(fd) => fd,
             #[cfg(target_os = "macos")]
-            Err(rustix::io::Errno::ACCESS) if create && parts.peek().is_none() => {
+            Err(rustix::io::Errno::ACCESS) if create && remaining == 0 => {
                 let metadata =
                     rustix::fs::statat(&current, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
                         .map_err(|e| e.to_string())?;
