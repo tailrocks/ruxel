@@ -57,6 +57,7 @@ inputs = [
   "tests/acceptance/pr66/cache.py",
   "tests/acceptance/pr66/check_overrides.py",
   "tests/acceptance/pr66/check_semantics.py",
+  "tests/acceptance/pr66/control_runtime.py",
   "tests/acceptance/pr66/coverage.py",
   "tests/acceptance/pr66/files_lifecycle.py",
   "tests/acceptance/pr66/host_isolation.py",
