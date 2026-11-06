@@ -11,7 +11,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let dev = str_param(obj, "dev").ok_or("filesystem: dev required")?;
     let fstype = str_param(obj, "fstype").ok_or("filesystem: fstype required")?;
     let resizefs = bool_param(obj, "resizefs", false);
+    mkfs_program(fstype)?;
 
+    #[cfg(target_os = "linux")]
+    let file = open_locked_device(dev)?;
+    #[cfg(target_os = "linux")]
+    let current = probe_file(&file)?;
+    #[cfg(not(target_os = "linux"))]
     let current = blkid_type(dev)?;
     let mut changed = false;
 
@@ -34,7 +40,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         None => {
             changed = true;
             if !ctx.check_mode {
-                make(dev, fstype)?;
+                #[cfg(target_os = "linux")]
+                {
+                    if probe_file(&file)?.is_some() {
+                        return Err("filesystem: device changed before formatting".into());
+                    }
+                    make_on_file(&file, fstype)?;
+                }
+                #[cfg(not(target_os = "linux"))]
+                return Err("filesystem: formatting requires Linux".into());
             }
         }
     }
@@ -42,47 +56,103 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "dev": dev, "fstype": fstype}))
 }
 
-pub(super) fn blkid_type(dev: &str) -> Result<Option<String>, String> {
-    let out = std::process::Command::new("blkid")
-        .args(["--probe", "-o", "value", "-s", "TYPE", dev])
-        .output()
-        .map_err(|e| format!("exec blkid: {e}"))?;
-    parse_blkid_result(out.status.code(), &out.stdout, &out.stderr)
+#[cfg(target_os = "linux")]
+fn open_locked_device(dev: &str) -> Result<std::fs::File, String> {
+    use std::os::unix::fs::FileTypeExt;
+    let file = std::fs::File::open(dev).map_err(|e| format!("filesystem: open {dev}: {e}"))?;
+    if !file
+        .metadata()
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_block_device()
+    {
+        return Err("filesystem: target must be a block device".into());
+    }
+    file.try_lock()
+        .map_err(|e| format!("filesystem: cannot lock {dev}: {e}"))?;
+    Ok(file)
 }
 
-fn parse_blkid_result(
-    status: Option<i32>,
-    stdout: &[u8],
-    stderr: &[u8],
+#[cfg(target_os = "linux")]
+fn probe_file(file: &std::fs::File) -> Result<Option<String>, String> {
+    use rsblkid::{device::TagName, probe::Probe};
+    let cloned = file.try_clone().map_err(|e| e.to_string())?;
+    let mut probe = Probe::builder()
+        .scan_file(cloned)
+        .scan_device_partitions(true)
+        .build()
+        .map_err(|e| format!("filesystem: probe initialization failed: {e}"))?;
+    let result = probe.find_all_device_properties();
+    let partition = probe
+        .lookup_device_property_value(TagName::PtType)
+        .is_some();
+    let usage = probe
+        .lookup_device_property_value(TagName::Usage)
+        .map(|v| v.value().to_owned());
+    let kind = probe
+        .lookup_device_property_value(TagName::Type)
+        .map(|v| v.value().to_owned());
+    classify_probe(result, partition, usage.as_deref(), kind)
+}
+
+#[cfg(target_os = "linux")]
+fn classify_probe(
+    result: rsblkid::probe::ScanResult,
+    partition: bool,
+    usage: Option<&str>,
+    kind: Option<String>,
 ) -> Result<Option<String>, String> {
-    if status != Some(0) {
-        return Err(format!(
-            "filesystem: blkid probe failed or could not identify device (status {status:?}): {}",
-            String::from_utf8_lossy(stderr).trim()
-        ));
+    use rsblkid::probe::ScanResult;
+    match result {
+        ScanResult::NoProperties => Ok(None),
+        ScanResult::FoundProperties if partition => {
+            Err("filesystem: device contains a partition table".into())
+        }
+        ScanResult::FoundProperties if usage != Some("filesystem") => {
+            Err("filesystem: device contains a non-filesystem signature".into())
+        }
+        ScanResult::FoundProperties => kind
+            .filter(|v| !v.is_empty())
+            .map(Some)
+            .ok_or_else(|| "filesystem: missing filesystem type".into()),
+        other => Err(format!(
+            "filesystem: ambiguous or failed device probe: {other:?}"
+        )),
     }
-    let value = std::str::from_utf8(stdout)
-        .map_err(|_| "filesystem: invalid blkid output")?
-        .trim();
-    if value.is_empty() || value.lines().count() != 1 {
-        return Err("filesystem: blkid did not report a unique filesystem type".into());
-    }
-    Ok(Some(value.to_string()))
 }
 
-fn make(dev: &str, fstype: &str) -> Result<(), String> {
-    if !matches!(fstype, "xfs" | "ext4") {
-        return Err(format!(
-            "filesystem: fstype {fstype:?} outside the closed surface"
+#[cfg(target_os = "linux")]
+pub(super) fn blkid_type(dev: &str) -> Result<Option<String>, String> {
+    let file = open_locked_device(dev)?;
+    probe_file(&file)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(super) fn blkid_type(_dev: &str) -> Result<Option<String>, String> {
+    Err("filesystem: probing requires Linux".into())
+}
+
+#[cfg(target_os = "linux")]
+fn make_on_file(file: &std::fs::File, fstype: &str) -> Result<(), String> {
+    let program = mkfs_program(fstype)?;
+    let mut command = std::process::Command::new(program);
+    command
+        .arg("/proc/self/fd/0")
+        .stdin(std::process::Stdio::from(
+            file.try_clone().map_err(|e| e.to_string())?,
         ));
+    super::run_checked(command)?;
+    Ok(())
+}
+
+fn mkfs_program(fstype: &str) -> Result<&'static str, String> {
+    match fstype {
+        "xfs" => Ok("mkfs.xfs"),
+        "ext4" => Ok("mkfs.ext4"),
+        _ => Err(format!(
+            "filesystem: fstype {fstype:?} outside the closed surface"
+        )),
     }
-    let bin = format!("mkfs.{fstype}");
-    let args: &[&str] = if fstype == "xfs" {
-        &["-f", dev]
-    } else {
-        &["-F", dev]
-    };
-    run_cmd(&bin, args)
 }
 
 fn can_grow(dev: &str, fstype: &str) -> Result<bool, String> {
@@ -227,18 +297,53 @@ mod tests {
         assert_eq!(super::parse_ext4_block_count("Block size: 4096\n"), None);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
-    fn probe_errors_and_missing_type_never_mean_blank_device() {
+    fn blank_and_filesystem_are_the_only_accepted_probe_states() {
+        use rsblkid::probe::ScanResult;
         assert_eq!(
-            super::parse_blkid_result(Some(0), b"ext4\n", b"").unwrap(),
+            super::classify_probe(ScanResult::NoProperties, false, None, None).unwrap(),
+            None
+        );
+        assert_eq!(
+            super::classify_probe(
+                ScanResult::FoundProperties,
+                false,
+                Some("filesystem"),
+                Some("ext4".into())
+            )
+            .unwrap(),
             Some("ext4".into())
         );
-        for status in [None, Some(2), Some(4), Some(8)] {
-            assert!(super::parse_blkid_result(status, b"", b"probe error").is_err());
-            assert!(super::parse_blkid_result(status, b"ext4\n", b"error").is_err());
+        assert!(
+            super::classify_probe(
+                ScanResult::FoundProperties,
+                true,
+                Some("filesystem"),
+                Some("ext4".into())
+            )
+            .is_err()
+        );
+        assert!(
+            super::classify_probe(
+                ScanResult::FoundProperties,
+                false,
+                Some("crypto"),
+                Some("crypto_LUKS".into())
+            )
+            .is_err()
+        );
+        assert!(
+            super::classify_probe(ScanResult::FoundProperties, false, Some("filesystem"), None)
+                .is_err()
+        );
+        for result in [
+            ScanResult::Error,
+            ScanResult::ConflictingValues,
+            ScanResult::Exception(-5),
+        ] {
+            assert!(super::classify_probe(result, false, None, None).is_err());
         }
-        assert!(super::parse_blkid_result(Some(0), b"", b"").is_err());
-        assert!(super::parse_blkid_result(Some(0), b"ext4\nxfs\n", b"").is_err());
     }
 
     #[test]
@@ -250,7 +355,7 @@ mod tests {
 
     #[test]
     fn mkfs_program_is_allowlisted() {
-        let error = super::make("/does/not/matter", "xfs;touch /tmp/pwn").unwrap_err();
+        let error = super::mkfs_program("xfs;touch /tmp/pwn").unwrap_err();
         assert!(error.contains("outside the closed surface"));
         assert_eq!(
             super::parse_xfs_block_count(
