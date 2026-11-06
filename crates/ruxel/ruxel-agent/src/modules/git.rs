@@ -4,6 +4,9 @@ use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
+#[path = "git/check.rs"]
+mod check;
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let repo = str_param(obj, "repo").ok_or("git: repo required")?;
@@ -105,10 +108,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
                 Some(dest),
             )?;
-            if !found {
+            if found {
+                remote = resolved;
+            } else if is_object_id(branch) {
+                let (refs, listed) = git(&["ls-remote", "--", repo], Some(dest))?;
+                if !listed {
+                    return Err("git ls-remote failed".into());
+                }
+                remote = match advertised_object(&refs, branch)? {
+                    Some(oid) => oid,
+                    None => check::resolve(repo, branch, &git)?,
+                };
+            } else {
                 return Err(format!("git: cannot resolve version {branch}"));
             }
-            remote = resolved;
         }
         if !ok {
             return Err("git ls-remote failed".into());
@@ -158,6 +171,30 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         "before": before,
         "after": after,
     }))
+}
+
+fn is_object_id(version: &str) -> bool {
+    (4..=64).contains(&version.len()) && version.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn advertised_object(refs: &str, version: &str) -> Result<Option<String>, String> {
+    let prefix = version.to_ascii_lowercase();
+    let mut matches = std::collections::BTreeSet::new();
+    for line in refs.lines() {
+        let Some((oid, name)) = line.split_once('\t') else {
+            continue;
+        };
+        if name != "HEAD" && !name.starts_with("refs/heads/") {
+            continue;
+        }
+        if oid.starts_with(&prefix) {
+            matches.insert(oid);
+        }
+    }
+    if matches.len() > 1 {
+        return Err(format!("git: ambiguous advertised object {version}"));
+    }
+    Ok(matches.into_iter().next().map(str::to_owned))
 }
 
 fn clone_branch(version: Option<&str>) -> Option<&str> {
@@ -316,3 +353,7 @@ mod tests {
         assert_eq!(super::clone_branch(Some("main")), Some("main"));
     }
 }
+
+#[cfg(test)]
+#[path = "git/tests/pinned.rs"]
+mod pinned_tests;
