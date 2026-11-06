@@ -87,7 +87,7 @@ run = [
   "python3 -I -S crates/ruxel/ruxel-agent/src/modules/filesystem/test_xfs.py",
   "python3 -B tests/acceptance/pr66/coverage.py",
   "python3 -B tests/acceptance/pr66/plan_matrix.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 -B tests/acceptance/pr66/expectations_runner.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost",
+  "python3 -B tests/acceptance/pr66/expectations_runner.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation",
   "python3 -B tests/acceptance/pr66/check_semantics.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/check_overrides.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/cache.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",

@@ -65,6 +65,8 @@ inputs = [
   "tests/acceptance/pr66/host_isolation.py",
   "tests/acceptance/pr66/local_scenarios.py",
   "tests/acceptance/pr66/nested_loops.py",
+  "tests/acceptance/pr66/oracles/README.md",
+  "tests/acceptance/pr66/oracles/controller-delegation-check-diff.jsonl",
   "tests/acceptance/pr66/plan_matrix.py",
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
