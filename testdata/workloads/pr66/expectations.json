@@ -61,12 +61,10 @@
           "succeeds": false
         },
         "diff": {
-          "state_unchanged": true
+          "state_unchanged": true,
+          "succeeds": false
         }
-      },
-      "pending": [
-        "verify frozen diff assertion behavior independently"
-      ]
+      }
     },
     "multihost": {
       "fixture": "multihost.pkl",
