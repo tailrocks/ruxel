@@ -94,6 +94,9 @@ fn report(output: CommandOutput, program: &str, key: &str) -> Result<Vec<Value>,
     let reports = parsed["report"]
         .as_array()
         .ok_or_else(|| format!("{program}: missing report"))?;
+    if reports.is_empty() {
+        return Err(format!("{program}: empty report envelope"));
+    }
     let mut rows = Vec::new();
     for item in reports {
         let values = item[key]
@@ -230,6 +233,13 @@ mod tests {
     fn malformed_reports_fail_closed_and_existing_pvs_are_unchanged() {
         let params = json!({"vg":"vg", "pvs":["/dev/a"]});
         assert!(run_with(&params, false, &mut |_, _| Ok(output(json!({})))).is_err());
+        let mut calls = Vec::new();
+        let mut empty = |name: &str, _: &[&str]| {
+            calls.push(name.to_string());
+            Ok(output(json!({"report":[]})))
+        };
+        assert!(run_with(&params, false, &mut empty).is_err());
+        assert_eq!(calls, ["vgs"]);
         let mut fake = |name: &str, _: &[&str]| Ok(if name == "vgs" { groups() } else { pvs() });
         assert_eq!(
             run_with(&params, false, &mut fake).unwrap()["changed"],
