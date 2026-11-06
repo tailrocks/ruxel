@@ -61,5 +61,4 @@ Production pilot work is outside this implementation goal.
   through its exit trap.
 
 Evidence is under `tools/oracle/captures/`, `docs/benchmarks/results/`, and
-`tools/chaos/artifacts/`. `plans/README.md` records that no required active
-implementation work remains.
+`tools/chaos/artifacts/`. No required active implementation work remains.
