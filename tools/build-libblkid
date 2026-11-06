@@ -25,6 +25,14 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 checksum() {
     if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
 }
+shell_quote() {
+    local value=$1
+    value=${value//\'/\'\\\'\'}
+    printf "'%s'" "$value"
+}
+case "$cache_root" in
+    *[[:cntrl:]]*) die 'Native cache paths must not contain control characters.' ;;
+esac
 recipe=$(checksum "${BASH_SOURCE[0]}"); recipe=${recipe%% *}
 worker_recipe=$(checksum "$worker"); worker_recipe=${worker_recipe%% *}
 recipe=$(printf '%s\n' "$recipe:$worker_recipe" | checksum); recipe=${recipe%% *}
@@ -81,8 +89,9 @@ if test "$mode" = musl; then
     unset PKG_CONFIG_PATH
     export PKG_CONFIG_ALLOW_CROSS=1
     export PKG_CONFIG_ALL_STATIC=1
-    export CFLAGS_x86_64_unknown_linux_musl="-I$output/sysroot/usr/include"
-    export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$output/sysroot --target=x86_64-unknown-linux-musl -I$output/sysroot/usr/include"
+    export CC_SHELL_ESCAPED_FLAGS=1
+    export CFLAGS_x86_64_unknown_linux_musl="$(shell_quote "-I$output/sysroot/usr/include")"
+    export BINDGEN_EXTRA_CLANG_ARGS="$(shell_quote "--sysroot=$output/sysroot") $(shell_quote --target=x86_64-unknown-linux-musl) $(shell_quote "-I$output/sysroot/usr/include")"
     if test "$(uname -s)" = Darwin; then
         export LIBCLANG_PATH="${LIBCLANG_PATH:-$(dirname "$(xcrun --find clang)")/../lib}"
     fi
@@ -93,7 +102,7 @@ pkg-config --exact-version="$version" blkid || die 'Unexpected libblkid version 
 case "${1:-}" in
     --sysroot) printf '%s\n' "$output/sysroot" ;;
     --print-env)
-        for name in PKG_CONFIG_ALLOW_CROSS PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR PKG_CONFIG_PATH PKG_CONFIG_ALL_STATIC \
+        for name in PKG_CONFIG_ALLOW_CROSS PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR PKG_CONFIG_PATH PKG_CONFIG_ALL_STATIC CC_SHELL_ESCAPED_FLAGS \
             CFLAGS_x86_64_unknown_linux_musl BINDGEN_EXTRA_CLANG_ARGS LIBCLANG_PATH; do
             if test -n "${!name:-}"; then printf 'export %s=%q\n' "$name" "${!name}"; fi
         done

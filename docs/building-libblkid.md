@@ -55,6 +55,7 @@ sets these variables before executing the command:
 - `PKG_CONFIG_SYSROOT_DIR=<output>/sysroot`
 - `PKG_CONFIG_LIBDIR=<output>/sysroot/usr/lib/pkgconfig`
 - `PKG_CONFIG_ALL_STATIC=1`
+- `CC_SHELL_ESCAPED_FLAGS=1`
 - `CFLAGS_x86_64_unknown_linux_musl=-I<output>/sysroot/usr/include`
 - `BINDGEN_EXTRA_CLANG_ARGS=--sysroot=<output>/sysroot --target=x86_64-unknown-linux-musl -I<output>/sysroot/usr/include`
 - `LIBCLANG_PATH` on macOS, defaulting to the selected Xcode tools' `usr/lib`.
@@ -62,6 +63,9 @@ sets these variables before executing the command:
 Use `--print-env` to inspect those nonsecret settings. The script checks that
 pkg-config reports exactly 2.41.6. Changing the archive requires changing its
 pinned checksum and reviewing the native library's probe behavior.
+Compiler and bindgen arguments use POSIX shell quoting, preserving spaces and
+metacharacters in cache paths. Control characters are refused because the
+native pkg-config metadata uses a line-oriented format.
 
 Verify the resulting executable in Linux with `file`, `readelf -l`, and
 `readelf -d`: it must have no ELF interpreter or dynamic dependencies.
