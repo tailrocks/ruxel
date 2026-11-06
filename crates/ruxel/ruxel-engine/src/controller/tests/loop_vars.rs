@@ -40,3 +40,20 @@ async fn empty_loop_does_not_resolve_item_variables() -> Result<()> {
     assert_eq!(recap["h"].skipped, 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn loop_variable_override_can_reference_inherited_value() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"loop":["one"],"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","name"]}}}]}]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
+    assert_eq!(params["cmd"], "parent");
+    Ok(())
+}

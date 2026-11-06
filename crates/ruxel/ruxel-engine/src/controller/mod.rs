@@ -385,6 +385,7 @@ mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
+#[cfg(test)]
 mod loop_vars;
 mod operation;
 mod plan;

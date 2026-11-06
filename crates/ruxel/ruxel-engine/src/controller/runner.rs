@@ -54,13 +54,6 @@ impl<B: Backend> Runner<'_, B> {
 
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
-        let task_vars = object(task, "vars");
-        if task.get("loop").is_some_and(|value| !value.is_null()) && array(task, "block").is_empty()
-        {
-            for name in task_vars.keys() {
-                layer.vars.remove(name);
-            }
-        }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
         if let Some(user) = string(task, "becomeUser") {
@@ -75,28 +68,6 @@ impl<B: Backend> Runner<'_, B> {
         layer
     }
 
-    fn resolve_task_vars(
-        &mut self,
-        task: &Value,
-        layer: &mut ContextLayer,
-        item: Option<(&str, &TrackedValue)>,
-        expression: Option<&Value>,
-        resolved: &mut std::collections::BTreeSet<String>,
-    ) -> Result<()> {
-        let vars = object(task, "vars");
-        let required = expression.map(|expr| super::loop_vars::required(&vars, expr));
-        let pending = vars
-            .into_iter()
-            .filter(|(name, _)| {
-                !resolved.contains(name)
-                    && required.as_ref().is_none_or(|names| names.contains(name))
-            })
-            .collect::<Map<_, _>>();
-        self.extend_vars_for_item(&mut layer.vars, &pending, item)?;
-        resolved.extend(pending.into_iter().map(|(key, _)| key));
-        Ok(())
-    }
-
     fn evaluate_selection(
         &mut self,
         task: &Value,
@@ -105,9 +76,15 @@ impl<B: Backend> Runner<'_, B> {
         expression: &Value,
         resolved: &mut std::collections::BTreeSet<String>,
     ) -> Result<TrackedValue> {
+        let facts = self.scope.get("setFacts");
         let definitions = object(task, "vars")
             .into_iter()
-            .filter(|(name, _)| !resolved.contains(name))
+            .filter(|(name, _)| {
+                !resolved.contains(name)
+                    && facts
+                        .as_ref()
+                        .is_none_or(|facts| facts.value.get(name).is_none())
+            })
             .collect();
         let scope = self.scope(layer, item);
         let (value, vars) =
@@ -204,7 +181,13 @@ impl<B: Backend> Runner<'_, B> {
                         return Ok(true);
                     }
                 }
-                self.resolve_task_vars(task, &mut layer, None, None, &mut resolved)?;
+                self.evaluate_selection(
+                    task,
+                    &mut layer,
+                    None,
+                    &json!({"kind":"ref","path":["vars"]}),
+                    &mut resolved,
+                )?;
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
                     success = self.tasks(array(task, "rescue"), &layer).await?;
@@ -273,7 +256,13 @@ impl<B: Backend> Runner<'_, B> {
                     continue;
                 }
             }
-            self.resolve_task_vars(task, &mut iteration_layer, binding, None, &mut resolved)?;
+            self.evaluate_selection(
+                task,
+                &mut iteration_layer,
+                binding,
+                &json!({"kind":"ref","path":["vars"]}),
+                &mut resolved,
+            )?;
             let scope = self.scope(&iteration_layer, binding);
             let mut result = self
                 .execute(task, &iteration_layer, &scope, item)

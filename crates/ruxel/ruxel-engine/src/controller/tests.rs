@@ -31,6 +31,17 @@ impl Backend for Fake {
                     continue;
                 }
                 if let Some(expr) = vars.get(name)
+                    && super::loop_vars::required(vars, expr)
+                        .iter()
+                        .any(|dependency| {
+                            dependency != name
+                                && vars.contains_key(dependency)
+                                && !resolved.contains_key(dependency)
+                        })
+                {
+                    continue;
+                }
+                if let Some(expr) = vars.get(name)
                     && let Ok(value) = self.evaluate_tracked(expr, &scope)
                 {
                     let mut values = scope.get("vars").context("vars")?;

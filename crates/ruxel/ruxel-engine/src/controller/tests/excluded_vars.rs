@@ -43,3 +43,20 @@ async fn task_override_can_reference_inherited_variable() -> Result<()> {
     assert_eq!(params["cmd"], "parent");
     Ok(())
 }
+
+#[tokio::test]
+async fn set_fact_takes_precedence_over_task_vars_in_condition() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":false}}}},{"vars":{"gate":{"kind":"literal","value":true}},"when":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"must not run"}}]}]});
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert!(backend.calls.is_empty());
+    assert_eq!(recap["h"].skipped, 1);
+    Ok(())
+}
