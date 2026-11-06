@@ -24,6 +24,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     match current.as_deref() {
         Some(t) if t == fstype => {
             if resizefs {
+                ensure_safe_resize(fstype)?;
                 #[cfg(target_os = "linux")]
                 {
                     if ctx.check_mode {
@@ -59,6 +60,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     Ok(json!({"changed": changed, "failed": false, "dev": dev, "fstype": fstype}))
+}
+
+fn ensure_safe_resize(fstype: &str) -> Result<(), String> {
+    if fstype == "xfs" {
+        return Err(
+            "filesystem: XFS resize unavailable because xfs_growfs reopens a mutable mount path"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -261,12 +272,10 @@ fn xfs_mount(file: &std::fs::File) -> Result<std::fs::File, String> {
 #[cfg(target_os = "linux")]
 fn grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
     match fstype {
-        "xfs" => {
-            let mount = xfs_mount(file)?;
-            let before = xfs_block_count(&mount)?;
-            run_on_file(&mount, "xfs_growfs", &[])?;
-            Ok(xfs_block_count(&mount)? > before)
-        }
+        "xfs" => Err(
+            "filesystem: XFS resize unavailable because xfs_growfs reopens a mutable mount path"
+                .into(),
+        ),
         "ext4" => {
             let before = ext4_block_count(file)?;
             run_on_file(file, "resize2fs", &[])?;
@@ -274,13 +283,6 @@ fn grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
         }
         _ => Err(format!("filesystem: unsupported resize type {fstype:?}")),
     }
-}
-
-#[cfg(target_os = "linux")]
-fn xfs_block_count(mount: &std::fs::File) -> Result<u64, String> {
-    let output = run_on_file(mount, "xfs_info", &[])?;
-    parse_xfs_block_count(&String::from_utf8_lossy(&output.stdout))
-        .ok_or_else(|| "xfs_info: missing data block count".into())
 }
 
 fn parse_xfs_block_count(output: &str) -> Option<u64> {
@@ -391,6 +393,12 @@ mod tests {
         ] {
             assert!(super::classify_probe(result, false, None, None).is_err());
         }
+    }
+
+    #[test]
+    fn refuses_xfs_growth_in_check_and_apply() {
+        assert!(super::ensure_safe_resize("xfs").is_err());
+        assert!(super::ensure_safe_resize("ext4").is_ok());
     }
 
     #[test]
