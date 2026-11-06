@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Compare Ruxel and Ansible check+diff outcomes without mutating a fixture.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

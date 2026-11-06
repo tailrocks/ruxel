@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Verify committed synthetic SSH-chaos acceptance evidence."""
 
 import ipaddress
 import hashlib

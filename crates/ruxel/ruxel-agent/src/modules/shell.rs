@@ -1,8 +1,3 @@
-//! `shell` (SEMANTICS §6): free-form via the shell, with the workload's
-//! args (executable, chdir, creates). The creates-guard result shape is
-//! pinned by golden E14: status ok, changed false, rc 0, the
-//! "Did not run command" msg, and null timing fields.
-
 use super::command::{check_mode_guard, command_result, creates_guard};
 use super::{ExecContext, params_object, str_param};
 use serde_json::Value;

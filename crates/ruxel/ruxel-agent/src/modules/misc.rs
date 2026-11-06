@@ -1,5 +1,3 @@
-//! Small closed-surface modules: `community.general.timezone` and `group`.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
@@ -8,7 +6,6 @@
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
-/// `community.general.timezone` (1 use: name=UTC) via timedatectl.
 pub(super) fn timezone(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("timezone: name required")?;
@@ -32,7 +29,6 @@ fn timezone_from_link(path: &std::path::Path) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `group` (SEMANTICS §6): name, gid, state via getent/groupadd/groupdel.
 pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("group: name required")?;

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Disposable-provider SSH chaos acceptance gate. Never accepts a raw target.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh
@@ -14,16 +13,12 @@ require_fixture_key "$KEY"
 [ -x "$RUXEL" ] || die "ruxel binary is not executable"
 [ -x "$AGENT" ] || die "agent binary is not executable"
 
-# Safety tests stop here. Provider identity and every local input have already
-# been validated; importantly, no SSH command has run yet.
 [ "${RUXEL_CHAOS_VALIDATE_ONLY:-0}" = 1 ] && exit 0
 
 REAL_SSH="$(command -v ssh)"
 case "$REAL_SSH" in
   "$(pwd)/tools/chaos/ssh") die "real ssh resolves to chaos proxy" ;;
 esac
-# OpenSSH limits Unix-domain socket paths to roughly 100 bytes. macOS TMPDIR
-# is already long, so keep the chaos ControlPath root deliberately short.
 work="$(mktemp -d /tmp/rx-chaos.XXXXXX)"
 runtime="$work/runtime"
 PLAYBOOK="$work/chaos.yml"
@@ -104,8 +99,6 @@ for case_name in "${cases[@]}"; do
     safe_ssh "find /var/lib/ruxel/agent -maxdepth 1 -type f -delete"
   fi
   if [ "$case_name" = large-task-result ] || [ "$case_name" = long-subprocess ]; then
-    # Defeat both the creates guard and its ledger fingerprint so the fault
-    # reaches the real large-result/long-subprocess boundary.
     safe_ssh "rm -f /tmp/ruxel-fixture-chaos/$case_name"
   fi
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Full Ansible/Ruxel parity gate on two equivalent provider-verified fixtures.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

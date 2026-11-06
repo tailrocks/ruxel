@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the bounded synthetic performance-scale fixture."""
-
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -12,17 +11,15 @@ NO_LOG = re.compile(r"^      no_log: true$", re.MULTILINE)
 LOOKUP = re.compile(r"lookup\(\s*['\"]community\.general\.onepassword['\"]")
 SECRET_NAME = re.compile(r"^    benchmark_secret_(\d{2}):", re.MULTILINE)
 SYNTHETIC_ITEM = re.compile(r"'ruxel-benchmark-item-(\d{2})'")
-FORBIDDEN = re.compile(
-    r"(?:op://|ChainArgos|java-monorepo|hosts\.ini|"
-    r"\b(?:titan|delorean|pegasus|sentry|postgresql-nova|clickhouse-selene)\b|"
-    r"(?:\d{1,3}\.){3}\d{1,3})",
-    re.IGNORECASE,
-)
+FIXTURE_SHA256 = "093b50185b989d0ce1e38e9ac637215ed4ad383ebd92d6284cb5473b404ca426"
 
 
 def validate(path: Path) -> list[str]:
-    text = path.read_text()
+    data = path.read_bytes()
+    text = data.decode("utf-8")
     errors = []
+    if hashlib.sha256(data).hexdigest() != FIXTURE_SHA256:
+        errors.append("fixture does not match the approved synthetic fixture")
     task_count = len(TASK.findall(text))
     lookup_count = len(LOOKUP.findall(text))
     secret_names = SECRET_NAME.findall(text)
@@ -47,9 +44,6 @@ def validate(path: Path) -> list[str]:
         errors.append("fixture must target only the synthetic benchmark group")
     if "vault='ruxel-benchmark'" not in text:
         errors.append("fixture must use the synthetic benchmark vault")
-    match = FORBIDDEN.search(text)
-    if match:
-        errors.append(f"forbidden real identity or address marker: {match.group(0)}")
     return errors
 
 
@@ -61,7 +55,7 @@ def main(argv: list[str]) -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print("benchmark fixture: 65 tasks, 52 synthetic lookups, identities clean")
+    print("benchmark fixture: 65 tasks, 52 synthetic lookups, approved fixture")
     return 0
 
 

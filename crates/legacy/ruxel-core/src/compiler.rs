@@ -1,17 +1,8 @@
-//! The plan compiler (ARCHITECTURE §3.3, §4): annotate every task with the
-//! registered/fact names its templates read, expand and render everything
-//! whose inputs are already known (play vars + memoized lookups), and mark
-//! the rest as deferred nodes to be rendered when their register inputs
-//! arrive at run time. Rendered literal-enum params are re-validated
-//! against the closed surface — a templated `state:` may not escape it.
-
 use crate::engine::{Engine, EngineError, Scope, VarValue};
 use crate::playbook::{Condition, ErrorKind, Play, Playbook, Task, TaskBody};
 use minijinja::value::Value;
 use std::collections::BTreeSet;
 
-/// Facts the agent supplies at handshake (SEMANTICS §2) — runtime inputs,
-/// like registers, from the compiler's point of view.
 const FACT_NAMES: &[&str] = &[
     "ansible_default_ipv4",
     "ansible_facts",
@@ -37,9 +28,7 @@ pub struct PlayPlan {
 pub struct PlanTask {
     pub name: Option<String>,
     pub body: PlanBody,
-    /// Registered/fact names read anywhere in this task's templates.
     pub reads: BTreeSet<String>,
-    /// Names this task provides to later tasks (register, `set_fact` keys).
     pub provides: Vec<String>,
     pub no_log: bool,
 }
@@ -59,16 +48,14 @@ pub enum PlanBody {
 
 #[derive(Debug)]
 pub enum Readiness {
-    /// All inputs known at compile time: params (and loop items, when a
-    /// loop is present) are fully rendered.
     Static {
         params: Vec<(String, Value)>,
         free_form: Option<String>,
-        /// One rendered param set per loop item (loop tasks only).
         loop_items: Option<Vec<Value>>,
     },
-    /// Reads names that only exist at run time; rendered when they arrive.
-    Deferred { waits_on: BTreeSet<String> },
+    Deferred {
+        waits_on: BTreeSet<String>,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -103,8 +90,6 @@ fn compile_play(
     play: &Play,
     engine: &Engine,
 ) -> Result<PlayPlan, Box<CompileError>> {
-    // The provider universe: every register/set_fact name any task in the
-    // play introduces, plus the handshake facts.
     let mut providers: BTreeSet<String> = FACT_NAMES
         .iter()
         .map(std::string::ToString::to_string)
@@ -264,10 +249,6 @@ fn compile_task(task: &Task, ctx: &mut PlayCtx<'_>) -> Result<PlanTask, Box<Comp
 
 type RenderedParts = (Vec<(String, Value)>, Option<String>, Option<Vec<Value>>);
 
-/// Render a fully-static task: loop items first (native list), then params
-/// once (loop-less) — per-item param rendering happens at dispatch, where
-/// `item` is bound, but compile proves them renderable by rendering with
-/// each item now.
 fn render_static(task: &Task, ctx: &PlayCtx<'_>) -> Result<RenderedParts, EngineError> {
     let TaskBody::Module(call) = &task.body else {
         unreachable!("blocks handled by caller")
@@ -312,8 +293,6 @@ fn render_static(task: &Task, ctx: &PlayCtx<'_>) -> Result<RenderedParts, Engine
     match &loop_items {
         None => render_params_with(&scope),
         Some(items) => {
-            // Params are proven renderable per item; the first item's
-            // rendering is kept as the representative param shape.
             let mut first: Option<RenderedParts> = None;
             for item in items {
                 let item_scope =
@@ -329,8 +308,6 @@ fn render_static(task: &Task, ctx: &PlayCtx<'_>) -> Result<RenderedParts, Engine
     }
 }
 
-/// Templated literal-enum params are validated post-render (the parser let
-/// them through on the promise we would).
 pub fn validate_rendered_enums(
     module: &crate::modules::ModuleSurface,
     params: &[(String, Value)],
@@ -359,8 +336,6 @@ pub fn validate_rendered_enums(
     }
     Ok(())
 }
-
-// -- Read-set scanning --------------------------------------------------------
 
 fn scan_task_reads(task: &Task, providers: &BTreeSet<String>, out: &mut BTreeSet<String>) {
     let mut scan_cond = |c: &Option<Condition>| {
@@ -413,7 +388,6 @@ fn scan_yaml(
     }
 }
 
-/// Scan only the `{{ … }}` / `{% … %}` segments of a template string.
 fn scan_template(template: &str, providers: &BTreeSet<String>, out: &mut BTreeSet<String>) {
     let bytes = template.as_bytes();
     let mut i = 0;
@@ -435,9 +409,6 @@ fn scan_template(template: &str, providers: &BTreeSet<String>, out: &mut BTreeSe
     }
 }
 
-/// Tokenize identifiers (string literals skipped) and keep the ones that
-/// name a runtime provider. Attribute segments after `.` can't collide:
-/// only exact provider names are kept.
 fn scan_expr(expr: &str, providers: &BTreeSet<String>, out: &mut BTreeSet<String>) {
     let mut chars = expr.char_indices().peekable();
     let mut quote: Option<char> = None;

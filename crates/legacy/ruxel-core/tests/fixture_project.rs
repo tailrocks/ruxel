@@ -1,6 +1,3 @@
-//! The repository-owned fixture project is the executable compatibility
-//! corpus. Real workload files are offline extraction input only.
-
 #![expect(clippy::unwrap_used, reason = "removed with the YAML front-end")]
 
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};

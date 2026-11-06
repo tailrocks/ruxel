@@ -1,12 +1,3 @@
-//! The linear per-host scheduler (M3): walk the play's tasks in order,
-//! render each one just-in-time with the full variable scope (play vars,
-//! facts, registered results), evaluate when/loop per SEMANTICS §3,
-//! execute — controller-side for `assert/fail/debug/set_fact`, on the agent
-//! for everything else — then build the registered envelope with
-//! `task_eval` and report ansible-shaped lines. Pipelined issue windows
-//! (ARCHITECTURE §4) replace this walk once the ledger lands; observable
-//! semantics stay identical.
-
 #![expect(
     clippy::similar_names,
     clippy::needless_continue,
@@ -40,7 +31,6 @@ use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
 use std::collections::BTreeSet;
 use std::io::Write;
 
-/// Scheduler boundary for one fully rendered agent iteration.
 #[expect(
     async_fn_in_trait,
     reason = "agent execution is not used through dynamic dispatch"
@@ -119,8 +109,6 @@ pub struct Recap {
     pub ignored: u32,
 }
 
-/// Output shape (SEMANTICS §7): ansible-shaped human lines, or one stable
-/// JSON object per task event on its own line (`--output json`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     Human,
@@ -141,9 +129,6 @@ struct HostRun<'a, A, L> {
     next_task_id: u64,
     format: OutputFormat,
     check_mode: bool,
-    /// `--tags` selection (SEMANTICS §4): None = run everything; Some =
-    /// run tasks whose effective tags intersect this set or include
-    /// `always`. Block tags propagate to contained tasks.
     tags_filter: Option<Vec<String>>,
 }
 
@@ -177,8 +162,6 @@ impl InheritedCtx {
 }
 
 impl<A, L> HostRun<'_, A, L> {
-    /// Whether a task runs under the active --tags filter, given the tags
-    /// inherited from any enclosing block.
     fn tag_selected(&self, task: &Task, inherited: &[String]) -> bool {
         let Some(filter) = &self.tags_filter else {
             return true;
@@ -261,8 +244,6 @@ pub async fn run_play<A: AgentExec, L: Write>(
         }
     }
 
-    // Handlers flush at end of play, definition order, once each, only if
-    // notified by a changed task (SEMANTICS §4).
     if !host_failed {
         for (handler, planned) in play.handlers.iter().zip(&compiled.handlers) {
             let name = handler.name.clone().unwrap_or_default();
@@ -328,9 +309,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             .push((name.to_string(), VarValue::Final(value)));
     }
 
-    /// Dispatch one maximal dependency-free issue window. Complex task
-    /// controls remain sequential; compiler-static plain agent tasks can be
-    /// rendered up front and drained by the agent in one wire Plan.
     async fn run_static_window(
         &mut self,
         tasks: &[Task],
@@ -365,8 +343,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 break;
             }
         }
-        // A halted batch consumes every sent task from this host's schedule:
-        // later tasks were deliberately not executed and host processing ends.
         Ok(Some((end - start, failed)))
     }
 
@@ -477,8 +453,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         Ok(environment)
     }
 
-    /// Returns true when the host must stop (unrescued failure).
-    /// `inherited_tags` are the tags of any enclosing block (SEMANTICS §4).
     async fn run_task_or_block(
         &mut self,
         task: &Task,
@@ -501,11 +475,9 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             else {
                 bail!("compiled/source task shape mismatch for {}", label(task));
             };
-            // The block's own tags propagate to its contained tasks.
             let mut child_tags: Vec<String> = inherited_tags.to_vec();
             child_tags.extend(task.tags.iter().cloned());
 
-            // Block-level when gates the whole block (SEMANTICS §4).
             if let Some(when) = &task.when {
                 let scope = self.scope(inherited, &task.vars);
                 if !self.engine.eval_condition(when, &scope)? {
@@ -531,9 +503,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 if rescue.is_empty() {
                     host_failed = true;
                 } else {
-                    // Ansible moves the triggering failure from `failed` to
-                    // `rescued` when rescue succeeds/starts; it is not counted
-                    // as a terminal host failure in the recap.
                     self.recap.failed = self.recap.failed.saturating_sub(1);
                     self.recap.rescued += 1;
                     for (sub, planned_sub) in rescue.iter().zip(planned_rescue) {
@@ -563,7 +532,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             return Ok(host_failed);
         }
 
-        // --tags: an unselected task reports skipped and does not run.
         if !self.tag_selected(task, inherited_tags) {
             self.print_status(out, task, "skipped", None, None, false);
             self.recap.skipped += 1;
@@ -588,7 +556,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         };
         let scope = self.scope(inherited, &task.vars);
 
-        // Loop expansion (per-item when) or single-shot when.
         let loop_items: Option<Vec<Value>> = match &task.loop_ {
             None => None,
             Some(v) => {
@@ -657,7 +624,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         let changed = result_truthy(&result, "changed");
         let skipped = result_truthy(&result, "skipped");
 
-        // notify on final changed (SEMANTICS §3.12).
         if changed && !failed {
             for h in &task.notify {
                 self.notified.insert(h.clone());
@@ -680,9 +646,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         failed && !task.ignore_errors
     }
 
-    /// Execute the task's iterations (single or per-item), including
-    /// controller-side modules, until/retries, and per-item when handled
-    /// by the caller for loops.
     async fn execute_iterations(
         &mut self,
         task: &Task,
@@ -696,7 +659,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         let mut per_item: Vec<Value> = Vec::new();
 
         for (item, item_scope) in iterations {
-            // Per-item when (loops only — single-shot handled by caller).
             if item.is_some()
                 && let Some(when) = &task.when
             {
@@ -717,8 +679,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                     .execute_once(task, call, readiness, &item_scope, item.as_ref(), inherited)
                     .await?;
                 let Some(until) = &task.until else { break raw };
-                // The until expression sees the candidate result under the
-                // register name (SEMANTICS §3.10).
                 let mut cand_scope = item_scope.clone();
                 if let Some(reg) = &task.register {
                     cand_scope =
@@ -738,7 +698,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 raw
             };
 
-            // changed_when / failed_when see the raw result (+item).
             let mut decorated = raw;
             let mut eval_scope = item_scope.clone();
             if let Some(reg) = &task.register {
@@ -778,7 +737,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         inherited: &InheritedCtx,
     ) -> Result<Value> {
         let module = call.module.name;
-        // Controller-side modules: no agent round-trip (ARCHITECTURE §4).
         match module {
             "debug" => {
                 let msg = match call.params.iter().find(|(k, _)| k == "msg") {
@@ -852,10 +810,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
                 })));
             }
             "pause" => {
-                // Interactive pause (SEMANTICS §4): controller-side, prompt
-                // on the operator TTY and block for Enter. When stdin is not
-                // a TTY (CI, --check), Ansible still prompts but a closed
-                // stdin returns immediately; mirror that — print and proceed.
                 let prompt = match call.params.iter().find(|(k, _)| k == "prompt") {
                     Some((_, v)) => self
                         .engine
@@ -881,8 +835,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             _ => {}
         }
 
-        // Agent-side execution: render params + free-form with the item
-        // scope, ship one iteration, await its result.
         let (mut params, rendered_params, compiled_free_form) = if item.is_none()
             && let Readiness::Static {
                 params,
@@ -915,12 +867,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             &self.playbook_dir.to_string_lossy(),
             &label(task),
         )?;
-        // `copy src=` reads the controller-side file (playbook-relative)
-        // and ships it as content; `template src=` additionally renders
-        // it through the engine with the full scope first (byte-fidelity
-        // proven by the M1 render-parity gate). All file payload stays a
-        // controller concern (ARCHITECTURE §1); the content-addressed
-        // blob channel later replaces inline shipping, not this logic.
         if (module == "copy" || module == "template")
             && !params.contains_key("content")
             && let Some(src) = params.get("src").and_then(|v| v.as_str())
@@ -1014,11 +960,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             return run_local_delegated(module, &params, &free_form, &environment).map(to_mj);
         }
 
-        // Stable ledger identity (ARCHITECTURE §6): blake3 over the task's
-        // identity and its fully-rendered params/body/item. Any change to
-        // params (including a rotated secret, which renders to different
-        // bytes) yields a different key → cache miss → re-check. A hash, so
-        // no secret is recoverable from it.
         let params_bytes = serde_json::to_vec(&params)?;
         let ledger_key = {
             let mut h = blake3::Hasher::new();
@@ -1072,8 +1013,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
             .context("agent returned no result for iteration")
     }
 
-    /// Recap accounting mirrors Ansible's: `ok` includes changed tasks and
-    /// ignored failures; an ignored changed failure also increments changed.
     fn finish_task(
         &mut self,
         task: &Task,
@@ -1110,8 +1049,6 @@ impl<A: AgentExec, L: Write> HostRun<'_, A, L> {
         if !display.is_empty() {
             let _ = writeln!(out, "    {display}");
         }
-        // --diff: print the content diff the agent produced (no_log-safe:
-        // redacted tasks never carry one).
         if self.format == OutputFormat::Human
             && !task.no_log
             && let Some(diff) = result.get_attr("diff").ok().filter(|d| !d.is_undefined())

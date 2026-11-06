@@ -1,5 +1,3 @@
-//! `slurp` (SEMANTICS §6): read-only, returns base64 `content`.
-
 use super::{params_object, str_param};
 use serde_json::{Value, json};
 
@@ -16,8 +14,6 @@ pub(super) fn run(params: &Value) -> Result<Value, String> {
     }))
 }
 
-/// Standard base64 (the agent stays dependency-light; 15 lines beats a
-/// crate for one call site).
 fn b64(data: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
@@ -48,7 +44,6 @@ fn b64(data: &[u8]) -> String {
 mod tests {
     #[test]
     fn b64_matches_python() {
-        // python3: base64.b64encode(b"26.2.1\n") == b"MjYuMi4xCg=="
         assert_eq!(super::b64(b"26.2.1\n"), "MjYuMi4xCg==");
         assert_eq!(super::b64(b""), "");
         assert_eq!(super::b64(b"a"), "YQ==");

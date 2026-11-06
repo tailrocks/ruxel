@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the cargo-deny check's declared manifests in sync with the workspace."""
+
 import json
 import pathlib
 import subprocess

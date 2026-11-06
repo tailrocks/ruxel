@@ -1,10 +1,3 @@
-//! `community.general.lvol` (SEMANTICS §6): vg, lv, size (incl.
-//! `+100%FREE`), resizefs. ⚠ resolved 2026-06-11: `+100%FREE` is
-//! meaningful only at creation/extension. If the LV exists and the VG has
-//! no free extents, it is already full → no change (not an error). We
-//! create when absent; when present and `+...%FREE` is requested, extend
-//! only if the VG reports free space.
-
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -19,7 +12,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     if exists {
-        // Existing LV: only the percent-of-free / +size forms can extend.
         let is_extend = size.starts_with('+');
         if is_extend && free_extents(vg)? > 0 {
             changed = true;
@@ -30,8 +22,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 }
                 args.push(lv_path(vg, lv));
                 let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
-                // lvextend returns rc=5 "matches existing size" when already
-                // full despite free_extents rounding — treat as no-change.
                 match run_cmd("lvextend", &args_ref) {
                     Ok(()) => {}
                     Err(e) if e.contains("matches existing size") || e.contains("not larger") => {
@@ -81,7 +71,6 @@ fn free_extents(vg: &str) -> Result<u64, String> {
 }
 
 fn create(vg: &str, lv: &str, size: &str) -> Result<(), String> {
-    // %-forms use -l (extents); absolute sizes use -L.
     let flag = if size.contains('%') { "-l" } else { "-L" };
     run_cmd("lvcreate", &[flag, lvcreate_size(size), "-n", lv, vg])
 }

@@ -1,5 +1,3 @@
-//! Replay the synthetic Ansible 2.21 render corpus through Ruxel.
-
 #![expect(
     clippy::expect_used,
     clippy::format_collect,

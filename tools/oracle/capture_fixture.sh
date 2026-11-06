@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Capture a real ansible-core 2.21 run of a workload playbook against a
-# ruxel fixture VM (tools/fixtures/create.sh output), writing golden
-# records. Targets come exclusively from the fixture scripts — never the
-# production inventory (docs/GOAL.md rule 2).
-#
-# Usage:
-#   tools/oracle/capture_fixture.sh <fixture-name> <keyfile> <playbook-path> <capture-name> [group]
 set -eu
 CALLER_PWD="$PWD"
 cd "$(dirname "$0")"
@@ -45,11 +38,6 @@ CAPTURE_FILE="$CAPTURE_DIR/${NAME}.jsonl"
 rm -f "$CAPTURE_FILE"
 touch "$CAPTURE_FILE"
 
-# Secretful playbooks: set RUXEL_DRY_SECRETS=1 so ansible resolves
-# onepassword/pipe lookups to the same deterministic dry values ruxel's
-# --dry-secrets produces (the fake onepassword is overlaid into galaxy's
-# community.general; the fake pipe plugin is in lookup_plugins/). No real
-# secret reaches the fixture, and ruxel↔ansible state stays byte-identical.
 LOOKUP_ARGS=""
 COLLECTION_PATH="$(pwd)/galaxy"
 if [ "${RUXEL_DRY_SECRETS:-}" = "1" ]; then

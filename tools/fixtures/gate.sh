@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Run the M2 transport gate against a fixture VM: two single-connect
-# processes — cold (may upload), then warm (must skip upload, < 1 s).
-#
-# Usage: tools/fixtures/gate.sh <fixture-name> <keyfile> <agent-binary>
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

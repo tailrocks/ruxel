@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Materialize the deterministic large-Plan chaos playbook."""
 
 import json
 import sys

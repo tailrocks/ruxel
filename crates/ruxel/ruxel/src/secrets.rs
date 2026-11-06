@@ -1,7 +1,3 @@
-//! Run-scoped 1Password resolver. Item JSON is fetched once and serves every
-//! field/section lookup from that item; apply prefetches discovered items on a
-//! bounded worker pool before compilation.
-
 #![expect(
     clippy::missing_errors_doc,
     clippy::unwrap_used,
@@ -183,8 +179,6 @@ pub fn discover_items(source: &str) -> BTreeSet<ItemRef> {
             items.insert(ItemRef { vault, item });
         }
     }
-    // community.general.onepassword calls need expression-aware discovery;
-    // scan each lookup expression, then extract positional item and vault kwarg.
     for expression in source.match_indices("community.general.onepassword") {
         let tail = &source[expression.0..source.len().min(expression.0 + 512)];
         let Some(end) = tail.find("}}") else { continue };

@@ -105,7 +105,6 @@ fn main() {
     match command.as_ref() {
         "manifest" if matches!(args.len(), 2 | 3) => match extract_manifest(Path::new(&args[1])) {
             Ok(mut manifest) => {
-                // The committed workload artifact is deliberately source-free.
                 manifest.locations.clear();
                 let json = format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap());
                 if let Some(output) = args.get(2) {
@@ -515,8 +514,6 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
         std::fs::read_dir(path).map_err(|error| format!("read {}: {error}", path.display()))?
     {
         let path = entry.map_err(|error| error.to_string())?.path();
-        // The closed workload is the top-level playbook set. Nested YAML is
-        // input data (for example application config), not Ansible tasks.
         if path.is_file()
             && !matches!(
                 path.file_name().and_then(|value| value.to_str()),

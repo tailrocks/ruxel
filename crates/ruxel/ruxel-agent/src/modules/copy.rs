@@ -1,8 +1,3 @@
-//! `copy` (SEMANTICS §6), `content=` form: byte-compare against dest,
-//! write atomically on difference, then attrs. `force: no` short-circuits
-//! when dest exists. The `src=` (controller-file) form arrives with the
-//! content-addressed blob channel.
-
 use super::{
     ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode, str_param,
     write_atomic_with,
@@ -31,7 +26,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     if copy_needs_write(exists, same, force) {
         changed = true;
-        // Unified content diff under --diff (before = current dest bytes).
+
         if ctx.diff_mode && !ctx.no_log {
             let before = String::from_utf8_lossy(&current);
             result["diff"] = json!(super::unified_diff(&before, content));

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run one benchmark command and record monotonic elapsed nanoseconds."""
 
 from __future__ import annotations
 

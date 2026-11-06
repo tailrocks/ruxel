@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Capture deterministic observable state from a labeled disposable fixture.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

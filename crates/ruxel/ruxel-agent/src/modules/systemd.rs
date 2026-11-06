@@ -1,10 +1,3 @@
-//! `systemd` + `service` (SEMANTICS §6): states started/stopped/restarted,
-//! enabled, `daemon_reload`. On these hosts `service` resolves to systemd —
-//! one implementation serves both. Pinned 2026-06-11 (fixture captures):
-//! `daemon_reload: true` executes the reload but reports changed: false,
-//! result {changed, name: null, status: {}}. `restarted` is always a
-//! change (an action, not a state).
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
@@ -34,7 +27,6 @@ pub(super) fn run(
             return Err(format!("daemon-reload failed: {}", st.2));
         }
         system_state.invalidate_units();
-        // Pinned: reload runs but does not report changed.
     }
 
     if let Some(unit) = name {

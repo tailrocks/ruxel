@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Create one fixture VM with an ephemeral SSH key. Prints connection info as
-# shell-evaluable lines:   RUXEL_FIXTURE_NAME=… RUXEL_FIXTURE_IP=… RUXEL_FIXTURE_KEY=…
-#
-# Usage: tools/fixtures/create.sh [name-suffix]
 
 source "$(dirname "$0")/lib.sh"
 
@@ -32,8 +28,6 @@ hcloud server create \
 
 ip="$(hcloud server ip "$name")"
 
-# Wait through cloud-init. Fresh images may briefly accept SSH, then restart
-# sshd while cloud-init finishes; one successful probe is not readiness.
 cloud_init_ready=0
 for _ in $(seq 1 60); do
   if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=3 \

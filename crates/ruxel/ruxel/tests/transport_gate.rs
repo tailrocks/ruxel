@@ -1,14 +1,3 @@
-//! The M2 transport gate, one connect per process (see the known-issue
-//! note in transport.rs): cold connect → handshake → facts → clean
-//! shutdown. tools/fixtures/gate.sh drives it twice — the second run
-//! asserts the content-addressed upload was skipped and the warm
-//! connect+handshake stays under the 1 s budget.
-//!
-//!   `RUXEL_TEST_SSH_DEST`=<dest> `RUXEL_TEST_AGENT_BIN`=<agent> \
-//!   [`RUXEL_TEST_SSH_KEY`=<keyfile>] \
-//!   [`RUXEL_TEST_EXPECT_NO_UPLOAD=1`] [`RUXEL_TEST_EXPECT_FAST=1`] \
-//!   cargo nextest run -p ruxel-cli --test `transport_gate` --run-ignored all --no-capture
-
 use std::time::Instant;
 
 fn env_or_skip() -> Option<(String, std::path::PathBuf)> {

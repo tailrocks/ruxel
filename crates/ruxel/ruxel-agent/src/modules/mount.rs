@@ -1,9 +1,3 @@
-//! `ansible.posix.mount` (SEMANTICS §6): fstab line + actually mounted,
-//! state: mounted. ⚠ resolved 2026-06-11: fstab fields are normalized for
-//! comparison — src/path/fstype/opts plus dump (0) and pass (0 for most,
-//! the workload uses defaults) — so a converged rerun is no-change even
-//! though Ansible writes its own whitespace.
-
 use super::{ExecContext, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
@@ -33,7 +27,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
 
-    // 1. fstab entry (normalized compare on the 6 fields).
     let current = std::fs::read_to_string(FSTAB).unwrap_or_default();
     let (content, fstab_changed) = rewrite_fstab(&current, src, path, fstype, opts);
     changed |= fstab_changed;
@@ -41,7 +34,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
     }
 
-    // 2. actually mounted?
     let mounted = is_mounted(path)?;
     if !mounted {
         changed = true;
@@ -67,7 +59,7 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
             continue;
         }
         let f: Vec<&str> = t.split_whitespace().collect();
-        // Match on mount point (field 1) — Ansible keys fstab by path.
+
         if f.len() >= 2 && f[1] == path {
             found = true;
             let matches = f.len() >= 4 && f[0] == src && f[2] == fstype && opts_eq(f[3], opts);
@@ -91,7 +83,6 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
     }
 }
 
-/// Option-set equality ignoring order (defaults is the common case).
 fn opts_eq(a: &str, b: &str) -> bool {
     let mut sa: Vec<&str> = a.split(',').collect();
     let mut sb: Vec<&str> = b.split(',').collect();

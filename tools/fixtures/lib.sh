@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-# Shared helpers for ruxel fixture VMs (docs/GOAL.md safety rules 2 & 3).
-#
-# Every fixture resource lives in the Hetzner Cloud project behind the local
-# `ruxel-fixtures` hcloud context and carries the label ruxel=fixture. These
-# scripts refuse to run against anything else: targets are only ever taken
-# from `hcloud server list` output of that context.
 
 set -euo pipefail
 
 export HCLOUD_CONTEXT="ruxel-fixtures"
 
-# Hard caps (docs/GOAL.md rule 3).
 readonly MAX_FIXTURES=2
-readonly SERVER_TYPE="${RUXEL_FIXTURE_TYPE:-cpx12}"  # smallest x86_64 available (no cx-line in this account)
+readonly SERVER_TYPE="${RUXEL_FIXTURE_TYPE:-cpx12}"
 readonly IMAGE="${RUXEL_FIXTURE_IMAGE:-debian-12}"
-readonly LOCATION="${RUXEL_FIXTURE_LOCATION:-sin}"   # cpx12 capacity: sin only (EU shared-x86 unavailable, checked 2026-06-11)
+readonly LOCATION="${RUXEL_FIXTURE_LOCATION:-sin}"
 readonly LABEL_SELECTOR="ruxel=fixture"
 
 die() { echo "fixtures: $*" >&2; exit 1; }
@@ -36,9 +29,6 @@ fixture_volumes() {
   hcloud volume list -l "$LABEL_SELECTOR" -o noheader -o columns=name 2>/dev/null
 }
 
-# Resolve a provider identity to its address. Never accept an address from the
-# caller: this is the structural boundary preventing a gate typo from reaching
-# an arbitrary server.
 resolve_fixture() {
   local name="${1:?fixture name required}"
   case "$name" in
@@ -70,8 +60,6 @@ require_fixture_key() {
   export FIXTURE_KEY
 }
 
-# Stable provider topology used to prove two parity targets started equivalent.
-# Deliberately excludes identity, address, timestamps, and provider object IDs.
 fixture_spec() {
   local name="${1:?fixture name required}"
   resolve_fixture "$name"

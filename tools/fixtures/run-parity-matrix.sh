@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Create isolated twin targets and run the complete declared fixture matrix.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

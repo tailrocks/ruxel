@@ -69,7 +69,6 @@ fn truncated_body_is_an_error() {
 
 #[test]
 fn oversized_frame_is_rejected() {
-    // A varint claiming 1 GiB.
     let mut buf = Vec::new();
     let mut len = 1u64 << 30;
     while len >= 0x80 {

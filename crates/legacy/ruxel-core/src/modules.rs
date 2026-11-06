@@ -1,22 +1,15 @@
-//! The closed module surface (docs/SEMANTICS.md §6): exactly the modules and
-//! parameters the workload uses. Unknown module, unknown parameter, or (for
-//! literal values) a value outside the observed set is a hard parse error —
-//! that is what "closed surface" means.
-
-/// One module's allowed surface.
 #[derive(Debug, Clone, Copy)]
 pub struct ModuleSurface {
     pub name: &'static str,
-    /// Allowed parameter keys.
+
     pub params: &'static [&'static str],
-    /// Accepts a free-form string body (`shell: echo hi`).
+
     pub free_form: bool,
-    /// Allowed literal values per param (templated values are validated
-    /// after rendering, not at parse time). Empty = any value.
+
     pub literal_enums: &'static [(&'static str, &'static [&'static str])],
-    /// Params accepted via the `args:` keyword (shell only in the workload).
+
     pub args_params: &'static [&'static str],
-    /// `set_fact` semantics: params are arbitrary variable names.
+
     pub any_params: bool,
 }
 
@@ -31,8 +24,6 @@ const fn surface(name: &'static str, params: &'static [&'static str]) -> ModuleS
     }
 }
 
-/// The registry. Source of truth: the 2026-06-11 param/value extraction in
-/// docs/SEMANTICS.md §6. Keep sorted by name for the error listing.
 pub static MODULES: &[ModuleSurface] = &[
     ModuleSurface {
         literal_enums: &[("state", &["mounted"])],

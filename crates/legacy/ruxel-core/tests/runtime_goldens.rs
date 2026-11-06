@@ -1,10 +1,3 @@
-//! Replay the runtime-semantics goldens (tools/oracle/captures/
-//! runtime-semantics.jsonl, a real local ansible-core 2.21 run of
-//! `tools/oracle/runtime_semantics.yml)`: every registered-result envelope
-//! ruxel's task evaluator builds — skip shape, loop aggregation, per-item
-//! when placement, until attempts, `changed_when` — must equal what Ansible
-//! registered, field for field.
-
 #![expect(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -71,12 +64,9 @@ fn e1_skip_shape_matches() {
 fn e2_changed_when_decoration_matches() {
     let dumps = load_dumps();
     let golden = &dumps["E2"];
-    // Reconstruct: the module result before changed_when had changed: true
-    // (command always reports changed) and no changed_when_result key.
     let mut base = golden.clone();
     base["changed"] = Json::Bool(true);
     base.as_object_mut().unwrap().remove("changed_when_result");
-    // changed_when: false is a literal — engine evaluates it to false.
     let outcome = engine()
         .eval_condition(&Condition::Literal(false), &Scope::new())
         .unwrap();
@@ -91,7 +81,6 @@ fn e3_per_item_when_placement_and_aggregate_match() {
     let items = ["alpha", "beta", "gamma"];
     let eng = engine();
 
-    // Per-item when evaluation must skip exactly beta.
     let cond = Condition::Expr("item != 'beta'".into());
     let outcomes: Vec<bool> = items
         .iter()
@@ -106,11 +95,9 @@ fn e3_per_item_when_placement_and_aggregate_match() {
         assert_eq!(skipped, !outcome, "skip placement at item {i}");
     }
 
-    // The skipped item's full embedded shape: skip dict + loop decoration.
     let built_skip = decorate_loop_item(&skipped_result(&cond), &Value::from("beta"));
     assert_eq!(to_json(&built_skip), golden["results"][1]);
 
-    // Aggregate envelope over the golden per-item results.
     let results: Vec<Value> = golden["results"]
         .as_array()
         .unwrap()
@@ -142,8 +129,6 @@ fn e5_until_attempts_match() {
     let golden = &dumps["E5"];
     assert_eq!(golden["attempts"], 2);
 
-    // The until expression drives retry: false on the failing attempt,
-    // true on the final one.
     let eng = engine();
     let cond = Condition::Expr("e5_until.rc == 0".into());
     let mut failing = golden.clone();
@@ -157,7 +142,6 @@ fn e5_until_attempts_match() {
             .unwrap()
     );
 
-    // Envelope: last attempt's dict plus attempts.
     let mut last = golden.clone();
     last.as_object_mut().unwrap().remove("attempts");
     let built = finalize_until(&to_value(&last), 2);
@@ -169,7 +153,6 @@ fn e6_e7_registered_failure_feeds_conditions() {
     let dumps = load_dumps();
     let e6 = &dumps["E6"];
     assert_eq!(e6["failed"], true);
-    // E7's when list (AND) over registered results evaluated true.
     let eng = engine();
     let e2 = &dumps["E2"];
     let scope = scope_with(&[("e2_cmd", e2), ("e6_fail", e6)]);
@@ -190,7 +173,6 @@ fn e8_set_fact_expression_matches() {
 #[test]
 fn e9_concat_stringifies_python_style() {
     let dumps = load_dumps();
-    // Golden from the run's debug output: "one=False" — Python str(False).
     let eng = engine();
     let item = serde_json::json!({"item": "one", "stat": {"exists": false}});
     let scope = scope_with(&[("item", &item)]);
@@ -221,9 +203,6 @@ fn e11_empty_loop_aggregate_matches() {
     assert_eq!(to_json(&loop_aggregate(vec![])), dumps["E11"]);
 }
 
-/// `no_log` censoring applies to *output* records (the capture callback saw
-/// censored dicts) while the registered variable keeps the real data (the
-/// dumps printed it).
 #[test]
 fn e12_e13_no_log_censors_output_not_register() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -261,7 +240,6 @@ fn e12_e13_no_log_censors_output_not_register() {
         e13_output
     );
 
-    // The registered vars (dumped by the next tasks) are NOT censored.
     let dumps = load_dumps();
     assert_eq!(dumps["E12"]["stdout"], "topsecret");
     assert_eq!(dumps["E13"]["results"][0]["stdout"], "s1");

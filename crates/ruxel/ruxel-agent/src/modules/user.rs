@@ -1,8 +1,3 @@
-//! `user` (SEMANTICS §6): passwd/group entries field-by-field via
-//! useradd/usermod/userdel. The workload's surface: name, uid, group,
-//! groups, append, home, `create_home`, shell, comment, system, state
-//! (absent ×1), remove.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

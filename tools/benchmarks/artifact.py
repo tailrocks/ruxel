@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Sanitize and register one benchmark sample."""
 
 from __future__ import annotations
 

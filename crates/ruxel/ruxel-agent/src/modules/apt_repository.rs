@@ -1,8 +1,3 @@
-//! `apt_repository` (SEMANTICS §6): exact sources line in
-//! `/etc/apt/sources.list.d/<filename>.list`. Changed iff the file's
-//! content changed; `update_cache` refreshes lists after a change (cache
-//! refresh itself never reports changed — same pin as apt).
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
@@ -31,9 +26,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let path = PathBuf::from(format!("/etc/apt/sources.list.d/{filename}.list"));
     let want = format!("{repo}\n");
     let current = std::fs::read_to_string(&path).unwrap_or_default();
-    // Ansible appends the line if missing rather than overwriting other
-    // lines; the workload's files are single-line and ruxel-owned, so
-    // exact-content compare is equivalent — and stricter.
     let changed = current != want;
 
     if changed && !ctx.check_mode {

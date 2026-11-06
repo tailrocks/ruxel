@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Reproducible six-host concurrency/resource gate using disposable SSH containers.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -42,7 +41,7 @@ run_ruxel() {
     --agent-bin "$AGENT" --output json "$@" tools/fixture-project/multihost.yml
 }
 
-run_ruxel >/dev/null # populate identical content-addressed agent cache on all hosts
+run_ruxel >/dev/null
 single_times="$work/single-times"
 for index in $(seq 1 6); do
   single_start="$(python3 -c 'import time; print(time.monotonic())')"

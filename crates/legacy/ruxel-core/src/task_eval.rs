@@ -1,16 +1,6 @@
-//! Controller-side task-result envelopes: the exact dict shapes Ansible
-//! (core 2.21) gives registered variables for skip, loop aggregation,
-//! until/retries, and `changed_when` — pinned by the runtime-semantics
-//! goldens (tools/oracle/captures/runtime-semantics.jsonl) and reproduced
-//! here field-for-field. Module execution fills the inner result dicts
-//! (M3); these functions build everything around them.
-
 use crate::playbook::Condition;
 use minijinja::value::Value;
 
-/// The result dict a task registers when its `when` evaluated false
-/// (SEMANTICS §3.2). `false_condition` carries the failing condition as
-/// written: an expression string, or the literal bool for `when: false`.
 pub fn skipped_result(false_condition: &Condition) -> Value {
     let cond_value = match false_condition {
         Condition::Literal(b) => Value::from(*b),
@@ -26,8 +16,6 @@ pub fn skipped_result(false_condition: &Condition) -> Value {
     ])
 }
 
-/// For a `when` list (AND), the registered `false_condition` is the first
-/// entry that evaluated false — pick it given the per-entry outcomes.
 #[must_use]
 pub fn first_false_condition(cond: &Condition, outcomes: &[bool]) -> Condition {
     match cond {
@@ -39,8 +27,6 @@ pub fn first_false_condition(cond: &Condition, outcomes: &[bool]) -> Condition {
     }
 }
 
-/// Decorate one loop iteration's result with its item binding, as Ansible
-/// records inside `results`: `ansible_loop_var: item` plus the item value.
 #[must_use]
 pub fn decorate_loop_item(result: &Value, item: &Value) -> Value {
     merge(
@@ -52,15 +38,6 @@ pub fn decorate_loop_item(result: &Value, item: &Value) -> Value {
     )
 }
 
-/// Aggregate a looped task's per-item results into the registered dict
-/// (SEMANTICS §3.3), shapes pinned by goldens E3, E4, E10, E11:
-/// - empty item list → `skipped: true`, `skip_reason`/`skipped_reason`
-///   "No items in the list", empty `results`
-/// - any failure → `failed: true`, msg "One or more items failed"
-/// - all items skipped → msg "All items skipped" plus aggregate
-///   `skipped: true`
-/// - otherwise → msg "All items completed"
-/// - `changed` is true iff any item changed.
 #[must_use]
 pub fn loop_aggregate(results: Vec<Value>) -> Value {
     if results.is_empty() {
@@ -99,8 +76,6 @@ pub fn loop_aggregate(results: Vec<Value>) -> Value {
     Value::from_iter(pairs)
 }
 
-/// Apply a `changed_when` outcome: the result's `changed` is replaced and
-/// the raw outcome recorded as `changed_when_result` (golden E2).
 #[must_use]
 pub fn apply_changed_when(result: &Value, outcome: bool) -> Value {
     merge(
@@ -112,18 +87,11 @@ pub fn apply_changed_when(result: &Value, outcome: bool) -> Value {
     )
 }
 
-/// Finalize an `until` task's registered result: the last attempt's dict
-/// plus `attempts` (golden E5).
 #[must_use]
 pub fn finalize_until(last: &Value, attempts: u64) -> Value {
     merge(last, [("attempts", Value::from(attempts))])
 }
 
-/// What `no_log: true` shows instead of a result, in every output channel
-/// (SEMANTICS §3.11) — the registered variable itself stays uncensored
-/// (pinned by goldens E12/E13: later tasks read the real data). `changed`
-/// is preserved; for a looped task each entry of `results` is censored the
-/// same way.
 #[must_use]
 pub fn censored_result(changed: bool, item_results_changed: Option<&[bool]>) -> Value {
     const CENSORED: &str = "the output has been hidden due to the fact that 'no_log: true' was specified for this result";
@@ -145,7 +113,6 @@ pub fn censored_result(changed: bool, item_results_changed: Option<&[bool]>) -> 
     }
 }
 
-/// Shallow-merge extra keys into a map value (existing keys overwritten).
 fn merge<const N: usize>(base: &Value, extra: [(&str, Value); N]) -> Value {
     let mut pairs: Vec<(Value, Value)> = Vec::new();
     if let Ok(iter) = base.try_iter() {

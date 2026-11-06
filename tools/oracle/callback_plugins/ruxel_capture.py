@@ -1,18 +1,3 @@
-"""Ansible callback plugin that captures per-task oracle data for ruxel.
-
-Records one JSON line per task/item result to the file named by
-RUXEL_CAPTURE_FILE (default: ./ruxel-capture.jsonl): play, task name, action,
-raw task args (pre-template), resolved module args (post-template, from the
-module invocation when the module reports it), the full result dict, status,
-and diff. no_log tasks arrive already censored by Ansible core - the capture
-stores exactly what Ansible itself would log.
-
-Enable with:
-    ANSIBLE_CALLBACK_PLUGINS=tools/oracle/callback_plugins \
-    ANSIBLE_CALLBACKS_ENABLED=ruxel_capture \
-    RUXEL_CAPTURE_FILE=/tmp/capture.jsonl \
-    ansible-playbook ...
-"""
 
 from __future__ import annotations
 
@@ -34,7 +19,6 @@ DOCUMENTATION = """
 
 
 def _jsonable(value):
-    """Coerce Ansible's internal types (AnsibleUnicode, wrappers) to plain JSON."""
     try:
         return json.loads(json.dumps(value, default=str))
     except (TypeError, ValueError):
@@ -66,8 +50,8 @@ class CallbackModule(CallbackBase):
         task = result._task
         raw = _jsonable(getattr(task, "args", {}))
         res = _jsonable(result._result)
-        # Resolved (post-template) module args, when the module echoes its
-        # invocation. Absent for some actions and for no_log tasks.
+
+
         invocation = res.get("invocation") if isinstance(res, dict) else None
         resolved = invocation.get("module_args") if isinstance(invocation, dict) else None
         record = {
@@ -85,7 +69,7 @@ class CallbackModule(CallbackBase):
             record["item_label"] = _jsonable(item)
         return record
 
-    # -- lifecycle ---------------------------------------------------------
+
 
     def v2_playbook_on_start(self, playbook):
         self._playbook = getattr(playbook, "_file_name", None)
@@ -93,7 +77,7 @@ class CallbackModule(CallbackBase):
     def v2_playbook_on_play_start(self, play):
         self._play = play.get_name()
 
-    # -- whole-task results ------------------------------------------------
+
 
     def v2_runner_on_ok(self, result):
         self._write(self._task_record("ok", result))
@@ -109,7 +93,7 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_unreachable(self, result):
         self._write(self._task_record("unreachable", result))
 
-    # -- per-loop-item results ----------------------------------------------
+
 
     def v2_runner_item_on_ok(self, result):
         self._write(self._task_record("item_ok", result, item=result._result.get("item")))

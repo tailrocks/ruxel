@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Correctness-gated benchmarks on exactly two provider-verified disposable twins.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

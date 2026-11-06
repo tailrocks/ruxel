@@ -1,8 +1,3 @@
-//! `ruxel apply -i hosts.ini [--limit pattern] playbook.yml` — the full
-//! pipeline: parse → connect (`ControlMaster` + agent) → linear scheduler →
-//! recap. `--check` executes the same remote pipeline with module prediction
-//! enabled, matching Ansible check-mode semantics.
-
 #![expect(
     clippy::struct_excessive_bools,
     clippy::needless_pass_by_value,
@@ -80,8 +75,6 @@ pub(crate) fn execute(args: ApplyArgs) -> Result<u8> {
         .unwrap_or_default();
     let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
 
-    // Secrets: the op-backed resolver by default (memoized once per run);
-    // --dry-secrets swaps in deterministic fakes for gates/offline.
     let engine = if args.dry_secrets {
         Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)))
     } else {

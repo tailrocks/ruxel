@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Run the fixed synthetic 65-task/52-lookup benchmark on disposable provider twins.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh
@@ -74,8 +73,6 @@ make_inventory "$RFIXTURE" "$RKEY" "$stage/ruxel.ini"
 make_inventory "$AFIXTURE" "$AKEY" "$stage/ansible.ini"
 resolve_fixture "$RFIXTURE"; RIP="$FIXTURE_IP"
 resolve_fixture "$AFIXTURE"; AIP="$FIXTURE_IP"
-# Gate timed samples on both SSH endpoints being ready and semantically equal.
-# Provider creation can complete before sshd accepts its first connection.
 tools/fixtures/state-snapshot.sh "$RFIXTURE" "$RKEY" "$stage/base-ruxel"
 tools/fixtures/state-snapshot.sh "$AFIXTURE" "$AKEY" "$stage/base-ansible"
 diff -u "$stage/base-ruxel" "$stage/base-ansible"

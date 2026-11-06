@@ -1,12 +1,7 @@
 #!/bin/sh
-# Capture the runtime-semantics goldens: run runtime_semantics.yml against
-# localhost (connection local — no remote target, ever) under the pinned
-# ansible-core 2.21 with the ruxel_capture callback, writing
-# captures/runtime-semantics.jsonl.
 set -eu
 cd "$(dirname "$0")"
 
-# The capture callback appends; start each capture from zero.
 rm -f captures/runtime-semantics.jsonl
 
 ANSIBLE_CALLBACK_PLUGINS=callback_plugins \

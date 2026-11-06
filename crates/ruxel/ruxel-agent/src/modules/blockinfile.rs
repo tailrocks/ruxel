@@ -1,7 +1,3 @@
-//! `blockinfile` (SEMANTICS §6): managed block between the default
-//! markers; replace the block's content in place, or append the whole
-//! block at EOF when absent. `create: yes` materializes a missing file.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
@@ -60,7 +56,6 @@ fn rewrite_block(current: &str, block: &str) -> String {
             format!("{}{}{}", &current[..b], managed, &current[end_of_marker..])
         }
         _ => {
-            // Insert at EOF.
             let mut s = current.to_string();
             if !s.is_empty() && !s.ends_with('\n') {
                 s.push('\n');

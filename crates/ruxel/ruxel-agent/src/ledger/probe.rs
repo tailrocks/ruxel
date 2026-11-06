@@ -1,10 +1,5 @@
 use super::{Path, Probe, Value};
 
-/// The fingerprint set a module's converged end state can be verified by,
-/// or None if the module must always execute (ARCHITECTURE §6 honesty rule).
-/// Cacheable registry: content/file modules, apt present (not latest),
-/// non-restarted systemd/service, and sysctl. Every other dispatch arm is
-/// intentionally always-execute until it gains an honest probe here.
 pub(super) fn probe_for(
     module: &str,
     params: &Value,
@@ -14,7 +9,6 @@ pub(super) fn probe_for(
     match module {
         "file" | "copy" | "template" | "lineinfile" | "replace" | "blockinfile" => {
             let path = s("path").or_else(|| s("dest"))?;
-            // `state: absent` / `link` aren't content — skip caching them.
             if matches!(s("state"), Some("absent" | "link")) {
                 return None;
             }
@@ -42,8 +36,6 @@ pub(super) fn probe_for(
                 return None;
             }
             let names = pkg_names(params);
-            // update_cache/upgrade-only invocations have no stable package
-            // fingerprint — let them run (network-truth class).
             if names.is_empty() {
                 return None;
             }
@@ -56,7 +48,6 @@ pub(super) fn probe_for(
         }
         "systemd" | "service" => {
             let name = s("name")?;
-            // `restarted` is an action, never cacheable.
             if s("state") == Some("restarted") {
                 return None;
             }

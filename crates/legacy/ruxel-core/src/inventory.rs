@@ -1,25 +1,16 @@
-//! INI inventory parsing for the workload's `hosts.ini` shape
-//! (docs/SEMANTICS.md §1): named hosts in groups, with
-//! `ansible_ssh_host` / `ansible_ssh_user` connection variables.
-
 use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Host {
     pub name: String,
-    /// `ansible_ssh_host` — connection address (falls back to `name`).
     pub ssh_host: String,
-    /// `ansible_ssh_user` — login user (falls back to the current convention,
-    /// which the workload always sets explicitly).
     pub ssh_user: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Inventory {
-    /// Hosts in file order.
     pub hosts: Vec<Host>,
-    /// Group name → member host names, in file order.
     pub groups: BTreeMap<String, Vec<String>>,
 }
 
@@ -38,9 +29,6 @@ pub enum InventoryError {
 }
 
 impl Inventory {
-    /// Parse the INI inventory dialect the workload uses. Anything outside
-    /// it — `[group:children]`, `[group:vars]`, host ranges, quoting — is a
-    /// hard error by design.
     pub fn parse(content: &str) -> Result<Self, InventoryError> {
         let mut inv = Inventory::default();
         let mut current_group: Option<String> = None;
@@ -111,10 +99,6 @@ impl Inventory {
         self.hosts.iter().find(|h| h.name == name)
     }
 
-    /// Resolve a play `hosts:` pattern intersected with an optional
-    /// `--limit` pattern. Supported pattern forms (the closed surface):
-    /// `all`, a group name, a host name, or a comma/colon-separated list of
-    /// those.
     pub fn select(&self, pattern: &str, limit: Option<&str>) -> Result<Vec<&Host>, PatternError> {
         let base = self.expand(pattern)?;
         let selected: Vec<&Host> = match limit {

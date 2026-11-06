@@ -1,7 +1,3 @@
-//! `stat` (SEMANTICS §6): read-only, never changed. Returns the `stat.*`
-//! fields the workload consumes (exists, isblk, …) plus the cheap common
-//! ones.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

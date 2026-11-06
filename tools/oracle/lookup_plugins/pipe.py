@@ -1,7 +1,3 @@
-# Fake `pipe` lookup for parity captures: returns the same deterministic
-# dry-secret value as ruxel's DrySecrets resolver (crates/legacy/ruxel-core/src/
-# engine.rs). Never executes anything. Loaded via ANSIBLE_LOOKUP_PLUGINS,
-# shadowing the builtin.
 from __future__ import annotations
 
 import hashlib

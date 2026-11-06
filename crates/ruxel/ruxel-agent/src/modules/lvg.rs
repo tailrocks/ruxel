@@ -1,10 +1,3 @@
-//! `community.general.lvg` (SEMANTICS §6): VG exists with exactly the
-//! given PVs. ⚠ resolved 2026-06-11: create when absent (pvcreate each PV,
-//! then vgcreate); when present with a *superset* requested, extend
-//! (vgextend the new PVs); a requested *subset* is a no-op (Ansible does
-//! not auto-reduce without force) — the drive-add workflow is "append a
-//! disk, re-run". Reduction is out of the workload's surface.
-
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -34,7 +27,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             changed = true;
             if !ctx.check_mode {
                 for pv in &pvs {
-                    // pvcreate is idempotent-ish; -f -y to claim cleanly.
                     run_cmd("pvcreate", &["-f", "-y", pv])?;
                 }
                 let mut args = vec![vg];
@@ -47,7 +39,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Some(have) => {
             let new_pvs = missing_pvs(&pvs, &have);
             if !new_pvs.is_empty() {
-                // Requested PVs the VG does not have yet → extend.
                 changed = true;
                 if !ctx.check_mode {
                     for pv in &new_pvs {
@@ -60,7 +51,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     run_cmd("vgextend", &args)?;
                 }
             }
-            // A requested subset (have ⊃ want) is intentionally a no-op.
+
             let _ = &want;
         }
     }
@@ -72,7 +63,6 @@ fn missing_pvs<'a>(want: &'a [String], have: &BTreeSet<String>) -> Vec<&'a Strin
     want.iter().filter(|pv| !have.contains(*pv)).collect()
 }
 
-/// PVs currently in the VG, or None when the VG does not exist.
 fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
     let out = std::process::Command::new("vgs")
         .args([
@@ -86,7 +76,6 @@ fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
         .output()
         .map_err(|e| format!("exec vgs: {e}"))?;
     if !out.status.success() {
-        // vgs exits non-zero when the VG is absent.
         return Ok(None);
     }
     let text = String::from_utf8_lossy(&out.stdout);
@@ -95,8 +84,6 @@ fn current_pvs(vg: &str) -> Result<Option<BTreeSet<String>>, String> {
 }
 
 fn parse_pvs_report(parsed: &Value) -> BTreeSet<String> {
-    // vgs nests the pv_name rows under the "vg" array (verified against
-    // lvm2 reportformat json 2026-06-11), not a "pv" array.
     let mut set = BTreeSet::new();
     if let Some(report) = parsed["report"].as_array() {
         for r in report {

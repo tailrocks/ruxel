@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Provision isolated loop-backed disks for synthetic storage fixtures.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

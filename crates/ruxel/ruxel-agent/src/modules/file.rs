@@ -1,6 +1,3 @@
-//! `file` (SEMANTICS §6): states directory / absent / link, plus
-//! owner/group/mode and recurse. Check-mode predicts without writing.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

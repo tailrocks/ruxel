@@ -1,12 +1,3 @@
-//! The templating engine: `MiniJinja` configured to reproduce ansible-core
-//! 2.21's observable rendering semantics for the closed surface in
-//! docs/SEMANTICS.md §2 — native types, the workload's filter set, lazy
-//! variable resolution, and controller-side lookups with a dry-secrets mode.
-//!
-//! Every semantic choice here is provisional until the render-parity harness
-//! (`tools/oracle/render_parity.py`) confirms it byte-for-byte against the
-//! pinned oracle; the goldens, not this file's comments, are the contract.
-
 use minijinja::value::{Kwargs, Object, Value};
 use minijinja::{Environment, ErrorKind as MjErrorKind, UndefinedBehavior};
 use serde_norway::Value as Yaml;
@@ -28,11 +19,6 @@ pub enum EngineError {
     TaggedValue,
 }
 
-// -- Lookups ----------------------------------------------------------------
-
-/// Controller-side lookup resolution (SEMANTICS §2). Implementations:
-/// `DrySecrets` (deterministic fakes, used by tests and `--dry-secrets`),
-/// and later a real `op`-backed resolver (M3).
 pub trait LookupResolver: Send + Sync {
     fn onepassword(
         &self,
@@ -44,9 +30,6 @@ pub trait LookupResolver: Send + Sync {
     fn pipe(&self, cmd: &str) -> Result<String, String>;
 }
 
-/// Canonical identity of one lookup invocation; memoization and the
-/// dry-secrets fake derive from this exact string. The Python fake lookup
-/// plugins in tools/oracle/ must build the identical string.
 fn lookup_key(kind: &str, parts: &[&str]) -> String {
     let mut key = String::from(kind);
     for p in parts {
@@ -93,8 +76,6 @@ fn python_display(value: &serde_json::Value) -> String {
     }
 }
 
-/// Deterministic fake secrets: stable across runs and languages so parity
-/// goldens are reproducible without any real secret store.
 pub struct DrySecrets;
 
 impl LookupResolver for DrySecrets {
@@ -122,8 +103,6 @@ impl LookupResolver for DrySecrets {
     }
 }
 
-/// Memoizes each distinct lookup invocation once per run (the specified
-/// deviation in SEMANTICS §2: one consistent secret snapshot per run).
 pub struct MemoizedResolver<R> {
     inner: R,
     cache: Mutex<HashMap<String, String>>,
@@ -177,11 +156,6 @@ impl<R: LookupResolver> LookupResolver for MemoizedResolver<R> {
     }
 }
 
-// -- Scope ------------------------------------------------------------------
-
-/// One variable binding: either a raw (possibly template-bearing) YAML value
-/// rendered lazily on first reference (play vars), or an already-final value
-/// (facts, register results, loop `item`).
 #[derive(Clone)]
 pub enum VarValue {
     Raw(Yaml),
@@ -197,8 +171,6 @@ impl std::fmt::Debug for VarValue {
     }
 }
 
-/// Layered variable scope, lowest→highest precedence (SEMANTICS §2: play
-/// vars → `set_fact` → register; loop `item` and task vars on top).
 #[derive(Clone, Default)]
 pub struct Scope {
     layers: Vec<Arc<Vec<(String, VarValue)>>>,
@@ -221,7 +193,6 @@ impl Scope {
         Self::default()
     }
 
-    /// Push a higher-precedence layer; later layers shadow earlier ones.
     #[must_use]
     pub fn with_layer(&self, vars: Vec<(String, VarValue)>) -> Self {
         let mut layers = self.layers.clone();
@@ -250,10 +221,6 @@ impl Scope {
     }
 }
 
-/// The minijinja context object: resolves scope names on demand, rendering
-/// raw values through the engine at first access (Ansible's lazy semantics —
-/// an unused broken var is never an error) and memoizing per evaluation
-/// context.
 struct ScopeObject {
     engine: Arc<EngineInner>,
     scope: Scope,
@@ -293,9 +260,6 @@ impl Object for ScopeObject {
                 self.in_flight.lock().unwrap().remove(name);
                 match result {
                     Ok(v) => v,
-                    // Surface render errors at use-site, like Ansible's
-                    // lazy templating does: the error message becomes the
-                    // failure when the variable is actually consumed.
                     Err(e) => {
                         let cycle = matches!(e, EngineError::VarCycle(_));
                         return Some(Value::from_object(ScopeRenderError {
@@ -321,8 +285,6 @@ impl Object for ScopeObject {
     }
 }
 
-/// A poisoned value: referencing a variable whose lazy render failed turns
-/// into a hard template error the moment it is used in any operation.
 #[derive(Debug)]
 struct ScopeRenderError {
     name: String,
@@ -344,8 +306,6 @@ impl Object for ScopeRenderError {
     }
 }
 
-// -- Engine -----------------------------------------------------------------
-
 #[derive(Debug)]
 struct EngineInner {
     env: Environment<'static>,
@@ -358,13 +318,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(resolver: Arc<dyn LookupResolver>) -> Self {
         let mut env = Environment::new();
-        // Ansible's undefined chains through attribute access and is caught
-        // by `default` (the workload's `item.stat.exists | default(false)`
-        // pattern). ⚠ pinned by the parity harness.
         env.set_undefined_behavior(UndefinedBehavior::Chainable);
-        // …but *emitting* an undefined into rendered output is
-        // AnsibleUndefinedVariable (pinned 2026-06-11: config/fixture_3/
-        // config.yml's slack_* refs error under the oracle).
         env.set_formatter(|out, _state, value| {
             if value.is_undefined() {
                 return Err(minijinja::Error::new(
@@ -372,9 +326,6 @@ impl Engine {
                     "undefined value in template output",
                 ));
             }
-            // Concatenated output stringifies the Python way (str(True) =
-            // "True", str(None) = "None") — pinned by runtime golden E9
-            // ("{{ item.item }}={{ item.stat.exists }}" → "one=False").
             match value.kind() {
                 minijinja::value::ValueKind::Bool => {
                     write!(out, "{}", if value.is_true() { "True" } else { "False" })
@@ -400,11 +351,7 @@ impl Engine {
             }
             .map_err(minijinja::Error::from)
         });
-        // The template module's keep_trailing_newline=True default
-        // (SEMANTICS §6 template). ⚠ pinned by the 22-template parity gate.
         env.set_keep_trailing_newline(true);
-        // Ansible uses trim_blocks=True and lstrip_blocks=False. Remove the
-        // first newline after block tags while preserving leading indentation.
         env.set_trim_blocks(true);
 
         env.add_filter("bool", filter_bool);
@@ -438,16 +385,10 @@ impl Engine {
         Value::from_dyn_object(self.scope_object(scope))
     }
 
-    /// Render a string with Ansible native-types semantics: a string that is
-    /// exactly one `{{ expression }}` evaluates to the native value; anything
-    /// else containing template syntax renders to a string; a plain string
-    /// passes through untouched.
     pub fn render_str(&self, template: &str, scope: &Scope) -> Result<Value, EngineError> {
         render_str_inner(&self.inner, template, &self.context(scope))
     }
 
-    /// Render a template file's content the way the `template` module does
-    /// (trailing newline preserved). Always a string.
     pub fn render_template_file(
         &self,
         content: &str,
@@ -456,16 +397,11 @@ impl Engine {
         Ok(self.inner.env.render_str(content, self.context(scope))?)
     }
 
-    /// Render an arbitrary parsed-YAML value: strings render with native
-    /// semantics, containers recurse, scalars pass through.
     pub fn render_value(&self, value: &Yaml, scope: &Scope) -> Result<Value, EngineError> {
         let obj = self.scope_object(scope);
         render_yaml(&self.inner, value, &obj)
     }
 
-    /// Evaluate a task condition (`when`/`until`/`changed_when`/
-    /// `failed_when`): bare expression(s), Ansible truthiness; a list is the
-    /// AND of all entries (SEMANTICS §3.2).
     pub fn eval_condition(
         &self,
         cond: &crate::playbook::Condition,
@@ -491,9 +427,6 @@ impl Engine {
 fn eval_expr_bool(inner: &EngineInner, expr: &str, ctx: &Value) -> Result<bool, EngineError> {
     let compiled = inner.env.compile_expression(expr)?;
     let value = compiled.eval(ctx.clone())?;
-    // Ansible raises AnsibleUndefinedVariable when a condition's result is
-    // undefined (pinned 2026-06-11 against the 2.21 oracle) — chainable
-    // undefined is only allowed to survive *inside* an expression.
     if value.is_undefined() {
         return Err(EngineError::Undefined(expr.to_string()));
     }
@@ -512,7 +445,6 @@ fn poison_error(value: &Value) -> Option<EngineError> {
     })
 }
 
-/// `"{{ expr }}"` (exactly one expression, nothing else) → Some(expr).
 fn single_expression(template: &str) -> Option<&str> {
     let inner = template.strip_prefix("{{")?.strip_suffix("}}")?;
     if inner.contains("{{") || inner.contains("}}") || inner.contains("{%") {
@@ -532,9 +464,6 @@ fn render_str_inner(
     if let Some(expr) = single_expression(template) {
         let compiled = inner.env.compile_expression(expr)?;
         let value = compiled.eval(ctx.clone())?;
-        // Match AnsibleUndefinedVariable on an undefined final result
-        // (pinned 2026-06-11): chaining may pass through undefined, but a
-        // template must not silently *produce* it.
         if value.is_undefined() {
             return Err(EngineError::Undefined(template.to_string()));
         }
@@ -588,11 +517,6 @@ fn render_yaml(
     })
 }
 
-// -- Filters ----------------------------------------------------------------
-
-/// Ansible's `bool` filter (core 2.21 strict semantics): real bools pass,
-/// the classic string/int spellings convert, anything else is an error.
-/// ⚠ exact accepted set pinned by harness experiments.
 fn filter_bool(value: Value) -> Result<bool, minijinja::Error> {
     if value.is_undefined() || value.is_none() {
         return Err(minijinja::Error::new(
@@ -630,8 +554,6 @@ fn bool_of(value: &Value) -> Option<bool> {
     None
 }
 
-/// Ansible's `hash` filter; the workload uses only `hash('sha256')`
-/// (SEMANTICS §2), so anything else is outside the closed surface.
 fn filter_hash(value: Value, algorithm: String) -> Result<String, minijinja::Error> {
     if algorithm != "sha256" {
         return Err(minijinja::Error::new(
@@ -651,8 +573,6 @@ fn filter_hash(value: Value, algorithm: String) -> Result<String, minijinja::Err
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Ansible's `b64decode` filter (setup-fixture_3.yml's bootstrap-marker
-/// compare). UTF-8 output only — the workload decodes a slurped text file.
 fn filter_b64decode(value: Value) -> Result<String, minijinja::Error> {
     use base64::Engine as _;
     let Some(s) = value.as_str() else {
@@ -671,9 +591,6 @@ fn filter_b64decode(value: Value) -> Result<String, minijinja::Error> {
     })
 }
 
-/// Ansible's `subelements` filter: list of dicts × subelement list key →
-/// list of `[parent, subelement]` pairs. `skip_missing` defaults to false:
-/// a parent without the key (or with a non-list value) is an error.
 fn filter_subelements(value: Value, key: String) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     let iter = value.try_iter().map_err(|_| {
@@ -702,8 +619,6 @@ fn filter_subelements(value: Value, key: String) -> Result<Value, minijinja::Err
     }
     Ok(Value::from(out))
 }
-
-// -- Lookup function ----------------------------------------------------------
 
 fn lookup_fn(
     resolver: &dyn LookupResolver,
@@ -850,7 +765,6 @@ broken: "{{ undefined_thing.attr.deep }}"
         );
         let v = engine().render_str("{{ a }}", &s).unwrap();
         assert_eq!(v.as_str(), Some("base-suffix"));
-        // `broken` is never referenced — lazy evaluation means no error.
     }
 
     #[test]
@@ -920,7 +834,6 @@ broken: "{{ undefined_thing.attr.deep }}"
         let v = engine()
             .render_str("{{ pw | hash('sha256') }}", &s)
             .unwrap();
-        // python3: hashlib.sha256(b"secret").hexdigest()
         assert_eq!(
             v.as_str(),
             Some("2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b")
@@ -993,7 +906,6 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn undefined_template_result_is_error() {
-        // Oracle: AnsibleUndefinedVariable (pinned 2026-06-11).
         assert!(matches!(
             engine().render_str("{{ nope }}", &Scope::new()),
             Err(EngineError::Undefined(_))
@@ -1006,8 +918,6 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn concat_of_two_expressions_is_a_string() {
-        // Oracle: '12' (string), not 12 — 2.21 does not literal_eval concat
-        // results (pinned 2026-06-11).
         let s = scope(&[("a", serde_json::json!(1)), ("b", serde_json::json!(2))]);
         let v = engine().render_str("{{ a }}{{ b }}", &s).unwrap();
         assert_eq!(v.as_str(), Some("12"));
@@ -1015,7 +925,6 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn space_wrapped_expression_is_a_string() {
-        // Oracle: ' 1 ' — whitespace outside delimiters defeats native mode.
         let s = scope(&[("a", serde_json::json!(1))]);
         let v = engine().render_str(" {{ a }} ", &s).unwrap();
         assert_eq!(v.as_str(), Some(" 1 "));
@@ -1023,7 +932,6 @@ broken: "{{ undefined_thing.attr.deep }}"
 
     #[test]
     fn urlencode_matches_python_quote() {
-        // Oracle: 'a%20b/c%2Bd%26e%3Df' — space %20, / kept, + encoded.
         let s = scope(&[("pw", serde_json::json!("a b/c+d&e=f"))]);
         let v = engine().render_str("{{ pw | urlencode }}", &s).unwrap();
         assert_eq!(v.as_str(), Some("a%20b/c%2Bd%26e%3Df"));

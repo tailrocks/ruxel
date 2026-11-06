@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Verify completeness, integrity, safety, and statistics of benchmark artifacts."""
 
 from __future__ import annotations
 
