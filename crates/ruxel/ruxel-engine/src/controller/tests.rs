@@ -10,6 +10,7 @@ mod more;
 mod persistence;
 mod plan_redaction;
 mod smoke;
+mod until_sensitivity;
 
 #[derive(Default)]
 struct Fake {

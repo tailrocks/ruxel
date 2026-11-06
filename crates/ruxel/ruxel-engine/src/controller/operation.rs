@@ -3,6 +3,41 @@ use super::{
     failed, json, ledger_key, result_scope, snake, string, truth, v1,
 };
 
+pub(super) fn sensitive_condition(value: &Value, scope: &TrackedValue) -> bool {
+    match value {
+        Value::Object(fields) if fields.get("kind").and_then(Value::as_str) == Some("ref") => {
+            let Some(path) = fields.get("path").and_then(Value::as_array) else {
+                return false;
+            };
+            let mut current = scope.clone();
+            for (index, part) in path.iter().enumerate() {
+                let Some(mut part) = part.as_str() else {
+                    return false;
+                };
+                if index == 0 && part == "variables" {
+                    part = "vars";
+                }
+                let Some(next) = current.get(part) else {
+                    return matches!(
+                        current.provenance,
+                        crate::expression::provenance::Provenance::Secret
+                    );
+                };
+                current = next;
+            }
+            current.is_secret()
+        }
+        Value::Object(fields) => {
+            fields.get("kind").and_then(Value::as_str) == Some("lookup")
+                || fields
+                    .values()
+                    .any(|child| sensitive_condition(child, scope))
+        }
+        Value::Array(items) => items.iter().any(|child| sensitive_condition(child, scope)),
+        _ => false,
+    }
+}
+
 impl<B: Backend> Runner<'_, B> {
     #[expect(
         clippy::too_many_lines,
@@ -61,6 +96,9 @@ impl<B: Backend> Runner<'_, B> {
             || layer.control_sensitive
             || source_sensitive
             || tracked_params.is_secret();
+        if let Some(condition) = task.get("until").filter(|value| !value.is_null()) {
+            sensitive |= sensitive_condition(condition, scope);
+        }
         let params = tracked_params
             .value
             .as_object()
@@ -276,7 +314,21 @@ impl<B: Backend> Runner<'_, B> {
                 },
             )?;
             let done = match task.get("until").filter(|v| !v.is_null()) {
-                Some(expr) => truth(&self.backend.evaluate_tracked(expr, &result_scope)?.value),
+                Some(expr) => {
+                    let condition =
+                        self.backend
+                            .evaluate_tracked(expr, &result_scope)
+                            .map_err(|error| {
+                                if sensitive {
+                                    anyhow::anyhow!("sensitive retry condition failed")
+                                } else {
+                                    error
+                                }
+                            })?;
+                    sensitive |= condition.is_secret();
+                    request.task.no_log |= sensitive;
+                    truth(&condition.value)
+                }
                 None => !failed(&result),
             };
             if done {

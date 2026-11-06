@@ -1,0 +1,45 @@
+use super::*;
+
+#[tokio::test]
+async fn secret_retry_condition_censors_output_and_prevents_agent_cache() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"private fact","noLog":true,"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":true}}}},{"name":"retry","until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"public"}}]}]});
+    let mut backend = Fake {
+        results: [json!({"changed":false,"stdout":"fixture-private-result"})].into(),
+        ..Fake::default()
+    };
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert!(backend.calls[0].task.no_log);
+    assert_eq!(backend.events[1]["result"]["censored"], true);
+    assert!(!serde_json::to_string(&backend.events)?.contains("fixture-private-result"));
+    Ok(())
+}
+
+#[test]
+fn nested_until_lookup_is_sensitive_before_dispatch() {
+    let scope = TrackedValue::object(BTreeMap::from([(
+        "vars".into(),
+        TrackedValue::object(BTreeMap::from([
+            ("private".into(), TrackedValue::secret(json!("fixture"))),
+            ("public".into(), TrackedValue::public(json!(true))),
+        ])),
+    )]));
+    assert!(super::super::operation::sensitive_condition(
+        &json!({"kind":"call","args":[{"kind":"lookup","provider":"synthetic","key":"fixture"}]}),
+        &scope
+    ));
+    assert!(super::super::operation::sensitive_condition(
+        &json!({"kind":"ref","path":["variables","private"]}),
+        &scope
+    ));
+    assert!(!super::super::operation::sensitive_condition(
+        &json!({"kind":"ref","path":["vars","public"]}),
+        &scope
+    ));
+}
