@@ -71,6 +71,8 @@ inputs = [
   "tests/acceptance/pr66/oracles/README.md",
   "tests/acceptance/pr66/oracles/controller-delegation-check-diff.jsonl",
   "tests/acceptance/pr66/plan_matrix.py",
+  "tests/acceptance/pr66/post_handshake_isolation.py",
+  "tests/acceptance/pr66/partial_recap.py",
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
   "tests/acceptance/pr66/scoped_variables.py",
