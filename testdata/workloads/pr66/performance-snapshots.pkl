@@ -1,0 +1,31 @@
+import "../../../schema/Ruxel.pkl"
+output {
+  value = new Ruxel.Config {
+    inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["performance"] { hosts { "fixture" } } } }
+    plays { new {
+      name = "Fixture secret and system snapshots"
+      targets { "performance" }
+      vars {
+        ["fixture_secret_alpha"] = new Ruxel.Lookup { provider = "synthetic"; item = "ruxel-fixture-item"; field = "alpha"; vault = "ruxel-test" }
+        ["fixture_secret_beta"] = new Ruxel.Lookup { provider = "synthetic"; item = "ruxel-fixture-item"; field = "beta"; vault = "ruxel-test" }
+      }
+      tasks {
+        new {
+          name = "Resolve multiple fields from one synthetic secret item"
+          noLog = true
+          operation = new Ruxel.Assert { that = new Ruxel.Call {
+            `function` = "and"
+            args {
+              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "fixture_secret_alpha" } } } }; new Ruxel.Literal { value = 0 } } }
+              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "fixture_secret_beta" } } } }; new Ruxel.Literal { value = 0 } } }
+            }
+          } }
+        }
+        new { name = "Verify fixture packages through one package snapshot"; operation = new Ruxel.Apt { name = new Listing { "curl"; "git" }; state = "present" } }
+        new { name = "Verify fixture service through one systemd snapshot"; operation = new Ruxel.Service { name = "ssh"; state = "started"; enabled = true } }
+        new { name = "Verify first PostgreSQL role through shared session"; becomeUser = "postgres"; operation = new Ruxel.PostgresRole { name = "ruxel_fixture_perf_a"; state = "present"; login_port = 40000 } }
+        new { name = "Verify second PostgreSQL role through shared session"; becomeUser = "postgres"; operation = new Ruxel.PostgresRole { name = "ruxel_fixture_perf_b"; state = "present"; login_port = 40000 } }
+      }
+    } }
+  }
+}

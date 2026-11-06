@@ -419,6 +419,34 @@
           "state_unchanged": true
         }
       }
+    },
+    "performance-snapshots": {
+      "fixture": "performance-snapshots.pkl",
+      "mode": "check",
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Resolve multiple fields from one synthetic secret item",
+          "field": "failed",
+          "equals": false
+        },
+        {
+          "kind": "output_excludes_synthetic_secrets"
+        }
+      ],
+      "phases": {
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "synthetic lookup injection and controller integration",
+        "package, service and PostgreSQL snapshot call counts"
+      ]
     }
   }
 }
