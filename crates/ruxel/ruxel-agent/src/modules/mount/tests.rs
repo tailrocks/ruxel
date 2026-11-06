@@ -1,3 +1,23 @@
+const FAKE_MOUNT: &str = r#"set -eu
+kind=$1
+shift
+if [ "$kind" = umount ]; then
+  if [ "$MOUNT_MODE" = fail_unmount ]; then echo synthetic-unmount-failure >&2; exit 1; fi
+  printf '' > "$MOUNT_STATE"
+  exit 0
+fi
+source=$6
+if [ "$source" = /new ] && [ "$MOUNT_MODE" != ok ]; then
+  echo synthetic-new-mount-failure >&2
+  exit 1
+fi
+if [ "$source" = /old ] && [ "$MOUNT_MODE" = fail_both ]; then
+  echo synthetic-restore-failure >&2
+  exit 1
+fi
+printf '%s' "$source" > "$MOUNT_STATE"
+"#;
+
 use serde_json::json;
 
 #[test]
@@ -122,29 +142,7 @@ fn exercise_replace(mode: &str, fail_persist: bool, expect_error: bool, fail_res
     let script = root.join("fake-mount.sh");
     std::fs::write(&state, "/old").unwrap();
     std::fs::write(&fstab, "old fstab\n").unwrap();
-    std::fs::write(
-        &script,
-        r#"set -eu
-kind=$1
-shift
-if [ "$kind" = umount ]; then
-  if [ "$MOUNT_MODE" = fail_unmount ]; then echo synthetic-unmount-failure >&2; exit 1; fi
-  printf '' > "$MOUNT_STATE"
-  exit 0
-fi
-source=$6
-if [ "$source" = /new ] && [ "$MOUNT_MODE" != ok ]; then
-  echo synthetic-new-mount-failure >&2
-  exit 1
-fi
-if [ "$source" = /old ] && [ "$MOUNT_MODE" = fail_both ]; then
-  echo synthetic-restore-failure >&2
-  exit 1
-fi
-printf '%s' "$source" > "$MOUNT_STATE"
-"#,
-    )
-    .unwrap();
+    std::fs::write(&script, FAKE_MOUNT).unwrap();
     let old = super::Mounted {
         source: "/old".into(),
         fstype: "ext4".into(),
