@@ -188,7 +188,7 @@ impl TrackedValue {
                 _ => Value::String("[REDACTED]".into()),
             }
         }
-        redact(&self.value, &self.provenance)
+        redact(&self.value, &self.provenance.validated(&self.value))
     }
 }
 

@@ -158,3 +158,13 @@ fn provenance_for_absent_object_field_does_not_declassify_default() -> Result<()
     assert!(eval(call("default", vec![missing, fallback]), &scope)?.is_secret());
     Ok(())
 }
+
+#[test]
+fn malformed_tree_redacts_output_and_debug() {
+    let value = TrackedValue {
+        value: json!({"payload":"synthetic-marker"}),
+        provenance: Provenance::Object(BTreeMap::from([("absent".into(), Provenance::Secret)])),
+    };
+    assert_eq!(value.redacted(), json!("[REDACTED]"));
+    assert!(!format!("{value:?}").contains("synthetic-marker"));
+}
