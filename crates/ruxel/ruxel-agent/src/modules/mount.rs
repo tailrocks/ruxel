@@ -177,22 +177,30 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
         return MountAction::Replace;
     }
     let actual_opts: Vec<_> = current.options.split(',').collect();
-    if opts.split(',').any(|option| match option {
-        "defaults" => ["ro", "nosuid", "nodev", "noexec", "sync"]
-            .iter()
-            .any(|v| actual_opts.contains(v)),
-        "suid" | "dev" | "exec" | "async" => {
-            let opposite = match option {
-                "suid" => "nosuid",
-                "dev" => "nodev",
-                "exec" => "noexec",
-                _ => "sync",
-            };
-            actual_opts.contains(&opposite)
+    let mut flags: [Option<bool>; 5] = [None; 5];
+    let mut other_drift = false;
+    for option in opts.split(',') {
+        match option {
+            "defaults" => flags = [Some(true); 5],
+            "rw" => flags[0] = Some(true),
+            "ro" => flags[0] = Some(false),
+            "suid" => flags[1] = Some(true),
+            "nosuid" => flags[1] = Some(false),
+            "dev" => flags[2] = Some(true),
+            "nodev" => flags[2] = Some(false),
+            "exec" => flags[3] = Some(true),
+            "noexec" => flags[3] = Some(false),
+            "async" => flags[4] = Some(true),
+            "sync" => flags[4] = Some(false),
+            "auto" | "noauto" | "nofail" | "_netdev" | "user" | "nouser" => {}
+            _ => other_drift |= !actual_opts.contains(&option),
         }
-        "auto" | "noauto" | "nofail" | "_netdev" | "user" | "nouser" => false,
-        _ => !actual_opts.contains(&option),
-    }) {
+    }
+    let negatives = ["ro", "nosuid", "nodev", "noexec", "sync"];
+    let flag_drift = flags.iter().zip(negatives).any(|(requested, negative)| {
+        requested.is_some_and(|positive| positive == actual_opts.contains(&negative))
+    });
+    if other_drift || flag_drift {
         MountAction::Remount
     } else {
         MountAction::None
@@ -254,6 +262,15 @@ mod tests {
                 MountAction::Remount
             );
         }
+        let restricted = find_mount("/dev/a /srv xfs rw,noexec 0 0\n", "/srv");
+        assert_eq!(
+            mount_action(restricted.as_ref(), "/dev/a", "xfs", "defaults,noexec"),
+            MountAction::None
+        );
+        assert_eq!(
+            mount_action(restricted.as_ref(), "/dev/a", "xfs", "noexec,defaults"),
+            MountAction::Remount
+        );
         assert_eq!(
             mount_action(current.as_ref(), "/dev/b", "xfs", "rw"),
             MountAction::Replace
