@@ -331,8 +331,13 @@ impl<B: Backend> Runner<'_, B> {
         incoming: &Map<String, Value>,
     ) -> Result<()> {
         for (key, value) in incoming {
-            let mut scope = self.scope.clone();
-            scope.insert("vars".into(), Value::Object(vars.clone()));
+            let scope = self.scope(
+                &ContextLayer {
+                    vars: vars.clone(),
+                    ..ContextLayer::default()
+                },
+                None,
+            );
             vars.insert(key.clone(), self.backend.evaluate(value, &scope)?);
         }
         Ok(())
@@ -909,6 +914,17 @@ mod tests {
         assert!(!backend.events[0].to_string().contains("private\"}"));
         assert_eq!(backend.events[0]["task"]["block"][0]["censored"], true);
         assert_eq!(backend.events[0]["task"]["block"][1]["when"]["kind"], "ref");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn set_fact_is_available_to_task_variables() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"set","operation":{"kind":"set_fact","values":{"answer":{"kind":"literal","value":"ready"}}}},{"name":"use","vars":{"derived":{"kind":"ref","path":["vars","answer"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","derived"]}}}]}]});
+        let mut backend = Fake::default();
+        run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        let params: Value =
+            serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
+        assert_eq!(params["cmd"], "ready");
         Ok(())
     }
 
