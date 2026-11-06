@@ -538,6 +538,7 @@ impl<B: Backend> Runner<'_, B> {
             .as_object()
             .context("operation parameters must evaluate to an object")?
             .clone();
+        crate::model::validate_operation(kind, &params)?;
         match kind {
             "pause" => {
                 if matches!(self.options.mode, Mode::Check | Mode::Diff) {
@@ -614,7 +615,15 @@ impl<B: Backend> Runner<'_, B> {
                     .to_owned(),
             );
         }
-        let destination = string(task, "delegateTo").unwrap_or(&self.host).to_owned();
+        let destination = if let Some(delegate) = task.get("delegateTo").filter(|v| !v.is_null()) {
+            self.backend
+                .evaluate(delegate, scope)?
+                .as_str()
+                .context("delegateTo must evaluate to a host name")?
+                .to_owned()
+        } else {
+            self.host.clone()
+        };
         let id = self.next_id;
         self.next_id += 1;
         let item_label = if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
@@ -872,6 +881,22 @@ mod tests {
         assert_eq!(recap["h"].failed, 0);
         assert_eq!(recap["h"].changed, 0);
         assert_eq!(recap["h"].ok, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn plan_keeps_runtime_expressions_deferred_and_censors_nested_secrets() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"private","noLog":true,"operation":{"kind":"command","cmd":"private"}},{"name":"deferred","when":{"kind":"ref","path":["results","notYetAvailable"]},"operation":{"kind":"command","cmd":"test"}}]}]}]});
+        let mut backend = Fake::default();
+        let options = Options {
+            mode: Mode::Plan,
+            ..Options::default()
+        };
+        run(&config, &BTreeMap::new(), &options, &mut backend).await?;
+        assert!(backend.calls.is_empty());
+        assert!(!backend.events[0].to_string().contains("private\"}"));
+        assert_eq!(backend.events[0]["task"]["block"][0]["censored"], true);
+        assert_eq!(backend.events[0]["task"]["block"][1]["when"]["kind"], "ref");
         Ok(())
     }
 
