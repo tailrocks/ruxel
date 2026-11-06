@@ -24,12 +24,12 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
         self.assertEqual(tasks[5]["operation"]["state"]["value"], "absent")
         self.assertEqual(tasks[6]["operation"]["type"]["value"], "default_privs")
-        self.assertTrue(tasks[7]["operation"]["that"])
-        self.assertEqual(tasks[8]["operation"]["content"]["function"], "string")
-        self.assertEqual(tasks[9]["operation"]["content"], "data")
+        self.assertTrue(tasks[9]["operation"]["that"])
+        self.assertEqual(tasks[10]["operation"]["content"]["function"], "string")
+        self.assertEqual(tasks[11]["operation"]["content"], "data")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
-        self.assertEqual(tasks[10]["operation"]["password"]["provider"], "synthetic")
+        self.assertEqual(tasks[12]["operation"]["password"]["provider"], "synthetic")
 
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
@@ -59,6 +59,8 @@ class SchemaTests(unittest.TestCase):
             'new R.Command { argv = new Listing<String> {} }',
             'new R.Ref {}',
             'new R.Call { `function` = "eq" }',
+            'new R.Call { `function` = "if"; args { new R.Literal { value = true } } }',
+            'new R.Call { `function` = "map"; args { new R.Literal { value = true } } }',
             'new R.Apt { state = "garbage" }',
             'new R.File { path = "/tmp/file"; state = "garbage" }',
             'new R.File { mode = "0644" }',
