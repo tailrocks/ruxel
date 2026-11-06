@@ -3,7 +3,7 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 use super::open_attrs;
 use super::{ExecContext, apply_attrs, apply_attrs_fd, params_object, str_param};
 use rustix::fs::{Dir, FileType, Mode, OFlags, fstat, mkdirat, open, openat};
@@ -31,13 +31,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         "directory" => {
             if super::bool_param(obj, "recurse", false) {
-                if !cfg!(target_os = "linux") {
-                    return Err("file: safe recursive traversal requires Linux O_PATH".into());
-                }
                 let (fd, created) = open_directory_path(p, !ctx.check_mode)?;
                 changed = created;
                 if let Some(fd) = fd {
-                    apply_attrs_recursive(&fd, obj, &mut changed, ctx.check_mode)?;
+                    apply_directory(&fd, obj, &mut changed, ctx.check_mode)?;
                 }
                 return Ok(
                     json!({"path": path, "state": "directory", "changed": changed, "failed": false}),
@@ -108,9 +105,10 @@ fn open_directory_path(path: &Path, create: bool) -> Result<(Option<OwnedFd>, bo
         let name = match part {
             Component::RootDir | Component::CurDir => continue,
             Component::Normal(name) => name,
-            _ => return Err("file: parent path components are not supported".into()),
+            Component::ParentDir => std::ffi::OsStr::new(".."),
+            Component::Prefix(_) => return Err("file: invalid path prefix".into()),
         };
-        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let flags = directory_anchor_flags();
         current = match openat(&current, name, flags, Mode::empty()) {
             Ok(fd) => fd,
             Err(rustix::io::Errno::NOENT) if !create => return Ok((None, true)),
@@ -123,6 +121,42 @@ fn open_directory_path(path: &Path, create: bool) -> Result<(Option<OwnedFd>, bo
         };
     }
     Ok((Some(current), created))
+}
+
+#[cfg(target_os = "linux")]
+fn directory_anchor_flags() -> OFlags {
+    OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC
+}
+
+#[cfg(target_os = "macos")]
+fn directory_anchor_flags() -> OFlags {
+    // Darwin O_EXEC | O_DIRECTORY is O_SEARCH; rustix doesn't expose it.
+    OFlags::from_bits_retain(0x4000_0000) | OFlags::DIRECTORY | OFlags::CLOEXEC
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn directory_anchor_flags() -> OFlags {
+    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC
+}
+
+fn apply_directory(
+    fd: impl AsFd,
+    obj: &serde_json::Map<String, Value>,
+    changed: &mut bool,
+    check_mode: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    super::apply_attrs_at(&fd, Path::new("."), obj, changed, check_mode)?;
+    #[cfg(not(target_os = "macos"))]
+    apply_attrs_fd(&fd, obj, changed, check_mode)?;
+    let readable = openat(
+        &fd,
+        ".",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| e.to_string())?;
+    apply_attrs_recursive(&readable, obj, changed, check_mode)
 }
 
 fn apply_attrs_recursive(
@@ -165,21 +199,39 @@ fn apply_entry(
     let stat = fstat(&fd).map_err(|e| e.to_string())?;
     match FileType::from_raw_mode(stat.st_mode) {
         FileType::RegularFile => apply_attrs_fd(&fd, obj, changed, check_mode),
+        FileType::Directory => apply_directory(&fd, obj, changed, check_mode),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_entry(
+    dir: impl AsFd,
+    name: &std::ffi::CStr,
+    obj: &serde_json::Map<String, Value>,
+    changed: &mut bool,
+    check_mode: bool,
+) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let stat = rustix::fs::statat(&dir, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+        .map_err(|e| e.to_string())?;
+    match FileType::from_raw_mode(stat.st_mode) {
+        FileType::RegularFile => {
+            let path = Path::new(std::ffi::OsStr::from_bytes(name.to_bytes()));
+            super::apply_attrs_at(&dir, path, obj, changed, check_mode)
+        }
         FileType::Directory => {
-            let readable = openat(
-                &fd,
-                ".",
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-                Mode::empty(),
-            )
-            .map_err(|e| e.to_string())?;
-            apply_attrs_recursive(&readable, obj, changed, check_mode)
+            let path = Path::new(std::ffi::OsStr::from_bytes(name.to_bytes()));
+            super::apply_attrs_at(&dir, path, obj, changed, check_mode)?;
+            let flags = directory_anchor_flags() | OFlags::NOFOLLOW;
+            let child = openat(&dir, name, flags, Mode::empty()).map_err(|e| e.to_string())?;
+            apply_directory(&child, obj, changed, check_mode)
         }
         _ => Ok(()),
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn apply_entry(
     _dir: impl AsFd,
     _name: &std::ffi::CStr,
@@ -187,151 +239,9 @@ fn apply_entry(
     _changed: &mut bool,
     _check_mode: bool,
 ) -> Result<(), String> {
-    Err("file: safe recursive entry traversal requires Linux O_PATH".into())
+    Err("file: safe recursive entry traversal is unsupported on this platform".into())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::fs::PermissionsExt;
-
-    fn context() -> ExecContext {
-        ExecContext {
-            check_mode: false,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        }
-    }
-
-    #[test]
-    fn default_file_state_applies_attrs_and_rejects_missing() {
-        let dir = std::env::temp_dir().join(format!("ruxel-file-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("existing");
-        std::fs::write(&path, b"content").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-
-        let result = run(&json!({"path": path, "mode": "0600"}), &context()).unwrap();
-        assert_eq!(result["changed"], true);
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        let missing = dir.join("missing");
-        assert!(
-            run(&json!({"path": missing}), &context())
-                .unwrap_err()
-                .contains("does not exist")
-        );
-        let _ = std::fs::remove_dir_all(dir);
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn recursive_attributes_detect_and_repair_nested_drift() {
-        let dir = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("ruxel-file-recursive-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("nested")).unwrap();
-        let file = dir.join("nested/file");
-        std::fs::write(&file, b"content").unwrap();
-        let params = json!({"path": dir, "state": "directory", "mode": "0700", "recurse": true});
-        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
-        assert_eq!(run(&params, &context()).unwrap()["changed"], false);
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let mut check = context();
-        check.check_mode = true;
-        assert_eq!(run(&params, &check).unwrap()["changed"], true);
-        assert_eq!(
-            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
-        assert_eq!(
-            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert_eq!(run(&params, &context()).unwrap()["changed"], false);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn recursive_attributes_do_not_follow_symlinks() {
-        let base = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("ruxel-file-symlink-{}", std::process::id()));
-        let root = base.join("root");
-        let external = base.join("external");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&external).unwrap();
-        let target = external.join("file");
-        std::fs::write(&target, b"safe").unwrap();
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
-        std::fs::set_permissions(&external, std::fs::Permissions::from_mode(0o700)).unwrap();
-        std::os::unix::fs::symlink(&external, root.join("dirlink")).unwrap();
-        std::os::unix::fs::symlink(&target, root.join("filelink")).unwrap();
-        let params = json!({"path": root, "state": "directory", "mode": "0755", "recurse": true});
-        run(&params, &context()).unwrap();
-        assert_eq!(
-            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert_eq!(
-            std::fs::metadata(&external).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert!(run(&json!({"path": root.join("dirlink"), "state":"directory", "mode":"0755", "recurse":true}), &context()).is_err());
-        std::fs::remove_dir_all(base).unwrap();
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn opened_directory_stays_anchored_when_path_is_swapped() {
-        let base = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("ruxel-file-swap-{}", std::process::id()));
-        let root = base.join("root");
-        let external = base.join("external");
-        let moved = base.join("moved");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&external).unwrap();
-        let victim = external.join("victim");
-        std::fs::write(&victim, b"safe").unwrap();
-        std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let fd = open_attrs(&root).unwrap();
-        std::fs::rename(&root, &moved).unwrap();
-        std::os::unix::fs::symlink(&external, &root).unwrap();
-        let params = json!({"mode": "0755"});
-        let mut changed = false;
-        apply_attrs_recursive(&fd, params.as_object().unwrap(), &mut changed, false).unwrap();
-        assert_eq!(
-            std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert!(open_attrs(&root).is_err());
-        std::fs::remove_dir_all(base).unwrap();
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn recursive_attributes_repair_unreadable_file() {
-        let root = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("ruxel-file-unreadable-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let file = root.join("file");
-        std::fs::write(&file, b"content").unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0)).unwrap();
-        let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
-        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
-        assert_eq!(
-            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
+#[path = "file/tests.rs"]
+mod tests;
