@@ -54,7 +54,10 @@ impl<B: Backend> Runner<'_, B> {
         let tracked_params = self
             .backend
             .evaluate_tracked(&Value::Object(params), scope)?;
-        let mut sensitive = layer.no_log || source_sensitive || tracked_params.is_secret();
+        let mut sensitive = layer.no_log
+            || layer.control_sensitive
+            || source_sensitive
+            || tracked_params.is_secret();
         let params = tracked_params
             .value
             .as_object()

@@ -98,7 +98,14 @@ impl<B: Backend> Runner<'_, B> {
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
             for task in tasks {
-                if !self.task(task, layer).await? {
+                let result = self.task(task, layer).await.map_err(|error| {
+                    if layer.no_log || flag(task, "noLog") || layer.control_sensitive {
+                        anyhow::anyhow!("sensitive task failed")
+                    } else {
+                        error
+                    }
+                })?;
+                if !result {
                     return Ok(false);
                 }
             }
@@ -112,7 +119,7 @@ impl<B: Backend> Runner<'_, B> {
         parent: &'a ContextLayer,
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
-            let layer = self.layer(task, parent)?;
+            let mut layer = self.layer(task, parent)?;
             if !self.handling
                 && !self.options.tags.is_empty()
                 && !layer
@@ -124,11 +131,13 @@ impl<B: Backend> Runner<'_, B> {
             }
             if !array(task, "block").is_empty() {
                 let scope = self.scope(&layer, None);
-                if let Some(condition) = task.get("when").filter(|v| !v.is_null())
-                    && !truth(&self.backend.evaluate_tracked(condition, &scope)?.value)
-                {
-                    self.recap.skipped += 1;
-                    return Ok(true);
+                if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
+                    let condition = self.backend.evaluate_tracked(condition, &scope)?;
+                    layer.control_sensitive |= condition.is_secret();
+                    if !truth(&condition.value) {
+                        self.recap.skipped += 1;
+                        return Ok(true);
+                    }
                 }
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
@@ -170,17 +179,34 @@ impl<B: Backend> Runner<'_, B> {
                 layer,
                 looped.then_some((string(task, "loopVar").unwrap_or("item"), item)),
             );
-            if let Some(condition) = task.get("when").filter(|v| !v.is_null())
-                && !truth(&self.backend.evaluate_tracked(condition, &scope)?.value)
-            {
-                let mut skipped = TrackedValue::public(json!({"skipped":true,"changed":false}));
-                if looped {
-                    skipped.insert("item".into(), item.clone())?;
+            let mut iteration_layer = layer.clone();
+            if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
+                let condition = self.backend.evaluate_tracked(condition, &scope)?;
+                iteration_layer.control_sensitive |= condition.is_secret();
+                if !truth(&condition.value) {
+                    let skipped = json!({"skipped":true,"changed":false});
+                    let mut skipped = if iteration_layer.control_sensitive {
+                        TrackedValue::secret(skipped)
+                    } else {
+                        TrackedValue::public(skipped)
+                    };
+                    if looped {
+                        skipped.insert("item".into(), item.clone())?;
+                    }
+                    results.push(skipped);
+                    continue;
                 }
-                results.push(skipped);
-                continue;
             }
-            let mut result = self.execute(task, layer, &scope, item).await?;
+            let mut result = self
+                .execute(task, &iteration_layer, &scope, item)
+                .await
+                .map_err(|error| {
+                    if iteration_layer.control_sensitive {
+                        anyhow::anyhow!("sensitive task failed")
+                    } else {
+                        error
+                    }
+                })?;
             if !result.value.is_object() {
                 bail!("operation result must be an object");
             }

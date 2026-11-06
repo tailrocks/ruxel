@@ -121,6 +121,7 @@ struct ContextLayer {
     become_user: Option<String>,
     tags: Vec<String>,
     no_log: bool,
+    control_sensitive: bool,
 }
 
 struct Runner<'a, B> {

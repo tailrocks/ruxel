@@ -41,6 +41,8 @@ output { value = new Ruxel.Config {
   new { name = "no-log-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private_no_log")) } }
   new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(COMMAND_SUFFIX) } } } }
   new { name = "registered"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cmd"; "stdout" } } } }
+  new { name = "conditional"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; operation = new Ruxel.Debug { msg = "controlled diagnostic" } }
+  new { name = "conditional-block"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; block { new { name = "conditional-child"; operation = new Ruxel.Debug { msg = "controlled child" } } } }
   new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
  } } }
 } }
@@ -61,13 +63,27 @@ output { value = new Ruxel.Config {
                 raise RuntimeError(f'{label} contains a synthetic secret or its encoding')
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text())]:
             events = [json.loads(line) for line in text.splitlines() if line]
-            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'command', 'registered'):
+            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'command', 'registered', 'conditional', 'conditional-child'):
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{label}: {name} was not censored')
             public = [event for event in events if event.get('task') == 'public']
             if len(public) != 1 or public[0]['result'].get('msg') != 'public diagnostic':
                 raise RuntimeError(f'{label}: public diagnostic was suppressed')
+        failing = base / 'failure.pkl'
+        failing.write_text('''import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "failure"; targets { "fixture" }; tasks {
+  new { name = "private failure"; noLog = true; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "synthetic-private-path-marker" } } } }
+ } } }
+} }
+''')
+        failure = subprocess.run([str(cli), 'apply', str(failing), '--local', '--agent', str(agent),
+                                  '--state-dir', str(base / 'failure-state')], stdin=subprocess.DEVNULL,
+                                 capture_output=True, text=True, timeout=30)
+        if failure.returncode == 0 or 'synthetic-private-path-marker' in failure.stderr:
+            raise RuntimeError('noLog evaluation failure was not sanitized')
         for path in (base / 'state').rglob('*'):
             if path.is_file():
                 data = path.read_bytes()
