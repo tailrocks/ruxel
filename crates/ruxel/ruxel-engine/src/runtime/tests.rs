@@ -42,6 +42,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         },
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        source_gate: Arc::new(tokio::sync::RwLock::new(())),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),
             values: Mutex::new(Vec::new()),

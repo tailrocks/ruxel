@@ -38,19 +38,15 @@ impl<B: Backend> Runner<'_, B> {
             source_sensitive = source.is_secret();
             params.insert("src".into(), source.value);
         }
-        self.backend
-            .prepare_operation(
+        source_sensitive = self
+            .backend
+            .prepare_operation_tracked(
                 kind,
                 &mut params,
                 scope.value.as_object().context("scope must be an object")?,
+                source_sensitive || layer.no_log || layer.control_sensitive,
             )
-            .map_err(|e| {
-                if source_sensitive {
-                    anyhow::anyhow!("sensitive operation preparation failed")
-                } else {
-                    e
-                }
-            })?;
+            .await?;
         let tracked_params = self
             .backend
             .evaluate_tracked(&Value::Object(params), scope)?;

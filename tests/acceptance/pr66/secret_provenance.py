@@ -117,6 +117,39 @@ output { value = new Ruxel.Config {
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{name} was not censored')
+        template_module = base / 'template-workload.pkl'
+        template_source = base / 'generated-template.pkl'
+        template_dest = base / 'template-output'
+        template_module.write_text('''import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "template"; targets { "fixture" }; tasks {
+  new { name = "write template"; operation = new Ruxel.Copy { dest = SOURCE; content = new Ruxel.Call { `function` = "concat"; args {
+   new Ruxel.Literal { value = PREFIX }; new Ruxel.Call { `function` = "base64Encode"; args { new Ruxel.Lookup { provider = "synthetic"; key = FAKE_VALUE } } }; new Ruxel.Literal { value = SUFFIX }
+  } } } }
+  new { name = "render template"; operation = new Ruxel.Template { src = SOURCE; dest = DEST } }
+  new { name = "read template"; register = "rendered"; operation = new Ruxel.Slurp { src = DEST } }
+  new { name = "template result"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "rendered"; "content" } } } }
+ } } }
+} }
+'''.replace('SOURCE', json.dumps(str(template_source))).replace('DEST', json.dumps(str(template_dest)))
+            .replace('PREFIX', json.dumps('output { value = new Dynamic { kind = "literal"; value = "'))
+            .replace('SUFFIX', json.dumps('" } }')).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)))
+        template_log = base / 'template.jsonl'
+        template_run = subprocess.run([str(cli), 'apply', str(template_module), '--local', '--agent', str(agent),
+                                       '--state-dir', str(base / 'template-state'), '--synthetic-secrets', '--log-file', str(template_log)],
+                                      stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        if template_run.returncode != 0 or template_dest.read_bytes() != encoded.encode():
+            raise RuntimeError(f'template readback fixture failed: {template_run.stderr}')
+        for label, text in [('stdout', template_run.stdout), ('stderr', template_run.stderr), ('log', template_log.read_text())]:
+            if encoded in text or encoded_twice in text:
+                raise RuntimeError(f'{label}: template readback exposed synthetic data')
+        for text in (template_run.stdout, template_log.read_text()):
+            events = [json.loads(line) for line in text.splitlines() if line]
+            for name in ('render template', 'read template', 'template result'):
+                matches = [event for event in events if event.get('task') == name]
+                if len(matches) != 1 or not matches[0]['result'].get('censored'):
+                    raise RuntimeError(f'{name} was not censored')
         failing = base / 'failure.pkl'
         failing.write_text('''import "Ruxel.pkl"
 output { value = new Ruxel.Config {

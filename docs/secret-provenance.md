@@ -28,7 +28,10 @@ with unknown read sets, including Shell and Command, are also sensitive. A
 sensitive operation whose effects are not known precisely makes subsequent
 agent results on that host sensitive for the rest of the run. Requests to the same
 host are serialized around this tracking. Controller-only diagnostics remain
-available when their inputs are public.
+available when their inputs are public. Controller-side Pkl template source
+preparation is synchronized with agent operations; after any tracked sensitive
+effect, source-backed template output is treated as sensitive because its
+imports can read additional resources.
 
 Path tracking compares the path strings supplied by tasks. It cannot discover
 symlink, hard-link, mount, relative-path or host-alias equivalence, nor does it

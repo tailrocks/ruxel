@@ -24,6 +24,10 @@ fn contains_path(value: &Value, paths: &BTreeSet<String>) -> bool {
 }
 
 impl Resources {
+    pub(super) fn has_sensitive_effects(&self) -> bool {
+        self.unknown_effects || !self.paths.is_empty()
+    }
+
     pub(super) fn observe(&mut self, request: &Request, input_sensitive: bool) -> Result<bool> {
         let mut params = Vec::new();
         for iteration in &request.task.iterations {

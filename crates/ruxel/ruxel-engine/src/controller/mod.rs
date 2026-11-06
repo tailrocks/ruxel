@@ -77,6 +77,24 @@ pub trait Backend {
     ) -> Result<()> {
         Ok(())
     }
+    /// Prepare a source and report whether it is sensitive.
+    async fn prepare_operation_tracked(
+        &mut self,
+        kind: &str,
+        params: &mut Map<String, Value>,
+        scope: &Map<String, Value>,
+        sensitive: bool,
+    ) -> Result<bool> {
+        self.prepare_operation(kind, params, scope)
+            .map_err(|error| {
+                if sensitive {
+                    anyhow::anyhow!("sensitive operation preparation failed")
+                } else {
+                    error
+                }
+            })?;
+        Ok(sensitive)
+    }
     async fn execute(&mut self, request: Request) -> Result<Value>;
     /// Execute a request and retain sensitivity of its inputs and result.
     async fn execute_tracked(

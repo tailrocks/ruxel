@@ -76,6 +76,7 @@ struct Execution {
     lookups: Arc<Lookups>,
     output: Arc<Output>,
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
+    source_gate: Arc<tokio::sync::RwLock<()>>,
 }
 impl Execution {
     async fn connect(&self, host: &str) -> Result<v1::Facts> {
@@ -277,11 +278,47 @@ impl Backend for Execution {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
     }
+    async fn prepare_operation_tracked(
+        &mut self,
+        kind: &str,
+        params: &mut Map<String, Value>,
+        scope: &Map<String, Value>,
+        mut sensitive: bool,
+    ) -> Result<bool> {
+        if kind != "template" || params.get("content").is_some_and(|v| !v.is_null()) {
+            self.prepare_operation(kind, params, scope)
+                .map_err(|error| {
+                    if sensitive {
+                        anyhow::anyhow!("sensitive operation preparation failed")
+                    } else {
+                        error
+                    }
+                })?;
+            return Ok(sensitive);
+        }
+        let gate = self.source_gate.clone();
+        let _guard = gate.write().await;
+        let trackers: Vec<_> = self.resources.lock().await.values().cloned().collect();
+        for tracker in trackers {
+            sensitive |= tracker.lock().await.has_sensitive_effects();
+        }
+        self.prepare_operation(kind, params, scope)
+            .map_err(|error| {
+                if sensitive {
+                    anyhow::anyhow!("sensitive operation preparation failed")
+                } else {
+                    error
+                }
+            })?;
+        Ok(sensitive)
+    }
     async fn execute_tracked(
         &mut self,
         mut request: Request,
         sensitive: bool,
     ) -> Result<TrackedValue> {
+        let gate = self.source_gate.clone();
+        let _guard = gate.read().await;
         let host = request.host.clone();
         let tracker = {
             let mut resources = self.resources.lock().await;
@@ -407,6 +444,7 @@ pub async fn run(
         mode: options.mode,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        source_gate: Arc::new(tokio::sync::RwLock::new(())),
         lookups: Arc::new(Lookups {
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()
