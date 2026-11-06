@@ -78,6 +78,7 @@ struct ContextLayer {
     environment: Map<String, Value>,
     become_user: Option<String>,
     tags: Vec<String>,
+    no_log: bool,
 }
 
 struct Runner<'a, B> {
@@ -329,6 +330,7 @@ impl<B: Backend> Runner<'_, B> {
         let mut layer = parent.clone();
         self.extend_vars(&mut layer.vars, &object(task, "vars"))?;
         layer.environment.extend(object(task, "environment"));
+        layer.no_log |= flag(task, "noLog");
         if let Some(user) = string(task, "becomeUser") {
             layer.become_user = Some(user.to_owned());
         }
@@ -483,7 +485,7 @@ impl<B: Backend> Runner<'_, B> {
                 );
             }
         }
-        let visible = if flag(task, "noLog") {
+        let visible = if layer.no_log {
             json!({"censored":true,"changed":flag(&result,"changed"),"failed":is_failed})
         } else {
             result
@@ -626,8 +628,9 @@ impl<B: Backend> Runner<'_, B> {
                     free_form: String::new(),
                     ledger_key: String::new(),
                 }],
-                check_mode_override: task.get("checkMode").and_then(Value::as_bool) == Some(false),
-                no_log: flag(task, "noLog"),
+                check_mode_override: !matches!(self.options.mode, Mode::Check | Mode::Diff)
+                    && task.get("checkMode").and_then(Value::as_bool) == Some(false),
+                no_log: layer.no_log,
                 become_user: layer.become_user.clone().unwrap_or_default(),
                 environment,
                 halt_on_failure: true,
@@ -636,7 +639,7 @@ impl<B: Backend> Runner<'_, B> {
             },
         };
         if self.options.mode == Mode::Plan {
-            let visible_params = if flag(task, "noLog") {
+            let visible_params = if layer.no_log {
                 json!({"censored":true})
             } else {
                 Value::Object(params)
