@@ -315,4 +315,23 @@ mod tests {
         assert!(open_attrs(&root).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn recursive_attributes_repair_unreadable_file() {
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("ruxel-file-unreadable-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("file");
+        std::fs::write(&file, b"content").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0)).unwrap();
+        let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
+        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
