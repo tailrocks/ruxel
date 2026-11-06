@@ -17,7 +17,7 @@ class SixHostArtifactTests(unittest.TestCase):
         ruxel = text.index('timed_sample ruxel "$repetition"')
         self.assertLess(ansible, ruxel)
         for requirement in (
-            "ordered recaps",
+            "assert recaps == [f\"fixture-{index}\" for index in range(1, 6)]",
             "leaked sshd children",
             "unreachable_status",
             "containers were not reaped",

@@ -7,7 +7,7 @@ FIXTURE="${1:?provider fixture name}"
 KEY="${2:?ssh keyfile}"
 AGENT="${3:?agent binary (x86_64-musl)}"
 PLAYBOOK="${4:?playbook path}"
-DRY="${5:-}"   # pass "dry" for secretful playbooks (dry-secrets both sides)
+DRY="${5:-}"
 GROUP="${6:-nodes}"
 RUN_DIR="$(mktemp -d)"
 trap 'rm -rf "$RUN_DIR"' EXIT
