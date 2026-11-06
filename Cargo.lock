@@ -1525,6 +1525,7 @@ version = "0.1.0"
 dependencies = [
  "hmac",
  "libc",
+ "md-5",
  "pbkdf2",
  "regex-lite",
  "rsblkid",

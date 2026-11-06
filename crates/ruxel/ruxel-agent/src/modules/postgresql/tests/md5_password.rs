@@ -5,7 +5,11 @@ use std::os::unix::fs::PermissionsExt;
 fn md5_password_check_and_apply_converge() {
     if std::env::var_os("RUXEL_MD5_TEST_CHILD").is_some() {
         let mut ctx = ExecContext {
-            check_mode: true, diff_mode: false, no_log: true, environment: vec![], become_user: None,
+            check_mode: true,
+            diff_mode: false,
+            no_log: true,
+            environment: vec![],
+            become_user: None,
         };
         let good = json!({"name":"fake-role", "password":"fake-password"});
         let drift = json!({"name":"fake-role", "password":"changed-password"});
@@ -28,8 +32,13 @@ fn md5_password_check_and_apply_converge() {
         .env("RUXEL_MD5_TEST_CHILD", "1")
         .env("RUXEL_MD5_TEST_LOG", &log)
         .env("PATH", &dir)
-        .output().unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(std::fs::read_to_string(&log).unwrap(), "alter\n");
     assert!(!String::from_utf8_lossy(&output.stdout).contains("fake-password"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("fake-password"));
