@@ -1,6 +1,6 @@
 use super::{
-    Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, Value, failed, json, snake,
-    string, truth, v1,
+    Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, Value, bail, failed, json,
+    result_scope, snake, string, truth, v1,
 };
 
 impl<B: Backend> Runner<'_, B> {
@@ -29,6 +29,7 @@ impl<B: Backend> Runner<'_, B> {
                 params.insert(snake(key), value.clone());
             }
         }
+        self.backend.prepare_operation(kind, &mut params, scope)?;
         let params = self.backend.evaluate(&Value::Object(params), scope)?;
         let params = params
             .as_object()
@@ -183,8 +184,10 @@ impl<B: Backend> Runner<'_, B> {
         let mut result = Value::Null;
         for attempt in 0..attempts {
             result = self.backend.execute(request.clone()).await?;
-            let mut result_scope = scope.clone();
-            result_scope.insert("result".into(), result.clone());
+            if !result.is_object() {
+                bail!("operation result must be an object");
+            }
+            let result_scope = result_scope(scope, task, &result)?;
             let done = match task.get("until").filter(|v| !v.is_null()) {
                 Some(expr) => truth(&self.backend.evaluate(expr, &result_scope)?),
                 None => !failed(&result),

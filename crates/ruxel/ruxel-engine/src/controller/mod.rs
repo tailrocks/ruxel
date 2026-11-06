@@ -36,6 +36,18 @@ pub trait Backend {
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
+    /// Prepare source-backed operations before evaluating their parameter expressions.
+    ///
+    /// # Errors
+    /// Returns an error if the source cannot be prepared.
+    fn prepare_operation(
+        &mut self,
+        _kind: &str,
+        _params: &mut Map<String, Value>,
+        _scope: &Map<String, Value>,
+    ) -> Result<()> {
+        Ok(())
+    }
     async fn execute(&mut self, request: Request) -> Result<Value>;
     /// Emit a structured execution event.
     ///
@@ -135,6 +147,23 @@ fn snake(name: &str) -> String {
         }
     }
     out
+}
+
+fn result_scope(
+    scope: &Map<String, Value>,
+    task: &Value,
+    result: &Value,
+) -> Result<Map<String, Value>> {
+    let mut next = scope.clone();
+    next.insert("result".into(), result.clone());
+    if let Some(name) = string(task, "register") {
+        next.entry("results")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .context("results scope is not an object")?
+            .insert(name.to_owned(), result.clone());
+    }
+    Ok(next)
 }
 
 fn group_hosts(

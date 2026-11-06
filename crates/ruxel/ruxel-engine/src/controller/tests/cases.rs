@@ -91,3 +91,21 @@ fn group_cycles_are_rejected() -> Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn retry_and_result_conditions_see_current_registered_iteration() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","register":"attempt","retries":2,"until":{"kind":"ref","path":["results","attempt","ready"]},"failedWhen":{"kind":"ref","path":["results","attempt","bad"]},"changedWhen":{"kind":"ref","path":["results","attempt","changed"]},"operation":{"kind":"command","cmd":"test"}}]}]});
+    let mut backend = Fake {
+        results: [
+            json!({"ready":false,"bad":true,"changed":false}),
+            json!({"ready":true,"bad":false,"changed":true}),
+        ]
+        .into(),
+        ..Fake::default()
+    };
+    let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+    assert_eq!(backend.calls.len(), 2);
+    assert_eq!(recap["h"].changed, 1);
+    assert_eq!(recap["h"].failed, 0);
+    Ok(())
+}

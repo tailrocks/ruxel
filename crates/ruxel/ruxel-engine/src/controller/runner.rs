@@ -1,6 +1,6 @@
 use super::{
     Backend, Context, ContextLayer, Future, Map, Pin, Result, Runner, Value, array, bail, failed,
-    flag, json, object, string, truth,
+    flag, json, object, result_scope, string, truth,
 };
 
 impl<B: Backend> Runner<'_, B> {
@@ -167,14 +167,15 @@ impl<B: Backend> Runner<'_, B> {
             if looped {
                 result["item"] = item.clone();
             }
-            let mut result_scope = scope.clone();
-            result_scope.insert("result".into(), result.clone());
+            let mut current_scope = result_scope(&scope, task, &result)?;
             if let Some(expr) = task.get("failedWhen").filter(|v| !v.is_null()) {
-                result["failed"] = Value::Bool(truth(&self.backend.evaluate(expr, &result_scope)?));
+                result["failed"] =
+                    Value::Bool(truth(&self.backend.evaluate(expr, &current_scope)?));
             }
             if let Some(expr) = task.get("changedWhen").filter(|v| !v.is_null()) {
+                current_scope = result_scope(&scope, task, &result)?;
                 result["changed"] =
-                    Value::Bool(truth(&self.backend.evaluate(expr, &result_scope)?));
+                    Value::Bool(truth(&self.backend.evaluate(expr, &current_scope)?));
             }
             results.push(result);
         }
