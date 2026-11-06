@@ -104,9 +104,8 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "replace" => false, FieldType::Text;
     ),
     operation!("shell";
-        "argv" => false, FieldType::TextList;
         "chdir" => false, FieldType::Text;
-        "cmd" => false, FieldType::Text;
+        "cmd" => true, FieldType::Text;
         "creates" => false, FieldType::Text;
         "executable" => false, FieldType::Text;
         "removes" => false, FieldType::Text;

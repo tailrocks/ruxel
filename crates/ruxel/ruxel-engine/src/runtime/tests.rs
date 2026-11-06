@@ -24,6 +24,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         "output { value = new Dynamic { kind = \"ref\"; path = new Listing { \"vars\"; \"name\" } } }",
     )?;
     let mut execution = Execution {
+        output: Arc::new(Output::new(OutputFormat::Json, None)?),
         inventory: Map::new(),
         mode: Mode::Apply,
         runtime: RuntimeOptions {
@@ -31,6 +32,9 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
             source_dir: directory.clone(),
             jobs: 1,
             no_cache: false,
+            connection: transport::ConnectOptions::default(),
+            output: OutputFormat::Json,
+            log_file: None,
             synthetic_secrets: true,
             local_state: None,
             local_agent: None,
@@ -64,5 +68,34 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
             .is_err()
     );
     std::fs::remove_dir_all(directory)?;
+    Ok(())
+}
+
+#[test]
+fn private_event_log_records_redacted_structure_and_refuses_overwrite() -> Result<()> {
+    let path = std::env::temp_dir().join(format!("ruxel-events-{}.jsonl", std::process::id()));
+    let lookups = Lookups {
+        resolver: Resolver::synthetic(),
+        values: Mutex::new(vec!["synthetic-private-value".into()]),
+    };
+    let output = Output::new(OutputFormat::Human, Some(&path))?;
+    output.event(&lookups.redact(
+        &json!({"host":"fixture","result":{"value":"synthetic-private-value","failed":false}}),
+    )?)?;
+    let text = std::fs::read_to_string(&path)?;
+    let value: Value = serde_json::from_str(&text)?;
+    assert_eq!(value["result"]["value"], "[REDACTED]");
+    assert_eq!(value["result"]["failed"], false);
+    assert!(Output::new(OutputFormat::Json, Some(&path)).is_err());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path)?.permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    drop(output);
+    std::fs::remove_file(path)?;
     Ok(())
 }

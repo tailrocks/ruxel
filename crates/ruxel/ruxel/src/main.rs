@@ -72,6 +72,17 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
         agent: args.agent,
         jobs: usize::from(args.jobs),
         no_cache: args.no_cache,
+        connection: ruxel_engine::transport::ConnectOptions {
+            keyfile: args.connection.ssh_key,
+            known_hosts_file: args.connection.known_hosts,
+            accept_new_host_key: args.connection.accept_new_host_key,
+            ..Default::default()
+        },
+        output: match args.presentation.output {
+            cli::OutputFormat::Json => ruxel_engine::runtime::OutputFormat::Json,
+            cli::OutputFormat::Human => ruxel_engine::runtime::OutputFormat::Human,
+        },
+        log_file: args.presentation.log_file,
         source_dir: args
             .root
             .parent()
@@ -96,14 +107,11 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
     match result {
         Ok(recaps) => {
             let failed = recaps.values().any(|r| r.failed != 0);
-            for (host, recap) in recaps {
-                let event = serde_json::json!({"host":host,"recap":{"ok":recap.ok,"changed":recap.changed,"failed":recap.failed,"skipped":recap.skipped,"rescued":recap.rescued,"ignored":recap.ignored}});
-                if writeln!(std::io::stdout().lock(), "{event}").is_err() {
-                    return ExitCode::Internal;
-                }
-            }
+            let changed = recaps.values().any(|r| r.changed != 0);
             if failed {
                 ExitCode::Failed
+            } else if changed && args.presentation.detailed_exitcode {
+                ExitCode::Changes
             } else {
                 ExitCode::Success
             }

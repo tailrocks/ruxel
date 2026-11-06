@@ -10,7 +10,6 @@ use ruxel_proto::v1;
 use serde_json::{Map, Value, json};
 use std::{
     collections::BTreeMap,
-    io::Write,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -21,6 +20,9 @@ pub struct RuntimeOptions {
     pub agent: PathBuf,
     pub jobs: usize,
     pub no_cache: bool,
+    pub connection: transport::ConnectOptions,
+    pub output: OutputFormat,
+    pub log_file: Option<PathBuf>,
     pub source_dir: PathBuf,
     pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
@@ -53,6 +55,10 @@ impl Connection {
     }
 }
 
+mod output;
+use output::Output;
+pub use output::OutputFormat;
+
 mod lookups;
 use lookups::Lookups;
 
@@ -63,6 +69,7 @@ struct Execution {
     mode: Mode,
     connections: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Connection>>>>>,
     lookups: Arc<Lookups>,
+    output: Arc<Output>,
 }
 impl Execution {
     async fn connect(&self, host: &str) -> Result<v1::Facts> {
@@ -124,7 +131,7 @@ impl Execution {
                 diff_mode: diff,
                 no_cache: self.runtime.no_cache,
                 port,
-                ..Default::default()
+                ..self.runtime.connection.clone()
             };
             let (c, f) = transport::connect_with(
                 &destination,
@@ -290,7 +297,7 @@ impl Backend for Execution {
     }
     fn event(&mut self, event: &Value) -> Result<()> {
         let event = self.lookups.redact(event)?;
-        writeln!(std::io::stdout().lock(), "{event}").context("write execution event")
+        self.output.event(&event)
     }
 }
 
@@ -320,6 +327,7 @@ pub async fn run(
             .context("missing inventory hosts")?
             .clone(),
         runtime: runtime.clone(),
+        output: Arc::new(Output::new(runtime.output, runtime.log_file.as_deref())?),
         mode: options.mode,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         lookups: Arc::new(Lookups {
@@ -364,6 +372,10 @@ pub async fn run(
         Ok(recap) => {
             if let Some(error) = shutdown_error {
                 return Err(redact_error(error));
+            }
+            for (host, total) in &recap {
+                let event = json!({"host":host,"recap":{"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
+                execution.output.event(&execution.lookups.redact(&event)?)?;
             }
             Ok(recap)
         }

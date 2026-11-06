@@ -49,3 +49,32 @@ async fn async_and_sync_framing_are_byte_identical() {
     let decoded: v1::Envelope = read_frame(&mut reader).await.unwrap().unwrap();
     assert_eq!(decoded, message);
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!("ruxel-fake-ssh-{}", std::process::id()));
+    std::fs::create_dir_all(&root)?;
+    let program = root.join("ssh");
+    std::fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n")?;
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))?;
+    let host = RemoteHost {
+        destination: "fixture.invalid".into(),
+        options: ConnectOptions {
+            keyfile: Some(root.join("synthetic identity")),
+            known_hosts_file: Some(root.join("synthetic known hosts")),
+            accept_new_host_key: true,
+            ..Default::default()
+        },
+    };
+    let output = host.client().env("PATH", &root).output().await?;
+    assert!(output.status.success());
+    let args = String::from_utf8(output.stdout)?;
+    assert!(args.contains("StrictHostKeyChecking=accept-new\n"));
+    assert!(args.contains("synthetic identity\n"));
+    assert!(args.contains("synthetic known hosts\n"));
+    assert!(args.ends_with("fixture.invalid\n"));
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
