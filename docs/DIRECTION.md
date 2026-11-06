@@ -1,7 +1,7 @@
 # Direction — Analysis and Recommended Architecture
 
 > Historical design record. Implementation status and acceptance are
-> authoritative in [`GOAL.md`](../GOAL.md) and [`PLAN.md`](PLAN.md); future
+> authoritative in [`GOAL.md`](GOAL.md) and [`PLAN.md`](PLAN.md); future
 > tense below describes the original design sequence, not unfinished work.
 
 Status: proposal for operator review. 2026-06-11.

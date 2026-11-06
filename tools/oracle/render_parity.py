@@ -2,7 +2,7 @@
 """Capture pinned Ansible rendering for repository-owned synthetic fixtures.
 
 No inventory or remote connection is loaded. Lookups use deterministic fake
-plugins. Output is replayed by crates/ruxel-core/tests/render_parity.rs.
+plugins. Output is replayed by crates/legacy/ruxel-core/tests/render_parity.rs.
 """
 
 from __future__ import annotations

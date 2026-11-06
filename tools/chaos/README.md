@@ -1,7 +1,7 @@
 # Chaos gate
 
 Local protocol chaos coverage lives in
-`crates/ruxel-agent/tests/protocol.rs`:
+`crates/ruxel/ruxel-agent/tests/protocol.rs`:
 
 - EOF immediately after `HelloAck`;
 - truncated frame during the next `Plan`;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # List and destroy ALL leftover fixture resources (label ruxel=fixture).
-# Safe to run at the start and end of every session (GOAL.md rule 3).
+# Safe to run at the start and end of every session (docs/GOAL.md rule 3).
 #
 # Usage: tools/fixtures/reap.sh [--dry-run]
 
