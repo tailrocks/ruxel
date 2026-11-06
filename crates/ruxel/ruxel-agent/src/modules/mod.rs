@@ -111,20 +111,20 @@ pub(crate) fn execute(
         }));
     }
     let result = match module {
-        "community.general.filesystem" => filesystem::run(params, ctx),
+        "filesystem" => filesystem::run(params, ctx),
         "git" => git::run(params, ctx),
         "iptables" => iptables::run(params, ctx),
         "lineinfile" => lineinfile::run(params, ctx),
         "community.general.lvol" => lvol::run(params, ctx),
-        "mount" => mount::run(params, ctx),
-        "postgresql_db" => postgresql::db(params, ctx),
-        "postgresql_user" => postgresql::user(params, ctx),
-        "postgresql_schema" => postgresql::schema(params, ctx),
-        "postgresql_privs" => postgresql::privs(params, ctx),
+        "ansible.posix.mount" => mount::run(params, ctx),
+        "community.postgresql.postgresql_db" => postgresql::db(params, ctx),
+        "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
+        "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
+        "community.postgresql.postgresql_privs" => postgresql::privs(params, ctx),
         "replace" => replace::run(params, ctx),
         "shell" => shell::run(params, free_form, ctx),
         "stat" => stat::run(params),
-        "timezone" => timezone::run(params, ctx),
+        "community.general.timezone" => timezone::run(params, ctx),
         "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx),
         "blockinfile" => blockinfile::run(params, ctx),
@@ -155,7 +155,7 @@ pub(crate) fn execute(
 pub(crate) fn is_implemented(module: &str) -> bool {
     matches!(
         module,
-        "community.general.filesystem"
+        "filesystem"
             | "ansible.posix.sysctl"
             | "apt"
             | "apt_repository"

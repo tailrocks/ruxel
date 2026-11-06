@@ -12,6 +12,9 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
+mod local;
+pub use local::LocalConnection;
+
 use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
