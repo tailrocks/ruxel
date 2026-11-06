@@ -21,6 +21,7 @@ ruxel-config = { path = "crates/ruxel/ruxel-config", version = "0.1.0" }
 ruxel-proto = { path = "crates/ruxel/ruxel-proto", version = "0.1.0" }
 
 base64 = "0.22"
+percent-encoding = "2"
 pbkdf2 = "0.13"
 regex-lite = "0.1"
 anyhow = "1.0.104"

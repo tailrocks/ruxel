@@ -10,6 +10,10 @@ pub(crate) struct Cli {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     Config(ConfigCmd),
+    Plan(RunArgs),
+    Apply(RunArgs),
+    Check(RunArgs),
+    Diff(RunArgs),
 }
 #[derive(Debug, clap::Args)]
 pub(crate) struct ConfigCmd {
@@ -23,4 +27,20 @@ pub(crate) enum ConfigCommand {
         #[arg(long)]
         raw: bool,
     },
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct RunArgs {
+    pub(crate) root: PathBuf,
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) hosts: Vec<String>,
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) tags: Vec<String>,
+    #[arg(long, default_value = "ruxel-agent")]
+    pub(crate) agent: PathBuf,
+    /// Run the real agent locally; use only disposable local workloads.
+    #[arg(long, requires = "state_dir")]
+    pub(crate) local: bool,
+    #[arg(long, requires = "local")]
+    pub(crate) state_dir: Option<PathBuf>,
 }

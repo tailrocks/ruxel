@@ -30,6 +30,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 #[derive(Default, Clone)]
 pub struct ConnectOptions {
+    pub port: Option<u16>,
     pub keyfile: Option<PathBuf>,
     pub accept_new_host_key: bool,
     pub known_hosts_file: Option<PathBuf>,
@@ -185,6 +186,9 @@ fn socket_dir_from(xdg_runtime: Option<PathBuf>, home: Option<PathBuf>) -> Resul
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
+    if let Some(port) = options.port {
+        cmd.arg("-p").arg(port.to_string());
+    }
     if let Some(keyfile) = &options.keyfile {
         cmd.arg("-i")
             .arg(keyfile)

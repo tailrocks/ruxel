@@ -1283,7 +1283,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ruxel-config",
+ "ruxel-engine",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1316,6 +1318,7 @@ dependencies = [
  "base64",
  "blake3",
  "openssh-sftp-client",
+ "percent-encoding",
  "prost",
  "ruxel-proto",
  "serde",
