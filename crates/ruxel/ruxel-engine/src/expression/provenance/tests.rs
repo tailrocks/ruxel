@@ -122,3 +122,24 @@ fn missing_secret_reference_taints_default_and_short_array_tree_fails_closed() -
     assert!(eval(json!({"kind":"ref", "path":["item", "0"]}), &scope)?.is_secret());
     Ok(())
 }
+
+#[test]
+fn wrong_provenance_shape_fails_closed_for_references_and_get() -> Result<()> {
+    let scope = TrackedValue {
+        value: json!({"item":["synthetic-secret"]}),
+        provenance: Provenance::Object(BTreeMap::from([(
+            "item".into(),
+            Provenance::Object(BTreeMap::new()),
+        )])),
+    };
+    assert!(scope.is_secret());
+    assert!(
+        scope
+            .get("item")
+            .and_then(|v| v.get("0"))
+            .context("item")?
+            .is_secret()
+    );
+    assert!(eval(json!({"kind":"ref", "path":["item", "0"]}), &scope)?.is_secret());
+    Ok(())
+}

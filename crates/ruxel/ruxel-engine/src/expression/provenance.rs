@@ -27,6 +27,28 @@ impl Provenance {
         }
     }
 
+    fn validated(&self, value: &Value) -> Self {
+        match (self, value) {
+            (Self::Public, _) => Self::Public,
+            (Self::Array(provenance), Value::Array(values)) if provenance.len() == values.len() => {
+                Self::Array(
+                    provenance
+                        .iter()
+                        .zip(values)
+                        .map(|(p, v)| p.validated(v))
+                        .collect(),
+                )
+            }
+            (Self::Object(provenance), Value::Object(values)) => Self::Object(
+                provenance
+                    .iter()
+                    .filter_map(|(k, p)| values.get(k).map(|v| (k.clone(), p.validated(v))))
+                    .collect(),
+            ),
+            _ => Self::Secret,
+        }
+    }
+
     fn child(&self, key: &str) -> Self {
         match self {
             Self::Public => Self::Public,
@@ -75,7 +97,7 @@ impl TrackedValue {
     }
     #[must_use]
     pub fn is_secret(&self) -> bool {
-        self.provenance.is_secret()
+        self.provenance.validated(&self.value).is_secret()
     }
 
     /// Construct a tracked object from independently tracked fields.
@@ -104,7 +126,7 @@ impl TrackedValue {
         }?;
         Some(Self {
             value: value.clone(),
-            provenance: self.provenance.child(key),
+            provenance: self.provenance.validated(&self.value).child(key),
         })
     }
 
@@ -183,7 +205,7 @@ fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
         root.as_str()
     };
     let mut value = &scope.value;
-    let mut provenance = scope.provenance.clone();
+    let mut provenance = scope.provenance.validated(&scope.value);
     for part in std::iter::once(root).chain(rest.iter().map(String::as_str)) {
         let next = match value {
             Value::Object(map) => map.get(part),
@@ -338,7 +360,8 @@ fn call(
             });
         }
         "map" => {
-            let source = evaluate_tracked(&args[0], scope, resolver)?;
+            let mut source = evaluate_tracked(&args[0], scope, resolver)?;
+            source.provenance = source.provenance.validated(&source.value);
             let items = source
                 .value
                 .as_array()
