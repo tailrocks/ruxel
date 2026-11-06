@@ -4,10 +4,15 @@ output {
   value = new Ruxel.Config {
     inventory {
       hosts {
-        for (i in 1..6) { ["fixture-\(i)"] { address = "127.0.0.1" } }
+        ["fixture-1"] { address = "127.0.0.1" }
+        ["fixture-2"] { address = "127.0.0.1" }
+        ["fixture-3"] { address = "127.0.0.1" }
+        ["fixture-4"] { address = "127.0.0.1" }
+        ["fixture-5"] { address = "127.0.0.1" }
+        ["fixture-6"] { address = "127.0.0.1" }
       }
       groups {
-        ["multihost"] { hosts { for (i in 1..6) "fixture-\(i)" } }
+        ["multihost"] { hosts { "fixture-1"; "fixture-2"; "fixture-3"; "fixture-4"; "fixture-5"; "fixture-6" } }
       }
     }
     plays {

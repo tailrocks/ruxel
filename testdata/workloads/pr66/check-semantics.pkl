@@ -15,7 +15,7 @@ output {
             name = "Predict a notifying file change"
             operation = new Ruxel.Copy {
               content = "synthetic"
-              dest = "/tmp/ruxel-fixture-check-notify"
+              dest = "__RUN_ROOT__/check-notify"
             }
             notify { "Record predicted handler" }
           }

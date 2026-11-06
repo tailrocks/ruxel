@@ -1,0 +1,58 @@
+import "../../../schema/Ruxel.pkl"
+
+output {
+  value = new Ruxel.Config {
+    inventory {
+      hosts { ["fixture"] { address = "127.0.0.1" } }
+      groups { ["storage"] { hosts { "fixture" } } }
+    }
+    plays {
+      new {
+        name = "Fixture xfs storage"
+        targets { "storage" }
+        vars {
+          ["fixture_disks"] = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-disk-1" }; new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-disk-2" }; new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-disk-3" } } }
+        }
+        tasks {
+          new {
+            name = "Resolve fixture disks"
+            operation = new Ruxel.Command {
+              argv = new Ruxel.ListExpr {
+                items {
+                  new Ruxel.Literal { value = "readlink" }
+                  new Ruxel.Literal { value = "-f" }
+                  new Ruxel.Ref { path { "item" } }
+                }
+              }
+            }
+            `loop` = new Ruxel.Ref { path { "fixture_disks" } }
+            register = "fixture_disk_devices"
+            changedWhen = new Ruxel.Literal { value = false }
+            checkMode = false
+          }
+          new {
+            name = "Create fixture volume group"
+            operation = new Ruxel.VolumeGroup {
+              vg = "ruxel_fixture_xfs"
+              pvs = new Ruxel.Call {
+                `function` = "mapAttribute"
+                args {
+                  new Ruxel.Ref { path { "fixture_disk_devices"; "results" } }
+                  new Ruxel.Literal { value = "stdout" }
+                }
+              }
+            }
+          }
+          new {
+            name = "Create fixture logical volume"
+            operation = new Ruxel.LogicalVolume { lv = "data"; vg = "ruxel_fixture_xfs"; size = "+100%FREE"; resizefs = true }
+          }
+          new {
+            name = "Format fixture volume"
+            operation = new Ruxel.Filesystem { fstype = "xfs"; dev = "/dev/ruxel_fixture_xfs/data"; resizefs = true }
+          }
+        }
+      }
+    }
+  }
+}

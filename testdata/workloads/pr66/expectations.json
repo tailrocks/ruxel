@@ -4,38 +4,172 @@
     "check-semantics": {
       "fixture": "check-semantics.pkl",
       "observations": [
-        {"kind": "file", "path": "/tmp/ruxel-fixture-check-notify", "content": "synthetic"}
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/check-notify",
+          "content": "synthetic"
+        }
       ],
       "drift": [
-        {"kind": "write_file", "path": "/tmp/ruxel-fixture-check-notify", "content": "drift"}
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/check-notify",
+          "content": "drift"
+        }
       ],
       "phases": {
-        "fresh": {"observations_match": true, "changed": true},
-        "converged": {"observations_match": true, "changed": false},
-        "drift_repair": {"observations_match": true, "changed": true},
-        "check": {"state_unchanged": true},
-        "diff": {"state_unchanged": true}
+        "fresh": {
+          "observations_match": true,
+          "changed": true
+        },
+        "converged": {
+          "observations_match": true,
+          "changed": false
+        },
+        "drift_repair": {
+          "observations_match": true,
+          "changed": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
       }
     },
     "controller-delegation": {
       "fixture": "controller-delegation.pkl",
-      "observations": [],
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Read synthetic value on controller",
+          "field": "stdout",
+          "equals": "ruxel-fixture-controller"
+        }
+      ],
       "phases": {
-        "fresh": {"succeeds": true},
-        "converged": {"succeeds": true},
-        "check": {"state_unchanged": true},
-        "diff": {"state_unchanged": true}
+        "fresh": {
+          "succeeds": true
+        },
+        "converged": {
+          "succeeds": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
       }
     },
     "multihost": {
       "fixture": "multihost.pkl",
-      "observations": [],
+      "observations": [
+        {
+          "kind": "task_result_each_host",
+          "hosts": [
+            "fixture-1",
+            "fixture-2",
+            "fixture-3",
+            "fixture-4",
+            "fixture-5",
+            "fixture-6"
+          ],
+          "task": "Run one-second independent host work",
+          "field": "rc",
+          "equals": 0
+        }
+      ],
       "phases": {
-        "fresh": {"succeeds_on_each_host": 6},
-        "converged": {"succeeds_on_each_host": 6},
-        "check": {"state_unchanged": true},
-        "diff": {"state_unchanged": true}
+        "fresh": {
+          "succeeds_on_each_host": 6
+        },
+        "converged": {
+          "succeeds_on_each_host": 6
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
       }
+    },
+    "storage-ext4": {
+      "fixture": "storage-ext4.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_ext4",
+          "physical_volume_count": 2
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_ext4",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_ext4/data",
+          "type": "ext4"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "drift injection and repair expectations"
+      ]
+    },
+    "storage-xfs": {
+      "fixture": "storage-xfs.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_xfs",
+          "physical_volume_count": 3
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_xfs",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_xfs/data",
+          "type": "xfs"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "drift injection and repair expectations"
+      ]
     }
   }
 }
