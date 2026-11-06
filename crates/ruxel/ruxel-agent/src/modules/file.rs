@@ -131,4 +131,29 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(dir);
     }
+    #[test]
+    fn recursive_attributes_detect_and_repair_nested_drift() {
+        let dir = std::env::temp_dir().join(format!("ruxel-file-recursive-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        let file = dir.join("nested/file");
+        std::fs::write(&file, b"content").unwrap();
+        let params = json!({"path": dir, "state": "directory", "mode": "0700", "recurse": true});
+        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+        assert_eq!(run(&params, &context()).unwrap()["changed"], false);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut check = context();
+        check.check_mode = true;
+        assert_eq!(run(&params, &check).unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(run(&params, &context()).unwrap()["changed"], false);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
