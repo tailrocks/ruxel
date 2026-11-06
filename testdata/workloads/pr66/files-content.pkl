@@ -26,7 +26,7 @@ output {
           operation = new Ruxel.Copy { content = call("concat", new Listing { call("trim", new Listing { call("base64Decode", new Listing { ref(new Listing { "vars"; "fixture_encoded" }) }) }); literal("\n") }); dest = "__RUN_ROOT__/files/copied.txt"; owner = "root"; group = "root"; mode = "0644"; force = true }
         }
         new { name = "Copy synthetic source asset"; operation = new Ruxel.Copy { src = "__FIXTURE_ROOT__/assets/source.txt"; dest = "__RUN_ROOT__/files/source.txt" } }
-        new { name = "Render synthetic template"; operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.j2"; dest = "__RUN_ROOT__/files/rendered.txt"; owner = "root"; group = "root"; mode = "0640" }; notify { "Restart synthetic fixture service" } }
+        new { name = "Render synthetic template"; operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.pkl"; dest = "__RUN_ROOT__/files/rendered.txt"; owner = "root"; group = "root"; mode = "0640" }; notify { "Restart synthetic fixture service" } }
         new { name = "Exercise line replacement"; operation = new Ruxel.LineInFile { path = "__RUN_ROOT__/files/copied.txt"; regexp = "^synthetic"; line = "synthetic-line"; state = "present" } }
         new { name = "Exercise multiline replacement"; operation = new Ruxel.Replace { path = "__RUN_ROOT__/files/copied.txt"; regexp = "synthetic(?:-line)?"; replace = "replaced" } }
         new { name = "Exercise managed block"; operation = new Ruxel.BlockInFile { path = "__RUN_ROOT__/files/block.txt"; block = "alpha\nbeta\n"; create = true; owner = "root"; group = "root"; mode = "0644" } }

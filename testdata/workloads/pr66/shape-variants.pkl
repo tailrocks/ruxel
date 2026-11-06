@@ -28,7 +28,7 @@ output { value = new Ruxel.Config {
       new {
         name = "Exercise literal template destination"
         checkMode = true
-        operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.j2"; dest = "__RUN_ROOT__/template" }
+        operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.pkl"; dest = "__RUN_ROOT__/template" }
       }
       new {
         name = "Exercise string block parameters"

@@ -65,7 +65,7 @@
         }
       },
       "pending": [
-        "verify frozen baseline check/diff assertion behavior independently"
+        "verify frozen diff assertion behavior independently"
       ]
     },
     "multihost": {
@@ -653,16 +653,12 @@
           "content": "synthetic source\n"
         },
         {
-          "kind": "file_contains",
+          "kind": "file",
           "path": "__RUN_ROOT__/files/rendered.txt",
-          "values": [
-            "alpha",
-            "beta",
-            "joined=alpha,beta",
-            "optional=fallback",
-            "encoded=synthetic%20value",
-            "conditional=enabled"
-          ]
+          "content": "alpha\nbeta\njoined=alpha,beta\nhash=b3cc0475bb78a5026098858e9889acf666d31062d513d303314eca31d36e72f2\noptional=fallback\nencoded=synthetic%20value\nconditional=enabled\n",
+          "owner": "root",
+          "group": "root",
+          "mode": "0640"
         },
         {
           "kind": "file_contains",
@@ -716,8 +712,8 @@
         }
       },
       "pending": [
-        "controller-side local source loading and template rendering",
-        "scalar-to-string interpolation",
+        "controller-side local source loading",
+        "typed template runtime verification including trailing newline",
         "independent handler notification observation"
       ]
     },
