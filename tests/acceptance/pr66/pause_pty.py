@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+PROMPT_TIMEOUT = 10
 
 
 def require(condition, message):
@@ -57,19 +58,28 @@ output { value = new Ruxel.Config {
                                        start_new_session=True)
             os.close(slave)
             lines = []
+            pending = b''
             try:
                 if mode == 'apply':
-                    deadline = time.monotonic() + 10
-                    while True:
-                        require(time.monotonic() < deadline, f'{case}: pause prompt timed out')
-                        ready, _, _ = select.select([process.stdout], [], [], max(0, deadline - time.monotonic()))
+                    deadline = time.monotonic() + PROMPT_TIMEOUT
+                    os.set_blocking(process.stdout.fileno(), False)
+                    prompted = False
+                    while not prompted:
+                        remaining = deadline - time.monotonic()
+                        require(remaining > 0, f'{case}: pause prompt timed out')
+                        ready, _, _ = select.select([process.stdout], [], [], remaining)
                         require(ready, f'{case}: pause prompt timed out')
-                        line = process.stdout.readline()
-                        require(line, f'{case}: process ended before pause')
-                        event = json.loads(line)
-                        lines.append(event)
-                        if event.get('pause') == 'synthetic pause prompt':
-                            break
+                        chunk = os.read(process.stdout.fileno(), 65536)
+                        require(chunk, f'{case}: process ended before pause')
+                        pending += chunk
+                        while b'\n' in pending:
+                            line, pending = pending.split(b'\n', 1)
+                            event = json.loads(line)
+                            lines.append(event)
+                            if event.get('pause') == 'synthetic pause prompt':
+                                prompted = True
+                                break
+                    os.set_blocking(process.stdout.fileno(), True)
                     time.sleep(0.2)
                     require(process.poll() is None and not marker.exists(), f'{case}: pause did not block')
                     if case == 'interrupt':
@@ -77,7 +87,7 @@ output { value = new Ruxel.Config {
                     else:
                         os.write(master, b'\n' if case == 'enter' else b'\x04')
                 stdout, stderr = process.communicate(timeout=10)
-                lines.extend(json.loads(line) for line in stdout.splitlines() if line)
+                lines.extend(json.loads(line) for line in (pending + stdout).splitlines() if line)
                 if case == 'interrupt':
                     require(process.returncode in (-signal.SIGINT, 130), f'interrupt: exit {process.returncode}: {stderr!r}')
                     require(not marker.exists(), 'interrupt: post-pause task executed')
@@ -85,15 +95,31 @@ output { value = new Ruxel.Config {
                     require(process.returncode == 0, f'{case}: exit {process.returncode}: {stderr!r}')
                     task = [e['result'] for e in lines if e.get('task') == 'pause' and 'result' in e]
                     require(len(task) == 1, f'{case}: missing pause result')
+                    recap = [e['recap'] for e in lines if e.get('host') == 'fixture' and 'recap' in e]
+                    require(len(recap) == 1 and recap[0].get('failed') == 0, f'{case}: missing or failed recap')
                     if mode == 'apply':
-                        require(not task[0].get('skipped') and marker.read_text() == 'continued', f'{case}: failed to continue')
+                        require(task[0].get('skipped') is not True and task[0].get('changed') is False
+                                and task[0].get('user_input') == '' and marker.read_text() == 'continued',
+                                f'{case}: incorrect pause result or continuation')
                     else:
                         require(task[0].get('skipped') is True and not marker.exists(), f'{case}: pause or preview mutated')
             finally:
                 os.close(master)
-                if process.poll() is None:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
+                cleanup_deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        break
+                    except ProcessLookupError:
+                        break
+                    except PermissionError:
+                        # macOS can briefly retain a group containing only orphan zombies.
+                        if time.monotonic() >= cleanup_deadline:
+                            raise
+                        time.sleep(0.02)
+                process.wait(timeout=5)
+                process.stdout.close()
+                process.stderr.close()
     print('PASS local PTY pause: enter, EOF, interrupt, check, diff')
 
 
