@@ -158,6 +158,37 @@ fn group_hosts(
     Ok(hosts)
 }
 
+/// Resolve and validate play targets without contacting any host.
+pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> {
+    let inventory = config.get("inventory").context("missing inventory")?;
+    let hosts = object(inventory, "hosts");
+    let groups = object(inventory, "groups");
+    let mut selected = BTreeSet::new();
+    for play in array(config, "plays") {
+        for value in array(play, "targets") {
+            let target = value.as_str().context("target must be a string")?;
+            if target == "all" {
+                selected.extend(hosts.keys().cloned());
+            } else if hosts.contains_key(target) {
+                selected.insert(target.to_owned());
+            } else if groups.contains_key(target) {
+                selected.extend(group_hosts(target, &groups, &mut BTreeSet::new())?);
+            } else {
+                bail!("unknown inventory target {target:?}");
+            }
+        }
+    }
+    for host in &selected {
+        if !hosts.contains_key(host) {
+            bail!("unknown inventory host {host:?}");
+        }
+    }
+    if !options.hosts.is_empty() {
+        selected.retain(|host| options.hosts.contains(host));
+    }
+    Ok(selected.into_iter().collect())
+}
+
 /// Expand explicit host and group targets and execute each play in order.
 /// Facts are supplied by the caller, keyed by inventory host name.
 pub async fn run<B: Backend>(
@@ -265,7 +296,11 @@ impl<B: Backend> Runner<'_, B> {
 
     fn scope(&self, layer: &ContextLayer, item: Option<(&str, &Value)>) -> Map<String, Value> {
         let mut scope = self.scope.clone();
-        scope.insert("vars".into(), Value::Object(layer.vars.clone()));
+        let mut vars = layer.vars.clone();
+        if let Some(facts) = self.scope.get("setFacts").and_then(Value::as_object) {
+            vars.extend(facts.clone());
+        }
+        scope.insert("vars".into(), Value::Object(vars));
         if let Some((name, value)) = item {
             scope.insert(name.to_owned(), value.clone());
             scope.insert("item".into(), value.clone());
@@ -429,6 +464,42 @@ impl<B: Backend> Runner<'_, B> {
                 params.insert(snake(key), self.backend.evaluate(value, scope)?);
             }
         }
+        match kind {
+            "debug" => {
+                return Ok(
+                    json!({"changed":false, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Hello world!"))}),
+                );
+            }
+            "fail" => {
+                return Ok(
+                    json!({"changed":false, "failed":true, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Failed as requested"))}),
+                );
+            }
+            "assert" => {
+                let assertion = params.get("that").context("assert requires that")?;
+                let pass = match assertion {
+                    Value::Array(values) => values.iter().all(truth),
+                    value => truth(value),
+                };
+                return Ok(
+                    json!({"changed":false,"failed":!pass,"msg":if pass { json!("All assertions passed") } else { params.get("fail_msg").cloned().unwrap_or_else(|| json!("Assertion failed")) }}),
+                );
+            }
+            "set_fact" => {
+                let values = params
+                    .get("values")
+                    .and_then(Value::as_object)
+                    .context("set_fact requires values")?;
+                self.scope
+                    .entry("setFacts")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+                    .context("results scope is not an object")?
+                    .extend(values.clone());
+                return Ok(json!({"changed":false,"facts":values}));
+            }
+            _ => {}
+        }
         let mut environment = std::collections::HashMap::new();
         for (key, value) in &layer.environment {
             let value = self.backend.evaluate(value, scope)?;
@@ -465,7 +536,7 @@ impl<B: Backend> Runner<'_, B> {
                 become_user: layer.become_user.clone().unwrap_or_default(),
                 environment,
                 halt_on_failure: true,
-                force_check_mode: self.options.mode == Mode::Check
+                force_check_mode: matches!(self.options.mode, Mode::Check | Mode::Diff)
                     || task.get("checkMode").and_then(Value::as_bool) == Some(true),
             },
         };
