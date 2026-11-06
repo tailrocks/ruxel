@@ -357,16 +357,15 @@ fn validate_param(
     }
     if let Some((_, values)) = surface.literal_enums.iter().find(|(p, _)| *p == param)
         && let Value::String(s) = value
+        && !s.contains("{{")
+        && !values.contains(&s.as_str())
     {
-        // Templated values are validated post-render, not here.
-        if !s.contains("{{") && !values.contains(&s.as_str()) {
-            return Err(ErrorKind::ValueOutsideSurface {
-                module: surface.name.into(),
-                param: param.into(),
-                value: s.clone(),
-                allowed: values.iter().map(|v| v.to_string()).collect(),
-            });
-        }
+        return Err(ErrorKind::ValueOutsideSurface {
+            module: surface.name.into(),
+            param: param.into(),
+            value: s.clone(),
+            allowed: values.iter().map(|v| v.to_string()).collect(),
+        });
     }
     Ok(())
 }
