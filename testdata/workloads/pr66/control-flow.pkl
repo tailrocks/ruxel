@@ -56,7 +56,7 @@ output {
               name = "Exercise exact expression nested in a literal loop"
               `loop` = new Ruxel.ListExpr { items { ref(new Listing { "vars"; "fixture_pairs" }) } }
               changedWhen = literal(false)
-              operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("nested-count="); call("length", new Listing { ref(new Listing { "item" }) }) }) }
+              operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("nested-count="); call("string", new Listing { call("length", new Listing { ref(new Listing { "item" }) }) }) }) }
             }
             new {
               name = "Execute mapped loop with label and environment"
@@ -92,7 +92,7 @@ output {
         new { name = "Exercise literal assertion failure message"; operation = new Ruxel.Assert { that = ref(new Listing { "vars"; "fixture_enabled" }); fail_msg = "synthetic assertion failed" } }
         new { name = "Exercise check-mode string value"; operation = new Ruxel.Command { cmd = "/usr/bin/true" }; checkMode = false; changedWhen = literal(false) }
         new { name = "Exercise interactive pause"; operation = new Ruxel.Pause { prompt = "Synthetic fixture pause; press Enter" }; tags { "synthetic" } }
-        new { name = "Exercise always tag scalar"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("pairs="); call("length", new Listing { ref(new Listing { "vars"; "fixture_pairs" }) }); literal(" pipe="); ref(new Listing { "vars"; "fixture_pipe" }) }) }; tags { "always" } }
+        new { name = "Exercise always tag scalar"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("pairs="); call("string", new Listing { call("length", new Listing { ref(new Listing { "vars"; "fixture_pairs" }) }) }); literal(" pipe="); ref(new Listing { "vars"; "fixture_pipe" }) }) }; tags { "always" } }
       }
     } }
   }

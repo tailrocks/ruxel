@@ -168,7 +168,7 @@ output { value = new Ruxel.Config {
         changedWhen = literal(false)
         environment { ["FIXTURE_LITERAL"] = literal("synthetic") }
         `loop` = new Ruxel.ListExpr { items { literal("literal"); call("concat", new Listing { literal("mixed-"); ref(new Listing { "vars"; "fixture_name" }) }); new Ruxel.MapExpr { entries { ["name"] = literal("mapping") } } } }
-        operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("value="); ref(new Listing { "item" }) }) }
+        operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("value="); call("string", new Listing { ref(new Listing { "item" }) }) }) }
       }
     }
   } }
