@@ -41,6 +41,16 @@ class SchemaTests(unittest.TestCase):
                 valid = f'new R.Task {{ name = "block"; block {{ {child} }}; {section} {{ {child} }} }}'
                 self.assertEqual(self.evaluate(prefix + 'value = ' + valid).returncode, 0)
 
+    def test_loop_variable_cannot_shadow_scope_roots(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        for name in ("vars", "variables", "facts", "results", "inventoryHost", "setFacts"):
+            with self.subTest(name=name):
+                task = f'new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+        for name in ("item", "entry"):
+            task = f'new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}'
+            self.assertEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [

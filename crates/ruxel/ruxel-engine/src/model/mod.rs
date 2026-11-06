@@ -128,6 +128,13 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             task.operation.is_none() || (task.rescue.is_empty() && task.always.is_empty()),
             "rescue and always require a block task"
         );
+        ensure!(
+            !matches!(
+                task.loop_var.as_str(),
+                "vars" | "variables" | "facts" | "results" | "inventoryHost" | "setFacts"
+            ),
+            "loop variable shadows a reserved scope root"
+        );
         ensure!(task.retries >= 1, "retries must be positive");
         if let Some(destination) = &task.delegate_to {
             if destination.is_object() {

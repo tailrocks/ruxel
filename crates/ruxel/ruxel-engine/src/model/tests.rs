@@ -113,3 +113,30 @@ fn rescue_and_always_require_block_tasks() {
         assert!(validate_config(&value).is_ok(), "block with {section}");
     }
 }
+
+#[test]
+fn loop_variables_cannot_shadow_scope_roots() {
+    for name in [
+        "vars",
+        "variables",
+        "facts",
+        "results",
+        "inventoryHost",
+        "setFacts",
+    ] {
+        let mut value = config(json!({"kind":"debug"}));
+        value["plays"][0]["tasks"][0]["loopVar"] = json!(name);
+        assert!(
+            validate_config(&value).is_err(),
+            "reserved loop variable {name}"
+        );
+    }
+    for name in ["item", "entry"] {
+        let mut value = config(json!({"kind":"debug"}));
+        value["plays"][0]["tasks"][0]["loopVar"] = json!(name);
+        assert!(
+            validate_config(&value).is_ok(),
+            "valid loop variable {name}"
+        );
+    }
+}
