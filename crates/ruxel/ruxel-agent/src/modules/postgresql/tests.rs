@@ -1,4 +1,5 @@
 mod connection;
+mod environment;
 mod roles;
 
 use super::*;

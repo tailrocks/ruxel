@@ -35,6 +35,7 @@ pub(super) fn psql(
         port: port.to_string(),
         database: db.map(str::to_string),
         login_user: ctx.login_user.map(str::to_owned),
+        environment: ctx.environment.clone(),
     };
     SESSIONS.with(|sessions| {
         let mut sessions = sessions.borrow_mut();
@@ -55,6 +56,7 @@ struct SessionKey {
     port: String,
     database: Option<String>,
     login_user: Option<String>,
+    environment: Vec<(String, String)>,
 }
 
 struct PsqlSession {
@@ -86,6 +88,7 @@ impl PsqlSession {
             args.push(database);
         }
         let mut child = become_command(ctx, "psql", &args)
+            .envs(key.environment.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
