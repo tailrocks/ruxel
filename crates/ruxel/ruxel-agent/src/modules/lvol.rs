@@ -188,7 +188,7 @@ fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
     command.args([
         "--all",
         "--reportformat",
-        "basic",
+        "json",
         "--noheadings",
         "-o",
         "lv_name",
@@ -196,11 +196,27 @@ fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
         vg,
     ]);
     let out = super::run_checked(command)?;
-    let text = std::str::from_utf8(&out.stdout).map_err(|_| "lvol: invalid lvs output")?;
-    Ok(text.lines().any(|line| {
-        let name = line.trim();
-        name == lv || name.strip_prefix('[').and_then(|v| v.strip_suffix(']')) == Some(lv)
-    }))
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| "lvol: invalid lvs JSON report")?;
+    let reports = report
+        .get("report")
+        .and_then(Value::as_array)
+        .filter(|reports| reports.len() == 1)
+        .ok_or("lvol: invalid lvs report structure")?;
+    let volumes = reports[0]
+        .get("lv")
+        .and_then(Value::as_array)
+        .ok_or("lvol: invalid lvs volume list")?;
+    let mut found = false;
+    for volume in volumes {
+        let name = volume
+            .get("lv_name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .ok_or("lvol: invalid lvs volume name")?;
+        found |= name == lv || name.strip_prefix('[').and_then(|v| v.strip_suffix(']')) == Some(lv);
+    }
+    Ok(found)
 }
 
 fn free_extents(vg: &str) -> Result<u64, String> {

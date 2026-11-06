@@ -90,7 +90,7 @@ fn percentage_volume_create_then_reapply() {
     for (name, script) in [
         (
             "lvs",
-            "#!/bin/sh\n[ -f \"$RUXEL_LVOL_TEST_STATE\" ] || exit 0\nprintf 'data\\n'\n",
+            "#!/bin/sh\nif [ -f \"$RUXEL_LVOL_TEST_STATE\" ]; then printf '{\\\"report\\\":[{\\\"lv\\\":[{\\\"lv_name\\\":\\\"data\\\"}]}]}'; else printf '{\\\"report\\\":[{\\\"lv\\\":[]}]}'; fi\n",
         ),
         (
             "lvcreate",
