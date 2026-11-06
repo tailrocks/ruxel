@@ -67,6 +67,7 @@ inputs = [
   "tests/acceptance/pr66/plan_matrix.py",
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
+  "tests/acceptance/pr66/scoped_variables.py",
   "tests/acceptance/pr66/test_coverage.py",
   "tools/build-libblkid",
   "tools/build-libblkid-source",

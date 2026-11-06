@@ -94,6 +94,7 @@ run = [
   "python3 -B tests/acceptance/pr66/control_runtime.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/handler_failure.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/nested_loops.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/scoped_variables.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/repeated_actions.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/host_isolation.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/local_scenarios.py multihost --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
