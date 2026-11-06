@@ -337,6 +337,88 @@
       "pending": [
         "drift injection and repair expectations"
       ]
+    },
+    "restart-actions": {
+      "fixture": "restart-actions.pkl",
+      "observations": [
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/restart",
+          "content": "#!/bin/sh\nexit 0\n",
+          "mode": "0755",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "task_loop_results",
+          "host": "fixture",
+          "task": "Restart synthetic workload units",
+          "items": [
+            "01",
+            "02",
+            "03",
+            "04",
+            "05",
+            "06",
+            "07",
+            "08",
+            "09",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36"
+          ],
+          "field": "rc",
+          "equals": 0
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/restart",
+          "content": "drift"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      }
     }
   }
 }
