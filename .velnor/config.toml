@@ -54,6 +54,7 @@ inputs = [
   "tests/acceptance/pr66/cache.py",
   "tests/acceptance/pr66/check_semantics.py",
   "tests/acceptance/pr66/coverage.py",
+  "tests/acceptance/pr66/files_lifecycle.py",
   "tests/acceptance/pr66/host_isolation.py",
   "tests/acceptance/pr66/local_scenarios.py",
   "tests/acceptance/pr66/plan_matrix.py",
