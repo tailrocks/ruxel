@@ -16,30 +16,45 @@ const MAX_HOST_CONCURRENCY: usize = 6;
 
 #[derive(Args)]
 pub(crate) struct ApplyArgs {
+    /// Inventory file (INI)
     #[arg(short = 'i', long = "inventory")]
     pub inventory: std::path::PathBuf,
+    /// Limit to hosts matching this pattern
     #[arg(long)]
     pub limit: Option<String>,
+    /// Predict changes remotely without applying them
     #[arg(long)]
     pub check: bool,
+    /// Show diffs
     #[arg(long)]
     pub diff: bool,
+    /// Run only tasks with these tags (plus `always`)
     #[arg(long, value_delimiter = ',')]
     pub tags: Vec<String>,
+    /// Agent binary to provision (built for the target's arch);
+    /// defaults to $`RUXEL_AGENT_BIN`
     #[arg(long, env = "RUXEL_AGENT_BIN")]
     pub agent_bin: Option<std::path::PathBuf>,
+    /// SSH identity for fixture/test targets (forces `IdentitiesOnly`)
     #[arg(long, env = "RUXEL_SSH_KEY")]
     pub ssh_key: Option<std::path::PathBuf>,
+    /// Accept new host keys (fixture/test targets)
     #[arg(long)]
     pub accept_new_host_key: bool,
+    /// Output format: human (ansible-shaped) or json (one event per line)
     #[arg(long, value_parser = ["human", "json"], default_value = "human")]
     pub output: String,
+    /// Resolve lookups as deterministic fakes instead of the real 1Password
+    /// CLI (gates, offline work — never touches the real vault)
     #[arg(long)]
     pub dry_secrets: bool,
+    /// Bypass the convergence ledger — full native check of every task
     #[arg(long)]
     pub no_cache: bool,
+    /// Return 2 when changes were applied (0 converged, 1 failed)
     #[arg(long)]
     pub detailed_exitcode: bool,
+    /// The playbook to apply
     pub playbook: std::path::PathBuf,
 }
 

@@ -13,20 +13,28 @@ use std::sync::Arc;
 
 #[derive(Args)]
 pub(crate) struct PlanArgs {
+    /// Inventory file (INI)
     #[arg(short = 'i', long = "inventory")]
     pub inventory: std::path::PathBuf,
+    /// Limit to hosts matching this pattern
     #[arg(long)]
     pub limit: Option<String>,
+    /// Accepted for ansible muscle-memory (plan is already check-mode)
     #[arg(long)]
     pub check: bool,
+    /// Show diffs (full diffs arrive with the module runtime in M3)
     #[arg(long)]
     pub diff: bool,
+    /// Run only tasks with these tags (plus `always`)
     #[arg(long, value_delimiter = ',')]
     pub tags: Vec<String>,
+    /// Resolve secret lookups as deterministic fakes (no `op` calls)
     #[arg(long)]
     pub dry_secrets: bool,
+    /// Return 2 when the preview contains work (0 for an empty/converged preview)
     #[arg(long)]
     pub detailed_exitcode: bool,
+    /// The playbook to plan
     pub playbook: std::path::PathBuf,
 }
 
