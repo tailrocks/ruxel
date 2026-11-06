@@ -17,8 +17,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     match current.as_deref() {
         Some(t) if t == fstype => {
-            if resizefs && !ctx.check_mode {
-                changed |= grow(dev, fstype)?;
+            if resizefs {
+                if ctx.check_mode {
+                    changed |= can_grow(dev, fstype)?;
+                } else {
+                    changed |= grow(dev, fstype)?;
+                }
             }
         }
         Some(other) => {
@@ -62,16 +66,64 @@ fn make(dev: &str, fstype: &str) -> Result<(), String> {
     run_cmd(&bin, args)
 }
 
+fn can_grow(dev: &str, fstype: &str) -> Result<bool, String> {
+    let mut command = std::process::Command::new("blockdev");
+    command.args(["--getsize64", dev]);
+    let out = super::run_checked(command)?;
+    let device_bytes: u64 = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .map_err(|_| "filesystem: invalid device size")?;
+    let (blocks, block_size) = match fstype {
+        "ext4" => {
+            let mut command = std::process::Command::new("tune2fs");
+            command.args(["-l", dev]);
+            let out = super::run_checked(command)?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            (
+                parse_ext4_field(&text, "Block count"),
+                parse_ext4_field(&text, "Block size"),
+            )
+        }
+        "xfs" => {
+            let mountpoint = xfs_mountpoint(dev)?;
+            let mut command = std::process::Command::new("xfs_info");
+            command.arg(mountpoint);
+            let out = super::run_checked(command)?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            (
+                parse_xfs_field(&text, "blocks="),
+                parse_xfs_field(&text, "bsize="),
+            )
+        }
+        _ => return Err(format!("filesystem: unsupported resize type {fstype:?}")),
+    };
+    let blocks = blocks.ok_or("filesystem: missing block count")?;
+    let block_size = block_size
+        .filter(|v| *v > 0)
+        .ok_or("filesystem: missing block size")?;
+    Ok(has_growth_space(device_bytes, block_size, blocks))
+}
+
+fn has_growth_space(device_bytes: u64, block_size: u64, blocks: u64) -> bool {
+    device_bytes / block_size > blocks
+}
+
+fn xfs_mountpoint(dev: &str) -> Result<String, String> {
+    let mut find = std::process::Command::new("findmnt");
+    find.args(["-n", "-o", "TARGET", "--source", dev]);
+    let output = super::run_checked(find)?;
+    let mountpoint = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if mountpoint.is_empty() || mountpoint.lines().count() != 1 {
+        return Err(format!("filesystem: expected one mountpoint for {dev}"));
+    }
+    Ok(mountpoint)
+}
+
 fn grow(dev: &str, fstype: &str) -> Result<bool, String> {
     match fstype {
         "xfs" => {
-            let mut find = std::process::Command::new("findmnt");
-            find.args(["-n", "-o", "TARGET", "--source", dev]);
-            let output = super::run_checked(find)?;
-            let mountpoint = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if mountpoint.is_empty() || mountpoint.lines().count() != 1 {
-                return Err(format!("filesystem: expected one mountpoint for {dev}"));
-            }
+            let mountpoint = xfs_mountpoint(dev)?;
             let before = xfs_block_count(&mountpoint)?;
             let mut command = std::process::Command::new("xfs_growfs");
             command.arg(&mountpoint);
@@ -98,12 +150,16 @@ fn xfs_block_count(mountpoint: &str) -> Result<u64, String> {
 }
 
 fn parse_xfs_block_count(output: &str) -> Option<u64> {
+    parse_xfs_field(output, "blocks=")
+}
+
+fn parse_xfs_field(output: &str, prefix: &str) -> Option<u64> {
     let line = output
         .lines()
         .find(|line| line.trim_start().starts_with("data"))?;
     line.split_whitespace().find_map(|field| {
         field
-            .strip_prefix("blocks=")
+            .strip_prefix(prefix)
             .and_then(|value| value.trim_end_matches(',').parse().ok())
     })
 }
@@ -124,9 +180,13 @@ fn ext4_block_count(dev: &str) -> Result<u64, String> {
 }
 
 fn parse_ext4_block_count(output: &str) -> Option<u64> {
+    parse_ext4_field(output, "Block count")
+}
+
+fn parse_ext4_field(output: &str, field: &str) -> Option<u64> {
     output.lines().find_map(|line| {
         let (key, value) = line.split_once(':')?;
-        (key.trim() == "Block count").then(|| value.trim().parse().ok())?
+        (key.trim() == field).then(|| value.trim().parse().ok())?
     })
 }
 
@@ -146,6 +206,13 @@ mod tests {
             Some(5_240_832)
         );
         assert_eq!(super::parse_ext4_block_count("Block size: 4096\n"), None);
+    }
+
+    #[test]
+    fn predicts_resize_from_geometry() {
+        assert!(!super::has_growth_space(4096 * 100, 4096, 100));
+        assert!(super::has_growth_space(4096 * 101, 4096, 100));
+        assert!(!super::has_growth_space(4096 * 100 + 100, 4096, 100));
     }
 
     #[test]

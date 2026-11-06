@@ -27,19 +27,38 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
 
-    let current = std::fs::read_to_string(FSTAB).unwrap_or_default();
+    let current = match std::fs::read_to_string(FSTAB) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("mount: cannot read {FSTAB}: {error}")),
+    };
     let (content, fstab_changed) = rewrite_fstab(&current, src, path, fstype, opts);
     changed |= fstab_changed;
     if fstab_changed && !ctx.check_mode {
         write_atomic(std::path::Path::new(FSTAB), content.as_bytes())?;
     }
 
-    let mounted = is_mounted(path)?;
-    if !mounted {
+    let mounts = std::fs::read_to_string("/proc/mounts").map_err(|e| e.to_string())?;
+    let current_mount = find_mount(&mounts, path);
+    let action = if current_mount.is_some() {
+        let desired_source = resolve_source(src)?;
+        mount_action(current_mount.as_ref(), &desired_source, fstype, opts)
+    } else {
+        MountAction::Mount
+    };
+    if action != MountAction::None {
         changed = true;
         if !ctx.check_mode {
             std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
+            if action == MountAction::Replace {
+                let mut command = std::process::Command::new("umount");
+                command.arg(path);
+                super::run_checked(command)?;
+            }
             let mut command = std::process::Command::new("mount");
+            if action == MountAction::Remount {
+                command.args(["-o", "remount"]);
+            }
             command.arg(path);
             super::run_checked(command)?;
         }
@@ -91,12 +110,87 @@ fn opts_eq(a: &str, b: &str) -> bool {
     sa == sb
 }
 
-fn is_mounted(path: &str) -> Result<bool, String> {
-    let mounts = std::fs::read_to_string("/proc/mounts").map_err(|e| e.to_string())?;
-    Ok(mounts
+#[derive(Debug, PartialEq, Eq)]
+enum MountAction {
+    None,
+    Mount,
+    Remount,
+    Replace,
+}
+
+struct Mounted {
+    source: String,
+    fstype: String,
+    options: String,
+}
+
+fn unescape_mount(value: &str) -> String {
+    value
+        .replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+}
+
+fn find_mount(mounts: &str, path: &str) -> Option<Mounted> {
+    mounts
         .lines()
-        .filter_map(|l| l.split_whitespace().nth(1))
-        .any(|mp| mp == path))
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            (fields.len() >= 4 && unescape_mount(fields[1]) == path).then(|| Mounted {
+                source: unescape_mount(fields[0]),
+                fstype: fields[2].into(),
+                options: fields[3].into(),
+            })
+        })
+        .last()
+}
+
+fn resolve_source(src: &str) -> Result<String, String> {
+    let source = if let Some((kind, value)) = src.split_once('=') {
+        if !matches!(kind, "UUID" | "LABEL" | "PARTUUID" | "PARTLABEL") {
+            return Ok(src.into());
+        }
+        let mut command = std::process::Command::new("blkid");
+        command.args(["-t", &format!("{kind}={value}"), "-o", "device"]);
+        let out = super::run_checked(command)?;
+        let result = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if result.is_empty() || result.lines().count() != 1 {
+            return Err(format!("mount: cannot uniquely resolve {src}"));
+        }
+        result
+    } else {
+        src.to_string()
+    };
+    Ok(std::fs::canonicalize(&source).map_or(source, |p| p.to_string_lossy().into_owned()))
+}
+
+fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) -> MountAction {
+    let Some(current) = current else {
+        return MountAction::Mount;
+    };
+    let actual = std::fs::canonicalize(&current.source).map_or_else(
+        |_| current.source.clone(),
+        |p| p.to_string_lossy().into_owned(),
+    );
+    if actual != src || current.fstype != fstype {
+        return MountAction::Replace;
+    }
+    let actual_opts: Vec<_> = current.options.split(',').collect();
+    if opts
+        .split(',')
+        .filter(|option| {
+            !matches!(
+                *option,
+                "defaults" | "auto" | "noauto" | "nofail" | "_netdev"
+            )
+        })
+        .any(|option| !actual_opts.contains(&option))
+    {
+        MountAction::Remount
+    } else {
+        MountAction::None
+    }
 }
 
 #[cfg(test)]
@@ -123,6 +217,29 @@ mod tests {
             params[field] = json!(value);
             assert!(super::run(&params, &ctx).is_err(), "field {field}");
         }
+    }
+
+    #[test]
+    fn identifies_mount_drift() {
+        use super::{MountAction, find_mount, mount_action};
+        let mounts = "/dev/a /srv xfs rw,noatime 0 0\n";
+        let current = find_mount(mounts, "/srv");
+        assert_eq!(
+            mount_action(current.as_ref(), "/dev/a", "xfs", "noatime,rw"),
+            MountAction::None
+        );
+        assert_eq!(
+            mount_action(current.as_ref(), "/dev/a", "xfs", "ro"),
+            MountAction::Remount
+        );
+        assert_eq!(
+            mount_action(current.as_ref(), "/dev/b", "xfs", "rw"),
+            MountAction::Replace
+        );
+        assert_eq!(
+            mount_action(None, "/dev/a", "xfs", "rw"),
+            MountAction::Mount
+        );
     }
 
     #[test]
