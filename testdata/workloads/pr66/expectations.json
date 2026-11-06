@@ -170,6 +170,58 @@
       "pending": [
         "drift injection and repair expectations"
       ]
+    },
+    "storage-two-tier": {
+      "fixture": "storage-two-tier.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_data",
+          "physical_volume_count": 2
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_data",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_data/data",
+          "type": "xfs"
+        },
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_hot",
+          "physical_volume_count": 1
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_hot",
+          "name": "hot"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_hot/hot",
+          "type": "xfs"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "drift injection and repair expectations"
+      ]
     }
   }
 }
