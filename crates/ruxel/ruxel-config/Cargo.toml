@@ -1,0 +1,14 @@
+[package]
+name = "ruxel-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pklr = { version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

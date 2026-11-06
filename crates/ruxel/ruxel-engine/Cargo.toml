@@ -1,0 +1,18 @@
+[package]
+name = "ruxel-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+openssh-sftp-client.workspace = true
+prost.workspace = true
+ruxel-proto.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

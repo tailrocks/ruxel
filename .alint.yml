@@ -12,20 +12,9 @@ ignore:
   # Deleted or rewritten by the Ruxel rewrite (§S8). One path per line:
   # each line is removed in the commit that deletes or rewrites the
   # path. Never add live code here.
-  - "crates/legacy/**"
   - "tools/**"
   - "crates/ruxel/ruxel/build.rs"
-  - "crates/ruxel/ruxel/src/main.rs"
-  - "crates/ruxel/ruxel/src/lib.rs"
-  - "crates/ruxel/ruxel/src/scheduler.rs"
-  - "crates/ruxel/ruxel/src/secrets.rs"
-  - "crates/ruxel/ruxel/src/transport.rs"
-  - "crates/ruxel/ruxel/src/commands/mod.rs"
-  - "crates/ruxel/ruxel/src/commands/plan.rs"
-  - "crates/ruxel/ruxel/src/commands/apply.rs"
-  - "crates/ruxel/ruxel/src/commands/run_log.rs"
-  - "crates/ruxel/ruxel/tests/op_resolver.rs"
-  - "crates/ruxel/ruxel/tests/transport_gate.rs"
+  - "crates/ruxel/ruxel-engine/src/transport.rs"
   - "crates/ruxel/ruxel-agent/src/main.rs"
   - "crates/ruxel/ruxel-agent/src/facts.rs"
   - "crates/ruxel/ruxel-agent/src/modules/apt.rs"
