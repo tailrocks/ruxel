@@ -1,4 +1,4 @@
-use super::*;
+use super::{ExecContext, Value, acl_privileges, ident, json, lit, login_port, params_object, psql, str_param, validate_privs};
 
 pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
