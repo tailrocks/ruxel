@@ -24,7 +24,7 @@ output {
         new { name = "Exercise absent path"; operation = new Ruxel.File { path = path("absent"); state = "absent" } }
         new {
           name = "Copy literal content"
-          operation = new Ruxel.Copy { content = call("concat", new Listing { call("trim", new Listing { call("base64Decode", new Listing { ref(new Listing { "fixture_encoded" }) }) }); literal("\n") }); dest = path("copied.txt"); owner = "root"; group = "root"; mode = "0644"; force = true }
+          operation = new Ruxel.Copy { content = call("concat", new Listing { call("trim", new Listing { call("base64Decode", new Listing { ref(new Listing { "vars"; "fixture_encoded" }) }) }); literal("\n") }); dest = path("copied.txt"); owner = "root"; group = "root"; mode = "0644"; force = true }
         }
         new { name = "Copy synthetic source asset"; operation = new Ruxel.Copy { src = "__FIXTURE_ROOT__/assets/source.txt"; dest = path("source.txt") } }
         new { name = "Render synthetic template"; operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.j2"; dest = path("rendered.txt"); owner = "root"; group = "root"; mode = "0640" }; notify { "Restart synthetic fixture service" } }
@@ -34,17 +34,17 @@ output {
         new { name = "Inspect path with follow"; operation = new Ruxel.Stat { path = path("tree-link"); follow = true }; register = "fixture_stat" }
         new {
           name = "Inspect templated registered path"
-          operation = new Ruxel.Stat { path = call("concat", new Listing { literal("__RUN_ROOT__/files/"); call("default", new Listing { ref(new Listing { "fixture_stat"; "stat"; "exists" }); literal(false) }) }) }
+          operation = new Ruxel.Stat { path = call("concat", new Listing { literal("__RUN_ROOT__/files/"); call("default", new Listing { ref(new Listing { "results"; "fixture_stat"; "stat"; "exists" }); literal(false) }) }) }
           register = "fixture_dynamic_stat"
         }
         new { name = "Read synthetic content"; operation = new Ruxel.Slurp { src = path("copied.txt") }; register = "fixture_slurp" }
-        new { name = "Preserve decoded fact shape"; operation = new Ruxel.SetFact { values = new Mapping { ["fixture_decoded"] = call("trim", new Listing { call("base64Decode", new Listing { ref(new Listing { "fixture_slurp"; "content" }) }) }) } } }
-        new { name = "Report mixed template shape"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("decoded="); ref(new Listing { "fixture_decoded" }); literal(" count="); call("length", new Listing { ref(new Listing { "fixture_lines" }) }) }) } }
+        new { name = "Preserve decoded fact shape"; operation = new Ruxel.SetFact { values = new Mapping { ["fixture_decoded"] = call("trim", new Listing { call("base64Decode", new Listing { ref(new Listing { "results"; "fixture_slurp"; "content" }) }) }) } } }
+        new { name = "Report mixed template shape"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("decoded="); ref(new Listing { "vars"; "fixture_decoded" }); literal(" count="); call("length", new Listing { ref(new Listing { "vars"; "fixture_lines" }) }) }) } }
         new { name = "Exercise command mapping and creates"; operation = new Ruxel.Command { cmd = "/usr/bin/touch created-by-command"; chdir = "__RUN_ROOT__/files"; creates = path("created-by-command") } }
         new { name = "Exercise command scalar"; operation = new Ruxel.Command { cmd = "/usr/bin/true" }; changedWhen = literal(false) }
         new { name = "Exercise shell arguments"; operation = new Ruxel.Shell { cmd = "printf synthetic > created-by-shell"; chdir = "__RUN_ROOT__/files"; creates = path("created-by-shell"); executable = "/bin/sh" } }
-        new { name = "Exercise assertion message shape"; operation = new Ruxel.Assert { that = ref(new Listing { "fixture_stat"; "stat"; "exists" }); fail_msg = "fixture path missing: __RUN_ROOT__/files" } }
-        new { name = "Exercise guarded failure module"; `when` = call("not", new Listing { ref(new Listing { "fixture_stat"; "stat"; "exists" }) }); operation = new Ruxel.Fail { msg = "synthetic failure should remain skipped" } }
+        new { name = "Exercise assertion message shape"; operation = new Ruxel.Assert { that = ref(new Listing { "results"; "fixture_stat"; "stat"; "exists" }); fail_msg = "fixture path missing: __RUN_ROOT__/files" } }
+        new { name = "Exercise guarded failure module"; `when` = call("not", new Listing { ref(new Listing { "results"; "fixture_stat"; "stat"; "exists" }) }); operation = new Ruxel.Fail { msg = "synthetic failure should remain skipped" } }
       }
       handlers { new { name = "Restart synthetic fixture service"; operation = new Ruxel.Service { name = "ssh"; state = "restarted" } } }
     } }

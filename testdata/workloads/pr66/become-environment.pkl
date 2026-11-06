@@ -24,7 +24,7 @@ output {
             that = new Ruxel.Call {
               `function` = "eq"
               args {
-                new Ruxel.Ref { path { "fixture_become_environment"; "stdout_lines" } }
+                new Ruxel.Ref { path { "results"; "fixture_become_environment"; "stdout_lines" } }
                 new Ruxel.ListExpr { items {
                   new Ruxel.Literal { value = "__RUN_ROOT__/become-home" }
                   new Ruxel.Literal { value = "ruxelbecome" }

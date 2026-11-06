@@ -24,7 +24,7 @@ output {
               that = new Ruxel.Call {
                 `function` = "eq"
                 args {
-                  new Ruxel.Ref { path { "fixture_controller_value"; "stdout" } }
+                  new Ruxel.Ref { path { "results"; "fixture_controller_value"; "stdout" } }
                   new Ruxel.Literal { value = "ruxel-fixture-controller" }
                 }
               }

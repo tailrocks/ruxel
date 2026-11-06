@@ -26,26 +26,26 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Configure synthetic Debian repository"
-        operation = new Ruxel.AptRepository { repo = ref(new Listing { "fixture_repo" }); filename = "ruxel-fixture"; state = "present"; update_cache = false }
+        operation = new Ruxel.AptRepository { repo = ref(new Listing { "vars"; "fixture_repo" }); filename = "ruxel-fixture"; state = "present"; update_cache = false }
       }
       new {
         name = "Create synthetic system fixture root"
-        operation = new Ruxel.File { path = ref(new Listing { "fixture_root" }); state = "directory" }
+        operation = new Ruxel.File { path = ref(new Listing { "vars"; "fixture_root" }); state = "directory" }
       }
       new {
         name = "Create public synthetic payload source"
-        operation = new Ruxel.Copy { content = "synthetic-download"; dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/payload-source.txt") }) }
+        operation = new Ruxel.Copy { content = "synthetic-download"; dest = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/payload-source.txt") }) }
       }
       new {
         name = "Start disposable payload server"
         checkMode = false
         changedWhen = literal(false)
-        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("nohup python3 -m http.server 18080 --bind 127.0.0.1 \\\n  --directory "); ref(new Listing { "fixture_root" }); literal(" </dev/null \\\n  >__RUN_ROOT__/http.log 2>&1 &\necho $! >__RUN_ROOT__/http.pid\nfor attempt in 1 2 3 4 5 6 7 8 9 10; do\n  if /usr/bin/curl --fail --silent \\\n    http://127.0.0.1:18080/payload-source.txt >/dev/null; then\n    exit 0\n  fi\n  sleep 0.1\ndone\nexit 1\n") }) }
+        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("nohup python3 -m http.server 18080 --bind 127.0.0.1 \\\n  --directory "); ref(new Listing { "vars"; "fixture_root" }); literal(" </dev/null \\\n  >__RUN_ROOT__/http.log 2>&1 &\necho $! >__RUN_ROOT__/http.pid\nfor attempt in 1 2 3 4 5 6 7 8 9 10; do\n  if /usr/bin/curl --fail --silent \\\n    http://127.0.0.1:18080/payload-source.txt >/dev/null; then\n    exit 0\n  fi\n  sleep 0.1\ndone\nexit 1\n") }) }
       }
       new {
         name = "Wait for disposable payload server"
         changedWhen = literal(false)
-        until = call("eq", new Listing { ref(new Listing { "fixture_payload_ready"; "rc" }); literal(0) })
+        until = call("eq", new Listing { ref(new Listing { "results"; "fixture_payload_ready"; "rc" }); literal(0) })
         retries = 3
         delaySeconds = 1
         register = "fixture_payload_ready"
@@ -53,7 +53,7 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Download public synthetic payload"
-        operation = new Ruxel.GetUrl { url = "http://127.0.0.1:18080/payload-source.txt"; dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/payload.txt") }) }
+        operation = new Ruxel.GetUrl { url = "http://127.0.0.1:18080/payload-source.txt"; dest = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/payload.txt") }) }
       }
       new {
         name = "Stop disposable payload server"
@@ -63,7 +63,7 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Ensure fixture group"
-        operation = new Ruxel.SystemGroup { name = ref(new Listing { "fixture_group" }); gid = 29871; state = "present" }
+        operation = new Ruxel.SystemGroup { name = ref(new Listing { "vars"; "fixture_group" }); gid = 29871; state = "present" }
       }
       new {
         name = "Ensure disposable absent group"
@@ -71,11 +71,11 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Exercise closed absent-user surface"
-        operation = new Ruxel.User { name = "ruxelfixture-absent"; uid = 29871; group = ref(new Listing { "fixture_group" }); groups = "adm"; append = true; comment = "Synthetic Ruxel Fixture"; home = "/var/lib/ruxelfixture"; shell = "/bin/sh"; create_home = false; system = false; state = "absent"; remove = true }
+        operation = new Ruxel.User { name = "ruxelfixture-absent"; uid = 29871; group = ref(new Listing { "vars"; "fixture_group" }); groups = "adm"; append = true; comment = "Synthetic Ruxel Fixture"; home = "/var/lib/ruxelfixture"; shell = "/bin/sh"; create_home = false; system = false; state = "absent"; remove = true }
       }
       new {
         name = "Install synthetic authorized key"
-        operation = new Ruxel.AuthorizedKey { user = "root"; key = ref(new Listing { "fixture_key" }); state = "present" }
+        operation = new Ruxel.AuthorizedKey { user = "root"; key = ref(new Listing { "vars"; "fixture_key" }); state = "present" }
       }
       new {
         name = "Set sysctl through short module name"
@@ -126,11 +126,11 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Initialize synthetic source repository"
-        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\nmkdir -p "); ref(new Listing { "fixture_root" }); literal("/origin\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin init\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin config user.email synthetic@example.invalid\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin config user.name Synthetic\nprintf fixture > "); ref(new Listing { "fixture_root" }); literal("/origin/data.txt\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin add data.txt\nGIT_AUTHOR_DATE=2020-01-01T00:00:00Z \\\nGIT_COMMITTER_DATE=2020-01-01T00:00:00Z \\\n  git -C "); ref(new Listing { "fixture_root" }); literal("/origin commit -m fixture || true\n") }); creates = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/origin/.git/HEAD") }) }
+        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\nmkdir -p "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin init\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.email synthetic@example.invalid\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.name Synthetic\nprintf fixture > "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin/data.txt\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin add data.txt\nGIT_AUTHOR_DATE=2020-01-01T00:00:00Z \\\nGIT_COMMITTER_DATE=2020-01-01T00:00:00Z \\\n  git -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin commit -m fixture || true\n") }); creates = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/origin/.git/HEAD") }) }
       }
       new {
         name = "Clone synthetic repository"
-        operation = new Ruxel.Git { repo = call("concat", new Listing { literal("file://"); ref(new Listing { "fixture_root" }); literal("/origin") }); dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/checkout") }); version = "HEAD"; update = true; force = false; accept_hostkey = false }
+        operation = new Ruxel.Git { repo = call("concat", new Listing { literal("file://"); ref(new Listing { "vars"; "fixture_root" }); literal("/origin") }); dest = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/checkout") }); version = "HEAD"; update = true; force = false; accept_hostkey = false }
       }
     }
   } }

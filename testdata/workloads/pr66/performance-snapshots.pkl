@@ -16,8 +16,8 @@ output {
           operation = new Ruxel.Assert { that = new Ruxel.Call {
             `function` = "and"
             args {
-              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "fixture_secret_alpha" } } } }; new Ruxel.Literal { value = 0 } } }
-              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "fixture_secret_beta" } } } }; new Ruxel.Literal { value = 0 } } }
+              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "vars"; "fixture_secret_alpha" } } } }; new Ruxel.Literal { value = 0 } } }
+              new Ruxel.Call { `function` = "gt"; args { new Ruxel.Call { `function` = "length"; args { new Ruxel.Ref { path { "vars"; "fixture_secret_beta" } } } }; new Ruxel.Literal { value = 0 } } }
             }
           } }
         }

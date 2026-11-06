@@ -18,7 +18,7 @@ output {
           new {
             name = "Resolve synthetic data disks"
             operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "readlink" }; new Ruxel.Literal { value = "-f" }; new Ruxel.Ref { path { "item" } } } } }
-            `loop` = new Ruxel.Ref { path { "fixture_data_disks" } }
+            `loop` = new Ruxel.Ref { path { "vars"; "fixture_data_disks" } }
             register = "fixture_data_devices"
             changedWhen = new Ruxel.Literal { value = false }
             checkMode = false
@@ -27,7 +27,7 @@ output {
             name = "Create synthetic data volume group"
             operation = new Ruxel.VolumeGroup {
               vg = "ruxel_fixture_data"
-              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "fixture_data_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
+              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "results"; "fixture_data_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
             }
           }
           new {
@@ -41,7 +41,7 @@ output {
           new {
             name = "Resolve synthetic hot disks"
             operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "readlink" }; new Ruxel.Literal { value = "-f" }; new Ruxel.Ref { path { "item" } } } } }
-            `loop` = new Ruxel.Ref { path { "fixture_hot_disks" } }
+            `loop` = new Ruxel.Ref { path { "vars"; "fixture_hot_disks" } }
             register = "fixture_hot_devices"
             changedWhen = new Ruxel.Literal { value = false }
             checkMode = false
@@ -50,7 +50,7 @@ output {
             name = "Create synthetic hot volume group"
             operation = new Ruxel.VolumeGroup {
               vg = "ruxel_fixture_hot"
-              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "fixture_hot_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
+              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "results"; "fixture_hot_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
             }
           }
           new {

@@ -25,7 +25,7 @@ output {
                 }
               }
             }
-            `loop` = new Ruxel.Ref { path { "fixture_disks" } }
+            `loop` = new Ruxel.Ref { path { "vars"; "fixture_disks" } }
             register = "fixture_disk_devices"
             changedWhen = new Ruxel.Literal { value = false }
             checkMode = false
@@ -37,7 +37,7 @@ output {
               pvs = new Ruxel.Call {
                 `function` = "mapAttribute"
                 args {
-                  new Ruxel.Ref { path { "fixture_disk_devices"; "results" } }
+                  new Ruxel.Ref { path { "results"; "fixture_disk_devices"; "results" } }
                   new Ruxel.Literal { value = "stdout" }
                 }
               }
