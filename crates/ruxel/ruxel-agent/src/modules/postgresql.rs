@@ -178,6 +178,7 @@ fn validate_privs(privs: &str) -> Result<(), String> {
         "TEMPORARY",
         "TEMP",
         "EXECUTE",
+        "MAINTAIN",
         "ALL",
         "ALL PRIVILEGES",
     ];
@@ -191,7 +192,7 @@ fn validate_privs(privs: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn acl_privileges(privs: &str, object_type: &str) -> Vec<String> {
+fn acl_privileges(privs: &str, object_type: &str, server_version: u32) -> Vec<String> {
     let all: &[&str] = match object_type {
         "database" => &["CREATE", "CONNECT", "TEMPORARY"],
         "schema" => &["CREATE", "USAGE"],
@@ -205,6 +206,9 @@ fn acl_privileges(privs: &str, object_type: &str) -> Vec<String> {
         let privilege = privilege.to_uppercase();
         if privilege == "ALL" || privilege == "ALL PRIVILEGES" {
             result.extend(all.iter().map(|p| (*p).to_owned()));
+            if matches!(object_type, "table" | "default_privs") && server_version >= 170_000 {
+                result.push("MAINTAIN".to_owned());
+            }
         } else if privilege == "TEMP" {
             result.push("TEMPORARY".to_owned());
         } else {
@@ -562,16 +566,29 @@ pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
     }
 
+    let needs_version = matches!(typ, "table" | "default_privs")
+        && privs_list.split(',').map(str::trim).any(|p| {
+            p.eq_ignore_ascii_case("ALL") || p.eq_ignore_ascii_case("ALL PRIVILEGES")
+        });
+    let server_version = if needs_version {
+        psql(ctx, &port, Some(login_db), "SHOW server_version_num")?
+            .parse::<u32>()
+            .map_err(|_| "postgresql_privs: invalid server_version_num")?
+    } else {
+        0
+    };
+    let probes = acl_privileges(privs_list, typ, server_version);
+
     let needed = match typ {
         "database" => privs_missing_database(
             ctx,
             &port,
             objs.ok_or("postgresql_privs: objs required for type=database")?,
             role,
-            privs_list,
+            &probes,
         )?,
         "schema" => {
-            privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), privs_list)?
+            privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), &probes)?
         }
         "table" => privs_missing_table(
             ctx,
@@ -580,7 +597,7 @@ pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             role,
             objs.unwrap_or(""),
             schema,
-            privs_list,
+            &probes,
         )?,
         "default_privs" => privs_missing_default(
             ctx,
@@ -588,7 +605,7 @@ pub(super) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             login_db,
             role,
             schema.unwrap_or("public"),
-            privs_list,
+            &probes,
             target_roles,
         )?,
         other => {
@@ -615,10 +632,10 @@ fn privs_missing_database(
     port: &str,
     objs: &str,
     role: &str,
-    privs: &str,
+    privs: &[String],
 ) -> Result<bool, String> {
     for db in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        for p in acl_privileges(privs, "database") {
+        for p in privs {
             let held = psql(
                 ctx,
                 port,
@@ -646,10 +663,10 @@ fn privs_missing_schema(
     db: &str,
     role: &str,
     objs: &str,
-    privs: &str,
+    privs: &[String],
 ) -> Result<bool, String> {
     for schema in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        for p in acl_privileges(privs, "schema") {
+        for p in privs {
             let held = psql(
                 ctx,
                 port,
@@ -678,7 +695,7 @@ fn privs_missing_table(
     role: &str,
     objs: &str,
     schema: Option<&str>,
-    privs: &str,
+    privs: &[String],
 ) -> Result<bool, String> {
     let role_oid_sql = format!("(SELECT oid FROM pg_roles WHERE rolname={})", lit(role));
     let tables: Vec<(String, String)> = if objs == "ALL_IN_SCHEMA" {
@@ -710,7 +727,7 @@ fn privs_missing_table(
         return Ok(false);
     }
     for (sch, tbl) in &tables {
-        for p in acl_privileges(privs, "table") {
+        for p in privs {
             let held = psql(
                 ctx,
                 port,
@@ -764,7 +781,7 @@ fn privs_missing_default(
     db: &str,
     role: &str,
     schema: &str,
-    privs: &str,
+    privs: &[String],
     target_roles: Option<&str>,
 ) -> Result<bool, String> {
     let targets: Vec<Option<&str>> = match target_roles {
@@ -777,12 +794,12 @@ fn privs_missing_default(
         None => vec![None],
     };
     for target in targets {
-        for privilege in acl_privileges(privs, "default_privs") {
+        for privilege in privs {
             let held = psql(
                 ctx,
                 port,
                 Some(db),
-                &default_priv_query(role, schema, &privilege, target),
+                &default_priv_query(role, schema, privilege, target),
             )?;
             if held != "1" {
                 return Ok(true);
@@ -929,13 +946,27 @@ mod tests {
             ("default_privs", vec!["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]),
         ] {
             for requested in ["ALL", "all privileges"] {
-                let probes = super::acl_privileges(requested, kind);
+                let probes = super::acl_privileges(requested, kind, 160_000);
                 assert_eq!(probes, held);
                 assert!(probes.iter().all(|privilege| held.contains(&privilege.as_str())));
                 assert!(probes.iter().any(|privilege| !held[1..].contains(&privilege.as_str())));
             }
         }
-        assert_eq!(super::acl_privileges("temp, TEMPORARY", "database"), ["TEMPORARY"]);
+        assert_eq!(super::acl_privileges("temp, TEMPORARY", "database", 180_000), ["TEMPORARY"]);
+    }
+
+    #[test]
+    fn all_table_acl_probes_follow_server_version() {
+        for kind in ["table", "default_privs"] {
+            let old = super::acl_privileges("ALL", kind, 160_000);
+            let current = super::acl_privileges("ALL PRIVILEGES", kind, 170_000);
+            assert!(!old.iter().any(|p| p == "MAINTAIN"));
+            assert!(current.iter().any(|p| p == "MAINTAIN"));
+            assert_eq!(current.len(), old.len() + 1);
+            assert!(current.iter().any(|p| !old.contains(p)));
+            assert!(super::acl_privileges("all", kind, 180_000).contains(&"MAINTAIN".into()));
+        }
+        assert!(super::validate_privs("MAINTAIN").is_ok());
     }
 
     #[test]
