@@ -222,6 +222,80 @@
       "pending": [
         "drift injection and repair expectations"
       ]
+    },
+    "postgresql-ownership": {
+      "fixture": "postgresql-ownership.pkl",
+      "observations": [
+        {
+          "kind": "postgres_role",
+          "port": 40000,
+          "name": "ruxel_fixture_owner",
+          "login": true
+        },
+        {
+          "kind": "postgres_role",
+          "port": 40000,
+          "name": "ruxel_fixture_reader"
+        },
+        {
+          "kind": "postgres_database_owner",
+          "port": 40000,
+          "database": "ruxel_fixture_database",
+          "owner": "ruxel_fixture_owner"
+        },
+        {
+          "kind": "postgres_schema_owner",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "ruxel_fixture_owner"
+        },
+        {
+          "kind": "postgres_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "database",
+          "object": "ruxel_fixture_database",
+          "role": "ruxel_fixture_reader",
+          "privilege": "CONNECT"
+        },
+        {
+          "kind": "postgres_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "schema",
+          "object": "ruxel_fixture_schema",
+          "role": "ruxel_fixture_reader",
+          "privilege": "USAGE"
+        },
+        {
+          "kind": "postgres_default_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "ruxel_fixture_owner",
+          "role": "ruxel_fixture_reader",
+          "object_type": "table",
+          "privilege": "SELECT"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "drift injection and repair expectations"
+      ]
     }
   }
 }
