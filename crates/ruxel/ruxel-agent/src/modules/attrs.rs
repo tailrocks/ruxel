@@ -28,7 +28,10 @@ fn parent_and_name(path: &Path) -> Result<(OwnedFd, &Path), String> {
     }
     // Initial parent resolution accepts the author's existing aliases and `..`.
     // All subsequent attribute operations use this held directory descriptor.
-    let (parent, name) = match path.file_name() {
+    use std::os::unix::ffi::OsStrExt;
+    let raw = path.as_os_str().as_bytes();
+    let directory_suffix = raw.ends_with(b"/") || raw.ends_with(b"/.");
+    let (parent, name) = match path.file_name().filter(|_| !directory_suffix) {
         Some(name) => (
             path.parent()
                 .filter(|p| !p.as_os_str().is_empty())

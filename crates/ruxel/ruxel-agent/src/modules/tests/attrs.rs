@@ -69,6 +69,28 @@ fn unreadable_owner_file_and_alias_prefix_preserve_check_semantics() {
     );
 }
 
+#[test]
+fn terminal_dot_preserves_authored_directory_resolution() {
+    let root = Root::new();
+    let directory = root.path().join("directory");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let alias = root.path().join("alias");
+    symlink(&directory, &alias).unwrap();
+    let attrs = json!({"mode":"0750"});
+    for path in [
+        alias.join("."),
+        std::path::PathBuf::from(format!("{}/", alias.display())),
+    ] {
+        let mut changed = false;
+        apply_attrs(&path, attrs.as_object().unwrap(), &mut changed, false).unwrap();
+        assert_eq!(
+            std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            0o750
+        );
+    }
+}
+
 struct Root(std::path::PathBuf);
 impl Root {
     fn new() -> Self {
