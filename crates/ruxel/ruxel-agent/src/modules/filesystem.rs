@@ -75,10 +75,23 @@ fn open_locked_device(dev: &str) -> Result<std::fs::File, String> {
 
 #[cfg(target_os = "linux")]
 fn probe_file(file: &std::fs::File) -> Result<Option<String>, String> {
-    use rsblkid::{device::TagName, probe::Probe};
+    use rsblkid::{
+        device::TagName,
+        probe::{FsProperty, Probe},
+    };
     let cloned = file.try_clone().map_err(|e| e.to_string())?;
+    let mut sector_command = std::process::Command::new("blockdev");
+    sector_command
+        .args(["--getss", "/proc/self/fd/0"])
+        .stdin(std::process::Stdio::from(
+            file.try_clone().map_err(|e| e.to_string())?,
+        ));
+    let output = super::run_checked(sector_command)?;
+    let sector_size = parse_sector_size(&output.stdout)?;
     let mut probe = Probe::builder()
         .scan_file(cloned)
+        .bytes_per_sector(sector_size)
+        .collect_fs_properties([FsProperty::Type, FsProperty::Usage])
         .scan_device_partitions(true)
         .build()
         .map_err(|e| format!("filesystem: probe initialization failed: {e}"))?;
@@ -93,6 +106,19 @@ fn probe_file(file: &std::fs::File) -> Result<Option<String>, String> {
         .lookup_device_property_value(TagName::Type)
         .map(|v| v.value().to_owned());
     classify_probe(result, partition, usage.as_deref(), kind)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_sector_size(output: &[u8]) -> Result<u32, String> {
+    let size: u32 = std::str::from_utf8(output)
+        .map_err(|_| "filesystem: invalid sector size")?
+        .trim()
+        .parse()
+        .map_err(|_| "filesystem: invalid sector size")?;
+    if size < 512 || !size.is_power_of_two() {
+        return Err("filesystem: unsupported logical sector size".into());
+    }
+    Ok(size)
 }
 
 #[cfg(target_os = "linux")]
@@ -295,6 +321,16 @@ mod tests {
             Some(5_240_832)
         );
         assert_eq!(super::parse_ext4_block_count("Block size: 4096\n"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn validates_logical_sector_size() {
+        assert_eq!(super::parse_sector_size(b"512\n").unwrap(), 512);
+        assert_eq!(super::parse_sector_size(b"4096\n").unwrap(), 4096);
+        for output in [&b"0"[..], &b"1023"[..], &b"invalid"[..]] {
+            assert!(super::parse_sector_size(output).is_err());
+        }
     }
 
     #[cfg(target_os = "linux")]
