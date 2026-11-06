@@ -11,8 +11,21 @@ pub(super) fn login_port(obj: &serde_json::Map<String, Value>) -> String {
     )
 }
 
+pub(super) struct PgContext<'a> {
+    pub(super) exec: &'a ExecContext,
+    pub(super) login_user: Option<&'a str>,
+}
+
+impl std::ops::Deref for PgContext<'_> {
+    type Target = ExecContext;
+
+    fn deref(&self) -> &Self::Target {
+        self.exec
+    }
+}
+
 pub(super) fn psql(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     db: Option<&str>,
     sql: &str,
@@ -21,11 +34,12 @@ pub(super) fn psql(
         become_user: ctx.become_user.clone(),
         port: port.to_string(),
         database: db.map(str::to_string),
+        login_user: ctx.login_user.map(str::to_owned),
     };
     SESSIONS.with(|sessions| {
         let mut sessions = sessions.borrow_mut();
         if !sessions.contains_key(&key) {
-            sessions.insert(key.clone(), PsqlSession::spawn(ctx, &key)?);
+            sessions.insert(key.clone(), PsqlSession::spawn(ctx.exec, &key)?);
         }
         let result = sessions.get_mut(&key).expect("session inserted").query(sql);
         if result.is_err() {
@@ -40,6 +54,7 @@ struct SessionKey {
     become_user: Option<String>,
     port: String,
     database: Option<String>,
+    login_user: Option<String>,
 }
 
 struct PsqlSession {
@@ -62,6 +77,10 @@ pub(crate) fn shutdown() {
 impl PsqlSession {
     fn spawn(ctx: &ExecContext, key: &SessionKey) -> Result<Self, String> {
         let mut args = vec!["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-p", &key.port];
+        if let Some(user) = &key.login_user {
+            args.push("--username");
+            args.push(user);
+        }
         if let Some(database) = &key.database {
             args.push("-d");
             args.push(database);

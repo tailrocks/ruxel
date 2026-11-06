@@ -1,10 +1,14 @@
 use super::{
-    ExecContext, Value, b64_decode, b64_encode, ident, json, lit, login_port, params_object, psql,
-    role_flag_tokens, str_param, validate_role_attr_flags,
+    ExecContext, PgContext, Value, b64_decode, b64_encode, ident, json, lit, login_port,
+    params_object, psql, role_flag_tokens, str_param, validate_role_attr_flags,
 };
 
 pub(crate) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
+    let ctx = &PgContext {
+        exec: ctx,
+        login_user: str_param(obj, "login_user"),
+    };
     let name = str_param(obj, "name").ok_or("postgresql_db: name required")?;
     let owner = str_param(obj, "owner");
     let state = str_param(obj, "state").unwrap_or("present");
@@ -61,6 +65,10 @@ pub(crate) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 pub(crate) fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
+    let ctx = &PgContext {
+        exec: ctx,
+        login_user: str_param(obj, "login_user"),
+    };
     let name = str_param(obj, "name").ok_or("postgresql_user: name required")?;
     let password = str_param(obj, "password");
     let role_attr_flags = str_param(obj, "role_attr_flags");
@@ -131,7 +139,7 @@ pub(crate) fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 }
 
 fn password_changed(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     name: &str,
     password: &str,
@@ -189,7 +197,7 @@ fn flags_to_sql(flags: &str) -> String {
         .join(" ")
 }
 
-fn flags_changed(ctx: &ExecContext, port: &str, name: &str, flags: &str) -> Result<bool, String> {
+fn flags_changed(ctx: &PgContext<'_>, port: &str, name: &str, flags: &str) -> Result<bool, String> {
     let row = psql(
         ctx,
         port,
@@ -238,6 +246,10 @@ pub(super) fn wanted_flag(flags: &str, positive: &str) -> Option<bool> {
 
 pub(crate) fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
+    let ctx = &PgContext {
+        exec: ctx,
+        login_user: str_param(obj, "login_user"),
+    };
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_schema: login_db required")?;
     let state = str_param(obj, "state").unwrap_or("present");

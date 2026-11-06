@@ -1,3 +1,4 @@
+mod connection;
 mod roles;
 
 use super::*;

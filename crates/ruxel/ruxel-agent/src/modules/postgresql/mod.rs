@@ -32,6 +32,6 @@ pub(super) use privileges::privs;
 #[cfg(test)]
 use privileges::{default_priv_query, grant_sql};
 pub(super) use session::shutdown;
-use session::{login_port, psql};
+use session::{PgContext, login_port, psql};
 #[cfg(test)]
 mod tests;

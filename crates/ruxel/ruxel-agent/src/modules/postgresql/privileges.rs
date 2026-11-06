@@ -1,10 +1,14 @@
 use super::{
-    ExecContext, Value, acl_privileges, ident, json, lit, login_port, params_object, psql,
-    str_param, validate_privs,
+    ExecContext, PgContext, Value, acl_privileges, ident, json, lit, login_port, params_object,
+    psql, str_param, validate_privs,
 };
 
 pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
+    let ctx = &PgContext {
+        exec: ctx,
+        login_user: str_param(obj, "login_user"),
+    };
     let login_db = str_param(obj, "login_db").ok_or("postgresql_privs: login_db required")?;
     let role = str_param(obj, "role").ok_or("postgresql_privs: role required")?;
     let typ = str_param(obj, "type").unwrap_or("table");
@@ -85,7 +89,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 }
 
 fn privs_missing_database(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     objs: &str,
     role: &str,
@@ -115,7 +119,7 @@ fn privs_missing_database(
 }
 
 fn privs_missing_schema(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     db: &str,
     role: &str,
@@ -146,7 +150,7 @@ fn privs_missing_schema(
 }
 
 fn privs_missing_table(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     db: &str,
     role: &str,
@@ -233,7 +237,7 @@ pub(super) fn default_priv_query(
 }
 
 fn privs_missing_default(
-    ctx: &ExecContext,
+    ctx: &PgContext<'_>,
     port: &str,
     db: &str,
     role: &str,
