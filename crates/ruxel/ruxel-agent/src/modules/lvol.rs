@@ -47,12 +47,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if !ctx.check_mode {
                 let flag = if relative { "-l" } else { "-L" };
                 let mut args = vec![flag.to_string(), size.to_string()];
-                if resizefs {
-                    args.insert(0, "-r".to_string());
-                }
                 args.push(lv_path(vg, lv));
                 let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
                 run_cmd(if relative { "lvextend" } else { "lvresize" }, &args_ref)?;
+                if let Some(fstype) = filesystem_type.as_deref() {
+                    super::filesystem::run(
+                        &json!({"dev": lv_path(vg, lv), "fstype": fstype, "resizefs": true}),
+                        ctx,
+                    )?;
+                }
             }
         }
     } else {
