@@ -4,6 +4,7 @@ mod commands;
 use clap::Parser;
 use cli::{Cli, Command, ConfigCommand};
 use ruxel::exit::ExitCode;
+use std::io::Write;
 
 fn main() {
     let code = match Cli::try_parse() {
@@ -12,8 +13,13 @@ fn main() {
                 ConfigCommand::Dump { root, raw: _ } => match commands::config::dump(&root) {
                     Ok(()) => ExitCode::Success,
                     Err(error) => {
-                        eprintln!("{error}");
-                        ExitCode::Config
+                        if writeln!(std::io::stderr().lock(), "{error}").is_err()
+                            || !error.is::<ruxel_config::ConfigError>()
+                        {
+                            ExitCode::Internal
+                        } else {
+                            ExitCode::Config
+                        }
                     }
                 },
             },
