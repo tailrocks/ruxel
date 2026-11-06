@@ -100,3 +100,16 @@ fn unsupported_surface_fields_are_rejected_before_execution() -> anyhow::Result<
     }
     Ok(())
 }
+
+#[test]
+fn rescue_and_always_require_block_tasks() {
+    for section in ["rescue", "always"] {
+        let child = json!({"name":"cleanup","operation":{"kind":"debug"}});
+        let mut value = config(json!({"kind":"debug"}));
+        value["plays"][0]["tasks"][0][section] = json!([child.clone()]);
+        assert!(validate_config(&value).is_err(), "operation with {section}");
+        value["plays"][0]["tasks"][0]["operation"] = Value::Null;
+        value["plays"][0]["tasks"][0]["block"] = json!([child]);
+        assert!(validate_config(&value).is_ok(), "block with {section}");
+    }
+}

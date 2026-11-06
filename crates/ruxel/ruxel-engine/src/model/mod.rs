@@ -124,6 +124,10 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             task.operation.is_some() == task.block.is_empty(),
             "task requires operation or nonempty block"
         );
+        ensure!(
+            task.operation.is_none() || (task.rescue.is_empty() && task.always.is_empty()),
+            "rescue and always require a block task"
+        );
         ensure!(task.retries >= 1, "retries must be positive");
         if let Some(destination) = &task.delegate_to {
             if destination.is_object() {

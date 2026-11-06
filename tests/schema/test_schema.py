@@ -31,6 +31,16 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
         self.assertEqual(tasks[12]["operation"]["password"]["provider"], "synthetic")
 
+    def test_rescue_and_always_require_block_tasks(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        child = 'new R.Task { name = "cleanup"; operation = new R.Debug {} }'
+        for section in ("rescue", "always"):
+            with self.subTest(section=section):
+                invalid = f'new R.Task {{ name = "run"; operation = new R.Debug {{}}; {section} {{ {child} }} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + invalid).returncode, 0)
+                valid = f'new R.Task {{ name = "block"; block {{ {child} }}; {section} {{ {child} }} }}'
+                self.assertEqual(self.evaluate(prefix + 'value = ' + valid).returncode, 0)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
