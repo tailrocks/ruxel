@@ -293,6 +293,7 @@ impl<B: Backend> Runner<'_, B> {
             .max(1);
         let mut result = Value::Null;
         let mut changed = false;
+        let mut executed = 0;
         for attempt in 0..attempts {
             let tracked = self
                 .backend
@@ -300,6 +301,7 @@ impl<B: Backend> Runner<'_, B> {
                 .await?;
             sensitive |= tracked.is_secret();
             result = tracked.value;
+            executed = attempt + 1;
             if !result.is_object() {
                 bail!("operation result must be an object");
             }
@@ -348,6 +350,9 @@ impl<B: Backend> Runner<'_, B> {
         }
         if changed {
             result["changed"] = Value::Bool(true);
+        }
+        if task.get("until").is_some_and(|value| !value.is_null()) {
+            result["attempts"] = Value::from(executed);
         }
         Ok(if sensitive {
             TrackedValue::secret(result)
