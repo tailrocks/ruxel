@@ -545,7 +545,7 @@ impl<B: Backend> Runner<'_, B> {
                         .and_then(Value::as_str)
                         .unwrap_or("Press Enter to continue");
                     self.backend
-                        .event(&json!({"host":self.host,"pause":prompt}))?;
+                        .event(&json!({"host":self.host,"pause":if layer.no_log { "[censored]" } else { prompt }}))?;
                     if std::io::stdin().is_terminal() {
                         let _ = tokio::task::spawn_blocking(|| {
                             let mut line = String::new();
@@ -615,6 +615,15 @@ impl<B: Backend> Runner<'_, B> {
         } else {
             item.to_string()
         };
+        let free_form = if kind == "shell" {
+            params
+                .get("cmd")
+                .and_then(Value::as_str)
+                .context("shell requires a string cmd")?
+                .to_owned()
+        } else {
+            String::new()
+        };
         let request = Request {
             host: destination,
             task: v1::RenderedTask {
@@ -625,7 +634,7 @@ impl<B: Backend> Runner<'_, B> {
                 iterations: vec![v1::Iteration {
                     item_label,
                     params_json: serde_json::to_vec(&params)?,
-                    free_form: String::new(),
+                    free_form,
                     ledger_key: String::new(),
                 }],
                 check_mode_override: !matches!(self.options.mode, Mode::Check | Mode::Diff)
@@ -703,6 +712,7 @@ mod tests {
     struct Fake {
         calls: Vec<Request>,
         events: Vec<Value>,
+        results: std::collections::VecDeque<Value>,
     }
     impl Backend for Fake {
         fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
@@ -729,7 +739,10 @@ mod tests {
         }
         fn execute(&mut self, request: Request) -> impl Future<Output = Result<Value>> {
             self.calls.push(request);
-            std::future::ready(Ok(json!({"changed":true})))
+            std::future::ready(Ok(self
+                .results
+                .pop_front()
+                .unwrap_or_else(|| json!({"changed":true}))))
         }
         fn event(&mut self, event: &Value) -> Result<()> {
             self.events.push(event.clone());
@@ -779,6 +792,45 @@ mod tests {
         assert!(backend.calls[0].task.force_check_mode);
         assert_eq!(backend.events[0]["result"]["censored"], true);
         assert!(!backend.events[0].to_string().contains("private"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retry_delegation_and_unrescued_always() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","retries":2,"operation":{"kind":"command","cmd":"try"}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","cmd":"never"}}]}]});
+        let mut backend = Fake {
+            results: [
+                json!({"failed":true}),
+                json!({"failed":true}),
+                json!({"changed":false}),
+            ]
+            .into(),
+            ..Fake::default()
+        };
+        let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        assert_eq!(backend.calls.len(), 3);
+        assert_eq!(backend.calls[0].host, "other");
+        assert_eq!(backend.calls[1].host, "other");
+        assert_eq!(backend.calls[2].task.name, "cleanup");
+        assert_eq!(backend.calls[2].task.iterations[0].free_form, "cleanup");
+        assert_eq!(recap["h"].failed, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ignored_failure_continues_and_block_censors_children() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","noLog":true,"block":[{"name":"bad","operation":{"kind":"fail","msg":"private"},"ignoreErrors":true},{"name":"next","operation":{"kind":"command","cmd":"private"}}]}]}]});
+        let mut backend = Fake::default();
+        let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        assert_eq!(recap["h"].ignored, 1);
+        assert_eq!(backend.calls.len(), 1);
+        assert!(backend.calls[0].task.no_log);
+        assert!(
+            !backend
+                .events
+                .iter()
+                .any(|event| event.to_string().contains("private"))
+        );
         Ok(())
     }
 
