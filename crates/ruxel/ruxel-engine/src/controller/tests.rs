@@ -8,6 +8,7 @@ mod inventory;
 mod loop_vars;
 mod more;
 mod persistence;
+mod plan_redaction;
 mod smoke;
 
 #[derive(Default)]
