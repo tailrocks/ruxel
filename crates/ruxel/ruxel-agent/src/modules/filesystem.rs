@@ -24,11 +24,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     match current.as_deref() {
         Some(t) if t == fstype => {
             if resizefs {
-                if ctx.check_mode {
-                    changed |= can_grow(dev, fstype)?;
-                } else {
-                    changed |= grow(dev, fstype)?;
+                #[cfg(target_os = "linux")]
+                {
+                    if ctx.check_mode {
+                        changed |= can_grow(&file, fstype)?;
+                    } else {
+                        changed |= grow(&file, fstype)?;
+                    }
                 }
+                #[cfg(not(target_os = "linux"))]
+                return Err("filesystem: resizing requires Linux".into());
             }
         }
         Some(other) => {
@@ -181,19 +186,32 @@ fn mkfs_program(fstype: &str) -> Result<&'static str, String> {
     }
 }
 
-fn can_grow(dev: &str, fstype: &str) -> Result<bool, String> {
-    let mut command = std::process::Command::new("blockdev");
-    command.args(["--getsize64", dev]);
-    let out = super::run_checked(command)?;
+#[cfg(target_os = "linux")]
+fn run_on_file(
+    file: &std::fs::File,
+    program: &str,
+    args: &[&str],
+) -> Result<std::process::Output, String> {
+    let mut command = std::process::Command::new(program);
+    command
+        .args(args)
+        .arg("/proc/self/fd/0")
+        .stdin(std::process::Stdio::from(
+            file.try_clone().map_err(|e| e.to_string())?,
+        ));
+    super::run_checked(command)
+}
+
+#[cfg(target_os = "linux")]
+fn can_grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
+    let out = run_on_file(file, "blockdev", &["--getsize64"])?;
     let device_bytes: u64 = String::from_utf8_lossy(&out.stdout)
         .trim()
         .parse()
         .map_err(|_| "filesystem: invalid device size")?;
     let (blocks, block_size) = match fstype {
         "ext4" => {
-            let mut command = std::process::Command::new("tune2fs");
-            command.args(["-l", dev]);
-            let out = super::run_checked(command)?;
+            let out = run_on_file(file, "tune2fs", &["-l"])?;
             let text = String::from_utf8_lossy(&out.stdout);
             (
                 parse_ext4_field(&text, "Block count"),
@@ -201,10 +219,8 @@ fn can_grow(dev: &str, fstype: &str) -> Result<bool, String> {
             )
         }
         "xfs" => {
-            let mountpoint = xfs_mountpoint(dev)?;
-            let mut command = std::process::Command::new("xfs_info");
-            command.arg(mountpoint);
-            let out = super::run_checked(command)?;
+            let mount = xfs_mount(file)?;
+            let out = run_on_file(&mount, "xfs_info", &[])?;
             let text = String::from_utf8_lossy(&out.stdout);
             (
                 parse_xfs_field(&text, "blocks="),
@@ -224,44 +240,47 @@ fn has_growth_space(device_bytes: u64, block_size: u64, blocks: u64) -> bool {
     device_bytes / block_size > blocks
 }
 
-fn xfs_mountpoint(dev: &str) -> Result<String, String> {
-    let mut find = std::process::Command::new("findmnt");
-    find.args(["-n", "-o", "TARGET", "--source", dev]);
-    let output = super::run_checked(find)?;
+#[cfg(target_os = "linux")]
+fn xfs_mount(file: &std::fs::File) -> Result<std::fs::File, String> {
+    use std::os::unix::fs::MetadataExt;
+    let output = run_on_file(file, "findmnt", &["-n", "-o", "TARGET", "--source"])?;
     let mountpoint = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if mountpoint.is_empty() || mountpoint.lines().count() != 1 {
-        return Err(format!("filesystem: expected one mountpoint for {dev}"));
+        return Err("filesystem: expected one XFS mountpoint".into());
     }
-    Ok(mountpoint)
+    let mount = std::fs::File::open(&mountpoint)
+        .map_err(|e| format!("filesystem: open mountpoint: {e}"))?;
+    if mount.metadata().map_err(|e| e.to_string())?.dev()
+        != file.metadata().map_err(|e| e.to_string())?.rdev()
+    {
+        return Err("filesystem: XFS mountpoint does not match opened device".into());
+    }
+    Ok(mount)
 }
 
-fn grow(dev: &str, fstype: &str) -> Result<bool, String> {
+#[cfg(target_os = "linux")]
+fn grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
     match fstype {
         "xfs" => {
-            let mountpoint = xfs_mountpoint(dev)?;
-            let before = xfs_block_count(&mountpoint)?;
-            let mut command = std::process::Command::new("xfs_growfs");
-            command.arg(&mountpoint);
-            super::run_checked(command)?;
-            Ok(xfs_block_count(&mountpoint)? > before)
+            let mount = xfs_mount(file)?;
+            let before = xfs_block_count(&mount)?;
+            run_on_file(&mount, "xfs_growfs", &[])?;
+            Ok(xfs_block_count(&mount)? > before)
         }
         "ext4" => {
-            let before = ext4_block_count(dev)?;
-            let mut command = std::process::Command::new("resize2fs");
-            command.arg(dev);
-            super::run_checked(command)?;
-            Ok(ext4_block_count(dev)? > before)
+            let before = ext4_block_count(file)?;
+            run_on_file(file, "resize2fs", &[])?;
+            Ok(ext4_block_count(file)? > before)
         }
-        _ => Ok(false),
+        _ => Err(format!("filesystem: unsupported resize type {fstype:?}")),
     }
 }
 
-fn xfs_block_count(mountpoint: &str) -> Result<u64, String> {
-    let mut command = std::process::Command::new("xfs_info");
-    command.arg(mountpoint);
-    let output = super::run_checked(command)?;
+#[cfg(target_os = "linux")]
+fn xfs_block_count(mount: &std::fs::File) -> Result<u64, String> {
+    let output = run_on_file(mount, "xfs_info", &[])?;
     parse_xfs_block_count(&String::from_utf8_lossy(&output.stdout))
-        .ok_or_else(|| format!("xfs_info {mountpoint}: missing data block count"))
+        .ok_or_else(|| "xfs_info: missing data block count".into())
 }
 
 fn parse_xfs_block_count(output: &str) -> Option<u64> {
@@ -279,19 +298,11 @@ fn parse_xfs_field(output: &str, prefix: &str) -> Option<u64> {
     })
 }
 
-fn ext4_block_count(dev: &str) -> Result<u64, String> {
-    let out = std::process::Command::new("tune2fs")
-        .args(["-l", dev])
-        .output()
-        .map_err(|e| format!("exec tune2fs: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "tune2fs -l {dev}: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+#[cfg(target_os = "linux")]
+fn ext4_block_count(file: &std::fs::File) -> Result<u64, String> {
+    let out = run_on_file(file, "tune2fs", &["-l"])?;
     parse_ext4_block_count(&String::from_utf8_lossy(&out.stdout))
-        .ok_or_else(|| format!("tune2fs -l {dev}: missing Block count"))
+        .ok_or_else(|| "tune2fs: missing Block count".into())
 }
 
 fn parse_ext4_block_count(output: &str) -> Option<u64> {
@@ -400,6 +411,5 @@ mod tests {
             Some(5_242_880)
         );
         assert_eq!(super::parse_xfs_block_count("meta-data= blocks=9\n"), None);
-        assert!(!super::grow("/does/not/matter", "btrfs").unwrap());
     }
 }
