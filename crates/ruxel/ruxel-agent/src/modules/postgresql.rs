@@ -191,6 +191,31 @@ fn validate_privs(privs: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn acl_privileges(privs: &str, object_type: &str) -> Vec<String> {
+    let all: &[&str] = match object_type {
+        "database" => &["CREATE", "CONNECT", "TEMPORARY"],
+        "schema" => &["CREATE", "USAGE"],
+        "table" | "default_privs" => &[
+            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
+        ],
+        _ => &[],
+    };
+    let mut result = Vec::new();
+    for privilege in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let privilege = privilege.to_uppercase();
+        if privilege == "ALL" || privilege == "ALL PRIVILEGES" {
+            result.extend(all.iter().map(|p| (*p).to_owned()));
+        } else if privilege == "TEMP" {
+            result.push("TEMPORARY".to_owned());
+        } else {
+            result.push(privilege);
+        }
+    }
+    result.sort_unstable();
+    result.dedup();
+    result
+}
+
 fn validate_role_attr_flags(flags: &str) -> Result<(), String> {
     const ALLOWED: &[&str] = &[
         "SUPERUSER",
@@ -593,7 +618,7 @@ fn privs_missing_database(
     privs: &str,
 ) -> Result<bool, String> {
     for db in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for p in acl_privileges(privs, "database") {
             let held = psql(
                 ctx,
                 port,
@@ -624,7 +649,7 @@ fn privs_missing_schema(
     privs: &str,
 ) -> Result<bool, String> {
     for schema in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for p in acl_privileges(privs, "schema") {
             let held = psql(
                 ctx,
                 port,
@@ -685,7 +710,7 @@ fn privs_missing_table(
         return Ok(false);
     }
     for (sch, tbl) in &tables {
-        for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for p in acl_privileges(privs, "table") {
             let held = psql(
                 ctx,
                 port,
@@ -752,12 +777,12 @@ fn privs_missing_default(
         None => vec![None],
     };
     for target in targets {
-        for privilege in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for privilege in acl_privileges(privs, "default_privs") {
             let held = psql(
                 ctx,
                 port,
                 Some(db),
-                &default_priv_query(role, schema, privilege, target),
+                &default_priv_query(role, schema, &privilege, target),
             )?;
             if held != "1" {
                 return Ok(true);
@@ -894,6 +919,24 @@ fn b64_decode(s: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn acl_probes_expand_all_and_normalize_temp() {
+        for (kind, held) in [
+            ("database", vec!["CONNECT", "CREATE", "TEMPORARY"]),
+            ("schema", vec!["CREATE", "USAGE"]),
+            ("table", vec!["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]),
+            ("default_privs", vec!["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]),
+        ] {
+            for requested in ["ALL", "all privileges"] {
+                let probes = super::acl_privileges(requested, kind);
+                assert_eq!(probes, held);
+                assert!(probes.iter().all(|privilege| held.contains(&privilege.as_str())));
+                assert!(probes.iter().any(|privilege| !held[1..].contains(&privilege.as_str())));
+            }
+        }
+        assert_eq!(super::acl_privileges("temp, TEMPORARY", "database"), ["TEMPORARY"]);
+    }
 
     #[test]
     fn b64_roundtrip() {
