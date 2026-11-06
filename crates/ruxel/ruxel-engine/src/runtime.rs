@@ -295,6 +295,7 @@ impl Backend for Execution {
     }
 }
 
+mod connect;
 mod scheduler;
 use scheduler::run_plays;
 
@@ -335,18 +336,11 @@ pub async fn run(
             values: Mutex::new(Vec::new()),
         }),
     };
-    let mut facts = BTreeMap::new();
     let result = async {
-        if options.mode != Mode::Plan {
-
-            for host in controller::selected_hosts(config, options)? {
-                let gathered = execution.connect(&host).await?;
-                facts.insert(host.clone(),json!({"default_ipv4_interface":gathered.default_ipv4_interface,"distribution_release":gathered.distribution_release,"architecture":gathered.architecture,"hostname":gathered.hostname}));
-
-            }
-        }
-        run_plays(config, &facts, options, &execution).await
-    }.await;
+        let (facts, failed) = connect::preconnect(config, options, &execution).await?;
+        run_plays(config, &facts, options, &execution, failed).await
+    }
+    .await;
     let mut shutdown_errors = Vec::new();
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
