@@ -1,0 +1,51 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "tests require successful protocol frames"
+)]
+use super::{ConnectOptions, RemoteHost, read_frame, write_frame};
+use ruxel_proto::v1;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+#[test]
+fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
+    let host = RemoteHost {
+        destination: "synthetic.invalid".into(),
+        options: ConnectOptions::default(),
+    };
+    let command = host.client();
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(command.as_std().get_program(), "ssh");
+    assert!(
+        !args
+            .iter()
+            .any(|arg| ["-M", "-S", "-O", "-A", "-J"].contains(&arg.as_str()))
+    );
+    assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
+    assert_eq!(args.last().map(String::as_str), Some("synthetic.invalid"));
+}
+
+#[tokio::test]
+async fn async_and_sync_framing_are_byte_identical() {
+    let message = v1::Envelope {
+        msg: Some(v1::envelope::Msg::Hello(v1::Hello {
+            proto_version: ruxel_proto::PROTO_VERSION,
+            run_id: "codec-identity".into(),
+            ..Default::default()
+        })),
+    };
+    let sync = ruxel_proto::frame::encode_frame(&message);
+    let (mut writer, mut reader) = tokio::io::duplex(1024);
+    write_frame(&mut writer, &message).await.unwrap();
+    let mut asynchronous = vec![0; sync.len()];
+    reader.read_exact(&mut asynchronous).await.unwrap();
+    assert_eq!(asynchronous, sync);
+
+    let (mut writer, mut reader) = tokio::io::duplex(1024);
+    writer.write_all(&sync).await.unwrap();
+    let decoded: v1::Envelope = read_frame(&mut reader).await.unwrap().unwrap();
+    assert_eq!(decoded, message);
+}

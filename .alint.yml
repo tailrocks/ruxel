@@ -14,7 +14,6 @@ ignore:
   # path. Never add live code here.
   - "tools/**"
   - "crates/ruxel/ruxel/build.rs"
-  - "crates/ruxel/ruxel-engine/src/transport.rs"
   - "crates/ruxel/ruxel-agent/src/main.rs"
   - "crates/ruxel/ruxel-agent/src/facts.rs"
   - "crates/ruxel/ruxel-agent/src/modules/apt.rs"

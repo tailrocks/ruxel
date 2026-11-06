@@ -1,17 +1,3 @@
-#![expect(
-    clippy::let_underscore_must_use,
-    clippy::expect_used,
-    clippy::missing_errors_doc,
-    clippy::items_after_statements,
-    clippy::cast_possible_truncation,
-    missing_debug_implementations,
-    reason = "replaced by the Ruxel rewrite"
-)]
-#![cfg_attr(
-    test,
-    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
-)]
-
 mod local;
 pub use local::LocalConnection;
 
@@ -21,14 +7,12 @@ use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::constants::{AGENT_DIR, HANDSHAKE_TIMEOUT_SECS};
 use ruxel_proto::v1::{self, envelope::Msg as EnvMsg, event::Msg as EvMsg};
 use sha2::{Digest, Sha256};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ConnectOptions {
     pub port: Option<u16>,
     pub keyfile: Option<PathBuf>,
@@ -38,99 +22,28 @@ pub struct ConnectOptions {
     pub no_cache: bool,
 }
 
-struct Master {
+struct RemoteHost {
     destination: String,
-    socket: PathBuf,
     options: ConnectOptions,
-    process: Child,
 }
 
-impl Drop for Master {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.socket);
-    }
-}
-
-static SOCKET_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn socket_name() -> String {
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let sequence = SOCKET_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!("ruxel-mux-{}-{epoch:x}-{sequence:x}", std::process::id())
-}
-
-impl Master {
-    async fn establish(destination: &str, options: &ConnectOptions) -> Result<Self> {
-        let socket_dir = socket_dir()?;
-        std::fs::create_dir_all(&socket_dir)
-            .with_context(|| format!("create socket directory {}", socket_dir.display()))?;
-        std::fs::set_permissions(&socket_dir, std::fs::Permissions::from_mode(0o700))
-            .with_context(|| format!("secure socket directory {}", socket_dir.display()))?;
-        let socket = socket_dir.join(socket_name());
-        let mut cmd = Command::new("ssh");
-        cmd.arg("-M")
-            .arg("-N")
-            .arg("-S")
-            .arg(&socket)
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg("-o")
-            .arg("ConnectTimeout=15")
-            .arg("-o")
-            .arg("ServerAliveInterval=15")
-            .arg("-o")
-            .arg("ServerAliveCountMax=4");
-        apply_options(&mut cmd, options);
-        cmd.arg(destination)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let mut process = cmd.spawn().context("spawn ssh master")?;
-        let mut stderr = process.stderr.take().expect("piped");
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        loop {
-            if socket.exists() {
-                break;
-            }
-            if let Some(status) = process.try_wait()? {
-                let mut err = String::new();
-                let _ = stderr.read_to_string(&mut err).await;
-                bail!(
-                    "ssh master to {destination} exited {status}: {}",
-                    err.trim()
-                );
-            }
-            if std::time::Instant::now() > deadline {
-                let _ = process.kill().await;
-                bail!("ssh master to {destination}: control socket never appeared");
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-
-        Ok(Master {
-            destination: destination.to_string(),
-            socket,
-            options: options.clone(),
-            process,
-        })
-    }
-
+impl RemoteHost {
     fn client(&self) -> Command {
-        let mut cmd = Command::new("ssh");
-        cmd.arg("-S")
-            .arg(&self.socket)
-            .arg("-o")
-            .arg("BatchMode=yes");
-        apply_options(&mut cmd, &self.options);
-        cmd.arg(&self.destination);
-        cmd
+        let mut command = Command::new("ssh");
+        command.args([
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=4",
+        ]);
+        apply_options(&mut command, &self.options);
+        command.arg(&self.destination);
+        command
     }
-
     async fn exec_status(&self, argv: &[&str]) -> Result<std::process::ExitStatus> {
         let mut cmd = self.client();
         cmd.arg("--");
@@ -152,37 +65,6 @@ impl Master {
         cmd.stdin(Stdio::null()).stderr(Stdio::piped());
         cmd.output().await.context("ssh exec output")
     }
-
-    async fn close(mut self) {
-        let _ = Command::new("ssh")
-            .arg("-S")
-            .arg(&self.socket)
-            .arg("-O")
-            .arg("exit")
-            .arg(&self.destination)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-        let _ = self.process.kill().await;
-        let _ = std::fs::remove_file(&self.socket);
-    }
-}
-
-fn socket_dir() -> Result<PathBuf> {
-    socket_dir_from(
-        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
-    )
-}
-
-fn socket_dir_from(xdg_runtime: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf> {
-    if let Some(runtime) = xdg_runtime {
-        return Ok(runtime.join("ruxel"));
-    }
-    home.map(|home| home.join(".ruxel/cp"))
-        .context("neither XDG_RUNTIME_DIR nor HOME is set for SSH control socket")
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
@@ -199,23 +81,30 @@ fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
         cmd.arg("-o")
             .arg(format!("UserKnownHostsFile={}", kh.display()));
     }
-    if options.accept_new_host_key {
-        cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
-    }
+    cmd.arg("-o").arg(if options.accept_new_host_key {
+        "StrictHostKeyChecking=accept-new"
+    } else {
+        "StrictHostKeyChecking=yes"
+    });
 }
 
+#[derive(Debug)]
 pub struct AgentConnection {
-    master: Master,
     agent: Child,
     stdin: ChildStdin,
     stdout: ChildStdout,
     pub uploaded_agent: bool,
 }
 
+#[derive(Debug)]
 pub struct HostFacts {
     pub facts: v1::Facts,
 }
 
+/// Connect and verify an agent over the PATH-selected SSH client.
+///
+/// # Errors
+/// Returns an error when agent upload, verification, or protocol negotiation fails.
 pub async fn connect_with(
     destination: &str,
     agent_binary: &Path,
@@ -223,16 +112,19 @@ pub async fn connect_with(
     check_mode: bool,
     options: &ConnectOptions,
 ) -> Result<(AgentConnection, HostFacts)> {
-    let master = Master::establish(destination, options).await?;
+    let remote = RemoteHost {
+        destination: destination.to_owned(),
+        options: options.clone(),
+    };
 
     let agent_bytes = std::fs::read(agent_binary)
         .with_context(|| format!("read agent binary {}", agent_binary.display()))?;
     let b3 = blake3::hash(&agent_bytes).to_hex().to_string();
     let remote_path = format!("{AGENT_DIR}/{b3}");
 
-    let uploaded_agent = ensure_agent(&master, &remote_path, &agent_bytes).await?;
+    let uploaded_agent = ensure_agent(&remote, &remote_path, &agent_bytes).await?;
 
-    let mut agent_cmd = master.client();
+    let mut agent_cmd = remote.client();
     agent_cmd
         .arg("--")
         .arg(&remote_path)
@@ -285,7 +177,6 @@ pub async fn connect_with(
 
     Ok((
         AgentConnection {
-            master,
             agent,
             stdin,
             stdout,
@@ -298,14 +189,26 @@ pub async fn connect_with(
 }
 
 impl AgentConnection {
+    /// Send a framed request.
+    ///
+    /// # Errors
+    /// Returns protocol encoding or stream write errors.
     pub async fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
         write_frame(&mut self.stdin, envelope).await
     }
 
+    /// Read one framed event.
+    ///
+    /// # Errors
+    /// Returns malformed frame or stream read errors.
     pub async fn next_event(&mut self) -> Result<Option<v1::Event>> {
         read_frame(&mut self.stdout).await
     }
 
+    /// Flush the ledger and wait for agent termination.
+    ///
+    /// # Errors
+    /// Returns stream errors or an unsuccessful agent exit.
     pub async fn shutdown(mut self) -> Result<()> {
         write_frame(
             &mut self.stdin,
@@ -315,7 +218,6 @@ impl AgentConnection {
         )
         .await?;
         let status = self.agent.wait().await.context("agent exit")?;
-        self.master.close().await;
         if !status.success() {
             bail!("agent exited with {status:?}");
         }
@@ -323,24 +225,24 @@ impl AgentConnection {
     }
 }
 
-async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Result<bool> {
-    cleanup_stale_agent_temps(master, remote_path).await?;
-    let exists = master
+async fn ensure_agent(remote: &RemoteHost, remote_path: &str, bytes: &[u8]) -> Result<bool> {
+    cleanup_stale_agent_temps(remote, remote_path).await?;
+    let exists = remote
         .exec_status(&["test", "-x", remote_path])
         .await?
         .success();
-    if exists && remote_agent_hash_matches(master, remote_path, bytes).await? {
+    if exists && remote_agent_hash_matches(remote, remote_path, bytes).await? {
         return Ok(false);
     }
 
-    master
+    remote
         .exec_status(&["mkdir", "-p", AGENT_DIR])
         .await?
         .success()
         .then_some(())
         .context("mkdir agent dir")?;
 
-    let mut sftp_cmd = master.client();
+    let mut sftp_cmd = remote.client();
     sftp_cmd
         .arg("-s")
         .arg("sftp")
@@ -377,26 +279,28 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
     }
     .await;
     if let Err(error) = upload_result {
-        let _ = master.exec_status(&["rm", "-f", &tmp_path]).await;
+        if let Err(cleanup) = remote.exec_status(&["rm", "-f", &tmp_path]).await {
+            return Err(error.context(format!("upload cleanup also failed: {cleanup}")));
+        }
         return Err(error);
     }
 
-    master
+    remote
         .exec_status(&["chmod", "755", remote_path])
         .await?
         .success()
         .then_some(())
         .context("chmod agent")?;
 
-    if !remote_agent_hash_matches(master, remote_path, bytes).await? {
+    if !remote_agent_hash_matches(remote, remote_path, bytes).await? {
         bail!("uploaded agent failed remote content verification");
     }
 
     Ok(true)
 }
 
-async fn cleanup_stale_agent_temps(master: &Master, remote_path: &str) -> Result<()> {
-    if !master
+async fn cleanup_stale_agent_temps(remote: &RemoteHost, remote_path: &str) -> Result<()> {
+    if !remote
         .exec_status(&["test", "-d", AGENT_DIR])
         .await?
         .success()
@@ -408,7 +312,7 @@ async fn cleanup_stale_agent_temps(master: &Master, remote_path: &str) -> Result
         .and_then(|name| name.to_str())
         .context("agent path has no UTF-8 file name")?;
     let pattern = format!("{name}.tmp-*");
-    master
+    remote
         .exec_status(&[
             "find",
             AGENT_DIR,
@@ -426,12 +330,14 @@ async fn cleanup_stale_agent_temps(master: &Master, remote_path: &str) -> Result
         .context("clean stale agent upload files")
 }
 
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
 async fn remote_agent_hash_matches(
-    master: &Master,
+    remote: &RemoteHost,
     remote_path: &str,
     bytes: &[u8],
 ) -> Result<bool> {
-    let output = master.exec_output(&["sha256sum", remote_path]).await?;
+    let output = remote.exec_output(&["sha256sum", remote_path]).await?;
     if !output.status.success() {
         return Ok(false);
     }
@@ -442,7 +348,7 @@ async fn remote_agent_hash_matches(
         .to_ascii_lowercase();
     let digest = Sha256::digest(bytes);
     let mut expected = String::with_capacity(digest.len() * 2);
-    const HEX: &[u8; 16] = b"0123456789abcdef";
+
     for byte in digest {
         expected.push(HEX[(byte >> 4) as usize] as char);
         expected.push(HEX[(byte & 0x0f) as usize] as char);
@@ -483,63 +389,10 @@ async fn read_frame<M: Message + Default>(r: &mut (impl AsyncRead + Unpin)) -> R
     if len > ruxel_proto::frame::MAX_FRAME_LEN {
         bail!("frame of {len} bytes exceeds MAX_FRAME_LEN");
     }
-    let mut body = vec![0u8; len as usize];
+    let mut body = vec![0u8; usize::try_from(len).context("frame length exceeds address space")?];
     r.read_exact(&mut body).await?;
     Ok(Some(M::decode(body.as_slice())?))
 }
 
 #[cfg(test)]
-mod transport_security_tests {
-    use super::{read_frame, socket_dir_from, socket_name, write_frame};
-    use ruxel_proto::v1;
-    use std::collections::HashSet;
-    use std::path::PathBuf;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    #[test]
-    fn socket_directory_is_private_location_not_tmp() {
-        assert_eq!(
-            socket_dir_from(Some(PathBuf::from("/run/user/1000")), None).unwrap(),
-            PathBuf::from("/run/user/1000/ruxel")
-        );
-        assert_eq!(
-            socket_dir_from(None, Some(PathBuf::from("/home/operator"))).unwrap(),
-            PathBuf::from("/home/operator/.ruxel/cp")
-        );
-    }
-
-    #[test]
-    fn concurrent_mux_socket_names_are_unique() {
-        let names = std::thread::scope(|scope| {
-            (0..16)
-                .map(|_| scope.spawn(|| (0..1_000).map(|_| socket_name()).collect::<Vec<_>>()))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .flat_map(|thread| thread.join().unwrap())
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(names.iter().collect::<HashSet<_>>().len(), names.len());
-    }
-
-    #[tokio::test]
-    async fn async_and_sync_framing_are_byte_identical() {
-        let message = v1::Envelope {
-            msg: Some(v1::envelope::Msg::Hello(v1::Hello {
-                proto_version: ruxel_proto::PROTO_VERSION,
-                run_id: "codec-identity".into(),
-                ..Default::default()
-            })),
-        };
-        let sync = ruxel_proto::frame::encode_frame(&message);
-        let (mut writer, mut reader) = tokio::io::duplex(1024);
-        write_frame(&mut writer, &message).await.unwrap();
-        let mut asynchronous = vec![0; sync.len()];
-        reader.read_exact(&mut asynchronous).await.unwrap();
-        assert_eq!(asynchronous, sync);
-
-        let (mut writer, mut reader) = tokio::io::duplex(1024);
-        writer.write_all(&sync).await.unwrap();
-        let decoded: v1::Envelope = read_frame(&mut reader).await.unwrap().unwrap();
-        assert_eq!(decoded, message);
-    }
-}
+mod tests;

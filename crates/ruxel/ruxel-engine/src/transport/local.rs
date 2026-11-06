@@ -7,6 +7,7 @@ use std::process::Stdio;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 /// An actual agent process connected through its framed protocol.
+#[derive(Debug)]
 pub struct LocalConnection {
     child: Child,
     stdin: ChildStdin,
@@ -16,6 +17,9 @@ pub struct LocalConnection {
 impl LocalConnection {
     /// Launch an agent locally. This performs no SSH or upload operations.
     /// The caller must select safe disposable paths and commands.
+    ///
+    /// # Errors
+    /// Returns subprocess startup or protocol negotiation errors.
     pub async fn connect(
         binary: &Path,
         state: &Path,
@@ -63,14 +67,23 @@ impl LocalConnection {
     }
 
     /// Send a framed request.
+    ///
+    /// # Errors
+    /// Returns stream write errors.
     pub async fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
         write_frame(&mut self.stdin, envelope).await
     }
     /// Read the next framed event.
+    ///
+    /// # Errors
+    /// Returns stream or malformed frame errors.
     pub async fn next_event(&mut self) -> Result<Option<v1::Event>> {
         read_frame(&mut self.stdout).await
     }
     /// Flush the agent ledger and wait for clean termination.
+    ///
+    /// # Errors
+    /// Returns stream errors or an unsuccessful subprocess exit.
     pub async fn shutdown(mut self) -> Result<()> {
         self.send(&v1::Envelope {
             msg: Some(v1::envelope::Msg::Done(v1::Done {})),
