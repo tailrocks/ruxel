@@ -1,6 +1,6 @@
 # RESTORE — Current Handoff
 
-Updated: 2026-07-17. Authoritative status: `GOAL.md` and `docs/PLAN.md`.
+Updated: 2026-07-17. Authoritative status: `docs/GOAL.md` and `docs/PLAN.md`.
 
 ## Status
 
