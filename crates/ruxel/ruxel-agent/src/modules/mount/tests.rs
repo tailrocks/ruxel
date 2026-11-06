@@ -203,16 +203,17 @@ fn refuses_unrestorable_mounts_before_replacement() {
         options: "rw".into(),
     };
     let info = "1 0 8:1 / /target rw - xfs /dev/fixture rw\n";
-    assert!(super::ensure_replaceable("/target", &device, info).is_ok());
+    assert!(super::ensure_replaceable(&device).is_ok());
+    assert!(super::ensure_mount_root("/target", info).is_ok());
     let subtree = "1 0 8:1 /subdir /target rw - xfs /dev/fixture rw\n";
-    assert!(super::ensure_replaceable("/target", &device, subtree).is_err());
-    assert!(super::ensure_replaceable("/missing", &device, info).is_err());
+    assert!(super::ensure_mount_root("/target", subtree).is_err());
+    assert!(super::ensure_mount_root("/missing", info).is_err());
     let tmpfs = super::Mounted {
         source: "tmpfs".into(),
         fstype: "tmpfs".into(),
         options: "rw".into(),
     };
-    assert!(super::ensure_replaceable("/target", &tmpfs, info).is_err());
+    assert!(super::ensure_replaceable(&tmpfs).is_err());
 }
 
 #[test]
@@ -293,4 +294,18 @@ fn failed_fstab_write_removes_new_mount_or_restores_options() {
         assert_eq!(calls.len(), 2);
         assert!(calls[1].0 == "umount" || calls[1].1.contains(&"remount,rw".to_string()));
     }
+}
+
+#[test]
+fn fstab_escapes_whitespace_and_converges() {
+    let (next, changed) = super::rewrite_fstab("", "/dev/a b", "/target with space", "ext4", "rw");
+    assert!(changed);
+    assert_eq!(
+        next,
+        "/dev/a\\040b\t/target\\040with\\040space\text4\trw\t0\t0\n"
+    );
+    assert_eq!(
+        super::rewrite_fstab(&next, "/dev/a b", "/target with space", "ext4", "rw"),
+        (next, false)
+    );
 }

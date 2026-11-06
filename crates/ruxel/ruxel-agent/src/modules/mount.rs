@@ -45,20 +45,24 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if action != MountAction::None {
         changed = true;
     }
+    if matches!(action, MountAction::Replace | MountAction::Remount) {
+        let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
+            .map_err(|e| format!("mount: cannot inspect existing mount: {e}"))?;
+        ensure_mount_root(path, &mountinfo)?;
+        if action == MountAction::Replace {
+            ensure_replaceable(
+                current_mount
+                    .as_ref()
+                    .ok_or("mount: missing existing mount")?,
+            )?;
+        }
+    }
     if !ctx.check_mode {
         let desired = Mounted {
             source: src.to_string(),
             fstype: fstype.to_string(),
             options: opts.to_string(),
         };
-        if action == MountAction::Replace {
-            let old = current_mount
-                .as_ref()
-                .ok_or("mount: missing existing mount")?;
-            let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
-                .map_err(|e| format!("mount: cannot inspect existing mount: {e}"))?;
-            ensure_replaceable(path, old, &mountinfo)?;
-        }
         if action == MountAction::Mount {
             std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
         }
@@ -80,10 +84,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "name": path, "src": src, "fstype": fstype}))
 }
 
-fn ensure_replaceable(path: &str, old: &Mounted, mountinfo: &str) -> Result<(), String> {
+fn ensure_replaceable(old: &Mounted) -> Result<(), String> {
     if !matches!(old.fstype.as_str(), "ext4" | "xfs") || !old.source.starts_with("/dev/") {
         return Err("mount: cannot safely restore this existing mount type or source".into());
     }
+    Ok(())
+}
+
+fn ensure_mount_root(path: &str, mountinfo: &str) -> Result<(), String> {
     let root = mountinfo
         .lines()
         .filter_map(|line| {
@@ -94,7 +102,7 @@ fn ensure_replaceable(path: &str, old: &Mounted, mountinfo: &str) -> Result<(), 
         .next_back()
         .ok_or("mount: existing mount missing from mountinfo")?;
     if root != "/" {
-        return Err("mount: cannot safely restore a subtree mount".into());
+        return Err("mount: cannot safely modify a subtree mount".into());
     }
     Ok(())
 }
@@ -221,7 +229,7 @@ fn replace_mount(
 }
 
 fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str) -> (String, bool) {
-    let want = [src, path, fstype, opts, "0", "0"];
+    let want = [src, path, fstype, opts, "0", "0"].map(escape_fstab);
     let mut lines: Vec<String> = current.lines().map(str::to_string).collect();
     let mut found = false;
     let mut changed = false;
@@ -232,9 +240,12 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
         }
         let f: Vec<&str> = t.split_whitespace().collect();
 
-        if f.len() >= 2 && f[1] == path {
+        if f.len() >= 2 && unescape_mount(f[1]) == path {
             found = true;
-            let matches = f.len() >= 4 && f[0] == src && f[2] == fstype && opts_eq(f[3], opts);
+            let matches = f.len() >= 4
+                && unescape_mount(f[0]) == src
+                && unescape_mount(f[2]) == fstype
+                && opts_eq(&unescape_mount(f[3]), opts);
             if !matches {
                 *line = want.join("\t");
                 changed = true;
@@ -253,6 +264,13 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
     } else {
         (current.to_string(), false)
     }
+}
+
+fn escape_fstab(value: &str) -> String {
+    value
+        .replace('\\', "\\134")
+        .replace(' ', "\\040")
+        .replace('\t', "\\011")
 }
 
 fn opts_eq(a: &str, b: &str) -> bool {
