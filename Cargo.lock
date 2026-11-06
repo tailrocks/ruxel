@@ -1317,6 +1317,7 @@ dependencies = [
  "anyhow",
  "base64",
  "blake3",
+ "futures-util",
  "openssh-sftp-client",
  "percent-encoding",
  "prost",

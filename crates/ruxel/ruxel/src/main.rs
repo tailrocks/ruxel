@@ -59,6 +59,7 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
     };
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
+        jobs: usize::from(args.jobs),
         source_dir: args
             .root
             .parent()
@@ -66,6 +67,8 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
             .to_path_buf(),
         synthetic_secrets: args.synthetic_secrets,
         local_state: args.state_dir,
+        local_agent: args.local_agent,
+        controller_state: args.controller_state_dir,
     };
     let result = tokio::runtime::Runtime::new()
         .map_err(|error| error.to_string())

@@ -1,941 +1,234 @@
 use super::{Field, FieldType, Operation};
 
+macro_rules! operation {
+    ($kind:literal; $($name:literal => $required:literal, $field:expr;)*) => {
+        Operation { kind: $kind, fields: &[$(Field {name:$name, required:$required, kind:$field}),*] }
+    };
+}
+
 pub(super) const OPERATIONS: &[Operation] = &[
-    Operation {
-        kind: "apt",
-        fields: &[
-            Field {
-                name: "autoremove",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "force",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "name",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present", "latest"]),
-            },
-            Field {
-                name: "update_cache",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "upgrade",
-                required: false,
-                kind: FieldType::Choice(&["dist"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "apt_repository",
-        fields: &[
-            Field {
-                name: "filename",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "repo",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-            Field {
-                name: "update_cache",
-                required: false,
-                kind: FieldType::Flag,
-            },
-        ],
-    },
-    Operation {
-        kind: "authorized_key",
-        fields: &[
-            Field {
-                name: "key",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-            Field {
-                name: "user",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "blockinfile",
-        fields: &[
-            Field {
-                name: "block",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "create",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "group",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "mode",
-                required: false,
-                kind: FieldType::Mode,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "path",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "command",
-        fields: &[
-            Field {
-                name: "argv",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "chdir",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "cmd",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "creates",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "removes",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "copy",
-        fields: &[
-            Field {
-                name: "content",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "dest",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "force",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "group",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "mode",
-                required: false,
-                kind: FieldType::Mode,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "src",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "file",
-        fields: &[
-            Field {
-                name: "dest",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "group",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "mode",
-                required: false,
-                kind: FieldType::Mode,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "path",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "recurse",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "src",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["file", "directory", "absent", "link"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "filesystem",
-        fields: &[
-            Field {
-                name: "dev",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "fstype",
-                required: true,
-                kind: FieldType::Choice(&["ext4", "xfs"]),
-            },
-            Field {
-                name: "resizefs",
-                required: false,
-                kind: FieldType::Flag,
-            },
-        ],
-    },
-    Operation {
-        kind: "get_url",
-        fields: &[
-            Field {
-                name: "dest",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "url",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "git",
-        fields: &[
-            Field {
-                name: "accept_hostkey",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "dest",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "force",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "repo",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "update",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "version",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "group",
-        fields: &[
-            Field {
-                name: "gid",
-                required: false,
-                kind: FieldType::Number,
-            },
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present", "absent"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "iptables",
-        fields: &[
-            Field {
-                name: "chain",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "comment",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "destination",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "ip_version",
-                required: false,
-                kind: FieldType::Choice(&["ipv4", "ipv6"]),
-            },
-            Field {
-                name: "jump",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "out_interface",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "policy",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "protocol",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "lineinfile",
-        fields: &[
-            Field {
-                name: "line",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "path",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "regexp",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present", "absent"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "replace",
-        fields: &[
-            Field {
-                name: "path",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "regexp",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "replace",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "shell",
-        fields: &[
-            Field {
-                name: "argv",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "chdir",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "cmd",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "creates",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "executable",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "removes",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "slurp",
-        fields: &[Field {
-            name: "src",
-            required: true,
-            kind: FieldType::Text,
-        }],
-    },
-    Operation {
-        kind: "stat",
-        fields: &[
-            Field {
-                name: "follow",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "path",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "sysctl",
-        fields: &[
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "reload",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-            Field {
-                name: "sysctl_file",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "sysctl_set",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "value",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "systemd",
-        fields: &[
-            Field {
-                name: "daemon_reload",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "enabled",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "name",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["started", "stopped", "restarted"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "user",
-        fields: &[
-            Field {
-                name: "append",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "comment",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "create_home",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "group",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "groups",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "home",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "remove",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "shell",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present", "absent"]),
-            },
-            Field {
-                name: "system",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "uid",
-                required: false,
-                kind: FieldType::Number,
-            },
-        ],
-    },
-    Operation {
-        kind: "community.general.lvg",
-        fields: &[
-            Field {
-                name: "pvs",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "vg",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "community.general.lvol",
-        fields: &[
-            Field {
-                name: "lv",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "resizefs",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "size",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "vg",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "community.general.timezone",
-        fields: &[
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "ansible.posix.mount",
-        fields: &[
-            Field {
-                name: "fstype",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "opts",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "path",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "src",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["mounted"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "community.postgresql.postgresql_db",
-        fields: &[
-            Field {
-                name: "login_db",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "login_port",
-                required: false,
-                kind: FieldType::Port,
-            },
-            Field {
-                name: "login_user",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "community.postgresql.postgresql_user",
-        fields: &[
-            Field {
-                name: "login_db",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "login_port",
-                required: false,
-                kind: FieldType::Port,
-            },
-            Field {
-                name: "login_user",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "password",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "role_attr_flags",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "community.postgresql.postgresql_schema",
-        fields: &[
-            Field {
-                name: "login_db",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "login_port",
-                required: false,
-                kind: FieldType::Port,
-            },
-            Field {
-                name: "login_user",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "name",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "community.postgresql.postgresql_privs",
-        fields: &[
-            Field {
-                name: "login_db",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "login_port",
-                required: false,
-                kind: FieldType::Port,
-            },
-            Field {
-                name: "login_user",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "objs",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "privs",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "role",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "schema",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "state",
-                required: false,
-                kind: FieldType::Choice(&["present"]),
-            },
-            Field {
-                name: "target_roles",
-                required: false,
-                kind: FieldType::TextList,
-            },
-            Field {
-                name: "type",
-                required: true,
-                kind: FieldType::Choice(&["database", "schema", "table", "default_privs"]),
-            },
-        ],
-    },
-    Operation {
-        kind: "template",
-        fields: &[
-            Field {
-                name: "dest",
-                required: true,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "force",
-                required: false,
-                kind: FieldType::Flag,
-            },
-            Field {
-                name: "group",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "mode",
-                required: false,
-                kind: FieldType::Mode,
-            },
-            Field {
-                name: "owner",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "src",
-                required: true,
-                kind: FieldType::Text,
-            },
-        ],
-    },
-    Operation {
-        kind: "assert",
-        fields: &[
-            Field {
-                name: "fail_msg",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "that",
-                required: true,
-                kind: FieldType::TextList,
-            },
-        ],
-    },
-    Operation {
-        kind: "debug",
-        fields: &[Field {
-            name: "msg",
-            required: false,
-            kind: FieldType::Text,
-        }],
-    },
-    Operation {
-        kind: "fail",
-        fields: &[Field {
-            name: "msg",
-            required: false,
-            kind: FieldType::Text,
-        }],
-    },
-    Operation {
-        kind: "pause",
-        fields: &[
-            Field {
-                name: "prompt",
-                required: false,
-                kind: FieldType::Text,
-            },
-            Field {
-                name: "seconds",
-                required: false,
-                kind: FieldType::Number,
-            },
-            Field {
-                name: "minutes",
-                required: false,
-                kind: FieldType::Number,
-            },
-        ],
-    },
-    Operation {
-        kind: "set_fact",
-        fields: &[Field {
-            name: "values",
-            required: false,
-            kind: FieldType::ExprMap,
-        }],
-    },
+    operation!("apt";
+        "autoremove" => false, FieldType::Flag;
+        "force" => false, FieldType::Flag;
+        "name" => false, FieldType::TextList;
+        "state" => false, FieldType::Choice(&["present","latest"]);
+        "update_cache" => false, FieldType::Flag;
+        "upgrade" => false, FieldType::Choice(&["dist"]);
+    ),
+    operation!("apt_repository";
+        "filename" => false, FieldType::Text;
+        "repo" => true, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+        "update_cache" => false, FieldType::Flag;
+    ),
+    operation!("authorized_key";
+        "key" => true, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+        "user" => true, FieldType::Text;
+    ),
+    operation!("blockinfile";
+        "block" => true, FieldType::Text;
+        "create" => false, FieldType::Flag;
+        "group" => false, FieldType::Text;
+        "mode" => false, FieldType::Mode;
+        "owner" => false, FieldType::Text;
+        "path" => true, FieldType::Text;
+    ),
+    operation!("command";
+        "argv" => false, FieldType::TextList;
+        "chdir" => false, FieldType::Text;
+        "cmd" => false, FieldType::Text;
+        "creates" => false, FieldType::Text;
+        "removes" => false, FieldType::Text;
+    ),
+    operation!("copy";
+        "content" => false, FieldType::Text;
+        "dest" => true, FieldType::Text;
+        "force" => false, FieldType::Flag;
+        "group" => false, FieldType::Text;
+        "mode" => false, FieldType::Mode;
+        "owner" => false, FieldType::Text;
+        "src" => false, FieldType::Text;
+    ),
+    operation!("file";
+        "dest" => false, FieldType::Text;
+        "group" => false, FieldType::Text;
+        "mode" => false, FieldType::Mode;
+        "owner" => false, FieldType::Text;
+        "path" => false, FieldType::Text;
+        "recurse" => false, FieldType::Flag;
+        "src" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["file","directory","absent","link"]);
+    ),
+    operation!("filesystem";
+        "dev" => true, FieldType::Text;
+        "fstype" => true, FieldType::Choice(&["ext4","xfs"]);
+        "resizefs" => false, FieldType::Flag;
+    ),
+    operation!("get_url";
+        "dest" => true, FieldType::Text;
+        "url" => true, FieldType::Text;
+    ),
+    operation!("git";
+        "accept_hostkey" => false, FieldType::Flag;
+        "dest" => true, FieldType::Text;
+        "force" => false, FieldType::Flag;
+        "repo" => true, FieldType::Text;
+        "update" => false, FieldType::Flag;
+        "version" => false, FieldType::Text;
+    ),
+    operation!("group";
+        "gid" => false, FieldType::Number;
+        "name" => true, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present","absent"]);
+    ),
+    operation!("iptables";
+        "chain" => true, FieldType::Text;
+        "comment" => false, FieldType::Text;
+        "destination" => false, FieldType::Text;
+        "ip_version" => false, FieldType::Choice(&["ipv4","ipv6"]);
+        "jump" => false, FieldType::Text;
+        "out_interface" => false, FieldType::Text;
+        "policy" => false, FieldType::Text;
+        "protocol" => false, FieldType::Text;
+    ),
+    operation!("lineinfile";
+        "line" => false, FieldType::Text;
+        "path" => true, FieldType::Text;
+        "regexp" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present","absent"]);
+    ),
+    operation!("replace";
+        "path" => true, FieldType::Text;
+        "regexp" => true, FieldType::Text;
+        "replace" => false, FieldType::Text;
+    ),
+    operation!("shell";
+        "argv" => false, FieldType::TextList;
+        "chdir" => false, FieldType::Text;
+        "cmd" => false, FieldType::Text;
+        "creates" => false, FieldType::Text;
+        "executable" => false, FieldType::Text;
+        "removes" => false, FieldType::Text;
+    ),
+    operation!("slurp";
+        "src" => true, FieldType::Text;
+    ),
+    operation!("stat";
+        "follow" => false, FieldType::Flag;
+        "path" => true, FieldType::Text;
+    ),
+    operation!("sysctl";
+        "name" => true, FieldType::Text;
+        "reload" => false, FieldType::Flag;
+        "state" => false, FieldType::Choice(&["present"]);
+        "sysctl_file" => false, FieldType::Text;
+        "sysctl_set" => false, FieldType::Flag;
+        "value" => true, FieldType::Scalar;
+    ),
+    operation!("systemd";
+        "daemon_reload" => false, FieldType::Flag;
+        "enabled" => false, FieldType::Flag;
+        "name" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["started","stopped","restarted"]);
+    ),
+    operation!("user";
+        "append" => false, FieldType::Flag;
+        "comment" => false, FieldType::Text;
+        "create_home" => false, FieldType::Flag;
+        "group" => false, FieldType::Text;
+        "groups" => false, FieldType::TextList;
+        "home" => false, FieldType::Text;
+        "name" => true, FieldType::Text;
+        "remove" => false, FieldType::Flag;
+        "shell" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present","absent"]);
+        "system" => false, FieldType::Flag;
+        "uid" => false, FieldType::Number;
+    ),
+    operation!("community.general.lvg";
+        "pvs" => true, FieldType::TextList;
+        "vg" => true, FieldType::Text;
+    ),
+    operation!("community.general.lvol";
+        "lv" => true, FieldType::Text;
+        "resizefs" => false, FieldType::Flag;
+        "size" => true, FieldType::Text;
+        "vg" => true, FieldType::Text;
+    ),
+    operation!("community.general.timezone";
+        "name" => true, FieldType::Text;
+        "state" => false, FieldType::Text;
+    ),
+    operation!("ansible.posix.mount";
+        "fstype" => true, FieldType::Text;
+        "opts" => false, FieldType::Text;
+        "path" => true, FieldType::Text;
+        "src" => true, FieldType::Text;
+        "state" => false, FieldType::Choice(&["mounted"]);
+    ),
+    operation!("community.postgresql.postgresql_db";
+        "login_db" => false, FieldType::Text;
+        "login_port" => false, FieldType::Port;
+        "login_user" => false, FieldType::Text;
+        "name" => true, FieldType::Text;
+        "owner" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+    ),
+    operation!("community.postgresql.postgresql_user";
+        "login_db" => false, FieldType::Text;
+        "login_port" => false, FieldType::Port;
+        "login_user" => false, FieldType::Text;
+        "name" => true, FieldType::Text;
+        "password" => false, FieldType::Text;
+        "role_attr_flags" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+    ),
+    operation!("community.postgresql.postgresql_schema";
+        "login_db" => true, FieldType::Text;
+        "login_port" => false, FieldType::Port;
+        "login_user" => false, FieldType::Text;
+        "name" => true, FieldType::Text;
+        "owner" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+    ),
+    operation!("community.postgresql.postgresql_privs";
+        "login_db" => true, FieldType::Text;
+        "login_port" => false, FieldType::Port;
+        "login_user" => false, FieldType::Text;
+        "objs" => false, FieldType::TextList;
+        "privs" => false, FieldType::TextList;
+        "role" => true, FieldType::Text;
+        "schema" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present"]);
+        "target_roles" => false, FieldType::TextList;
+        "type" => true, FieldType::Choice(&["database","schema","table","default_privs"]);
+    ),
+    operation!("template";
+        "content" => false, FieldType::Text;
+        "dest" => true, FieldType::Text;
+        "force" => false, FieldType::Flag;
+        "group" => false, FieldType::Text;
+        "mode" => false, FieldType::Mode;
+        "owner" => false, FieldType::Text;
+        "src" => false, FieldType::Text;
+    ),
+    operation!("assert";
+        "fail_msg" => false, FieldType::Text;
+        "that" => true, FieldType::Flags;
+    ),
+    operation!("debug";
+        "msg" => false, FieldType::Text;
+    ),
+    operation!("fail";
+        "msg" => false, FieldType::Text;
+    ),
+    operation!("pause";
+        "prompt" => false, FieldType::Text;
+        "seconds" => false, FieldType::Number;
+        "minutes" => false, FieldType::Number;
+    ),
+    operation!("set_fact";
+        "values" => false, FieldType::ExprMap;
+    ),
 ];

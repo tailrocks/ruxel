@@ -24,12 +24,13 @@ base64 = "0.22"
 percent-encoding = "2"
 pbkdf2 = "0.13"
 regex-lite = "0.1"
+futures-util = "0.3"
 anyhow = "1.0.104"
 blake3 = "1.8.7"
 openssh-sftp-client = "0.15.12"
 clap = { version = "4.6.7", features = ["derive", "color", "env", "help", "usage"] }
 hmac = "0.13.0"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "time", "process", "signal"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "time", "process", "signal", "sync"] }
 prost = "0.14.4"
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.3.0"

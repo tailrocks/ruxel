@@ -1,7 +1,7 @@
 //! Connect the typed task controller to actual agent processes.
 use crate::{
     controller::{self, Backend, Mode, Options, Recap, Request},
-    expression::{self, Expr, LookupResolver, Scope},
+    expression::{self, Expr, Scope},
     secrets::{Lookup, ProcessBackend, Resolver},
     transport::{self, AgentConnection, LocalConnection},
 };
@@ -19,9 +19,12 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct RuntimeOptions {
     pub agent: PathBuf,
+    pub jobs: usize,
     pub source_dir: PathBuf,
     pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
+    pub local_agent: Option<PathBuf>,
+    pub controller_state: Option<PathBuf>,
 }
 
 enum Connection {
@@ -49,122 +52,52 @@ impl Connection {
     }
 }
 
-struct Lookups {
-    resolver: Resolver,
-    values: Mutex<Vec<String>>,
-}
-impl Lookups {
-    fn lookup(expr: &Expr) -> Result<Lookup> {
-        let Expr::Lookup {
-            provider,
-            key,
-            vault,
-            item,
-            section,
-            field,
-            reference,
-            argv,
-        } = expr
-        else {
-            bail!("expected lookup");
-        };
-        let required = |value: &Option<String>| value.clone().context("missing lookup selector");
-        Ok(match provider.as_str() {
-            "fnox" => Lookup::Fnox {
-                key: required(key)?,
-            },
-            "op" if reference.is_some() => Lookup::OnePasswordUri {
-                reference: required(reference)?,
-            },
-            "op" => Lookup::OnePassword {
-                vault: required(vault)?,
-                item: required(item)?,
-                field: required(field)?,
-                section: section.clone(),
-            },
-            "command" => Lookup::Command { argv: argv.clone() },
-            "pipe" => Lookup::Pipe {
-                command: required(key)?,
-            },
-            "synthetic" => Lookup::Synthetic {
-                value: required(key)?,
-            },
-            _ => bail!("unknown lookup provider"),
-        })
-    }
-    fn redact(&self, value: &Value) -> Result<Value> {
-        fn scrub(value: &Value, secrets: &[String]) -> Value {
-            match value {
-                Value::String(text) => Value::String(
-                    secrets
-                        .iter()
-                        .filter(|s| !s.is_empty())
-                        .fold(text.clone(), |text, secret| {
-                            text.replace(secret, "[REDACTED]")
-                        }),
-                ),
-                Value::Array(items) => {
-                    Value::Array(items.iter().map(|v| scrub(v, secrets)).collect())
-                }
-                Value::Object(items) => Value::Object(
-                    items
-                        .iter()
-                        .map(|(key, value)| {
-                            let key = secrets
-                                .iter()
-                                .filter(|s| !s.is_empty())
-                                .fold(key.clone(), |key, secret| key.replace(secret, "[REDACTED]"));
-                            (key, scrub(value, secrets))
-                        })
-                        .collect(),
-                ),
-                _ => value.clone(),
-            }
-        }
-        let secrets = self
-            .values
-            .lock()
-            .map_err(|_| anyhow::anyhow!("redactor unavailable"))?;
-        Ok(scrub(value, &secrets))
-    }
-}
-impl LookupResolver for Lookups {
-    fn resolve(&self, expr: &Expr) -> Result<Value> {
-        let value = self
-            .resolver
-            .resolve(&Self::lookup(expr)?)
-            .map_err(anyhow::Error::msg)?;
-        self.values
-            .lock()
-            .map_err(|_| anyhow::anyhow!("redactor unavailable"))?
-            .push(value.clone());
-        Ok(Value::String(value))
-    }
-}
+mod lookups;
+use lookups::Lookups;
 
+#[derive(Clone)]
 struct Execution {
     inventory: Map<String, Value>,
     runtime: RuntimeOptions,
     mode: Mode,
-    connections: BTreeMap<String, Connection>,
-    lookups: Lookups,
+    connections: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Connection>>>>>,
+    lookups: Arc<Lookups>,
 }
 impl Execution {
-    async fn connect(&mut self, host: &str) -> Result<v1::Facts> {
-        let spec = self
-            .inventory
-            .get(host)
-            .context("selected host is missing")?;
+    async fn connect(&self, host: &str) -> Result<v1::Facts> {
+        let mut connections = self.connections.lock().await;
+        if connections.contains_key(host) {
+            return Ok(v1::Facts::default());
+        }
+        let spec = self.inventory.get(host);
+        let controller_local = host == "localhost" && spec.is_none();
+        anyhow::ensure!(
+            spec.is_some() || controller_local,
+            "selected host is missing"
+        );
         let check = matches!(self.mode, Mode::Check | Mode::Diff);
         let diff = self.mode == Mode::Diff;
-        let (connection, gathered) = if let Some(state) = &self.runtime.local_state {
+        let (connection, gathered) = if self.runtime.local_state.is_some() || controller_local {
+            let state = self
+                .runtime
+                .local_state
+                .as_ref()
+                .or(self.runtime.controller_state.as_ref())
+                .context("localhost delegation requires --controller-state-dir")?;
+            let binary = if self.runtime.local_state.is_some() {
+                &self.runtime.agent
+            } else {
+                self.runtime
+                    .local_agent
+                    .as_ref()
+                    .context("localhost delegation requires --local-agent")?
+            };
             // Host names are inventory keys, never accepted as filesystem paths.
             let path = state.join(blake3::hash(host.as_bytes()).to_hex().as_str());
-            let (c, f) =
-                LocalConnection::connect(&self.runtime.agent, &path, "pkl-local", check, diff)
-                    .await?;
+            let (c, f) = LocalConnection::connect(binary, &path, "pkl-local", check, diff).await?;
             (Connection::Local(Box::new(c)), f)
         } else {
+            let spec = spec.context("selected host is missing")?;
             let address = spec
                 .get("address")
                 .and_then(Value::as_str)
@@ -193,7 +126,10 @@ impl Execution {
             .await?;
             (Connection::Remote(Box::new(c)), f.facts)
         };
-        self.connections.insert(host.to_owned(), connection);
+        connections.insert(
+            host.to_owned(),
+            Arc::new(tokio::sync::Mutex::new(connection)),
+        );
         Ok(gathered)
     }
 
@@ -204,7 +140,7 @@ impl Execution {
             return expression::evaluate(
                 &serde_json::from_value::<Expr>(value.clone())?,
                 scope,
-                &self.lookups,
+                self.lookups.as_ref(),
             );
         }
         match value {
@@ -271,7 +207,10 @@ impl Backend for Execution {
             for iteration in &mut request.task.iterations {
                 let mut params: Map<String, Value> =
                     serde_json::from_slice(&iteration.params_json)?;
-                if let Some(src) = params.remove("src").filter(|v| !v.is_null()) {
+                let source = params.remove("src").filter(|v| !v.is_null());
+                if let Some(src) =
+                    source.filter(|_| params.get("content").is_none_or(Value::is_null))
+                {
                     let source = self
                         .runtime
                         .source_dir
@@ -283,13 +222,17 @@ impl Backend for Execution {
                 }
             }
         }
-        if !self.connections.contains_key(&request.host) {
+        if !self.connections.lock().await.contains_key(&request.host) {
             self.connect(&request.host).await?;
         }
         let connection = self
             .connections
-            .get_mut(&request.host)
+            .lock()
+            .await
+            .get(&request.host)
+            .cloned()
             .context("execution host is not connected")?;
+        let mut connection = connection.lock().await;
         let id = request.task.task_id;
         connection
             .send(&v1::Envelope {
@@ -327,6 +270,9 @@ impl Backend for Execution {
     }
 }
 
+mod scheduler;
+use scheduler::run_plays;
+
 /// Run an evaluated, validated configuration through the controller and agent protocol.
 ///
 /// # Errors
@@ -336,9 +282,13 @@ pub async fn run(
     options: &Options,
     runtime: &RuntimeOptions,
 ) -> Result<BTreeMap<String, Recap>> {
+    anyhow::ensure!(
+        (1..=128).contains(&runtime.jobs),
+        "jobs must be between 1 and 128"
+    );
     let validated = crate::model::validate_config(config)?;
     let config = &validated;
-    let mut execution = Execution {
+    let execution = Execution {
         inventory: config
             .get("inventory")
             .and_then(|v| v.get("hosts"))
@@ -347,15 +297,15 @@ pub async fn run(
             .clone(),
         runtime: runtime.clone(),
         mode: options.mode,
-        connections: BTreeMap::new(),
-        lookups: Lookups {
+        connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        lookups: Arc::new(Lookups {
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()
             } else {
                 Resolver::new(Arc::new(ProcessBackend))
             },
             values: Mutex::new(Vec::new()),
-        },
+        }),
     };
     let mut facts = BTreeMap::new();
     let result = async {
@@ -367,10 +317,14 @@ pub async fn run(
 
             }
         }
-        controller::run(config,&facts,options,&mut execution).await
+        run_plays(config, &facts, options, &execution).await
     }.await;
     let mut shutdown_error = None;
-    for (_, connection) in std::mem::take(&mut execution.connections) {
+    let connections = std::mem::take(&mut *execution.connections.lock().await);
+    for (_, connection) in connections {
+        let connection = Arc::try_unwrap(connection)
+            .map_err(|_| anyhow::anyhow!("agent connection still in use"))?
+            .into_inner();
         if let Err(error) = connection.shutdown().await {
             shutdown_error = Some(error);
         }
@@ -393,20 +347,4 @@ pub async fn run(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn redaction_preserves_json_structure_for_short_and_escaped_secrets() -> Result<()> {
-        let lookups = Lookups {
-            resolver: Resolver::synthetic(),
-            values: Mutex::new(vec!["true".into(), "quoted\"secret".into()]),
-        };
-        let result = lookups
-            .redact(&json!({"value":true,"nested":["true","quoted\"secret"],"true-key":1}))?;
-        assert_eq!(result["value"], true);
-        assert_eq!(result["nested"], json!(["[REDACTED]", "[REDACTED]"]));
-        assert_eq!(result["[REDACTED]-key"], 1);
-        Ok(())
-    }
-}
+mod tests;
