@@ -4,32 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 #[test]
 fn login_identity_is_passed_and_sessions_are_isolated() {
     if std::env::var_os("RUXEL_FAKE_PSQL_CHILD").is_some() {
-        let ctx = ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: Vec::new(),
-            become_user: None,
-        };
-        let user = "--host=synthetic";
-        db(
-            &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
-            &ctx,
-        )
-        .unwrap();
-        super::super::user(
-            &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
-            &ctx,
-        )
-        .unwrap();
-        schema(
-            &json!({"name":"sample", "login_db":"sample", "login_user":user}),
-            &ctx,
-        )
-        .unwrap();
-        privs(&json!({"role":"sample", "login_db":"sample", "type":"database", "objs":"sample", "privs":"CONNECT", "login_user":user}), &ctx).unwrap();
-        db(&json!({"name":"sample", "login_user":"other"}), &ctx).unwrap();
-        shutdown();
+        exercise_sessions();
         return;
     }
     let dir = std::env::temp_dir().join(format!("ruxel-pg-login-{}", std::process::id()));
@@ -48,18 +23,18 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
     assert!(status.success());
     let calls = std::fs::read_to_string(&log).unwrap();
     let lines: Vec<_> = calls.lines().collect();
-    assert_eq!(lines.len(), 3);
+    assert_eq!(lines.len(), 4);
     assert_eq!(
         lines
             .iter()
-            .filter(|line| line.contains("-d maintenance"))
+            .filter(|line| line.contains("-d dbname='maintenance'"))
             .count(),
         1
     );
     assert_eq!(
         lines
             .iter()
-            .filter(|line| line.contains("-d sample"))
+            .filter(|line| line.contains("-d dbname='sample'"))
             .count(),
         1
     );
@@ -68,7 +43,7 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
             .iter()
             .filter(|line| line.contains("--username --host=synthetic"))
             .count(),
-        2
+        3
     );
     assert_eq!(
         lines
@@ -77,5 +52,52 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
             .count(),
         1
     );
+    assert!(calls.contains("dbname='dbname=target user=other host=synthetic \\' \\\\'"));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn exercise_sessions() {
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let user = "--host=synthetic";
+    db(
+        &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    super::super::user(
+        &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    schema(
+        &json!({"name":"sample", "login_db":"sample", "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    privs(&json!({"role":"sample", "login_db":"sample", "type":"database", "objs":"sample", "privs":"CONNECT", "login_user":user}), &ctx).unwrap();
+    db(&json!({"name":"sample", "login_user":"other"}), &ctx).unwrap();
+    let database = "dbname=target user=other host=synthetic ' \\";
+    db(
+        &json!({"name":"sample", "login_db":database, "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    super::super::user(
+        &json!({"name":"sample", "login_db":database, "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    schema(
+        &json!({"name":"sample", "login_db":database, "login_user":user}),
+        &ctx,
+    )
+    .unwrap();
+    privs(&json!({"role":"sample", "login_db":database, "type":"database", "objs":"sample", "privs":"CONNECT", "login_user":user}), &ctx).unwrap();
+    shutdown();
 }

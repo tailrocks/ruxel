@@ -66,6 +66,14 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["value"]["values"]["answer"]["value"], 42)
 
+    def test_postgres_maintenance_database_selector(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        for kind in ("PostgresDatabase", "PostgresRole"):
+            with self.subTest(kind=kind):
+                result = self.evaluate(prefix + f'value = new R.{kind} {{ name = "fixture"; login_db = "maintenance" }}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["value"]["login_db"], "maintenance")
+
     def test_blocks_reject_loop_controls(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         child = 'new R.Task { name = "child"; operation = new R.Debug {} }'
@@ -81,8 +89,6 @@ class SchemaTests(unittest.TestCase):
         for expression in [
             'new R.Command {}',
             'new R.Timezone { name = "UTC"; state = "present" }',
-            'new R.PostgresDatabase { name = "db"; login_db = "ignored" }',
-            'new R.PostgresRole { name = "role"; login_db = "ignored" }',
             'new R.Command { cmd = "true"; removes = "/tmp/a" }',
             'new R.Shell { cmd = "true"; removes = "/tmp/a" }',
             'new R.Shell {}',

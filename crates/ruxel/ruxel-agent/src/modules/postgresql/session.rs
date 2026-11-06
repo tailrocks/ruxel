@@ -84,7 +84,13 @@ impl PsqlSession {
             args.push("--username");
             args.push(user);
         }
-        if let Some(database) = &key.database {
+        let database_arg = key.database.as_ref().map(|database| {
+            format!(
+                "dbname='{}'",
+                database.replace('\\', "\\\\").replace('\'', "\\'")
+            )
+        });
+        if let Some(database) = &database_arg {
             args.push("-d");
             args.push(database);
         }
