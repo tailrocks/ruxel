@@ -64,3 +64,13 @@ fn accepts_typed_deferred_values_and_plain_valid_results() -> Result<()> {
     )?;
     Ok(())
 }
+
+#[test]
+fn rejects_ssh_option_injection_before_transport() {
+    let mut value = config(json!({"kind":"command","cmd":"safe"}));
+    value["inventory"]["hosts"]["synthetic"]["address"] = json!("-oProxyCommand=unsafe");
+    assert!(validate_config(&value).is_err());
+    value["inventory"]["hosts"]["synthetic"]["address"] = json!("unused.invalid");
+    value["inventory"]["hosts"]["synthetic"]["user"] = json!("bad user");
+    assert!(validate_config(&value).is_err());
+}

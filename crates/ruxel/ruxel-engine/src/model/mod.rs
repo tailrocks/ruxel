@@ -185,8 +185,22 @@ pub fn validate_config(value: &Value) -> Result<Value> {
         serde_json::from_value(value.clone()).context("invalid configuration shape")?;
     for host in config.inventory.hosts.values() {
         ensure!(
-            !host.address.is_empty() && host.port != 0,
+            !host.address.is_empty()
+                && !host.address.starts_with('-')
+                && host.port != 0
+                && host
+                    .address
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-:%[]".contains(&b)),
             "invalid host address or port"
+        );
+        ensure!(
+            host.user.as_ref().is_none_or(|user| !user.is_empty()
+                && !user.starts_with('-')
+                && user
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))),
+            "invalid SSH user"
         );
         expression_map(&host.vars)?;
     }
