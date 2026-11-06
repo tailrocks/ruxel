@@ -1,0 +1,42 @@
+import "../../../schema/Ruxel.pkl"
+output {
+  value = new Ruxel.Config {
+    inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+    plays { new {
+      name = "Synthetic become-user environment semantics"
+      targets { "all" }
+      tasks {
+        new {
+          name = "Create synthetic become account"
+          operation = new Ruxel.User { name = "ruxelbecome"; home = "__RUN_ROOT__/become-home"; shell = "/bin/sh"; create_home = true }
+        }
+        new {
+          name = "Capture synthetic become environment"
+          operation = new Ruxel.Shell { cmd = "printf '%s\\n' \"$HOME\" \"$USER\" \"$LOGNAME\" \"$SHELL\" \"$RUXEL_FIXTURE_VALUE\"" }
+          becomeUser = "ruxelbecome"
+          environment { ["RUXEL_FIXTURE_VALUE"] = new Ruxel.Literal { value = "synthetic" } }
+          register = "fixture_become_environment"
+          changedWhen = new Ruxel.Literal { value = false }
+        }
+        new {
+          name = "Verify explicit become environment"
+          operation = new Ruxel.Assert {
+            that = new Ruxel.Call {
+              `function` = "eq"
+              args {
+                new Ruxel.Ref { path { "fixture_become_environment"; "stdout_lines" } }
+                new Ruxel.ListExpr { items {
+                  new Ruxel.Literal { value = "__RUN_ROOT__/become-home" }
+                  new Ruxel.Literal { value = "ruxelbecome" }
+                  new Ruxel.Literal { value = "ruxelbecome" }
+                  new Ruxel.Literal { value = "/bin/sh" }
+                  new Ruxel.Literal { value = "synthetic" }
+                } }
+              }
+            }
+          }
+        }
+      }
+    } }
+  }
+}
