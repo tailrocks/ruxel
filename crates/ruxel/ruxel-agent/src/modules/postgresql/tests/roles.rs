@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 
 #[test]
 fn role_flag_wants_positive_and_negative_forms() {

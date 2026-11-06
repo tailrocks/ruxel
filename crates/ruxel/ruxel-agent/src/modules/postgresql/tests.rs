@@ -1,3 +1,5 @@
+mod roles;
+
 use super::*;
 
 #[test]

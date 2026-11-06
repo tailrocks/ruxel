@@ -34,6 +34,4 @@ use privileges::{default_priv_query, grant_sql};
 pub(super) use session::shutdown;
 use session::{login_port, psql};
 #[cfg(test)]
-mod role_tests;
-#[cfg(test)]
 mod tests;
