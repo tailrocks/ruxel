@@ -175,6 +175,18 @@ pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> 
     let inventory = config.get("inventory").context("missing inventory")?;
     let hosts = object(inventory, "hosts");
     let groups = object(inventory, "groups");
+    for name in groups.keys() {
+        for host in group_hosts(name, &groups, &mut BTreeSet::new())? {
+            if !hosts.contains_key(&host) {
+                bail!("unknown inventory host {host:?}");
+            }
+        }
+    }
+    for host in &options.hosts {
+        if !hosts.contains_key(host) {
+            bail!("unknown host filter {host:?}");
+        }
+    }
     let mut selected = BTreeSet::new();
     for play in array(config, "plays") {
         for value in array(play, "targets") {
@@ -831,6 +843,35 @@ mod tests {
                 .iter()
                 .any(|event| event.to_string().contains("private"))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn until_uses_result_and_loop_label_uses_item() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","loop":["one"],"loopLabel":{"kind":"ref","path":["item"]},"retries":2,"until":{"kind":"ref","path":["result","ready"]},"operation":{"kind":"command","cmd":"test"}}]}]});
+        let mut backend = Fake {
+            results: [json!({"ready":false}), json!({"ready":true,"changed":true})].into(),
+            ..Fake::default()
+        };
+        let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        assert_eq!(backend.calls.len(), 2);
+        assert_eq!(backend.calls[0].task.iterations[0].item_label, "one");
+        assert_eq!(recap["h"].changed, 1);
+        assert_eq!(recap["h"].failed, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn result_conditions_override_agent_status() -> Result<()> {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"override","changedWhen":{"kind":"literal","value":false},"failedWhen":{"kind":"literal","value":false},"operation":{"kind":"command","cmd":"test"}}]}]});
+        let mut backend = Fake {
+            results: [json!({"failed":true,"changed":true})].into(),
+            ..Fake::default()
+        };
+        let recap = run(&config, &BTreeMap::new(), &Options::default(), &mut backend).await?;
+        assert_eq!(recap["h"].failed, 0);
+        assert_eq!(recap["h"].changed, 0);
+        assert_eq!(recap["h"].ok, 1);
         Ok(())
     }
 
