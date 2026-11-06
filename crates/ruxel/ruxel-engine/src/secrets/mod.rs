@@ -3,6 +3,7 @@
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -59,8 +60,27 @@ pub trait Backend: Send + Sync {
     fn pipe(&self, command: &str) -> Result<String, String>;
 }
 
-#[derive(Debug, Default)]
-pub struct ProcessBackend;
+#[derive(Debug)]
+pub struct ProcessBackend {
+    fnox: PathBuf,
+    op: PathBuf,
+}
+
+impl Default for ProcessBackend {
+    fn default() -> Self {
+        Self::with_programs("fnox", "op")
+    }
+}
+
+impl ProcessBackend {
+    #[must_use]
+    pub fn with_programs(fnox: impl Into<PathBuf>, op: impl Into<PathBuf>) -> Self {
+        Self {
+            fnox: fnox.into(),
+            op: op.into(),
+        }
+    }
+}
 
 fn process_output(mut command: Command) -> Result<String, String> {
     let result = command
@@ -82,7 +102,7 @@ impl Backend for ProcessBackend {
         {
             return Err("invalid environment key".into());
         }
-        let mut cmd = Command::new("fnox");
+        let mut cmd = Command::new(&self.fnox);
         cmd.args([
             "exec",
             "--no-redact",
@@ -98,7 +118,7 @@ impl Backend for ProcessBackend {
         process_output(cmd)
     }
     fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String> {
-        let mut cmd = Command::new("op");
+        let mut cmd = Command::new(&self.op);
         cmd.args([
             "item", "get", "--vault", vault, "--format", "json", "--", item,
         ]);
@@ -148,7 +168,7 @@ impl Resolver {
     /// Resolve every reference deterministically without invoking any backend.
     #[must_use]
     pub fn synthetic() -> Self {
-        let mut resolver = Self::new(Arc::new(ProcessBackend));
+        let mut resolver = Self::new(Arc::new(ProcessBackend::default()));
         resolver.synthetic = true;
         resolver
     }
@@ -351,3 +371,10 @@ fn select_field(
     reason = "test assertions need successful fake lookups"
 )]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test setup requires synthetic process operations to succeed"
+)]
+mod process_tests;
