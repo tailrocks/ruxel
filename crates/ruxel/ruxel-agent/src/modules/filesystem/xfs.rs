@@ -29,8 +29,18 @@ fn invoke(
     mode: &str,
     bytes: u64,
 ) -> Result<bool, String> {
+    invoke_with_program(device, mount, mode, bytes, "python3")
+}
+
+fn invoke_with_program(
+    device: &std::fs::File,
+    mount: &std::fs::File,
+    mode: &str,
+    bytes: u64,
+    program: &str,
+) -> Result<bool, String> {
     let rdev = device.metadata().map_err(|e| e.to_string())?.rdev();
-    let mut command = Command::new("python3");
+    let mut command = Command::new(program);
     command
         .args([
             "-I",
@@ -56,4 +66,21 @@ fn invoke(
     result["changed"]
         .as_bool()
         .ok_or_else(|| "filesystem: missing XFS helper result".into())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_interpreter_fails_before_any_ioctl() {
+        let directory = std::fs::File::open(".").unwrap();
+        let error = super::invoke_with_program(
+            &directory,
+            &directory,
+            "preflight",
+            0,
+            "/__ruxel_missing_python3__",
+        )
+        .unwrap_err();
+        assert!(error.contains("requires python3"));
+    }
 }

@@ -31,6 +31,8 @@ def geometry(ioctl):
 
 
 def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat):
+    if sys.version_info < (3, 9):
+        raise ValueError('XFS resize requires Python 3.9 or newer')
     if sys.platform != 'linux' or platform.machine() not in ('x86_64', 'aarch64'):
         raise ValueError('unsupported XFS ioctl ABI')
     if mode not in ('preflight', 'check', 'grow') or target_bytes < 0:

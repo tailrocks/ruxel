@@ -97,6 +97,12 @@ class Tests(unittest.TestCase):
                     self.run_helper('preflight')
                 self.assertEqual(len(self.kernel.calls), 1)
 
+    def test_old_python_refused_before_ioctl(self):
+        with patch.object(h.sys, 'version_info', (3, 8, 0)):
+            with self.assertRaisesRegex(ValueError, 'Python 3.9'):
+                self.run_helper('preflight')
+        self.assertEqual(self.kernel.calls, [])
+
     def test_kernel_errors_propagate(self):
         for code in (errno.ENOTTY, errno.EPERM, errno.EWOULDBLOCK, errno.EIO):
             with self.subTest(code=code):
