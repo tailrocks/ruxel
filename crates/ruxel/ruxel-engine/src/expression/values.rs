@@ -50,6 +50,35 @@ fn compare_int_float(integer: i128, float: f64) -> Result<std::cmp::Ordering> {
         }
     }))
 }
+pub(super) fn equal(left: &Value, right: &Value) -> Result<bool> {
+    match (left, right) {
+        (Value::Number(_), Value::Number(_)) => Ok(compare(left, right)?.is_eq()),
+        (Value::Array(a), Value::Array(b)) => {
+            if a.len() != b.len() {
+                return Ok(false);
+            }
+            for (a, b) in a.iter().zip(b) {
+                if !equal(a, b)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            if a.len() != b.len() {
+                return Ok(false);
+            }
+            for (key, value) in a {
+                match b.get(key) {
+                    Some(other) if equal(value, other)? => {}
+                    _ => return Ok(false),
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(left == right),
+    }
+}
 pub(super) fn render_string(value: &Value) -> String {
     render(value, false)
 }
@@ -81,25 +110,5 @@ fn render(value: &Value, nested: bool) -> String {
 }
 
 fn quote(value: &str) -> String {
-    let delimiter = if value.contains('\'') && !value.contains('"') {
-        '"'
-    } else {
-        '\''
-    };
-    let mut result = String::from(delimiter);
-    for ch in value.chars() {
-        match ch {
-            '\\' => result.push_str("\\\\"),
-            '\n' => result.push_str("\\n"),
-            '\r' => result.push_str("\\r"),
-            '\t' => result.push_str("\\t"),
-            c if c == delimiter => {
-                result.push('\\');
-                result.push(c);
-            }
-            c => result.push(c),
-        }
-    }
-    result.push(delimiter);
-    result
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
 }

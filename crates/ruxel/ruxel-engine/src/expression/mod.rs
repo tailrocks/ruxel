@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 mod values;
-use values::{compare, render_string};
+use values::{compare, equal, render_string};
 
 /// An expression evaluated against a host's current execution scope.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -136,14 +136,32 @@ fn call(
 ) -> Result<Value> {
     match function {
         "concat" => {}
+        "if" => arity(function, args, 3)?,
         "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "bool" | "trim"
         | "urlencode" | "list" | "string" => arity(function, args, 1)?,
         "default" | "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains"
-        | "mapAttribute" | "subelements" | "join" => arity(function, args, 2)?,
+        | "mapAttribute" | "subelements" | "join" | "map" => arity(function, args, 2)?,
         _ => bail!("unknown expression function {function}"),
     }
     // These operators must not evaluate an unused branch, which may reference absent data.
     match function {
+        "if" => {
+            let condition = boolean(&evaluate(&args[0], scope, resolver)?)?;
+            return evaluate(&args[if condition { 1 } else { 2 }], scope, resolver);
+        }
+        "map" => {
+            let source = evaluate(&args[0], scope, resolver)?;
+            let items = source.as_array().context("map expects a list")?;
+            let mut child = scope.clone();
+            return items
+                .iter()
+                .map(|item| {
+                    child.item = item.clone();
+                    evaluate(&args[1], &child, resolver)
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(Value::Array);
+        }
         "default" => {
             arity(function, args, 2)?;
             return match evaluate(&args[0], scope, resolver) {
@@ -178,12 +196,7 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
         }
         "eq" | "ne" => {
             arity(function, args, 2)?;
-            let equal = if values[0].is_number() && values[1].is_number() {
-                compare(&values[0], &values[1])?.is_eq()
-            } else {
-                values[0] == values[1]
-            };
-            Ok(json!(equal == (function == "eq")))
+            Ok(json!(equal(&values[0], &values[1])? == (function == "eq")))
         }
         "lt" | "le" | "gt" | "ge" => {
             arity(function, args, 2)?;
@@ -199,7 +212,16 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
             arity(function, args, 2)?;
             Ok(json!(match (&values[0], &values[1]) {
                 (Value::String(haystack), Value::String(needle)) => haystack.contains(needle),
-                (Value::Array(items), needle) => items.contains(needle),
+                (Value::Array(items), needle) => {
+                    let mut found = false;
+                    for item in items {
+                        if equal(item, needle)? {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found
+                }
                 (Value::Object(map), Value::String(key)) => map.contains_key(key),
                 _ => bail!("contains expects a string, list, or map and a compatible value"),
             }))
@@ -252,7 +274,11 @@ fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result
         "string" => Ok(json!(render_string(&values[0]))),
         "bool" => Ok(json!(match &values[0] {
             Value::Bool(value) => *value,
-            Value::Number(value) => value.as_f64().is_some_and(|n| n != 0.0),
+            Value::Number(value) => match value.as_i64() {
+                Some(0) => false,
+                Some(1) => true,
+                _ => bail!("bool expects a boolean-like value"),
+            },
             Value::String(value) => match value.to_ascii_lowercase().as_str() {
                 "true" | "yes" | "on" | "1" => true,
                 "false" | "no" | "off" | "0" => false,

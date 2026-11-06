@@ -125,3 +125,4 @@ fn resolves_custom_loop_binding() -> Result<()> {
 }
 
 mod extra;
+mod template;
