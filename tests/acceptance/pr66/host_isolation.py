@@ -78,7 +78,8 @@ output { value = new Ruxel.Config {
         require(all(e['result'].get('msg') == e['host'] for e in facts), 'host facts crossed boundaries')
         first = [i for i, e in enumerate(events) if e.get('task') == 'read distinct fact']
         second = [i for i, e in enumerate(events) if e.get('task') == 'second play']
-        require(len(second) == len(hosts) and max(first) < min(second), 'play barrier violated')
+        require(len(second) == len(hosts) and {events[i]['host'] for i in second} == hosts
+                and max(first) < min(second), 'play barrier violated or second-play host missing')
         intervals = [json.loads(line) for line in log.read_text().splitlines()]
         require(len(intervals) == 2 * len(hosts), 'missing instrumentation events')
         active = set()
