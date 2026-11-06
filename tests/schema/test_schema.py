@@ -57,6 +57,15 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = "fixture" }').returncode, 0)
         self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = new R.Ref { path { "vars"; "filename" } } }').returncode, 0)
 
+    def test_set_fact_always_emits_values_mapping(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        result = self.evaluate(prefix + 'value = new R.SetFact {}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["value"]["values"], {})
+        result = self.evaluate(prefix + 'value = new R.SetFact { values { ["answer"] = new R.Literal { value = 42 } } }')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["value"]["values"]["answer"]["value"], 42)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [

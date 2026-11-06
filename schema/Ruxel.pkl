@@ -352,5 +352,5 @@ class Pause {
 
 class SetFact {
   fixed kind = "set_fact"
-  values: Mapping<String, Expr>? = null
+  values: Mapping<String, Expr>
 }

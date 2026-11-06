@@ -223,6 +223,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "minutes" => false, FieldType::Number;
     ),
     operation!("set_fact";
-        "values" => false, FieldType::ExprMap;
+        "values" => true, FieldType::ExprMap;
     ),
 ];

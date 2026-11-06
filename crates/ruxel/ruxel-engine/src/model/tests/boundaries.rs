@@ -59,3 +59,16 @@ fn apt_repository_requires_filename_before_execution() -> Result<()> {
     assert!(validate_operation("apt_repository", params.as_object().context("object")?).is_err());
     Ok(())
 }
+
+#[test]
+fn set_fact_requires_values_mapping() {
+    assert!(validate_config(&config(json!({"kind":"set_fact"}))).is_err());
+    assert!(validate_config(&config(json!({"kind":"set_fact", "values":null}))).is_err());
+    assert!(validate_config(&config(json!({"kind":"set_fact", "values":{}}))).is_ok());
+    assert!(
+        validate_config(&config(
+            json!({"kind":"set_fact", "values":{"answer":{"kind":"literal","value":42}}})
+        ))
+        .is_ok()
+    );
+}
