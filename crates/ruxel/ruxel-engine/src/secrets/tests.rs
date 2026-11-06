@@ -138,3 +138,6 @@ fn synthetic_mode_never_calls_backend_and_is_stable() {
     assert_eq!(backend.items.load(Ordering::SeqCst), 0);
     assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
 }
+
+#[cfg(unix)]
+mod process;

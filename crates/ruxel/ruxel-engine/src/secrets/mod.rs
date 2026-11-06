@@ -371,10 +371,3 @@ fn select_field(
     reason = "test assertions need successful fake lookups"
 )]
 mod tests;
-
-#[cfg(all(test, unix))]
-#[expect(
-    clippy::unwrap_used,
-    reason = "test setup requires synthetic process operations to succeed"
-)]
-mod process_tests;

@@ -1,4 +1,4 @@
-use super::{Lookup, ProcessBackend, Resolver};
+use super::super::{Lookup, ProcessBackend, Resolver};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
