@@ -42,6 +42,6 @@ the exact target is a disposable fixture volume before applying them; no drift
 injection has been executed. Snapshot call-count expectations require separate
 instrumentation and have not been measured.
 
-The delegation fixture forces its read-only local `printf` to run in check
-and diff so its following assertion has a result. The frozen task did not
-force check mode; this deliberate difference needs separate parity coverage.
+The delegation fixture retains the frozen command’s default check behavior.
+The local controller skips that command in check mode, so its subsequent
+assertion fails; check must still leave state unchanged.

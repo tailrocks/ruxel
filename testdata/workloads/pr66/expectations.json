@@ -57,12 +57,16 @@
           "succeeds": true
         },
         "check": {
-          "state_unchanged": true
+          "state_unchanged": true,
+          "succeeds": false
         },
         "diff": {
           "state_unchanged": true
         }
-      }
+      },
+      "pending": [
+        "verify frozen baseline check/diff assertion behavior independently"
+      ]
     },
     "multihost": {
       "fixture": "multihost.pkl",

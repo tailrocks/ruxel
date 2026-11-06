@@ -14,7 +14,6 @@ output {
           new {
             name = "Read synthetic value on controller"
             delegateTo = "localhost"
-            checkMode = false
             operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printf"; "ruxel-fixture-controller" } }
             register = "fixture_controller_value"
             changedWhen = new Ruxel.Literal { value = false }
