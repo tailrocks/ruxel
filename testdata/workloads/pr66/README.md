@@ -48,5 +48,6 @@ assertion fails, matching the frozen check capture; check must still leave
 state unchanged.
 
 The template workload expresses rendering as typed content operations. The
-fixture output assertion is independent and exact. Its lines match the frozen
-check capture; trailing newline and runtime behavior still require verification.
+fixture output assertion is independent and exact. The native template passed
+local fresh, converged, check, diff and drift-repair checks. Its lines match
+the frozen check capture; the frozen trailing newline still needs verification.

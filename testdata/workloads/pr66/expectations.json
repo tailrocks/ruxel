@@ -712,8 +712,8 @@
         }
       },
       "pending": [
-        "controller-side local source loading",
-        "typed template runtime verification including trailing newline",
+        "full files-content scenario and source asset execution",
+        "frozen baseline trailing newline verification",
         "independent handler notification observation"
       ]
     },
