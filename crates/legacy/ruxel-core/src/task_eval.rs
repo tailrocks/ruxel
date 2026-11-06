@@ -1,5 +1,3 @@
-//! until/retries, and `changed_when` — pinned by the runtime-semantics
-
 use crate::playbook::Condition;
 use minijinja::value::Value;
 

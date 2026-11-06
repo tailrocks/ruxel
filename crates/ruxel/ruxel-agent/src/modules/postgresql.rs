@@ -1,5 +1,3 @@
-//! postgres) on `login_port`. Idempotence is decided in SQL — `pg_catalog`
-
 #![expect(
     clippy::cast_possible_truncation,
     clippy::expect_used,
@@ -394,8 +392,6 @@ fn password_changed(
     Ok(computed != stored_stored_key)
 }
 
-/// `StoredKey` = base64( SHA256( HMAC-SHA256(SaltedPassword, "Client Key") ) ),
-/// `SaltedPassword` = PBKDF2-HMAC-SHA256(password, base64decode(salt), iter).
 fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<String, String> {
     use hmac::{Hmac, KeyInit, Mac};
     use sha2::{Digest, Sha256};

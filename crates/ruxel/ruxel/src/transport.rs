@@ -1,7 +1,3 @@
-//! Controller-side transport (ARCHITECTURE §2): one SSH `ControlMaster`
-//! system OpenSSH via `tokio::process` — the operator's ~/.ssh/config, keys,
-//! and `known_hosts` behave exactly like their ansible-playbook runs, and
-
 #![expect(
     clippy::let_underscore_must_use,
     clippy::expect_used,
@@ -29,18 +25,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-/// `Default` (config-driven, strict `known_hosts`, exactly like ansible);
 #[derive(Default, Clone)]
 pub struct ConnectOptions {
     pub keyfile: Option<PathBuf>,
     pub accept_new_host_key: bool,
-    /// Dedicated `known_hosts` (fixtures: isolates ephemeral host keys from
     pub known_hosts_file: Option<PathBuf>,
     pub diff_mode: bool,
     pub no_cache: bool,
 }
 
-/// The per-host `ControlMaster`: a foreground `ssh -M -N` child owning the
 struct Master {
     destination: String,
     socket: PathBuf,

@@ -298,7 +298,6 @@ fn command_display(command: &std::process::Command) -> String {
         .join(" ")
 }
 
-/// Build a `std::process::Command`, wrapped in `runuser -u <user> --` when the
 pub(super) fn become_command(
     ctx: &ExecContext,
     program: &str,

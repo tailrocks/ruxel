@@ -1,7 +1,3 @@
-//! vault (never a real exampleorg secret). Runs only when a 1Password
-//! session is available — set `OP_SERVICE_ACCOUNT_TOKEN` (the ruxel-ci
-//!   cargo nextest run -p ruxel-cli --test `op_resolver` --run-ignored all --no-capture
-
 use ruxel_cli::secrets::OpResolver;
 use ruxel_core::engine::LookupResolver;
 

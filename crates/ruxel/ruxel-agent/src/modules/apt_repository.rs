@@ -1,5 +1,3 @@
-//! content changed; `update_cache` refreshes lists after a change (cache
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

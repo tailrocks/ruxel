@@ -1,5 +1,3 @@
-//! chain policy. `ip_version=ipv6` routes to ip6tables.
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

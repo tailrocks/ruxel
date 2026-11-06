@@ -1,5 +1,3 @@
-//! `accept_hostkey`. update=false → clone only if absent. Changed = fresh
-
 #![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
 
 use super::{ExecContext, bool_param, params_object, str_param};

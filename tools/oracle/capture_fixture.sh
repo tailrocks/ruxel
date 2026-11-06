@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# production inventory (docs/GOAL.md rule 2).
 set -eu
 CALLER_PWD="$PWD"
 cd "$(dirname "$0")"

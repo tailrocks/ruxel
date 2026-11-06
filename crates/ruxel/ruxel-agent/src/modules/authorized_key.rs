@@ -1,5 +1,3 @@
-//! ~`user/.ssh/authorized_keys`. Matching is comment-insensitive on the key
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

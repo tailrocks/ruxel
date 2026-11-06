@@ -1,4 +1,3 @@
-# dry-secret value as ruxel's DrySecrets resolver (crates/legacy/ruxel-core/src/
 from __future__ import annotations
 
 import hashlib

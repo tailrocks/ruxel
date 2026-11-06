@@ -1,6 +1,3 @@
-//! execute — controller-side for `assert/fail/debug/set_fact`, on the agent
-//! `task_eval` and report ansible-shaped lines. Pipelined issue windows
-
 #![expect(
     clippy::similar_names,
     clippy::needless_continue,

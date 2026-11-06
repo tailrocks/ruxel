@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Safe to run at the start and end of every session (docs/GOAL.md rule 3).
 
 source "$(dirname "$0")/lib.sh"
 

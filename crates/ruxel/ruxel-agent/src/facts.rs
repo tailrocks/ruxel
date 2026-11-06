@@ -9,7 +9,6 @@ pub(crate) fn gather() -> Facts {
     }
 }
 
-/// destination 00000000 (what `ansible_default_ipv4.interface` reports).
 fn default_ipv4_interface() -> Option<String> {
     let table = std::fs::read_to_string("/proc/net/route").ok()?;
     for line in table.lines().skip(1) {
@@ -23,9 +22,6 @@ fn default_ipv4_interface() -> Option<String> {
     None
 }
 
-/// `VERSION_CODENAME` from /etc/os-release ("bookworm" on Debian 12) — the
-/// The `distribution_release` entry in `ansible_facts` carries this value on
-/// these hosts.
 fn distribution_release() -> Option<String> {
     let os_release = std::fs::read_to_string("/etc/os-release").ok()?;
     for line in os_release.lines() {

@@ -1,5 +1,3 @@
-//! enabled, `daemon_reload`. On these hosts `service` resolves to systemd —
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

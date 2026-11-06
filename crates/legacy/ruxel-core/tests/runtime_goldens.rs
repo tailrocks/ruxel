@@ -1,6 +1,3 @@
-//! `tools/oracle/runtime_semantics.yml)`: every registered-result envelope
-//! when placement, until attempts, `changed_when` — must equal what Ansible
-
 #![expect(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -206,7 +203,6 @@ fn e11_empty_loop_aggregate_matches() {
     assert_eq!(to_json(&loop_aggregate(vec![])), dumps["E11"]);
 }
 
-/// `no_log` censoring applies to *output* records (the capture callback saw
 #[test]
 fn e12_e13_no_log_censors_output_not_register() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))

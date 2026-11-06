@@ -1,8 +1,3 @@
-//!   `RUXEL_TEST_SSH_DEST`=<dest> `RUXEL_TEST_AGENT_BIN`=<agent> \
-//!   [`RUXEL_TEST_SSH_KEY`=<keyfile>] \
-//!   [`RUXEL_TEST_EXPECT_NO_UPLOAD=1`] [`RUXEL_TEST_EXPECT_FAST=1`] \
-//!   cargo nextest run -p ruxel-cli --test `transport_gate` --run-ignored all --no-capture
-
 use std::time::Instant;
 
 fn env_or_skip() -> Option<(String, std::path::PathBuf)> {

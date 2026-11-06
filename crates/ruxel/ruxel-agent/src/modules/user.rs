@@ -1,5 +1,3 @@
-//! groups, append, home, `create_home`, shell, comment, system, state
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

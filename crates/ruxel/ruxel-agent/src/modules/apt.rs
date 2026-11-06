@@ -1,5 +1,3 @@
-//! (present/latest), `update_cache`, upgrade: dist, autoremove, force.
-
 #![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
 
 use super::{ExecContext, bool_param, params_object, str_param};
@@ -119,7 +117,6 @@ pub(super) fn run(
     Ok(result)
 }
 
-/// `DEBIAN_FRONTEND`, plus task environment.
 fn apt_get(args: &[&str], ctx: &ExecContext) -> Result<(String, i32, String), String> {
     let mut cmd = std::process::Command::new("apt-get");
     cmd.arg("-y")

@@ -10,8 +10,6 @@ impl Ledger {
         let had_host_key = key_path.exists();
         let host_key = load_or_create_host_key(&key_path);
         let path = ledger_dir.join("ledger.json");
-        // A ledger without its host key is legacy or unrecoverable. Remove it:
-        // legacy result payloads may contain pre-no_log plaintext diffs.
         if !had_host_key {
             drop(std::fs::remove_file(&path));
         }

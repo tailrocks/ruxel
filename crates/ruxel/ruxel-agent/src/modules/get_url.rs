@@ -1,5 +1,3 @@
-//! `get_url` uses, and a static-musl HTTP+TLS stack inside the agent buys
-
 #![cfg_attr(
     test,
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")

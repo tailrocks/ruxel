@@ -1,14 +1,6 @@
-//! Stream framing: `varint length ‖ message bytes` over any Read/Write
-//! (the agent's stdio on an SSH channel — docs/ARCHITECTURE.md §2). Sync
-//! by design: the agent reads its plan single-threaded; the controller
-//! wraps these on its async pipes by buffering whole frames.
-
 use prost::Message;
 use std::io::{self, Read, Write};
 
-/// Upper bound on a single frame; anything larger is a protocol error,
-/// not a real message (the biggest legitimate payloads — rendered task
-/// params — are kilobytes).
 pub const MAX_FRAME_LEN: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Default)]
@@ -18,11 +10,6 @@ pub struct VarintDecoder {
 }
 
 impl VarintDecoder {
-    /// Add one byte to the length prefix decoder.
-    ///
-    /// Returns the decoded length when the prefix ends, or `None` while more
-    /// bytes are needed.
-    ///
     /// # Errors
     ///
     /// Returns an error if the varint exceeds 64 bits.
@@ -56,8 +43,6 @@ pub fn encode_frame<M: Message>(msg: &M) -> Vec<u8> {
     frame
 }
 
-/// Encode and write one complete frame, then flush the writer.
-///
 /// # Errors
 ///
 /// Returns an error if writing or flushing the frame fails.
@@ -67,12 +52,9 @@ pub fn write_frame<M: Message>(w: &mut impl Write, msg: &M) -> io::Result<()> {
     w.flush()
 }
 
-/// Read one frame; `Ok(None)` on clean EOF at a frame boundary.
-///
 /// # Errors
 ///
-/// Returns an error for a truncated prefix or body, an invalid or oversized
-/// length, or a message that cannot be decoded.
+/// Returns an error for an invalid, truncated, oversized, or undecodable frame.
 pub fn read_frame<M: Message + Default>(r: &mut impl Read) -> io::Result<Option<M>> {
     let mut decoder = VarintDecoder::default();
     let mut first_byte = true;

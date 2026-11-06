@@ -1,4 +1,3 @@
-# (crates/legacy/ruxel-core/src/engine.rs). Never talks to 1Password.
 from __future__ import annotations
 
 import hashlib

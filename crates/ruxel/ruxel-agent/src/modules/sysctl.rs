@@ -1,6 +1,3 @@
-//! file (and the live kernel value when `sysctl_set`), string-normalized
-//! multi-value keys like `net.ipv4.ip_local_port_range` need.
-
 use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 

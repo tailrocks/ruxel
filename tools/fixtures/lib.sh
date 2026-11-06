@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Shared helpers for ruxel fixture VMs (docs/GOAL.md safety rules 2 & 3).
 
 set -euo pipefail
 
 export HCLOUD_CONTEXT="ruxel-fixtures"
 
-# Hard caps (docs/GOAL.md rule 3).
 readonly MAX_FIXTURES=2
 readonly SERVER_TYPE="${RUXEL_FIXTURE_TYPE:-cpx12}"  # smallest x86_64 available (no cx-line in this account)
 readonly IMAGE="${RUXEL_FIXTURE_IMAGE:-debian-12}"

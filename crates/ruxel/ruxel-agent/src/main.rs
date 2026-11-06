@@ -190,8 +190,6 @@ fn serve() -> i32 {
     }
 }
 
-/// Execute one rendered task: per iteration, `TaskStart` then `TaskResult`.
-/// (`task_eval`) — the agent reports raw per-iteration module outcomes.
 #[expect(
     clippy::too_many_lines,
     clippy::let_underscore_must_use,

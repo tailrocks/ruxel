@@ -29,7 +29,6 @@ pub struct PlanTask {
     pub name: Option<String>,
     pub body: PlanBody,
     pub reads: BTreeSet<String>,
-    /// Names this task provides to later tasks (register, `set_fact` keys).
     pub provides: Vec<String>,
     pub no_log: bool,
 }

@@ -1,15 +1,3 @@
-//! The convergence ledger (ARCHITECTURE §6): a per-host record of what
-//! each task left behind, so a converged re-run verifies cheap fingerprints
-//! instead of re-doing each module's own check. Keyed by the controller's
-//! stable `ledger_key` (a blake3 of task identity + rendered params).
-//!
-//! Honesty rule (ARCHITECTURE §6): a fingerprint match never suppresses a
-//! *mandatory-execute* action. Only modules whose effect is a verifiable
-//! end state are cacheable (file content, package presence, unit state,
-//! sysctl value); command/shell, `restarted`, network fetches, and the
-//! controller-side modules are never cached — `probe_for` returns None and
-//! they always run.
-
 mod probe;
 mod store;
 
@@ -18,7 +6,6 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// One verifiable fact about the post-task system state.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind")]
 enum Probe {
@@ -57,7 +44,6 @@ enum Probe {
 }
 
 impl Probe {
-    /// True if the current system still matches this recorded fingerprint.
     fn verify(&self, system_state: &mut crate::system_state::SystemState) -> bool {
         match self {
             Probe::File {
@@ -113,9 +99,6 @@ pub(crate) struct Ledger {
 }
 
 impl Ledger {
-    /// `CachedOk` verdict: a record for this key, same agent version, and
-    /// every fingerprint still verifies. Returns the result to replay
-    /// (changed forced false — the task is converged).
     #[cfg(test)]
     pub(crate) fn cached_ok(&self, key: &str) -> Option<Value> {
         self.cached_ok_with_state(key, &mut crate::system_state::SystemState::default())
@@ -141,8 +124,6 @@ impl Ledger {
         Some(result)
     }
 
-    /// Record a freshly-executed task's fingerprints, if its module is
-    /// cacheable. No-op for always-execute modules (`probe_for` → None).
     #[cfg(test)]
     pub(crate) fn record(
         &mut self,

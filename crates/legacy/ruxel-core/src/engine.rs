@@ -1,6 +1,3 @@
-//! The templating engine: `MiniJinja` configured to reproduce ansible-core
-//! (`tools/oracle/render_parity.py`) confirms it byte-for-byte against the
-
 use minijinja::value::{Kwargs, Object, Value};
 use minijinja::{Environment, ErrorKind as MjErrorKind, UndefinedBehavior};
 use serde_norway::Value as Yaml;
@@ -174,7 +171,6 @@ impl std::fmt::Debug for VarValue {
     }
 }
 
-/// vars → `set_fact` → register; loop `item` and task vars on top).
 #[derive(Clone, Default)]
 pub struct Scope {
     layers: Vec<Arc<Vec<(String, VarValue)>>>,
@@ -323,7 +319,6 @@ impl Engine {
     pub fn new(resolver: Arc<dyn LookupResolver>) -> Self {
         let mut env = Environment::new();
         env.set_undefined_behavior(UndefinedBehavior::Chainable);
-        // AnsibleUndefinedVariable (pinned 2026-06-11: config/fixture_3/
         env.set_formatter(|out, _state, value| {
             if value.is_undefined() {
                 return Err(minijinja::Error::new(
@@ -578,7 +573,6 @@ fn filter_hash(value: Value, algorithm: String) -> Result<String, minijinja::Err
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Ansible's `b64decode` filter (setup-fixture_3.yml's bootstrap-marker
 fn filter_b64decode(value: Value) -> Result<String, minijinja::Error> {
     use base64::Engine as _;
     let Some(s) = value.as_str() else {
