@@ -291,6 +291,7 @@ fn can_grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
     Ok(has_growth_space(device_bytes, block_size, blocks))
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn has_growth_space(device_bytes: u64, block_size: u64, blocks: u64) -> bool {
     device_bytes / block_size > blocks
 }
@@ -329,10 +330,12 @@ fn grow(file: &std::fs::File, fstype: &str) -> Result<bool, String> {
     }
 }
 
+#[cfg(test)]
 fn parse_xfs_block_count(output: &str) -> Option<u64> {
     parse_xfs_field(output, "blocks=")
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_xfs_field(output: &str, prefix: &str) -> Option<u64> {
     let line = output
         .lines()
@@ -351,22 +354,17 @@ fn ext4_block_count(file: &std::fs::File) -> Result<u64, String> {
         .ok_or_else(|| "tune2fs: missing Block count".into())
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_ext4_block_count(output: &str) -> Option<u64> {
     parse_ext4_field(output, "Block count")
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_ext4_field(output: &str, field: &str) -> Option<u64> {
     output.lines().find_map(|line| {
         let (key, value) = line.split_once(':')?;
         (key.trim() == field).then(|| value.trim().parse().ok())?
     })
-}
-
-fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let mut command = std::process::Command::new(cmd);
-    command.args(args);
-    super::run_checked(command)?;
-    Ok(())
 }
 
 #[cfg(test)]
