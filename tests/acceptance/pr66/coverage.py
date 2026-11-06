@@ -87,20 +87,60 @@ def strip_rust_comments(source):
     return ''.join(out)
 
 
+def mask_rust_literals(source):
+    """Mask string payloads while preserving positions and normal quote delimiters."""
+    out = list(source)
+    i = 0
+    while i < len(source):
+        raw = re.match(r'r(#{0,255})"', source[i:]) if source[i] == 'r' else None
+        if raw:
+            end = source.find('"' + raw.group(1), i + len(raw.group(0)))
+            if end < 0:
+                raise ValueError("unterminated Rust raw string")
+            end += 1 + len(raw.group(1))
+            for j in range(i, end):
+                if out[j] != '\n':
+                    out[j] = ' '
+            i = end
+        elif source[i] == '"':
+            start = i
+            i += 1
+            while i < len(source) and source[i] != '"':
+                if source[i] == '\\':
+                    i += 2
+                else:
+                    i += 1
+            if i >= len(source):
+                raise ValueError("unterminated Rust string")
+            for j in range(start + 1, i):
+                if out[j] != '\n':
+                    out[j] = ' '
+            i += 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
 def controller_kinds(operation, local):
-    """Require uncommented admission and dispatch on both local retry paths."""
+    """Require executable admission and dispatch on both local retry paths."""
     operation = strip_rust_comments(operation)
     local = strip_rust_comments(local)
-    admission = re.findall(
-        r'if\s+matches!\s*\(\s*kind\s*,\s*((?:"[a-z_]+"\s*(?:\|\s*)?)+)\)'
-        r'\s*\{\s*return\s+self\s*\.\s*local_retry\s*\(', operation, re.S)
+    code = mask_rust_literals(operation)
+    local_code = mask_rust_literals(local)
+    admission = list(re.finditer(
+        r'if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)'
+        r'\s*\{\s*return\s+self\s*\.\s*local_retry\s*\(', code, re.S))
     if len(admission) != 1:
         raise ValueError("controller local admission route not found or ambiguous")
-    admitted_list = re.findall(r'"([a-z_]+)"', admission[0])
+    a = admission[0]
+    admitted_text = operation[a.start(1):a.end(1)]
+    if not re.fullmatch(r'\s*"[a-z_]+"(?:\s*\|\s*"[a-z_]+")*\s*', admitted_text):
+        raise ValueError("invalid controller local admission")
+    admitted_list = re.findall(r'"([a-z_]+)"', admitted_text)
     if not admitted_list or len(set(admitted_list)) != len(admitted_list):
         raise ValueError("invalid controller local admission")
     functions = re.search(r'async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>'
-                          r'.*?async\s+fn\s+local_retry\s*\((.*)', local, re.S)
+                          r'.*?async\s+fn\s+local_retry\s*\((.*)', local_code, re.S)
     if not functions:
         raise ValueError("controller local dispatch or retry route not found")
     retry = functions.group(2)
@@ -109,7 +149,14 @@ def controller_kinds(operation, local):
         raise ValueError("controller retry-loop local dispatch not found")
     if not re.search(r'\.\s*local_once\s*\(', retry[:loop.start()]):
         raise ValueError("controller non-retry local dispatch not found")
-    arms = re.findall(r'^\s*"([a-z_]+)"\s*=>', functions.group(1), re.M)
+    arms = []
+    for arm in re.finditer(r'^\s*"([ ]*)"\s*=>', functions.group(1), re.M):
+        start = functions.start(1) + arm.start(1)
+        end = functions.start(1) + arm.end(1)
+        kind = local[start:end]
+        if not re.fullmatch(r'[a-z_]+', kind):
+            raise ValueError("invalid controller local dispatch arm")
+        arms.append(kind)
     if not arms or len(set(arms)) != len(arms):
         raise ValueError("invalid controller local dispatch")
     if set(admitted_list) != set(arms):

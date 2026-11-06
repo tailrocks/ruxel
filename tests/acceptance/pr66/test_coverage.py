@@ -27,6 +27,8 @@ class File { fixed kind = "file" }'''
             (operation, local.replace('self.local_once(', 'self.other(')),
             (operation, local.replace('for attempt in 1..=attempts { self.local_once(', 'for attempt in 1..=attempts { self.other(')),
             ('/* ' + operation + ' */', local),
+            ('let inert = r#"\n' + operation + '\n"#;', local),
+            ('let inert = "' + operation.replace('"', r'\"') + '";', local),
             ('/* outer /* nested */ ' + operation + ' */', local),
             (operation, local.replace('for attempt in 1..=attempts { self.local_once(', 'for attempt in 1..=attempts { /* self.local_once( */ self.other(')),
             (operation, local.replace('async fn local_once', 'async fn other')),
