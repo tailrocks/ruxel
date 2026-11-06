@@ -73,6 +73,8 @@ inputs = [
   "tests/acceptance/pr66/plan_matrix.py",
   "tests/acceptance/pr66/post_handshake_isolation.py",
   "tests/acceptance/pr66/partial_recap.py",
+  "tests/acceptance/pr66/pause_pty.py",
+  "tests/acceptance/pr66/test_pause_pty.py",
   "tests/acceptance/pr66/cross_play_facts.py",
   "tests/acceptance/pr66/loop_task_vars.py",
   "tests/acceptance/pr66/repeated_actions.py",
