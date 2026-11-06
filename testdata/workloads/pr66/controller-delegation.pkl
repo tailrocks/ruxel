@@ -1,0 +1,37 @@
+import "../../../schema/Ruxel.pkl"
+
+output {
+  value = new Ruxel.Config {
+    inventory {
+      hosts { ["fixture"] { address = "127.0.0.1" } }
+      groups { ["nodes"] { hosts { "fixture" } } }
+    }
+    plays {
+      new {
+        name = "Fixture controller delegation"
+        targets { "nodes" }
+        tasks {
+          new {
+            name = "Read synthetic value on controller"
+            delegateTo = "localhost"
+            operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printf"; "ruxel-fixture-controller" } }
+            register = "fixture_controller_value"
+            changedWhen = new Ruxel.Literal { value = false }
+          }
+          new {
+            name = "Assert delegated result shape"
+            operation = new Ruxel.Assert {
+              that = new Ruxel.Call {
+                `function` = "eq"
+                args {
+                  new Ruxel.Ref { path { "fixture_controller_value"; "stdout" } }
+                  new Ruxel.Literal { value = "ruxel-fixture-controller" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

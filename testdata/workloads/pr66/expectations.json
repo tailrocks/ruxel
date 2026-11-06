@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "scenarios": {
+    "check-semantics": {
+      "fixture": "check-semantics.pkl",
+      "observations": [
+        {"kind": "file", "path": "/tmp/ruxel-fixture-check-notify", "content": "synthetic"}
+      ],
+      "drift": [
+        {"kind": "write_file", "path": "/tmp/ruxel-fixture-check-notify", "content": "drift"}
+      ],
+      "phases": {
+        "fresh": {"observations_match": true, "changed": true},
+        "converged": {"observations_match": true, "changed": false},
+        "drift_repair": {"observations_match": true, "changed": true},
+        "check": {"state_unchanged": true},
+        "diff": {"state_unchanged": true}
+      }
+    },
+    "controller-delegation": {
+      "fixture": "controller-delegation.pkl",
+      "observations": [],
+      "phases": {
+        "fresh": {"succeeds": true},
+        "converged": {"succeeds": true},
+        "check": {"state_unchanged": true},
+        "diff": {"state_unchanged": true}
+      }
+    },
+    "multihost": {
+      "fixture": "multihost.pkl",
+      "observations": [],
+      "phases": {
+        "fresh": {"succeeds_on_each_host": 6},
+        "converged": {"succeeds_on_each_host": 6},
+        "check": {"state_unchanged": true},
+        "diff": {"state_unchanged": true}
+      }
+    }
+  }
+}
