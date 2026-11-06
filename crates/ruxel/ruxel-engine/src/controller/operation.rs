@@ -49,7 +49,14 @@ impl<B: Backend> Runner<'_, B> {
             .await?;
         let tracked_params = self
             .backend
-            .evaluate_tracked(&Value::Object(params), scope)?;
+            .evaluate_tracked(&Value::Object(params), scope)
+            .map_err(|error| {
+                if source_sensitive {
+                    anyhow::anyhow!("sensitive operation evaluation failed")
+                } else {
+                    error
+                }
+            })?;
         let mut sensitive = layer.no_log
             || layer.control_sensitive
             || source_sensitive

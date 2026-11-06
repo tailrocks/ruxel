@@ -150,6 +150,26 @@ output { value = new Ruxel.Config {
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{name} was not censored')
+        template_error = base / 'template-error-workload.pkl'
+        template_error_source = base / 'template-error-source.pkl'
+        template_error_dest = base / 'template-error-output'
+        template_error.write_text(template_module.read_text()
+            .replace(json.dumps(str(template_source)), json.dumps(str(template_error_source)))
+            .replace(json.dumps(str(template_dest)), json.dumps(str(template_error_dest)))
+            .replace(json.dumps('output { value = new Dynamic { kind = "literal"; value = "'),
+                     json.dumps('output { value = new Dynamic { kind = "ref"; path = new Listing { "'))
+            .replace(json.dumps('" } }'), json.dumps('" } } }')))
+        template_error_log = base / 'template-error.jsonl'
+        failed_template = subprocess.run([str(cli), 'apply', str(template_error), '--local', '--agent', str(agent),
+                                          '--state-dir', str(base / 'template-error-state'), '--synthetic-secrets',
+                                          '--log-file', str(template_error_log)], stdin=subprocess.DEVNULL,
+                                         capture_output=True, text=True, timeout=30)
+        if (failed_template.returncode == 0 or not template_error_source.exists()
+                or 'sensitive operation evaluation failed' not in failed_template.stderr):
+            raise RuntimeError(f'sensitive template error fixture did not reach evaluation: {failed_template.stderr}')
+        for text in (failed_template.stdout, failed_template.stderr, template_error_log.read_text()):
+            if FAKE_VALUE in text or encoded in text or encoded_twice in text:
+                raise RuntimeError('sensitive template expression failure exposed synthetic data')
         for path in (base / 'template-state').rglob('*'):
             if path.is_file():
                 data = path.read_bytes()
