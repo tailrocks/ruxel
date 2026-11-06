@@ -12,7 +12,7 @@ struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "ruxel-secret-process-{}-{}",
+            "ruxel-secret-process-{}-{}-'",
             std::process::id(),
             NEXT_DIR.fetch_add(1, Ordering::Relaxed)
         ));
@@ -47,12 +47,9 @@ fn synthetic_executables_exercise_arguments_dedup_and_redaction() {
     let fixture = Fixture::new();
     let op = fixture.script(
         "fake-op",
-        &format!(
-            r#"[ "$#" -eq 8 ] && [ "$1" = item ] && [ "$2" = get ] && [ "$3" = --vault ] && [ "$4" = vault ] && [ "$5" = --format ] && [ "$6" = json ] && [ "$7" = -- ] && [ "$8" = --help ] || exit 4
-printf 'call\n' >> '{}'
-printf '%s' '{{"fields":[{{"id":"username","value":"alice"}},{{"label":"Password","section":{{"id":"login"}},"value":"synthetic-value"}}]}}'"#,
-            fixture.0.join("calls").display()
-        ),
+        r#"[ "$#" -eq 8 ] && [ "$1" = item ] && [ "$2" = get ] && [ "$3" = --vault ] && [ "$4" = vault ] && [ "$5" = --format ] && [ "$6" = json ] && [ "$7" = -- ] && [ "$8" = --help ] || exit 4
+printf 'call\n' >> "${0%/*}/calls"
+printf '%s' '{"fields":[{"id":"username","value":"alice"},{"label":"Password","section":{"id":"login"},"value":"synthetic-value"}]}'"#,
     );
     let fnox = fixture.script(
         "fake-fnox",
