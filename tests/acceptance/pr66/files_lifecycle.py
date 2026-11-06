@@ -89,7 +89,7 @@ output { value = new Ruxel.Config {
             require((payload / 'link').is_symlink() and (payload / 'link').resolve() == (payload / 'content').resolve(), 'link incorrect')
             require((payload / 'line').read_text() == 'setting=new\n', 'line edit incorrect')
             require((payload / 'replace').read_text() == 'fruit=pear\n', 'replace incorrect')
-            require('alpha\nbeta' in (payload / 'block').read_text(), 'block missing')
+            require((payload / 'block').read_text() == 'header\n# BEGIN ANSIBLE MANAGED BLOCK\nalpha\nbeta\n# END ANSIBLE MANAGED BLOCK\n', 'block content incorrect')
             found = {e['task']: e['result'] for e in events if e.get('task') in ('stat', 'slurp') and 'result' in e}
             require(found.get('stat', {}).get('stat', {}).get('exists') is True, 'stat result incorrect')
             require(base64.b64decode(found.get('slurp', {}).get('content', ''), validate=True) == b'synthetic-content\n', 'slurp result incorrect')
