@@ -3,8 +3,8 @@ module Ruxel
 // Runtime expressions are data: evaluation happens against each host's facts and results.
 typealias Expr = Literal|Ref|Call|ListExpr|MapExpr|Lookup
 class Literal { fixed kind = "literal"; value: Scalar? = null }
-class Ref { fixed kind = "ref"; path: Listing<String> }
-class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"subelements"|"mapAttribute"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
+class Ref { fixed kind = "ref"; path: Listing<String>(!this.isEmpty) }
+class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"subelements"|"mapAttribute"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup>(`function` == "concat" || (List("not", "length", "sha256", "base64Encode", "base64Decode", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 1) || (!List("concat", "not", "length", "sha256", "base64Encode", "base64Decode", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 2)) }
 class ListExpr { fixed kind = "list"; items: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
 class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
 class Lookup {
@@ -24,6 +24,8 @@ typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
 typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
 typealias TextList = String|Listing<String>|Expr
+typealias CommandArgs = String(this.length > 0)|Listing<String>(!this.isEmpty)|Expr
+typealias Port = Int(this >= 1 && this <= 65535)|Expr
 
 class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
 class Group { hosts: Listing<String>; children: Listing<String>; vars: Mapping<String, Expr> }
@@ -72,7 +74,7 @@ class Apt {
   autoremove: Flag? = null
   force: Flag? = null
   name: TextList? = null
-  state: Text? = null
+  state: ("present"|"latest"|Expr)? = null
   update_cache: Flag? = null
   upgrade: Text? = null
 }
@@ -81,14 +83,14 @@ class AptRepository {
   fixed kind = "apt_repository"
   filename: Text? = null
   repo: Text
-  state: Text? = null
+  state: ("present"|Expr)? = null
   update_cache: Flag? = null
 }
 
 class AuthorizedKey {
   fixed kind = "authorized_key"
   key: Text
-  state: Text? = null
+  state: ("present"|Expr)? = null
   user: Text
 }
 
@@ -104,16 +106,16 @@ class BlockInFile {
 
 class Command {
   fixed kind = "command"
-  argv: TextList? = null
+  argv: CommandArgs? = null
   chdir: Text? = null
-  cmd: Text?(this != null && argv == null || this == null && argv != null) = null
+  cmd: (String(this.length > 0)|Expr)?(this != null && argv == null || this == null && argv != null) = null
   creates: Text? = null
   removes: Text? = null
 }
 
 class Copy {
   fixed kind = "copy"
-  content: Text? = null
+  content: Text?(this != null && src == null || this == null && src != null) = null
   dest: Text
   force: Flag? = null
   group: Text? = null
@@ -128,10 +130,10 @@ class File {
   group: Text? = null
   mode: FileMode? = null
   owner: Text? = null
-  path: Text? = null
+  path: Text?(this != null || dest != null) = null
   recurse: Flag? = null
   src: Text? = null
-  state: Text? = null
+  state: ("file"|"directory"|"absent"|"link"|Expr)? = null
 }
 
 class Filesystem {
@@ -161,7 +163,7 @@ class SystemGroup {
   fixed kind = "group"
   gid: NumberValue? = null
   name: Text
-  state: Text? = null
+  state: ("present"|"absent"|Expr)? = null
 }
 
 class Firewall {
@@ -181,7 +183,7 @@ class LineInFile {
   line: Text? = null
   path: Text
   regexp: Text? = null
-  state: Text? = null
+  state: ("present"|"absent"|Expr)? = null
 }
 
 class Replace {
@@ -193,9 +195,9 @@ class Replace {
 
 class Shell {
   fixed kind = "shell"
-  argv: TextList? = null
+  argv: CommandArgs? = null
   chdir: Text? = null
-  cmd: Text?(this != null && argv == null || this == null && argv != null) = null
+  cmd: (String(this.length > 0)|Expr)?(this != null && argv == null || this == null && argv != null) = null
   creates: Text? = null
   executable: Text? = null
   removes: Text? = null
@@ -216,7 +218,7 @@ class Sysctl {
   fixed kind = "sysctl"
   name: Text
   reload: Flag? = null
-  state: Text? = null
+  state: ("present"|Expr)? = null
   sysctl_file: Text? = null
   sysctl_set: Flag? = null
   value: Text? = null
@@ -241,7 +243,7 @@ class User {
   name: Text
   remove: Flag? = null
   shell: Text? = null
-  state: Text? = null
+  state: ("present"|"absent"|Expr)? = null
   system: Flag? = null
   uid: NumberValue? = null
 }
@@ -272,52 +274,52 @@ class Mount {
   opts: Text? = null
   path: Text
   src: Text? = null
-  state: Text? = null
+  state: ("mounted"|Expr)? = null
 }
 
 class PostgresDatabase {
   fixed kind = "community.postgresql.postgresql_db"
   login_db: Text? = null
-  login_port: NumberValue? = null
+  login_port: Port? = null
   login_user: Text? = null
   name: Text
   owner: Text? = null
-  state: Text? = null
+  state: ("present"|Expr)? = null
 }
 
 class PostgresRole {
   fixed kind = "community.postgresql.postgresql_user"
   login_db: Text? = null
-  login_port: NumberValue? = null
+  login_port: Port? = null
   login_user: Text? = null
   name: Text
   password: Text? = null
   role_attr_flags: Text? = null
-  state: Text? = null
+  state: ("present"|Expr)? = null
 }
 
 class PostgresSchema {
   fixed kind = "community.postgresql.postgresql_schema"
   login_db: Text? = null
-  login_port: NumberValue? = null
+  login_port: Port? = null
   login_user: Text? = null
   name: Text
   owner: Text? = null
-  state: Text? = null
+  state: ("present"|Expr)? = null
 }
 
 class PostgresPrivileges {
   fixed kind = "community.postgresql.postgresql_privs"
   login_db: Text? = null
-  login_port: NumberValue? = null
+  login_port: Port? = null
   login_user: Text? = null
   objs: TextList? = null
   privs: TextList? = null
   role: Text
   schema: Text? = null
-  state: Text? = null
+  state: ("present"|Expr)? = null
   target_roles: TextList? = null
-  type: Text
+  type: "database"|"schema"|"table"|"default_privs"|Expr
 }
 
 class Template {

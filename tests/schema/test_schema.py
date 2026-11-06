@@ -30,6 +30,16 @@ class SchemaTests(unittest.TestCase):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.Command { argv = new Listing<String> {} }',
+            'new R.Ref {}',
+            'new R.Call { `function` = "eq" }',
+            'new R.Apt { state = "garbage" }',
+            'new R.File { path = "/tmp/file"; state = "garbage" }',
+            'new R.File { mode = "0644" }',
+            'new R.Copy { dest = "/tmp/file" }',
+            'new R.Copy { dest = "/tmp/file"; src = "a"; content = "b" }',
+            'new R.PostgresRole { name = "a"; login_port = 70000 }',
+            'new R.PostgresPrivileges { role = "a"; type = "garbage" }',
             'new R.Pause { seconds = -1 }',
             'new R.Command { cmd = "x"; argv = new Listing<String> { "x" } }',
             'new R.Service { state = "unsupported" }',
