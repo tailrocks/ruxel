@@ -53,10 +53,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             return Ok(json!({"changed": true, "failed": false, "before": null, "after": null}));
         }
         let mut args: Vec<&str> = vec!["clone"];
-        if let Some(v) = clone_branch(version) {
-            args.push("--branch");
-            args.push(v);
-        }
         args.push("--");
         args.push(repo);
         args.push(dest);
@@ -64,9 +60,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if !ok {
             return Err(format!("git clone {repo} failed"));
         }
-        let (_, ok) = git(&["reset", "--hard", "HEAD"], Some(dest))?;
-        if !ok {
-            return Err("git reset --hard HEAD after clone failed".into());
+        if let Some(v) = clone_branch(version) {
+            let (_, ok) = git(&["checkout", v], Some(dest))?;
+            if !ok {
+                return Err(format!("git checkout {v} after clone failed"));
+            }
         }
         let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
@@ -90,8 +88,32 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if action == "compare" {
         let branch = version.unwrap_or("HEAD");
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
-        let remote = ls.split_whitespace().next().unwrap_or("").to_string();
-        let changed = tracked_dirty || (ok && !remote.is_empty() && remote != before);
+        let mut remote = ls.split_whitespace().next().unwrap_or("").to_string();
+        if ls.lines().next().is_some_and(|line| {
+            line.split_whitespace()
+                .nth(1)
+                .is_some_and(|name| name.starts_with("refs/tags/"))
+        }) {
+            let peeled = format!("refs/tags/{branch}^{{}}");
+            let (tag, tag_ok) = git(&["ls-remote", "--", repo, &peeled], Some(dest))?;
+            if tag_ok && !tag.is_empty() {
+                remote = tag.split_whitespace().next().unwrap_or("").to_string();
+            }
+        }
+        if ok && remote.is_empty() {
+            let (resolved, found) = git(
+                &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
+                Some(dest),
+            )?;
+            if !found {
+                return Err(format!("git: cannot resolve version {branch}"));
+            }
+            remote = resolved;
+        }
+        if !ok {
+            return Err("git ls-remote failed".into());
+        }
+        let changed = tracked_dirty || remote != before;
         return Ok(json!({"changed": changed, "failed": false, "before": before, "after": remote}));
     }
 
@@ -106,7 +128,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err("git fetch failed".into());
     }
     let target = match version {
-        Some(v) => format!("origin/{v}"),
+        Some(v) => {
+            let remote_branch = format!("refs/remotes/origin/{v}");
+            let (_, found) = git(&["rev-parse", "--verify", &remote_branch], Some(dest))?;
+            if found {
+                remote_branch
+            } else {
+                format!("{v}^{{commit}}")
+            }
+        }
         None => "FETCH_HEAD".to_string(),
     };
     let (_, ok) = git(&["checkout", version.unwrap_or("HEAD")], Some(dest))?;
@@ -216,6 +246,55 @@ mod tests {
             "original\n"
         );
         assert_eq!(super::run(&forced, &ctx).unwrap()["changed"], false);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn clone_and_update_tag_and_commit_versions() {
+        let root = std::env::temp_dir().join(format!("ruxel-git-versions-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let dest = root.join("dest");
+        std::fs::create_dir(&source).unwrap();
+        git(&source, &["init", "-b", "main"]);
+        git(&source, &["config", "user.name", "Test"]);
+        git(&source, &["config", "user.email", "test@example.invalid"]);
+        std::fs::write(source.join("file"), "first").unwrap();
+        git(&source, &["add", "file"]);
+        git(&source, &["commit", "-m", "first"]);
+        git(&source, &["tag", "-a", "v1", "-m", "version one"]);
+        let first = Command::new("git")
+            .current_dir(&source)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        let first = String::from_utf8(first.stdout).unwrap().trim().to_owned();
+        std::fs::write(source.join("file"), "second").unwrap();
+        git(&source, &["commit", "-am", "second"]);
+        let second = Command::new("git")
+            .current_dir(&source)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        let second = String::from_utf8(second.stdout).unwrap().trim().to_owned();
+        let ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let mut params = json!({"repo": source, "dest": dest, "version": first});
+        assert_eq!(super::run(&params, &ctx).unwrap()["after"], first);
+        params["version"] = json!(second);
+        assert_eq!(super::run(&params, &ctx).unwrap()["after"], second);
+        params["version"] = json!("v1");
+        assert_eq!(super::run(&params, &ctx).unwrap()["after"], first);
+        let check = super::ExecContext {
+            check_mode: true,
+            ..ctx
+        };
+        assert_eq!(super::run(&params, &check).unwrap()["changed"], false);
         std::fs::remove_dir_all(root).unwrap();
     }
 
