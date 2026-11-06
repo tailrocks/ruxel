@@ -27,9 +27,9 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def run(cli, agent, module, state, mode):
+def run(cli, agent, module, state, mode, *options):
     result = subprocess.run([str(cli), mode, str(module), '--local', '--agent', str(agent),
-                             '--state-dir', str(state)], capture_output=True, text=True, timeout=30)
+                             '--state-dir', str(state), *options], capture_output=True, text=True, timeout=30)
     require(result.returncode == 0, f'{mode} exited {result.returncode}: {result.stderr}\n{result.stdout}')
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
@@ -81,6 +81,16 @@ def main():
         for mode in ('plan', 'apply', 'apply', 'check', 'diff'):
             events = run(cli, agent, module, base / 'state', mode)
             check_events(events, hosts, task, mode, value)
+        if args.scenario == 'multihost':
+            for selector, expected in [('multihost', hosts), ('fixture-*', hosts),
+                                       ('fixture-1,fixture-3', {'fixture-1', 'fixture-3'})]:
+                events = run(cli, agent, module, base / 'state', 'plan', '--hosts', selector)
+                check_events(events, expected, task, 'plan', value)
+            invalid = subprocess.run([str(cli), 'plan', str(module), '--local', '--agent', str(agent),
+                                      '--state-dir', str(base / 'state'), '--hosts', 'missing*'],
+                                     capture_output=True, text=True, timeout=30)
+            require(invalid.returncode != 0 and not invalid.stdout.strip(),
+                    'unmatched selector was accepted or emitted host events')
     print(f'PASS {args.scenario}: plan, two applies, check, diff; see limitations in module docstring')
 
 
