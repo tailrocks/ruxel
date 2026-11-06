@@ -184,11 +184,11 @@ fn lv_path(vg: &str, lv: &str) -> String {
 }
 
 fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
-    let out = std::process::Command::new("lvs")
-        .args(["--noheadings", "-o", "lv_name", &format!("{vg}/{lv}")])
-        .output()
-        .map_err(|e| format!("exec lvs: {e}"))?;
-    Ok(out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty())
+    let mut command = std::process::Command::new("lvs");
+    command.args(["--noheadings", "-o", "lv_name", "--", vg]);
+    let out = super::run_checked(command)?;
+    let text = std::str::from_utf8(&out.stdout).map_err(|_| "lvol: invalid lvs output")?;
+    Ok(text.lines().any(|line| line.trim() == lv))
 }
 
 fn free_extents(vg: &str) -> Result<u64, String> {
@@ -337,3 +337,7 @@ mod tests {
 #[cfg(test)]
 #[path = "lvol/tests/percent.rs"]
 mod percent_tests;
+
+#[cfg(test)]
+#[path = "lvol/tests/probe.rs"]
+mod probe_tests;
