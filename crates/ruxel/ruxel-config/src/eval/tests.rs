@@ -130,3 +130,24 @@ fn resource_symlink_race_never_reads_outside() -> Result<(), Box<dyn std::error:
     assert!(!escaped, "resource race read outside sentinel");
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn module_symlinks_set_the_resolved_resource_root() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+    let dir = std::env::temp_dir().join(format!("ruxel-module-link-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("actual"))?;
+    std::fs::create_dir_all(dir.join("entry"))?;
+    std::fs::write(dir.join("actual/value.txt"), "resolved")?;
+    std::fs::write(
+        dir.join("actual/main.pkl"),
+        "value = read(\"value.txt\").text\n",
+    )?;
+    symlink(
+        dir.join("actual/main.pkl").canonicalize()?,
+        dir.join("entry/main.pkl"),
+    )?;
+    assert_eq!(eval(&dir.join("entry/main.pkl"))?["value"], "resolved");
+    std::fs::remove_dir_all(dir)?;
+    Ok(())
+}

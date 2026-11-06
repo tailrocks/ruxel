@@ -1,26 +1,17 @@
-use cap_std::{ambient_authority, fs::Dir};
+use cap_std::fs::Dir;
 use pklr::{EvalCapabilities, NativeCapabilities, Result};
 use std::path::{Path, PathBuf};
 
 mod glob;
+mod module;
 mod path;
 
 pub(super) struct Resources {
     root: PathBuf,
     dir: Dir,
     native: NativeCapabilities,
-}
-
-impl Resources {
-    pub(super) fn new(root: &Path) -> Result<Self> {
-        let dir = Dir::open_ambient_dir(root, ambient_authority())
-            .map_err(|e| pklr::Error::Io(root.to_path_buf(), e))?;
-        Ok(Self {
-            root: root.to_path_buf(),
-            dir,
-            native: NativeCapabilities::new(),
-        })
-    }
+    module: PathBuf,
+    source: String,
 }
 
 impl EvalCapabilities for Resources {
@@ -28,7 +19,11 @@ impl EvalCapabilities for Resources {
         true
     }
     fn read_to_string(&mut self, path: &Path) -> Result<String> {
-        self.native.read_to_string(path)
+        if path == self.module {
+            Ok(self.source.clone())
+        } else {
+            self.native.read_to_string(path)
+        }
     }
     fn path_exists(&mut self, path: &Path) -> Result<bool> {
         self.native.path_exists(path)
