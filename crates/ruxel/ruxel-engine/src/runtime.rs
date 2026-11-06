@@ -312,7 +312,7 @@ pub async fn run(
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()
             } else {
-                Resolver::new(Arc::new(ProcessBackend))
+                Resolver::new(Arc::new(ProcessBackend::default()))
             },
             values: Mutex::new(Vec::new()),
         }),
