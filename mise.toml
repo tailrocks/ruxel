@@ -79,19 +79,18 @@ description = "Repository policy (alint, rust-strict-v1)"
 run = ["alint validate-config", "alint check --fail-on-warning"]
 
 [tasks."acceptance-local"]
-env = { PYTHONDONTWRITEBYTECODE = "1" }
 description = "Safe native Pkl acceptance against actual local agent subprocesses"
 run = [
   "cargo build --locked -p ruxel -p ruxel-agent",
   "python3 -B -m unittest discover -s tests/acceptance/pr66 -p test_coverage.py",
-  "python3 tests/acceptance/pr66/coverage.py",
-  "python3 tests/acceptance/pr66/plan_matrix.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/check_semantics.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/cache.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/retry.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/host_isolation.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/local_scenarios.py multihost --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
-  "python3 tests/acceptance/pr66/local_scenarios.py controller-delegation --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/coverage.py",
+  "python3 -B tests/acceptance/pr66/plan_matrix.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/check_semantics.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/cache.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/retry.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/host_isolation.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/local_scenarios.py multihost --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/local_scenarios.py controller-delegation --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
 ]
 
 [tasks.check]
