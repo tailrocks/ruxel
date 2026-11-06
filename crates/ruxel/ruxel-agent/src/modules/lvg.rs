@@ -152,7 +152,9 @@ fn current_pvs(
             if pv.is_empty() {
                 return Err("pvs: empty physical volume name for existing group".into());
             }
-            set.insert(pv.to_string());
+            if !set.insert(pv.to_string()) {
+                return Err("pvs: duplicate physical volume row for existing group".into());
+            }
         }
     }
     if set.len() != expected_count {
@@ -246,6 +248,26 @@ mod tests {
             calls[2],
             ("vgextend".into(), vec!["vg".into(), "/dev/b".into()])
         );
+    }
+
+    #[test]
+    fn duplicate_pv_rows_cannot_trigger_extension() {
+        let params = json!({"vg":"vg", "pvs":["/dev/a", "/dev/b"]});
+        for check in [true, false] {
+            let mut calls = Vec::new();
+            let mut fake = |name: &str, _: &[&str]| {
+                calls.push(name.to_string());
+                Ok(if name == "vgs" {
+                    groups()
+                } else {
+                    output(
+                        &json!({"report":[{"pv":[{"vg_name":"vg", "pv_name":"/dev/a"}, {"vg_name":"vg", "pv_name":"/dev/a"}]}]}),
+                    )
+                })
+            };
+            assert!(run_with(&params, check, &mut fake).is_err());
+            assert_eq!(calls, ["vgs", "pvs"]);
+        }
     }
 
     #[test]
