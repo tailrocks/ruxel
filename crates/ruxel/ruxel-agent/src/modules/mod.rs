@@ -103,13 +103,6 @@ pub(crate) fn execute(
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
 ) -> Outcome {
-    if !is_implemented(module) {
-        return Outcome::from_result(json!({
-            "failed": true,
-            "changed": false,
-            "msg": format!("module {module:?} is not implemented in this agent build"),
-        }));
-    }
     let result = match module {
         "filesystem" => filesystem::run(params, ctx),
         "git" => git::run(params, ctx),
@@ -140,7 +133,9 @@ pub(crate) fn execute(
         "copy" => copy::run(params, ctx),
         "slurp" => slurp::run(params),
         "systemd" | "service" => systemd::run(params, ctx, system_state),
-        _ => unreachable!("is_implemented and execute dispatch must stay aligned"),
+        _ => Err(format!(
+            "module {module:?} is not implemented in this agent build"
+        )),
     };
     match result {
         Ok(value) => Outcome::from_result(value),
@@ -150,30 +145,6 @@ pub(crate) fn execute(
             "msg": msg,
         })),
     }
-}
-
-pub(crate) fn is_implemented(module: &str) -> bool {
-    matches!(
-        module,
-        "filesystem"
-            | "ansible.posix.sysctl"
-            | "apt"
-            | "apt_repository"
-            | "authorized_key"
-            | "blockinfile"
-            | "command"
-            | "community.general.lvg"
-            | "copy"
-            | "file"
-            | "get_url"
-            | "group"
-            | "service"
-            | "slurp"
-            | "sysctl"
-            | "systemd"
-            | "template"
-            | "user"
-    )
 }
 
 pub(crate) fn shutdown() {
