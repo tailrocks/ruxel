@@ -209,6 +209,10 @@ fn call(
                 .context("base64Decode expects a string")?;
             Ok(json!(String::from_utf8(STANDARD.decode(text)?)?))
         }
+        "mapAttribute" => {
+            arity(function, args, 2)?;
+            map_attribute(&values[0], &values[1])
+        }
         "subelements" => {
             arity(function, args, 2)?;
             subelements(&values[0], &values[1])
@@ -231,16 +235,42 @@ fn boolean(value: &Value) -> Result<bool> {
 fn compare(left: &Value, right: &Value) -> Result<std::cmp::Ordering> {
     match (left, right) {
         (Value::String(a), Value::String(b)) => Ok(a.cmp(b)),
-        (Value::Number(a), Value::Number(b)) => a
-            .as_f64()
-            .zip(b.as_f64())
-            .and_then(|(a, b)| a.partial_cmp(&b))
-            .context("numbers cannot be compared"),
+        (Value::Number(a), Value::Number(b)) => {
+            let integer = |n: &serde_json::Number| {
+                n.as_i64()
+                    .map(i128::from)
+                    .or_else(|| n.as_u64().map(i128::from))
+            };
+            if let Some((a, b)) = integer(a).zip(integer(b)) {
+                return Ok(a.cmp(&b));
+            }
+            a.as_f64()
+                .zip(b.as_f64())
+                .and_then(|(a, b)| a.partial_cmp(&b))
+                .context("numbers cannot be compared")
+        }
         _ => bail!("comparison expects two strings or two numbers"),
     }
 }
 fn is_missing_reference(error: &anyhow::Error) -> bool {
     error.downcast_ref::<MissingReference>().is_some()
+}
+fn map_attribute(items: &Value, key: &Value) -> Result<Value> {
+    let items = items.as_array().context("mapAttribute expects a list")?;
+    let key = key.as_str().context("mapAttribute expects a field name")?;
+    items
+        .iter()
+        .map(|item| {
+            let mut value = item;
+            for part in key.split('.') {
+                value = value
+                    .get(part)
+                    .with_context(|| format!("missing mapAttribute field {key}"))?;
+            }
+            Ok(value.clone())
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Value::Array)
 }
 fn subelements(parents: &Value, key: &Value) -> Result<Value> {
     let parents = parents.as_array().context("subelements expects a list")?;

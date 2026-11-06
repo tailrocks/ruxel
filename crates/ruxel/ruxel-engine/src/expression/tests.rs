@@ -115,3 +115,35 @@ fn resolves_custom_loop_binding() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn maps_loop_results_and_compares_large_integers() -> Result<()> {
+    let scope = Scope::default();
+    assert_eq!(
+        run(
+            call(
+                "mapAttribute",
+                vec![
+                    lit(json!([{"stdout":"a"},{"stdout":"b"}])),
+                    lit(json!("stdout"))
+                ]
+            ),
+            &scope
+        )?,
+        json!(["a", "b"])
+    );
+    assert_eq!(
+        run(
+            call(
+                "gt",
+                vec![
+                    lit(json!(9007199254740993_u64)),
+                    lit(json!(9007199254740992_u64))
+                ]
+            ),
+            &scope
+        )?,
+        json!(true)
+    );
+    Ok(())
+}
