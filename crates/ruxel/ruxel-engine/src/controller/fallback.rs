@@ -19,6 +19,17 @@ pub(super) fn evaluate<B: Backend + ?Sized>(
         let mut unresolved = Vec::new();
         let mut error = None;
         for (name, definition) in pending {
+            if loop_vars::required(vars, definition)
+                .iter()
+                .any(|dependency| {
+                    dependency != name
+                        && vars.contains_key(dependency)
+                        && !resolved.contains_key(dependency)
+                })
+            {
+                unresolved.push((name, definition));
+                continue;
+            }
             match backend.evaluate_tracked(definition, &scope) {
                 Ok(value) => {
                     let mut bindings = scope
@@ -35,7 +46,7 @@ pub(super) fn evaluate<B: Backend + ?Sized>(
             }
         }
         if unresolved.len() == previous {
-            return Err(error.unwrap_or_else(|| anyhow::anyhow!("variable evaluation failed")));
+            return Err(error.unwrap_or_else(|| anyhow::anyhow!("cyclic task variable reference")));
         }
         pending = unresolved;
     }

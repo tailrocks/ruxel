@@ -77,3 +77,19 @@ fn custom_backend_fallback_resolves_referenced_task_variable() -> Result<()> {
     assert_eq!(resolved.len(), 1);
     Ok(())
 }
+
+#[test]
+fn custom_backend_fallback_resolves_shadowed_dependencies_in_order() -> Result<()> {
+    let mut backend = Fake::default();
+    let vars = json!({"alias":{"kind":"ref","path":["vars","derived"]},"derived":{"kind":"literal","value":"new"}});
+    let expr = json!({"kind":"ref","path":["vars","alias"]});
+    let scope = TrackedValue::public(json!({"vars":{"derived":"inherited"}}));
+    let (value, _) = super::super::fallback::evaluate(
+        &mut backend,
+        &expr,
+        &scope,
+        vars.as_object().context("vars")?,
+    )?;
+    assert_eq!(value.value, "new");
+    Ok(())
+}
