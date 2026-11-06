@@ -74,6 +74,7 @@ inputs = [
   "tests/acceptance/pr66/post_handshake_isolation.py",
   "tests/acceptance/pr66/partial_recap.py",
   "tests/acceptance/pr66/cross_play_facts.py",
+  "tests/acceptance/pr66/loop_task_vars.py",
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
   "tests/acceptance/pr66/scoped_variables.py",

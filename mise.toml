@@ -107,6 +107,7 @@ run = [
   "python3 -B tests/acceptance/pr66/post_handshake_isolation.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/partial_recap.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/cross_play_facts.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/loop_task_vars.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/local_scenarios.py multihost --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/local_scenarios.py controller-delegation --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
 ]
