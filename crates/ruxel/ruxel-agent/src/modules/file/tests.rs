@@ -1,3 +1,6 @@
+#[path = "tests/root_alias.rs"]
+mod root_alias;
+
 #[path = "tests/extra.rs"]
 mod extra;
 

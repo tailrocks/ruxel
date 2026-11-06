@@ -99,11 +99,35 @@ fn open_directory_path(
     obj: &serde_json::Map<String, Value>,
     changed: &mut bool,
 ) -> Result<(Option<OwnedFd>, bool), String> {
-    let mut current = path_start(path)?;
+    let current = match path_start(path) {
+        Ok(fd) => fd,
+        Err(error) if !path.is_absolute() => {
+            let absolute = std::env::current_dir().map_err(|_| error)?.join(path);
+            return open_directory_path(&absolute, create, obj, changed);
+        }
+        Err(error) => return Err(error),
+    };
+    open_directory_from(current, path, create, obj, changed, 0)
+}
+
+fn open_directory_from(
+    mut current: OwnedFd,
+    path: &Path,
+    create: bool,
+    obj: &serde_json::Map<String, Value>,
+    changed: &mut bool,
+    depth: usize,
+) -> Result<(Option<OwnedFd>, bool), String> {
     #[cfg(not(target_os = "macos"))]
-    let _ = (&obj, &changed);
+    let _ = (&obj, &changed, depth);
+    if depth > 40 {
+        return Err("file: too many root symlink expansions".into());
+    }
     let mut created = false;
-    let mut parts = path.components().peekable();
+    let mut parts = path
+        .components()
+        .filter(|part| !matches!(part, Component::RootDir | Component::CurDir))
+        .peekable();
     while let Some(part) = parts.next() {
         let name = match part {
             Component::RootDir | Component::CurDir => continue,
@@ -116,6 +140,21 @@ fn open_directory_path(
             Ok(fd) => fd,
             #[cfg(target_os = "macos")]
             Err(rustix::io::Errno::ACCESS) if create && parts.peek().is_none() => {
+                let stat =
+                    rustix::fs::statat(&current, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+                        .map_err(|e| e.to_string())?;
+                if FileType::from_raw_mode(stat.st_mode) == FileType::Symlink {
+                    use std::os::unix::ffi::OsStrExt;
+                    let target = rustix::fs::readlinkat(&current, name, Vec::new())
+                        .map_err(|e| e.to_string())?;
+                    let target = Path::new(std::ffi::OsStr::from_bytes(target.to_bytes()));
+                    let start = if target.is_absolute() {
+                        path_start(target)?
+                    } else {
+                        current
+                    };
+                    return open_directory_from(start, target, create, obj, changed, depth + 1);
+                }
                 super::apply_attrs_at(&current, Path::new(name), obj, changed, false)?;
                 openat(&current, name, flags, Mode::empty()).map_err(|e| e.to_string())?
             }
