@@ -68,7 +68,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 }
 
 fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str) -> (String, bool) {
-    let want = [src, path, fstype, opts, "0", "0"];
+    let want = [src, path, fstype, opts, "0", "0"].map(escape_fstab);
     let mut lines: Vec<String> = current.lines().map(str::to_string).collect();
     let mut found = false;
     let mut changed = false;
@@ -79,9 +79,12 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
         }
         let f: Vec<&str> = t.split_whitespace().collect();
 
-        if f.len() >= 2 && f[1] == path {
+        if f.len() >= 2 && unescape_mount(f[1]) == path {
             found = true;
-            let matches = f.len() >= 4 && f[0] == src && f[2] == fstype && opts_eq(f[3], opts);
+            let matches = f.len() >= 4
+                && unescape_mount(f[0]) == src
+                && unescape_mount(f[2]) == fstype
+                && opts_eq(&unescape_mount(f[3]), opts);
             if !matches {
                 *line = want.join("\t");
                 changed = true;
@@ -100,6 +103,13 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
     } else {
         (current.to_string(), false)
     }
+}
+
+fn escape_fstab(value: &str) -> String {
+    value
+        .replace('\\', "\\134")
+        .replace(' ', "\\040")
+        .replace('\t', "\\011")
 }
 
 fn opts_eq(a: &str, b: &str) -> bool {
@@ -282,6 +292,27 @@ mod tests {
         assert_eq!(
             mount_action(None, "/dev/a", "xfs", "rw"),
             MountAction::Mount
+        );
+    }
+
+    #[test]
+    fn fstab_escapes_fields_and_converges() {
+        let (next, changed) =
+            super::rewrite_fstab("", "/dev/a b", "/target with space", "ext4", "rw");
+        assert!(changed);
+        assert_eq!(
+            next,
+            "/dev/a\\040b\t/target\\040with\\040space\text4\trw\t0\t0\n"
+        );
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/a b", "/target with space", "ext4", "rw"),
+            (next, false)
+        );
+        let (next, _) = super::rewrite_fstab("", "/dev/a\\b", "/mnt/a\tb", "ext4", "rw");
+        assert!(next.contains("/dev/a\\134b\t/mnt/a\\011b"));
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/a\\b", "/mnt/a\tb", "ext4", "rw"),
+            (next, false)
         );
     }
 
