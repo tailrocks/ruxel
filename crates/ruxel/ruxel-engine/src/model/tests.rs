@@ -140,3 +140,23 @@ fn loop_variables_cannot_shadow_scope_roots() {
         );
     }
 }
+
+#[test]
+fn apt_repository_requires_filename_before_execution() -> Result<()> {
+    assert!(
+        validate_config(&config(
+            json!({"kind":"apt_repository","repo":"deb fixture"})
+        ))
+        .is_err()
+    );
+    assert!(
+        validate_config(&config(
+            json!({"kind":"apt_repository","repo":"deb fixture","filename":"fixture"})
+        ))
+        .is_ok()
+    );
+    assert!(validate_config(&config(json!({"kind":"apt_repository","repo":"deb fixture","filename":{"kind":"ref","path":["vars","filename"]}}))).is_ok());
+    let params = json!({"repo":"deb fixture"});
+    assert!(validate_operation("apt_repository", params.as_object().context("object")?).is_err());
+    Ok(())
+}

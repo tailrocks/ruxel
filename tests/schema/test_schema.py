@@ -51,6 +51,12 @@ class SchemaTests(unittest.TestCase):
             task = f'new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}'
             self.assertEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
 
+    def test_apt_repository_requires_filename(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        self.assertNotEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture" }').returncode, 0)
+        self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = "fixture" }').returncode, 0)
+        self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = new R.Ref { path { "vars"; "filename" } } }').returncode, 0)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [

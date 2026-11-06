@@ -81,7 +81,7 @@ class Apt {
 
 class AptRepository {
   fixed kind = "apt_repository"
-  filename: Text? = null
+  filename: Text
   repo: Text
   state: ("present"|Expr)? = null
   update_cache: Flag? = null

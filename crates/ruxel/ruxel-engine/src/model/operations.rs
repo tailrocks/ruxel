@@ -16,7 +16,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "upgrade" => false, FieldType::Choice(&["dist"]);
     ),
     operation!("apt_repository";
-        "filename" => false, FieldType::Text;
+        "filename" => true, FieldType::Text;
         "repo" => true, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
         "update_cache" => false, FieldType::Flag;
