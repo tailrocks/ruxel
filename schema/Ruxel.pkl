@@ -21,7 +21,8 @@ class Lookup {
 typealias Scalar = String|Boolean|Int|Float
 typealias Text = String|Expr
 typealias Flag = Boolean|Expr
-typealias NumberValue = Int|Expr
+typealias NumberValue = Int(this >= 0)|Expr
+typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
 typealias TextList = String|Listing<String>|Expr
 
 class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
@@ -31,6 +32,7 @@ class Config { inventory: Inventory; plays: Listing<Play> }
 class Play {
   name: String
   targets: Listing<String>
+  preTasks: Listing<Task>
   tasks: Listing<Task>
   handlers: Listing<Task>
   vars: Mapping<String, Expr>
@@ -39,10 +41,11 @@ class Play {
 }
 class Task {
   name: String
-  operation: Operation? = null
+  operation: Operation?(this != null && block.isEmpty || this == null && !block.isEmpty) = null
   `when`: Expr? = null
   `loop`: Expr? = null
   loopVar: String = "item"
+  loopLabel: Expr? = null
   register: String? = null
   notify: Listing<String>
   tags: Listing<String>
@@ -94,7 +97,7 @@ class BlockInFile {
   block: Text? = null
   create: Flag? = null
   group: Text? = null
-  mode: Text? = null
+  mode: FileMode? = null
   owner: Text? = null
   path: Text
 }
@@ -103,7 +106,7 @@ class Command {
   fixed kind = "command"
   argv: TextList? = null
   chdir: Text? = null
-  cmd: Text? = null
+  cmd: Text?(this != null && argv == null || this == null && argv != null) = null
   creates: Text? = null
   removes: Text? = null
 }
@@ -114,7 +117,7 @@ class Copy {
   dest: Text
   force: Flag? = null
   group: Text? = null
-  mode: Text? = null
+  mode: FileMode? = null
   owner: Text? = null
   src: Text? = null
 }
@@ -123,7 +126,7 @@ class File {
   fixed kind = "file"
   dest: Text? = null
   group: Text? = null
-  mode: Text? = null
+  mode: FileMode? = null
   owner: Text? = null
   path: Text? = null
   recurse: Flag? = null
@@ -192,7 +195,7 @@ class Shell {
   fixed kind = "shell"
   argv: TextList? = null
   chdir: Text? = null
-  cmd: Text? = null
+  cmd: Text?(this != null && argv == null || this == null && argv != null) = null
   creates: Text? = null
   executable: Text? = null
   removes: Text? = null
@@ -224,7 +227,7 @@ class Service {
   daemon_reload: Flag? = null
   enabled: Flag? = null
   name: Text? = null
-  state: Text? = null
+  state: ("started"|"stopped"|"restarted"|Expr)? = null
 }
 
 class User {
@@ -323,7 +326,7 @@ class Template {
   dest: Text
   force: Flag? = null
   group: Text? = null
-  mode: Text? = null
+  mode: FileMode? = null
   owner: Text? = null
   src: Text
 }
