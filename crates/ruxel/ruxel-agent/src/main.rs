@@ -218,26 +218,30 @@ fn execute_task(
             },
         );
 
-        let params: serde_json::Value = if iteration.params_json.is_empty() {
-            serde_json::json!({})
+        let parsed = if iteration.params_json.is_empty() {
+            Ok(serde_json::json!({}))
         } else {
-            match serde_json::from_slice(&iteration.params_json) {
-                Ok(v) => v,
-                Err(e) => {
-                    send_result(
-                        out,
-                        task,
-                        iteration,
-                        "failed",
-                        true,
-                        &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
-                        start,
-                    );
-                    if task.halt_on_failure {
-                        return true;
-                    }
-                    continue;
+            serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
+        };
+        let params = match parsed.and_then(|params| {
+            modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
+            Ok(params)
+        }) {
+            Ok(params) => params,
+            Err(e) => {
+                send_result(
+                    out,
+                    task,
+                    iteration,
+                    "failed",
+                    true,
+                    &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
+                    start,
+                );
+                if task.halt_on_failure {
+                    return true;
                 }
+                continue;
             }
         };
 
@@ -271,6 +275,7 @@ fn execute_task(
             &task.module,
             &params,
             &iteration.free_form,
+            iteration.source_content.as_deref(),
             &ctx,
             system_state,
         );

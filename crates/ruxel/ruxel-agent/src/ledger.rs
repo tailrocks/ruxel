@@ -199,7 +199,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests;
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for &byte in bytes {

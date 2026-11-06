@@ -5,22 +5,50 @@ use super::{
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(crate) fn validate_source(
+    module: &str,
+    params: &Value,
+    source: Option<&[u8]>,
+) -> Result<(), String> {
+    if source.is_some() {
+        if module != "copy" {
+            return Err("source bytes are supported only for copy".into());
+        }
+        if params_object(params)?
+            .get("content")
+            .is_some_and(|v| !v.is_null())
+        {
+            return Err("copy: source bytes conflict with content".into());
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn run(
+    params: &Value,
+    source: Option<&[u8]>,
+    ctx: &ExecContext,
+) -> Result<Value, String> {
     let obj = params_object(params)?;
     let dest = str_param(obj, "dest").ok_or("copy: dest required")?;
-    let content = str_param(obj, "content")
-        .ok_or("copy: only content= is implemented until the blob channel lands")?;
+    super::validate_source("copy", params, source)?;
+    let content = match source {
+        Some(bytes) => bytes,
+        None => str_param(obj, "content")
+            .ok_or("copy: content or source bytes required")?
+            .as_bytes(),
+    };
     let force = bool_param(obj, "force", true);
     let p = Path::new(dest);
 
     let mut changed = false;
     let exists = p.exists();
     let current = if exists {
-        std::fs::read(p).unwrap_or_default()
+        std::fs::read(p).map_err(|e| format!("copy: read destination: {e}"))?
     } else {
         Vec::new()
     };
-    let same = exists && current == content.as_bytes();
+    let same = exists && current == content;
 
     let mut result = json!({"dest": dest, "changed": false, "failed": false});
 
@@ -28,8 +56,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         changed = true;
 
         if ctx.diff_mode && !ctx.no_log {
-            let before = String::from_utf8_lossy(&current);
-            result["diff"] = json!(super::unified_diff(&before, content));
+            result["diff"] = if let (Ok(before), Ok(after)) =
+                (std::str::from_utf8(&current), std::str::from_utf8(content))
+            {
+                json!(super::unified_diff(before, after))
+            } else {
+                use sha2::{Digest, Sha256};
+                json!(format!(
+                    "Binary files differ: {} bytes (sha256 {}) -> {} bytes (sha256 {})",
+                    current.len(),
+                    crate::ledger::hex(&Sha256::digest(&current)),
+                    content.len(),
+                    crate::ledger::hex(&Sha256::digest(content))
+                ))
+            };
         }
         if !ctx.check_mode {
             let creation_mode = if exists {
@@ -40,7 +80,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
                 Some(default_file_mode(&status))
             };
-            write_atomic_with(p, content.as_bytes(), creation_mode, None)?;
+            write_atomic_with(p, content, creation_mode, None)?;
         }
     }
     if p.exists() || !ctx.check_mode {

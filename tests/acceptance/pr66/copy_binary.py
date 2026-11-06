@@ -74,6 +74,20 @@ output { value = new Ruxel.Config {
             require(result.get('changed') is True and snapshot() == before, f'{mode}: source change prediction failed')
         updated = run('apply')
         require(updated.get('changed') is True and dest.read_bytes() == SECOND, 'binary source update ignored')
+        source.write_bytes(b'')
+        before = snapshot()
+        for mode in ('check', 'diff'):
+            result = run(mode)
+            require(result.get('changed') is True and snapshot() == before, f'{mode}: empty source prediction failed')
+        emptied = run('apply')
+        require(emptied.get('changed') is True and dest.read_bytes() == b'', 'empty source ignored')
+        source.write_bytes(FIRST)
+        module.write_text(module.read_text().replace('name = "copy";', 'name = "copy"; noLog = true;'))
+        private = run('diff')
+        require(private.get('censored') is True and not private.get('diff') and dest.read_bytes() == b'',
+                'noLog binary prediction leaked or mutated destination')
+        private = run('apply')
+        require(private.get('censored') is True and dest.read_bytes() == FIRST, 'noLog binary copy failed')
     print('PASS binary copy: fresh, convergence, drift/source repair, check/diff non-mutation')
 
 

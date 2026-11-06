@@ -132,7 +132,7 @@ fn proto_version_mismatch_refused() {
     let mut stdin = agent.stdin.take().unwrap();
     let mut stdout = agent.stdout.take().unwrap();
 
-    write_frame(&mut stdin, &hello("t2", PROTO_VERSION + 1)).unwrap();
+    write_frame(&mut stdin, &hello("t2", 1)).unwrap();
     let event: v1::Event = read_frame(&mut stdout).unwrap().expect("an event");
     assert!(
         matches!(event.msg, Some(v1::event::Msg::Log(l)) if l.message.contains("mismatch")),
@@ -530,3 +530,6 @@ fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
     finish_agent(&mut rerun, &mut rerun_stdin);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[path = "protocol/source_content.rs"]
+mod source_content;

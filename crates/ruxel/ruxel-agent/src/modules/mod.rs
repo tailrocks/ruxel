@@ -102,10 +102,13 @@ impl Outcome {
     }
 }
 
+pub(crate) use copy::validate_source;
+
 pub(crate) fn execute(
     module: &str,
     params: &Value,
     free_form: &str,
+    source: Option<&[u8]>,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
 ) -> Outcome {
@@ -132,11 +135,11 @@ pub(crate) fn execute(
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
         "community.general.lvg" => lvg::run(params, ctx),
-        "template" => copy::run(params, ctx),
+        "template" => copy::run(params, None, ctx),
         "get_url" => get_url::run(params, ctx),
         "command" => command::run(params, free_form, ctx),
         "file" => file::run(params, ctx),
-        "copy" => copy::run(params, ctx),
+        "copy" => copy::run(params, source, ctx),
         "slurp" => slurp::run(params),
         "systemd" | "service" => systemd::run(params, ctx, system_state),
         _ => Err(format!(

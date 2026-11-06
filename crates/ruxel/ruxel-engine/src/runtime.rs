@@ -230,7 +230,7 @@ impl Backend for Execution {
         self.evaluate_value(value, &scope)
     }
     async fn execute(&mut self, mut request: Request) -> Result<Value> {
-        if matches!(request.task.module.as_str(), "copy" | "template") {
+        if request.task.module == "copy" {
             for iteration in &mut request.task.iterations {
                 let mut params: Map<String, Value> =
                     serde_json::from_slice(&iteration.params_json)?;
@@ -242,11 +242,11 @@ impl Backend for Execution {
                         .runtime
                         .source_dir
                         .join(src.as_str().context("source path must be text")?);
-                    let content =
-                        std::fs::read_to_string(source).context("read controller source file")?;
-                    params.insert("content".into(), Value::String(content));
-                    iteration.params_json = serde_json::to_vec(&params)?;
+                    iteration.source_content =
+                        Some(std::fs::read(source).context("read controller source file")?);
+                    params.remove("content");
                 }
+                iteration.params_json = serde_json::to_vec(&params)?;
             }
         }
         for index in 0..request.task.iterations.len() {

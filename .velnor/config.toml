@@ -58,6 +58,7 @@ inputs = [
   "tests/acceptance/pr66/check_overrides.py",
   "tests/acceptance/pr66/check_semantics.py",
   "tests/acceptance/pr66/control_runtime.py",
+  "tests/acceptance/pr66/copy_binary.py",
   "tests/acceptance/pr66/coverage.py",
   "tests/acceptance/pr66/expectations_runner.py",
   "tests/acceptance/pr66/files_lifecycle.py",
