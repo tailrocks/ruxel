@@ -1,0 +1,8 @@
+import "../../../../schema/Ruxel.pkl"
+output { value = new Ruxel.File {
+  path = "__RUN_ROOT__/literal"
+  dest = "__RUN_ROOT__/dest"
+  src = "__RUN_ROOT__/source"
+  state = "absent"
+  recurse = true
+} }

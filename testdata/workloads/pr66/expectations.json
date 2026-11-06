@@ -638,6 +638,49 @@
         "scalar-to-string interpolation",
         "independent handler notification observation"
       ]
+    },
+    "shape-variants": {
+      "fixture": "shape-variants.pkl",
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Exercise literal stat path",
+          "field": "stat.exists",
+          "equals": false
+        },
+        {
+          "kind": "task_loop_results",
+          "host": "fixture",
+          "task": "Exercise scalar loop and nested task shapes",
+          "items": [
+            "literal",
+            "mixed-synthetic",
+            {
+              "name": "mapping"
+            }
+          ]
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "state_unchanged": true
+        },
+        "converged": {
+          "state_unchanged": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "typed schema negative cases in invalid/ (path+dest currently accepted)",
+        "scalar-to-string interpolation of mapping loop item",
+        "controller-side template loading and rendering"
+      ]
     }
   }
 }

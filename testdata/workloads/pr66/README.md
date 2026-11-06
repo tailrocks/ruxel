@@ -17,9 +17,14 @@ not necessarily the entire play (pause and handlers have separate semantics).
 
 Pkl evaluation has been checked against the in-development `schema/Ruxel.pkl`.
 These fixtures have not been run through the controller or an acceptance
-harness. The other two matrix workloads and their state expectations remain
+harness. The other one matrix workload and their state expectations remain
 unported; in particular this directory does not establish full PR 66 parity.
 
 Storage scenarios require isolated disposable fixture disks at their declared
 by-id paths. Their drift-repair coverage remains pending. Never execute them
 on a real server.
+
+`shape-variants.pkl` omits two frozen tasks that were permanently skipped but
+provide conflicting operation fields. Their original shapes are retained in
+`invalid/` as schema rejection cases. Copy source plus content is rejected;
+file path plus destination still incorrectly evaluates and remains pending.
