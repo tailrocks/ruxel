@@ -27,18 +27,24 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def run(cli, agent, module, state, mode, *options):
+def run(cli, agent, module, state, mode, *options, expected_exit=0):
     result = subprocess.run([str(cli), mode, str(module), '--local', '--agent', str(agent),
                              '--state-dir', str(state), *options], capture_output=True, text=True, timeout=30)
-    require(result.returncode == 0, f'{mode} exited {result.returncode}: {result.stderr}\n{result.stdout}')
+    require(result.returncode == expected_exit, f'{mode} exited {result.returncode}, expected {expected_exit}: {result.stderr}\n{result.stdout}')
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
-def check_events(events, hosts, task, mode, value):
+def check_events(events, hosts, task, mode, value, expected_assert_failure=False):
     recaps = [e for e in events if 'recap' in e]
     require(len(recaps) == len(hosts) and {e['host'] for e in recaps} == hosts,
             f'{mode}: missing, duplicate, or unexpected host recaps')
-    require(all(e['recap']['failed'] == 0 for e in recaps), f'{mode}: host failure')
+    expected_failed = 1 if expected_assert_failure else 0
+    require(all(e['recap']['failed'] == expected_failed for e in recaps), f'{mode}: unexpected host failure count')
+    if expected_assert_failure:
+        assertions = [e['result'] for e in events if e.get('task') == 'Assert delegated result shape' and 'result' in e]
+        require(len(assertions) == 1 and assertions[0].get('failed') is True,
+                f'{mode}: expected downstream assertion failure')
+        require(all(e['recap']['changed'] == 0 for e in recaps), f'{mode}: reported changes')
     if mode in ('check', 'diff'):
         results = [e for e in events if e.get('task') == task and 'result' in e]
         require(len(results) == len(hosts) and {e['host'] for e in results} == hosts,
@@ -79,8 +85,18 @@ def main():
         module = fixture_dir / fixture.name
         module.write_bytes(data)
         for mode in ('plan', 'apply', 'apply', 'check', 'diff'):
-            events = run(cli, agent, module, base / 'state', mode)
-            check_events(events, hosts, task, mode, value)
+            # Agent ledger is execution metadata; snapshot the workload tree and
+            # schema, which are the only fixture files this reviewed scenario uses.
+            snapshot = {p.relative_to(base): p.read_bytes() for p in base.rglob('*')
+                        if p.is_file() and not p.is_relative_to(base / 'state')}
+            expected_failure = args.scenario == 'controller-delegation' and mode in ('check', 'diff')
+            events = run(cli, agent, module, base / 'state', mode,
+                         expected_exit=8 if expected_failure else 0)
+            check_events(events, hosts, task, mode, value, expected_failure)
+            if mode in ('check', 'diff'):
+                after = {p.relative_to(base): p.read_bytes() for p in base.rglob('*')
+                         if p.is_file() and not p.is_relative_to(base / 'state')}
+                require(after == snapshot, f'{mode}: fixture files changed')
         if args.scenario == 'multihost':
             for selector, expected in [('multihost', hosts), ('fixture-*', hosts),
                                        ('fixture-1,fixture-3', {'fixture-1', 'fixture-3'})]:

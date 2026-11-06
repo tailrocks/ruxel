@@ -11,21 +11,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "schema/Ruxel.pkl"
 AGENT = ROOT / "crates/ruxel/ruxel-agent/src/modules/mod.rs"
+CONTROLLER = ROOT / "crates/ruxel/ruxel-engine/src/controller/operation.rs"
 
 
 def operation_kinds(source):
-    classes = re.findall(r"\bclass\s+(\w+)\s+extends\s+Operation\s*\{([^{}]*)\}", source, re.S)
-    if not classes:
-        raise ValueError("no concrete Operation classes found")
+    alias = re.search(r"^typealias\s+Operation\s*=\s*([^\n]+)", source, re.M)
+    if not alias:
+        raise ValueError("Operation union not found")
+    names = [name.strip() for name in alias.group(1).split("|")]
+    if not names or any(not re.fullmatch(r"[A-Za-z_]\w*", name) for name in names):
+        raise ValueError("unrecognized Operation union")
+    if len(set(names)) != len(names):
+        raise ValueError("duplicate Operation class")
     kinds = []
-    for name, body in classes:
-        match = re.search(r'\bkind\s*=\s*"([^"]+)"', body)
-        if not match:
-            raise ValueError(f"{name} has no literal kind")
-        kinds.append(match.group(1))
+    for name in names:
+        pattern = r'\bclass\s+' + re.escape(name) + r'\s*\{\s*fixed\s+kind\s*=\s*"([^"]+)"'
+        matches = re.findall(pattern, source)
+        if len(matches) != 1:
+            raise ValueError(f"{name} must have one fixed literal kind")
+        kinds.append(matches[0])
     if len(set(kinds)) != len(kinds):
         raise ValueError("duplicate operation kind")
     return set(kinds)
+
+
+def controller_kinds(source):
+    match = re.search(r"match kind\s*\{(.*?)\n\s*_\s*=>", source, re.S)
+    if not match:
+        raise ValueError("controller dispatch match not found")
+    kinds = set(re.findall(r'^\s*"([^"]+)"\s*=>', match.group(1), re.M))
+    if not kinds:
+        raise ValueError("controller dispatch contains no recognizable arms")
+    return kinds
 
 
 def dispatch_kinds(source):
@@ -62,18 +79,19 @@ def main():
         agent = AGENT.read_text()
         implemented = dispatch_kinds(agent)
         admitted = admission_kinds(agent)
+        controller = controller_kinds(CONTROLLER.read_text())
     except (OSError, ValueError) as error:
         print(f"coverage error: {error}", file=sys.stderr)
         return 1
     if admitted is not None and admitted != implemented:
         print(f'agent admission/dispatch mismatch: dispatch-only={sorted(implemented - admitted)}, admission-only={sorted(admitted - implemented)}', file=sys.stderr)
         return 1
-    missing = sorted(declared - implemented)
+    missing = sorted(declared - implemented - controller)
     for kind in missing:
-        print(f"no executable agent dispatch for schema operation: {kind}", file=sys.stderr)
+        print(f"no executable agent or controller dispatch for schema operation: {kind}", file=sys.stderr)
     if missing:
         return 1
-    print(f"{len(declared)} schema operation kinds have agent dispatch arms; behavioral tests still required")
+    print(f"{len(declared)} schema operation kinds have dispatch arms; behavioral tests still required")
     return 0
 
 

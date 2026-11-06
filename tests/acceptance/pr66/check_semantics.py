@@ -64,8 +64,10 @@ def main():
         for mode in ('check', 'diff'):
             events, recap = run(cli, agent, module, state, mode)
             require(recap['changed'] > 0 and not target.exists(), f'{mode} failed to predict without writing')
-            require(any(e.get('task') == 'Record predicted handler' for e in events),
-                    f'{mode} did not run the notified handler')
+            handlers = [e.get('result', {}) for e in events if e.get('task') == 'Record predicted handler']
+            require(len(handlers) == 1 and handlers[0].get('msg') == 'predicted handler ran'
+                    and not handlers[0].get('failed') and not handlers[0].get('skipped'),
+                    f'{mode} did not successfully run the notified handler')
             if mode == 'diff':
                 require(any(e.get('result', {}).get('diff') for e in events), 'diff omitted file difference')
         _, fresh = run(cli, agent, module, state, 'apply')

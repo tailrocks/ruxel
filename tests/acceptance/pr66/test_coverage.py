@@ -1,16 +1,25 @@
 import unittest
 
-from coverage import admission_kinds, dispatch_kinds, operation_kinds
+from coverage import admission_kinds, controller_kinds, dispatch_kinds, operation_kinds
 
 
 class CoverageTest(unittest.TestCase):
     def test_extracts_only_operation_classes_and_rejects_duplicates(self):
-        source = '''class Value extends Expr { kind = "value" }
-class Copy extends Operation { kind = "copy"; path: String }
-class File extends Operation { kind = "file" }'''
+        source = '''typealias Operation = Copy|File
+class Value { fixed kind = "value" }
+class Copy { fixed kind = "copy"; path: String }
+class File { fixed kind = "file" }'''
         self.assertEqual(operation_kinds(source), {"copy", "file"})
         with self.assertRaises(ValueError):
-            operation_kinds(source + '\nclass Other extends Operation { kind = "copy" }')
+            operation_kinds(source.replace('fixed kind = "file"', 'fixed kind = "copy"'))
+        with self.assertRaises(ValueError):
+            operation_kinds(source.replace('Copy|File', 'Copy|Missing'))
+
+    def test_controller_dispatch(self):
+        source = 'match kind {\n "assert" => {},\n "debug" => {},\n _ => {}\n }'
+        self.assertEqual(controller_kinds(source), {"assert", "debug"})
+        with self.assertRaises(ValueError):
+            controller_kinds('fn other() { "assert"; }')
 
     def test_dispatch_admission_is_extracted_and_missing_guard_is_allowed(self):
         source = 'fn is_implemented(module: &str) -> bool { matches!(module, "copy" | "file") }'
