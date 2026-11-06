@@ -20,6 +20,9 @@ homepage = "https://github.com/tailrocks/ruxel"
 ruxel-config = { path = "crates/ruxel/ruxel-config", version = "0.1.0" }
 ruxel-proto = { path = "crates/ruxel/ruxel-proto", version = "0.1.0" }
 
+base64 = "0.22"
+pbkdf2 = "0.13"
+regex-lite = "0.1"
 anyhow = "1.0.104"
 blake3 = "1.8.7"
 openssh-sftp-client = "0.15.12"
