@@ -364,8 +364,17 @@ impl<B: Backend> Runner<'_, B> {
 
     pub(super) async fn run_handlers(&mut self, layer: &ContextLayer) -> Result<()> {
         let handlers = self.handlers.clone();
+        let defined: std::collections::BTreeSet<_> = handlers
+            .iter()
+            .filter_map(|handler| string(handler, "name"))
+            .collect();
+        let mut executed = std::collections::BTreeSet::new();
         for handler in &handlers {
-            if string(handler, "name").is_some_and(|name| self.notified.remove(name)) {
+            if let Some(name) = string(handler, "name")
+                && !executed.contains(name)
+                && self.notified.remove(name)
+            {
+                executed.insert(name);
                 self.handling = true;
                 let result = self.task(handler, layer).await;
                 self.handling = false;
@@ -377,15 +386,12 @@ impl<B: Backend> Runner<'_, B> {
                     }
                 })?;
                 if !result {
-                    self.notified.retain(|name| {
-                        !handlers
-                            .iter()
-                            .any(|handler| string(handler, "name") == Some(name))
-                    });
                     break;
                 }
             }
         }
+        self.notified
+            .retain(|name| !defined.contains(name.as_str()));
         if !self.notified.is_empty() {
             bail!("unknown notified handlers: {:?}", self.notified);
         }

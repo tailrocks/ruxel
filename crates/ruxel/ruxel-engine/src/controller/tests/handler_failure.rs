@@ -33,3 +33,40 @@ async fn unknown_notification_remains_an_error_after_handler_failure() {
     .await;
     assert!(error.is_err_and(|error| error.to_string().contains("missing")));
 }
+
+#[tokio::test]
+async fn backward_notification_does_not_rerun_or_report_known_handler() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"trigger","notify":["first","second"],"operation":{"kind":"command","cmd":"trigger"}}],"handlers":[{"name":"first","operation":{"kind":"command","cmd":"first"}},{"name":"second","notify":["first"],"operation":{"kind":"command","cmd":"second"}}]}]});
+    let mut backend = Fake::default();
+    let recaps = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let names: Vec<_> = backend
+        .calls
+        .iter()
+        .map(|call| call.task.name.as_str())
+        .collect();
+    assert_eq!(names, ["trigger", "first", "second"]);
+    assert_eq!(recaps["h"].failed, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn backward_notification_does_not_hide_unknown_handler() {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"notify":["first","second"],"operation":{"kind":"command","cmd":"trigger"}}],"handlers":[{"name":"first","operation":{"kind":"command","cmd":"first"}},{"name":"second","notify":["first","missing"],"operation":{"kind":"command","cmd":"second"}}]}]});
+    let mut backend = Fake::default();
+    let result = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await;
+    assert!(result.is_err_and(|error| error.to_string().contains("missing")));
+}
