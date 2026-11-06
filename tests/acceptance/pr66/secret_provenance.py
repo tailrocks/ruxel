@@ -88,6 +88,35 @@ output { value = new Ruxel.Config {
             public = [event for event in events if event.get('task') == 'public']
             if len(public) != 1 or public[0]['result'].get('msg') != 'public diagnostic':
                 raise RuntimeError(f'{label}: public diagnostic was suppressed')
+        environment_module = base / 'environment.pkl'
+        environment_file = base / 'environment-payload'
+        environment_marker = base / 'environment-executed'
+        environment_module.write_text('''import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "environment"; targets { "fixture" }; tasks {
+  new { name = "sensitive copy"; operation = new Ruxel.Copy { dest = TARGET; content = new Ruxel.Call { `function` = "base64Encode"; args { new Ruxel.Lookup { provider = "synthetic"; key = FAKE_VALUE } } } } }
+  new { name = "environment read"; register = "envread"; environment { ["RUXEL_READ_PATH"] = new Ruxel.Literal { value = TARGET } }; operation = new Ruxel.Command { argv = new Listing { "/bin/sh"; "-c"; ENV_COMMAND } } }
+  new { name = "environment result"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "envread"; "stdout" } } } }
+ } } }
+} }
+'''.replace('TARGET', json.dumps(str(environment_file))).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('ENV_COMMAND', json.dumps('cat \"$RUXEL_READ_PATH\"; touch ' + shlex.quote(str(environment_marker)))))
+        environment_log = base / 'environment.jsonl'
+        environment_run = subprocess.run([str(cli), 'apply', str(environment_module), '--local', '--agent', str(agent),
+                                          '--state-dir', str(base / 'environment-state'), '--synthetic-secrets',
+                                          '--log-file', str(environment_log)], stdin=subprocess.DEVNULL,
+                                         capture_output=True, text=True, timeout=30)
+        if environment_run.returncode != 0 or environment_file.read_bytes() != encoded.encode() or not environment_marker.is_file():
+            raise RuntimeError(f'environment read fixture failed: {environment_run.stderr}')
+        for label, text in [('stdout', environment_run.stdout), ('stderr', environment_run.stderr), ('log', environment_log.read_text())]:
+            if encoded in text or FAKE_VALUE in text:
+                raise RuntimeError(f'{label}: environment-mediated read exposed the synthetic value')
+        for text in (environment_run.stdout, environment_log.read_text()):
+            events = [json.loads(line) for line in text.splitlines() if line]
+            for name in ('environment read', 'environment result'):
+                matches = [event for event in events if event.get('task') == name]
+                if len(matches) != 1 or not matches[0]['result'].get('censored'):
+                    raise RuntimeError(f'{name} was not censored')
         failing = base / 'failure.pkl'
         failing.write_text('''import "Ruxel.pkl"
 output { value = new Ruxel.Config {
