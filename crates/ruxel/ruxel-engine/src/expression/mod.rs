@@ -2,6 +2,13 @@ use std::{collections::BTreeMap, fmt};
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+
+const URL_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -11,6 +18,7 @@ use sha2::{Digest, Sha256};
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Expr {
     Literal {
+        #[serde(default)]
         value: Value,
     },
     #[serde(rename = "ref")]
@@ -116,6 +124,14 @@ fn call(
     scope: &Scope,
     resolver: &impl LookupResolver,
 ) -> Result<Value> {
+    match function {
+        "concat" => {}
+        "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "bool" | "trim"
+        | "urlencode" | "list" => arity(function, args, 1)?,
+        "default" | "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains"
+        | "mapAttribute" | "subelements" | "join" => arity(function, args, 2)?,
+        _ => bail!("unknown expression function {function}"),
+    }
     // These operators must not evaluate an unused branch, which may reference absent data.
     match function {
         "default" => {
@@ -141,6 +157,10 @@ fn call(
         .iter()
         .map(|e| evaluate(e, scope, resolver))
         .collect::<Result<Vec<_>>>()?;
+    evaluate_call(function, args, &values)
+}
+
+fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Value> {
     match function {
         "not" => {
             arity(function, args, 1)?;
@@ -180,7 +200,7 @@ fn call(
         }
         "concat" => {
             let mut result = String::new();
-            for value in &values {
+            for value in values {
                 result.push_str(value.as_str().context("concat expects strings")?);
             }
             Ok(json!(result))
@@ -208,6 +228,52 @@ fn call(
                 .as_str()
                 .context("base64Decode expects a string")?;
             Ok(json!(String::from_utf8(STANDARD.decode(text)?)?))
+        }
+        _ => evaluate_transform(function, args, values),
+    }
+}
+
+fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result<Value> {
+    match function {
+        "bool" => Ok(json!(match &values[0] {
+            Value::Bool(value) => *value,
+            Value::Number(value) => value.as_f64().is_some_and(|n| n != 0.0),
+            Value::String(value) => match value.to_ascii_lowercase().as_str() {
+                "true" | "yes" | "on" | "1" => true,
+                "false" | "no" | "off" | "0" => false,
+                _ => bail!("bool expects a boolean-like value"),
+            },
+            _ => bail!("bool expects a boolean-like value"),
+        })),
+        "trim" => Ok(json!(
+            values[0].as_str().context("trim expects a string")?.trim()
+        )),
+        "urlencode" => Ok(json!(
+            utf8_percent_encode(
+                values[0].as_str().context("urlencode expects a string")?,
+                URL_ENCODE_SET
+            )
+            .to_string()
+        )),
+        "list" => match &values[0] {
+            Value::Array(_) => Ok(values[0].clone()),
+            Value::String(value) => Ok(json!(
+                value.chars().map(|c| c.to_string()).collect::<Vec<_>>()
+            )),
+            _ => bail!("list expects a list or string"),
+        },
+        "join" => {
+            let items = values[0].as_array().context("join expects a list")?;
+            let separator = values[1]
+                .as_str()
+                .context("join expects a separator string")?;
+            Ok(json!(
+                items
+                    .iter()
+                    .map(|item| item.as_str().context("join expects strings"))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(separator)
+            ))
         }
         "mapAttribute" => {
             arity(function, args, 2)?;

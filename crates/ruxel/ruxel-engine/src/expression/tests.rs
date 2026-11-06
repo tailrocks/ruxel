@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use super::{Expr, LookupResolver, Scope, evaluate};
@@ -144,6 +144,51 @@ fn maps_loop_results_and_compares_large_integers() -> Result<()> {
             &scope
         )?,
         json!(true)
+    );
+    Ok(())
+}
+
+#[test]
+fn transformations_and_invalid_calls() -> Result<()> {
+    let scope = Scope::default();
+    assert_eq!(run(json!({"kind":"literal"}), &scope)?, Value::Null);
+    assert_eq!(
+        run(call("trim", vec![lit(json!(" a "))]), &scope)?,
+        json!("a")
+    );
+    assert_eq!(
+        run(call("bool", vec![lit(json!("yes"))]), &scope)?,
+        json!(true)
+    );
+    assert_eq!(
+        run(call("urlencode", vec![lit(json!("a b/~"))]), &scope)?,
+        json!("a%20b%2F~")
+    );
+    assert_eq!(
+        run(
+            call("join", vec![lit(json!(["a", "b"])), lit(json!(":"))]),
+            &scope
+        )?,
+        json!("a:b")
+    );
+    assert_eq!(
+        run(call("list", vec![lit(json!("ab"))]), &scope)?,
+        json!(["a", "b"])
+    );
+    let lookup = json!({"kind":"lookup", "provider":"command"});
+    assert!(
+        run(call("unknown", vec![lookup.clone()]), &scope)
+            .err()
+            .context("expected invalid call")?
+            .to_string()
+            .contains("unknown expression function")
+    );
+    assert!(
+        run(call("eq", vec![lookup]), &scope)
+            .err()
+            .context("expected invalid call")?
+            .to_string()
+            .contains("expects 2 arguments")
     );
     Ok(())
 }
