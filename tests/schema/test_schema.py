@@ -35,6 +35,11 @@ class SchemaTests(unittest.TestCase):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.Timezone { name = "UTC"; state = "present" }',
+            'new R.PostgresDatabase { name = "db"; login_db = "ignored" }',
+            'new R.PostgresRole { name = "role"; login_db = "ignored" }',
+            'new R.Command { cmd = "true"; removes = "/tmp/a" }',
+            'new R.Shell { cmd = "true"; removes = "/tmp/a" }',
             'new R.Shell {}',
             'new R.Shell { argv = new Listing<String> { "echo" } }',
             'new R.BlockInFile { path = "/tmp/x" }',
