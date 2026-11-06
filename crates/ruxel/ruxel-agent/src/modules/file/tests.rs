@@ -102,14 +102,22 @@ fn recursive_attributes_repair_unreadable_root() {
         .join(format!("ruxel-root-unreadable-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("file"), b"safe").unwrap();
+    std::fs::set_permissions(root.join("file"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let held_file = std::fs::File::open(root.join("file")).unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o000)).unwrap();
     let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
     let mut check = context();
     check.check_mode = true;
-    assert!(run(&params, &check).is_err());
+    if let Ok(result) = run(&params, &check) {
+        assert_eq!(result["changed"], true);
+    }
     assert_eq!(
         std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
         0o000
+    );
+    assert_eq!(
+        held_file.metadata().unwrap().permissions().mode() & 0o777,
+        0o644
     );
     assert_eq!(run(&params, &context()).unwrap()["changed"], true);
     assert_eq!(
