@@ -185,10 +185,22 @@ fn lv_path(vg: &str, lv: &str) -> String {
 
 fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
     let mut command = std::process::Command::new("lvs");
-    command.args(["--noheadings", "-o", "lv_name", "--", vg]);
+    command.args([
+        "--all",
+        "--reportformat",
+        "basic",
+        "--noheadings",
+        "-o",
+        "lv_name",
+        "--",
+        vg,
+    ]);
     let out = super::run_checked(command)?;
     let text = std::str::from_utf8(&out.stdout).map_err(|_| "lvol: invalid lvs output")?;
-    Ok(text.lines().any(|line| line.trim() == lv))
+    Ok(text.lines().any(|line| {
+        let name = line.trim();
+        name == lv || name.strip_prefix('[').and_then(|v| v.strip_suffix(']')) == Some(lv)
+    }))
 }
 
 fn free_extents(vg: &str) -> Result<u64, String> {
