@@ -1,4 +1,5 @@
 use super::*;
+use std::path::PathBuf;
 
 #[test]
 fn redaction_preserves_json_structure_for_short_and_escaped_secrets() -> Result<()> {
