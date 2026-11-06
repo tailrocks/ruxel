@@ -9,46 +9,32 @@ impl<B: Backend> Runner<'_, B> {
         vars: &mut std::collections::BTreeMap<String, TrackedValue>,
         incoming: &Map<String, Value>,
     ) -> Result<()> {
-        self.extend_vars_for_item(vars, incoming, None)
-    }
-
-    fn extend_vars_for_item(
-        &mut self,
-        vars: &mut std::collections::BTreeMap<String, TrackedValue>,
-        incoming: &Map<String, Value>,
-        item: Option<(&str, &TrackedValue)>,
-    ) -> Result<()> {
-        let mut pending: Vec<_> = incoming.iter().collect();
-        let mut previous_count = pending.len();
-        while !pending.is_empty() {
-            let mut unresolved = Vec::new();
-            let mut last_error = None;
-            for (key, value) in pending {
-                let scope = self.scope(
-                    &ContextLayer {
-                        vars: vars.clone(),
-                        ..ContextLayer::default()
-                    },
-                    item,
-                );
-                match self.backend.evaluate_tracked(value, &scope) {
-                    Ok(value) => {
-                        vars.insert(key.clone(), value);
-                    }
-                    Err(error) => {
-                        unresolved.push((key, value));
-                        last_error = Some(error);
-                    }
-                }
-            }
-            if unresolved.len() == incoming.len()
-                || (!unresolved.is_empty() && unresolved.len() == previous_count)
-            {
-                return Err(last_error.context("variable evaluation failed")?);
-            }
-            previous_count = unresolved.len();
-            pending = unresolved;
+        if incoming.is_empty() {
+            return Ok(());
         }
+        let facts = self.scope.get("setFacts");
+        let definitions = incoming
+            .iter()
+            .filter(|(name, _)| {
+                facts
+                    .as_ref()
+                    .is_none_or(|facts| facts.value.get(*name).is_none())
+            })
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        let scope = self.scope(
+            &ContextLayer {
+                vars: vars.clone(),
+                ..ContextLayer::default()
+            },
+            None,
+        );
+        let (_, resolved) = self.backend.evaluate_task_expression(
+            &json!({"kind":"ref","path":["vars"]}),
+            &scope,
+            &definitions,
+        )?;
+        vars.extend(resolved);
         Ok(())
     }
 
