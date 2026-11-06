@@ -444,10 +444,20 @@ impl<B: Backend> Runner<'_, B> {
             if let Some(condition) = task.get("when").filter(|v| !v.is_null())
                 && !truth(&self.backend.evaluate(condition, &scope)?)
             {
-                results.push(json!({"skipped":true,"changed":false}));
+                let mut skipped = json!({"skipped":true,"changed":false});
+                if looped {
+                    skipped["item"] = item.clone();
+                }
+                results.push(skipped);
                 continue;
             }
             let mut result = self.execute(task, layer, &scope, item).await?;
+            if !result.is_object() {
+                bail!("operation result must be an object");
+            }
+            if looped {
+                result["item"] = item.clone();
+            }
             let mut result_scope = scope.clone();
             result_scope.insert("result".into(), result.clone());
             if let Some(expr) = task.get("failedWhen").filter(|v| !v.is_null()) {
