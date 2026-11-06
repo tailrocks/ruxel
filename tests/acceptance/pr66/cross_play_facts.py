@@ -38,7 +38,7 @@ output { value = new Ruxel.Config {
   new { name = "set"; targets { "all" }; tasks { new { name = "set private fact"; noLog = true
    operation = new Ruxel.SetFact { values { ["private_value"] = new Ruxel.Call { `function` = "concat"; args { new Ruxel.Literal { value = SECRET }; new Ruxel.Ref { path { "inventoryHost" } } } } } }
   } } }
-  new { name = "consume"; targets { "all" }; tasks { new { name = "consume private fact"; noLog = true
+  new { name = "consume"; targets { "all" }; tasks { new { name = "consume private fact"
    operation = new Ruxel.Copy { dest = new Ruxel.Call { `function` = "concat"; args { new Ruxel.Literal { value = PREFIX }; new Ruxel.Ref { path { "inventoryHost" } } } }; content = new Ruxel.Ref { path { "vars"; "private_value" } } }
   } } }
  }
