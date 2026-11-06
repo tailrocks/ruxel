@@ -48,7 +48,9 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
     let value = match ruxel_config::eval(&args.root) {
         Ok(value) => value,
         Err(error) => {
-            let _ = writeln!(std::io::stderr().lock(), "{error}");
+            if writeln!(std::io::stderr().lock(), "{error}").is_err() {
+                return ExitCode::Internal;
+            }
             return ExitCode::Config;
         }
     };
@@ -97,7 +99,7 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
             }
         }
         Err(error) => {
-            let _ = writeln!(std::io::stderr().lock(), "{error}");
+            drop(writeln!(std::io::stderr().lock(), "{error}"));
             ExitCode::Internal
         }
     }
