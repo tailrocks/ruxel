@@ -166,82 +166,6 @@ fn result_scope(
     Ok(next)
 }
 
-fn group_hosts(
-    name: &str,
-    groups: &Map<String, Value>,
-    visiting: &mut BTreeSet<String>,
-) -> Result<BTreeSet<String>> {
-    if !visiting.insert(name.to_owned()) {
-        bail!("inventory group cycle at {name:?}");
-    }
-    let group = groups
-        .get(name)
-        .with_context(|| format!("unknown inventory group {name:?}"))?;
-    let mut hosts = BTreeSet::new();
-    for host in array(group, "hosts") {
-        hosts.insert(
-            host.as_str()
-                .context("group host must be a string")?
-                .to_owned(),
-        );
-    }
-    for child in array(group, "children") {
-        hosts.extend(group_hosts(
-            child.as_str().context("group child must be a string")?,
-            groups,
-            visiting,
-        )?);
-    }
-    visiting.remove(name);
-    Ok(hosts)
-}
-
-/// Resolve and validate play targets without contacting any host.
-///
-/// # Errors
-/// Returns an error for unknown targets or invalid inventory groups.
-pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> {
-    let inventory = config.get("inventory").context("missing inventory")?;
-    let hosts = object(inventory, "hosts");
-    let groups = object(inventory, "groups");
-    for name in groups.keys() {
-        for host in group_hosts(name, &groups, &mut BTreeSet::new())? {
-            if !hosts.contains_key(&host) {
-                bail!("unknown inventory host {host:?}");
-            }
-        }
-    }
-    for host in &options.hosts {
-        if !hosts.contains_key(host) {
-            bail!("unknown host filter {host:?}");
-        }
-    }
-    let mut selected = BTreeSet::new();
-    for play in array(config, "plays") {
-        for value in array(play, "targets") {
-            let target = value.as_str().context("target must be a string")?;
-            if target == "all" {
-                selected.extend(hosts.keys().cloned());
-            } else if hosts.contains_key(target) {
-                selected.insert(target.to_owned());
-            } else if groups.contains_key(target) {
-                selected.extend(group_hosts(target, &groups, &mut BTreeSet::new())?);
-            } else {
-                bail!("unknown inventory target {target:?}");
-            }
-        }
-    }
-    for host in &selected {
-        if !hosts.contains_key(host) {
-            bail!("unknown inventory host {host:?}");
-        }
-    }
-    if !options.hosts.is_empty() {
-        selected.retain(|host| options.hosts.contains(host));
-    }
-    Ok(selected.into_iter().collect())
-}
-
 fn visible_plan(task: &Value) -> Value {
     if flag(task, "noLog") {
         return json!({"name":string(task,"name"),"noLog":true,"censored":true});
@@ -283,24 +207,17 @@ pub async fn run<B: Backend>(
     let groups = object(inventory, "groups");
     let mut totals = BTreeMap::new();
     for play in array(config, "plays") {
-        let mut targets = BTreeSet::new();
-        for target in array(play, "targets") {
-            let target = target.as_str().context("target must be a string")?;
-            if target == "all" {
-                targets.extend(hosts.keys().cloned());
-            } else if hosts.contains_key(target) {
-                targets.insert(target.to_owned());
-            } else if groups.contains_key(target) {
-                targets.extend(group_hosts(target, &groups, &mut BTreeSet::new())?);
-            } else {
-                bail!("unknown inventory target {target:?}");
-            }
-        }
+        let selectors = array(play, "targets")
+            .iter()
+            .map(|value| value.as_str().context("target must be a string"))
+            .collect::<Result<Vec<_>>>()?;
+        let targets = expand_selectors(&selectors, &hosts, &groups)?;
+        let filtered: BTreeSet<_> = selected_hosts(config, options)?.into_iter().collect();
         for host in targets {
             if !hosts.contains_key(&host) {
                 bail!("unknown inventory host {host:?}");
             }
-            if !options.hosts.is_empty() && !options.hosts.contains(&host) {
+            if !filtered.contains(&host) {
                 continue;
             }
             if options.mode == Mode::Plan {
@@ -354,7 +271,10 @@ pub async fn run<B: Backend>(
 }
 
 mod ledger;
+mod selection;
 pub use ledger::ledger_key;
+pub use selection::selected_hosts;
+use selection::{expand_selectors, group_hosts};
 mod operation;
 mod runner;
 
