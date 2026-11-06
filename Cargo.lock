@@ -1217,7 +1217,6 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "pklr"
 version = "5.2.3"
-source = "git+https://github.com/donbeave/pklr.git?rev=576547e4c5a868c11d3cf0bdbfb5569821f139fd#576547e4c5a868c11d3cf0bdbfb5569821f139fd"
 dependencies = [
  "fancy-regex",
  "indexmap",

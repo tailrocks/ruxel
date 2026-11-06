@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-pklr = { git = "https://github.com/donbeave/pklr.git", rev = "576547e4c5a868c11d3cf0bdbfb5569821f139fd", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+pklr = { path = "../../../vendor/pklr", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
 cap-std = "=4.0.3"
 serde_json.workspace = true
 thiserror.workspace = true
