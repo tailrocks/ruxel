@@ -30,15 +30,29 @@ impl Drop for TempRepository {
     }
 }
 
-pub(super) fn resolve<F>(repo: &str, version: &str, git: &F) -> Result<String, String>
+pub(super) fn resolve<F>(repo: &str, dest: &str, version: &str, git: &F) -> Result<String, String>
 where
     F: Fn(&[&str], Option<&str>) -> Result<(String, bool), String>,
 {
     let temp = TempRepository::new()?;
     let path = temp.0.to_str().ok_or("git: temporary path is not UTF-8")?;
+    let reference =
+        std::fs::canonicalize(dest).map_err(|e| format!("git: resolve checkout path: {e}"))?;
+    let reference = reference
+        .to_str()
+        .ok_or("git: checkout path is not UTF-8")?;
     let (_, cloned) = git(
-        &["clone", "--bare", "--no-hardlinks", "--", repo, path],
-        None,
+        &[
+            "clone",
+            "--bare",
+            "--no-hardlinks",
+            "--reference-if-able",
+            reference,
+            "--",
+            repo,
+            path,
+        ],
+        Some(dest),
     )?;
     if !cloned {
         return Err("git: isolated check clone failed".into());

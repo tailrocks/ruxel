@@ -92,35 +92,54 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         let branch = version.unwrap_or("HEAD");
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
         let mut remote = ls.split_whitespace().next().unwrap_or("").to_string();
-        if ls.lines().next().is_some_and(|line| {
-            line.split_whitespace()
-                .nth(1)
-                .is_some_and(|name| name.starts_with("refs/tags/"))
-        }) {
-            let peeled = format!("refs/tags/{branch}^{{}}");
+        if let Some(tag_ref) = ls
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            && tag_ref.starts_with("refs/tags/")
+        {
+            let peeled = format!("{tag_ref}^{{}}");
             let (tag, tag_ok) = git(&["ls-remote", "--", repo, &peeled], Some(dest))?;
             if tag_ok && !tag.is_empty() {
                 remote = tag.split_whitespace().next().unwrap_or("").to_string();
             }
         }
         if ok && remote.is_empty() {
-            let (resolved, found) = git(
-                &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
-                Some(dest),
-            )?;
-            if found {
-                remote = resolved;
-            } else if is_object_id(branch) {
-                let (refs, listed) = git(&["ls-remote", "--", repo], Some(dest))?;
-                if !listed {
-                    return Err("git ls-remote failed".into());
+            let is_oid = is_object_id(branch);
+            let hash_len = if is_oid {
+                let (format, found) = git(&["rev-parse", "--show-object-format"], Some(dest))?;
+                if !found {
+                    return Err("git: cannot determine object format".into());
                 }
-                remote = match advertised_object(&refs, branch)? {
-                    Some(oid) => oid,
-                    None => check::resolve(repo, branch, &git)?,
-                };
+                match format.as_str() {
+                    "sha1" => 40,
+                    "sha256" => 64,
+                    _ => return Err("git: unsupported object format".into()),
+                }
             } else {
-                return Err(format!("git: cannot resolve version {branch}"));
+                0
+            };
+            if is_oid && branch.len() < hash_len {
+                remote = check::resolve(repo, dest, branch, &git)?;
+            } else {
+                let (resolved, found) = git(
+                    &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
+                    Some(dest),
+                )?;
+                if found {
+                    remote = resolved;
+                } else if is_oid {
+                    let (refs, listed) = git(&["ls-remote", "--", repo], Some(dest))?;
+                    if !listed {
+                        return Err("git ls-remote failed".into());
+                    }
+                    remote = match advertised_object(&refs, branch)? {
+                        Some(oid) => oid,
+                        None => check::resolve(repo, dest, branch, &git)?,
+                    };
+                } else {
+                    return Err(format!("git: cannot resolve version {branch}"));
+                }
             }
         }
         if !ok {
@@ -357,3 +376,7 @@ mod tests {
 #[cfg(test)]
 #[path = "git/tests/pinned.rs"]
 mod pinned_tests;
+
+#[cfg(test)]
+#[path = "git/tests/ambiguity.rs"]
+mod ambiguity_tests;

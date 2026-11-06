@@ -50,6 +50,12 @@ fn check_resolves_new_remote_commit_without_mutating_checkout() {
     assert_eq!(run(&advertised, &check).unwrap()["after"], target);
     std::fs::write(source.join("file"), "third").unwrap();
     git(&source, &["commit", "-am", "third"]);
+    git(
+        &source,
+        &["tag", "-a", "v-test", &target, "-m", "synthetic tag"],
+    );
+    let tag = json!({"repo": source, "dest": dest, "version": "refs/tags/v-test"});
+    assert_eq!(run(&tag, &check).unwrap()["after"], target);
     let refs_before = git(&dest, &["show-ref"]);
     let params = json!({"repo": source, "dest": dest, "version": target});
     let mut ctx = ExecContext {
