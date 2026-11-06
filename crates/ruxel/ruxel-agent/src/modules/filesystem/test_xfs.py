@@ -1,5 +1,8 @@
 import errno
 import importlib.util
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 import stat
 import struct
@@ -55,6 +58,24 @@ class Tests(unittest.TestCase):
         return h.execute(mode, target, 77, self.kernel.ioctl,
                          lambda fd: types.SimpleNamespace(st_mode=stat.S_IFDIR, st_dev=identity))
 
+    def test_shell_handoff_starts_python_with_held_directory(self):
+        with tempfile.TemporaryDirectory() as path:
+            directory = os.open(path, os.O_RDONLY)
+            try:
+                identity = os.fstat(directory)
+                code = ("import os,stat; s=os.fstat(3); "
+                        "assert stat.S_ISDIR(s.st_mode); "
+                        "assert (s.st_dev,s.st_ino)==(%d,%d); "
+                        "assert not stat.S_ISDIR(os.fstat(0).st_mode)" %
+                        (identity.st_dev, identity.st_ino))
+                result = subprocess.run(
+                    ['sh', '-c', 'exec 3<&0; exec </dev/null; exec "$@"',
+                     'ruxel-xfs-helper', sys.executable, '-I', '-S', '-c', code],
+                    stdin=directory, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            finally:
+                os.close(directory)
+
     def test_preflight_only_reads(self):
         self.assertFalse(self.run_helper('preflight')['changed'])
         self.assertEqual([c[1] for c in self.kernel.calls], [h.GEOMETRY])
@@ -68,7 +89,7 @@ class Tests(unittest.TestCase):
         self.assertFalse(self.run_helper('grow')['changed'])
         self.assertEqual([c[1] for c in self.kernel.calls],
                          [h.GEOMETRY, h.GROW, h.GEOMETRY, h.GEOMETRY])
-        self.assertTrue(all(c[0] == 0 for c in self.kernel.calls))
+        self.assertTrue(all(c[0] == 3 for c in self.kernel.calls))
 
     def test_rounds_small_final_allocation_group_and_converges(self):
         self.assertTrue(self.run_helper('check', 1034 * 4096)['changed'])

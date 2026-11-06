@@ -1,6 +1,6 @@
 """FD-only Linux x86_64/aarch64 XFS data growth helper.
 
-Run with python3 -I -S -c SCRIPT MODE BYTES EXPECTED_RDEV, mount directory on fd0.
+Run with python3 -I -S -c SCRIPT MODE BYTES EXPECTED_RDEV, mount directory on fd3.
 The caller holds the matching block device and mount directory throughout.
 Exclusive administrative ownership of filesystem resizing is required.
 """
@@ -18,7 +18,7 @@ GROW = 0x4010586e
 
 def geometry(ioctl):
     data = bytearray(112)
-    ioctl(0, GEOMETRY, data, True)
+    ioctl(3, GEOMETRY, data, True)
     blocksize = struct.unpack_from('=I', data, 0)[0]
     agblocks = struct.unpack_from('=I', data, 8)[0]
     imaxpct = struct.unpack_from('=I', data, 28)[0]
@@ -37,7 +37,7 @@ def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat
         raise ValueError('unsupported XFS ioctl ABI')
     if mode not in ('preflight', 'check', 'grow') or target_bytes < 0:
         raise ValueError('invalid helper arguments')
-    identity = fstat(0)
+    identity = fstat(3)
     if not stat.S_ISDIR(identity.st_mode) or identity.st_dev != expected_rdev:
         raise ValueError('mount descriptor identity mismatch')
     blocksize, imaxpct, before, agblocks = geometry(ioctl)
@@ -55,7 +55,7 @@ def execute(mode, target_bytes, expected_rdev, ioctl=fcntl.ioctl, fstat=os.fstat
         raise ValueError('XFS target overflows u64')
     if mode == 'check' or target == before:
         return {'changed': target > before, 'blocks': before, 'blocksize': blocksize}
-    ioctl(0, GROW, struct.pack('=QI4x', target, imaxpct))
+    ioctl(3, GROW, struct.pack('=QI4x', target, imaxpct))
     after_blocksize, after_imaxpct, after, after_agblocks = geometry(ioctl)
     if after_blocksize != blocksize or after_imaxpct != imaxpct or after_agblocks != agblocks or after != target:
         raise ValueError('XFS growth postcondition failed')

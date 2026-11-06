@@ -40,9 +40,13 @@ fn invoke_with_program(
     program: &str,
 ) -> Result<bool, String> {
     let rdev = device.metadata().map_err(|e| e.to_string())?.rdev();
-    let mut command = Command::new(program);
+    let mut command = Command::new("sh");
     command
         .args([
+            "-c",
+            "exec 3<&0; exec </dev/null; exec \"$@\"",
+            "ruxel-xfs-helper",
+            program,
             "-I",
             "-S",
             "-c",
@@ -71,6 +75,18 @@ fn invoke_with_program(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn real_python_starts_with_directory_descriptor() {
+        let directory = std::fs::File::open(".").unwrap();
+        let error = super::invoke_with_program(&directory, &directory, "preflight", 0, "python3")
+            .unwrap_err();
+        assert!(
+            error.contains("mount descriptor identity mismatch"),
+            "{error}"
+        );
+        assert!(!error.contains("init_sys_streams"));
+    }
+
+    #[test]
     fn missing_interpreter_fails_before_any_ioctl() {
         let directory = std::fs::File::open(".").unwrap();
         let error = super::invoke_with_program(
@@ -81,6 +97,6 @@ mod tests {
             "/__ruxel_missing_python3__",
         )
         .unwrap_err();
-        assert!(error.contains("requires python3"));
+        assert!(error.contains("XFS helper failed"));
     }
 }
