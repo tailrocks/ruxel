@@ -143,3 +143,18 @@ fn wrong_provenance_shape_fails_closed_for_references_and_get() -> Result<()> {
     assert!(eval(json!({"kind":"ref", "path":["item", "0"]}), &scope)?.is_secret());
     Ok(())
 }
+
+#[test]
+fn provenance_for_absent_object_field_does_not_declassify_default() -> Result<()> {
+    let scope = TrackedValue {
+        value: json!({"vars":{}}),
+        provenance: Provenance::Object(BTreeMap::from([(
+            "vars".into(),
+            Provenance::Object(BTreeMap::from([("secret".into(), Provenance::Secret)])),
+        )])),
+    };
+    let missing = json!({"kind":"ref", "path":["vars", "secret"]});
+    let fallback = json!({"kind":"literal", "value":"absent"});
+    assert!(eval(call("default", vec![missing, fallback]), &scope)?.is_secret());
+    Ok(())
+}

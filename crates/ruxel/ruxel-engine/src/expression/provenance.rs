@@ -39,12 +39,16 @@ impl Provenance {
                         .collect(),
                 )
             }
-            (Self::Object(provenance), Value::Object(values)) => Self::Object(
-                provenance
-                    .iter()
-                    .filter_map(|(k, p)| values.get(k).map(|v| (k.clone(), p.validated(v))))
-                    .collect(),
-            ),
+            (Self::Object(provenance), Value::Object(values))
+                if provenance.keys().all(|k| values.contains_key(k)) =>
+            {
+                Self::Object(
+                    provenance
+                        .iter()
+                        .filter_map(|(k, p)| values.get(k).map(|v| (k.clone(), p.validated(v))))
+                        .collect(),
+                )
+            }
             _ => Self::Secret,
         }
     }
