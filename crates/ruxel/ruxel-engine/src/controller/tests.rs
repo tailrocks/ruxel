@@ -16,6 +16,32 @@ struct Fake {
     results: std::collections::VecDeque<Value>,
 }
 impl Backend for Fake {
+    fn evaluate_task_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        vars: &Map<String, Value>,
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        let mut scope = scope.clone();
+        let mut resolved = BTreeMap::new();
+        let names = super::loop_vars::required(vars, value);
+        for _ in 0..vars.len() {
+            for name in &names {
+                if resolved.contains_key(name) {
+                    continue;
+                }
+                if let Some(expr) = vars.get(name)
+                    && let Ok(value) = self.evaluate_tracked(expr, &scope)
+                {
+                    let mut values = scope.get("vars").context("vars")?;
+                    values.insert(name.clone(), value.clone())?;
+                    scope.insert("vars".into(), values)?;
+                    resolved.insert(name.clone(), value);
+                }
+            }
+        }
+        Ok((self.evaluate_tracked(value, &scope)?, resolved))
+    }
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
         if value.get("kind").and_then(Value::as_str) == Some("ref") {
             let mut current = Value::Object(scope.clone());

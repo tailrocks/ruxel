@@ -39,6 +39,7 @@ pub use output::OutputFormat;
 
 mod lookups;
 use lookups::Lookups;
+mod lazy_vars;
 mod resources;
 use resources::Resources;
 
@@ -158,6 +159,14 @@ impl Backend for Execution {
     fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
+    }
+    fn evaluate_task_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        vars: &Map<String, Value>,
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        lazy_vars::evaluate(self, value, scope, vars)
     }
     async fn prepare_operation_tracked(
         &mut self,

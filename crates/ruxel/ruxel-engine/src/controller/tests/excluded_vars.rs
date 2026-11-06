@@ -26,3 +26,20 @@ async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
     assert_eq!(recap["h"].ok, 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn task_override_can_reference_inherited_variable() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","name"]}}}]}]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
+    assert_eq!(params["cmd"], "parent");
+    Ok(())
+}

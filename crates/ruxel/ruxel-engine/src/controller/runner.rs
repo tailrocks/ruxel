@@ -55,8 +55,11 @@ impl<B: Backend> Runner<'_, B> {
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
         let task_vars = object(task, "vars");
-        for name in task_vars.keys() {
-            layer.vars.remove(name);
+        if task.get("loop").is_some_and(|value| !value.is_null()) && array(task, "block").is_empty()
+        {
+            for name in task_vars.keys() {
+                layer.vars.remove(name);
+            }
         }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
@@ -92,6 +95,29 @@ impl<B: Backend> Runner<'_, B> {
         self.extend_vars_for_item(&mut layer.vars, &pending, item)?;
         resolved.extend(pending.into_iter().map(|(key, _)| key));
         Ok(())
+    }
+
+    fn evaluate_selection(
+        &mut self,
+        task: &Value,
+        layer: &mut ContextLayer,
+        item: Option<(&str, &TrackedValue)>,
+        expression: &Value,
+        resolved: &mut std::collections::BTreeSet<String>,
+    ) -> Result<TrackedValue> {
+        let definitions = object(task, "vars")
+            .into_iter()
+            .filter(|(name, _)| !resolved.contains(name))
+            .collect();
+        let scope = self.scope(layer, item);
+        let (value, vars) =
+            self.backend
+                .evaluate_task_expression(expression, &scope, &definitions)?;
+        for (name, value) in vars {
+            resolved.insert(name.clone());
+            layer.vars.insert(name, value);
+        }
+        Ok(value)
     }
 
     pub(super) fn scope(
@@ -170,9 +196,8 @@ impl<B: Backend> Runner<'_, B> {
             if !array(task, "block").is_empty() {
                 let mut resolved = std::collections::BTreeSet::new();
                 if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
-                    self.resolve_task_vars(task, &mut layer, None, Some(condition), &mut resolved)?;
-                    let scope = self.scope(&layer, None);
-                    let condition = self.backend.evaluate_tracked(condition, &scope)?;
+                    let condition =
+                        self.evaluate_selection(task, &mut layer, None, condition, &mut resolved)?;
                     layer.control_sensitive |= condition.is_secret();
                     if !truth(&condition.value) {
                         self.recap.skipped += 1;
@@ -202,15 +227,13 @@ impl<B: Backend> Runner<'_, B> {
     pub(super) async fn operation(&mut self, task: &Value, layer: &ContextLayer) -> Result<bool> {
         let mut loop_layer = layer.clone();
         let items = if let Some(expr) = task.get("loop").filter(|v| !v.is_null()) {
-            self.resolve_task_vars(
+            let value = self.evaluate_selection(
                 task,
                 &mut loop_layer,
                 None,
-                Some(expr),
+                expr,
                 &mut std::collections::BTreeSet::new(),
             )?;
-            let scope = self.scope(&loop_layer, None);
-            let value = self.backend.evaluate_tracked(expr, &scope)?;
             let items = value
                 .value
                 .as_array()
@@ -228,15 +251,13 @@ impl<B: Backend> Runner<'_, B> {
             let mut iteration_layer = layer.clone();
             let mut resolved = std::collections::BTreeSet::new();
             if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
-                self.resolve_task_vars(
+                let condition = self.evaluate_selection(
                     task,
                     &mut iteration_layer,
                     binding,
-                    Some(condition),
+                    condition,
                     &mut resolved,
                 )?;
-                let scope = self.scope(&iteration_layer, binding);
-                let condition = self.backend.evaluate_tracked(condition, &scope)?;
                 iteration_layer.control_sensitive |= condition.is_secret();
                 if !truth(&condition.value) {
                     let skipped = json!({"skipped":true,"changed":false});

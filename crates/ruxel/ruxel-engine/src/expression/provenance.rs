@@ -17,6 +17,16 @@ impl std::fmt::Display for SensitiveMissingReference {
 }
 impl std::error::Error for SensitiveMissingReference {}
 
+pub(crate) fn copy_evaluation_error(error: &anyhow::Error) -> anyhow::Error {
+    if let Some(missing) = error.downcast_ref::<MissingReference>() {
+        MissingReference(missing.0.clone()).into()
+    } else if error.downcast_ref::<SensitiveMissingReference>().is_some() {
+        SensitiveMissingReference.into()
+    } else {
+        anyhow::anyhow!(error.to_string())
+    }
+}
+
 fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
     let (root, rest) = path.split_first().context("empty reference")?;
     let root = if root == "variables" {
@@ -48,6 +58,17 @@ fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
     })
 }
 
+pub(crate) trait VariableResolver {
+    fn resolve(&self, path: &[String], scope: &TrackedValue) -> Result<Option<TrackedValue>>;
+}
+
+struct NoVariables;
+impl VariableResolver for NoVariables {
+    fn resolve(&self, _path: &[String], _scope: &TrackedValue) -> Result<Option<TrackedValue>> {
+        Ok(None)
+    }
+}
+
 /// Evaluate an expression with provenance. Scope is an object containing the
 /// same roots as the controller scope (`vars`, `facts`, `results`, and `item`).
 /// The caller must carry the returned provenance with the value.
@@ -60,9 +81,21 @@ pub fn evaluate_tracked(
     scope: &TrackedValue,
     resolver: &impl LookupResolver,
 ) -> Result<TrackedValue> {
+    evaluate_with_variables(expr, scope, resolver, &NoVariables)
+}
+
+pub(crate) fn evaluate_with_variables(
+    expr: &Expr,
+    scope: &TrackedValue,
+    resolver: &impl LookupResolver,
+    variables: &dyn VariableResolver,
+) -> Result<TrackedValue> {
     match expr {
         Expr::Literal { value } => Ok(TrackedValue::public(value.clone())),
-        Expr::Ref { path } => reference(path, scope),
+        Expr::Ref { path } => match variables.resolve(path, scope)? {
+            Some(value) => Ok(value),
+            None => reference(path, scope),
+        },
         Expr::Lookup { .. } => resolver
             .resolve(expr)
             .map(TrackedValue::secret)
@@ -70,7 +103,7 @@ pub fn evaluate_tracked(
         Expr::List { items } => {
             let items = items
                 .iter()
-                .map(|e| evaluate_tracked(e, scope, resolver))
+                .map(|e| evaluate_with_variables(e, scope, resolver, variables))
                 .collect::<Result<Vec<_>>>()?;
             Ok(TrackedValue {
                 value: Value::Array(items.iter().map(|v| v.value.clone()).collect()),
@@ -80,7 +113,12 @@ pub fn evaluate_tracked(
         Expr::Map { entries } => {
             let entries = entries
                 .iter()
-                .map(|(k, e)| Ok((k.clone(), evaluate_tracked(e, scope, resolver)?)))
+                .map(|(k, e)| {
+                    Ok((
+                        k.clone(),
+                        evaluate_with_variables(e, scope, resolver, variables)?,
+                    ))
+                })
                 .collect::<Result<BTreeMap<_, _>>>()?;
             Ok(TrackedValue {
                 value: Value::Object(
@@ -97,7 +135,7 @@ pub fn evaluate_tracked(
                 ),
             })
         }
-        Expr::Call { function, args } => call(function, args, scope, resolver),
+        Expr::Call { function, args } => call(function, args, scope, resolver, variables),
     }
 }
 
@@ -110,6 +148,7 @@ fn call(
     args: &[Expr],
     scope: &TrackedValue,
     resolver: &impl LookupResolver,
+    variables: &dyn VariableResolver,
 ) -> Result<TrackedValue> {
     let expected = match function {
         "concat" => None,
@@ -125,21 +164,27 @@ fn call(
     }
     match function {
         "if" => {
-            let condition = evaluate_tracked(&args[0], scope, resolver)?;
+            let condition = evaluate_with_variables(&args[0], scope, resolver, variables)?;
             let selected =
                 boolean(&condition.value).map_err(|e| sensitive_error(e, condition.is_secret()))?;
-            let mut result = evaluate_tracked(&args[if selected { 1 } else { 2 }], scope, resolver)
-                .map_err(|e| sensitive_error(e, condition.is_secret()))?;
+            let mut result = evaluate_with_variables(
+                &args[if selected { 1 } else { 2 }],
+                scope,
+                resolver,
+                variables,
+            )
+            .map_err(|e| sensitive_error(e, condition.is_secret()))?;
             if condition.is_secret() {
                 result.provenance = Provenance::Secret;
             }
             return Ok(result);
         }
         "default" => {
-            return match evaluate_tracked(&args[0], scope, resolver) {
+            return match evaluate_with_variables(&args[0], scope, resolver, variables) {
                 Ok(value) if value.value.is_null() => {
-                    let mut fallback = evaluate_tracked(&args[1], scope, resolver)
-                        .map_err(|e| sensitive_error(e, value.is_secret()))?;
+                    let mut fallback =
+                        evaluate_with_variables(&args[1], scope, resolver, variables)
+                            .map_err(|e| sensitive_error(e, value.is_secret()))?;
                     if value.is_secret() {
                         fallback.provenance = Provenance::Secret;
                     }
@@ -147,19 +192,20 @@ fn call(
                 }
                 Ok(value) => Ok(value),
                 Err(error) if error.downcast_ref::<SensitiveMissingReference>().is_some() => {
-                    let mut fallback = evaluate_tracked(&args[1], scope, resolver)
-                        .map_err(|e| sensitive_error(e, true))?;
+                    let mut fallback =
+                        evaluate_with_variables(&args[1], scope, resolver, variables)
+                            .map_err(|e| sensitive_error(e, true))?;
                     fallback.provenance = Provenance::Secret;
                     Ok(fallback)
                 }
                 Err(error) if is_missing_reference(&error) => {
-                    evaluate_tracked(&args[1], scope, resolver)
+                    evaluate_with_variables(&args[1], scope, resolver, variables)
                 }
                 Err(error) => Err(error),
             };
         }
         "and" | "or" => {
-            let left = evaluate_tracked(&args[0], scope, resolver)?;
+            let left = evaluate_with_variables(&args[0], scope, resolver, variables)?;
             let b = boolean(&left.value).map_err(|e| sensitive_error(e, left.is_secret()))?;
             if (function == "and" && !b) || (function == "or" && b) {
                 return Ok(if left.is_secret() {
@@ -168,7 +214,7 @@ fn call(
                     TrackedValue::public(Value::Bool(b))
                 });
             }
-            let right = evaluate_tracked(&args[1], scope, resolver)
+            let right = evaluate_with_variables(&args[1], scope, resolver, variables)
                 .map_err(|e| sensitive_error(e, left.is_secret()))?;
             let sensitive = left.is_secret() || right.is_secret();
             let value =
@@ -180,7 +226,7 @@ fn call(
             });
         }
         "map" => {
-            let mut source = evaluate_tracked(&args[0], scope, resolver)?;
+            let mut source = evaluate_with_variables(&args[0], scope, resolver, variables)?;
             source.provenance = source.provenance.validated(&source.value);
             let items = source
                 .value
@@ -200,7 +246,7 @@ fn call(
                     Provenance::Object(v) => v,
                     Provenance::Secret => {
                         result.push(
-                            evaluate_tracked(&args[1], &child, resolver)
+                            evaluate_with_variables(&args[1], &child, resolver, variables)
                                 .map_err(|e| sensitive_error(e, true))?,
                         );
                         continue;
@@ -210,7 +256,7 @@ fn call(
                 tree.insert("item".into(), source.provenance.child(&index.to_string()));
                 child.provenance = Provenance::Object(tree);
                 result.push(
-                    evaluate_tracked(&args[1], &child, resolver)
+                    evaluate_with_variables(&args[1], &child, resolver, variables)
                         .map_err(|e| sensitive_error(e, source.is_secret()))?,
                 );
             }
@@ -228,8 +274,8 @@ fn call(
     let mut values = Vec::new();
     let mut sensitive = false;
     for arg in args {
-        let value =
-            evaluate_tracked(arg, scope, resolver).map_err(|e| sensitive_error(e, sensitive))?;
+        let value = evaluate_with_variables(arg, scope, resolver, variables)
+            .map_err(|e| sensitive_error(e, sensitive))?;
         sensitive |= value.is_secret();
         values.push(value.value);
     }

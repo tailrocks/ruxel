@@ -65,6 +65,27 @@ pub trait Backend {
             TrackedValue::public(value)
         })
     }
+    /// Evaluate a task expression while resolving task variables as needed.
+    ///
+    /// # Errors
+    /// Returns an error if an accessed variable or expression cannot be evaluated.
+    fn evaluate_task_expression(
+        &mut self,
+        value: &Value,
+        scope: &crate::expression::provenance::TrackedValue,
+        vars: &Map<String, Value>,
+    ) -> Result<(
+        crate::expression::provenance::TrackedValue,
+        std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
+    )> {
+        if !vars.is_empty() {
+            bail!("backend does not support lazy task variables");
+        }
+        Ok((
+            self.evaluate_tracked(value, scope)?,
+            std::collections::BTreeMap::new(),
+        ))
+    }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
     /// # Errors
