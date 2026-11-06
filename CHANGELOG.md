@@ -7,7 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Pkl evaluation via pklr and `ruxel config dump`.
+- Typed Pkl configuration, evaluation via pklr, and `ruxel config dump`.
+- Controller commands for plan, check, diff, and apply, with synthetic local acceptance coverage in progress.
 - alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
 - `hk.pkl` git hooks (mise, gitleaks, cargo fmt, check, clippy, deny, rumdl).
 - Initial research implementation and closed-workload CLI/agent surface.
@@ -22,6 +23,6 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
-- YAML playbooks, INI inventory, MiniJinja, the 1Password resolver, and `plan`/`apply` (to be rewritten).
+- YAML and INI configuration input and MiniJinja authoring.
 - Ansible parity tooling, Ansible-era docs, and agent modules no schema reaches; recoverable from tag `ansible-parity-final`.
 - `justfile`; `mise run check` replaces `just check`. The Python Ansible-parity suites no longer run by default.
