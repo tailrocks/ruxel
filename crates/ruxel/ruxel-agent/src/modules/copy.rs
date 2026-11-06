@@ -105,4 +105,35 @@ mod tests {
         assert!(!copy_needs_write(true, true, true));
         assert!(copy_needs_write(true, false, true));
     }
+    #[test]
+    fn template_content_preserves_trailing_newlines_and_converges() {
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-template-newlines-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("content");
+        let mut ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let mut state = crate::system_state::SystemState::default();
+        for content in ["rendered", "rendered\n", "rendered\n\n"] {
+            let params = serde_json::json!({"dest": path, "content": content});
+            ctx.check_mode = true;
+            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            ctx.check_mode = false;
+            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            assert_eq!(std::fs::read(&path).unwrap(), content.as_bytes());
+            assert!(
+                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+            );
+            ctx.check_mode = true;
+            assert!(
+                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

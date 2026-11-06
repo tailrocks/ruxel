@@ -70,6 +70,19 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
     let value = execution.evaluate(&Value::Object(params), &scope)?;
     assert_eq!(value["content"], "rendered-value");
     assert!(value.get("src").is_none());
+    for text in ["rendered", "rendered\n", "rendered\n\n"] {
+        let scope = json!({"vars":{"name":text}})
+            .as_object()
+            .context("scope")?
+            .clone();
+        let mut params = json!({"src":"source.pkl","dest":"unused"})
+            .as_object()
+            .context("params")?
+            .clone();
+        execution.prepare_operation("template", &mut params, &scope)?;
+        let value = execution.evaluate(&Value::Object(params), &scope)?;
+        assert_eq!(value["content"], text);
+    }
     let mut jinja = json!({"src":"source.j2","dest":"unused"})
         .as_object()
         .context("params")?
