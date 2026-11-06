@@ -44,11 +44,30 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 fn blkid_type(dev: &str) -> Result<Option<String>, String> {
     let out = std::process::Command::new("blkid")
-        .args(["-o", "value", "-s", "TYPE", dev])
+        .args(["--probe", "-o", "value", "-s", "TYPE", dev])
         .output()
         .map_err(|e| format!("exec blkid: {e}"))?;
-    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    Ok(if t.is_empty() { None } else { Some(t) })
+    parse_blkid_result(out.status.code(), &out.stdout, &out.stderr)
+}
+
+fn parse_blkid_result(
+    status: Option<i32>,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Result<Option<String>, String> {
+    if status != Some(0) {
+        return Err(format!(
+            "filesystem: blkid probe failed or could not identify device (status {status:?}): {}",
+            String::from_utf8_lossy(stderr).trim()
+        ));
+    }
+    let value = std::str::from_utf8(stdout)
+        .map_err(|_| "filesystem: invalid blkid output")?
+        .trim();
+    if value.is_empty() || value.lines().count() != 1 {
+        return Err("filesystem: blkid did not report a unique filesystem type".into());
+    }
+    Ok(Some(value.to_string()))
 }
 
 fn make(dev: &str, fstype: &str) -> Result<(), String> {
@@ -206,6 +225,20 @@ mod tests {
             Some(5_240_832)
         );
         assert_eq!(super::parse_ext4_block_count("Block size: 4096\n"), None);
+    }
+
+    #[test]
+    fn probe_errors_and_missing_type_never_mean_blank_device() {
+        assert_eq!(
+            super::parse_blkid_result(Some(0), b"ext4\n", b"").unwrap(),
+            Some("ext4".into())
+        );
+        for status in [None, Some(2), Some(4), Some(8)] {
+            assert!(super::parse_blkid_result(status, b"", b"probe error").is_err());
+            assert!(super::parse_blkid_result(status, b"ext4\n", b"error").is_err());
+        }
+        assert!(super::parse_blkid_result(Some(0), b"", b"").is_err());
+        assert!(super::parse_blkid_result(Some(0), b"ext4\nxfs\n", b"").is_err());
     }
 
     #[test]
