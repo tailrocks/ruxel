@@ -1,6 +1,6 @@
 import unittest
 
-from coverage import dispatch_kinds, operation_kinds
+from coverage import admission_kinds, dispatch_kinds, operation_kinds
 
 
 class CoverageTest(unittest.TestCase):
@@ -11,6 +11,13 @@ class File extends Operation { kind = "file" }'''
         self.assertEqual(operation_kinds(source), {"copy", "file"})
         with self.assertRaises(ValueError):
             operation_kinds(source + '\nclass Other extends Operation { kind = "copy" }')
+
+    def test_dispatch_admission_is_extracted_and_missing_guard_is_allowed(self):
+        source = 'fn is_implemented(module: &str) -> bool { matches!(module, "copy" | "file") }'
+        self.assertEqual(admission_kinds(source), {"copy", "file"})
+        self.assertIsNone(admission_kinds("fn execute() {}"))
+        with self.assertRaises(ValueError):
+            admission_kinds("fn is_implemented(x: &str) -> bool { custom(x) }")
 
     def test_uses_dispatch_arms_not_supported_list(self):
         source = '''let result = match module {

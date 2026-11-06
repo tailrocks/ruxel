@@ -41,12 +41,32 @@ def dispatch_kinds(source):
     return kinds
 
 
+def admission_kinds(source):
+    """Return a separate dispatch admission list when the agent has one."""
+    if not re.search(r"\bfn\s+is_implemented\s*\(", source):
+        if re.search(r"\bis_implemented\s*\(", source):
+            raise ValueError("dispatch admission function not found")
+        return None
+    match = re.search(r"fn\s+is_implemented\s*\([^)]*\)[^{]*\{\s*matches!\s*\(\s*module\s*,(.*?)\)\s*\}", source, re.S)
+    if not match:
+        raise ValueError("unrecognized agent admission list")
+    kinds = set(re.findall(r'"([^"]+)"', match.group(1)))
+    if not kinds:
+        raise ValueError("empty agent admission list")
+    return kinds
+
+
 def main():
     try:
         declared = operation_kinds(SCHEMA.read_text())
-        implemented = dispatch_kinds(AGENT.read_text())
+        agent = AGENT.read_text()
+        implemented = dispatch_kinds(agent)
+        admitted = admission_kinds(agent)
     except (OSError, ValueError) as error:
         print(f"coverage error: {error}", file=sys.stderr)
+        return 1
+    if admitted is not None and admitted != implemented:
+        print(f'agent admission/dispatch mismatch: dispatch-only={sorted(implemented - admitted)}, admission-only={sorted(admitted - implemented)}', file=sys.stderr)
         return 1
     missing = sorted(declared - implemented)
     for kind in missing:
