@@ -119,6 +119,10 @@ def execute(name, case, cli, agent):
             events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
             recaps = [e for e in events if 'recap' in e]
             require(recaps and all(e['recap'].get('failed') == 0 for e in recaps), f'{name} {mode}: failed or missing recaps')
+            if name == 'multihost':
+                expected_hosts = {host for item in case['observations'] for host in item['hosts']}
+                require(len(recaps) == len(expected_hosts) and {e['host'] for e in recaps} == expected_hosts,
+                        f'{name} {mode}: missing or duplicate host recaps')
             return events, recaps
         def observe(events):
             for item in case['observations']:
@@ -169,9 +173,11 @@ def execute(name, case, cli, agent):
                 if phase == 'diff':
                     require(any(e.get('result', {}).get('diff') for e in events), 'diff missing')
             else:
-                tasks = [e['result'] for e in events if e.get('task') == case['observations'][0]['task'] and 'result' in e]
-                require(len(tasks) == len(case['observations'][0]['hosts']) and all(x.get('skipped') for x in tasks),
-                        f'{phase}: commands not skipped')
+                expected_hosts = set(case['observations'][0]['hosts'])
+                task_events = [e for e in events if e.get('task') == case['observations'][0]['task'] and 'result' in e]
+                require(len(task_events) == len(expected_hosts) and {e['host'] for e in task_events} == expected_hosts
+                        and all(e['result'].get('skipped') for e in task_events),
+                        f'{phase}: missing, duplicate or unskipped host commands')
         if 'drift_repair' in case['phases']:
             events, recaps = run('apply')
             check_phase('drift_repair', events, recaps)
@@ -185,7 +191,8 @@ def main():
     args = parser.parse_args()
     cli, agent = args.ruxel.resolve(strict=True), args.agent.resolve(strict=True)
     manifest = json.loads((WORKLOADS / 'expectations.json').read_text())
-    require(manifest.get('version') == 1 and set(manifest.get('scenarios', {})) == SCENARIOS,
+    require(set(manifest) == {'version', 'scenarios'} and manifest.get('version') == 1
+            and set(manifest.get('scenarios', {})) == SCENARIOS,
             'expectations manifest version or scenario inventory mismatch')
     selected = args.scenario or sorted(SCENARIOS)
     failures = []

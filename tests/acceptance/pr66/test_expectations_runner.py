@@ -1,8 +1,13 @@
+import contextlib
 import copy
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import expectations_runner
 from expectations_runner import path_in, validate_case
 
 
@@ -31,6 +36,35 @@ class ExpectationsTest(unittest.TestCase):
             validate_case('check-semantics', unknown)
         with self.assertRaises(RuntimeError):
             validate_case('storage-ext4', case)
+
+    def test_default_all_and_unsupported_selection_fail_without_remote_execution(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / 'binary'
+            binary.write_text('synthetic')
+            (root / 'expectations.json').write_text(json.dumps({
+                'version': 1, 'scenarios': {name: {} for name in expectations_runner.SCENARIOS},
+            }))
+            original = expectations_runner.execute
+            def execute_safe(name, case, cli, agent):
+                if name in expectations_runner.PINS:
+                    return None
+                return original(name, case, cli, agent)
+            args = ['expectations_runner', '--ruxel', str(binary), '--agent', str(binary)]
+            with patch.object(expectations_runner, 'WORKLOADS', root), \
+                 patch.object(expectations_runner, 'execute', side_effect=execute_safe), \
+                 patch.object(expectations_runner.subprocess, 'run') as launched, \
+                 patch('sys.argv', args), contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertTrue(expectations_runner.main())
+                self.assertIn('2/14 selected scenarios passed', output.getvalue())
+                launched.assert_not_called()
+            with patch.object(expectations_runner, 'WORKLOADS', root), \
+                 patch.object(expectations_runner.subprocess, 'run') as launched, \
+                 patch('sys.argv', args + ['--scenario', 'storage-ext4']), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertTrue(expectations_runner.main())
+                self.assertIn('no reviewed safe local adapter', output.getvalue())
+                launched.assert_not_called()
 
     def test_paths_stay_under_temporary_root(self):
         with tempfile.TemporaryDirectory() as temp:
