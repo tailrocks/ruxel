@@ -136,8 +136,15 @@ fn current_pvs(
         let name = row["vg_name"].as_str().ok_or("pvs: missing vg_name")?;
         let pv = row["pv_name"].as_str().ok_or("pvs: missing pv_name")?;
         if name.trim() == vg {
-            set.insert(pv.trim().to_string());
+            let pv = pv.trim();
+            if pv.is_empty() {
+                return Err("pvs: empty physical volume name for existing group".into());
+            }
+            set.insert(pv.to_string());
         }
+    }
+    if set.is_empty() {
+        return Err("pvs: existing volume group has no reported physical volumes".into());
     }
     Ok(Some(set))
 }
@@ -227,6 +234,28 @@ mod tests {
             calls[2],
             ("vgextend".into(), vec!["vg".into(), "/dev/b".into()])
         );
+    }
+
+    #[test]
+    fn existing_group_without_reported_pvs_cannot_trigger_extension() {
+        let params = json!({"vg":"vg", "pvs":["/dev/a"]});
+        for rows in [
+            json!([]),
+            json!([{"vg_name":"other", "pv_name":"/dev/b"}]),
+            json!([{"vg_name":"vg", "pv_name":" "}]),
+        ] {
+            let mut calls = Vec::new();
+            let mut fake = |name: &str, _: &[&str]| {
+                calls.push(name.to_string());
+                Ok(if name == "vgs" {
+                    groups()
+                } else {
+                    output(&json!({"report":[{"pv":rows}]}))
+                })
+            };
+            assert!(run_with(&params, false, &mut fake).is_err());
+            assert_eq!(calls, ["vgs", "pvs"]);
+        }
     }
 
     #[test]
