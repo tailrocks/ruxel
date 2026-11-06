@@ -49,6 +49,7 @@ pub(super) async fn run_plays(
                     for (host, recap) in recaps {
                         let total = totals.entry(host).or_default();
                         total.ok += recap.ok;
+                        total.planned += recap.planned;
                         total.changed += recap.changed;
                         total.failed += recap.failed;
                         total.skipped += recap.skipped;

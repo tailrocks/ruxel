@@ -1,4 +1,7 @@
-use super::{ExecContext, Value, b64_decode, b64_encode, ident, json, lit, login_port, params_object, psql, role_flag_tokens, str_param, validate_role_attr_flags};
+use super::{
+    ExecContext, Value, b64_decode, b64_encode, ident, json, lit, login_port, params_object, psql,
+    role_flag_tokens, str_param, validate_role_attr_flags,
+};
 
 pub(crate) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;

@@ -374,7 +374,7 @@ pub async fn run(
                 return Err(redact_error(error));
             }
             for (host, total) in &recap {
-                let event = json!({"host":host,"recap":{"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
+                let event = json!({"host":host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
                 execution.output.event(&execution.lookups.redact(&event)?)?;
             }
             Ok(recap)

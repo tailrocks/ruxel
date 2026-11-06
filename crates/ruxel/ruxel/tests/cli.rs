@@ -91,3 +91,50 @@ fn execution_rejects_untyped_output_as_config_error() -> Result<(), Box<dyn std:
     assert!(String::from_utf8(output.stderr)?.contains("invalid configuration shape"));
     Ok(())
 }
+
+#[test]
+fn detailed_plan_counts_only_selected_operations() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = std::env::temp_dir().join(format!("ruxel-cli-plan-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    std::fs::copy(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../../schema/Ruxel.pkl"),
+        directory.join("Ruxel.pkl"),
+    )?;
+    let root = directory.join("plan.pkl");
+    std::fs::write(
+        &root,
+        r#"import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "plan"; targets { "fixture" }; tasks { new {
+  name = "deferred"; tags { "selected" }; operation = new Ruxel.Debug { msg = "fixture" }
+ } } } }
+} }
+"#,
+    )?;
+    for (tag, expected, planned) in [("selected", 3, 1), ("other", 0, 0)] {
+        let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+            .arg("plan")
+            .arg(&root)
+            .args([
+                "--detailed-exitcode",
+                "--tags",
+                tag,
+                "--agent",
+                "/missing-agent",
+            ])
+            .output()?;
+        assert_eq!(output.status.code(), Some(expected), "{output:?}");
+        let events: Vec<serde_json::Value> = String::from_utf8(output.stdout)?
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<Result<_, _>>()?;
+        assert!(
+            events
+                .iter()
+                .any(|event| event["recap"]["planned"] == planned)
+        );
+    }
+    std::fs::remove_dir_all(directory)?;
+    Ok(())
+}
