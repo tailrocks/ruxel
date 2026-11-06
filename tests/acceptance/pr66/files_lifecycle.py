@@ -51,6 +51,9 @@ def main():
         (payload / 'replace').write_text('fruit=apple\n')
         (payload / 'block').write_text('header\n')
         (payload / 'absent').write_text('remove-me\n')
+        (payload / 'tree/sub').mkdir(parents=True)
+        (payload / 'tree/sub/file').write_text('nested\n')
+        (payload / 'tree/sub/file').chmod(0o600)
         def quoted(name):
             return json.dumps(str(payload / name))
         source = '''import "../schema/Ruxel.pkl"
@@ -58,6 +61,7 @@ output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "files"; targets { "all" }; vars { ["value"] = new Ruxel.Literal { value = "rendered" } }; tasks {
   new { name = "remove"; operation = new Ruxel.File { path = ABSENT; state = "absent" } }
+  new { name = "recurse"; operation = new Ruxel.File { path = TREE; state = "directory"; mode = "0700"; recurse = true } }
   new { name = "directory"; operation = new Ruxel.File { path = DIR; state = "directory"; mode = "0700" } }
   new { name = "content"; operation = new Ruxel.Copy { dest = CONTENT; content = "synthetic-content\\n"; mode = "0640" } }
   new { name = "template"; operation = new Ruxel.Template { dest = TEMPLATE; content = new Ruxel.Call { `function` = "concat"; args { new Ruxel.Literal { value = "prefix-" }; new Ruxel.Ref { path { "vars"; "value" } } } } } }
@@ -70,7 +74,7 @@ output { value = new Ruxel.Config {
  } } }
 } }
 '''
-        for name in ('dir', 'content', 'template', 'link', 'line', 'replace', 'block', 'absent'):
+        for name in ('dir', 'content', 'template', 'link', 'line', 'replace', 'block', 'absent', 'tree'):
             source = source.replace(name.upper(), quoted(name))
         module = base / 'fixtures/files.pkl'
         module.write_text(source)
@@ -85,6 +89,7 @@ output { value = new Ruxel.Config {
             return events, recap[0]
         def observed(events):
             require(not (payload / 'absent').exists(), 'absent path still exists')
+            require(all(stat.S_IMODE((payload / p).stat().st_mode) == 0o700 for p in ('tree', 'tree/sub', 'tree/sub/file')), 'recursive modes incorrect')
             require((payload / 'dir').is_dir() and stat.S_IMODE((payload / 'dir').stat().st_mode) == 0o700, 'directory incorrect')
             require((payload / 'content').read_bytes() == b'synthetic-content\n', 'copy content incorrect')
             require(stat.S_IMODE((payload / 'content').stat().st_mode) == 0o640, 'copy mode incorrect')
@@ -105,6 +110,7 @@ output { value = new Ruxel.Config {
         (payload / 'content').write_text('drift\n')
         (payload / 'template').write_text('drift')
         (payload / 'absent').write_text('remove-again\n')
+        (payload / 'tree/sub/file').chmod(0o600)
         (payload / 'line').write_text('setting=old\n')
         (payload / 'replace').write_text('fruit=apple\n')
         (payload / 'block').write_text('header\n')
