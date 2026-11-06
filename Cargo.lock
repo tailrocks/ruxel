@@ -1481,6 +1481,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix-linux-procfs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fc84bf7e9aa16c4f2c758f27412dc9841341e16aa682d9c7ac308fe3ee12056"
+dependencies = [
+ "once_cell",
+ "rustix 1.1.6",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1514,9 +1524,12 @@ name = "ruxel-agent"
 version = "0.1.0"
 dependencies = [
  "hmac",
+ "libc",
  "pbkdf2",
  "regex-lite",
  "rsblkid",
+ "rustix 1.1.6",
+ "rustix-linux-procfs",
  "ruxel-proto",
  "serde",
  "serde_json",

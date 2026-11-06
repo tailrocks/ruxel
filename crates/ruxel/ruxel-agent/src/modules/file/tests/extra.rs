@@ -36,7 +36,7 @@ fn recursive_attributes_repair_unreadable_file() {
     std::fs::create_dir_all(&root).unwrap();
     let file = root.join("file");
     std::fs::write(&file, b"content").unwrap();
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
     let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
     assert_eq!(run(&params, &context()).unwrap()["changed"], true);
     assert_eq!(
@@ -74,7 +74,7 @@ fn recursive_attributes_repair_unreadable_directory() {
         .join(format!("ruxel-dir-unreadable-{}", std::process::id()));
     std::fs::create_dir_all(root.join("nested")).unwrap();
     std::fs::write(root.join("nested/file"), b"safe").unwrap();
-    std::fs::set_permissions(root.join("nested"), std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(root.join("nested"), std::fs::Permissions::from_mode(0o000)).unwrap();
     let params = json!({"path": root, "state": "directory", "mode": "0700", "recurse": true});
     assert_eq!(run(&params, &context()).unwrap()["changed"], true);
     assert_eq!(

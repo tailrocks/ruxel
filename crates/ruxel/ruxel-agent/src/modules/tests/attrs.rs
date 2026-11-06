@@ -1,0 +1,92 @@
+use super::{apply_attrs, apply_attrs_fd, open_attrs};
+use serde_json::json;
+use std::os::unix::fs::{PermissionsExt, symlink};
+
+#[test]
+fn descriptor_attributes_survive_alias_retarget() {
+    let root = Root::new();
+    let original = root.path().join("original");
+    let victim = root.path().join("victim");
+    std::fs::write(&original, "original").unwrap();
+    std::fs::write(&victim, "victim").unwrap();
+    std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let fd = open_attrs(&original).unwrap();
+    std::fs::rename(&original, root.path().join("held")).unwrap();
+    symlink(&victim, &original).unwrap();
+    let attrs = json!({"mode":"0640"});
+    let mut changed = false;
+    apply_attrs_fd(&fd, attrs.as_object().unwrap(), &mut changed, false).unwrap();
+    assert!(changed);
+    assert_eq!(
+        std::fs::metadata(root.path().join("held"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640
+    );
+    assert_eq!(
+        std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn unreadable_owner_file_and_alias_prefix_preserve_check_semantics() {
+    let root = Root::new();
+    let directory = root.path().join("directory");
+    std::fs::create_dir(&directory).unwrap();
+    let file = directory.join("file");
+    std::fs::write(&file, "payload").unwrap();
+    let alias = root.path().join("alias");
+    symlink(&directory, &alias).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let attrs = json!({"mode":"0600"});
+    let mut changed = false;
+    apply_attrs(
+        &alias.join("../directory/file"),
+        attrs.as_object().unwrap(),
+        &mut changed,
+        true,
+    )
+    .unwrap();
+    assert!(changed);
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0
+    );
+    apply_attrs(
+        &alias.join("file"),
+        attrs.as_object().unwrap(),
+        &mut changed,
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+struct Root(std::path::PathBuf);
+impl Root {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "ruxel-attrs-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+impl Drop for Root {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}

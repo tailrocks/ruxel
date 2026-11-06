@@ -25,7 +25,6 @@ ignore:
   - "crates/ruxel/ruxel-agent/src/modules/file.rs"
   - "crates/ruxel/ruxel-agent/src/modules/get_url.rs"
   - "crates/ruxel/ruxel-agent/src/modules/lvg.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/mod.rs"
   - "crates/ruxel/ruxel-agent/src/modules/slurp.rs"
   - "crates/ruxel/ruxel-agent/src/modules/sysctl.rs"
   - "crates/ruxel/ruxel-agent/src/modules/systemd.rs"
