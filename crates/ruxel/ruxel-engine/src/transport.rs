@@ -225,8 +225,9 @@ impl AgentConnection {
     }
 }
 
+static UPLOAD_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 async fn ensure_agent(remote: &RemoteHost, remote_path: &str, bytes: &[u8]) -> Result<bool> {
-    cleanup_stale_agent_temps(remote, remote_path).await?;
     let exists = remote
         .exec_status(&["test", "-x", remote_path])
         .await?
@@ -259,7 +260,14 @@ async fn ensure_agent(remote: &RemoteHost, remote_path: &str, bytes: &[u8]) -> R
     .await
     .context("sftp handshake")?;
 
-    let tmp_path = format!("{remote_path}.tmp-{}", std::process::id());
+    let sequence = UPLOAD_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let tmp_path = format!(
+        "{remote_path}.tmp-{}-{timestamp}-{sequence}",
+        std::process::id()
+    );
     let upload_result: Result<()> = async {
         let mut file = sftp
             .options()
@@ -297,37 +305,6 @@ async fn ensure_agent(remote: &RemoteHost, remote_path: &str, bytes: &[u8]) -> R
     }
 
     Ok(true)
-}
-
-async fn cleanup_stale_agent_temps(remote: &RemoteHost, remote_path: &str) -> Result<()> {
-    if !remote
-        .exec_status(&["test", "-d", AGENT_DIR])
-        .await?
-        .success()
-    {
-        return Ok(());
-    }
-    let name = Path::new(remote_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("agent path has no UTF-8 file name")?;
-    let pattern = format!("{name}.tmp-*");
-    remote
-        .exec_status(&[
-            "find",
-            AGENT_DIR,
-            "-maxdepth",
-            "1",
-            "-type",
-            "f",
-            "-name",
-            &pattern,
-            "-delete",
-        ])
-        .await?
-        .success()
-        .then_some(())
-        .context("clean stale agent upload files")
 }
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
