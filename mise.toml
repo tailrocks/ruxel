@@ -100,6 +100,7 @@ run = [
   "python3 -B tests/acceptance/pr66/template_source.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/copy_binary.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/copy_force.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
+  "python3 -B tests/acceptance/pr66/secret_provenance.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/repeated_actions.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/host_isolation.py --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",
   "python3 -B tests/acceptance/pr66/local_scenarios.py multihost --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",

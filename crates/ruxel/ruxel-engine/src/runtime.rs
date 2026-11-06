@@ -1,12 +1,9 @@
 //! Connect the typed task controller to actual agent processes.
 use crate::{
     controller::{self, Backend, Mode, Options, Recap, Request},
-    expression::{
-        self, Expr, Scope,
-        provenance::{Provenance, TrackedValue},
-    },
-    secrets::{Lookup, ProcessBackend, Resolver},
-    transport::{self, AgentConnection, LocalConnection},
+    expression::{Scope, provenance::TrackedValue},
+    secrets::{ProcessBackend, Resolver},
+    transport,
 };
 use anyhow::{Context, Result, bail};
 use ruxel_proto::v1;
@@ -33,30 +30,8 @@ pub struct RuntimeOptions {
     pub controller_state: Option<PathBuf>,
 }
 
-enum Connection {
-    Local(Box<LocalConnection>),
-    Remote(Box<AgentConnection>),
-}
-impl Connection {
-    async fn send(&mut self, message: &v1::Envelope) -> Result<()> {
-        match self {
-            Self::Local(c) => c.send(message).await,
-            Self::Remote(c) => c.send(message).await,
-        }
-    }
-    async fn next(&mut self) -> Result<Option<v1::Event>> {
-        match self {
-            Self::Local(c) => c.next_event().await,
-            Self::Remote(c) => c.next_event().await,
-        }
-    }
-    async fn shutdown(self) -> Result<()> {
-        match self {
-            Self::Local(c) => c.shutdown().await,
-            Self::Remote(c) => c.shutdown().await,
-        }
-    }
-}
+mod connection;
+use connection::Connection;
 
 mod output;
 use output::Output;
@@ -109,7 +84,7 @@ impl Execution {
             };
             // Host names are inventory keys, never accepted as filesystem paths.
             let path = state.join(blake3::hash(host.as_bytes()).to_hex().as_str());
-            let (c, f) = LocalConnection::connect(
+            let (c, f) = transport::LocalConnection::connect(
                 binary,
                 &path,
                 "pkl-local",
@@ -156,102 +131,8 @@ impl Execution {
         );
         Ok(gathered)
     }
-
-    fn prefetch_lookups(&self, value: &Value) -> Result<()> {
-        // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
-        fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
-            if let Some(kind) = value.get("kind").and_then(Value::as_str) {
-                if kind == "lookup" {
-                    found.push(Lookups::lookup(&serde_json::from_value::<Expr>(
-                        value.clone(),
-                    )?)?);
-                    return Ok(());
-                }
-                if ["literal", "ref", "call", "list", "map"].contains(&kind) {
-                    return Ok(());
-                }
-            }
-            match value {
-                Value::Array(items) => {
-                    for item in items {
-                        direct_lookups(item, found)?;
-                    }
-                }
-                Value::Object(items) => {
-                    for item in items.values() {
-                        direct_lookups(item, found)?;
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        }
-        let mut lookups = Vec::new();
-        direct_lookups(value, &mut lookups)?;
-        self.lookups
-            .resolver
-            .prefetch(&lookups)
-            .map_err(anyhow::Error::msg)?;
-        Ok(())
-    }
-
-    fn evaluate_value_tracked(&self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
-        if let Some(kind) = value.get("kind").and_then(Value::as_str)
-            && ["literal", "ref", "call", "list", "map", "lookup"].contains(&kind)
-        {
-            return expression::provenance::evaluate_tracked(
-                &serde_json::from_value::<Expr>(value.clone())?,
-                scope,
-                self.lookups.as_ref(),
-            );
-        }
-        match value {
-            Value::Array(items) => {
-                let items = items
-                    .iter()
-                    .map(|v| self.evaluate_value_tracked(v, scope))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(TrackedValue {
-                    value: Value::Array(items.iter().map(|v| v.value.clone()).collect()),
-                    provenance: Provenance::Array(
-                        items.into_iter().map(|v| v.provenance).collect(),
-                    ),
-                })
-            }
-            Value::Object(items) => Ok(TrackedValue::object(
-                items
-                    .iter()
-                    .map(|(k, v)| Ok((k.clone(), self.evaluate_value_tracked(v, scope)?)))
-                    .collect::<Result<BTreeMap<_, _>>>()?,
-            )),
-            _ => Ok(TrackedValue::public(value.clone())),
-        }
-    }
-
-    fn evaluate_value(&self, value: &Value, scope: &Scope) -> Result<Value> {
-        if let Some(kind) = value.get("kind").and_then(Value::as_str)
-            && ["literal", "ref", "call", "list", "map", "lookup"].contains(&kind)
-        {
-            return expression::evaluate(
-                &serde_json::from_value::<Expr>(value.clone())?,
-                scope,
-                self.lookups.as_ref(),
-            );
-        }
-        match value {
-            Value::Array(items) => items
-                .iter()
-                .map(|v| self.evaluate_value(v, scope))
-                .collect(),
-            Value::Object(items) => items
-                .iter()
-                .map(|(k, v)| Ok((k.clone(), self.evaluate_value(v, scope)?)))
-                .collect::<Result<Map<_, _>>>()
-                .map(Value::Object),
-            _ => Ok(value.clone()),
-        }
-    }
 }
+mod evaluation;
 mod templates;
 
 impl Backend for Execution {

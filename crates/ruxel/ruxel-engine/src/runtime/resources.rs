@@ -74,13 +74,13 @@ mod tests {
     use ruxel_proto::v1;
     use serde_json::json;
 
-    fn request(module: &str, params: Value) -> Result<Request> {
+    fn request(module: &str, params: &Value) -> Result<Request> {
         Ok(Request {
             host: "fixture".into(),
             task: v1::RenderedTask {
                 module: module.into(),
                 iterations: vec![v1::Iteration {
-                    params_json: serde_json::to_vec(&params)?,
+                    params_json: serde_json::to_vec(params)?,
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -92,25 +92,25 @@ mod tests {
     fn tracks_sensitive_paths_and_unknown_side_effects_per_destination() -> Result<()> {
         let mut resources = Resources::default();
         assert!(resources.observe(
-            &request("copy", json!({"dest":"/tmp/fixture-private"}))?,
+            &request("copy", &json!({"dest":"/tmp/fixture-private"}))?,
             true
         )?);
         assert!(!resources.observe(
-            &request("slurp", json!({"src":"/tmp/fixture-public"}))?,
+            &request("slurp", &json!({"src":"/tmp/fixture-public"}))?,
             false
         )?);
         assert!(resources.observe(
-            &request("slurp", json!({"src":"/tmp/fixture-private"}))?,
+            &request("slurp", &json!({"src":"/tmp/fixture-private"}))?,
             false
         )?);
         assert!(resources.observe(
-            &request("shell", json!({"cmd":"cat /tmp/fixture-private"}))?,
+            &request("shell", &json!({"cmd":"cat /tmp/fixture-private"}))?,
             false
         )?);
-        assert!(resources.observe(&request("shell", json!({"cmd":"synthetic"}))?, true)?);
-        assert!(resources.observe(&request("slurp", json!({"src":"/tmp/any"}))?, false)?);
+        assert!(resources.observe(&request("shell", &json!({"cmd":"synthetic"}))?, true)?);
+        assert!(resources.observe(&request("slurp", &json!({"src":"/tmp/any"}))?, false)?);
         let mut other_destination = Resources::default();
-        assert!(!other_destination.observe(&request("slurp", json!({"src":"/tmp/any"}))?, false)?);
+        assert!(!other_destination.observe(&request("slurp", &json!({"src":"/tmp/any"}))?, false)?);
         Ok(())
     }
 }

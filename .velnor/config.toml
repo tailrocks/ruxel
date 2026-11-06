@@ -73,6 +73,7 @@ inputs = [
   "tests/acceptance/pr66/repeated_actions.py",
   "tests/acceptance/pr66/retry.py",
   "tests/acceptance/pr66/scoped_variables.py",
+  "tests/acceptance/pr66/secret_provenance.py",
   "tests/acceptance/pr66/template_source.py",
   "tests/acceptance/pr66/test_coverage.py",
   "tests/acceptance/pr66/test_expectations_runner.py",
