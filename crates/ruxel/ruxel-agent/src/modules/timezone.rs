@@ -1,8 +1,3 @@
-#![cfg_attr(
-    test,
-    expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
-)]
-
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
