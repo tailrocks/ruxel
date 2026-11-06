@@ -19,6 +19,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct RuntimeOptions {
     pub agent: PathBuf,
+    pub source_dir: PathBuf,
     pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
 }
@@ -265,7 +266,23 @@ impl Backend for Execution {
         };
         self.evaluate_value(value, &scope)
     }
-    async fn execute(&mut self, request: Request) -> Result<Value> {
+    async fn execute(&mut self, mut request: Request) -> Result<Value> {
+        if matches!(request.task.module.as_str(), "copy" | "template") {
+            for iteration in &mut request.task.iterations {
+                let mut params: Map<String, Value> =
+                    serde_json::from_slice(&iteration.params_json)?;
+                if let Some(src) = params.remove("src").filter(|v| !v.is_null()) {
+                    let source = self
+                        .runtime
+                        .source_dir
+                        .join(src.as_str().context("source path must be text")?);
+                    let content =
+                        std::fs::read_to_string(source).context("read controller source file")?;
+                    params.insert("content".into(), Value::String(content));
+                    iteration.params_json = serde_json::to_vec(&params)?;
+                }
+            }
+        }
         if !self.connections.contains_key(&request.host) {
             self.connect(&request.host).await?;
         }
@@ -319,7 +336,8 @@ pub async fn run(
     options: &Options,
     runtime: &RuntimeOptions,
 ) -> Result<BTreeMap<String, Recap>> {
-    let config = config.get("config").unwrap_or(config);
+    let validated = crate::model::validate_config(config)?;
+    let config = &validated;
     let mut execution = Execution {
         inventory: config
             .get("inventory")

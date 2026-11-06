@@ -59,6 +59,11 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
     };
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
+        source_dir: args
+            .root
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf(),
         synthetic_secrets: args.synthetic_secrets,
         local_state: args.state_dir,
     };
