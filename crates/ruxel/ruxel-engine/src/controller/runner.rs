@@ -302,7 +302,14 @@ impl<B: Backend> Runner<'_, B> {
                 self.handling = true;
                 let result = self.task(handler, layer).await;
                 self.handling = false;
-                if !result? {
+                let result = result.map_err(|error| {
+                    if layer.no_log || flag(handler, "noLog") || layer.control_sensitive {
+                        anyhow::anyhow!("sensitive task failed")
+                    } else {
+                        error
+                    }
+                })?;
+                if !result {
                     break;
                 }
             }

@@ -84,6 +84,20 @@ output { value = new Ruxel.Config {
                                  capture_output=True, text=True, timeout=30)
         if failure.returncode == 0 or 'synthetic-private-path-marker' in failure.stderr:
             raise RuntimeError('noLog evaluation failure was not sanitized')
+        handler = base / 'handler.pkl'
+        handler.write_text('''import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "handler"; targets { "fixture" }; tasks {
+  new { name = "trigger"; changedWhen = new Ruxel.Literal { value = true }; notify { "private handler" }; operation = new Ruxel.Debug { msg = "trigger" } }
+ }; handlers { new { name = "private handler"; noLog = true; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "synthetic-handler-path-marker" } } } } } } }
+} }
+''')
+        failure = subprocess.run([str(cli), 'apply', str(handler), '--local', '--agent', str(agent),
+                                  '--state-dir', str(base / 'handler-state')], stdin=subprocess.DEVNULL,
+                                 capture_output=True, text=True, timeout=30)
+        if failure.returncode == 0 or 'synthetic-handler-path-marker' in failure.stderr:
+            raise RuntimeError('noLog handler failure was not sanitized')
         for path in (base / 'state').rglob('*'):
             if path.is_file():
                 data = path.read_bytes()
