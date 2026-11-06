@@ -19,8 +19,8 @@ class SchemaTests(unittest.TestCase):
         config = json.loads(output)["config"]
         tasks = config["plays"][0]["tasks"]
         self.assertEqual(tasks[0]["operation"]["owner"], {"kind": "ref", "path": ["vars", "owner"]})
-        self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
-        self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
+        self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["argv"], ["true"])
+        self.assertEqual(config["plays"][0]["preTasks"][2]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
         self.assertEqual(tasks[5]["operation"]["state"]["value"], "absent")
         self.assertEqual(tasks[6]["operation"]["type"]["value"], "default_privs")
@@ -35,6 +35,8 @@ class SchemaTests(unittest.TestCase):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.Shell {}',
+            'new R.Shell { argv = new Listing<String> { "echo" } }',
             'new R.BlockInFile { path = "/tmp/x" }',
             'new R.LineInFile { path = "/tmp/x" }',
             'new R.LineInFile { path = "/tmp/x"; state = "absent" }',

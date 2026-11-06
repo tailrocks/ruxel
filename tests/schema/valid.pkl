@@ -9,6 +9,7 @@ config = new R.Config {
       name = "exercise"
       targets { "all" }
       preTasks {
+        new R.Task { name = "shell"; operation = new R.Shell { cmd = "printf ok" } }
         new R.Task { name = "prepare"; operation = new R.Command { argv = new Listing<String> { "true" } } }
         new R.Task { name = "wait"; operation = new R.Pause { seconds = 1 } }
       }
