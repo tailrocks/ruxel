@@ -50,12 +50,14 @@ def main():
         (payload / 'line').write_text('setting=old\n')
         (payload / 'replace').write_text('fruit=apple\n')
         (payload / 'block').write_text('header\n')
+        (payload / 'absent').write_text('remove-me\n')
         def quoted(name):
             return json.dumps(str(payload / name))
         source = '''import "../schema/Ruxel.pkl"
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "files"; targets { "all" }; vars { ["value"] = new Ruxel.Literal { value = "rendered" } }; tasks {
+  new { name = "remove"; operation = new Ruxel.File { path = ABSENT; state = "absent" } }
   new { name = "directory"; operation = new Ruxel.File { path = DIR; state = "directory"; mode = "0700" } }
   new { name = "content"; operation = new Ruxel.Copy { dest = CONTENT; content = "synthetic-content\\n"; mode = "0640" } }
   new { name = "template"; operation = new Ruxel.Template { dest = TEMPLATE; content = new Ruxel.Call { `function` = "concat"; args { new Ruxel.Literal { value = "prefix-" }; new Ruxel.Ref { path { "vars"; "value" } } } } } }
@@ -68,7 +70,7 @@ output { value = new Ruxel.Config {
  } } }
 } }
 '''
-        for name in ('dir', 'content', 'template', 'link', 'line', 'replace', 'block'):
+        for name in ('dir', 'content', 'template', 'link', 'line', 'replace', 'block', 'absent'):
             source = source.replace(name.upper(), quoted(name))
         module = base / 'fixtures/files.pkl'
         module.write_text(source)
@@ -82,6 +84,7 @@ output { value = new Ruxel.Config {
             require(len(recap) == 1 and recap[0]['failed'] == 0, f'{mode}: missing or failed recap')
             return events, recap[0]
         def observed(events):
+            require(not (payload / 'absent').exists(), 'absent path still exists')
             require((payload / 'dir').is_dir() and stat.S_IMODE((payload / 'dir').stat().st_mode) == 0o700, 'directory incorrect')
             require((payload / 'content').read_bytes() == b'synthetic-content\n', 'copy content incorrect')
             require(stat.S_IMODE((payload / 'content').stat().st_mode) == 0o640, 'copy mode incorrect')
@@ -101,6 +104,7 @@ output { value = new Ruxel.Config {
         observed(stable)
         (payload / 'content').write_text('drift\n')
         (payload / 'template').write_text('drift')
+        (payload / 'absent').write_text('remove-again\n')
         (payload / 'line').write_text('setting=old\n')
         (payload / 'replace').write_text('fruit=apple\n')
         (payload / 'block').write_text('header\n')
