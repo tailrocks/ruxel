@@ -32,7 +32,10 @@ configuration/build logs, installed package versions, license copies, a
 provenance record, artifact checksums, and the generated musl sysroot. A recipe
 digest and verified artifact checksums allow reuse of an unchanged build. An
 exclusive cache-directory lock serializes concurrent builders, which recheck the
-cache after acquiring it. A competing build waits at most 60 seconds before
+cache after acquiring it. Cache paths include the complete build-recipe digest,
+version and target, so a different checkout's recipe never replaces an active
+sysroot. Completed caches are immutable: a failed artifact check refuses reuse
+and repair in place. A competing build waits at most 60 seconds before
 failing; no partial build is marked complete. An interrupted build can be retried
 after confirming no builder is running and removing its stale `build.lock`.
 Package versions are recorded rather than pinned: signed Alpine repository

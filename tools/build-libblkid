@@ -20,7 +20,6 @@ if test "$mode" = native; then
 else
     target=x86_64-unknown-linux-musl
 fi
-output="$cache_root/ruxel/native/libblkid/$version/$target"
 worker="$repo_root/tools/build-libblkid-source"
 die() { printf '%s\n' "$*" >&2; exit 1; }
 checksum() {
@@ -28,12 +27,16 @@ checksum() {
 }
 recipe=$(checksum "${BASH_SOURCE[0]}"); recipe=${recipe%% *}
 worker_recipe=$(checksum "$worker"); worker_recipe=${worker_recipe%% *}
-recipe="$recipe:$worker_recipe"
+recipe=$(printf '%s\n' "$recipe:$worker_recipe" | checksum); recipe=${recipe%% *}
+output="$cache_root/ruxel/native/libblkid/$version/$target/$recipe"
 mkdir -p "$output"
 valid_cache() {
     test -f "$output/recipe.sha256" && test "$(cat "$output/recipe.sha256")" = "$recipe" &&
         (cd "$output" && checksum -c artifacts.sha256 >/dev/null 2>&1)
 }
+if test -f "$output/recipe.sha256" && ! valid_cache; then
+    die 'Published native dependency cache failed verification; refusing to modify it in place.'
+fi
 if ! valid_cache; then
     for ((attempt = 0; attempt < 60; attempt++)); do
         if mkdir "$output/build.lock" 2>/dev/null; then break; fi
@@ -42,6 +45,9 @@ if ! valid_cache; then
     test "$attempt" -lt 60 || die 'Another native dependency build holds the cache lock; retry after it finishes.'
     trap 'rmdir "$output/build.lock"' EXIT
     if ! valid_cache; then
+        if test -f "$output/recipe.sha256"; then
+            die 'Published native dependency cache failed verification; refusing to modify it in place.'
+        fi
         rm -f "$output/recipe.sha256"
         if test "$mode" = native; then
             for tool in cc make pkg-config tar; do command -v "$tool" >/dev/null || die "Missing native build tool: $tool"; done
@@ -62,7 +68,8 @@ if ! valid_cache; then
                 "$image" sh -c 'apk add --no-cache build-base linux-headers xz pkgconf >/build/packages.log 2>&1 && sh /recipe/build-source /build "$1" "$2" yes' \
                 sh "$version" "$source_sha256" >&2
         fi
-        printf '%s\n' "$recipe" >"$output/recipe.sha256"
+        printf '%s\n' "$recipe" >"$output/recipe.sha256.new"
+        mv "$output/recipe.sha256.new" "$output/recipe.sha256"
     fi
     rmdir "$output/build.lock"
     trap - EXIT
