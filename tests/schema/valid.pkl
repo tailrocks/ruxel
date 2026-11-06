@@ -8,7 +8,10 @@ config = new R.Config {
     new R.Play {
       name = "exercise"
       targets { "all" }
-      preTasks { new R.Task { name = "prepare"; operation = new R.Command { argv = new Listing<String> { "true" } } } }
+      preTasks {
+        new R.Task { name = "prepare"; operation = new R.Command { argv = new Listing<String> { "true" } } }
+        new R.Task { name = "wait"; operation = new R.Pause { seconds = 1 } }
+      }
       tasks {
         new R.Task {
           name = "create database"

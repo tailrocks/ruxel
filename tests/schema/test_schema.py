@@ -20,6 +20,7 @@ class SchemaTests(unittest.TestCase):
         tasks = config["plays"][0]["tasks"]
         self.assertEqual(tasks[0]["operation"]["owner"], {"kind": "ref", "path": ["vars", "owner"]})
         self.assertEqual(config["plays"][0]["preTasks"][0]["operation"]["argv"], ["true"])
+        self.assertEqual(config["plays"][0]["preTasks"][1]["operation"]["seconds"], 1)
         self.assertEqual(tasks[0]["loopLabel"]["value"], "database")
         self.assertEqual(tasks[2]["block"][0]["operation"]["mode"], "0644")
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
@@ -29,6 +30,7 @@ class SchemaTests(unittest.TestCase):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
+            'new R.Pause { seconds = -1 }',
             'new R.Command { cmd = "x"; argv = new Listing<String> { "x" } }',
             'new R.Service { state = "unsupported" }',
             'new R.User { name = "test"; uid = -1 }',

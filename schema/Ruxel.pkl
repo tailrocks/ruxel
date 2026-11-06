@@ -350,6 +350,8 @@ class Fail {
 class Pause {
   fixed kind = "pause"
   prompt: Text? = null
+  seconds: NumberValue? = null
+  minutes: NumberValue? = null
 }
 
 class SetFact {
