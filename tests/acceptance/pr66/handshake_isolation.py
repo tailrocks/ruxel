@@ -44,8 +44,11 @@ output { value = new Ruxel.Config {
 with open(LOG, "a+") as f:
     fcntl.flock(f, fcntl.LOCK_EX)
     f.seek(0)
-    index = sum(1 for _ in f)
-    f.write(json.dumps([index, os.environ["RUXEL_STATE_DIR"]]) + "\\n")
+    rows = [json.loads(line) for line in f]
+    state = os.environ["RUXEL_STATE_DIR"]
+    known = {row[1]: row[0] for row in rows}
+    index = known.get(state, len(known))
+    f.write(json.dumps([index, state]) + "\\n")
     f.flush()
     fcntl.flock(f, fcntl.LOCK_UN)
 if index == FAILED_INDEX:
@@ -73,9 +76,9 @@ os.execv(AGENT, [AGENT])
             require(next(e['recap']['failed'] for e in recaps if e['host'] == healthy) == 0,
                     f'failed index {failed_index}: healthy host reported failure')
             launches = [json.loads(line) for line in log.read_text().splitlines()]
-            require(len(launches) == 2 and [row[0] for row in launches] == [0, 1]
-                    and len({row[1] for row in launches}) == 2,
-                    f'failed index {failed_index}: a host was retried or not launched')
+            require({row[0] for row in launches} == {0, 1} and len({row[1] for row in launches}) == 2
+                    and sum(row[0] == failed_index for row in launches) == 1,
+                    f'failed index {failed_index}: failed host was retried or a host was not launched')
     print('PASS handshake isolation: healthy host completes two plays in both host orderings; failed host not retried')
 
 
