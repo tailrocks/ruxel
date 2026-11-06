@@ -46,6 +46,8 @@ output { value = new Ruxel.Config {
   new { name = "copy-sensitive"; operation = new Ruxel.Copy { dest = RESOURCE_PATH; content = encode(secret()) } }
   new { name = "read-sensitive"; register = "readback"; operation = new Ruxel.Slurp { src = RESOURCE_PATH } }
   new { name = "public-read"; operation = new Ruxel.Slurp { src = PUBLIC_PATH } }
+  new { name = "shell-cat"; register = "cat_result"; operation = new Ruxel.Shell { cmd = CAT_COMMAND } }
+  new { name = "shell-cat-result"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cat_result"; "stdout" } } } }
   new { name = "readback"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "readback"; "content" } } } }
   new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(COMMAND_SUFFIX); secret(); lit(SHELL_SUFFIX) } } } }
   new { name = "shell-read"; register = "shell_readback"; operation = new Ruxel.Slurp { src = SHELL_PATH } }
@@ -56,7 +58,7 @@ output { value = new Ruxel.Config {
   new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
  } } }
 } }
-'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('COMMAND_SUFFIX', json.dumps(' | base64; touch ' + shlex.quote(str(executed)) + '; printf %s ')).replace('RESOURCE_PATH', json.dumps(str(secret_file))).replace('SHELL_PATH', json.dumps(str(shell_file))).replace('PUBLIC_PATH', json.dumps(str(public_file))).replace('SHELL_SUFFIX', json.dumps(' > ' + shlex.quote(str(shell_file)))))
+'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('COMMAND_SUFFIX', json.dumps(' | base64; touch ' + shlex.quote(str(executed)) + '; printf %s ')).replace('RESOURCE_PATH', json.dumps(str(secret_file))).replace('SHELL_PATH', json.dumps(str(shell_file))).replace('PUBLIC_PATH', json.dumps(str(public_file))).replace('CAT_COMMAND', json.dumps('cat ' + shlex.quote(str(secret_file)))).replace('SHELL_SUFFIX', json.dumps(' > ' + shlex.quote(str(shell_file)))))
         event_log = base / 'events.jsonl'
         result = subprocess.run([str(cli), 'apply', str(module), '--local', '--agent', str(agent),
                                  '--state-dir', str(base / 'state'), '--synthetic-secrets',
@@ -69,12 +71,14 @@ output { value = new Ruxel.Config {
         encoded = base64.b64encode(FAKE_VALUE.encode()).decode()
         encoded_twice = base64.b64encode(encoded.encode()).decode()
         encoded_no_log = base64.b64encode(NO_LOG_VALUE.encode()).decode()
+        if secret_file.read_bytes() != encoded.encode() or shell_file.read_bytes() != FAKE_VALUE.encode():
+            raise RuntimeError('sensitive files did not contain the expected synthetic bytes')
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text()), ('stderr', result.stderr)]:
             if FAKE_VALUE in text or encoded in text or encoded_twice in text or NO_LOG_VALUE in text or encoded_no_log in text:
                 raise RuntimeError(f'{label} contains a synthetic secret or its encoding')
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text())]:
             events = [json.loads(line) for line in text.splitlines() if line]
-            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'copy-sensitive', 'read-sensitive', 'readback', 'command', 'shell-read', 'shell-readback', 'registered', 'conditional', 'conditional-child'):
+            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'copy-sensitive', 'read-sensitive', 'readback', 'shell-cat', 'shell-cat-result', 'command', 'shell-read', 'shell-readback', 'registered', 'conditional', 'conditional-child'):
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{label}: {name} was not censored')
@@ -96,7 +100,7 @@ output { value = new Ruxel.Config {
         failure = subprocess.run([str(cli), 'apply', str(failing), '--local', '--agent', str(agent),
                                   '--state-dir', str(base / 'failure-state')], stdin=subprocess.DEVNULL,
                                  capture_output=True, text=True, timeout=30)
-        if failure.returncode == 0 or 'synthetic-private-path-marker' in failure.stderr:
+        if failure.returncode == 0 or 'synthetic-private-path-marker' in (failure.stdout + failure.stderr):
             raise RuntimeError('noLog evaluation failure was not sanitized')
         handler = base / 'handler.pkl'
         handler.write_text('''import "Ruxel.pkl"
@@ -110,12 +114,12 @@ output { value = new Ruxel.Config {
         failure = subprocess.run([str(cli), 'apply', str(handler), '--local', '--agent', str(agent),
                                   '--state-dir', str(base / 'handler-state')], stdin=subprocess.DEVNULL,
                                  capture_output=True, text=True, timeout=30)
-        if failure.returncode == 0 or 'synthetic-handler-path-marker' in failure.stderr:
+        if failure.returncode == 0 or 'synthetic-handler-path-marker' in (failure.stdout + failure.stderr):
             raise RuntimeError('noLog handler failure was not sanitized')
         for path in (base / 'state').rglob('*'):
             if path.is_file():
                 data = path.read_bytes()
-                if FAKE_VALUE.encode() in data or encoded.encode() in data or NO_LOG_VALUE.encode() in data or encoded_no_log.encode() in data:
+                if FAKE_VALUE.encode() in data or encoded.encode() in data or NO_LOG_VALUE.encode() in data or encoded_no_log.encode() in data or encoded_twice.encode() in data:
                     raise RuntimeError('synthetic secret was persisted in local agent state')
         print('PASS: synthetic lookup, transforms, facts and command results are redacted in stdout and JSONL; public diagnostic remains visible')
 

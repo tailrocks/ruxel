@@ -23,9 +23,10 @@ through their own side effects.
 
 Within a run, sensitive Copy, Template and File operations mark their destination
 paths for the selected host. Subsequent agent requests mentioning a marked path
-or an ancestor or descendant are sensitive. A sensitive operation whose effects
-are not known precisely, including Shell and Command, makes subsequent agent
-results on that host sensitive for the rest of the run. Requests to the same
+or an ancestor or descendant are sensitive. After a path is marked, operations
+with unknown read sets, including Shell and Command, are also sensitive. A
+sensitive operation whose effects are not known precisely makes subsequent
+agent results on that host sensitive for the rest of the run. Requests to the same
 host are serialized around this tracking. Controller-only diagnostics remain
 available when their inputs are public.
 

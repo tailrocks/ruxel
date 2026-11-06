@@ -32,8 +32,13 @@ impl Resources {
                     .context("invalid operation parameters")?,
             );
         }
+        let opaque_request = !matches!(
+            request.task.module.as_str(),
+            "copy" | "template" | "file" | "slurp" | "stat"
+        );
         let sensitive = input_sensitive
             || self.unknown_effects
+            || (opaque_request && !self.paths.is_empty())
             || params.iter().any(|v| contains_path(v, &self.paths));
         if sensitive {
             match request.task.module.as_str() {
@@ -92,6 +97,10 @@ mod tests {
         )?);
         assert!(resources.observe(
             &request("slurp", json!({"src":"/tmp/fixture-private"}))?,
+            false
+        )?);
+        assert!(resources.observe(
+            &request("shell", json!({"cmd":"cat /tmp/fixture-private"}))?,
             false
         )?);
         assert!(resources.observe(&request("shell", json!({"cmd":"synthetic"}))?, true)?);
