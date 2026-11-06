@@ -23,6 +23,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let (current, extent) = lv_geometry(vg, lv)?;
             needs_absolute_resize(current, extent, requested)?
         };
+        if !needs_resize && resizefs {
+            let path = lv_path(vg, lv);
+            let fstype = super::filesystem::blkid_type(&path)?
+                .ok_or("lvol: filesystem type unavailable for resize")?;
+            let result = super::filesystem::run(
+                &json!({"dev": path, "fstype": fstype, "resizefs": true}),
+                ctx,
+            )?;
+            changed |= result["changed"].as_bool().unwrap_or(false);
+        }
         if needs_resize {
             changed = true;
             if !ctx.check_mode {

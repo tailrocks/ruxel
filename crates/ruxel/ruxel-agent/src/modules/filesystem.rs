@@ -42,7 +42,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "dev": dev, "fstype": fstype}))
 }
 
-fn blkid_type(dev: &str) -> Result<Option<String>, String> {
+pub(super) fn blkid_type(dev: &str) -> Result<Option<String>, String> {
     let out = std::process::Command::new("blkid")
         .args(["--probe", "-o", "value", "-s", "TYPE", dev])
         .output()

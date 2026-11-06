@@ -177,16 +177,22 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
         return MountAction::Replace;
     }
     let actual_opts: Vec<_> = current.options.split(',').collect();
-    if opts
-        .split(',')
-        .filter(|option| {
-            !matches!(
-                *option,
-                "defaults" | "auto" | "noauto" | "nofail" | "_netdev"
-            )
-        })
-        .any(|option| !actual_opts.contains(&option))
-    {
+    if opts.split(',').any(|option| match option {
+        "defaults" => ["ro", "nosuid", "nodev", "noexec", "sync"]
+            .iter()
+            .any(|v| actual_opts.contains(v)),
+        "suid" | "dev" | "exec" | "async" => {
+            let opposite = match option {
+                "suid" => "nosuid",
+                "dev" => "nodev",
+                "exec" => "noexec",
+                _ => "sync",
+            };
+            actual_opts.contains(&opposite)
+        }
+        "auto" | "noauto" | "nofail" | "_netdev" | "user" | "nouser" => false,
+        _ => !actual_opts.contains(&option),
+    }) {
         MountAction::Remount
     } else {
         MountAction::None
@@ -232,6 +238,22 @@ mod tests {
             mount_action(current.as_ref(), "/dev/a", "xfs", "ro"),
             MountAction::Remount
         );
+        assert_eq!(
+            mount_action(current.as_ref(), "/dev/a", "xfs", "defaults"),
+            MountAction::None
+        );
+        for option in ["ro", "nosuid", "nodev", "noexec", "sync"] {
+            let mounts = format!("/dev/a /srv xfs rw,{option} 0 0\n");
+            assert_eq!(
+                mount_action(
+                    find_mount(&mounts, "/srv").as_ref(),
+                    "/dev/a",
+                    "xfs",
+                    "defaults"
+                ),
+                MountAction::Remount
+            );
+        }
         assert_eq!(
             mount_action(current.as_ref(), "/dev/b", "xfs", "rw"),
             MountAction::Replace
