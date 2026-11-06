@@ -246,9 +246,9 @@ pub async fn run<B: Backend>(
                 next_id: 1,
             };
             let mut layer = ContextLayer::default();
-            for (name, group) in &groups {
-                if group_hosts(name, &groups, &mut BTreeSet::new())?.contains(&host) {
-                    runner.extend_vars(&mut layer.vars, &object(group, "vars"))?;
+            for name in ordered_groups(&groups)? {
+                if group_hosts(&name, &groups, &mut BTreeSet::new())?.contains(&host) {
+                    runner.extend_vars(&mut layer.vars, &object(&groups[&name], "vars"))?;
                 }
             }
             runner.extend_vars(&mut layer.vars, &object(&hosts[&host], "vars"))?;
@@ -281,7 +281,7 @@ mod ledger;
 mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
-use selection::{expand_selectors, group_hosts};
+use selection::{expand_selectors, group_hosts, ordered_groups};
 mod operation;
 mod runner;
 

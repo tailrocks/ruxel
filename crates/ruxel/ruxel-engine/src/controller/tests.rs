@@ -1,6 +1,7 @@
 use super::*;
 
 mod cases;
+mod inventory;
 
 #[derive(Default)]
 struct Fake {

@@ -30,6 +30,40 @@ pub(super) fn group_hosts(
     Ok(hosts)
 }
 
+pub(super) fn ordered_groups(groups: &Map<String, Value>) -> Result<Vec<String>> {
+    let mut incoming: std::collections::BTreeMap<String, usize> =
+        groups.keys().map(|name| (name.clone(), 0)).collect();
+    for group in groups.values() {
+        for child in array(group, "children") {
+            let name = child.as_str().context("group child must be a string")?;
+            *incoming
+                .get_mut(name)
+                .with_context(|| format!("unknown inventory group {name:?}"))? += 1;
+        }
+    }
+    let mut ready: BTreeSet<_> = incoming
+        .iter()
+        .filter(|(_, count)| **count == 0)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let mut ordered = Vec::new();
+    while let Some(name) = ready.pop_first() {
+        for child in array(&groups[&name], "children") {
+            let child = child.as_str().context("group child must be a string")?;
+            let count = incoming.get_mut(child).context("unknown child group")?;
+            *count -= 1;
+            if *count == 0 {
+                ready.insert(child.to_owned());
+            }
+        }
+        ordered.push(name);
+    }
+    if ordered.len() != groups.len() {
+        bail!("inventory group cycle");
+    }
+    Ok(ordered)
+}
+
 fn matches_glob(pattern: &str, name: &str) -> bool {
     let mut reachable = vec![false; name.chars().count() + 1];
     reachable[0] = true;
