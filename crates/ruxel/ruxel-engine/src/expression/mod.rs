@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
+mod values;
+use values::{compare, render_string};
+
 /// An expression evaluated against a host's current execution scope.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -175,7 +178,12 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
         }
         "eq" | "ne" => {
             arity(function, args, 2)?;
-            Ok(json!((values[0] == values[1]) == (function == "eq")))
+            let equal = if values[0].is_number() && values[1].is_number() {
+                compare(&values[0], &values[1])?.is_eq()
+            } else {
+                values[0] == values[1]
+            };
+            Ok(json!(equal == (function == "eq")))
         }
         "lt" | "le" | "gt" | "ge" => {
             arity(function, args, 2)?;
@@ -241,11 +249,7 @@ fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Valu
 
 fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result<Value> {
     match function {
-        "string" => Ok(json!(match &values[0] {
-            Value::String(value) => value.clone(),
-            Value::Bool(_) | Value::Number(_) | Value::Null => values[0].to_string(),
-            _ => bail!("string expects a scalar"),
-        })),
+        "string" => Ok(json!(render_string(&values[0]))),
         "bool" => Ok(json!(match &values[0] {
             Value::Bool(value) => *value,
             Value::Number(value) => value.as_f64().is_some_and(|n| n != 0.0),
@@ -308,55 +312,6 @@ fn arity(function: &str, args: &[Expr], expected: usize) -> Result<()> {
 }
 fn boolean(value: &Value) -> Result<bool> {
     value.as_bool().context("expected boolean")
-}
-fn compare(left: &Value, right: &Value) -> Result<std::cmp::Ordering> {
-    match (left, right) {
-        (Value::String(a), Value::String(b)) => Ok(a.cmp(b)),
-        (Value::Number(a), Value::Number(b)) => {
-            let integer = |n: &serde_json::Number| {
-                n.as_i64()
-                    .map(i128::from)
-                    .or_else(|| n.as_u64().map(i128::from))
-            };
-            match (integer(a), integer(b)) {
-                (Some(a), Some(b)) => Ok(a.cmp(&b)),
-                (Some(a), None) => compare_int_float(a, b.as_f64().context("invalid number")?),
-                (None, Some(b)) => compare_int_float(b, a.as_f64().context("invalid number")?)
-                    .map(std::cmp::Ordering::reverse),
-                (None, None) => a
-                    .as_f64()
-                    .zip(b.as_f64())
-                    .and_then(|(a, b)| a.partial_cmp(&b))
-                    .context("numbers cannot be compared"),
-            }
-        }
-        _ => bail!("comparison expects two strings or two numbers"),
-    }
-}
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "the fractional part is compared separately after range checks"
-)]
-fn compare_int_float(integer: i128, float: f64) -> Result<std::cmp::Ordering> {
-    use std::cmp::Ordering;
-    ensure!(float.is_finite(), "numbers cannot be compared");
-    // JSON integers fit in u64/i64, so values at or beyond 2^64 are outside their range.
-    if float >= 18_446_744_073_709_551_616.0 {
-        return Ok(Ordering::Less);
-    }
-    if float <= -18_446_744_073_709_551_616.0 {
-        return Ok(Ordering::Greater);
-    }
-    let truncated = float.trunc() as i128;
-    Ok(integer.cmp(&truncated).then_with(|| {
-        if float.fract() > 0.0 {
-            Ordering::Less
-        } else if float.fract() < 0.0 {
-            Ordering::Greater
-        } else {
-            Ordering::Equal
-        }
-    }))
 }
 fn is_missing_reference(error: &anyhow::Error) -> bool {
     error.downcast_ref::<MissingReference>().is_some()
