@@ -25,6 +25,10 @@ def main():
         shutil.copyfile(ROOT / 'schema/Ruxel.pkl', base / 'Ruxel.pkl')
         module = base / 'test.pkl'
         executed = base / 'command-executed'
+        secret_file = base / 'secret-payload'
+        shell_file = base / 'shell-payload'
+        public_file = base / 'public-payload'
+        public_file.write_text('public file')
         module.write_text('''import "Ruxel.pkl"
 function secret(): Ruxel.Lookup = new { provider = "synthetic"; key = FAKE_VALUE }
 function ref(a: String, b: String): Ruxel.Ref = new { path { a; b } }
@@ -39,14 +43,20 @@ output { value = new Ruxel.Config {
   new { name = "fact-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private")) } }
   new { name = "no-log-fact"; noLog = true; operation = new Ruxel.SetFact { values { ["private_no_log"] = lit(NO_LOG_VALUE) } } }
   new { name = "no-log-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private_no_log")) } }
-  new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(COMMAND_SUFFIX) } } } }
+  new { name = "copy-sensitive"; operation = new Ruxel.Copy { dest = RESOURCE_PATH; content = encode(secret()) } }
+  new { name = "read-sensitive"; register = "readback"; operation = new Ruxel.Slurp { src = RESOURCE_PATH } }
+  new { name = "public-read"; operation = new Ruxel.Slurp { src = PUBLIC_PATH } }
+  new { name = "readback"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "readback"; "content" } } } }
+  new { name = "command"; register = "cmd"; operation = new Ruxel.Shell { cmd = new Ruxel.Call { `function` = "concat"; args { lit("printf %s "); secret(); lit(COMMAND_SUFFIX); secret(); lit(SHELL_SUFFIX) } } } }
+  new { name = "shell-read"; register = "shell_readback"; operation = new Ruxel.Slurp { src = SHELL_PATH } }
+  new { name = "shell-readback"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "shell_readback"; "content" } } } }
   new { name = "registered"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cmd"; "stdout" } } } }
   new { name = "conditional"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; operation = new Ruxel.Debug { msg = "controlled diagnostic" } }
   new { name = "conditional-block"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; block { new { name = "conditional-child"; operation = new Ruxel.Debug { msg = "controlled child" } } } }
   new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
  } } }
 } }
-'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('COMMAND_SUFFIX', json.dumps(' | base64; touch ' + shlex.quote(str(executed)))))
+'''.replace('NO_LOG_VALUE', json.dumps(NO_LOG_VALUE)).replace('FAKE_VALUE', json.dumps(FAKE_VALUE)).replace('COMMAND_SUFFIX', json.dumps(' | base64; touch ' + shlex.quote(str(executed)) + '; printf %s ')).replace('RESOURCE_PATH', json.dumps(str(secret_file))).replace('SHELL_PATH', json.dumps(str(shell_file))).replace('PUBLIC_PATH', json.dumps(str(public_file))).replace('SHELL_SUFFIX', json.dumps(' > ' + shlex.quote(str(shell_file)))))
         event_log = base / 'events.jsonl'
         result = subprocess.run([str(cli), 'apply', str(module), '--local', '--agent', str(agent),
                                  '--state-dir', str(base / 'state'), '--synthetic-secrets',
@@ -57,16 +67,20 @@ output { value = new Ruxel.Config {
         if not executed.is_file():
             raise RuntimeError('sensitive command did not execute')
         encoded = base64.b64encode(FAKE_VALUE.encode()).decode()
+        encoded_twice = base64.b64encode(encoded.encode()).decode()
         encoded_no_log = base64.b64encode(NO_LOG_VALUE.encode()).decode()
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text()), ('stderr', result.stderr)]:
-            if FAKE_VALUE in text or encoded in text or NO_LOG_VALUE in text or encoded_no_log in text:
+            if FAKE_VALUE in text or encoded in text or encoded_twice in text or NO_LOG_VALUE in text or encoded_no_log in text:
                 raise RuntimeError(f'{label} contains a synthetic secret or its encoding')
         for label, text in [('stdout', result.stdout), ('log', event_log.read_text())]:
             events = [json.loads(line) for line in text.splitlines() if line]
-            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'command', 'registered', 'conditional', 'conditional-child'):
+            for name in ('lookup', 'encoded', 'fact', 'fact-reference', 'no-log-fact', 'no-log-reference', 'copy-sensitive', 'read-sensitive', 'readback', 'command', 'shell-read', 'shell-readback', 'registered', 'conditional', 'conditional-child'):
                 matches = [event for event in events if event.get('task') == name]
                 if len(matches) != 1 or not matches[0]['result'].get('censored'):
                     raise RuntimeError(f'{label}: {name} was not censored')
+            public_read = [event for event in events if event.get('task') == 'public-read']
+            if len(public_read) != 1 or public_read[0]['result'].get('content') != base64.b64encode(b'public file').decode():
+                raise RuntimeError(f'{label}: unrelated public file result was suppressed')
             public = [event for event in events if event.get('task') == 'public']
             if len(public) != 1 or public[0]['result'].get('msg') != 'public diagnostic':
                 raise RuntimeError(f'{label}: public diagnostic was suppressed')

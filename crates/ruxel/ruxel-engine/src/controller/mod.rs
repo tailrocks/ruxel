@@ -78,6 +78,26 @@ pub trait Backend {
         Ok(())
     }
     async fn execute(&mut self, request: Request) -> Result<Value>;
+    /// Execute a request and retain sensitivity of its inputs and result.
+    async fn execute_tracked(
+        &mut self,
+        mut request: Request,
+        sensitive: bool,
+    ) -> Result<TrackedValue> {
+        request.task.no_log |= sensitive;
+        let result = self.execute(request).await.map_err(|error| {
+            if sensitive {
+                anyhow::anyhow!("sensitive operation failed")
+            } else {
+                error
+            }
+        })?;
+        Ok(if sensitive {
+            TrackedValue::secret(result)
+        } else {
+            TrackedValue::public(result)
+        })
+    }
     /// Emit a structured execution event.
     ///
     /// # Errors

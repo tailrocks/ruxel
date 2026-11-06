@@ -64,6 +64,8 @@ pub use output::OutputFormat;
 
 mod lookups;
 use lookups::Lookups;
+mod resources;
+use resources::Resources;
 
 #[derive(Clone)]
 struct Execution {
@@ -73,6 +75,7 @@ struct Execution {
     connections: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Connection>>>>>,
     lookups: Arc<Lookups>,
     output: Arc<Output>,
+    resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
 }
 impl Execution {
     async fn connect(&self, host: &str) -> Result<v1::Facts> {
@@ -274,6 +277,34 @@ impl Backend for Execution {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
     }
+    async fn execute_tracked(
+        &mut self,
+        mut request: Request,
+        sensitive: bool,
+    ) -> Result<TrackedValue> {
+        let host = request.host.clone();
+        let tracker = {
+            let mut resources = self.resources.lock().await;
+            resources.entry(host).or_default().clone()
+        };
+        // Serialize requests to the same destination so a read cannot race a
+        // secret write before its provenance is recorded.
+        let mut resources = tracker.lock().await;
+        let sensitive = resources.observe(&request, sensitive)?;
+        request.task.no_log |= sensitive;
+        let result = self.execute(request).await.map_err(|error| {
+            if sensitive {
+                anyhow::anyhow!("sensitive operation failed")
+            } else {
+                error
+            }
+        })?;
+        Ok(if sensitive {
+            TrackedValue::secret(result)
+        } else {
+            TrackedValue::public(result)
+        })
+    }
     async fn execute(&mut self, mut request: Request) -> Result<Value> {
         if request.task.module == "copy" {
             for iteration in &mut request.task.iterations {
@@ -375,6 +406,7 @@ pub async fn run(
         output: Arc::new(Output::new(runtime.output, runtime.log_file.as_deref())?),
         mode: options.mode,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         lookups: Arc::new(Lookups {
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()

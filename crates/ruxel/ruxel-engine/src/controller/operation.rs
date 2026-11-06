@@ -251,13 +251,12 @@ impl<B: Backend> Runner<'_, B> {
             .max(1);
         let mut result = Value::Null;
         for attempt in 0..attempts {
-            result = self.backend.execute(request.clone()).await.map_err(|e| {
-                if sensitive {
-                    anyhow::anyhow!("sensitive operation failed")
-                } else {
-                    e
-                }
-            })?;
+            let tracked = self
+                .backend
+                .execute_tracked(request.clone(), sensitive)
+                .await?;
+            sensitive |= tracked.is_secret();
+            result = tracked.value;
             if !result.is_object() {
                 bail!("operation result must be an object");
             }
