@@ -9,14 +9,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let resizefs = bool_param(obj, "resizefs", false);
 
     let exists = lv_exists(vg, lv)?;
-    let mut changed = false;
-
-    if exists {
-        let filesystem = if resizefs {
-            Some(super::filesystem::prepare_resize(&lv_path(vg, lv))?)
-        } else {
-            None
-        };
+    let changed = if exists {
         let relative = size.starts_with('+');
         let needs_resize = if relative {
             if size != "+100%FREE" {
@@ -28,30 +21,53 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let (current, extent) = lv_geometry(vg, lv)?;
             needs_absolute_resize(current, extent, requested)?
         };
-        if !needs_resize && let Some(target) = &filesystem {
-            changed |= super::filesystem::resize_existing(target, ctx)?;
-        }
-        if needs_resize {
-            changed = true;
-            if !ctx.check_mode {
+        reconcile_existing(
+            resizefs,
+            needs_resize,
+            ctx.check_mode,
+            || super::filesystem::prepare_resize(&lv_path(vg, lv)),
+            || {
                 let flag = if relative { "-l" } else { "-L" };
-                let mut args = vec![flag.to_string(), size.to_string()];
-                args.push(lv_path(vg, lv));
-                let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
-                run_cmd(if relative { "lvextend" } else { "lvresize" }, &args_ref)?;
-                if let Some(target) = &filesystem {
-                    super::filesystem::resize_existing(target, ctx)?;
-                }
-            }
-        }
+                let path = lv_path(vg, lv);
+                run_cmd(
+                    if relative { "lvextend" } else { "lvresize" },
+                    &[flag, size, &path],
+                )
+            },
+            |target| super::filesystem::resize_existing(target, ctx),
+        )?
     } else {
-        changed = true;
         if !ctx.check_mode {
             create(vg, lv, size)?;
         }
-    }
+        true
+    };
 
     Ok(json!({"changed": changed, "failed": false, "lv": lv, "vg": vg}))
+}
+
+fn reconcile_existing<T>(
+    resizefs: bool,
+    needs_resize: bool,
+    check_mode: bool,
+    prepare: impl FnOnce() -> Result<Option<T>, String>,
+    grow_volume: impl FnOnce() -> Result<(), String>,
+    grow_filesystem: impl FnOnce(&T) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let filesystem = if resizefs { prepare()? } else { None };
+    if needs_resize {
+        if !check_mode {
+            grow_volume()?;
+            if let Some(target) = &filesystem {
+                grow_filesystem(target)?;
+            }
+        }
+        Ok(true)
+    } else if let Some(target) = &filesystem {
+        grow_filesystem(target)
+    } else {
+        Ok(false)
+    }
 }
 
 fn size_bytes(size: &str) -> Result<u64, String> {
@@ -165,6 +181,98 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn blank_lv_can_resume_without_formatting_or_filesystem_resize() {
+        use std::cell::RefCell;
+        for check in [true, false] {
+            for needs_resize in [true, false] {
+                let calls = RefCell::new(Vec::new());
+                let changed = super::reconcile_existing(
+                    true,
+                    needs_resize,
+                    check,
+                    || {
+                        calls.borrow_mut().push("probe_blank");
+                        Ok(None::<()>)
+                    },
+                    || {
+                        calls.borrow_mut().push("grow_lv");
+                        Ok(())
+                    },
+                    |()| {
+                        calls.borrow_mut().push("grow_fs");
+                        Ok(true)
+                    },
+                )
+                .unwrap();
+                assert_eq!(changed, needs_resize);
+                let expected = if needs_resize && !check {
+                    vec!["probe_blank", "grow_lv"]
+                } else {
+                    vec!["probe_blank"]
+                };
+                assert_eq!(*calls.borrow(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn existing_filesystem_recovers_interrupted_growth_and_errors_fail_closed() {
+        use std::cell::RefCell;
+        let calls = RefCell::new(Vec::new());
+        let changed = super::reconcile_existing(
+            true,
+            false,
+            false,
+            || {
+                calls.borrow_mut().push("probe_ext4");
+                Ok(Some(()))
+            },
+            || {
+                calls.borrow_mut().push("grow_lv");
+                Ok(())
+            },
+            |()| {
+                calls.borrow_mut().push("grow_fs");
+                Ok(true)
+            },
+        )
+        .unwrap();
+        assert!(changed);
+        assert_eq!(*calls.borrow(), ["probe_ext4", "grow_fs"]);
+        let calls = RefCell::new(Vec::new());
+        let result = super::reconcile_existing(
+            true,
+            true,
+            false,
+            || -> Result<Option<()>, String> { Err("ambiguous signature".into()) },
+            || {
+                calls.borrow_mut().push("grow_lv");
+                Ok(())
+            },
+            |()| {
+                calls.borrow_mut().push("grow_fs");
+                Ok(true)
+            },
+        );
+        assert!(result.is_err());
+        assert!(calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn resizefs_false_does_not_probe_or_touch_filesystem() {
+        let changed = super::reconcile_existing(
+            false,
+            true,
+            false,
+            || -> Result<Option<()>, String> { panic!("unexpected probe") },
+            || Ok(()),
+            |()| -> Result<bool, String> { panic!("unexpected filesystem resize") },
+        )
+        .unwrap();
+        assert!(changed);
+    }
+
     #[test]
     fn absolute_size_reconciles_at_extent_boundaries() {
         assert_eq!(super::size_bytes("10G").unwrap(), 10 << 30);
