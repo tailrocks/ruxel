@@ -103,3 +103,22 @@ fn sensitive_failures_are_generic_and_public_errors_remain_useful() {
     assert_ne!(error, "sensitive expression failed");
     assert!(!error.is_empty());
 }
+
+#[test]
+fn missing_secret_reference_taints_default_and_short_array_tree_fails_closed() -> Result<()> {
+    let scope = TrackedValue {
+        value: json!({"vars":{"secret":{}}, "item":["synthetic-secret"]}),
+        provenance: Provenance::Object(BTreeMap::from([
+            (
+                "vars".into(),
+                Provenance::Object(BTreeMap::from([("secret".into(), Provenance::Secret)])),
+            ),
+            ("item".into(), Provenance::Array(vec![])),
+        ])),
+    };
+    let missing = json!({"kind":"ref", "path":["vars", "secret", "probe"]});
+    let fallback = json!({"kind":"literal", "value":"absent"});
+    assert!(eval(call("default", vec![missing, fallback]), &scope)?.is_secret());
+    assert!(eval(json!({"kind":"ref", "path":["item", "0"]}), &scope)?.is_secret());
+    Ok(())
+}

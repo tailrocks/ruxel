@@ -36,7 +36,7 @@ impl Provenance {
                 .ok()
                 .and_then(|i| items.get(i))
                 .cloned()
-                .unwrap_or_default(),
+                .unwrap_or(Self::Secret),
             Self::Object(items) => items.get(key).cloned().unwrap_or_default(),
         }
     }
@@ -78,6 +78,60 @@ impl TrackedValue {
         self.provenance.is_secret()
     }
 
+    /// Construct a tracked object from independently tracked fields.
+    #[must_use]
+    pub fn object(fields: BTreeMap<String, Self>) -> Self {
+        Self {
+            value: Value::Object(
+                fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.value.clone()))
+                    .collect(),
+            ),
+            provenance: Provenance::Object(
+                fields.into_iter().map(|(k, v)| (k, v.provenance)).collect(),
+            ),
+        }
+    }
+
+    /// Retrieve a child without discarding its provenance.
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<Self> {
+        let value = match &self.value {
+            Value::Object(fields) => fields.get(key),
+            Value::Array(items) => key.parse::<usize>().ok().and_then(|index| items.get(index)),
+            _ => None,
+        }?;
+        Some(Self {
+            value: value.clone(),
+            provenance: self.provenance.child(key),
+        })
+    }
+
+    /// Replace a field in a tracked object, preserving sensitivity of siblings.
+    ///
+    /// # Errors
+    /// Returns an error when this value or its provenance is not an object.
+    pub fn insert(&mut self, key: String, value: Self) -> Result<()> {
+        let fields = self
+            .value
+            .as_object_mut()
+            .context("tracked value must be an object")?;
+        match &mut self.provenance {
+            Provenance::Public => {
+                self.provenance =
+                    Provenance::Object(BTreeMap::from([(key.clone(), value.provenance)]));
+            }
+            Provenance::Secret => {}
+            Provenance::Object(tree) => {
+                tree.insert(key.clone(), value.provenance);
+            }
+            Provenance::Array(_) => bail!("object has incompatible provenance"),
+        }
+        fields.insert(key, value.value);
+        Ok(())
+    }
+
     /// Redact sensitive nodes while retaining public siblings and their structure.
     #[must_use]
     pub fn redacted(&self) -> Value {
@@ -112,6 +166,15 @@ impl TrackedValue {
     }
 }
 
+#[derive(Debug)]
+struct SensitiveMissingReference;
+impl std::fmt::Display for SensitiveMissingReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("sensitive reference missing")
+    }
+}
+impl std::error::Error for SensitiveMissingReference {}
+
 fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
     let (root, rest) = path.split_first().context("empty reference")?;
     let root = if root == "variables" {
@@ -122,15 +185,19 @@ fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
     let mut value = &scope.value;
     let mut provenance = scope.provenance.clone();
     for part in std::iter::once(root).chain(rest.iter().map(String::as_str)) {
-        value = match value {
+        let next = match value {
             Value::Object(map) => map.get(part),
             Value::Array(items) => part
                 .parse::<usize>()
                 .ok()
                 .and_then(|index| items.get(index)),
             _ => None,
-        }
-        .ok_or_else(|| MissingReference(path.join(".")))?;
+        };
+        value = match next {
+            Some(value) => value,
+            None if provenance.is_secret() => return Err(SensitiveMissingReference.into()),
+            None => return Err(MissingReference(path.join(".")).into()),
+        };
         provenance = provenance.child(part);
     }
     Ok(TrackedValue {
@@ -237,6 +304,12 @@ fn call(
                     Ok(fallback)
                 }
                 Ok(value) => Ok(value),
+                Err(error) if error.downcast_ref::<SensitiveMissingReference>().is_some() => {
+                    let mut fallback = evaluate_tracked(&args[1], scope, resolver)
+                        .map_err(|e| sensitive_error(e, true))?;
+                    fallback.provenance = Provenance::Secret;
+                    Ok(fallback)
+                }
                 Err(error) if is_missing_reference(&error) => {
                     evaluate_tracked(&args[1], scope, resolver)
                 }
