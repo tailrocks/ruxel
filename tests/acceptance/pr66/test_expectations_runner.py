@@ -37,6 +37,27 @@ class ExpectationsTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             validate_case('storage-ext4', case)
 
+    def test_delegation_pending_and_diff_contract_are_not_ignored(self):
+        case = {
+            'fixture': 'controller-delegation.pkl',
+            'observations': [{'kind': 'task_result', 'host': 'fixture', 'task': 'x', 'field': 'stdout', 'equals': 'ok'}],
+            'phases': {
+                'fresh': {'succeeds': True}, 'converged': {'succeeds': True},
+                'check': {'state_unchanged': True, 'succeeds': False},
+                'diff': {'state_unchanged': True},
+            },
+            'pending': ['verify frozen diff assertion behavior independently'],
+        }
+        validate_case('controller-delegation', case)
+        unknown = copy.deepcopy(case)
+        unknown['pending'].append('unhandled assertion')
+        with self.assertRaises(RuntimeError):
+            validate_case('controller-delegation', unknown)
+        wrong_diff = copy.deepcopy(case)
+        wrong_diff['phases']['diff']['succeeds'] = True
+        with self.assertRaises(RuntimeError):
+            validate_case('controller-delegation', wrong_diff)
+
     def test_default_all_and_unsupported_selection_fail_without_remote_execution(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -47,7 +68,7 @@ class ExpectationsTest(unittest.TestCase):
             }))
             original = expectations_runner.execute
             def execute_safe(name, case, cli, agent):
-                if name in expectations_runner.PINS:
+                if name in {'check-semantics', 'multihost'}:
                     return None
                 return original(name, case, cli, agent)
             args = ['expectations_runner', '--ruxel', str(binary), '--agent', str(binary)]
