@@ -22,7 +22,6 @@ ignore:
   - "crates/ruxel/ruxel-agent/src/modules/blockinfile.rs"
   - "crates/ruxel/ruxel-agent/src/modules/command.rs"
   - "crates/ruxel/ruxel-agent/src/modules/copy.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/file.rs"
   - "crates/ruxel/ruxel-agent/src/modules/get_url.rs"
   - "crates/ruxel/ruxel-agent/src/modules/lvg.rs"
   - "crates/ruxel/ruxel-agent/src/modules/slurp.rs"
