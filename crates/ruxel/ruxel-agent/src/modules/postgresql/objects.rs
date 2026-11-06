@@ -156,6 +156,19 @@ fn password_changed(
     if stored.is_empty() {
         return Ok(true);
     }
+    if stored.starts_with("md5") {
+        use md5::{Digest as _, Md5};
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut hash = Md5::new();
+        hash.update(password.as_bytes());
+        hash.update(name.as_bytes());
+        let mut expected = String::from("md5");
+        for byte in hash.finalize() {
+            expected.push(char::from(HEX[usize::from(byte >> 4)]));
+            expected.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        return Ok(stored != expected);
+    }
     if !stored.starts_with("SCRAM-SHA-256$") {
         return Ok(true);
     }

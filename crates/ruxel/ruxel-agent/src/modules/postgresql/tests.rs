@@ -1,5 +1,6 @@
 mod connection;
 mod environment;
+mod md5_password;
 mod roles;
 
 use super::*;
