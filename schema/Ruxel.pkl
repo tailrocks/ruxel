@@ -275,6 +275,7 @@ class Mount {
 
 class PostgresDatabase {
   fixed kind = "community.postgresql.postgresql_db"
+  login_db: Text? = null
   login_port: Port? = null
   login_user: Text? = null
   name: Text
@@ -284,6 +285,7 @@ class PostgresDatabase {
 
 class PostgresRole {
   fixed kind = "community.postgresql.postgresql_user"
+  login_db: Text? = null
   login_port: Port? = null
   login_user: Text? = null
   name: Text

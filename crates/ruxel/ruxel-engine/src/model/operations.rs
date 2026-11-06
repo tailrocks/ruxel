@@ -164,6 +164,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["mounted"]);
     ),
     operation!("community.postgresql.postgresql_db";
+        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;
@@ -171,6 +172,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["present"]);
     ),
     operation!("community.postgresql.postgresql_user";
+        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;

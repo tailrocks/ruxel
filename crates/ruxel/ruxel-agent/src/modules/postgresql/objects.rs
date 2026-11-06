@@ -8,6 +8,7 @@ pub(crate) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_db: name required")?;
     let owner = str_param(obj, "owner");
@@ -68,6 +69,7 @@ pub(crate) fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_user: name required")?;
     let password = str_param(obj, "password");
@@ -262,6 +264,7 @@ pub(crate) fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String>
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_schema: login_db required")?;

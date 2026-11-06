@@ -14,6 +14,7 @@ pub(super) fn login_port(obj: &serde_json::Map<String, Value>) -> String {
 pub(super) struct PgContext<'a> {
     pub(super) exec: &'a ExecContext,
     pub(super) login_user: Option<&'a str>,
+    pub(super) login_db: Option<&'a str>,
 }
 
 impl std::ops::Deref for PgContext<'_> {
@@ -33,7 +34,7 @@ pub(super) fn psql(
     let key = SessionKey {
         become_user: ctx.become_user.clone(),
         port: port.to_string(),
-        database: db.map(str::to_string),
+        database: db.or(ctx.login_db).map(str::to_string),
         login_user: ctx.login_user.map(str::to_owned),
         environment: ctx.environment.iter().cloned().collect(),
     };

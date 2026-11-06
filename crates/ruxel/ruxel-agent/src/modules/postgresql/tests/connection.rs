@@ -12,8 +12,16 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
             become_user: None,
         };
         let user = "--host=synthetic";
-        db(&json!({"name":"sample", "login_user":user}), &ctx).unwrap();
-        super::super::user(&json!({"name":"sample", "login_user":user}), &ctx).unwrap();
+        db(
+            &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
+            &ctx,
+        )
+        .unwrap();
+        super::super::user(
+            &json!({"name":"sample", "login_db":"maintenance", "login_user":user}),
+            &ctx,
+        )
+        .unwrap();
         schema(
             &json!({"name":"sample", "login_db":"sample", "login_user":user}),
             &ctx,
@@ -41,6 +49,20 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
     let calls = std::fs::read_to_string(&log).unwrap();
     let lines: Vec<_> = calls.lines().collect();
     assert_eq!(lines.len(), 3);
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("-d maintenance"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("-d sample"))
+            .count(),
+        1
+    );
     assert_eq!(
         lines
             .iter()

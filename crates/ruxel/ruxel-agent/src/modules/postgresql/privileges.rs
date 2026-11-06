@@ -8,6 +8,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let login_db = str_param(obj, "login_db").ok_or("postgresql_privs: login_db required")?;
     let role = str_param(obj, "role").ok_or("postgresql_privs: role required")?;
