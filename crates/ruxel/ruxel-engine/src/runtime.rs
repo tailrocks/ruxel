@@ -10,25 +10,11 @@ use ruxel_proto::v1;
 use serde_json::{Map, Value, json};
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
-/// Transport selection is explicit; local mode never calls SSH.
-#[derive(Debug, Clone)]
-pub struct RuntimeOptions {
-    pub agent: PathBuf,
-    pub jobs: usize,
-    pub no_cache: bool,
-    pub connection: transport::ConnectOptions,
-    pub output: OutputFormat,
-    pub log_file: Option<PathBuf>,
-    pub source_dir: PathBuf,
-    pub synthetic_secrets: bool,
-    pub local_state: Option<PathBuf>,
-    pub local_agent: Option<PathBuf>,
-    pub controller_state: Option<PathBuf>,
-}
+mod options;
+pub use options::RuntimeOptions;
 
 mod connection;
 use connection::Connection;
