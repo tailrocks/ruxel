@@ -39,7 +39,14 @@ cp libblkid/src/blkid.h ../sysroot/usr/include/blkid/blkid.h
 cp .libs/libblkid.a ../sysroot/usr/lib/
 cp libblkid/blkid.pc ../sysroot/usr/lib/pkgconfig/
 if test "$copy_system_headers" = no; then
-    sed "s|=/usr|=$output/sysroot/usr|g" ../sysroot/usr/lib/pkgconfig/blkid.pc >../sysroot/usr/lib/pkgconfig/blkid.pc.new
+    while IFS= read -r line; do
+        case "$line" in
+            prefix=/usr|exec_prefix=/usr|libdir=/usr/*|includedir=/usr/*)
+                printf '%s=%s/sysroot%s\n' "${line%%=*}" "$output" "${line#*=}"
+                ;;
+            *) printf '%s\n' "$line" ;;
+        esac
+    done <../sysroot/usr/lib/pkgconfig/blkid.pc >../sysroot/usr/lib/pkgconfig/blkid.pc.new
     mv ../sysroot/usr/lib/pkgconfig/blkid.pc.new ../sysroot/usr/lib/pkgconfig/blkid.pc
 fi
 cp libblkid/COPYING Documentation/licenses/COPYING.LGPL-2.1-or-later ../sysroot/usr/share/licenses/libblkid/
