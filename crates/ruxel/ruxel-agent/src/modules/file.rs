@@ -3,10 +3,10 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 use super::open_attrs;
 use super::{ExecContext, apply_attrs, apply_attrs_fd, params_object, str_param};
-use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, fstat, mkdirat, open, openat, statat};
+use rustix::fs::{Dir, FileType, Mode, OFlags, fstat, mkdirat, open, openat};
 use serde_json::{Value, json};
 use std::os::fd::{AsFd, OwnedFd};
 use std::path::Component;
@@ -31,6 +31,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         "directory" => {
             if super::bool_param(obj, "recurse", false) {
+                if !cfg!(target_os = "linux") {
+                    return Err("file: safe recursive traversal requires Linux O_PATH".into());
+                }
                 let (fd, created) = open_directory_path(p, !ctx.check_mode)?;
                 changed = created;
                 if let Some(fd) = fd {
@@ -138,31 +141,53 @@ fn apply_attrs_recursive(
             if matches!(name.to_bytes(), b"." | b"..") {
                 continue;
             }
-            let entry_stat =
-                statat(&fd, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|e| e.to_string())?;
-            if !matches!(
-                FileType::from_raw_mode(entry_stat.st_mode),
-                FileType::Directory | FileType::RegularFile
-            ) {
-                continue;
-            }
-            let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK;
-            let child = match openat(&fd, name, flags, Mode::empty()) {
-                Ok(fd) => fd,
-                Err(rustix::io::Errno::LOOP) => continue,
-                Err(e) => return Err(e.to_string()),
-            };
-            let opened = fstat(&child).map_err(|e| e.to_string())?;
-            if !matches!(
-                FileType::from_raw_mode(opened.st_mode),
-                FileType::Directory | FileType::RegularFile
-            ) {
-                return Err("file: entry changed type during traversal".into());
-            }
-            apply_attrs_recursive(&child, obj, changed, check_mode)?;
+            apply_entry(&fd, name, obj, changed, check_mode)?;
         }
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn apply_entry(
+    dir: impl AsFd,
+    name: &std::ffi::CStr,
+    obj: &serde_json::Map<String, Value>,
+    changed: &mut bool,
+    check_mode: bool,
+) -> Result<(), String> {
+    let fd = openat(
+        &dir,
+        name,
+        OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| e.to_string())?;
+    let stat = fstat(&fd).map_err(|e| e.to_string())?;
+    match FileType::from_raw_mode(stat.st_mode) {
+        FileType::RegularFile => apply_attrs_fd(&fd, obj, changed, check_mode),
+        FileType::Directory => {
+            let readable = openat(
+                &fd,
+                ".",
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|e| e.to_string())?;
+            apply_attrs_recursive(&readable, obj, changed, check_mode)
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_entry(
+    _dir: impl AsFd,
+    _name: &std::ffi::CStr,
+    _obj: &serde_json::Map<String, Value>,
+    _changed: &mut bool,
+    _check_mode: bool,
+) -> Result<(), String> {
+    Err("file: safe recursive entry traversal requires Linux O_PATH".into())
 }
 
 #[cfg(test)]
@@ -203,6 +228,7 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(dir);
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn recursive_attributes_detect_and_repair_nested_drift() {
         let dir = std::env::temp_dir()
@@ -231,6 +257,7 @@ mod tests {
         assert_eq!(run(&params, &context()).unwrap()["changed"], false);
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn recursive_attributes_do_not_follow_symlinks() {
         let base = std::env::temp_dir()
@@ -260,6 +287,7 @@ mod tests {
         assert!(run(&json!({"path": root.join("dirlink"), "state":"directory", "mode":"0755", "recurse":true}), &context()).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn opened_directory_stays_anchored_when_path_is_swapped() {
         let base = std::env::temp_dir()
