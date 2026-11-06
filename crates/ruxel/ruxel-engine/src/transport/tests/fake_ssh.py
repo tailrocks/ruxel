@@ -76,6 +76,9 @@ def sftp():
             offset = struct.unpack('>Q', data[:8])[0]
             content, rest = take(data[8:])
             assert not rest
+            if (ROOT / 'sftp-fail').exists():
+                packet(b'\x65' + request + struct.pack('>I', 4) + string('synthetic write failure') + string(''))
+                continue
             handles[handle].seek(offset)
             handles[handle].write(content)
         elif kind == 4:
@@ -123,6 +126,8 @@ elif REMOTE[0] == 'sha256sum':
     digest = '0' * 64 if (ROOT / 'mismatch').exists() else hashlib.sha256(local(REMOTE[1]).read_bytes()).hexdigest()
     print(digest + '  ' + REMOTE[1])
 elif REMOTE[:2] == ['rm', '-f']:
+    if (ROOT / 'cleanup-fail').exists():
+        sys.exit(23)
     local(REMOTE[2]).unlink(missing_ok=True)
 else:
     assert len(REMOTE) == 1 and REMOTE[0].startswith('/var/lib/ruxel/agent/')

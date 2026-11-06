@@ -62,8 +62,12 @@ pub(super) async fn ensure_agent(
     }
     .await;
     if let Err(error) = upload_result {
-        if let Err(cleanup) = remote.exec_status(&["rm", "-f", &tmp_path]).await {
-            return Err(error.context(format!("upload cleanup also failed: {cleanup}")));
+        match remote.exec_status(&["rm", "-f", &tmp_path]).await {
+            Ok(status) if status.success() => {}
+            Ok(status) => return Err(error.context(format!("upload cleanup failed: {status}"))),
+            Err(cleanup) => {
+                return Err(error.context(format!("upload cleanup also failed: {cleanup}")));
+            }
         }
         return Err(error);
     }

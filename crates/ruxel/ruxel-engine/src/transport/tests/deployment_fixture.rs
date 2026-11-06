@@ -1,4 +1,6 @@
 use super::super::super::{ConnectOptions, RemoteHost, connect_remote};
+use prost::Message;
+use ruxel_proto::v1::envelope::Msg;
 use ruxel_proto::v1::{self, event::Msg as Event};
 use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
@@ -67,6 +69,47 @@ impl Fixture {
             .lines()
             .map(|line| Ok(serde_json::from_str(line)?))
             .collect()
+    }
+    pub(super) fn verify_first_upload(&self) -> anyhow::Result<std::path::PathBuf> {
+        let calls = self.calls()?;
+        let remote = calls.iter().find(|event| event[0] == "launch").unwrap()[1]
+            .as_str()
+            .unwrap();
+        let cache = self.root.join("remote/var/lib/ruxel/agent");
+        let uploaded = self
+            .root
+            .join("remote")
+            .join(remote.trim_start_matches('/'));
+        assert_eq!(
+            std::fs::read(&uploaded)?,
+            std::fs::read(self.root.join("agent"))?
+        );
+        assert_eq!(
+            std::fs::metadata(&cache)?.permissions().mode() & 0o777,
+            0o700
+        );
+        let position = |command: &str| {
+            calls
+                .iter()
+                .position(|event| {
+                    event[0] == "ssh"
+                        && event[1]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|arg| arg == command)
+                })
+                .unwrap()
+        };
+        assert!(position("sha256sum") < position("755"));
+        assert!(position("755") < calls.iter().position(|event| event[0] == "launch").unwrap());
+        let hello = v1::Envelope::decode(std::fs::read(self.root.join("hello"))?.as_slice())?;
+        assert!(
+            matches!(hello.msg, Some(Msg::Hello(h)) if h.run_id == "deployment-test" && h.check_mode && h.diff_mode && h.no_cache)
+        );
+        let done = v1::Envelope::decode(std::fs::read(self.root.join("done"))?.as_slice())?;
+        assert!(matches!(done.msg, Some(Msg::Done(_))));
+        Ok(uploaded)
     }
 }
 impl Drop for Fixture {

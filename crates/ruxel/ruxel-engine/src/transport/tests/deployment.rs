@@ -1,8 +1,6 @@
 #[path = "deployment_fixture.rs"]
 mod fixture;
 use fixture::Fixture;
-use prost::Message;
-use ruxel_proto::v1::{self, envelope::Msg};
 use std::os::unix::fs::{PermissionsExt, symlink};
 
 #[tokio::test]
@@ -17,7 +15,7 @@ async fn exercise() -> anyhow::Result<()> {
     assert!(connection.uploaded_agent);
     assert_eq!(facts.facts.hostname, "synthetic-agent");
     connection.shutdown().await?;
-    let uploaded = verify_first_upload(&fixture)?;
+    let uploaded = fixture.verify_first_upload()?;
     let cache = fixture.root.join("remote/var/lib/ruxel/agent");
     std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o755))?;
     let (connection, _) = fixture.connect().await?;
@@ -86,44 +84,20 @@ async fn exercise() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn verify_first_upload(fixture: &Fixture) -> anyhow::Result<std::path::PathBuf> {
-    let calls = fixture.calls()?;
-    let remote = calls.iter().find(|event| event[0] == "launch").unwrap()[1]
-        .as_str()
-        .unwrap();
-    let cache = fixture.root.join("remote/var/lib/ruxel/agent");
-    let uploaded = fixture
-        .root
-        .join("remote")
-        .join(remote.trim_start_matches('/'));
-    assert_eq!(
-        std::fs::read(&uploaded)?,
-        std::fs::read(fixture.root.join("agent"))?
-    );
-    assert_eq!(
-        std::fs::metadata(&cache)?.permissions().mode() & 0o777,
-        0o700
-    );
-    let position = |command: &str| {
-        calls
-            .iter()
-            .position(|event| {
-                event[0] == "ssh"
-                    && event[1]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .any(|arg| arg == command)
-            })
-            .unwrap()
-    };
-    assert!(position("sha256sum") < position("755"));
-    assert!(position("755") < calls.iter().position(|event| event[0] == "launch").unwrap());
-    let hello = v1::Envelope::decode(std::fs::read(fixture.root.join("hello"))?.as_slice())?;
-    assert!(
-        matches!(hello.msg, Some(Msg::Hello(h)) if h.run_id == "deployment-test" && h.check_mode && h.diff_mode && h.no_cache)
-    );
-    let done = v1::Envelope::decode(std::fs::read(fixture.root.join("done"))?.as_slice())?;
-    assert!(matches!(done.msg, Some(Msg::Done(_))));
-    Ok(uploaded)
+#[tokio::test]
+async fn failed_upload_and_cleanup_are_both_reported_without_launch() -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("sftp-fail"), b"synthetic write refusal")?;
+    std::fs::write(
+        fixture.root.join("cleanup-fail"),
+        b"synthetic cleanup refusal",
+    )?;
+    let error = tokio::time::timeout(std::time::Duration::from_secs(15), fixture.connect())
+        .await?
+        .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("cleanup failed") && message.contains("23"));
+    assert!(message.contains("sftp write agent"));
+    assert!(!fixture.calls()?.iter().any(|event| event[0] == "launch"));
+    Ok(())
 }
