@@ -62,6 +62,56 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "dev": dev, "fstype": fstype}))
 }
 
+pub(super) struct ResizeTarget {
+    #[cfg(target_os = "linux")]
+    file: std::fs::File,
+    #[cfg(target_os = "linux")]
+    fstype: String,
+}
+
+pub(super) fn prepare_resize(dev: &str) -> Result<ResizeTarget, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let file = open_locked_device(dev)?;
+        let fstype = probe_file(&file)?.ok_or("filesystem: no filesystem to resize")?;
+        mkfs_program(&fstype)?;
+        ensure_safe_resize(&fstype)?;
+        Ok(ResizeTarget { file, fstype })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = dev;
+        Err("filesystem: resizing requires Linux".into())
+    }
+}
+
+pub(super) fn resize_existing(target: &ResizeTarget, ctx: &ExecContext) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let current = probe_file(&target.file)?;
+        check_resize_signature(&target.fstype, current.as_deref())?;
+        ensure_safe_resize(&target.fstype)?;
+        if ctx.check_mode {
+            can_grow(&target.file, &target.fstype)
+        } else {
+            grow(&target.file, &target.fstype)
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (target, ctx);
+        Err("filesystem: resizing requires Linux".into())
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn check_resize_signature(expected: &str, current: Option<&str>) -> Result<(), String> {
+    if current != Some(expected) {
+        return Err("filesystem: filesystem changed before resize".into());
+    }
+    Ok(())
+}
+
 pub(super) fn ensure_safe_resize(fstype: &str) -> Result<(), String> {
     if fstype == "xfs" {
         return Err(
@@ -161,12 +211,6 @@ fn classify_probe(
             "filesystem: ambiguous or failed device probe: {other:?}"
         )),
     }
-}
-
-#[cfg(target_os = "linux")]
-pub(super) fn blkid_type(dev: &str) -> Result<Option<String>, String> {
-    let file = open_locked_device(dev)?;
-    probe_file(&file)
 }
 
 #[cfg(not(target_os = "linux"))]

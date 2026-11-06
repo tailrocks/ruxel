@@ -91,3 +91,10 @@ fn mkfs_program_is_allowlisted() {
     );
     assert_eq!(super::parse_xfs_block_count("meta-data= blocks=9\n"), None);
 }
+
+#[test]
+fn resize_rejects_disappeared_or_changed_filesystem() {
+    assert!(super::check_resize_signature("ext4", None).is_err());
+    assert!(super::check_resize_signature("ext4", Some("xfs")).is_err());
+    assert!(super::check_resize_signature("ext4", Some("ext4")).is_ok());
+}

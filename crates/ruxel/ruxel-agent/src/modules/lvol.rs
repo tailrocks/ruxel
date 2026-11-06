@@ -12,11 +12,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut changed = false;
 
     if exists {
-        let filesystem_type = if resizefs {
-            let fstype = super::filesystem::blkid_type(&lv_path(vg, lv))?
-                .ok_or("lvol: filesystem type unavailable for resize")?;
-            super::filesystem::ensure_safe_resize(&fstype)?;
-            Some(fstype)
+        let filesystem = if resizefs {
+            Some(super::filesystem::prepare_resize(&lv_path(vg, lv))?)
         } else {
             None
         };
@@ -31,16 +28,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let (current, extent) = lv_geometry(vg, lv)?;
             needs_absolute_resize(current, extent, requested)?
         };
-        if !needs_resize && resizefs {
-            let path = lv_path(vg, lv);
-            let fstype = filesystem_type
-                .as_deref()
-                .ok_or("lvol: filesystem type unavailable for resize")?;
-            let result = super::filesystem::run(
-                &json!({"dev": path, "fstype": fstype, "resizefs": true}),
-                ctx,
-            )?;
-            changed |= result["changed"].as_bool().unwrap_or(false);
+        if !needs_resize && let Some(target) = &filesystem {
+            changed |= super::filesystem::resize_existing(target, ctx)?;
         }
         if needs_resize {
             changed = true;
@@ -50,11 +39,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push(lv_path(vg, lv));
                 let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
                 run_cmd(if relative { "lvextend" } else { "lvresize" }, &args_ref)?;
-                if let Some(fstype) = filesystem_type.as_deref() {
-                    super::filesystem::run(
-                        &json!({"dev": lv_path(vg, lv), "fstype": fstype, "resizefs": true}),
-                        ctx,
-                    )?;
+                if let Some(target) = &filesystem {
+                    super::filesystem::resize_existing(target, ctx)?;
                 }
             }
         }
