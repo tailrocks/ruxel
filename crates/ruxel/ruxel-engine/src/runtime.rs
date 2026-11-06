@@ -1,7 +1,10 @@
 //! Connect the typed task controller to actual agent processes.
 use crate::{
     controller::{self, Backend, Mode, Options, Recap, Request},
-    expression::{self, Expr, Scope},
+    expression::{
+        self, Expr, Scope,
+        provenance::{Provenance, TrackedValue},
+    },
     secrets::{Lookup, ProcessBackend, Resolver},
     transport::{self, AgentConnection, LocalConnection},
 };
@@ -150,6 +153,77 @@ impl Execution {
         Ok(gathered)
     }
 
+    fn prefetch_lookups(&self, value: &Value) -> Result<()> {
+        // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
+        fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
+            if let Some(kind) = value.get("kind").and_then(Value::as_str) {
+                if kind == "lookup" {
+                    found.push(Lookups::lookup(&serde_json::from_value::<Expr>(
+                        value.clone(),
+                    )?)?);
+                    return Ok(());
+                }
+                if ["literal", "ref", "call", "list", "map"].contains(&kind) {
+                    return Ok(());
+                }
+            }
+            match value {
+                Value::Array(items) => {
+                    for item in items {
+                        direct_lookups(item, found)?;
+                    }
+                }
+                Value::Object(items) => {
+                    for item in items.values() {
+                        direct_lookups(item, found)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        let mut lookups = Vec::new();
+        direct_lookups(value, &mut lookups)?;
+        self.lookups
+            .resolver
+            .prefetch(&lookups)
+            .map_err(anyhow::Error::msg)?;
+        Ok(())
+    }
+
+    fn evaluate_value_tracked(&self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
+        if let Some(kind) = value.get("kind").and_then(Value::as_str)
+            && ["literal", "ref", "call", "list", "map", "lookup"].contains(&kind)
+        {
+            return expression::provenance::evaluate_tracked(
+                &serde_json::from_value::<Expr>(value.clone())?,
+                scope,
+                self.lookups.as_ref(),
+            );
+        }
+        match value {
+            Value::Array(items) => {
+                let items = items
+                    .iter()
+                    .map(|v| self.evaluate_value_tracked(v, scope))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(TrackedValue {
+                    value: Value::Array(items.iter().map(|v| v.value.clone()).collect()),
+                    provenance: Provenance::Array(
+                        items.into_iter().map(|v| v.provenance).collect(),
+                    ),
+                })
+            }
+            Value::Object(items) => Ok(TrackedValue::object(
+                items
+                    .iter()
+                    .map(|(k, v)| Ok((k.clone(), self.evaluate_value_tracked(v, scope)?)))
+                    .collect::<Result<BTreeMap<_, _>>>()?,
+            )),
+            _ => Ok(TrackedValue::public(value.clone())),
+        }
+    }
+
     fn evaluate_value(&self, value: &Value, scope: &Scope) -> Result<Value> {
         if let Some(kind) = value.get("kind").and_then(Value::as_str)
             && ["literal", "ref", "call", "list", "map", "lookup"].contains(&kind)
@@ -186,40 +260,7 @@ impl Backend for Execution {
         templates::prepare(self, kind, params, scope)
     }
     fn evaluate(&mut self, value: &Value, map: &Map<String, Value>) -> Result<Value> {
-        // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
-        fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
-            if let Some(kind) = value.get("kind").and_then(Value::as_str) {
-                if kind == "lookup" {
-                    found.push(Lookups::lookup(&serde_json::from_value::<Expr>(
-                        value.clone(),
-                    )?)?);
-                    return Ok(());
-                }
-                if ["literal", "ref", "call", "list", "map"].contains(&kind) {
-                    return Ok(());
-                }
-            }
-            match value {
-                Value::Array(items) => {
-                    for item in items {
-                        direct_lookups(item, found)?;
-                    }
-                }
-                Value::Object(items) => {
-                    for item in items.values() {
-                        direct_lookups(item, found)?;
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        }
-        let mut lookups = Vec::new();
-        direct_lookups(value, &mut lookups)?;
-        self.lookups
-            .resolver
-            .prefetch(&lookups)
-            .map_err(anyhow::Error::msg)?;
+        self.prefetch_lookups(value)?;
         let scope = Scope {
             facts: map.get("facts").cloned().unwrap_or(Value::Null),
             results: map.get("results").cloned().unwrap_or(Value::Null),
@@ -228,6 +269,10 @@ impl Backend for Execution {
             extra: map.clone(),
         };
         self.evaluate_value(value, &scope)
+    }
+    fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
+        self.prefetch_lookups(value)?;
+        self.evaluate_value_tracked(value, scope)
     }
     async fn execute(&mut self, mut request: Request) -> Result<Value> {
         if request.task.module == "copy" {

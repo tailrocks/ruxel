@@ -46,6 +46,15 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
             values: Mutex::new(Vec::new()),
         }),
     };
+    let tracked = execution.evaluate_tracked(
+        &json!({"public":"visible", "private":{"kind":"call", "function":"base64Encode", "args":[{"kind":"lookup", "provider":"synthetic", "key":"fixture-only"}]}}),
+        &TrackedValue::public(json!({})),
+    )?;
+    assert_eq!(
+        tracked.redacted(),
+        json!({"public":"visible", "private":"[REDACTED]"})
+    );
+    assert_ne!(tracked.value["private"], "[REDACTED]");
     let scope = json!({"vars":{"name":"rendered-value"}})
         .as_object()
         .context("scope")?

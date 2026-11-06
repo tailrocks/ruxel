@@ -36,6 +36,34 @@ pub trait Backend {
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
+    /// Evaluate while retaining secret provenance from the scope.
+    ///
+    /// Backends that do not implement provenance must conservatively mark the
+    /// result sensitive whenever the supplied scope contains a secret.
+    ///
+    /// # Errors
+    /// Returns an error if evaluation fails.
+    fn evaluate_tracked(
+        &mut self,
+        value: &Value,
+        scope: &crate::expression::provenance::TrackedValue,
+    ) -> Result<crate::expression::provenance::TrackedValue> {
+        use crate::expression::provenance::TrackedValue;
+        let sensitive = scope.is_secret();
+        let scope = scope.value.as_object().context("scope must be an object")?;
+        let value = self.evaluate(value, scope).map_err(|error| {
+            if sensitive {
+                anyhow::anyhow!("sensitive evaluation failed")
+            } else {
+                error
+            }
+        })?;
+        Ok(if sensitive {
+            TrackedValue::secret(value)
+        } else {
+            TrackedValue::public(value)
+        })
+    }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
     /// # Errors
