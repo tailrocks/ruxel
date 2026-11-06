@@ -146,21 +146,21 @@ fn current_pvs(
 mod tests {
     use super::*;
 
-    fn output(value: Value) -> CommandOutput {
+    fn output(value: &Value) -> CommandOutput {
         CommandOutput {
             success: true,
-            stdout: serde_json::to_vec(&value).unwrap(),
+            stdout: serde_json::to_vec(value).unwrap(),
             stderr: vec![],
         }
     }
     fn empty_groups() -> CommandOutput {
-        output(json!({"report":[{"vg":[]}]}))
+        output(&json!({"report":[{"vg":[]}]}))
     }
     fn groups() -> CommandOutput {
-        output(json!({"report":[{"vg":[{"vg_name":"vg"}]}]}))
+        output(&json!({"report":[{"vg":[{"vg_name":"vg"}]}]}))
     }
     fn pvs() -> CommandOutput {
-        output(json!({"report":[{"pv":[{"vg_name":"vg", "pv_name":"/dev/a"}]}]}))
+        output(&json!({"report":[{"pv":[{"vg_name":"vg", "pv_name":"/dev/a"}]}]}))
     }
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
                 Ok(if name == "vgs" {
                     empty_groups()
                 } else {
-                    output(json!({}))
+                    output(&json!({}))
                 })
             };
             assert_eq!(
@@ -216,7 +216,7 @@ mod tests {
             Ok(match name {
                 "vgs" => groups(),
                 "pvs" => pvs(),
-                _ => output(json!({})),
+                _ => output(&json!({})),
             })
         };
         assert_eq!(
@@ -232,11 +232,11 @@ mod tests {
     #[test]
     fn malformed_reports_fail_closed_and_existing_pvs_are_unchanged() {
         let params = json!({"vg":"vg", "pvs":["/dev/a"]});
-        assert!(run_with(&params, false, &mut |_, _| Ok(output(json!({})))).is_err());
+        assert!(run_with(&params, false, &mut |_, _| Ok(output(&json!({})))).is_err());
         let mut calls = Vec::new();
         let mut empty = |name: &str, _: &[&str]| {
             calls.push(name.to_string());
-            Ok(output(json!({"report":[]})))
+            Ok(output(&json!({"report":[]})))
         };
         assert!(run_with(&params, false, &mut empty).is_err());
         assert_eq!(calls, ["vgs"]);
