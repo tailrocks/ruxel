@@ -22,6 +22,51 @@ label = "ubuntu-26.04"
 platform = "linux_x64"
 executor = "hosted"
 
+[[checks]]
+id = "acceptance-local"
+task = "acceptance-local"
+inputs = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "mise.toml",
+  "schema/Ruxel.pkl",
+  "testdata/workloads/pr66/README.md",
+  "testdata/workloads/pr66/assets/source.txt",
+  "testdata/workloads/pr66/assets/synthetic.txt",
+  "testdata/workloads/pr66/assets/template.pkl",
+  "testdata/workloads/pr66/become-environment.pkl",
+  "testdata/workloads/pr66/check-semantics.pkl",
+  "testdata/workloads/pr66/control-flow.pkl",
+  "testdata/workloads/pr66/controller-delegation.pkl",
+  "testdata/workloads/pr66/expectations.json",
+  "testdata/workloads/pr66/files-content.pkl",
+  "testdata/workloads/pr66/invalid/copy-source-and-content.pkl",
+  "testdata/workloads/pr66/invalid/file-path-and-dest.pkl",
+  "testdata/workloads/pr66/multihost.pkl",
+  "testdata/workloads/pr66/performance-snapshots.pkl",
+  "testdata/workloads/pr66/postgresql-ownership.pkl",
+  "testdata/workloads/pr66/restart-actions.pkl",
+  "testdata/workloads/pr66/shape-variants.pkl",
+  "testdata/workloads/pr66/storage-ext4.pkl",
+  "testdata/workloads/pr66/storage-two-tier.pkl",
+  "testdata/workloads/pr66/storage-xfs.pkl",
+  "testdata/workloads/pr66/system-surface.pkl",
+  "tests/acceptance/pr66/cache.py",
+  "tests/acceptance/pr66/check_semantics.py",
+  "tests/acceptance/pr66/coverage.py",
+  "tests/acceptance/pr66/host_isolation.py",
+  "tests/acceptance/pr66/local_scenarios.py",
+  "tests/acceptance/pr66/plan_matrix.py",
+  "tests/acceptance/pr66/retry.py",
+  "tests/acceptance/pr66/test_coverage.py",
+]
+tools = ["rust"]
+timeout_minutes = 30
+[checks.runner]
+label = "ubuntu-26.04"
+platform = "linux_x64"
+executor = "hosted"
+
 [[qualified_tools]]
 id = "cargo-deny"
 backend = { kind = "aqua", package = "EmbarkStudios/cargo-deny" }
