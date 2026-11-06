@@ -112,20 +112,32 @@ fn current_pvs(
     command: &mut impl FnMut(&str, &[&str]) -> Result<CommandOutput, String>,
 ) -> Result<Option<BTreeSet<String>>, String> {
     let groups = report(
-        command("vgs", &["--reportformat", "json", "-o", "vg_name"])?,
+        command("vgs", &["--reportformat", "json", "-o", "vg_name,pv_count"])?,
         "vgs",
         "vg",
     )?;
-    let mut found = false;
+    let mut expected_count = None;
     for row in groups {
         let name = row["vg_name"].as_str().ok_or("vgs: missing vg_name")?;
         if name.trim() == vg {
-            found = true;
+            if expected_count.is_some() {
+                return Err("vgs: duplicate volume group".into());
+            }
+            let count = row["pv_count"]
+                .as_str()
+                .ok_or("vgs: missing pv_count")?
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "vgs: invalid pv_count")?;
+            if count == 0 {
+                return Err("vgs: existing volume group has no physical volumes".into());
+            }
+            expected_count = Some(count);
         }
     }
-    if !found {
+    let Some(expected_count) = expected_count else {
         return Ok(None);
-    }
+    };
     let volumes = report(
         command("pvs", &["--reportformat", "json", "-o", "vg_name,pv_name"])?,
         "pvs",
@@ -143,8 +155,8 @@ fn current_pvs(
             set.insert(pv.to_string());
         }
     }
-    if set.is_empty() {
-        return Err("pvs: existing volume group has no reported physical volumes".into());
+    if set.len() != expected_count {
+        return Err("pvs: physical volume count disagrees with vgs".into());
     }
     Ok(Some(set))
 }
@@ -164,7 +176,7 @@ mod tests {
         output(&json!({"report":[{"vg":[]}]}))
     }
     fn groups() -> CommandOutput {
-        output(&json!({"report":[{"vg":[{"vg_name":"vg"}]}]}))
+        output(&json!({"report":[{"vg":[{"vg_name":"vg", "pv_count":"1"}]}]}))
     }
     fn pvs() -> CommandOutput {
         output(&json!({"report":[{"pv":[{"vg_name":"vg", "pv_name":"/dev/a"}]}]}))
@@ -234,6 +246,22 @@ mod tests {
             calls[2],
             ("vgextend".into(), vec!["vg".into(), "/dev/b".into()])
         );
+    }
+
+    #[test]
+    fn partial_membership_report_cannot_trigger_extension() {
+        let params = json!({"vg":"vg", "pvs":["/dev/a", "/dev/b"]});
+        let mut calls = Vec::new();
+        let mut fake = |name: &str, _: &[&str]| {
+            calls.push(name.to_string());
+            Ok(if name == "vgs" {
+                output(&json!({"report":[{"vg":[{"vg_name":"vg", "pv_count":"2"}]}]}))
+            } else {
+                pvs()
+            })
+        };
+        assert!(run_with(&params, false, &mut fake).is_err());
+        assert_eq!(calls, ["vgs", "pvs"]);
     }
 
     #[test]
