@@ -4,6 +4,7 @@ mod cases;
 mod excluded_vars;
 mod failures;
 mod flows;
+mod handler_failure;
 mod inventory;
 mod loop_vars;
 mod more;

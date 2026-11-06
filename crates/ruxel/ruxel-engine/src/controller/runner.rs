@@ -377,6 +377,11 @@ impl<B: Backend> Runner<'_, B> {
                     }
                 })?;
                 if !result {
+                    self.notified.retain(|name| {
+                        !handlers
+                            .iter()
+                            .any(|handler| string(handler, "name") == Some(name))
+                    });
                     break;
                 }
             }
