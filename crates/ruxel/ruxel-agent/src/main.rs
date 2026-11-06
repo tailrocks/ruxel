@@ -242,6 +242,7 @@ fn execute_task(
         };
 
         if !no_cache
+            && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()

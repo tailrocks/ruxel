@@ -98,6 +98,11 @@ pub(crate) struct Ledger {
     dirty: bool,
 }
 
+pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
+    // Root-directory metadata cannot prove that recursive descendant attributes still match.
+    !(module == "file" && probe::bool_value(params.get("recurse"), false))
+}
+
 impl Ledger {
     #[cfg(test)]
     pub(crate) fn cached_ok(&self, key: &str) -> Option<Value> {
@@ -152,7 +157,11 @@ impl Ledger {
         result: &Value,
         system_state: &mut crate::system_state::SystemState,
     ) {
-        if key.is_empty() || status == "failed" || status == "skipped" {
+        if key.is_empty()
+            || status == "failed"
+            || status == "skipped"
+            || !cache_allowed(module, params)
+        {
             return;
         }
         let Some(probes) = probe_for(module, params, system_state) else {
