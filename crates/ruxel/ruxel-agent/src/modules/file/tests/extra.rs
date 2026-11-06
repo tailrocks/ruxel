@@ -19,7 +19,7 @@ fn opened_directory_stays_anchored_when_path_is_swapped() {
     std::os::unix::fs::symlink(&external, &root).unwrap();
     let params = json!({"mode": "0755"});
     let mut changed = false;
-    apply_attrs_recursive(&fd, params.as_object().unwrap(), &mut changed, false).unwrap();
+    apply_directory(&fd, params.as_object().unwrap(), &mut changed, false).unwrap();
     assert_eq!(
         std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777,
         0o600

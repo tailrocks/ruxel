@@ -91,6 +91,23 @@ fn terminal_dot_preserves_authored_directory_resolution() {
     }
 }
 
+#[test]
+fn regular_file_with_directory_suffix_fails_without_mutation() {
+    let root = Root::new();
+    let file = root.path().join("file");
+    std::fs::write(&file, "payload").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let attrs = json!({"mode":"0644"});
+    let mut changed = false;
+    let path = std::path::PathBuf::from(format!("{}/", file.display()));
+    assert!(apply_attrs(&path, attrs.as_object().unwrap(), &mut changed, false).is_err());
+    assert!(!changed);
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
 struct Root(std::path::PathBuf);
 impl Root {
     fn new() -> Self {
