@@ -1,11 +1,3 @@
-//! Verifies the op-backed resolver against the synthetic `ruxel-test`
-//! vault (never a real ChainArgos secret). Runs only when a 1Password
-//! session is available — set OP_SERVICE_ACCOUNT_TOKEN (the ruxel-ci
-//! service account) or have a desktop `op` session:
-//!
-//!   set -a; source ~/.config/ruxel/op-ci.env; set +a
-//!   cargo nextest run -p ruxel-cli --test op_resolver --run-ignored all --no-capture
-
 use ruxel_cli::secrets::OpResolver;
 use ruxel_core::engine::LookupResolver;
 
@@ -35,7 +27,6 @@ fn resolves_synthetic_vault_item() {
         .expect("op read username");
     assert_eq!(user, "ruxel_test_user");
 
-    // pipe('op read …') path — the workload's other lookup form.
     let via_pipe = r
         .pipe("op read 'op://ruxel-test/ruxel-test PostgreSQL/username'")
         .expect("pipe op read");

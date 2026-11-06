@@ -1,10 +1,3 @@
-//! `get_url` (SEMANTICS §6): url + dest only. Pinned semantics: with no
-//! checksum and force unset, an existing dest short-circuits to unchanged;
-//! otherwise download and report changed. Fetching shells out to curl
-//! (falling back to wget) — the workload installs curl before its only
-//! get_url uses, and a static-musl HTTP+TLS stack inside the agent buys
-//! nothing but binary size until a playbook needs it.
-
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;

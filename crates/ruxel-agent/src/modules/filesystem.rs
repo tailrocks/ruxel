@@ -1,6 +1,3 @@
-//! `filesystem` (SEMANTICS §6): blkid fstype on dev; create only if
-//! absent; resizefs grows the fs to the device. xfs ×5, ext4 ×1.
-
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -15,7 +12,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     match current.as_deref() {
         Some(t) if t == fstype => {
-            // Already the right fs. resizefs may still grow it.
             if resizefs && !ctx.check_mode {
                 changed |= grow(dev, fstype)?;
             }
@@ -56,7 +52,7 @@ fn make(dev: &str, fstype: &str) -> Result<(), String> {
         ));
     }
     let bin = format!("mkfs.{fstype}");
-    // xfs needs -f only when overwriting; on a blank dev it is harmless.
+
     let args: &[&str] = if fstype == "xfs" {
         &["-f", dev]
     } else {
@@ -65,16 +61,9 @@ fn make(dev: &str, fstype: &str) -> Result<(), String> {
     run_cmd(&bin, args)
 }
 
-/// Grow to fill the device. Returns whether a grow ran (best-effort: a
-/// no-op grow on an already-full fs reports no change).
 fn grow(dev: &str, fstype: &str) -> Result<bool, String> {
     match fstype {
-        "xfs" => {
-            // xfs_growfs requires a mountpoint, but the closed filesystem
-            // surface carries only `dev`. Mounted XFS growth is handled by
-            // lvol's `resizefs` (`lvextend -r`); do not guess a mountpoint.
-            Ok(false)
-        }
+        "xfs" => Ok(false),
         "ext4" => {
             let before = ext4_block_count(dev)?;
             let mut command = std::process::Command::new("resize2fs");

@@ -1,11 +1,3 @@
-//! `apt` (SEMANTICS §6): the workload's exact surface — name install
-//! (present/latest), update_cache, upgrade: dist, autoremove, force.
-//! Changed semantics pinned 2026-06-11 by fixture captures
-//! (update-packages run1/run2): update_cache-only is never changed;
-//! upgrade/autoremove are changed iff apt actually did work (parsed from
-//! the "N upgraded, N newly installed, N to remove" summary); installs
-//! are changed iff a requested package was missing.
-
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -44,7 +36,7 @@ pub fn run(
             }
             system_state.invalidate_packages();
         }
-        // Pinned: cache refresh alone never reports changed.
+
         result["cache_updated"] = json!(!ctx.check_mode);
         result["cache_update_time"] = json!(
             std::time::SystemTime::now()
@@ -94,9 +86,6 @@ pub fn run(
         fill_exec_fields(&mut result, &stdout, &stderr, false);
         result["diff"] = json!({});
     } else if autoremove && upgrade.is_some() {
-        // upgrade+autoremove arrive together in the workload: apt-get
-        // handles it via --auto-remove on the upgrade call; the summary
-        // parse above already accounted for removals.
     }
 
     if !names.is_empty() {
@@ -128,8 +117,6 @@ pub fn run(
     Ok(result)
 }
 
-/// `apt-get -y` with Ansible's default dpkg options and the workload's
-/// DEBIAN_FRONTEND, plus task environment.
 fn apt_get(args: &[&str], ctx: &ExecContext) -> Result<(String, i32, String), String> {
     let mut cmd = std::process::Command::new("apt-get");
     cmd.arg("-y")
@@ -152,8 +139,6 @@ fn apt_get(args: &[&str], ctx: &ExecContext) -> Result<(String, i32, String), St
     ))
 }
 
-/// Parse apt's "N upgraded, N newly installed, N to remove and N not
-/// upgraded." summary: any non-zero action count = changed.
 fn summary_changed(stdout: &str) -> bool {
     for line in stdout.lines() {
         if line.contains("upgraded,") && line.contains("newly installed") {
@@ -162,8 +147,7 @@ fn summary_changed(stdout: &str) -> bool {
                 .filter(|s| !s.is_empty())
                 .filter_map(|s| s.parse().ok())
                 .collect();
-            // upgraded, newly installed, to remove — "not upgraded" (idx 3)
-            // does not count as work done.
+
             return numbers.iter().take(3).any(|n| *n > 0);
         }
     }
@@ -189,9 +173,6 @@ fn fill_exec_fields(result: &mut Value, stdout: &str, stderr: &str, with_msg: bo
     result["stderr_lines"] = json!(lines(stderr));
 }
 
-/// Which of the requested packages need an install action: for `present`,
-/// anything not currently installed; for `latest`, also anything with a
-/// newer candidate per apt policy.
 #[cfg(test)]
 mod tests {
     use super::summary_changed;
@@ -207,7 +188,7 @@ mod tests {
         assert!(summary_changed(
             "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded."
         ));
-        // "not upgraded" alone is not work
+
         assert!(!summary_changed(
             "0 upgraded, 0 newly installed, 0 to remove and 7 not upgraded."
         ));

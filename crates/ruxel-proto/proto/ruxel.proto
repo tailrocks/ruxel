@@ -1,17 +1,17 @@
-// Ruxel controller↔agent protocol. Framed as varint-length-prefixed messages
-// over the agent's stdio on an SSH channel ("gRPC minus the g" —
-// docs/ARCHITECTURE.md §2). Every controller→agent message is an Envelope;
-// every agent→controller message is an Event. Module params travel as
-// canonical JSON bytes in M2; per-module typed structs land with the module
-// runtime in M3.
+
+
+
+
+
+
 
 syntax = "proto3";
 
 package ruxel.v1;
 
-// ---------------------------------------------------------------------------
-// Controller → agent
-// ---------------------------------------------------------------------------
+
+
+
 
 message Envelope {
   oneof msg {
@@ -23,7 +23,7 @@ message Envelope {
   }
 }
 
-// First message, controller → agent.
+
 message Hello {
   uint32 proto_version = 1;
   string run_id = 2;
@@ -32,64 +32,64 @@ message Hello {
   bool no_cache = 5;
 }
 
-// The full task list for one play run. Deferred tasks arrive as
-// placeholders (rendered=false) so the agent knows shape and order; their
-// rendered bodies follow in PlanPatch messages as register inputs arrive
-// (docs/ARCHITECTURE.md §4).
+
+
+
+
 message Plan {
   repeated RenderedTask tasks = 1;
-  repeated string blobs_referenced = 2; // b3sums the tasks' payloads need
+  repeated string blobs_referenced = 2;
 }
 
-// Late-rendered continuation for deferred tasks.
-// Controller-sent continuation for register-dependent tasks (plan 020).
+
+
 message PlanPatch {
   repeated RenderedTask tasks = 1;
 }
 
-// Reply to PauseRequest: the operator pressed Enter (or aborted).
-// RESERVED: wire contract for planned pause work (plan 023); not yet sent by the controller.
+
+
 message Resume {
   uint64 task_id = 1;
   bool abort = 2;
 }
 
-// End of run: agent flushes its ledger and exits 0.
+
 message Done {}
 
-// One executable task, fully rendered controller-side. A loop task carries
-// one Iteration per (non-skipped) item — all templating, including the
-// per-item param render, already happened on the controller. A loop-less
-// task is exactly one Iteration with an empty item label.
+
+
+
+
 message RenderedTask {
-  uint64 task_id = 1;        // ordinal within the run, stable across patches
+  uint64 task_id = 1;
   string name = 2;
-  string module = 3;         // closed-surface module name
-  bool rendered = 4;         // false = deferred placeholder
+  string module = 3;
+  bool rendered = 4;
   repeated Iteration iterations = 5;
-  bool check_mode_override = 6; // task-level `check_mode: no`
+  bool check_mode_override = 6;
   bool no_log = 7;
-  string become_user = 8;    // empty = run as connection user (root)
+  string become_user = 8;
   map<string, string> environment = 9;
-  // Batch safety: stop draining this Plan after this task fails. The
-  // controller clears it for ignore_errors tasks.
+
+
   bool halt_on_failure = 10;
-  bool force_check_mode = 11; // task-level `check_mode: yes`
+  bool force_check_mode = 11;
 }
 
 message Iteration {
-  string item_label = 1;  // loop item display label ("" when loop-less)
-  bytes params_json = 2;  // canonical JSON object of rendered params
-  string free_form = 3;   // shell/command body
-  // Stable task identity for the convergence ledger (ARCHITECTURE §6):
-  // blake3 over playbook/play/task/module/canonical-params (+item). A hash,
-  // so no secret value is recoverable from it. Empty = do not cache.
+  string item_label = 1;
+  bytes params_json = 2;
+  string free_form = 3;
+
+
+
   string ledger_key = 4;
 }
 
-// ---------------------------------------------------------------------------
-// Agent → controller
-// ---------------------------------------------------------------------------
+
+
+
 
 message Event {
   oneof msg {
@@ -103,17 +103,17 @@ message Event {
   }
 }
 
-// First reply, agent → controller.
+
 message HelloAck {
   string agent_version = 1;
   uint32 proto_version = 2;
   Facts facts = 3;
-  // Ledger generation: changes when the ledger was wiped or migrated, so the
-  // controller can report degraded (full-check) runs honestly.
+
+
   uint64 ledger_generation = 4;
 }
 
-// The complete fact set the workload consumes (docs/SEMANTICS.md §2).
+
 message Facts {
   string default_ipv4_interface = 1;
   string distribution_release = 2;
@@ -121,30 +121,30 @@ message Facts {
   string hostname = 4;
 }
 
-// Content-addressed payloads the agent does not have yet; the controller
-// pushes them over the SFTP channel.
-// RESERVED: wire contract for planned blob work (plan 020); not yet sent by the controller.
+
+
+
 message BlobsNeeded {
-  repeated string missing = 1; // b3sums
+  repeated string missing = 1;
 }
 
 message TaskStart {
   uint64 task_id = 1;
-  string item_label = 2; // loop item display label, empty when loop-less
+  string item_label = 2;
 }
 
 message TaskResult {
   uint64 task_id = 1;
-  string status = 2;       // ok | changed | failed | skipped
+  string status = 2;
   bool changed = 3;
-  bytes result_json = 4;   // full result dict (register payload)
-  string diff = 5;         // unified diff when diff mode produced one
+  bytes result_json = 4;
+  string diff = 5;
   uint64 elapsed_ms = 6;
-  string item_label = 7;   // per-item results carry their label
+  string item_label = 7;
 }
 
-// Interactive pause (SEMANTICS §4): relayed to the operator TTY.
-// RESERVED: wire contract for planned pause work (plan 023); not yet sent by the controller.
+
+
 message PauseRequest {
   uint64 task_id = 1;
   string prompt = 2;
@@ -162,7 +162,7 @@ message Log {
   string message = 2;
 }
 
-// Structured panic/abort report — the agent's last words.
+
 message CrashReport {
   string message = 1;
   string location = 2;

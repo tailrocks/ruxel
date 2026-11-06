@@ -1,21 +1,8 @@
-//! The convergence ledger (ARCHITECTURE §6): a per-host record of what
-//! each task left behind, so a converged re-run verifies cheap fingerprints
-//! instead of re-doing each module's own check. Keyed by the controller's
-//! stable `ledger_key` (a blake3 of task identity + rendered params).
-//!
-//! Honesty rule (ARCHITECTURE §6): a fingerprint match never suppresses a
-//! *mandatory-execute* action. Only modules whose effect is a verifiable
-//! end state are cacheable (file content, package presence, unit state,
-//! sysctl value); command/shell, `restarted`, network fetches, and the
-//! controller-side modules are never cached — `probe_for` returns None and
-//! they always run.
-
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-/// One verifiable fact about the post-task system state.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind")]
 enum Probe {
@@ -54,7 +41,6 @@ enum Probe {
 }
 
 impl Probe {
-    /// True if the current system still matches this recorded fingerprint.
     fn verify(&self, system_state: &mut crate::system_state::SystemState) -> bool {
         match self {
             Probe::File {
@@ -118,8 +104,7 @@ impl Ledger {
         let had_host_key = key_path.exists();
         let host_key = load_or_create_host_key(&key_path);
         let path = ledger_dir.join("ledger.json");
-        // A ledger without its host key is legacy or unrecoverable. Remove it:
-        // legacy result payloads may contain pre-no_log plaintext diffs.
+
         if !had_host_key {
             let _ = std::fs::remove_file(&path);
         }
@@ -154,9 +139,6 @@ impl Ledger {
         }
     }
 
-    /// CachedOk verdict: a record for this key, same agent version, and
-    /// every fingerprint still verifies. Returns the result to replay
-    /// (changed forced false — the task is converged).
     #[cfg(test)]
     pub fn cached_ok(&self, key: &str) -> Option<Value> {
         self.cached_ok_with_state(key, &mut crate::system_state::SystemState::default())
@@ -182,8 +164,6 @@ impl Ledger {
         Some(result)
     }
 
-    /// Record a freshly-executed task's fingerprints, if its module is
-    /// cacheable. No-op for always-execute modules (probe_for → None).
     #[cfg(test)]
     pub fn record(
         &mut self,
@@ -299,11 +279,6 @@ fn set_mode(path: &Path, mode: u32) {
 #[cfg(not(unix))]
 fn set_mode(_path: &Path, _mode: u32) {}
 
-/// The fingerprint set a module's converged end state can be verified by,
-/// or None if the module must always execute (ARCHITECTURE §6 honesty rule).
-/// Cacheable registry: content/file modules, apt present (not latest),
-/// non-restarted systemd/service, and sysctl. Every other dispatch arm is
-/// intentionally always-execute until it gains an honest probe here.
 fn probe_for(
     module: &str,
     params: &Value,
@@ -313,7 +288,7 @@ fn probe_for(
     match module {
         "file" | "copy" | "template" | "lineinfile" | "replace" | "blockinfile" => {
             let path = s("path").or_else(|| s("dest"))?;
-            // `state: absent` / `link` aren't content — skip caching them.
+
             if matches!(s("state"), Some("absent") | Some("link")) {
                 return None;
             }
@@ -341,8 +316,7 @@ fn probe_for(
                 return None;
             }
             let names = pkg_names(params)?;
-            // update_cache/upgrade-only invocations have no stable package
-            // fingerprint — let them run (network-truth class).
+
             if names.is_empty() {
                 return None;
             }
@@ -355,7 +329,7 @@ fn probe_for(
         }
         "systemd" | "service" => {
             let name = s("name")?;
-            // `restarted` is an action, never cacheable.
+
             if s("state") == Some("restarted") {
                 return None;
             }

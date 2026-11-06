@@ -1,7 +1,3 @@
-//! `stat` (SEMANTICS §6): read-only, never changed. Returns the `stat.*`
-//! fields the workload consumes (exists, isblk, …) plus the cheap common
-//! ones.
-
 use super::{params_object, str_param};
 use serde_json::{Value, json};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};

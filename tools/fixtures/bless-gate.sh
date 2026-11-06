@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# The parity gate, automated. For one playbook against a fixture VM:
-#   1. ruxel apply            (fresh: may change)
-#   2. ruxel apply again      (MUST be changed=0 — ruxel is idempotent)
-#   3. ansible-playbook        (MUST be changed=0 — ansible agrees ruxel's
-#                               state is converged: the "bless")
-# Exits non-zero unless both idempotence checks hold. This is the
-# three-way convergence proof done by hand for the first five playbooks
-# (update-packages, upgrade-debian, install-docker, drives, postgresql).
-#
-# Usage:
-#   tools/fixtures/bless-gate.sh <fixture-name> <keyfile> <agent-bin> <playbook> [dry] [group]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh
@@ -43,12 +32,6 @@ echo "== [1/3] ruxel apply (fresh) =="
 RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \
   cargo run -q -p ruxel-cli -- apply --output json -i "$INV" ${DRY:+--dry-secrets} "$PLAYBOOK" | tee "$RUN_DIR/ruxel-fresh.jsonl"
 
-# Parity, not zero: a converged run still reports the tasks that are
-# *inherently* always-changed — bare command/shell with no changed_when
-# (e.g. `mise use -g …`) report changed on every run under Ansible too.
-# Drop-in parity = ruxel's converged-rerun changed-set equals Ansible's on
-# the same state. We compare counts here; the task-name sets are diffed
-# from the captures when they disagree.
 echo "== [2/3] ruxel apply (converged rerun) =="
 RUXEL_SSH_KEY="$KEY" RUXEL_AGENT_BIN="$AGENT" \
   cargo run -q -p ruxel-cli -- apply --output json -i "$INV" ${DRY:+--dry-secrets} "$PLAYBOOK" | tee "$RUN_DIR/ruxel-rerun.jsonl"

@@ -1,8 +1,3 @@
-//! Agent protocol-loop tests against the real binary over pipes — the
-//! transport-free half of the M2 gate: handshake + facts + clean shutdown,
-//! version mismatch, EOF resilience, the single-run lock, and kill -9
-//! leaving the state dir reusable.
-
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
@@ -144,7 +139,7 @@ fn eof_without_done_exits_clean() {
     let dir = temp_dir("eof");
     let mut agent = spawn_agent(&dir);
     let stdin = agent.stdin.take().unwrap();
-    drop(stdin); // controller vanished
+    drop(stdin);
     assert_eq!(agent.wait().unwrap().code(), Some(0));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -266,14 +261,12 @@ fn no_log_copy_emits_no_diff_and_leaves_no_ledger_record() {
 fn second_agent_is_locked_out_and_kill9_releases() {
     let dir = temp_dir("lock");
 
-    // First agent holds the lock mid-run.
     let mut first = spawn_agent(&dir);
     let mut stdin1 = first.stdin.take().unwrap();
     let mut stdout1 = first.stdout.take().unwrap();
     write_frame(&mut stdin1, &hello("run1", PROTO_VERSION)).unwrap();
     let _ack: v1::Event = read_frame(&mut stdout1).unwrap().expect("ack");
 
-    // Second agent must refuse (exit 66).
     let mut second = spawn_agent(&dir);
     let _stdin2 = second.stdin.take().unwrap();
     let mut stdout2 = second.stdout.take().unwrap();
@@ -284,8 +277,6 @@ fn second_agent_is_locked_out_and_kill9_releases() {
     );
     assert_eq!(second.wait().unwrap().code(), Some(66));
 
-    // kill -9 the first: the OS releases the lock; a rerun succeeds
-    // (the M2 gate's disconnect-mid-stream reusability).
     first.kill().unwrap();
     let _ = first.wait();
 

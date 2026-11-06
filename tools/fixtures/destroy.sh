@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Destroy one fixture VM and its ephemeral key. Refuses non-fixture targets.
-#
-# Usage: tools/fixtures/destroy.sh <ruxel-fixture-name>
 
 source "$(dirname "$0")/lib.sh"
 

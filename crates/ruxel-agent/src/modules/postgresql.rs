@@ -1,9 +1,3 @@
-//! `community.postgresql.postgresql_{db,user,schema,privs}` (SEMANTICS §6).
-//! Connection: psql over the unix socket as the `become_user` (peer auth as
-//! postgres) on `login_port`. Idempotence is decided in SQL — pg_catalog
-//! state and explicit-ACL inspection via aclexplode — so "changed"
-//! reflects a real catalog delta, never a blind re-grant.
-
 use super::{ExecContext, become_command, params_object, str_param};
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -22,12 +16,6 @@ fn login_port(obj: &serde_json::Map<String, Value>) -> String {
         .unwrap_or_else(|| "5432".into())
 }
 
-/// Run SQL, returning trimmed stdout (psql -tA: tuples-only, unaligned).
-/// Run-scoped sessions are keyed by become user/port/database, removing the
-/// former runuser+psql fork per statement. SQL stays on **stdin**, never argv — so a
-/// password-bearing `ALTER ROLE … PASSWORD '…'` never appears in the
-/// target's process table (ruxel's secrets-never-on-disk posture extends
-/// to the process list). `db` selects the target database.
 fn psql(ctx: &ExecContext, port: &str, db: Option<&str>, sql: &str) -> Result<String, String> {
     let key = SessionKey {
         become_user: ctx.become_user.clone(),
@@ -165,9 +153,6 @@ impl Drop for PsqlSession {
     }
 }
 
-/// Allowlist of privilege keywords accepted in `privs` (SEMANTICS §6 grant
-/// set). Anything else is a hard error — closed surface, and it blocks
-/// keyword injection through the grant statements.
 fn validate_privs(privs: &str) -> Result<(), String> {
     const ALLOWED: &[&str] = &[
         "SELECT",
@@ -231,17 +216,13 @@ fn role_flag_tokens(flags: &str) -> Vec<String> {
         .collect()
 }
 
-/// Quote an SQL string literal.
 fn lit(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// Quote an SQL identifier.
 fn ident(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
 }
-
-// -- postgresql_db ----------------------------------------------------------
 
 pub fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -299,8 +280,6 @@ pub fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "db": name}))
 }
 
-// -- postgresql_user --------------------------------------------------------
-
 pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("postgresql_user: name required")?;
@@ -343,7 +322,6 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             psql(ctx, &port, None, &sql)?;
         }
     } else {
-        // Attr-flag drift (SUPERUSER etc.).
         if let Some(f) = role_attr_flags
             && flags_changed(ctx, &port, name, f)?
         {
@@ -357,13 +335,7 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 )?;
             }
         }
-        // Password idempotence (the ⚠): compare the stored SCRAM verifier
-        // to a verifier derived from the supplied password. PG stores
-        // SCRAM-SHA-256$<iter>:<salt>$... — re-deriving needs the salt, so
-        // instead ALTER and let PG no-op when the verifier matches is NOT
-        // observable as unchanged. Correct rule: compute whether the
-        // cleartext already authenticates by comparing against the stored
-        // verifier via PG's own check.
+
         if let Some(p) = password
             && password_changed(ctx, &port, name, p)?
         {
@@ -382,10 +354,6 @@ pub fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "user": name}))
 }
 
-/// True when the supplied password does not match the stored SCRAM verifier.
-/// Uses PG's own scram machinery: re-hash the cleartext with the stored
-/// salt+iterations and compare the stored-key — done entirely in SQL so the
-/// rule matches Ansible's (community.postgresql compares the same way).
 fn password_changed(
     ctx: &ExecContext,
     port: &str,
@@ -405,35 +373,27 @@ fn password_changed(
         return Ok(true);
     }
     if !stored.starts_with("SCRAM-SHA-256$") {
-        // md5 or plain — treat any mismatch conservatively as changed.
         return Ok(true);
     }
-    // Parse SCRAM-SHA-256$<iter>:<b64salt>$<b64storedkey>:<b64serverkey>
+
     let body = &stored["SCRAM-SHA-256$".len()..];
     let (iter_salt, keys) = body.split_once('$').ok_or("malformed scram verifier")?;
     let (iter, salt) = iter_salt
         .split_once(':')
         .ok_or("malformed scram iter:salt")?;
     let stored_stored_key = keys.split(':').next().unwrap_or("");
-    // Derive StoredKey from the cleartext using the stored salt/iterations
-    // via a tiny SQL routine (PG has no built-in scram() exposed, so use
-    // the pgcrypto-free path: ask PG to hash by setting a scratch role).
-    // Simplest faithful approach: set the password on a temp role and read
-    // back its verifier with the SAME salt is not possible (random salt).
-    // So compute StoredKey in-process.
+
     let computed = scram_stored_key(password, salt, iter.parse().unwrap_or(4096))?;
     Ok(computed != stored_stored_key)
 }
 
-/// StoredKey = base64( SHA256( HMAC-SHA256(SaltedPassword, "Client Key") ) ),
-/// SaltedPassword = PBKDF2-HMAC-SHA256(password, base64decode(salt), iter).
 fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<String, String> {
     use hmac::{Hmac, KeyInit, Mac};
     use sha2::{Digest, Sha256};
     type H = Hmac<Sha256>;
 
     let salt = b64_decode(b64salt).ok_or("bad scram salt b64")?;
-    // PBKDF2-HMAC-SHA256
+
     let mut salted = [0u8; 32];
     pbkdf2::pbkdf2::<H>(password.as_bytes(), &salt, iterations, &mut salted)
         .map_err(|_| "pbkdf2".to_string())?;
@@ -445,7 +405,6 @@ fn scram_stored_key(password: &str, b64salt: &str, iterations: u32) -> Result<St
 }
 
 fn flags_to_sql(flags: &str) -> String {
-    // role_attr_flags is a comma/space list of PG role options.
     flags
         .split([',', ' '])
         .filter(|s| !s.is_empty())
@@ -500,8 +459,6 @@ fn wanted_flag(flags: &str, positive: &str) -> Option<bool> {
     }
 }
 
-// -- postgresql_schema ------------------------------------------------------
-
 pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
@@ -555,8 +512,6 @@ pub fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "schema": name}))
 }
 
-// -- postgresql_privs -------------------------------------------------------
-
 pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_privs: login_db required")?;
@@ -578,7 +533,6 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
     }
 
-    // changed iff at least one requested privilege is not already held.
     let needed = match typ {
         "database" => privs_missing_database(
             ctx,
@@ -626,13 +580,6 @@ pub fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     Ok(json!({"changed": changed, "failed": false, "role": role, "type": typ}))
 }
-
-// Idempotence is decided on the *explicit* ACL grant to the role —
-// `aclexplode` expands the stored acl and excludes the PUBLIC default
-// (grantee 0) and inherited/implicit privileges, which `has_*_privilege`
-// would wrongly count (pinned 2026-06-11: looker held CONNECT via PUBLIC
-// yet Ansible still grants the explicit entry). `privilege_type` from
-// aclexplode is the full upper-case name, matched against the request.
 
 fn privs_missing_database(
     ctx: &ExecContext,
@@ -885,8 +832,6 @@ fn grant_sql(
     })
 }
 
-// -- base64 (StoredKey encode + salt decode) --------------------------------
-
 fn b64_encode(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
@@ -932,9 +877,7 @@ fn b64_decode(s: &str) -> Option<Vec<u8>> {
             acc = (acc << 6) | u32::from(val(c)?);
             bits += 6;
         }
-        // `acc` holds `bits` significant bits, MSB-first. Drop the low
-        // `bits % 8` padding bits, then emit the `bits / 8` whole bytes
-        // from the top down.
+
         let nbytes = bits / 8;
         acc >>= bits % 8;
         for i in (0..nbytes).rev() {
@@ -1012,8 +955,6 @@ mod tests {
 
     #[test]
     fn scram_stored_key_matches_postgres() {
-        // The live verifier captured from PG15 for password "s3cr3t-ruxel"
-        // (salt+iterations from SCRAM-SHA-256$4096:<salt>$<storedkey>:...).
         let got =
             super::scram_stored_key("s3cr3t-ruxel", "tmEKTUhvHycriHKDSR74nA==", 4096).unwrap();
         assert_eq!(got, "qsXMYQ6PkvDbKdO/Fwo5aAQisdU9bG3fdoLEpQMpraM=");
@@ -1021,7 +962,6 @@ mod tests {
 
     #[test]
     fn b64_decode_partial_groups() {
-        // 2-char tail (12 bits → 1 byte) is the case the first impl botched.
         assert_eq!(super::b64_decode("nA==").unwrap(), vec![0x9c]);
         assert_eq!(super::b64_decode("tA==").unwrap().len(), 1);
     }

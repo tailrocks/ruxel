@@ -1,6 +1,6 @@
-# Fake `community.general.onepassword` lookup for parity captures: returns
-# the same deterministic dry-secret value as ruxel's DrySecrets resolver
-# (crates/ruxel-core/src/engine.rs). Never talks to 1Password.
+
+
+
 from __future__ import annotations
 
 import hashlib

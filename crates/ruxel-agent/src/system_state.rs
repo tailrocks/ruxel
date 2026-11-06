@@ -1,5 +1,3 @@
-//! Lazy per-run system snapshots shared by module checks and ledger probes.
-
 use std::collections::HashMap;
 
 #[derive(Default)]

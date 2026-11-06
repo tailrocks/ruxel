@@ -1,15 +1,3 @@
-//! Controller-side transport (ARCHITECTURE §2): one SSH ControlMaster
-//! connection per host for the whole run, driven directly through the
-//! system OpenSSH via tokio::process — the operator's ~/.ssh/config, keys,
-//! and known_hosts behave exactly like their ansible-playbook runs, and
-//! every channel (exec, sftp, the agent's stdio stream) is a plain
-//! `ssh -S <socket>` mux client whose pipes we own end to end.
-//!
-//! A 2026-06-11 second-connect stall could not be reproduced in later
-//! sequential, two-provider-host, or repeated six-container gates. Host
-//! sessions are bounded-concurrent and independently own collision-proof
-//! mux names; no speculative transport rewrite was made.
-
 use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
@@ -23,24 +11,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-/// Connection tuning beyond the operator's ssh config. Production runs use
-/// `Default` (config-driven, strict known_hosts, exactly like ansible);
-/// fixture/test runs point at an ephemeral keyfile and accept new hosts.
 #[derive(Default, Clone)]
 pub struct ConnectOptions {
     pub keyfile: Option<PathBuf>,
     pub accept_new_host_key: bool,
-    /// Dedicated known_hosts (fixtures: isolates ephemeral host keys from
-    /// the operator's global file, which recycled cloud IPs poison).
+
     pub known_hosts_file: Option<PathBuf>,
-    /// `--diff`: ask the agent to emit unified content diffs.
+
     pub diff_mode: bool,
-    /// `--no-cache`: bypass the convergence ledger (full check every task).
+
     pub no_cache: bool,
 }
 
-/// The per-host ControlMaster: a foreground `ssh -M -N` child owning the
-/// TCP connection; every command/channel is a mux client on its socket.
 struct Master {
     destination: String,
     socket: PathBuf,
@@ -50,9 +32,6 @@ struct Master {
 
 impl Drop for Master {
     fn drop(&mut self) {
-        // Tokio kills the foreground master because kill_on_drop is set.
-        // Remove its private mux path even when a cancelled host future never
-        // reaches the async close handshake.
         let _ = std::fs::remove_file(&self.socket);
     }
 }
@@ -85,9 +64,6 @@ impl Master {
             .arg("BatchMode=yes")
             .arg("-o")
             .arg("ConnectTimeout=15")
-            // Long-lived masters cross flaky consumer routes; keepalives
-            // detect drops instead of wedging reads (observed: sin link
-            // resets mid-session, 2026-06-11).
             .arg("-o")
             .arg("ServerAliveInterval=15")
             .arg("-o")
@@ -101,8 +77,6 @@ impl Master {
         let mut process = cmd.spawn().context("spawn ssh master")?;
         let mut stderr = process.stderr.take().expect("piped");
 
-        // Wait for the control socket, surfacing ssh's own error if the
-        // master dies first (auth failure, unreachable, host key).
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         loop {
             if socket.exists() {
@@ -131,7 +105,6 @@ impl Master {
         })
     }
 
-    /// A mux-client command over the master's connection.
     fn client(&self) -> Command {
         let mut cmd = Command::new("ssh");
         cmd.arg("-S")
@@ -213,13 +186,12 @@ fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
     }
 }
 
-/// One connected host: the master and the running agent's stdio stream.
 pub struct AgentConnection {
     master: Master,
     agent: Child,
     stdin: ChildStdin,
     stdout: ChildStdout,
-    /// True when this run had to upload the agent (hash was missing).
+
     pub uploaded_agent: bool,
 }
 
@@ -309,17 +281,14 @@ pub async fn connect_with(
 }
 
 impl AgentConnection {
-    /// Send one controller→agent message.
     pub async fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
         write_frame(&mut self.stdin, envelope).await
     }
 
-    /// Receive the next agent event; `None` when the agent closed cleanly.
     pub async fn next_event(&mut self) -> Result<Option<v1::Event>> {
         read_frame(&mut self.stdout).await
     }
 
-    /// Send Done, wait for the agent to flush and exit, close the master.
     pub async fn shutdown(mut self) -> Result<()> {
         write_frame(
             &mut self.stdin,
@@ -337,9 +306,6 @@ impl AgentConnection {
     }
 }
 
-/// Content-addressed agent provisioning: if `remote_path` is already an
-/// executable file, nothing moves; otherwise upload via an SFTP channel on
-/// the same master and mark executable. Returns whether an upload happened.
 async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Result<bool> {
     cleanup_stale_agent_temps(master, remote_path).await?;
     let exists = master
@@ -357,7 +323,6 @@ async fn ensure_agent(master: &Master, remote_path: &str, bytes: &[u8]) -> Resul
         .then_some(())
         .context("mkdir agent dir")?;
 
-    // SFTP subsystem channel on the same master (ARCHITECTURE: ch1).
     let mut sftp_cmd = master.client();
     sftp_cmd
         .arg("-s")
@@ -467,8 +432,6 @@ async fn remote_agent_hash_matches(
     }
     Ok(remote == expected)
 }
-
-// -- Async framing (same wire format as ruxel_proto::frame) -----------------
 
 async fn write_frame<M: Message>(w: &mut (impl AsyncWrite + Unpin), msg: &M) -> Result<()> {
     let buf = ruxel_proto::frame::encode_frame(msg);

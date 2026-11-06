@@ -75,8 +75,8 @@ def normalize_value(value, module=None, include_diff=True):
     if "censored" in value:
         normalized["redacted"] = True
     elif value.get("redacted") is True:
-        # Durable oracle captures are normalized more than once by validation
-        # and promotion workflows. Preserve the canonical marker.
+
+
         normalized["redacted"] = True
     for key, child in value.items():
         if key not in allowed:

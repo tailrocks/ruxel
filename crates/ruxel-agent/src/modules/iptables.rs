@@ -1,7 +1,3 @@
-//! `iptables` (SEMANTICS §6): rule-spec presence via `iptables -C`
-//! (append when missing — the module's append semantics preserved), and
-//! chain policy. ip_version=ipv6 routes to ip6tables.
-
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -14,7 +10,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Some(other) => return Err(format!("iptables: ip_version {other:?} invalid")),
     };
 
-    // Policy mode.
     if let Some(policy) = str_param(obj, "policy") {
         let current = current_policy(binary, chain)?;
         let changed = current.as_deref() != Some(policy);
@@ -24,15 +19,12 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
 
-    // Rule mode: build the spec from the closed param surface.
     let spec = rule_spec(obj);
     let mut check: Vec<&str> = vec!["-C", chain];
     check.extend(spec.iter().map(String::as_str));
     let present = probe(binary, &check)?;
     let changed = !present;
     if changed && !ctx.check_mode {
-        // Closed surface is append-only. TODO(spec): add insert semantics only
-        // if a future workload introduces `rule_num`/`action`.
         let mut append: Vec<&str> = vec!["-A", chain];
         append.extend(spec.iter().map(String::as_str));
         exec_rule(binary, &append)?;

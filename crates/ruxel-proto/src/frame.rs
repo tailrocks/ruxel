@@ -1,14 +1,6 @@
-//! Stream framing: `varint length ‖ message bytes` over any Read/Write
-//! (the agent's stdio on an SSH channel — docs/ARCHITECTURE.md §2). Sync
-//! by design: the agent reads its plan single-threaded; the controller
-//! wraps these on its async pipes by buffering whole frames.
-
 use prost::Message;
 use std::io::{self, Read, Write};
 
-/// Upper bound on a single frame; anything larger is a protocol error,
-/// not a real message (the biggest legitimate payloads — rendered task
-/// params — are kilobytes).
 pub const MAX_FRAME_LEN: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Default)]
@@ -54,7 +46,6 @@ pub fn write_frame<M: Message>(w: &mut impl Write, msg: &M) -> io::Result<()> {
     w.flush()
 }
 
-/// Read one frame; `Ok(None)` on clean EOF at a frame boundary.
 pub fn read_frame<M: Message + Default>(r: &mut impl Read) -> io::Result<Option<M>> {
     let mut decoder = VarintDecoder::default();
     let mut first_byte = true;
@@ -148,7 +139,6 @@ mod tests {
 
     #[test]
     fn oversized_frame_is_rejected() {
-        // A varint claiming 1 GiB.
         let mut buf = Vec::new();
         let mut len = 1u64 << 30;
         while len >= 0x80 {

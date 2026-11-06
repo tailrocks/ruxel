@@ -1,8 +1,3 @@
-//! `sysctl` / `ansible.posix.sysctl` (SEMANTICS §6): value in the target
-//! file (and the live kernel value when sysctl_set), string-normalized
-//! comparison — runs of whitespace compare equal, exactly the rule
-//! multi-value keys like net.ipv4.ip_local_port_range need.
-
 use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
 use serde_json::{Value, json};
 
@@ -28,7 +23,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
 
-    // File state: a `name = value` line, replacing any existing entry.
     let current = std::fs::read_to_string(file).unwrap_or_default();
     let (content, file_changed) = rewrite_file(&current, name, &value);
     changed |= file_changed;
@@ -36,7 +30,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         write_atomic(std::path::Path::new(file), content.as_bytes())?;
     }
 
-    // Live value when sysctl_set.
     if sysctl_set {
         let live = read_sysctl(name)?;
         if normalized(&live) != normalized(&value) {
@@ -110,7 +103,6 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
     }
 }
 
-/// Whitespace-run normalization: "1\t2  3" == "1 2 3".
 fn normalized(v: &str) -> String {
     v.split_whitespace().collect::<Vec<_>>().join(" ")
 }

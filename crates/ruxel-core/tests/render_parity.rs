@@ -1,5 +1,3 @@
-//! Replay the synthetic Ansible 2.21 render corpus through Ruxel.
-
 use minijinja::value::Value;
 use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver, Scope, VarValue};
 use ruxel_core::playbook::Condition;

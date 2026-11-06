@@ -46,7 +46,7 @@ def encode(value):
 def capture_template(records, templar, playbook, task, field, value, bind):
     try:
         result = encode(templar.template(trust_as_template(str(value))))
-    except Exception as error:  # error type is observable parity
+    except Exception as error:
         result = {"t": "error", "v": type(error).__name__}
     records.append({"kind": "expr", "playbook": playbook, "task": task,
                     "field": field, "input": str(value), "bind": bind,

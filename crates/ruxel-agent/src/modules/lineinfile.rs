@@ -1,8 +1,3 @@
-//! `lineinfile` (SEMANTICS §6): present = if `line` already present
-//! anywhere, no change (Ansible's idempotence rule — even when regexp
-//! also matches elsewhere); else replace the LAST regexp match; else
-//! append at EOF. absent = delete matching lines.
-
 use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};
@@ -45,8 +40,6 @@ fn rewrite_lines(
         "present" => {
             let line = line.ok_or("lineinfile: line required for present")?;
             if lines.iter().any(|l| l == line) {
-                // Already present verbatim — idempotent, even if regexp
-                // matches a different line.
             } else if let Some(re) = regexp {
                 let last_match = lines.iter().rposition(|l| re.is_match(l));
                 match last_match {

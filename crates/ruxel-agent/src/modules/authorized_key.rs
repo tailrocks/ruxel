@@ -1,7 +1,3 @@
-//! `authorized_key` (SEMANTICS §6): exact key present in
-//! ~user/.ssh/authorized_keys. Matching is comment-insensitive on the key
-//! material (type + base64), Ansible's rule.
-
 use super::{ExecContext, params_object, str_param, write_atomic_with};
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -75,14 +71,12 @@ fn validate_paths(ssh_dir: &Path, auth_file: &Path, uid: u32) -> Result<(), Stri
     }
 }
 
-/// (key type, base64 material) — comments and options ignored.
 fn key_material(line: &str) -> Option<(String, String)> {
     let mut parts = line.split_whitespace();
     let first = parts.next()?;
     let (ktype, material) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
         (first, parts.next()?)
     } else {
-        // options field precedes the type
         let t = parts.next()?;
         (t, parts.next()?)
     };

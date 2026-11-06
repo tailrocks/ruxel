@@ -1,6 +1,3 @@
-//! `file` (SEMANTICS §6): states directory / absent / link, plus
-//! owner/group/mode and recurse. Check-mode predicts without writing.
-
 use super::{ExecContext, apply_attrs, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;

@@ -35,10 +35,10 @@ def normalize(record):
         "task_name": record["task_name"],
         "action": record["action"],
         "status": record["status"],
-        # Captures are durable semantic evidence, not raw Ansible diagnostics.
-        # Keep exactly the result surface compared with Ruxel; module temp
-        # paths, timestamps, PIDs, inodes, and systemd runtime counters are
-        # deliberately excluded.
+
+
+
+
         "result": normalize_value(scrub(record.get("result") or {}), action),
     }
     if record.get("ignore_errors"):

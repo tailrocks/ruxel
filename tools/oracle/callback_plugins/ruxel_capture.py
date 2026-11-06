@@ -66,8 +66,8 @@ class CallbackModule(CallbackBase):
         task = result._task
         raw = _jsonable(getattr(task, "args", {}))
         res = _jsonable(result._result)
-        # Resolved (post-template) module args, when the module echoes its
-        # invocation. Absent for some actions and for no_log tasks.
+
+
         invocation = res.get("invocation") if isinstance(res, dict) else None
         resolved = invocation.get("module_args") if isinstance(invocation, dict) else None
         record = {
@@ -85,7 +85,7 @@ class CallbackModule(CallbackBase):
             record["item_label"] = _jsonable(item)
         return record
 
-    # -- lifecycle ---------------------------------------------------------
+
 
     def v2_playbook_on_start(self, playbook):
         self._playbook = getattr(playbook, "_file_name", None)
@@ -93,7 +93,7 @@ class CallbackModule(CallbackBase):
     def v2_playbook_on_play_start(self, play):
         self._play = play.get_name()
 
-    # -- whole-task results ------------------------------------------------
+
 
     def v2_runner_on_ok(self, result):
         self._write(self._task_record("ok", result))
@@ -109,7 +109,7 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_unreachable(self, result):
         self._write(self._task_record("unreachable", result))
 
-    # -- per-loop-item results ----------------------------------------------
+
 
     def v2_runner_item_on_ok(self, result):
         self._write(self._task_record("item_ok", result, item=result._result.get("item")))

@@ -1,8 +1,3 @@
-//! `git` (SEMANTICS §6): repo/dest/version(branch)/update/force/
-//! accept_hostkey. update=false → clone only if absent. Changed = fresh
-//! clone or HEAD sha moved; `force` discards local modifications before
-//! update. Network-truth class (ARCHITECTURE §6).
-
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -16,9 +11,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let force = bool_param(obj, "force", false);
     let accept_hostkey = bool_param(obj, "accept_hostkey", false);
 
-    // argv flag-smuggling defense: positional values must not look like
-    // flags (`--` placement is subcommand-sensitive in git — `checkout --
-    // x` means path x — so validation, not separators, is the guard).
     validate_positionals(&[
         ("repo", Some(repo)),
         ("dest", Some(dest)),
@@ -70,9 +62,7 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if !ok {
             return Err(format!("git clone {repo} failed"));
         }
-        // Ansible's git module resets the new worktree to the selected
-        // revision after cloning. Besides enforcing a clean checkout, this
-        // records ORIG_HEAD; preserve that observable repository state.
+
         let (_, ok) = git(&["reset", "--hard", "HEAD"], Some(dest))?;
         if !ok {
             return Err("git reset --hard HEAD after clone failed".into());
@@ -87,7 +77,6 @@ pub fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     if action == "compare" {
-        // Compare remote HEAD for the branch without touching the tree.
         let branch = version.unwrap_or("HEAD");
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
         let remote = ls.split_whitespace().next().unwrap_or("").to_string();

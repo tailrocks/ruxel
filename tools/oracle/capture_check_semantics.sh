@@ -1,5 +1,4 @@
 #!/bin/sh
-# Pin check-mode pause + predicted-handler behavior using localhost only.
 set -eu
 cd "$(dirname "$0")/../.."
 

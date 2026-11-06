@@ -1,7 +1,3 @@
-//! Playbook YAML → typed model, enforcing the closed surface
-//! (docs/SEMANTICS.md §§1–4, §6). Template strings stay raw at this stage —
-//! rendering is the engine's job, not the parser's.
-
 use crate::modules::{self, ModuleSurface};
 use serde_norway::Value;
 
@@ -16,7 +12,7 @@ pub struct Play {
     pub name: Option<String>,
     pub hosts: String,
     pub becomes: bool,
-    /// Play vars in file order, values raw (lazily templated).
+
     pub vars: Vec<(String, Value)>,
     pub pre_tasks: Vec<Task>,
     pub tasks: Vec<Task>,
@@ -29,7 +25,7 @@ pub struct Task {
     pub body: TaskBody,
     pub when: Option<Condition>,
     pub register: Option<String>,
-    /// Raw `loop:` value — literal list or `"{{ var }}"` template string.
+
     pub loop_: Option<Value>,
     pub loop_label: Option<String>,
     pub vars: Vec<(String, Value)>,
@@ -41,7 +37,7 @@ pub struct Task {
     pub changed_when: Option<Condition>,
     pub failed_when: Option<Condition>,
     pub ignore_errors: bool,
-    /// `check_mode: no` forces real execution under `--check` (SEMANTICS §3.5).
+
     pub check_mode: Option<bool>,
     pub no_log: bool,
     pub environment: Vec<(String, Value)>,
@@ -63,14 +59,12 @@ pub enum TaskBody {
 #[derive(Debug)]
 pub struct ModuleCall {
     pub module: &'static ModuleSurface,
-    /// Param key/value pairs in file order, raw values.
+
     pub params: Vec<(String, Value)>,
-    /// Free-form body for `command`/`shell`.
+
     pub free_form: Option<String>,
 }
 
-/// `when`/`changed_when`/`failed_when`/`until`: a bare expression, a literal
-/// bool, or a list of expressions joined by AND (SEMANTICS §3.2).
 #[derive(Debug, Clone)]
 pub enum Condition {
     Literal(bool),
@@ -82,7 +76,7 @@ pub enum Condition {
 #[error("{source_name}: {at}: {kind}")]
 pub struct ParseError {
     pub source_name: String,
-    /// Human-readable location: play/task names.
+
     pub at: String,
     pub kind: ErrorKind,
 }
@@ -124,7 +118,6 @@ pub enum ErrorKind {
 
 type Result<T> = std::result::Result<T, ErrorKind>;
 
-/// Parse one playbook file's content.
 pub fn parse(source_name: &str, content: &str) -> std::result::Result<Playbook, Box<ParseError>> {
     let err = |at: String, kind: ErrorKind| {
         Box::new(ParseError {
@@ -365,7 +358,6 @@ fn validate_param(
     if let Some((_, values)) = surface.literal_enums.iter().find(|(p, _)| *p == param)
         && let Value::String(s) = value
     {
-        // Templated values are validated post-render, not here.
         if !s.contains("{{") && !values.contains(&s.as_str()) {
             return Err(ErrorKind::ValueOutsideSurface {
                 module: surface.name.into(),
@@ -396,8 +388,6 @@ fn parse_condition(value: Value) -> Result<Condition> {
         }
     })
 }
-
-// -- YAML helpers -----------------------------------------------------------
 
 fn as_mapping(value: Value, expected: &'static str) -> Result<serde_norway::Mapping> {
     match value {
@@ -449,8 +439,6 @@ fn string_list(value: Value) -> Result<Vec<String>> {
     }
 }
 
-/// YAML-1.1-style truthiness, as Ansible's loader applies it: real bools plus
-/// the yes/no/true/false string spellings the workload uses.
 fn bool_value(value: &Value) -> Result<bool> {
     match value {
         Value::Bool(b) => Ok(*b),

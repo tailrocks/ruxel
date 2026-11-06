@@ -1,8 +1,3 @@
-//! `command` (SEMANTICS §6): argv exec, no shell. Free-form bodies split
-//! shlex-style (pinned by golden E15: `echo 'a b' c` → ["echo","a b","c"]).
-//! Always changed (the controller's changed_when normally overrides);
-//! failure = rc≠0.
-
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -89,7 +84,6 @@ pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value)
     })
 }
 
-/// Result fields shared with shell (SEMANTICS §3.8).
 pub fn command_result(cmd: Value, output: &std::process::Output) -> Value {
     let rc = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout)
@@ -118,8 +112,6 @@ pub fn command_result(cmd: Value, output: &std::process::Output) -> Value {
     })
 }
 
-/// POSIX-shlex split, matching Python shlex.split for the shapes the
-/// workload uses (plain words, single/double quotes, backslash escapes).
 fn shlex_split(input: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut current = String::new();

@@ -140,7 +140,7 @@ def proxy_frames(child, fault):
 def proxy_sftp(child):
     def upload():
         while (packet := read_sftp_packet(sys.stdin.buffer)) is not None:
-            if sftp_packet_type(packet) == 6:  # SSH_FXP_WRITE
+            if sftp_packet_type(packet) == 6:
                 child.stdin.write(packet[: max(5, len(packet) // 2)])
                 child.stdin.flush()
                 sentinel()

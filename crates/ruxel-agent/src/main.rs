@@ -1,11 +1,3 @@
-//! Ruxel agent: runs on the target host, executes compiled plans streamed
-//! over stdio (varint-framed protobuf — docs/ARCHITECTURE.md §2). M2
-//! skeleton: handshake + facts + clean shutdown + crash reporting + the
-//! single-run lock. Module runtime, probe engine, and ledger land in M3.
-//!
-//! stdout is exclusively protocol frames; anything human-readable goes out
-//! as Log events or to stderr.
-
 mod facts;
 mod ledger;
 mod modules;
@@ -16,8 +8,6 @@ use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
 
-/// Exit codes: 0 clean, 64 protocol error, 65 version mismatch,
-/// 66 lock held (another run in flight), 70 panic.
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let message = info
@@ -60,7 +50,6 @@ fn serve() -> i32 {
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
-    // Single-run guard (ARCHITECTURE §8): one agent per host at a time.
     let dir = state_dir();
     let _ = std::fs::create_dir_all(&dir);
     #[cfg(unix)]
@@ -94,10 +83,6 @@ fn serve() -> i32 {
         return 66;
     }
 
-    // Orphan guard: a controller that dies before completing the
-    // handshake can leave this process alive with an open channel (its
-    // local ssh client may be orphaned rather than closed). If no Hello
-    // arrives promptly, exit and free the lock. Exit code 67.
     let handshaken = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
         let handshaken = handshaken.clone();
@@ -120,17 +105,14 @@ fn serve() -> i32 {
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
             Ok(Some(env)) => env,
-            // Clean EOF: controller went away (Ctrl-C, connection loss).
-            // The current task always completes before the next frame read,
-            // so exiting here leaves the host reusable (ARCHITECTURE §8).
+
             Ok(None) => {
                 ledger.flush();
                 return 0;
             }
             Err(e) => {
                 log_event(&mut stdout, v1::log::Level::Error, format!("frame: {e}"));
-                // Completed-task fingerprints remain valid even when a later
-                // frame is corrupt.
+
                 ledger.flush();
                 return 64;
             }
@@ -157,7 +139,7 @@ fn serve() -> i32 {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
                         proto_version: PROTO_VERSION,
                         facts: Some(facts::gather()),
-                        ledger_generation: 0, // ledger lands in M3
+                        ledger_generation: 0,
                     })),
                 };
                 if write_frame(&mut stdout, &ack).is_err() {
@@ -203,9 +185,6 @@ fn serve() -> i32 {
     }
 }
 
-/// Execute one rendered task: per iteration, TaskStart then TaskResult.
-/// Aggregation, register binding, and status envelopes are controller-side
-/// (task_eval) — the agent reports raw per-iteration module outcomes.
 #[allow(clippy::too_many_arguments)]
 fn execute_task(
     out: &mut impl std::io::Write,
@@ -253,12 +232,6 @@ fn execute_task(
             }
         };
 
-        // Ledger fast path (ARCHITECTURE §6): if this exact task is on
-        // record and every fingerprint still verifies, replay the cached
-        // result (changed=false) without invoking the module — the
-        // converged no-op in microseconds. --no-cache and check mode skip
-        // the cache. Honesty rule is enforced in probe_for: always-execute
-        // modules have no fingerprints and never reach here cached.
         if !no_cache
             && !task_check_mode
             && !task.no_log
@@ -291,8 +264,7 @@ fn execute_task(
             &ctx,
             system_state,
         );
-        // Record the converged fingerprint (real applies only — check mode
-        // didn't change the system, so its state isn't authoritative).
+
         if !task_check_mode && !task.no_log {
             ledger.record_with_state(
                 &iteration.ledger_key,

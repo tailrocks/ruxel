@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Reproducible six-host concurrency/resource gate using disposable SSH containers.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

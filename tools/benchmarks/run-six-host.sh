@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Capture acceptance-grade six-host evidence using disposable local containers.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -97,7 +96,6 @@ timed_sample() {
     "$execution_order" "$elapsed" "$stdout" "$stderr"
 }
 
-# Warm identical agent caches before alternating paired samples.
 run_ruxel >/dev/null
 for repetition in $(seq 1 "$REPETITIONS"); do
   if [ "$((repetition % 2))" -eq 1 ]; then
@@ -109,15 +107,12 @@ for repetition in $(seq 1 "$REPETITIONS"); do
   fi
 done
 
-# Repeated connections must leave no SSH session children.
 sleep 1
 for name in "${containers[@]}"; do
   children="$(docker exec "$name" sh -c 'pgrep -c sshd || true')"
   [ "$children" -le 1 ] || { echo "$name leaked sshd children: $children" >&2; exit 1; }
 done
 
-# One stopped host must yield five ordered recaps, one structured unreachable,
-# and exit 1. This log is part of the hashed gate metadata, not a timing sample.
 kernel="$(docker exec "${containers[0]}" uname -r)"
 docker stop "${containers[5]}" >/dev/null
 set +e
@@ -151,7 +146,6 @@ print(sanitize_file(Path(sys.argv[1])))
 PY
 )"
 
-# Reap before recording the resources_reaped correctness claim.
 docker rm -f "${containers[@]}" >/dev/null 2>&1 || true
 [ -z "$(docker ps -aq --filter "name=^/${prefix}-")" ] ||
   { echo "six-host benchmark containers were not reaped" >&2; exit 1; }

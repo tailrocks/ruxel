@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Provision the synthetic PostgreSQL fixture on a provider-verified Debian target.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/fixtures/lib.sh

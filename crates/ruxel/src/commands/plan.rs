@@ -1,8 +1,3 @@
-//! `ruxel plan -i hosts.ini [--limit pattern] playbook.yml` — the drop-in
-//! CLI shape (SEMANTICS §4). M2: offline compile preview with dry secrets —
-//! parse, select hosts, compile, and show what is statically known and
-//! what defers to runtime. The probe-backed live plan lands in M3.
-
 use anyhow::{Context, Result};
 use clap::Args;
 use ruxel_core::compiler::{self, PlanBody, PlanTask, Readiness};
@@ -51,8 +46,6 @@ pub fn execute(args: PlanArgs) -> Result<u8> {
         .unwrap_or_else(|| args.playbook.display().to_string());
     let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
 
-    // M2 preview always renders with dry secrets; the real `op`-backed
-    // resolver arrives with apply support in M3.
     let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
     let plan = compiler::compile(&playbook, &engine)?;
 

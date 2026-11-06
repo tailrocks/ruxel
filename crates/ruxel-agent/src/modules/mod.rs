@@ -1,9 +1,3 @@
-//! Native module implementations (SEMANTICS §6): each takes its rendered
-//! params (JSON) and produces the Ansible-shaped result dict the
-//! controller registers and reports. Param closure is enforced at parse
-//! time on the controller; the agent still rejects unknown params loudly
-//! rather than ignoring them (defense in depth, same closed-surface rule).
-
 mod apt;
 mod apt_repository;
 mod authorized_key;
@@ -37,19 +31,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct ExecContext {
     pub check_mode: bool,
-    /// `--diff`: content modules embed a unified diff in their result.
+
     pub diff_mode: bool,
-    /// `no_log`: sensitive task output must not be duplicated into diffs.
+
     pub no_log: bool,
-    /// Task `environment:` merged into the child process env.
+
     pub environment: Vec<(String, String)>,
-    /// `become_user:` — run module subprocesses as this user (SEMANTICS §1).
+
     pub become_user: Option<String>,
 }
 
-/// A minimal unified diff (before → after) for content modules under
-/// `--diff`. Whole-file, no hunking — matches what operators expect to
-/// eyeball for a config change and keeps the agent dependency-free.
 pub(super) fn unified_diff(before: &str, after: &str) -> String {
     if before == after {
         return String::new();
@@ -71,7 +62,6 @@ pub(super) fn unified_diff(before: &str, after: &str) -> String {
 }
 
 pub struct Outcome {
-    /// ok | changed | failed | skipped (status the controller reports).
     pub status: &'static str,
     pub changed: bool,
     pub result: Value,
@@ -196,15 +186,12 @@ pub fn shutdown() {
     postgresql::shutdown();
 }
 
-// -- Shared helpers -----------------------------------------------------------
-
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     write_atomic_with(path, bytes, None, None)
 }
 
-/// Same-directory exclusive temp plus rename: never follows the destination.
 pub(super) fn write_atomic_with(
     path: &Path,
     bytes: &[u8],
@@ -302,10 +289,6 @@ fn command_display(command: &std::process::Command) -> String {
         .join(" ")
 }
 
-/// Build a std::process::Command, wrapped in `runuser -u <user> --` when the
-/// task set `become_user` (SEMANTICS §1: the task runs as that uid/gid with
-/// its environment). Used by command/shell and the postgresql modules
-/// (peer auth as the postgres OS user).
 pub(super) fn become_command(
     ctx: &ExecContext,
     program: &str,
@@ -368,8 +351,6 @@ fn bool_param(obj: &Map<String, Value>, key: &str, default: bool) -> bool {
     }
 }
 
-/// Resolve a user name or numeric id against /etc/passwd (correct under
-/// static musl, where NSS is unavailable by construction).
 fn resolve_uid(owner: &str) -> Result<u32, String> {
     if let Ok(uid) = owner.parse::<u32>() {
         return Ok(uid);
@@ -408,16 +389,11 @@ fn resolve_gid_from(groups: &str, group: &str) -> Result<u32, String> {
     Err(format!("group {group:?} not found"))
 }
 
-/// Parse a mode param: octal string ("0755") or integer.
 pub(super) fn parse_mode(value: &Value) -> Result<u32, String> {
     match value {
         Value::String(s) => u32::from_str_radix(s.trim_start_matches("0o"), 8)
             .map_err(|_| format!("invalid mode {s:?}")),
         Value::Number(n) => {
-            // YAML 0755 without quotes arrives as decimal 755 read as
-            // octal-by-convention — Ansible warns and treats literally;
-            // the workload always quotes modes, so a bare number here is
-            // already-octal semantics from JSON round-trips.
             let raw = n.as_u64().ok_or("invalid numeric mode")?;
             u32::from_str_radix(&raw.to_string(), 8).map_err(|_| format!("invalid mode {raw}"))
         }
@@ -434,7 +410,6 @@ pub(super) fn default_file_mode(status: &str) -> u32 {
     0o666 & !umask
 }
 
-/// chown/chmod attributes shared by file and copy.
 fn apply_attrs(
     path: &std::path::Path,
     obj: &Map<String, Value>,
