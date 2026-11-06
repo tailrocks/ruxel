@@ -72,6 +72,12 @@ fn percentage_volume_create_then_reapply() {
             environment: vec![],
             become_user: None,
         };
+        for invalid in ["bogus%", "-50%FREE", "2.5%VG", "0%VG"] {
+            ctx.check_mode = true;
+            let params = serde_json::json!({"vg": "synthetic", "lv": "data", "size": invalid});
+            assert!(super::run(&params, &ctx).is_err(), "{invalid}");
+        }
+        ctx.check_mode = false;
         let params = serde_json::json!({"vg": "synthetic", "lv": "data", "size": "100%FREE"});
         assert_eq!(super::run(&params, &ctx).unwrap()["changed"], true);
         assert_eq!(super::run(&params, &ctx).unwrap()["changed"], false);

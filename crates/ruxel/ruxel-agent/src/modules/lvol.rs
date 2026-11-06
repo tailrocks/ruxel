@@ -7,6 +7,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let lv = str_param(obj, "lv").ok_or("lvol: lv required")?;
     let size = str_param(obj, "size").ok_or("lvol: size required")?;
     let resizefs = bool_param(obj, "resizefs", false);
+    if size.contains('%') {
+        validate_percentage(size.strip_prefix('+').unwrap_or(size))?;
+    }
 
     let exists = lv_exists(vg, lv)?;
     let changed = if exists {
