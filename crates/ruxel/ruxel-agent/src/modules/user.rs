@@ -96,6 +96,9 @@ pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("user: name required")?;
+    if name.starts_with('-') {
+        return Err("user: name must not start with a hyphen".into());
+    }
     let state = str_param(obj, "state").unwrap_or("present");
 
     let entry = passwd_entry(name)?;
@@ -320,6 +323,29 @@ mod tests {
             }
             if check_mode {
                 assert!(group(&json!({"name":"ruxel-synthetic-group"}), &ctx).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_option_like_user_names_before_running_utilities() {
+        for check_mode in [true, false] {
+            let ctx = ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: Vec::new(),
+                become_user: None,
+            };
+            for state in ["present", "absent"] {
+                for name in ["--help", "-u"] {
+                    let error = run(&json!({"name":name, "state":state}), &ctx)
+                        .expect_err("option-like user name must be rejected");
+                    assert!(error.contains("user") && error.contains("name"));
+                }
+            }
+            if check_mode {
+                assert!(run(&json!({"name":"ruxel-synthetic-user"}), &ctx).is_ok());
             }
         }
     }
