@@ -77,11 +77,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Ok(json!({"changed": false, "failed": false, "before": before, "after": before}));
     }
 
+    let (status, ok) = git(&["status", "--porcelain"], Some(dest))?;
+    if !ok {
+        return Err("git status failed".into());
+    }
+    let dirty = !status.is_empty();
+    let tracked_dirty = status.lines().any(|line| !line.starts_with("?? "));
+    if dirty && !force {
+        return Err("git: local changes would be overwritten; set force to discard them".into());
+    }
+
     if action == "compare" {
         let branch = version.unwrap_or("HEAD");
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
         let remote = ls.split_whitespace().next().unwrap_or("").to_string();
-        let changed = ok && !remote.is_empty() && remote != before;
+        let changed = tracked_dirty || (ok && !remote.is_empty() && remote != before);
         return Ok(json!({"changed": changed, "failed": false, "before": before, "after": remote}));
     }
 
@@ -108,8 +118,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err(format!("git reset --hard {target} failed"));
     }
     let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
+    let (after_status, ok) = git(&["status", "--porcelain"], Some(dest))?;
+    if !ok {
+        return Err("git status after update failed".into());
+    }
     Ok(json!({
-        "changed": before != after,
+        "changed": status != after_status || before != after,
         "failed": false,
         "before": before,
         "after": after,
@@ -142,6 +156,69 @@ fn repo_action(exists: bool, update: bool, check_mode: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+    use std::path::Path;
+    use std::process::Command;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn update_preserves_dirty_checkout_unless_forced() {
+        let root = std::env::temp_dir().join(format!("ruxel-git-test-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let dest = root.join("dest");
+        std::fs::create_dir(&source).unwrap();
+        git(&source, &["init", "-b", "main"]);
+        git(&source, &["config", "user.name", "Test"]);
+        git(&source, &["config", "user.email", "test@example.invalid"]);
+        std::fs::write(source.join("file"), "original\n").unwrap();
+        git(&source, &["add", "file"]);
+        git(&source, &["commit", "-m", "initial"]);
+        git(
+            &root,
+            &["clone", source.to_str().unwrap(), dest.to_str().unwrap()],
+        );
+        std::fs::write(dest.join("file"), "local edit\n").unwrap();
+        let ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let params = json!({"repo": source, "dest": dest});
+        assert!(
+            super::run(&params, &ctx)
+                .unwrap_err()
+                .contains("local changes")
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("file")).unwrap(),
+            "local edit\n"
+        );
+        let mut forced = params;
+        forced["force"] = json!(true);
+        assert_eq!(super::run(&forced, &ctx).unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("file")).unwrap(),
+            "original\n"
+        );
+        assert_eq!(super::run(&forced, &ctx).unwrap()["changed"], false);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn positional_flags_are_rejected() {
         assert!(super::validate_positionals(&[("repo", Some("https://example.test/x"))]).is_ok());
