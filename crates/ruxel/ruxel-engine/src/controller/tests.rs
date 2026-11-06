@@ -4,6 +4,7 @@ mod cases;
 mod failures;
 mod flows;
 mod inventory;
+mod loop_vars;
 mod more;
 mod persistence;
 

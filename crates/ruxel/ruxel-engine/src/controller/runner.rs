@@ -9,6 +9,15 @@ impl<B: Backend> Runner<'_, B> {
         vars: &mut std::collections::BTreeMap<String, TrackedValue>,
         incoming: &Map<String, Value>,
     ) -> Result<()> {
+        self.extend_vars_for_item(vars, incoming, None)
+    }
+
+    fn extend_vars_for_item(
+        &mut self,
+        vars: &mut std::collections::BTreeMap<String, TrackedValue>,
+        incoming: &Map<String, Value>,
+        item: Option<(&str, &TrackedValue)>,
+    ) -> Result<()> {
         let mut pending: Vec<_> = incoming.iter().collect();
         let mut previous_count = pending.len();
         while !pending.is_empty() {
@@ -20,7 +29,7 @@ impl<B: Backend> Runner<'_, B> {
                         vars: vars.clone(),
                         ..ContextLayer::default()
                     },
-                    None,
+                    item,
                 );
                 match self.backend.evaluate_tracked(value, &scope) {
                     Ok(value) => {
@@ -45,7 +54,25 @@ impl<B: Backend> Runner<'_, B> {
 
     pub(super) fn layer(&mut self, task: &Value, parent: &ContextLayer) -> Result<ContextLayer> {
         let mut layer = parent.clone();
-        self.extend_vars(&mut layer.vars, &object(task, "vars"))?;
+        let task_vars = object(task, "vars");
+        if task.get("loop").is_some_and(|value| !value.is_null()) && array(task, "block").is_empty()
+        {
+            let dependent = super::loop_vars::item_dependent(
+                &task_vars,
+                string(task, "loopVar").unwrap_or("item"),
+            );
+            let independent = task_vars
+                .iter()
+                .filter(|(name, _)| !dependent.contains(*name))
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            for name in task_vars.keys() {
+                layer.vars.remove(name);
+            }
+            self.extend_vars(&mut layer.vars, &independent)?;
+        } else {
+            self.extend_vars(&mut layer.vars, &task_vars)?;
+        }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
         if let Some(user) = string(task, "becomeUser") {
@@ -175,11 +202,16 @@ impl<B: Backend> Runner<'_, B> {
         let looped = task.get("loop").is_some_and(|v| !v.is_null());
         let mut results = Vec::new();
         for item in &items {
-            let scope = self.scope(
-                layer,
-                looped.then_some((string(task, "loopVar").unwrap_or("item"), item)),
-            );
+            let binding = looped.then_some((string(task, "loopVar").unwrap_or("item"), item));
             let mut iteration_layer = layer.clone();
+            if looped {
+                let task_vars = object(task, "vars");
+                for name in task_vars.keys() {
+                    iteration_layer.vars.remove(name);
+                }
+                self.extend_vars_for_item(&mut iteration_layer.vars, &task_vars, binding)?;
+            }
+            let scope = self.scope(&iteration_layer, binding);
             if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
                 let condition = self.backend.evaluate_tracked(condition, &scope)?;
                 iteration_layer.control_sensitive |= condition.is_secret();
