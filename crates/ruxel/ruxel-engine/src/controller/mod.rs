@@ -100,6 +100,7 @@ struct Runner<'a, B> {
     scope: Map<String, Value>,
     handlers: Vec<Value>,
     notified: BTreeSet<String>,
+    handling: bool,
     recap: Recap,
     next_id: u64,
 }
@@ -240,6 +241,7 @@ pub async fn run<B: Backend>(
                 scope,
                 handlers: array(play, "handlers").to_vec(),
                 notified: BTreeSet::new(),
+                handling: false,
                 recap: Recap::default(),
                 next_id: 1,
             };
@@ -251,6 +253,11 @@ pub async fn run<B: Backend>(
             }
             runner.extend_vars(&mut layer.vars, &object(&hosts[&host], "vars"))?;
             runner.extend_vars(&mut layer.vars, &object(play, "vars"))?;
+            layer.tags = array(play, "tags")
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
             let success = runner.tasks(array(play, "preTasks"), &layer).await?

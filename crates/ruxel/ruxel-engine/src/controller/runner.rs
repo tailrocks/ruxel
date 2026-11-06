@@ -100,8 +100,12 @@ impl<B: Backend> Runner<'_, B> {
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
             let layer = self.layer(task, parent)?;
-            if !self.options.tags.is_empty()
-                && !layer.tags.iter().any(|tag| self.options.tags.contains(tag))
+            if !self.handling
+                && !self.options.tags.is_empty()
+                && !layer
+                    .tags
+                    .iter()
+                    .any(|tag| tag == "always" || self.options.tags.contains(tag))
             {
                 return Ok(true);
             }
@@ -231,10 +235,13 @@ impl<B: Backend> Runner<'_, B> {
     pub(super) async fn run_handlers(&mut self, layer: &ContextLayer) -> Result<()> {
         let handlers = self.handlers.clone();
         for handler in &handlers {
-            if string(handler, "name").is_some_and(|name| self.notified.remove(name))
-                && !self.task(handler, layer).await?
-            {
-                break;
+            if string(handler, "name").is_some_and(|name| self.notified.remove(name)) {
+                self.handling = true;
+                let result = self.task(handler, layer).await;
+                self.handling = false;
+                if !result? {
+                    break;
+                }
             }
         }
         if !self.notified.is_empty() {
