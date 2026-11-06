@@ -32,3 +32,12 @@ Killing the agent or losing its connection does not establish that a kernel
 operation has stopped; establish process quiescence before another mutation.
 The prototype remains gated on isolated mounted-XFS acceptance. Its mocked
 geometry and allocation-group tests do not establish mounted-filesystem safety.
+
+## Filesystem identity limits during migration
+
+Attribute changes use held descriptors. On macOS, a target must be readable,
+or a directory must be searchable, to acquire a suitable descriptor. An
+unprivileged agent cannot repair an owned mode-`000` target through a pathname
+fallback: it returns an error before changing that target's attributes.
+Recursive operations also require access to enumerate directories. These
+remaining platform limitations keep full migration acceptance open.

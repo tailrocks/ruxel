@@ -44,21 +44,54 @@ fn parent_and_name(path: &Path) -> Result<(OwnedFd, &Path), String> {
     Ok((fd, name))
 }
 
-#[cfg(any(not(target_vendor = "apple"), test))]
 pub(super) fn open_attrs(path: &Path) -> Result<OwnedFd, String> {
     let (parent, name) = parent_and_name(path)?;
+    open_attrs_at(parent, name)
+}
+
+fn open_attrs_at(parent: impl AsFd, name: &Path) -> Result<OwnedFd, String> {
+    #[cfg(not(target_os = "linux"))]
+    let before = rustix::fs::statat(&parent, name, AtFlags::SYMLINK_NOFOLLOW)
+        .map_err(|error| error.to_string())?;
+    #[cfg(not(target_os = "linux"))]
+    regular_or_directory(before.st_mode)?;
     #[cfg(target_os = "linux")]
     let flags = OFlags::PATH;
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_vendor = "apple")]
+    let flags = if FileType::from_raw_mode(before.st_mode) == FileType::Directory {
+        OFlags::RDONLY | OFlags::DIRECTORY
+    } else {
+        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOCTTY
+    };
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
     let flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOCTTY;
-    let fd = rustix::fs::openat(
+    let opened = rustix::fs::openat(
         &parent,
         name,
         flags | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
-    )
-    .map_err(|e| e.to_string())?;
-    regular_or_directory(rustix::fs::fstat(&fd).map_err(|e| e.to_string())?.st_mode)?;
+    );
+    #[cfg(target_vendor = "apple")]
+    let opened = match opened {
+        Err(rustix::io::Errno::ACCESS)
+            if FileType::from_raw_mode(before.st_mode) == FileType::Directory =>
+        {
+            rustix::fs::openat(
+                &parent,
+                name,
+                anchor_flags() | OFlags::NOFOLLOW,
+                Mode::empty(),
+            )
+        }
+        result => result,
+    };
+    let fd = opened.map_err(|e| e.to_string())?;
+    let after = rustix::fs::fstat(&fd).map_err(|e| e.to_string())?;
+    regular_or_directory(after.st_mode)?;
+    #[cfg(not(target_os = "linux"))]
+    if before.st_dev != after.st_dev || before.st_ino != after.st_ino {
+        return Err("attribute target changed while acquiring descriptor".into());
+    }
     Ok(fd)
 }
 
@@ -95,15 +128,7 @@ pub(super) fn apply_attrs(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    #[cfg(target_vendor = "apple")]
-    {
-        let (parent, name) = parent_and_name(path)?;
-        apply_attrs_at(parent, name, obj, changed, check_mode)
-    }
-    #[cfg(not(target_vendor = "apple"))]
-    {
-        apply_attrs_fd(open_attrs(path)?, obj, changed, check_mode)
-    }
+    apply_attrs_fd(open_attrs(path)?, obj, changed, check_mode)
 }
 
 pub(super) fn apply_attrs_fd(
@@ -167,35 +192,9 @@ pub(super) fn apply_attrs_at(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    let flags = AtFlags::SYMLINK_NOFOLLOW;
-    let meta = rustix::fs::statat(&parent, name, flags).map_err(|e| e.to_string())?;
-    regular_or_directory(meta.st_mode)?;
-    let uid = str_param(obj, "owner").map(resolve_uid).transpose()?;
-    let gid = str_param(obj, "group").map(resolve_gid).transpose()?;
-    if uid.is_some_and(|uid| uid != meta.st_uid) || gid.is_some_and(|gid| gid != meta.st_gid) {
-        *changed = true;
-        if !check_mode {
-            rustix::fs::chownat(
-                &parent,
-                name,
-                uid.map(rustix::fs::Uid::from_raw),
-                gid.map(rustix::fs::Gid::from_raw),
-                flags,
-            )
-            .map_err(|e| e.to_string())?;
-        }
-    }
-    if let Some(value) = obj.get("mode") {
-        let desired = mode(value)?;
-        let current = rustix::fs::statat(&parent, name, flags).map_err(|e| e.to_string())?;
-        if Mode::from_raw_mode(current.st_mode) != desired {
-            *changed = true;
-            if !check_mode {
-                rustix::fs::chmodat(&parent, name, desired, flags).map_err(|e| e.to_string())?;
-            }
-        }
-    }
-    Ok(())
+    let fd = open_attrs_at(parent, name)
+        .map_err(|error| format!("cannot pin attribute target without access: {error}"))?;
+    apply_attrs_fd(fd, obj, changed, check_mode)
 }
 
 #[cfg(test)]

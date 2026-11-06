@@ -32,42 +32,8 @@ fn descriptor_attributes_survive_alias_retarget() {
     );
 }
 
-#[test]
-fn unreadable_owner_file_and_alias_prefix_preserve_check_semantics() {
-    let root = Root::new();
-    let directory = root.path().join("directory");
-    std::fs::create_dir(&directory).unwrap();
-    let file = directory.join("file");
-    std::fs::write(&file, "payload").unwrap();
-    let alias = root.path().join("alias");
-    symlink(&directory, &alias).unwrap();
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let attrs = json!({"mode":"0600"});
-    let mut changed = false;
-    apply_attrs(
-        &alias.join("../directory/file"),
-        attrs.as_object().unwrap(),
-        &mut changed,
-        true,
-    )
-    .unwrap();
-    assert!(changed);
-    assert_eq!(
-        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-        0
-    );
-    apply_attrs(
-        &alias.join("file"),
-        attrs.as_object().unwrap(),
-        &mut changed,
-        false,
-    )
-    .unwrap();
-    assert_eq!(
-        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
-}
+#[path = "attrs_unreadable.rs"]
+mod unreadable;
 
 #[test]
 fn terminal_dot_preserves_authored_directory_resolution() {
@@ -106,6 +72,29 @@ fn regular_file_with_directory_suffix_fails_without_mutation() {
         std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
         0o600
     );
+}
+
+#[test]
+fn directory_access_modes_use_pinned_attributes() {
+    let root = Root::new();
+    let path = root.path().join("directory");
+    std::fs::create_dir(&path).unwrap();
+    let attrs = json!({"mode":"0700"});
+    for mode in [0o111, 0o600] {
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        let mut changed = false;
+        apply_attrs(&path, attrs.as_object().unwrap(), &mut changed, true).unwrap();
+        assert!(changed);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        apply_attrs(&path, attrs.as_object().unwrap(), &mut changed, false).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
 }
 
 struct Root(std::path::PathBuf);
