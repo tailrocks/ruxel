@@ -1,5 +1,6 @@
 mod connection;
 mod environment;
+mod lists;
 mod md5_password;
 mod roles;
 mod table_rows;
@@ -93,7 +94,7 @@ fn grants_and_default_acl_queries_target_role_and_schema() {
         "table",
         "reader",
         "SELECT",
-        Some("events"),
+        Some(&["events".into()]),
         Some("audit"),
         None,
     )
@@ -116,9 +117,9 @@ fn default_privileges_target_object_creator_roles() {
         "default_privs",
         "reader",
         "SELECT",
-        Some("TABLES"),
+        Some(&["TABLES".into()]),
         Some("audit"),
-        Some("writer,loader"),
+        Some(&["writer".into(), "loader".into()]),
     )
     .unwrap();
     assert_eq!(sql.len(), 2);
