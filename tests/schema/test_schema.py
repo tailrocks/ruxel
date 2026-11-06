@@ -25,6 +25,11 @@ class SchemaTests(unittest.TestCase):
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
+            'new R.Operation { kind = "unsupported" }',
+            'new R.Apt { kind = "unsupported"; name = "hello" }',
+            'new R.Expr { kind = "unsupported" }',
+            'new R.Call { `function` = "equals" }',
+            'new R.Task { name = "bad"; operation = new { kind = "unsupported" } }',
             'new R.Filesystem { dev = "/dev/test"; fstype = "btrfs" }',
             'new R.LogicalVolume { vg = "test"; lv = "data" }',
             'new R.Task { name = "bad"; retries = 0 }',

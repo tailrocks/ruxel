@@ -12,7 +12,7 @@ config = new R.Config {
         new R.Task {
           name = "create database"
           operation = new R.PostgresDatabase { name = "app"; owner = new R.Ref { path { "vars"; "owner" } } }
-          `when` = new R.Call { `function` = "equals"; args { new R.Literal { value = true }; new R.Literal { value = true } } }
+          `when` = new R.Call { `function` = "eq"; args { new R.Literal { value = true }; new R.Literal { value = true } } }
           register = "result"
         }
         new R.Task { name = "logical volume"; operation = new R.LogicalVolume { vg = "vg"; lv = "data"; size = "1G" } }
