@@ -2,6 +2,7 @@ mod connection;
 mod environment;
 mod md5_password;
 mod roles;
+mod table_rows;
 
 use super::*;
 

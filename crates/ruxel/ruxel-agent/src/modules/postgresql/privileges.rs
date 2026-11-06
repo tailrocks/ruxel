@@ -166,16 +166,11 @@ fn privs_missing_table(
             port,
             Some(db),
             &format!(
-                "SELECT schemaname,tablename FROM pg_tables WHERE schemaname={}",
+                "SELECT COALESCE(json_agg(json_build_array(schemaname, tablename)), '[]'::json)::text FROM pg_tables WHERE schemaname={}",
                 lit(s)
             ),
         )?;
-        rows.lines()
-            .filter_map(|l| {
-                l.split_once('|')
-                    .map(|(a, b)| (a.to_string(), b.to_string()))
-            })
-            .collect()
+        parse_table_rows(&rows)?
     } else {
         let s = schema.unwrap_or("public");
         objs.split(',')
@@ -210,6 +205,11 @@ fn privs_missing_table(
         }
     }
     Ok(false)
+}
+
+pub(super) fn parse_table_rows(rows: &str) -> Result<Vec<(String, String)>, String> {
+    serde_json::from_str(rows)
+        .map_err(|error| format!("postgresql_privs: invalid table rows: {error}"))
 }
 
 pub(super) fn default_priv_query(
