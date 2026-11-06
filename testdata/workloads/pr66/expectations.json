@@ -444,7 +444,7 @@
         }
       },
       "pending": [
-        "synthetic lookup injection and controller integration",
+        "synthetic lookup controller integration and same-item dedup",
         "package, service and PostgreSQL snapshot call counts"
       ]
     }

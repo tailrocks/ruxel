@@ -6,8 +6,8 @@ output {
       name = "Fixture secret and system snapshots"
       targets { "performance" }
       vars {
-        ["fixture_secret_alpha"] = new Ruxel.Lookup { provider = "synthetic"; item = "ruxel-fixture-item"; field = "alpha"; vault = "ruxel-test" }
-        ["fixture_secret_beta"] = new Ruxel.Lookup { provider = "synthetic"; item = "ruxel-fixture-item"; field = "beta"; vault = "ruxel-test" }
+        ["fixture_secret_alpha"] = new Ruxel.Lookup { provider = "synthetic"; key = "synthetic-alpha" }
+        ["fixture_secret_beta"] = new Ruxel.Lookup { provider = "synthetic"; key = "synthetic-beta" }
       }
       tasks {
         new {
