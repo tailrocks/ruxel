@@ -345,10 +345,12 @@ pub async fn run(
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
         match Arc::try_unwrap(connection) {
-            Err(_) => shutdown_errors.push(format!("{host}: agent connection still in use")),
+            Err(_) => {
+                shutdown_errors.push((host, anyhow::anyhow!("agent connection still in use")));
+            }
             Ok(connection) => {
                 if let Err(error) = connection.into_inner().shutdown().await {
-                    shutdown_errors.push(format!("{host}: {error}"));
+                    shutdown_errors.push((host, error));
                 }
             }
         }
@@ -361,12 +363,21 @@ pub async fn run(
     };
     match result {
         Err(error) => {
-            shutdown_errors.insert(0, error.to_string());
-            Err(redact_error(anyhow::anyhow!(shutdown_errors.join("; "))))
+            let mut errors = vec![error.to_string()];
+            errors.extend(
+                shutdown_errors
+                    .into_iter()
+                    .map(|(host, error)| format!("{host}: {error}")),
+            );
+            Err(redact_error(anyhow::anyhow!(errors.join("; "))))
         }
-        Ok(recap) => {
-            if !shutdown_errors.is_empty() {
-                return Err(redact_error(anyhow::anyhow!(shutdown_errors.join("; "))));
+        Ok(mut recap) => {
+            for (host, error) in shutdown_errors {
+                connect::report_failure(&execution, &host, "unreachable", &error)?;
+                let total = recap.entry(host).or_default();
+                if total.failed == 0 {
+                    total.failed = 1;
+                }
             }
             for (host, total) in &recap {
                 let event = json!({"host":host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});

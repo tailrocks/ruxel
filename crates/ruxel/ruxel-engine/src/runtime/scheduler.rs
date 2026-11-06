@@ -48,6 +48,18 @@ pub(super) async fn run_plays(
             set_facts.extend(host_facts);
             match result {
                 Err(failure) => {
+                    if let Some(partial) = failure.downcast_ref::<controller::RunFailure>() {
+                        for (name, recap) in &partial.recaps {
+                            let total = totals.entry(name.clone()).or_default();
+                            total.ok += recap.ok;
+                            total.planned += recap.planned;
+                            total.changed += recap.changed;
+                            total.failed += recap.failed;
+                            total.skipped += recap.skipped;
+                            total.rescued += recap.rescued;
+                            total.ignored += recap.ignored;
+                        }
+                    }
                     super::connect::report_failure(execution, &host, "host_failed", &failure)?;
                     totals.entry(host).or_default().failed += 1;
                 }

@@ -330,11 +330,15 @@ pub async fn run<B: Backend>(
                 .collect();
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
-            let success = runner.tasks(array(play, "preTasks"), &layer).await?
-                && runner.tasks(array(play, "tasks"), &layer).await?;
-            if success {
-                runner.run_handlers(&layer).await?;
+            let execution: Result<()> = async {
+                let success = runner.tasks(array(play, "preTasks"), &layer).await?
+                    && runner.tasks(array(play, "tasks"), &layer).await?;
+                if success {
+                    runner.run_handlers(&layer).await?;
+                }
+                Ok(())
             }
+            .await;
             if let Some(persisted) = runner.scope.get("setFacts") {
                 set_facts.insert(host.clone(), persisted);
             }
@@ -345,11 +349,16 @@ pub async fn run<B: Backend>(
             recap.skipped += runner.recap.skipped;
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;
+            if let Err(error) = execution {
+                return Err(RunFailure::new(error, totals).into());
+            }
         }
     }
     Ok(totals)
 }
 
+mod failure;
+pub(crate) use failure::RunFailure;
 mod ledger;
 mod selection;
 pub use ledger::ledger_key;
