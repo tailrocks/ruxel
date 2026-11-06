@@ -681,6 +681,132 @@
         "scalar-to-string interpolation of mapping loop item",
         "controller-side template loading and rendering"
       ]
+    },
+    "system-surface": {
+      "fixture": "system-surface.pkl",
+      "observations": [
+        {
+          "kind": "package_installed",
+          "name": "ca-certificates"
+        },
+        {
+          "kind": "package_installed",
+          "name": "git"
+        },
+        {
+          "kind": "apt_repository",
+          "name": "ruxel-fixture",
+          "repo": "deb http://deb.debian.org/debian bookworm main"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/system/payload.txt",
+          "content": "synthetic-download"
+        },
+        {
+          "kind": "group",
+          "name": "ruxelfixture",
+          "gid": 29871
+        },
+        {
+          "kind": "group_absent",
+          "name": "ruxelfixture-absent"
+        },
+        {
+          "kind": "account_absent",
+          "name": "ruxelfixture-absent"
+        },
+        {
+          "kind": "authorized_key",
+          "user": "root",
+          "comment": "synthetic@fixture"
+        },
+        {
+          "kind": "sysctl",
+          "name": "net.ipv4.ip_forward",
+          "value": "0"
+        },
+        {
+          "kind": "sysctl",
+          "name": "vm.swappiness",
+          "value": "60"
+        },
+        {
+          "kind": "firewall_rule",
+          "chain": "OUTPUT",
+          "destination": "192.0.2.1",
+          "protocol": "tcp",
+          "out_interface": "eth0",
+          "jump": "DROP",
+          "comment": "ruxel synthetic fixture"
+        },
+        {
+          "kind": "timezone",
+          "name": "Etc/UTC"
+        },
+        {
+          "kind": "service",
+          "name": "ssh",
+          "enabled": true,
+          "active": true
+        },
+        {
+          "kind": "service",
+          "name": "ruxel-fixture.service",
+          "enabled": false,
+          "active": false
+        },
+        {
+          "kind": "mount",
+          "path": "/mnt/ruxel-fixture",
+          "source": "tmpfs",
+          "fstype": "tmpfs",
+          "options": [
+            "size=16m"
+          ]
+        },
+        {
+          "kind": "git_checkout",
+          "path": "__RUN_ROOT__/system/checkout",
+          "source": "__RUN_ROOT__/system/origin",
+          "clean": true,
+          "head_equals_source": true
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/system/payload.txt",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_firewall_rule",
+          "chain": "OUTPUT",
+          "comment": "ruxel synthetic fixture"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "runtime and independent observation integration",
+        "check-mode forced HTTP server changes pid/log files; nonmutation expectation must be verified and this conflict resolved",
+        "fixed service, mount, account and firewall names require a dedicated disposable VM"
+      ]
     }
   }
 }

@@ -1,0 +1,137 @@
+import "../../../schema/Ruxel.pkl"
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+output { value = new Ruxel.Config {
+  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+  plays { new {
+    name = "Synthetic operating-system surface"
+    targets { "all" }
+    vars {
+      ["fixture_user"] = literal("ruxelfixture")
+      ["fixture_group"] = literal("ruxelfixture")
+      ["fixture_root"] = literal("__RUN_ROOT__/system")
+      ["fixture_repo"] = literal("deb http://deb.debian.org/debian bookworm main")
+      ["fixture_key"] = literal("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHpYv7vR9EwLmVQ2HxM0v1G1c3Xf9m2xk4n6p8q0r2s4 synthetic@fixture")
+    }
+    tasks {
+      new {
+        name = "Refresh package metadata and install fixture package"
+        operation = new Ruxel.Apt { name = new Listing { "ca-certificates"; "git" }; state = "latest"; update_cache = true; force = false; autoremove = false }
+      }
+      new {
+        name = "Exercise package upgrade shape without applying it"
+        checkMode = true
+        operation = new Ruxel.Apt { upgrade = "dist"; update_cache = false }
+      }
+      new {
+        name = "Configure synthetic Debian repository"
+        operation = new Ruxel.AptRepository { repo = ref(new Listing { "fixture_repo" }); filename = "ruxel-fixture"; state = "present"; update_cache = false }
+      }
+      new {
+        name = "Create synthetic system fixture root"
+        operation = new Ruxel.File { path = ref(new Listing { "fixture_root" }); state = "directory" }
+      }
+      new {
+        name = "Create public synthetic payload source"
+        operation = new Ruxel.Copy { content = "synthetic-download"; dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/payload-source.txt") }) }
+      }
+      new {
+        name = "Start disposable payload server"
+        checkMode = false
+        changedWhen = literal(false)
+        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("nohup python3 -m http.server 18080 --bind 127.0.0.1 \\\n  --directory "); ref(new Listing { "fixture_root" }); literal(" </dev/null \\\n  >__RUN_ROOT__/http.log 2>&1 &\necho $! >__RUN_ROOT__/http.pid\nfor attempt in 1 2 3 4 5 6 7 8 9 10; do\n  if /usr/bin/curl --fail --silent \\\n    http://127.0.0.1:18080/payload-source.txt >/dev/null; then\n    exit 0\n  fi\n  sleep 0.1\ndone\nexit 1\n") }) }
+      }
+      new {
+        name = "Wait for disposable payload server"
+        changedWhen = literal(false)
+        until = call("eq", new Listing { ref(new Listing { "fixture_payload_ready"; "rc" }); literal(0) })
+        retries = 3
+        delaySeconds = 1
+        register = "fixture_payload_ready"
+        operation = new Ruxel.Command { cmd = "/usr/bin/curl --fail --silent http://127.0.0.1:18080/payload-source.txt" }
+      }
+      new {
+        name = "Download public synthetic payload"
+        operation = new Ruxel.GetUrl { url = "http://127.0.0.1:18080/payload-source.txt"; dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/payload.txt") }) }
+      }
+      new {
+        name = "Stop disposable payload server"
+        checkMode = false
+        changedWhen = literal(false)
+        operation = new Ruxel.Shell { cmd = "kill \"$(cat __RUN_ROOT__/http.pid)\"" }
+      }
+      new {
+        name = "Ensure fixture group"
+        operation = new Ruxel.SystemGroup { name = ref(new Listing { "fixture_group" }); gid = 29871; state = "present" }
+      }
+      new {
+        name = "Ensure disposable absent group"
+        operation = new Ruxel.SystemGroup { name = "ruxelfixture-absent"; state = "absent" }
+      }
+      new {
+        name = "Exercise closed absent-user surface"
+        operation = new Ruxel.User { name = "ruxelfixture-absent"; uid = 29871; group = ref(new Listing { "fixture_group" }); groups = "adm"; append = true; comment = "Synthetic Ruxel Fixture"; home = "/var/lib/ruxelfixture"; shell = "/bin/sh"; create_home = false; system = false; state = "absent"; remove = true }
+      }
+      new {
+        name = "Install synthetic authorized key"
+        operation = new Ruxel.AuthorizedKey { user = "root"; key = ref(new Listing { "fixture_key" }); state = "present" }
+      }
+      new {
+        name = "Set sysctl through short module name"
+        operation = new Ruxel.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; state = "present"; reload = true; sysctl_set = true; sysctl_file = "/etc/sysctl.d/99-ruxel-fixture.conf" }
+      }
+      new {
+        name = "Set sysctl through collection name"
+        operation = new Ruxel.Sysctl { name = "vm.swappiness"; value = "60"; state = "present"; reload = true; sysctl_set = true }
+      }
+      new {
+        name = "Add isolated fixture firewall rule"
+        operation = new Ruxel.Firewall { chain = "OUTPUT"; destination = "192.0.2.1"; protocol = "tcp"; out_interface = "eth0"; jump = "DROP"; comment = "ruxel synthetic fixture"; ip_version = "ipv4" }
+      }
+      new {
+        name = "Exercise firewall policy shape in check mode"
+        checkMode = true
+        operation = new Ruxel.Firewall { chain = "FORWARD"; policy = "DROP" }
+      }
+      new {
+        name = "Configure fixture timezone"
+        operation = new Ruxel.Timezone { name = "Etc/UTC" }
+      }
+      new {
+        name = "Ensure SSH service is enabled and started"
+        operation = new Ruxel.Service { name = "ssh"; state = "started"; enabled = true }
+      }
+      new {
+        name = "Install disposable fixture service"
+        operation = new Ruxel.Copy { content = "[Unit]\nDescription=Ruxel synthetic fixture\n[Service]\nType=oneshot\nExecStart=/usr/bin/true\nRemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n"; dest = "/etc/systemd/system/ruxel-fixture.service" }
+      }
+      new {
+        name = "Load stopped disposable fixture service"
+        operation = new Ruxel.Service { name = "ruxel-fixture.service"; state = "stopped"; enabled = false; daemon_reload = true }
+      }
+      new {
+        name = "Exercise stopped service prediction"
+        checkMode = true
+        operation = new Ruxel.Service { name = "ruxel-fixture.service"; state = "stopped"; enabled = false }
+      }
+      new {
+        name = "Exercise restarted systemd shape"
+        checkMode = true
+        operation = new Ruxel.Service { name = "ssh"; state = "restarted"; daemon_reload = false }
+      }
+      new {
+        name = "Mount disposable tmpfs"
+        operation = new Ruxel.Mount { path = "/mnt/ruxel-fixture"; src = literal("tmpfs"); fstype = "tmpfs"; opts = "size=16m"; state = "mounted" }
+      }
+      new {
+        name = "Initialize synthetic source repository"
+        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\nmkdir -p "); ref(new Listing { "fixture_root" }); literal("/origin\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin init\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin config user.email synthetic@example.invalid\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin config user.name Synthetic\nprintf fixture > "); ref(new Listing { "fixture_root" }); literal("/origin/data.txt\ngit -C "); ref(new Listing { "fixture_root" }); literal("/origin add data.txt\nGIT_AUTHOR_DATE=2020-01-01T00:00:00Z \\\nGIT_COMMITTER_DATE=2020-01-01T00:00:00Z \\\n  git -C "); ref(new Listing { "fixture_root" }); literal("/origin commit -m fixture || true\n") }); creates = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/origin/.git/HEAD") }) }
+      }
+      new {
+        name = "Clone synthetic repository"
+        operation = new Ruxel.Git { repo = call("concat", new Listing { literal("file://"); ref(new Listing { "fixture_root" }); literal("/origin") }); dest = call("concat", new Listing { ref(new Listing { "fixture_root" }); literal("/checkout") }); version = "HEAD"; update = true; force = false; accept_hostkey = false }
+      }
+    }
+  } }
+} }
