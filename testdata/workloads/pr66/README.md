@@ -41,3 +41,7 @@ Storage drift specifications erase filesystem signatures. A harness must prove
 the exact target is a disposable fixture volume before applying them; no drift
 injection has been executed. Snapshot call-count expectations require separate
 instrumentation and have not been measured.
+
+The delegation fixture forces its read-only local `printf` to run in check
+and diff so its following assertion has a result. The frozen task did not
+force check mode; this deliberate difference needs separate parity coverage.
