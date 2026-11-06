@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise interactive pause and interruption with a local agent and a PTY."""
 import argparse
+import fcntl
 import json
 import os
 import pty
@@ -47,6 +48,11 @@ def read_prompt(stream, timeout):
         os.set_blocking(stream.fileno(), True)
 
 
+def controlling_terminal():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ruxel', type=Path, required=True)
@@ -69,17 +75,20 @@ output { value = new Ruxel.Config {
  } } }
 } }
 '''.replace('DEST', json.dumps(str(marker))))
-        for case in ('enter', 'eof', 'interrupt', 'check', 'diff'):
+        for case in ('enter', 'typed', 'eof', 'interrupt', 'ctrl-c', 'check', 'diff'):
             marker.unlink(missing_ok=True)
             master, slave = pty.openpty()
             attrs = termios.tcgetattr(slave)
             attrs[3] &= ~termios.ECHO
+            attrs[3] |= termios.ISIG | termios.ICANON
+            attrs[6][termios.VINTR] = b'\x03'
+            attrs[6][termios.VEOF] = b'\x04'
             termios.tcsetattr(slave, termios.TCSANOW, attrs)
             mode = case if case in ('check', 'diff') else 'apply'
             process = subprocess.Popen([str(cli), mode, str(module), '--local', '--agent', str(agent),
                                         '--state-dir', str(base / ('state-' + case))],
                                        stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       start_new_session=True)
+                                       preexec_fn=controlling_terminal)
             os.close(slave)
             lines = []
             pending = b''
@@ -90,11 +99,14 @@ output { value = new Ruxel.Config {
                     require(process.poll() is None and not marker.exists(), f'{case}: pause did not block')
                     if case == 'interrupt':
                         os.kill(process.pid, signal.SIGINT)
+                    elif case == 'ctrl-c':
+                        require(os.tcgetpgrp(master) == process.pid, 'ctrl-c: CLI is not foreground terminal group')
+                        os.write(master, b'\x03')
                     else:
-                        os.write(master, b'\n' if case == 'enter' else b'\x04')
+                        os.write(master, {'enter': b'\n', 'typed': b'synthetic typed input\n', 'eof': b'\x04'}[case])
                 stdout, stderr = process.communicate(timeout=10)
                 lines.extend(json.loads(line) for line in (pending + stdout).splitlines() if line)
-                if case == 'interrupt':
+                if case in ('interrupt', 'ctrl-c'):
                     require(process.returncode in (-signal.SIGINT, 130), f'interrupt: exit {process.returncode}: {stderr!r}')
                     require(not marker.exists(), 'interrupt: post-pause task executed')
                 else:
@@ -126,7 +138,7 @@ output { value = new Ruxel.Config {
                 process.wait(timeout=5)
                 process.stdout.close()
                 process.stderr.close()
-    print('PASS local PTY pause: enter, EOF, interrupt, check, diff')
+    print('PASS local controlling-PTY pause: enter, typed input, EOF, SIGINT, Ctrl+C, check, diff')
 
 
 if __name__ == '__main__':
