@@ -16,16 +16,16 @@ fn empty_scope() -> TrackedValue {
 fn lookup() -> Value {
     json!({"kind":"lookup", "provider":"synthetic", "key":"unused"})
 }
-fn call(function: &str, args: Vec<Value>) -> Value {
+fn call(function: &str, args: &[Value]) -> Value {
     json!({"kind":"call", "function":function, "args":args})
 }
 
 #[test]
 fn transforms_and_nested_values_preserve_secret_provenance() -> Result<()> {
     let expr = json!({"kind":"map", "entries":{
-        "encoded":call("base64Encode", vec![lookup()]),
+        "encoded":call("base64Encode", &[lookup()]),
         "public":{"kind":"literal", "value":"visible"},
-        "nested":call("urlencode", vec![call("base64Encode", vec![lookup()])])
+        "nested":call("urlencode", &[call("base64Encode", &[lookup()])])
     }});
     let value = eval(expr, &empty_scope())?;
     assert_eq!(value.value["encoded"], "c2FtcGxlIC8gcHJpdmF0ZQ==");
@@ -49,7 +49,7 @@ fn references_select_provenance_without_tainting_public_siblings() -> Result<()>
     assert!(eval(path("a"), &scope)?.is_secret());
     assert!(!eval(path("b"), &scope)?.is_secret());
     assert_eq!(
-        eval(call("base64Encode", vec![path("a")]), &scope)?.redacted(),
+        eval(call("base64Encode", &[path("a")]), &scope)?.redacted(),
         json!("[REDACTED]")
     );
     Ok(())
@@ -57,11 +57,11 @@ fn references_select_provenance_without_tainting_public_siblings() -> Result<()>
 
 #[test]
 fn lazy_condition_and_map_propagate_sensitivity() -> Result<()> {
-    let sensitive_test = call("eq", vec![lookup(), lookup()]);
+    let sensitive_test = call("eq", &[lookup(), lookup()]);
     let value = eval(
         call(
             "if",
-            vec![
+            &[
                 sensitive_test,
                 json!({"kind":"literal", "value":"selected"}),
                 json!({"kind":"ref", "path":["missing"]}),
@@ -74,9 +74,9 @@ fn lazy_condition_and_map_propagate_sensitivity() -> Result<()> {
     let mapped = eval(
         call(
             "map",
-            vec![
+            &[
                 list,
-                call("base64Encode", vec![json!({"kind":"ref", "path":["item"]})]),
+                call("base64Encode", &[json!({"kind":"ref", "path":["item"]})]),
             ],
         ),
         &empty_scope(),
@@ -87,21 +87,21 @@ fn lazy_condition_and_map_propagate_sensitivity() -> Result<()> {
 
 #[test]
 fn sensitive_failures_are_generic_and_public_errors_remain_useful() {
-    let invalid = call("base64Decode", vec![lookup()]);
+    let invalid = call("base64Decode", &[lookup()]);
     let error = eval(invalid, &empty_scope())
         .err()
         .map(|e| e.to_string())
         .unwrap_or_default();
     assert_eq!(error, "sensitive expression failed");
     let error = eval(
-        call("base64Decode", vec![json!({"kind":"literal", "value":"%"})]),
+        call("base64Decode", &[json!({"kind":"literal", "value":"%"})]),
         &empty_scope(),
     )
     .err()
     .map(|e| e.to_string())
     .unwrap_or_default();
     assert_ne!(error, "sensitive expression failed");
-    assert!(!error.is_empty());
+    assert_ne!(error, "");
 }
 
 mod review_tests;

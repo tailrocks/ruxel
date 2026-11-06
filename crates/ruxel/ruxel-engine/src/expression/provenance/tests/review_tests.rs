@@ -14,7 +14,7 @@ fn missing_secret_reference_taints_default_and_short_array_tree_fails_closed() -
     };
     let missing = json!({"kind":"ref", "path":["vars", "secret", "probe"]});
     let fallback = json!({"kind":"literal", "value":"absent"});
-    assert!(eval(call("default", vec![missing, fallback]), &scope)?.is_secret());
+    assert!(eval(call("default", &[missing, fallback]), &scope)?.is_secret());
     assert!(eval(json!({"kind":"ref", "path":["item", "0"]}), &scope)?.is_secret());
     Ok(())
 }
@@ -51,7 +51,7 @@ fn provenance_for_absent_object_field_does_not_declassify_default() -> Result<()
     };
     let missing = json!({"kind":"ref", "path":["vars", "secret"]});
     let fallback = json!({"kind":"literal", "value":"absent"});
-    assert!(eval(call("default", vec![missing, fallback]), &scope)?.is_secret());
+    assert!(eval(call("default", &[missing, fallback]), &scope)?.is_secret());
     Ok(())
 }
 
