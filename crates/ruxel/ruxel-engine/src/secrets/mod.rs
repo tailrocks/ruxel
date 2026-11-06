@@ -1,5 +1,6 @@
 //! Controller-side lookup resolution. Secret values never appear in diagnostics.
 
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::process::Command;
@@ -111,6 +112,7 @@ type Cell<T> = Arc<OnceLock<Result<T, String>>>;
 #[derive(Clone)]
 pub struct Resolver {
     backend: Arc<dyn Backend>,
+    synthetic: bool,
     values: Arc<Mutex<HashMap<Lookup, Cell<String>>>>,
     items: Arc<Mutex<HashMap<(String, String), Cell<serde_json::Value>>>>,
 }
@@ -120,9 +122,18 @@ impl Resolver {
     pub fn new(backend: Arc<dyn Backend>) -> Self {
         Self {
             backend,
+            synthetic: false,
             values: Arc::default(),
             items: Arc::default(),
         }
+    }
+
+    /// Resolve every reference deterministically without invoking any backend.
+    #[must_use]
+    pub fn synthetic() -> Self {
+        let mut resolver = Self::new(Arc::new(ProcessBackend));
+        resolver.synthetic = true;
+        resolver
     }
 
     /// Resolve a lookup; concurrent requests for the same value share one fetch.
@@ -138,6 +149,9 @@ impl Resolver {
     }
 
     fn resolve_uncached(&self, lookup: &Lookup) -> Result<String, String> {
+        if self.synthetic {
+            return Ok(synthetic_value(lookup));
+        }
         let generic = || "secret lookup failed".to_owned();
         match lookup {
             Lookup::Fnox { key } => self.backend.fnox(key).map_err(|_| generic()),
@@ -228,17 +242,53 @@ fn parse_op_reference(reference: &str) -> Option<(&str, &str, Option<&str>, &str
 }
 
 fn pipe_op_reference(command: &str) -> Option<&str> {
-    let start = command.find("op://")?;
-    let tail = &command[start..];
-    let quote = command[..start]
-        .chars()
-        .next_back()
-        .filter(|c| *c == '\'' || *c == '"');
-    let end = quote
-        .and_then(|q| tail.find(q))
-        .or_else(|| tail.find(char::is_whitespace))
-        .unwrap_or(tail.len());
-    Some(&tail[..end])
+    let rest = command.trim().strip_prefix("op")?;
+    let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
+    let rest = rest.strip_prefix("read")?;
+    let rest = rest.strip_prefix(char::is_whitespace)?.trim();
+    let reference = if let Some(quote) = rest.chars().next().filter(|c| *c == '\'' || *c == '"') {
+        let inner = rest.strip_prefix(quote)?.strip_suffix(quote)?;
+        if inner.contains(quote) || (quote == '"' && inner.contains(['$', '`', '\\'])) {
+            return None;
+        }
+        inner
+    } else {
+        if rest
+            .chars()
+            .any(|c| c.is_whitespace() || "|&;<>$`\\(){}*?[]!~#\"'".contains(c))
+        {
+            return None;
+        }
+        rest
+    };
+    reference.starts_with("op://").then_some(reference)
+}
+
+fn synthetic_value(lookup: &Lookup) -> String {
+    let (kind, parts): (&str, Vec<&str>) = match lookup {
+        Lookup::Fnox { key } => ("fnox", vec![key]),
+        Lookup::OnePassword {
+            vault,
+            item,
+            field,
+            section,
+        } => (
+            "onepassword",
+            vec![item, field, vault, section.as_deref().unwrap_or("")],
+        ),
+        Lookup::OnePasswordUri { reference } => ("op-uri", vec![reference]),
+        Lookup::Command { argv } => ("command", argv.iter().map(String::as_str).collect()),
+        Lookup::Pipe { command } => ("pipe", vec![command]),
+        Lookup::Synthetic { value } => return value.clone(),
+    };
+    let mut key = kind.to_owned();
+    for part in parts {
+        key.push('\u{1f}');
+        key.push_str(part);
+    }
+    let digest = Sha256::digest(key.as_bytes());
+    let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+    format!("dry-secret-{hex}")
 }
 
 fn select_field(
@@ -345,5 +395,64 @@ mod tests {
                 .unwrap(),
             "fake-pipe"
         );
+    }
+    #[test]
+    fn only_plain_op_read_is_optimized() {
+        let backend = Arc::new(Fake::default());
+        let resolver = Resolver::new(backend.clone());
+        for command in [
+            "printf '%s' 'op://vault/item/username'",
+            "op read 'op://vault/item/username' | base64",
+            "op read \"op://vault/item/$name\"",
+        ] {
+            assert_eq!(
+                resolver
+                    .resolve(&Lookup::Pipe {
+                        command: command.into()
+                    })
+                    .unwrap(),
+                "fake-pipe"
+            );
+        }
+        assert_eq!(backend.items.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            resolver
+                .resolve(&Lookup::Pipe {
+                    command: "op read 'op://vault/item/username'".into()
+                })
+                .unwrap(),
+            "alice"
+        );
+    }
+
+    #[test]
+    fn synthetic_mode_never_calls_backend_and_is_stable() {
+        let backend = Arc::new(Fake::default());
+        let mut resolver = Resolver::new(backend.clone());
+        resolver.synthetic = true;
+        let lookup = Lookup::Pipe {
+            command: "op read 'op://vault/item/username'".into(),
+        };
+        let value = resolver.resolve(&lookup).unwrap();
+        assert!(value.starts_with("dry-secret-"));
+        assert_eq!(value, Resolver::synthetic().resolve(&lookup).unwrap());
+        for lookup in [
+            Lookup::Fnox { key: "KEY".into() },
+            Lookup::OnePasswordUri {
+                reference: "op://vault/item/username".into(),
+            },
+            Lookup::Command {
+                argv: vec!["program".into()],
+            },
+        ] {
+            assert!(
+                resolver
+                    .resolve(&lookup)
+                    .unwrap()
+                    .starts_with("dry-secret-")
+            );
+        }
+        assert_eq!(backend.items.load(Ordering::SeqCst), 0);
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
     }
 }
