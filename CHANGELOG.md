@@ -7,14 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
 - `hk.pkl` git hooks (mise, gitleaks, cargo fmt, check, clippy, deny, rumdl).
 - Initial research implementation and closed-workload CLI/agent surface.
 
 ### Changed
 
+- Workspace lints from the operator's repository standard, clippy configuration.
+- Crates moved to `crates/<group>/<package>` (repository policy).
 - Dependencies updated to their newest versions.
 - Toolchain: Rust 1.99.1, operator mise layout with mbx as the cargo wrapper, lockfile v4; uv removed.
-- CI regenerated with velnor-actions 0.1.74; tool versions now come from `mise.toml`.
+- CI regenerated with velnor-actions 0.1.75; tool versions now come from `mise.toml`.
 
 ### Removed
 

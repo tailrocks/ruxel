@@ -31,7 +31,7 @@ parameters even for modules that do not echo an `invocation`.
 without loading inventory or opening a connection. Pinned Ansible renders each
 expression, condition, loop bind, and template file with deterministic fake
 facts/registers/lookups. The committed JSONL is replayed through Ruxel by
-`crates/ruxel-core/tests/render_parity.rs`.
+`crates/legacy/ruxel-core/tests/render_parity.rs`.
 
 ```bash
 cd tools/oracle

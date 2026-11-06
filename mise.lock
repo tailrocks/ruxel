@@ -96,6 +96,11 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464456"
 provenance = "github-attestations"
 
+[[tools."cargo:alint"]]
+version = "0.21.1"
+backend = "cargo:alint"
+specifiers = ["0.21.1"]
+
 [[tools."cargo:cargo-deny"]]
 version = "0.20.2"
 backend = "cargo:cargo-deny"

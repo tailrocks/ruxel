@@ -1,0 +1,121 @@
+#![expect(
+    clippy::struct_excessive_bools,
+    clippy::needless_pass_by_value,
+    reason = "replaced by the Ruxel rewrite"
+)]
+
+use anyhow::{Context, Result};
+use clap::Args;
+use ruxel_core::compiler::{self, PlanBody, PlanTask, Readiness};
+use ruxel_core::engine::{DrySecrets, Engine, MemoizedResolver};
+use ruxel_core::inventory::Inventory;
+use std::sync::Arc;
+
+#[derive(Args)]
+pub(crate) struct PlanArgs {
+    /// Inventory file (INI)
+    #[arg(short = 'i', long = "inventory")]
+    pub inventory: std::path::PathBuf,
+    /// Limit to hosts matching this pattern
+    #[arg(long)]
+    pub limit: Option<String>,
+    /// Accepted for ansible muscle-memory (plan is already check-mode)
+    #[arg(long)]
+    pub check: bool,
+    /// Show diffs (full diffs arrive with the module runtime in M3)
+    #[arg(long)]
+    pub diff: bool,
+    /// Run only tasks with these tags (plus `always`)
+    #[arg(long, value_delimiter = ',')]
+    pub tags: Vec<String>,
+    /// Resolve secret lookups as deterministic fakes (no `op` calls)
+    #[arg(long)]
+    pub dry_secrets: bool,
+    /// Return 2 when the preview contains work (0 for an empty/converged preview)
+    #[arg(long)]
+    pub detailed_exitcode: bool,
+    /// The playbook to plan
+    pub playbook: std::path::PathBuf,
+}
+
+pub(crate) fn execute(args: PlanArgs) -> Result<u8> {
+    let inv_content = std::fs::read_to_string(&args.inventory)
+        .with_context(|| format!("read inventory {}", args.inventory.display()))?;
+    let inventory = Inventory::parse(&inv_content)?;
+
+    let pb_content = std::fs::read_to_string(&args.playbook)
+        .with_context(|| format!("read playbook {}", args.playbook.display()))?;
+    let pb_name = args.playbook.file_name().map_or_else(
+        || args.playbook.display().to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
+    let playbook = ruxel_core::playbook::parse(&pb_name, &pb_content)?;
+
+    let engine = Engine::new(Arc::new(MemoizedResolver::new(DrySecrets)));
+    let plan = compiler::compile(&playbook, &engine)?;
+
+    let mut has_work = false;
+    for (play, play_plan) in playbook.plays.iter().zip(&plan.plays) {
+        let hosts = inventory.select(&play.hosts, args.limit.as_deref())?;
+        println!(
+            "PLAY [{}] — {} host(s): {}",
+            play_plan.name.as_deref().unwrap_or(&play_plan.hosts),
+            hosts.len(),
+            hosts
+                .iter()
+                .map(|h| h.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let mut stats = (0usize, 0usize);
+        print_tasks(&play_plan.pre_tasks, &mut stats);
+        print_tasks(&play_plan.tasks, &mut stats);
+        has_work |= stats.0 + stats.1 > 0;
+        println!(
+            "\n{} task(s): {} statically rendered, {} deferred to runtime data",
+            stats.0 + stats.1,
+            stats.0,
+            stats.1
+        );
+        println!("(offline preview — probe-backed plan verdicts land in M3)");
+    }
+    Ok(if args.detailed_exitcode && has_work {
+        2
+    } else {
+        0
+    })
+}
+
+fn print_tasks(tasks: &[PlanTask], stats: &mut (usize, usize)) {
+    for task in tasks {
+        match &task.body {
+            PlanBody::Module { module, readiness } => {
+                let label = task.name.as_deref().unwrap_or("(unnamed)");
+                match readiness {
+                    Readiness::Static { loop_items, .. } => {
+                        stats.0 += 1;
+                        let loop_note = loop_items
+                            .as_ref()
+                            .map(|i| format!(" ×{}", i.len()))
+                            .unwrap_or_default();
+                        println!("  static    {module:<42} {label}{loop_note}");
+                    }
+                    Readiness::Deferred { waits_on } => {
+                        stats.1 += 1;
+                        let waits = waits_on.iter().cloned().collect::<Vec<_>>().join(", ");
+                        println!("  deferred  {module:<42} {label}  (waits: {waits})");
+                    }
+                }
+            }
+            PlanBody::Block {
+                block,
+                rescue,
+                always,
+            } => {
+                print_tasks(block, stats);
+                print_tasks(rescue, stats);
+                print_tasks(always, stats);
+            }
+        }
+    }
+}
