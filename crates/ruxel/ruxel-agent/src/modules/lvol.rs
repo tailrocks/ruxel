@@ -61,16 +61,25 @@ fn needs_resize(
 
 fn validate_percentage(size: &str) -> Result<(), String> {
     let valid = size.split_once('%').is_some_and(|(number, kind)| {
-        let mut parts = number.split('.');
-        let integer = parts.next().unwrap_or_default();
-        let fraction = parts.next();
-        !integer.is_empty()
-            && integer.bytes().all(|c| c.is_ascii_digit())
-            && fraction
-                .is_none_or(|part| !part.is_empty() && part.bytes().all(|c| c.is_ascii_digit()))
-            && parts.next().is_none()
-            && matches!(kind, "VG" | "FREE" | "PVS" | "ORIGIN" | "LV")
-            && number.bytes().any(|c| matches!(c, b'1'..=b'9'))
+        number.bytes().all(|c| c.is_ascii_digit())
+            && number
+                .parse::<u32>()
+                .is_ok_and(|value| value > 0 && value < u32::MAX)
+            && matches!(
+                kind.to_ascii_uppercase().as_str(),
+                "V" | "VG"
+                    | "L"
+                    | "LV"
+                    | "P"
+                    | "PV"
+                    | "PVS"
+                    | "F"
+                    | "FR"
+                    | "FREE"
+                    | "O"
+                    | "OR"
+                    | "ORIGIN"
+            )
     });
     if valid {
         Ok(())

@@ -29,6 +29,9 @@ fn percentage_size_validation_rejects_malformed_values() {
         "-50%FREE",
         "0%VG",
         "1.2.3%VG",
+        "2.5%PVS",
+        "4294967295%VG",
+        "999999999999999999999%VG",
         "50%NOPE",
         "%FREE",
         "50%FREE%VG",
@@ -38,7 +41,18 @@ fn percentage_size_validation_rejects_malformed_values() {
             "{size}"
         );
     }
-    for size in ["100%FREE", "50%VG", "2.5%PVS", "100%ORIGIN", "100%LV"] {
+    for size in [
+        "100%FREE",
+        "50%VG",
+        "2%PVS",
+        "100%ORIGIN",
+        "100%LV",
+        "100%free",
+        "50%V",
+        "100%FR",
+        "10%p",
+        "5%or",
+    ] {
         assert!(
             !super::needs_resize(size, || unreachable!(), || unreachable!()).unwrap(),
             "{size}"
