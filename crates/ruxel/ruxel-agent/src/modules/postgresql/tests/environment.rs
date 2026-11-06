@@ -11,19 +11,25 @@ fn task_environment_is_applied_and_isolates_cached_sessions() {
             environment: vec![("PGHOST".into(), "first".into())],
             become_user: None,
         };
-        for credentials in [
+        for (index, credentials) in [
+            Some(("first", "synthetic-a")),
             Some(("first", "synthetic-a")),
             Some(("first", "synthetic-a")),
             Some(("first", "synthetic-b")),
             Some(("second", "synthetic-b")),
             None,
-        ] {
+        ].into_iter().enumerate() {
             context.environment = credentials.map_or_else(Vec::new, |(host, password)| {
                 vec![
                     ("PGHOST".into(), host.into()),
                     ("PGPASSWORD".into(), password.into()),
                 ]
             });
+            if index == 1 {
+                context.environment.reverse();
+            } else if index == 2 {
+                context.environment.insert(0, ("PGHOST".into(), "superseded".into()));
+            }
             let pg = PgContext {
                 exec: &context,
                 login_user: None,
