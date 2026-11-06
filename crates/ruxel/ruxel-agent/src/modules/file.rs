@@ -140,10 +140,10 @@ fn open_directory_from(
             Ok(fd) => fd,
             #[cfg(target_os = "macos")]
             Err(rustix::io::Errno::ACCESS) if create && parts.peek().is_none() => {
-                let stat =
+                let metadata =
                     rustix::fs::statat(&current, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
                         .map_err(|e| e.to_string())?;
-                if FileType::from_raw_mode(stat.st_mode) == FileType::Symlink {
+                if FileType::from_raw_mode(metadata.st_mode) == FileType::Symlink {
                     use std::os::unix::ffi::OsStrExt;
                     let target = rustix::fs::readlinkat(&current, name, Vec::new())
                         .map_err(|e| e.to_string())?;

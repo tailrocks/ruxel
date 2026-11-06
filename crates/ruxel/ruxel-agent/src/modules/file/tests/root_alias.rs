@@ -13,14 +13,25 @@ fn unreadable_root_alias_resolves_from_held_parent() {
     std::os::unix::fs::symlink("root", base.join("alias")).unwrap();
     let params =
         json!({"path": base.join("alias"), "state":"directory", "mode":"0700", "recurse":true});
-    assert_eq!(run(&params, &context()).unwrap()["changed"], true);
-    assert_eq!(
-        std::fs::metadata(root.join("file"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
-        0o700
-    );
+    let inaccessible = cfg!(target_os = "macos") && std::fs::File::open(&root).is_err();
+    let result = run(&params, &context());
+    if inaccessible {
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o000
+        );
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    } else {
+        assert_eq!(result.unwrap()["changed"], true);
+        assert_eq!(
+            std::fs::metadata(root.join("file"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+    }
     std::fs::remove_dir_all(base).unwrap();
 }
