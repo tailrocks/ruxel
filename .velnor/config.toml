@@ -15,6 +15,7 @@ test_runner = "cargo_nextest"
 globs = [
   "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
 ]
@@ -40,6 +41,7 @@ inputs = [
   "Cargo.toml",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
   "mise.toml",
