@@ -41,3 +41,6 @@ fn rollback_unmounts_protect_option_like_paths() {
         assert!(unmounts.iter().all(|(_, args)| args == &["--", "-target"]));
     }
 }
+
+#[path = "auto.rs"]
+mod auto;

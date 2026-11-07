@@ -345,7 +345,7 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
         |_| current.source.clone(),
         |p| p.to_string_lossy().into_owned(),
     );
-    if actual != src || current.fstype != fstype {
+    if actual != src || (fstype != "auto" && current.fstype != fstype) {
         return MountAction::Replace;
     }
     let actual_opts: Vec<_> = current.options.split(',').collect();
