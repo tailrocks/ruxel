@@ -44,6 +44,7 @@ struct Execution {
     source_gate: Arc<tokio::sync::RwLock<()>>,
 }
 #[cfg(test)]
+#[path = "runtime/tests/effects.rs"]
 mod effect_tests;
 mod evaluation;
 mod templates;
