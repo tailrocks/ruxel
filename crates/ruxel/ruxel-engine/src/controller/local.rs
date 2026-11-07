@@ -10,7 +10,6 @@ impl<B: Backend> Runner<'_, B> {
     )]
     pub(super) async fn local_once(
         &mut self,
-        task: &Value,
         kind: &str,
         layer: &ContextLayer,
         params: &Map<String, Value>,
@@ -26,9 +25,9 @@ impl<B: Backend> Runner<'_, B> {
         };
         match kind {
             "pause" => {
-                if (matches!(self.options.mode, Mode::Check | Mode::Diff)
-                    || task.get("checkMode").and_then(Value::as_bool) == Some(true))
-                    && task.get("checkMode").and_then(Value::as_bool) != Some(false)
+                if layer
+                    .check_mode
+                    .unwrap_or(matches!(self.options.mode, Mode::Check | Mode::Diff))
                 {
                     return Ok(result_value(
                         json!({"changed":false,"failed":false,"skipped":true}),

@@ -33,6 +33,9 @@ impl<B: Backend> Runner<'_, B> {
         }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
+        if let Some(check_mode) = task.get("checkMode").and_then(Value::as_bool) {
+            layer.check_mode = Some(check_mode);
+        }
         if let Some(user) = string(task, "becomeUser") {
             layer.become_user = Some(user.to_owned());
         }
