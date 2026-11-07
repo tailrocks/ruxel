@@ -28,6 +28,17 @@ fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
     };
     let condition = json!({"kind":"ref","path":["vars","gate"]});
     assert!(!runner.sensitive_layered_condition(&condition, &runner.scope, &layer));
+    let private = json!({"kind":"lookup","provider":"synthetic","key":"fixture"});
+    for expression in [
+        json!({"kind":"call","function":"if","args":[{"kind":"literal","value":true},{"kind":"literal","value":true},private]}),
+        json!({"kind":"call","function":"and","args":[{"kind":"literal","value":false},private]}),
+        json!({"kind":"call","function":"or","args":[{"kind":"literal","value":true},private]}),
+    ] {
+        assert!(!runner.sensitive_layered_condition(&expression, &runner.scope, &layer));
+    }
+    let reached =
+        json!({"kind":"call","function":"and","args":[{"kind":"literal","value":true},private]});
+    assert!(runner.sensitive_layered_condition(&reached, &runner.scope, &layer));
     Ok(())
 }
 
