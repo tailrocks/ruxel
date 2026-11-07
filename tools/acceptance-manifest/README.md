@@ -7,6 +7,12 @@ baseline oracle hashes are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
 expected to fail while 11 scenarios have no adapter.
 
+Restart lifecycle unit tests pin its unchanged workload and observation contract,
+check synthetic metadata/results, and exercise a fake lifecycle's phase ordering
+and preview non-mutation. This is groundwork only: `restart-actions` remains
+unsupported and its CLI guard test verifies rejection before launching a client.
+No service restart or full restart-scenario acceptance is established by these tests.
+
 ```sh
 cargo test --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml
 cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml -- \

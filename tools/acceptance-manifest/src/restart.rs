@@ -2,15 +2,11 @@
 //! authorized disposable Linux root fixture can exercise the unchanged workload.
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{fs, os::unix::fs::MetadataExt, path::Path};
 const PIN: &str = "8188b88f5da95d7326e6b07efdd00908c09ee11958ff1e52a695e3c5a4d14d5b";
 
 fn validate_inputs(fixture: &[u8], case: &Value) -> Result<()> {
-    let digest: String = Sha256::digest(fixture)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let digest = crate::pins::digest(fixture);
     let expected: Value = serde_json::from_str(include_str!("../restart-contract.json"))?;
     ensure!(
         digest == PIN && *case == expected,
