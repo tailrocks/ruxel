@@ -69,3 +69,44 @@ fn item_lookups_default_vault_and_field_without_losing_explicit_values() -> Resu
     assert!(evaluate(&empty_reference, &Scope::default(), &resolver).is_err());
     Ok(())
 }
+
+#[test]
+fn overlapping_secrets_are_redacted_independent_of_order() -> Result<()> {
+    for secrets in [
+        vec!["abc", "abcdef", "cdefg", "aaa"],
+        vec!["aaa", "cdefg", "abcdef", "abc"],
+    ] {
+        let resolver = Lookups {
+            resolver: Resolver::synthetic(),
+            values: Mutex::new(secrets.into_iter().map(str::to_owned).collect()),
+        };
+        let input =
+            json!({"error":"public: abcdefg / aaaa; suffix stays", "abcdefg":"aaa", "number":42});
+        let output = resolver.redact(&input)?;
+        assert_eq!(
+            output["error"],
+            "public: [REDACTED] / [REDACTED]; suffix stays"
+        );
+        assert_eq!(output["[REDACTED]"], "[REDACTED]");
+        assert_eq!(output["number"], 42);
+    }
+    Ok(())
+}
+
+#[test]
+fn redaction_handles_unicode_overlaps_and_does_not_rescan_the_marker() -> Result<()> {
+    let resolver = Lookups {
+        resolver: Resolver::synthetic(),
+        values: Mutex::new(vec![
+            "é🙂".into(),
+            "🙂z".into(),
+            "REDACTED".into(),
+            String::new(),
+        ]),
+    };
+    assert_eq!(
+        resolver.redact(&json!("start é🙂z end"))?,
+        json!("start [REDACTED] end")
+    );
+    Ok(())
+}

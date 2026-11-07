@@ -6,6 +6,33 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::sync::Mutex;
 
+fn redact_text(text: &str, secrets: &[String]) -> String {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for (start, _) in text.char_indices() {
+        let end = secrets
+            .iter()
+            .filter(|secret| !secret.is_empty() && text[start..].starts_with(secret.as_str()))
+            .map(|secret| start + secret.len())
+            .max();
+        if let Some(end) = end {
+            if let Some(last) = spans.last_mut().filter(|last| start <= last.1) {
+                last.1 = last.1.max(end);
+            } else {
+                spans.push((start, end));
+            }
+        }
+    }
+    let mut output = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for (start, end) in spans {
+        output.push_str(&text[cursor..start]);
+        output.push_str("[REDACTED]");
+        cursor = end;
+    }
+    output.push_str(&text[cursor..]);
+    output
+}
+
 pub(super) struct Lookups {
     pub(super) resolver: Resolver,
     pub(super) values: Mutex<Vec<String>>,
@@ -65,14 +92,7 @@ impl Lookups {
     pub(super) fn redact(&self, value: &Value) -> Result<Value> {
         fn scrub(value: &Value, secrets: &[String]) -> Value {
             match value {
-                Value::String(text) => Value::String(
-                    secrets
-                        .iter()
-                        .filter(|s| !s.is_empty())
-                        .fold(text.clone(), |text, secret| {
-                            text.replace(secret, "[REDACTED]")
-                        }),
-                ),
+                Value::String(text) => Value::String(redact_text(text, secrets)),
                 Value::Array(items) => {
                     Value::Array(items.iter().map(|v| scrub(v, secrets)).collect())
                 }
@@ -80,10 +100,7 @@ impl Lookups {
                     items
                         .iter()
                         .map(|(key, value)| {
-                            let key = secrets
-                                .iter()
-                                .filter(|s| !s.is_empty())
-                                .fold(key.clone(), |key, secret| key.replace(secret, "[REDACTED]"));
+                            let key = redact_text(key, secrets);
                             (key, scrub(value, secrets))
                         })
                         .collect(),
