@@ -22,7 +22,7 @@ fn dump_and_missing_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn raw_dump_preserves_declaration_order() -> Result<(), Box<dyn std::error::Error>> {
+fn dump_preserves_declaration_order_and_rejects_raw() -> Result<(), Box<dyn std::error::Error>> {
     let root = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../ruxel-config/testdata/eval/minimal.pkl"
@@ -33,10 +33,12 @@ fn raw_dump_preserves_declaration_order() -> Result<(), Box<dyn std::error::Erro
     let raw = Command::new(env!("CARGO_BIN_EXE_ruxel"))
         .args(["config", "dump", root, "--raw"])
         .output()?;
-    assert!(raw.status.success());
-    assert_eq!(raw.stdout, plain.stdout);
+    assert!(plain.status.success());
+    assert_eq!(raw.status.code(), Some(2));
+    assert_eq!(raw.stdout, b"");
+    assert!(String::from_utf8(raw.stderr)?.contains("unexpected argument '--raw' found"));
     assert_eq!(
-        String::from_utf8(raw.stdout)?,
+        String::from_utf8(plain.stdout)?,
         "{\n  \"name\": \"ruxel\",\n  \"count\": 1\n}\n"
     );
     Ok(())

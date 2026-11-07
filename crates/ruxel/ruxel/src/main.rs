@@ -14,7 +14,7 @@ fn main() {
             Command::Check(args) => run(args, ruxel_engine::controller::Mode::Check),
             Command::Diff(args) => run(args, ruxel_engine::controller::Mode::Diff),
             Command::Config(config) => match config.command {
-                ConfigCommand::Dump { root, raw: _ } => match commands::config::dump(&root) {
+                ConfigCommand::Dump { root } => match commands::config::dump(&root) {
                     Ok(()) => ExitCode::Success,
                     Err(error) => {
                         if writeln!(std::io::stderr().lock(), "{error}").is_err()

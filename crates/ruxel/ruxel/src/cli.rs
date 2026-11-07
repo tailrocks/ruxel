@@ -22,11 +22,7 @@ pub(crate) struct ConfigCmd {
 }
 #[derive(Debug, Subcommand)]
 pub(crate) enum ConfigCommand {
-    Dump {
-        root: PathBuf,
-        #[arg(long)]
-        raw: bool,
-    },
+    Dump { root: PathBuf },
 }
 
 #[derive(Debug, clap::Args)]
