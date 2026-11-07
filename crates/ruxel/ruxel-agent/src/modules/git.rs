@@ -50,6 +50,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             out.status.success(),
         ))
     };
+    let head = || -> Result<String, String> {
+        let (revision, ok) = git(&["rev-parse", "HEAD"], Some(dest))?;
+        if !ok {
+            return Err("git rev-parse HEAD failed".into());
+        }
+        Ok(revision)
+    };
 
     if action == "clone" {
         if ctx.check_mode {
@@ -69,11 +76,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 return Err(format!("git checkout {v} after clone failed"));
             }
         }
-        let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
+        let after = head()?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
     }
 
-    let (before, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
+    let before = head()?;
     if action == "unchanged" {
         return Ok(json!({"changed": false, "failed": false, "before": before, "after": before}));
     }
@@ -179,7 +186,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if !ok {
         return Err(format!("git reset --hard {target} failed"));
     }
-    let (after, _) = git(&["rev-parse", "HEAD"], Some(dest))?;
+    let after = head()?;
     let (after_status, ok) = git(&["status", "--porcelain"], Some(dest))?;
     if !ok {
         return Err("git status after update failed".into());
@@ -380,3 +387,7 @@ mod pinned_tests;
 #[cfg(test)]
 #[path = "git/tests/ambiguity.rs"]
 mod ambiguity_tests;
+
+#[cfg(test)]
+#[path = "git/tests/head.rs"]
+mod head_tests;
