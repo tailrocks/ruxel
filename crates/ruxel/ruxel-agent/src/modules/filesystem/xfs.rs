@@ -113,6 +113,37 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn production_helper_reports_real_geometry_ioctl_error() {
+        // procfs rejects XFS geometry requests; no block device is opened.
+        let directory = std::fs::File::open("/proc/self").unwrap();
+        let device_id = directory.metadata().unwrap().dev().to_string();
+        let output = Command::new("sh")
+            .args([
+                "-c",
+                super::HANDOFF,
+                "ruxel-xfs-helper",
+                "perl",
+                "-T",
+                "-e",
+                super::HELPER,
+                "preflight",
+                "0",
+                &device_id,
+            ])
+            .env("LC_ALL", "C")
+            .stdin(Stdio::from(directory))
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("XFS ioctl failed: Inappropriate ioctl for device"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn real_perl_starts_with_directory_descriptor() {
         let directory = std::fs::File::open(".").unwrap();
