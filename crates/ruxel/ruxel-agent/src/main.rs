@@ -136,9 +136,23 @@ fn serve() -> i32 {
                 return 64;
             }
         };
+        let is_hello = matches!(&envelope.msg, Some(Msg::Hello(_)));
+        if is_hello == handshaken.load(Ordering::Relaxed) {
+            log_event(
+                &mut stdout,
+                v1::log::Level::Error,
+                if is_hello {
+                    "duplicate Hello"
+                } else {
+                    "expected Hello before other messages"
+                }
+                .to_owned(),
+            );
+            ledger.flush();
+            return 64;
+        }
         match envelope.msg {
             Some(Msg::Hello(hello)) => {
-                handshaken.store(true, std::sync::atomic::Ordering::Relaxed);
                 check_mode = hello.check_mode;
                 diff_mode = hello.diff_mode;
                 no_cache = hello.no_cache;
@@ -153,6 +167,7 @@ fn serve() -> i32 {
                     );
                     return 65;
                 }
+                handshaken.store(true, Ordering::Relaxed);
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {
                         agent_version: env!("CARGO_PKG_VERSION").into(),

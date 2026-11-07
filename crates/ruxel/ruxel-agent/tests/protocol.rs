@@ -143,6 +143,47 @@ fn proto_version_mismatch_refused() {
 }
 
 #[test]
+fn batch_before_hello_is_refused_without_mutation() {
+    let dir = temp_dir("batch-before-hello");
+    let dest = dir.join("must-not-exist");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &copy_plan(1, &dest, "wrong", "key")).unwrap();
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("refusal");
+    assert!(
+        matches!(event.msg, Some(v1::event::Msg::Log(log)) if log.message.contains("expected Hello"))
+    );
+    assert_eq!(agent.wait().unwrap().code(), Some(64));
+    assert!(!dest.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn duplicate_hello_is_refused_and_flushes_prior_ledger() {
+    let dir = temp_dir("duplicate-hello");
+    let dest = dir.join("managed");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("first", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    write_frame(&mut stdin, &copy_plan(1, &dest, "saved", "key")).unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "changed");
+    write_frame(&mut stdin, &hello("second", PROTO_VERSION)).unwrap();
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("refusal");
+    assert!(
+        matches!(event.msg, Some(v1::event::Msg::Log(log)) if log.message.contains("duplicate Hello"))
+    );
+    assert_eq!(agent.wait().unwrap().code(), Some(64));
+    assert_ne!(
+        std::fs::read(dir.join("ledger/ledger.json")).unwrap(),
+        [] as [u8; 0]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn eof_without_done_exits_clean() {
     let dir = temp_dir("eof");
     let mut agent = spawn_agent(&dir);
