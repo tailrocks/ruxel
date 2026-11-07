@@ -70,7 +70,6 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         let tracked = TrackedValue::public(params.clone());
         runner
             .local_once(
-                &json!({}),
                 "set_fact",
                 &layer,
                 params.as_object().context("params")?,
