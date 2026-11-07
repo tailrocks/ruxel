@@ -15,6 +15,7 @@ use std::{
 fn execution() -> Result<Execution> {
     Ok(Execution {
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         inventory: Map::new(),
         runtime: RuntimeOptions {
             agent: PathBuf::new(),

@@ -5,24 +5,32 @@ use ruxel_proto::v1;
 pub(super) enum Connection {
     Local(Box<LocalConnection>),
     Remote(Box<AgentConnection>),
+    #[cfg(test)]
+    Test(super::effect_tests::TestConnection),
 }
 impl Connection {
     pub(super) async fn send(&mut self, message: &v1::Envelope) -> Result<()> {
         match self {
             Self::Local(c) => c.send(message).await,
             Self::Remote(c) => c.send(message).await,
+            #[cfg(test)]
+            Self::Test(c) => c.send(message),
         }
     }
     pub(super) async fn next(&mut self) -> Result<Option<v1::Event>> {
         match self {
             Self::Local(c) => c.next_event().await,
             Self::Remote(c) => c.next_event().await,
+            #[cfg(test)]
+            Self::Test(c) => c.next().await,
         }
     }
     pub(super) async fn shutdown(self) -> Result<()> {
         match self {
             Self::Local(c) => c.shutdown().await,
             Self::Remote(c) => c.shutdown().await,
+            #[cfg(test)]
+            Self::Test(_) => Ok(()),
         }
     }
 }

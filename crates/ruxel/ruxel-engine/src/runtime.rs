@@ -33,6 +33,7 @@ mod delegates;
 #[derive(Clone)]
 struct Execution {
     conservative_sensitive: Arc<std::sync::atomic::AtomicBool>,
+    effect_gate: Arc<tokio::sync::RwLock<()>>,
     inventory: Map<String, Value>,
     runtime: RuntimeOptions,
     mode: Mode,
@@ -139,6 +140,8 @@ impl Execution {
         Ok(gathered)
     }
 }
+#[cfg(test)]
+mod effect_tests;
 mod evaluation;
 mod templates;
 
@@ -197,6 +200,7 @@ impl Backend for Execution {
         scope: &Map<String, Value>,
         mut sensitive: bool,
     ) -> Result<bool> {
+        sensitive |= self.conservative_sensitive();
         if kind != "template" || params.get("content").is_some_and(|v| !v.is_null()) {
             self.prepare_operation(kind, params, scope)
                 .map_err(|error| {
@@ -210,6 +214,7 @@ impl Backend for Execution {
         }
         let gate = self.source_gate.clone();
         let _guard = gate.write().await;
+        sensitive |= self.conservative_sensitive();
         let trackers: Vec<_> = self.resources.lock().await.values().cloned().collect();
         for tracker in trackers {
             sensitive |= tracker.lock().await.has_sensitive_effects();
@@ -229,9 +234,22 @@ impl Backend for Execution {
         mut request: Request,
         sensitive: bool,
     ) -> Result<TrackedValue> {
-        self.connect(&request.host).await?;
+        if !self.connections.lock().await.contains_key(&request.host) {
+            self.connect(&request.host).await?;
+        }
         let gate = self.source_gate.clone();
         let _guard = gate.read().await;
+        let effects = self.effect_gate.clone();
+        let _effect_read;
+        let _effect_write;
+        if sensitive && !self.conservative_sensitive() {
+            _effect_read = None;
+            _effect_write = Some(effects.write().await);
+        } else {
+            _effect_read = Some(effects.read().await);
+            _effect_write = None;
+        }
+        let sensitive = sensitive || self.conservative_sensitive();
         let host = request.host.clone();
         let tracker = {
             let mut resources = self.resources.lock().await;
@@ -349,6 +367,7 @@ pub async fn run(
     let config = &validated;
     let execution = Execution {
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         inventory: config
             .get("inventory")
             .and_then(|v| v.get("hosts"))
