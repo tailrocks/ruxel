@@ -77,7 +77,7 @@ fn acl_removal_uses_held_directory_after_name_retarget() {
             .unwrap()
             .success()
     );
-    super::staging::clear_inherited_acl(&fs::File::open(&held).unwrap()).unwrap();
+    super::access::clear_inherited_acl(&fs::File::open(&held).unwrap()).unwrap();
     let output = Command::new("/bin/ls")
         .arg("-lde")
         .arg(&held)

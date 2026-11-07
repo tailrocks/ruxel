@@ -7,6 +7,7 @@ use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
+mod access;
 mod staging;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
