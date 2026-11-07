@@ -31,7 +31,7 @@ impl Fixture {
             .create(true)
             .append(true)
             .open(self.root.join("calls.jsonl"))?;
-        writeln!(log, "{value}")?;
+        log.write_all(format!("{value}\n").as_bytes())?;
         Ok(())
     }
     fn stat(&self, path: &str) -> Result<u8> {
@@ -97,7 +97,9 @@ impl Fixture {
                 }
             }
             [path] if path.starts_with("/var/lib/ruxel/agent/") => {
-                self.local(path);
+                if fs::metadata(self.local(path))?.mode() & 0o111 == 0 {
+                    return Ok(126);
+                }
                 self.record("launch", &[(*path).into()])?;
                 let mut input = io::stdin().lock();
                 fs::write(self.root.join("hello"), frame(&mut input)?)?;

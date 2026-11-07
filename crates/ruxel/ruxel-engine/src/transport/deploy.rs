@@ -57,6 +57,13 @@ pub(super) async fn ensure_agent(
             .context("protect uploaded agent")?;
         file.write_all(bytes).await.context("sftp write agent")?;
         file.close().await.context("sftp close")?;
+        verify_agent(remote, &tmp_path, uid, bytes).await?;
+        remote
+            .exec_status(&["chmod", "755", &tmp_path])
+            .await?
+            .success()
+            .then_some(())
+            .context("chmod agent")?;
         sftp.fs()
             .rename(&tmp_path, remote_path)
             .await
@@ -76,20 +83,18 @@ pub(super) async fn ensure_agent(
         return Err(error);
     }
 
-    if !cache::trusted_file(remote, remote_path, uid).await? {
+    verify_agent(remote, remote_path, uid, bytes).await?;
+    Ok(true)
+}
+
+async fn verify_agent(remote: &RemoteHost, path: &str, uid: u32, bytes: &[u8]) -> Result<()> {
+    if !cache::trusted_file(remote, path, uid).await? {
         bail!("uploaded agent has unsafe ownership, type, permissions or links");
     }
-    if !remote_agent_hash_matches(remote, remote_path, bytes).await? {
+    if !remote_agent_hash_matches(remote, path, bytes).await? {
         bail!("uploaded agent failed remote content verification");
     }
-    remote
-        .exec_status(&["chmod", "755", remote_path])
-        .await?
-        .success()
-        .then_some(())
-        .context("chmod agent")?;
-
-    Ok(true)
+    Ok(())
 }
 
 const HEX: &[u8; 16] = b"0123456789abcdef";

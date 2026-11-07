@@ -61,13 +61,15 @@ pub(super) async fn prepare(remote: &RemoteHost) -> Result<u32> {
             .await?
             .success()
         {
-            ensure!(
-                remote
-                    .exec_status(&["mkdir", "-m", "700", managed])
-                    .await?
-                    .success(),
-                "create private agent cache directory"
-            );
+            let created = remote
+                .exec_status(&["mkdir", "-m", "700", managed])
+                .await?
+                .success();
+            if !created {
+                directory(remote, managed, uid, false)
+                    .await
+                    .context("create private agent cache directory")?;
+            }
         }
         directory(remote, managed, uid, false).await?;
     }

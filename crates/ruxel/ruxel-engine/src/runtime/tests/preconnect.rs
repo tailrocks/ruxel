@@ -51,3 +51,45 @@ async fn zero_jobs_still_completes_one_at_a_time() {
         .await;
     assert_eq!(results.len(), 2);
 }
+
+#[tokio::test]
+async fn cancellation_drops_active_connections_and_keeps_gate_until_batch_drops() {
+    struct Active(Arc<AtomicUsize>);
+    impl Drop for Active {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let active = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(AtomicUsize::new(0));
+    let gate = tokio::sync::RwLock::new(());
+    let held = gate.write().await;
+    let mut pending = Box::pin(bounded(
+        ["a", "b", "c"].map(str::to_owned).to_vec(),
+        2,
+        |_| {
+            let active = active.clone();
+            let started = started.clone();
+            let held = &held;
+            async move {
+                std::hint::black_box(held);
+                active.fetch_add(1, Ordering::SeqCst);
+                started.fetch_add(1, Ordering::SeqCst);
+                let _active = Active(active);
+                std::future::pending::<()>().await;
+            }
+        },
+    ));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), pending.next())
+            .await
+            .is_err()
+    );
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+    assert_eq!(active.load(Ordering::SeqCst), 2);
+    assert!(gate.try_read().is_err());
+    drop(pending);
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+    drop(held);
+    assert!(gate.try_write().is_ok());
+}

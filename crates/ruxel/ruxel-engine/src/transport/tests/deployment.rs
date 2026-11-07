@@ -4,6 +4,36 @@ use fixture::Fixture;
 use std::os::unix::fs::{PermissionsExt, symlink};
 
 #[tokio::test]
+async fn concurrent_connections_share_fresh_cache_safely() -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        tokio::join!(fixture.connect(), fixture.connect())
+    })
+    .await?;
+    let (first, _) = first?;
+    let (second, _) = second?;
+    first.shutdown().await?;
+    second.shutdown().await?;
+    let calls = fixture.calls()?;
+    for (position, event) in calls
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event[0] == "rename")
+    {
+        let temporary = event[1].as_str().unwrap();
+        assert!(calls[..position].iter().any(|call| {
+            call[0] == "ssh"
+                && call[1].as_array().is_some_and(|args| {
+                    args.windows(3).any(|window| {
+                        window[0] == "chmod" && window[1] == "755" && window[2] == temporary
+                    })
+                })
+        }));
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn guarded_upload_verifies_before_executable_launch_and_repairs_cache() -> anyhow::Result<()>
 {
     tokio::time::timeout(std::time::Duration::from_secs(15), exercise()).await??;
