@@ -104,3 +104,34 @@ fn apt_latest_is_not_cached() {
         .is_none()
     );
 }
+
+#[test]
+fn explicit_refreshes_and_actions_bypass_even_existing_records() {
+    let dir = Scratch::new("action-cache-gate");
+    let file = dir.file("target", b"stable");
+    let mut ledger = Ledger::load(&dir.0);
+    record_file(&mut ledger, "old-record", &file);
+    assert!(ledger.cached_ok("old-record").is_some());
+
+    for (module, params) in [
+        ("apt", json!({"name":"pkg", "update_cache":true})),
+        ("apt", json!({"name":"pkg", "autoremove":"yes"})),
+        ("apt", json!({"name":"pkg", "upgrade":"dist"})),
+        ("apt", json!({"name":"pkg", "state":"latest"})),
+        ("systemd", json!({"name":"unit", "daemon_reload":true})),
+        ("service", json!({"name":"unit", "daemon_reload":"yes"})),
+        ("systemd", json!({"name":"unit", "state":"restarted"})),
+    ] {
+        assert!(!cache_allowed(module, &params), "{module} {params}");
+        ledger.record("new-record", module, &params, "ok", &json!({}));
+        assert!(ledger.cached_ok("new-record").is_none());
+    }
+    assert!(cache_allowed(
+        "apt",
+        &json!({"name":"pkg", "update_cache":false})
+    ));
+    assert!(cache_allowed(
+        "systemd",
+        &json!({"name":"unit", "daemon_reload":false})
+    ));
+}

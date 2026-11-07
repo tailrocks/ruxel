@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
 - Agents require one successful handshake before executing batches and reject duplicate handshakes.
 - Agents finish the current iteration and flush the ledger on SIGTERM or SIGINT during a batch.
 - Sensitive-resource tracking treats parent traversal and relative remote paths conservatively.

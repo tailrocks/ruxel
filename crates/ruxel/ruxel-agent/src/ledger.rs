@@ -99,7 +99,20 @@ pub(crate) struct Ledger {
 }
 
 pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
-    !(module == "file" && probe::bool_value(params.get("recurse"), false))
+    match module {
+        "file" => !probe::bool_value(params.get("recurse"), false),
+        "apt" => {
+            !probe::bool_value(params.get("update_cache"), false)
+                && !probe::bool_value(params.get("autoremove"), false)
+                && params.get("upgrade").and_then(Value::as_str).is_none()
+                && params.get("state").and_then(Value::as_str) != Some("latest")
+        }
+        "systemd" | "service" => {
+            !probe::bool_value(params.get("daemon_reload"), false)
+                && params.get("state").and_then(Value::as_str) != Some("restarted")
+        }
+        _ => true,
+    }
 }
 
 impl Ledger {
