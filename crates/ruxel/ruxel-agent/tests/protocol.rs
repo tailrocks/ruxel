@@ -411,6 +411,55 @@ fn ledger_replays_converged_task() {
 }
 
 #[test]
+fn daemon_reload_bypasses_a_matching_ledger_record() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = temp_dir("reload-cache");
+    let fake = dir.join("systemctl");
+    let calls = dir.join("calls");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$RUXEL_TEST_CALLS\"\nexit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_ruxel-agent"))
+        .env("RUXEL_STATE_DIR", &dir)
+        .env("RUXEL_TEST_CALLS", &calls)
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("reload-cache", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+
+    // Seed a valid, matching record to model a cache entry from an older agent.
+    write_frame(
+        &mut stdin,
+        &copy_plan(1, &dir.join("seed"), "stable", "same-key"),
+    )
+    .unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "changed");
+    let params = serde_json::to_vec(&serde_json::json!({
+        "name": "test.service", "daemon_reload": true
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &plan_with_params(2, "systemd", params, "same-key"),
+    )
+    .unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "ok");
+    finish_agent(&mut agent, &mut stdin);
+    assert_eq!(std::fs::read_to_string(&calls).unwrap(), "daemon-reload\n");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn malformed_params_fail_without_killing_agent() {
     let dir = temp_dir("bad-params");
     let dest = dir.join("after-error");
