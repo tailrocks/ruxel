@@ -15,6 +15,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Sensitive-resource tracking treats parent traversal and relative remote paths conservatively.
 - Block check mode reaches nested tasks, rescue/always tasks and controller pauses; child overrides take precedence.
 - Workspace lints from the operator's repository standard, clippy configuration.
 - Crates moved to `crates/<group>/<package>` (repository policy).
