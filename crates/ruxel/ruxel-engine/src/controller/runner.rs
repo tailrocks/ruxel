@@ -237,7 +237,8 @@ impl<B: Backend> Runner<'_, B> {
                 iteration_layer.control_sensitive |= condition.is_secret();
                 if !truth(&condition.value) {
                     let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip_reason":"Conditional result was False"});
-                    let mut skipped = if iteration_layer.control_sensitive {
+                    let mut skipped = if iteration_layer.control_sensitive || iteration_layer.no_log
+                    {
                         TrackedValue::secret(skipped)
                     } else {
                         TrackedValue::public(skipped)
