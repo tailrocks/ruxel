@@ -6,6 +6,8 @@ use std::path::Path;
 
 #[path = "git/check.rs"]
 mod check;
+#[path = "git/checkout.rs"]
+mod checkout;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -71,10 +73,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             return Err(format!("git clone {repo} failed"));
         }
         if let Some(v) = clone_branch(version) {
-            let (_, ok) = git(&["checkout", v], Some(dest))?;
-            if !ok {
-                return Err(format!("git checkout {v} after clone failed"));
-            }
+            checkout::resolved(v, dest, &git)?;
         }
         let after = head()?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
@@ -178,14 +177,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         None => "FETCH_HEAD".to_string(),
     };
-    let (_, ok) = git(&["checkout", version.unwrap_or("HEAD")], Some(dest))?;
-    if !ok {
-        return Err("git checkout failed".into());
-    }
-    let (_, ok) = git(&["reset", "--hard", &target], Some(dest))?;
-    if !ok {
-        return Err(format!("git reset --hard {target} failed"));
-    }
+    checkout::resolved(&target, dest, &git)?;
     let after = head()?;
     let (after_status, ok) = git(&["status", "--porcelain"], Some(dest))?;
     if !ok {
