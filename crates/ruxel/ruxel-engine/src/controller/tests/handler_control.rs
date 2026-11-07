@@ -13,10 +13,10 @@ async fn handler_control_tracks_sensitive_and_independent_public_notifications()
         };
         let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[
             {"targets":["h"],"tasks":[{"name":"gate","noLog":true,"operation":{"kind":"set_fact","values":{"gate":true}}},triggers[0],triggers[1]],"handlers":[
+                {"name":"chained","operation":{"kind":"debug","msg":"synthetic chained"}},
                 {"name":"guarded","changedWhen":true,"notify":["chained"],"operation":{"kind":"set_fact","values":{"guardedFact":"synthetic"}}},
                 {"name":"public","operation":{"kind":"debug","msg":"public handler"}},
-                {"name":"joint","operation":{"kind":"debug","msg":"public joint"}},
-                {"name":"chained","operation":{"kind":"debug","msg":"synthetic chained"}}
+                {"name":"joint","operation":{"kind":"debug","msg":"public joint"}}
             ]}
         ]});
         let mut backend = Precise::default();

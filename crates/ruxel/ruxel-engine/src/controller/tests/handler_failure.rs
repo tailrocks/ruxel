@@ -70,3 +70,51 @@ async fn backward_notification_does_not_hide_unknown_handler() {
     .await;
     assert!(result.is_err_and(|error| error.to_string().contains("missing")));
 }
+
+#[tokio::test]
+async fn later_handler_queues_earlier_handler_once_even_with_a_cycle() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"trigger","notify":["second"],"operation":{"kind":"command","cmd":"trigger"}}],"handlers":[{"name":"first","notify":["second"],"operation":{"kind":"command","cmd":"first"}},{"name":"second","notify":["first"],"operation":{"kind":"command","cmd":"second"}}]}]});
+    let mut backend = Fake::default();
+    let recaps = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let names: Vec<_> = backend
+        .calls
+        .iter()
+        .map(|call| call.task.name.as_str())
+        .collect();
+    assert_eq!(names, ["trigger", "second", "first"]);
+    assert_eq!(recaps["h"].failed, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn backward_handler_failure_stops_pending_known_handlers() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"trigger","notify":["second"],"operation":{"kind":"command","cmd":"trigger"}}],"handlers":[{"name":"first","operation":{"kind":"fail","msg":"expected"}},{"name":"third","operation":{"kind":"command","cmd":"must not run"}},{"name":"second","notify":["first","third"],"operation":{"kind":"command","cmd":"second"}}]}]});
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let names: Vec<_> = backend
+        .calls
+        .iter()
+        .map(|call| call.task.name.as_str())
+        .collect();
+    assert_eq!(names, ["trigger", "second"]);
+    assert_eq!(recap["h"].failed, 1);
+    assert_eq!(
+        backend.events.last().context("handler failure event")?["task"],
+        "first"
+    );
+    Ok(())
+}

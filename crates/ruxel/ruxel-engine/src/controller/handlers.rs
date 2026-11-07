@@ -23,27 +23,33 @@ impl<B: Backend> Runner<'_, B> {
             .filter_map(|handler| string(handler, "name"))
             .collect();
         let mut executed = BTreeSet::new();
-        for handler in &handlers {
-            if let Some(name) = string(handler, "name")
-                && !executed.contains(name)
-                && let Some(sensitive) = self.notified.remove(name)
-            {
-                executed.insert(name);
-                let mut context = layer.clone();
-                context.control_sensitive |= sensitive;
-                self.handling = true;
-                let result = self.task(handler, &context).await;
-                self.handling = false;
-                let result = result.map_err(|error| {
-                    if context.no_log || flag(handler, "noLog") || context.control_sensitive {
-                        anyhow::anyhow!("sensitive task failed")
-                    } else {
-                        error
+        'flush: loop {
+            let before = executed.len();
+            for handler in &handlers {
+                if let Some(name) = string(handler, "name")
+                    && !executed.contains(name)
+                    && let Some(sensitive) = self.notified.remove(name)
+                {
+                    executed.insert(name);
+                    let mut context = layer.clone();
+                    context.control_sensitive |= sensitive;
+                    self.handling = true;
+                    let result = self.task(handler, &context).await;
+                    self.handling = false;
+                    let result = result.map_err(|error| {
+                        if context.no_log || flag(handler, "noLog") || context.control_sensitive {
+                            anyhow::anyhow!("sensitive task failed")
+                        } else {
+                            error
+                        }
+                    })?;
+                    if !result {
+                        break 'flush;
                     }
-                })?;
-                if !result {
-                    break;
                 }
+            }
+            if executed.len() == before {
+                break;
             }
         }
         self.notified
