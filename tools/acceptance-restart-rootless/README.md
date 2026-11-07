@@ -57,3 +57,18 @@ Replay source:7ef8a90f139cb40409fa69d24dea35c68ce2f731. Binary SHA-256:
 ruxel       2a7746958c772dd3e759eebe33bde457f2ebc69bf37430634c25dc2fc9a36145
 ruxel-agent ee8c6c5b1304ace221e9f46a501fbc87100c4a8f794e057dfbd7e4852e9a7e8c
 ```
+
+## Reviewed path and file-size follow-up
+
+The review found that the interpolated payload path could contain shell syntax,
+and fixture.rs had154 lines. A new negative test reproduced the path rejection
+gap without executing any hostile string. Payloads now require an absolute path
+containing only ASCII letters/digits and `/_.-`; spaces, shell metacharacters,
+quotes, escapes, controls, Unicode and relative paths refuse before substitution
+or CLI execution. Fixture tests moved to fixture_tests.rs; fixture.rs is136 lines
+and every new source file is below150 lines.
+
+Final owner verification:7 tests passed with0 ignored, strict all-target Clippy,
+fmt and diff checks passed, and the ordinary rootless actual CLI/agent lifecycle
+passed again using the same fresh7ef8a90 binaries. Hostile paths were only pure
+string-validation inputs. Root/full acceptance remains unsupported.
