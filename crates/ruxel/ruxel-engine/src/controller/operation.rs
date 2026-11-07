@@ -43,7 +43,7 @@ impl<B: Backend> Runner<'_, B> {
         clippy::too_many_lines,
         reason = "operation preparation and retry share scope"
     )]
-    pub(super) async fn execute(
+    pub(super) async fn execute_once(
         &mut self,
         task: &Value,
         layer: &ContextLayer,
@@ -86,7 +86,7 @@ impl<B: Backend> Runner<'_, B> {
             .backend
             .evaluate_tracked(&Value::Object(params), scope)
             .map_err(|error| {
-                if source_sensitive {
+                if source_sensitive || layer.no_log || layer.control_sensitive {
                     anyhow::anyhow!("sensitive operation evaluation failed")
                 } else {
                     error

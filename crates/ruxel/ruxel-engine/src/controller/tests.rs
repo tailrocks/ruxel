@@ -13,6 +13,8 @@ mod more;
 mod persistence;
 mod plan_redaction;
 mod retry_count;
+mod retry_preparation;
+mod retry_source;
 mod smoke;
 mod until_sensitivity;
 
