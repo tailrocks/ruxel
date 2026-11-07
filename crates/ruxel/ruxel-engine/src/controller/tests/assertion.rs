@@ -14,6 +14,7 @@ async fn assertions_skip_unneeded_conditions_and_failure_messages() -> Result<()
         let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
             {"name":"success","operation":{"kind":"assert","that":true,"fail_msg":missing}},
             {"name":"false first","ignoreErrors":true,"operation":{"kind":"assert","that":that}},
+            {"name":"false before invalid","ignoreErrors":true,"operation":{"kind":"assert","that":[false,{"kind":"literal","value":"wrong"}]}},
             {"name":"after","operation":{"kind":"debug","msg":"continued"}}
         ]}]});
         let mut backend = Fake::default();
@@ -26,9 +27,10 @@ async fn assertions_skip_unneeded_conditions_and_failure_messages() -> Result<()
         )
         .await?;
         assert_eq!(recap["h"].failed, 0);
-        assert_eq!(recap["h"].ignored, 1);
+        assert_eq!(recap["h"].ignored, 2);
         assert_eq!(backend.events[1]["result"]["failed"], true);
-        assert_eq!(backend.events[2]["result"]["msg"], "continued");
+        assert_eq!(backend.events[2]["result"]["failed"], true);
+        assert_eq!(backend.events[3]["result"]["msg"], "continued");
     }
     Ok(())
 }
@@ -70,5 +72,38 @@ async fn assertion_result_inherits_accessed_sensitive_condition() -> Result<()> 
     )
     .await?;
     assert_eq!(backend.0.events[1]["result"]["censored"], true);
+    Ok(())
+}
+
+#[tokio::test]
+async fn computed_assertion_list_validates_every_materialized_value() -> Result<()> {
+    for (values, expected_error) in [
+        (json!([false, "wrong"]), true),
+        (json!([false, true]), false),
+    ] {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"computed":{"kind":"literal","value":values}},"tasks":[
+            {"name":"computed","ignoreErrors":true,"operation":{"kind":"assert","that":{"kind":"ref","path":["vars","computed"]}}}
+        ]}]});
+        let mut backend = Fake::default();
+        let result = run(
+            &config,
+            &BTreeMap::new(),
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(result.is_err(), expected_error);
+        if expected_error {
+            assert!(
+                result
+                    .expect_err("invalid list")
+                    .to_string()
+                    .contains("assertion must be boolean")
+            );
+        } else {
+            assert_eq!(result?["h"].ignored, 1);
+        }
+    }
     Ok(())
 }

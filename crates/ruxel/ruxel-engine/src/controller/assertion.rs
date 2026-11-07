@@ -62,10 +62,7 @@ impl<B: Backend> Runner<'_, B> {
                 Value::Array(items) => {
                     let mut pass = true;
                     for item in items {
-                        if !item.as_bool().context("assertion must be boolean")? {
-                            pass = false;
-                            break;
-                        }
+                        pass &= item.as_bool().context("assertion must be boolean")?;
                     }
                     pass
                 }
