@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    controller::Mode,
+    controller::{Backend, Mode},
     runtime::{Lookups, Output, OutputFormat, RuntimeOptions},
     secrets::Resolver,
     transport,
@@ -124,5 +124,24 @@ fn layered_binding_cycles_fail_without_resolving_unrelated_definitions() -> Resu
         )
         .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn execution_backend_uses_lazy_layered_resolver() -> Result<()> {
+    let mut execution = execution()?;
+    let parent = json!({"unused":{"kind":"ref","path":["results","future"]},"value":{"kind":"literal","value":"parent"}});
+    let child = json!({"value":{"kind":"ref","path":["vars","value"]}});
+    let layers = [
+        parent.as_object().context("parent")?.clone(),
+        child.as_object().context("child")?.clone(),
+    ];
+    let scope = TrackedValue::public(json!({"vars":{},"results":{}}));
+    let (value, _) = execution.evaluate_layered_expression(
+        &json!({"kind":"ref","path":["vars","value"]}),
+        &scope,
+        &layers,
+    )?;
+    assert_eq!(value.value, "parent");
     Ok(())
 }

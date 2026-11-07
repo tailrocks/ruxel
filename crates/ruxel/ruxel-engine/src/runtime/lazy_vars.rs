@@ -138,7 +138,7 @@ pub(super) fn evaluate(
     evaluate_layers(execution, value, scope, std::slice::from_ref(definitions))
 }
 
-fn evaluate_layers(
+pub(super) fn evaluate_layers(
     execution: &Execution,
     value: &Value,
     scope: &TrackedValue,

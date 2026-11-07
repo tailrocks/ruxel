@@ -12,21 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 
-/// Execution mode selected by the caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Plan,
-    Apply,
-    Check,
-    Diff,
-}
-
-/// An operation prepared for an agent, with its intended execution host.
-#[derive(Debug, Clone)]
-pub struct Request {
-    pub host: String,
-    pub task: v1::RenderedTask,
-}
+mod types;
+pub use types::{Mode, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
@@ -81,6 +68,20 @@ pub trait Backend {
         std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
     )> {
         fallback::evaluate(self, value, scope, vars)
+    }
+    /// Evaluate an expression with ordered variable definition layers.
+    /// The default conservatively materializes parent layers; backends can
+    /// override it to preserve lazy evaluation across layers.
+    ///
+    /// # Errors
+    /// Returns an error if a required expression or binding cannot be evaluated.
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        fallback::evaluate_layers(self, value, scope, layers)
     }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
