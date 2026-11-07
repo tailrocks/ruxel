@@ -77,7 +77,7 @@ fn run() -> Result<(), String> {
     let config =
         std::fs::read_to_string(root.join(".velnor/config.toml")).map_err(|e| e.to_string())?;
     let output = Command::new("cargo")
-        .args(["metadata", "--offline", "--locked", "--format-version", "1"])
+        .args(["metadata", "--locked", "--format-version", "1"])
         .current_dir(root)
         .output()
         .map_err(|e| e.to_string())?;
