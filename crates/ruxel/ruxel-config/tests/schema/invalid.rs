@@ -1,5 +1,6 @@
 #[test]
 fn rejects_invalid_types_and_missing_required_fields() {
+    let mut accepted = Vec::new();
     for expression in [
         r"new R.Command {}",
         r#"new R.Timezone { name = "UTC"; state = "present" }"#,
@@ -55,6 +56,12 @@ fn rejects_invalid_types_and_missing_required_fields() {
         r#"new R.LogicalVolume { vg = "test"; lv = "data" }"#,
         r#"new R.Host { address = "localhost"; port = 70000 }"#,
     ] {
-        assert!(super::evaluate(expression).is_err(), "{expression}");
+        if super::evaluate(expression).is_ok() {
+            accepted.push(expression);
+        }
     }
+    assert!(
+        accepted.is_empty(),
+        "accepted invalid expressions: {accepted:#?}"
+    );
 }

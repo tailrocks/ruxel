@@ -17,6 +17,14 @@ impl Drop for Source {
 }
 
 fn evaluate(expression: &str) -> Result<Value> {
+    let document = format!(
+        "import {} as R\nvalue = {expression}\n",
+        serde_json::to_string(&root().join("schema/Ruxel.pkl"))?
+    );
+    Ok(evaluate_document(&document)?["value"].clone())
+}
+
+fn evaluate_document(document: &str) -> Result<Value> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
         "ruxel-schema-{}-{}",
@@ -26,14 +34,8 @@ fn evaluate(expression: &str) -> Result<Value> {
     std::fs::create_dir(&path)?;
     let source = Source(path);
     let module = source.0.join("case.pkl");
-    std::fs::write(
-        &module,
-        format!(
-            "import {} as R\nvalue = {expression}\n",
-            serde_json::to_string(&root().join("schema/Ruxel.pkl"))?
-        ),
-    )?;
-    Ok(evaluate_module(&module)?["value"].clone())
+    std::fs::write(&module, document)?;
+    evaluate_module(&module)
 }
 
 fn evaluate_module(module: &Path) -> Result<Value> {
@@ -79,3 +81,9 @@ mod constraints;
 
 #[path = "schema/invalid.rs"]
 mod invalid;
+
+#[path = "schema/required.rs"]
+mod required;
+
+#[path = "schema/native.rs"]
+mod native;
