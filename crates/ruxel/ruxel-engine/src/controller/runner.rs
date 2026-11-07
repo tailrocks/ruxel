@@ -146,6 +146,9 @@ impl<B: Backend> Runner<'_, B> {
                 && !self.options.tags.is_empty()
                 && !super::tag_selection::selected(task, &parent.tags, &self.options.tags)
             {
+                if array(task, "block").is_empty() {
+                    self.skip_tagged_leaf(task, parent)?;
+                }
                 return Ok(true);
             }
             let mut layer = Self::layer(task, parent);

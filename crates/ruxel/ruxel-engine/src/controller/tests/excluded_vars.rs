@@ -22,7 +22,9 @@ async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
     )
     .await?;
     assert_eq!(backend.calls.len(), 1);
-    assert_eq!(recap["h"].skipped, 3);
+    assert_eq!(recap["h"].skipped, 4);
+    assert_eq!(backend.events[0]["task"], "tagged out");
+    assert_eq!(backend.events[0]["result"]["skipped"], true);
     assert_eq!(recap["h"].ok, 1);
     Ok(())
 }

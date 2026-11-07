@@ -21,3 +21,19 @@ pub(super) fn selected(task: &Value, inherited: &[String], filter: &[String]) ->
                 .any(|child| selected(child, &tags, filter))
         })
 }
+
+impl<B: super::Backend> super::Runner<'_, B> {
+    pub(super) fn skip_tagged_leaf(
+        &mut self,
+        task: &Value,
+        parent: &super::ContextLayer,
+    ) -> super::Result<()> {
+        self.recap.skipped += 1;
+        let result = if parent.no_log || parent.control_sensitive || super::flag(task, "noLog") {
+            super::json!({"censored":true,"changed":false,"failed":false})
+        } else {
+            super::json!({"skipped":true,"changed":false})
+        };
+        self.backend.event(&super::json!({"host":self.host,"task":super::string(task,"name").unwrap_or(""),"result":result}))
+    }
+}

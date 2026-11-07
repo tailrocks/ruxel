@@ -37,7 +37,47 @@ async fn tagged_descendants_survive_untagged_blocks_in_plan_and_apply() -> Resul
         } else {
             assert_eq!(recap["h"].ok, 3);
             assert_eq!(recap["h"].failed, 0);
+            assert_eq!(recap["h"].skipped, 1);
         }
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn reached_rescue_and_always_skip_unselected_leaves_with_inherited_censorship() -> Result<()>
+{
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"block","noLog":true,"block":[{"name":"failure","tags":["chosen"],"operation":{"kind":"fail"}}],
+         "rescue":[{"name":"excluded rescue","operation":{"kind":"fail"}}],
+         "always":[{"name":"excluded always","operation":{"kind":"fail"}},
+                   {"name":"selected always","tags":["chosen"],"operation":{"kind":"debug","msg":"ok"}}]}
+    ]}]});
+    let mut backend = Fake::default();
+    let options = Options {
+        tags: vec!["chosen".into()],
+        ..Options::default()
+    };
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].rescued, 1);
+    assert_eq!(recap["h"].skipped, 2);
+    assert_eq!(recap["h"].failed, 0);
+    for (event, name) in backend
+        .events
+        .iter()
+        .skip(1)
+        .take(2)
+        .zip(["excluded rescue", "excluded always"])
+    {
+        assert_eq!(event["task"], name);
+        assert_eq!(event["result"]["censored"], true);
+    }
+    assert_eq!(backend.events[3]["task"], "selected always");
     Ok(())
 }
