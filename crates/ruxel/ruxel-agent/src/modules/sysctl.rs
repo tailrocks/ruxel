@@ -23,7 +23,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let mut changed = false;
 
-    let current = std::fs::read_to_string(file).unwrap_or_default();
+    let current = match std::fs::read_to_string(file) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("sysctl: cannot read {file}: {error}")),
+    };
     let (content, file_changed) = rewrite_file(&current, name, &value);
     changed |= file_changed;
     if file_changed && !ctx.check_mode {
@@ -113,6 +117,45 @@ fn read_sysctl(name: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    #[test]
+    fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()> {
+        let path = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));
+        std::fs::write(&path, [0xff, 0xfe])?;
+        for check_mode in [true, false] {
+            let ctx = super::ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            };
+            assert!(super::run(&json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}), &ctx).is_err());
+            assert_eq!(std::fs::read(&path)?, [0xff, 0xfe]);
+        }
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn missing_file_is_planned_for_creation() -> std::io::Result<()> {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-sysctl-missing-{}", std::process::id()));
+        let ctx = super::ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = super::run(
+            &json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}),
+            &ctx,
+        )
+        .map_err(std::io::Error::other)?;
+        assert_eq!(result["changed"], true);
+        assert!(!path.exists());
+        Ok(())
+    }
     #[test]
     fn whitespace_normalization() {
         assert_eq!(

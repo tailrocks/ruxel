@@ -11,6 +11,16 @@ jobs = ["alint"]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
 
+[[stacks.rust.inputs]]
+globs = [
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
+]
+packages = ["ruxel-acceptance-xfs"]
+
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
@@ -29,8 +39,11 @@ inputs = [
   ".cargo/config.toml",
   "Cargo.lock",
   "Cargo.toml",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/test_xfs.py",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.py",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
   "mise.toml",
   "schema/Ruxel.pkl",
   "testdata/workloads/pr66/README.md",
@@ -177,6 +190,7 @@ inputs = [
   "tools/acceptance-pty/src/verify.rs",
   "tools/acceptance-pty/tests/orphan_output.rs",
   "tools/acceptance-pty/tests/partial_output.rs",
+  "tools/acceptance-pty/tests/terminal_anchor.rs",
   "tools/acceptance-runtime/Cargo.lock",
   "tools/acceptance-runtime/Cargo.toml",
   "tools/acceptance-runtime/README.md",
@@ -200,6 +214,10 @@ inputs = [
   "tools/acceptance-runtime/src/proxy.rs",
   "tools/acceptance-runtime/src/snapshot.rs",
   "tools/acceptance-runtime/tests/proxy_entry.rs",
+  "tools/acceptance-xfs/Cargo.lock",
+  "tools/acceptance-xfs/Cargo.toml",
+  "tools/acceptance-xfs/README.md",
+  "tools/acceptance-xfs/src/lib.rs",
   "tools/build-libblkid",
   "tools/build-libblkid-source",
   "tools/pkg-config-libblkid",

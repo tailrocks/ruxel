@@ -20,7 +20,8 @@ workloads. Synthetic secret mode does not require a live secret account.
 ## XFS growth prototype prerequisites
 
 The descriptor-based XFS growth prototype requires Linux x86_64 or aarch64
-and Python 3.9 or newer with its standard `fcntl` module. Provision Python
+and a 64-bit Perl interpreter with its standard `Config`, `Fcntl`, `Math::BigInt`,
+and `POSIX` modules. Provision Perl
 from the target distribution's official signed repository before requesting
 filesystem or logical-volume growth. The helper checks the pinned mount's
 geometry before logical-volume mutation; a missing interpreter or unsupported
