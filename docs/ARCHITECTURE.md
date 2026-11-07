@@ -31,13 +31,18 @@ complete platform coverage.
    operation requests and receives results through the protocol. A local agent
    mode exists for disposable local testing.
 4. The controller handles task outcomes, conditions, retries, blocks and
-   handlers, and reports per-host results. Plan lists selected operations without connecting. Check and diff use
+   handlers, and reports per-host results. Plan selects operations without
+   connecting, but censors task and host details because evaluated Pkl values
+   do not carry file provenance. Check and diff use
    non-mutating checks where the operation supports them; a task with
    `checkMode = false` can execute changes in either mode. Apply performs changes.
 
-Controller and agent use protocol version 2 and reject version 1 peers during
-handshake. `Copy.src` is read as bytes on the controller and sent in an optional
-binary iteration payload; an empty source differs from an absent source. Text
+Controller and agent use protocol version 3 and reject older peers during
+handshake. The agent reports its durable sensitivity state in the handshake;
+an omitted state is an error. See [Secret provenance](secret-provenance.md)
+for the marker's scope and output consequences. `Copy.src` is read as bytes on
+the controller and sent in an optional binary iteration payload; an empty
+source differs from an absent source. Text
 `Copy.content` and rendered native templates retain their text representation.
 Source bytes are accepted only for Copy and cannot accompany explicit content.
 Binary diffs report sizes and SHA-256 hashes; `noLog` suppresses those results.
