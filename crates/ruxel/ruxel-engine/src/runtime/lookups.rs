@@ -34,9 +34,9 @@ impl Lookups {
                 reference: required(reference)?,
             },
             "op" => Lookup::OnePassword {
-                vault: required(vault)?,
+                vault: vault.clone().unwrap_or_else(|| "Private".to_owned()),
                 item: required(item)?,
-                field: required(field)?,
+                field: field.clone().unwrap_or_else(|| "password".to_owned()),
                 section: section.clone(),
             },
             "command" => Lookup::Command { argv: argv.clone() },
@@ -107,3 +107,6 @@ impl LookupResolver for Lookups {
         Ok(Value::String(value))
     }
 }
+
+#[cfg(test)]
+mod tests;

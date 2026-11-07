@@ -115,3 +115,23 @@ fn postgres_database_and_role_accept_login_db() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Result<()> {
+    for lookup in [
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item"}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":null, "field":null}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":"username"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password"}),
+    ] {
+        validate_config(&config(json!({"kind":"debug", "msg":lookup})))?;
+    }
+    for lookup in [
+        json!({"kind":"lookup", "provider":"op"}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":""}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":""}),
+    ] {
+        assert!(validate_config(&config(json!({"kind":"debug", "msg":lookup}))).is_err());
+    }
+    Ok(())
+}
