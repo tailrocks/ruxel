@@ -32,9 +32,17 @@ retry conditions, assertions and template preparation currently consume a
 materialized scope, so a layered resolver must be threaded through those paths
 and through the default backend contract. Existing sensitive-control,
 no-logging, per-item scope, cross-play facts and handler tests remain required.
-This branch is not ready for integration: custom backend fallback still eagerly
-materializes parent layers, and secret-sensitive retry analysis and caching
-must be audited with unresolved definitions. The existing runtime acceptance
-runner also fails its tag-selection expectation on the pre-change binary; do
-not weaken that check as part of this work. The two local fixtures and a
-controller test cover the immediate forward-reference regression only.
+This branch is not ready for integration. The default custom-backend API retains
+its eager single-layer fallback and rejects multiple layers. Backends can opt
+into standard expression semantics and demand-driven layers by calling
+`controller::evaluate_standard_layered` with their own lookup resolver. That
+requires an explicit migration and does not preserve backend-specific expression
+extensions. Retry sensitivity is conservative for dynamic branches whose outcome
+cannot be known before dispatch; this avoids placing potentially sensitive agent
+results in the cache, but can censor results unnecessarily.
+
+The local Rust runtime acceptance runner passes its six scenarios with the
+revised tag check, which requires exactly one skipped event for each excluded
+leaf and confirms that the existing payload is unchanged. The play and block
+fixtures, focused custom-backend tests, and those acceptance scenarios cover
+bounded cases; they do not establish full parity or replace independent review.
