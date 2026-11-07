@@ -154,6 +154,9 @@ impl Backend for Execution {
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
         lazy_vars::evaluate(self, value, scope, vars)
     }
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,

@@ -22,6 +22,11 @@ pub use types::{Mode, Recap, Request};
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
 #[expect(async_fn_in_trait, reason = "the backend is statically dispatched")]
 pub trait Backend {
+    /// Retain raw variable layers until expression access instead of eagerly
+    /// materializing inherited bindings. Requires a lazy layered evaluator.
+    fn lazy_variable_layers(&self) -> bool {
+        false
+    }
     /// Evaluate an expression in the current scope.
     ///
     /// # Errors
@@ -77,8 +82,9 @@ pub trait Backend {
     /// evaluation hooks before evaluating the child layer. This preserves opaque
     /// backend semantics, including their scope and provenance handling.
     /// Backends providing standard lazy expressions should override this method
-    /// using `evaluate_standard_layered`; the default can evaluate unused parent
-    /// bindings and does not provide lazy cross-layer references.
+    /// using `evaluate_standard_layered` and enable `lazy_variable_layers`.
+    /// The default can evaluate unused parent bindings and does not provide lazy
+    /// cross-layer references.
     ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
@@ -345,6 +351,7 @@ pub async fn run<B: Backend>(
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
             let execution: Result<()> = async {
+                runner.materialize_inherited_variables(&mut layer, None)?;
                 let success = runner.tasks(array(play, "preTasks"), &layer).await?
                     && runner.tasks(array(play, "tasks"), &layer).await?;
                 if success {

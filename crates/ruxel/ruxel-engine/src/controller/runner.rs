@@ -4,6 +4,27 @@ use super::{
 };
 
 impl<B: Backend> Runner<'_, B> {
+    pub(super) fn materialize_inherited_variables(
+        &mut self,
+        layer: &mut ContextLayer,
+        item: Option<(&str, &TrackedValue)>,
+    ) -> Result<()> {
+        if self.backend.lazy_variable_layers() {
+            return Ok(());
+        }
+        for definitions in self.variable_layers(layer) {
+            let scope = self.scope(layer, item);
+            let (_, values) = self.backend.evaluate_task_expression(
+                &json!({"kind":"ref","path":["vars"]}),
+                &scope,
+                &definitions,
+            )?;
+            layer.vars.extend(values);
+        }
+        layer.definitions.clear();
+        Ok(())
+    }
+
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
         let definitions = object(task, "vars");
@@ -34,9 +55,17 @@ impl<B: Backend> Runner<'_, B> {
     ) -> Result<TrackedValue> {
         let definitions = self.variable_layers(layer);
         let scope = self.scope(layer, item);
-        let (value, _) =
+        let (value, values) =
             self.backend
                 .evaluate_layered_expression(expression, &scope, &definitions)?;
+        if !self.backend.lazy_variable_layers() {
+            for (name, value) in values {
+                for definitions in &mut layer.definitions {
+                    definitions.remove(&name);
+                }
+                layer.vars.insert(name, value);
+            }
+        }
         Ok(value)
     }
 
@@ -131,6 +160,7 @@ impl<B: Backend> Runner<'_, B> {
                         return Ok(true);
                     }
                 }
+                self.materialize_inherited_variables(&mut layer, None)?;
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
                     self.recap.rescued += 1;
@@ -201,6 +231,7 @@ impl<B: Backend> Runner<'_, B> {
                     continue;
                 }
             }
+            self.materialize_inherited_variables(&mut iteration_layer, binding)?;
             let scope = self.scope(&iteration_layer, binding);
             let mut result = self
                 .execute(task, &iteration_layer, &scope, item)

@@ -14,6 +14,9 @@ impl Backend for BackendWithLookup {
     fn evaluate(&mut self, _: &Value, _: &Map<String, Value>) -> Result<Value> {
         anyhow::bail!("unexpected evaluation")
     }
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,

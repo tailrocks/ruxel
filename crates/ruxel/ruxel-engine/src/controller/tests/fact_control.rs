@@ -8,6 +8,9 @@ impl crate::expression::LookupResolver for Precise {
     }
 }
 impl Backend for Precise {
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,

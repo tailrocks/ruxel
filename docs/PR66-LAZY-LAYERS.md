@@ -32,12 +32,21 @@ retry conditions, assertions and template preparation currently consume a
 materialized scope, so a layered resolver must be threaded through those paths
 and through the default backend contract. Existing sensitive-control,
 no-logging, per-item scope, cross-play facts and handler tests remain required.
-This branch is not ready for integration. The default custom-backend API retains
-its eager single-layer fallback and rejects multiple layers. Backends can opt
-into standard expression semantics and demand-driven layers by calling
-`controller::evaluate_standard_layered` with their own lookup resolver. That
-requires an explicit migration and does not preserve backend-specific expression
-extensions. Retry sensitivity is conservative for dynamic branches whose outcome
+This branch remains under independent review. The default custom-backend API
+retains eager inherited-variable materialization and delegates evaluation to the
+backend's existing hooks. Group, host and play bindings materialize once at play
+entry, block bindings once after block selection, and task bindings once per
+iteration. Unused inherited bindings can still fail before execution; this is
+the opaque backend's compatibility behavior, not lazy parity.
+
+Backends opt into demand-driven layers by returning `true` from
+`Backend::lazy_variable_layers` and overriding `evaluate_layered_expression`.
+Backends using standard expression semantics can delegate that method to
+`controller::evaluate_standard_layered` with their own lookup resolver. This is
+an explicit opt-in and does not preserve backend-specific expression extensions.
+The Rust runtime uses this path. Cross-name references see the newest visible
+definition, matching the frozen scheduler; direct inherited self-overrides are
+an explicit behavior extension. Retry sensitivity is conservative for dynamic branches whose outcome
 cannot be known before dispatch; this avoids placing potentially sensitive agent
 results in the cache, but can censor results unnecessarily.
 

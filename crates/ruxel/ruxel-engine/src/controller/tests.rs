@@ -45,6 +45,9 @@ impl crate::expression::LookupResolver for Fake {
     }
 }
 impl Backend for Fake {
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,
