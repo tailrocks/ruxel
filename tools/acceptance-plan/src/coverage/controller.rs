@@ -7,16 +7,21 @@ pub fn kinds(operation: &str, local: &str) -> Result<BTreeSet<String>> {
     let local = lex::strip(local)?;
     let code = lex::mask(&operation)?;
     let local_code = lex::mask(&local)?;
+    let operation_range = lex::function(&code, "execute_once")?;
+    let code = &code[operation_range.clone()];
+    let local_range = lex::function(&local_code, "local_once")?;
+    let local_code = &local_code[local_range.clone()];
     let admission = Regex::new(
-        r#"(?s)async\s+fn\s+execute_once\s*\(.*?if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)\s*\{\s*return\s+self\s*\.\s*local_once\s*\("#,
+        r#"(?s)if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)\s*\{\s*return\s+self\s*\.\s*local_once\s*\("#,
     )?;
-    let matches: Vec<_> = admission.captures_iter(&code).collect();
+    let matches: Vec<_> = admission.captures_iter(code).collect();
     ensure!(
         matches.len() == 1,
         "controller local admission route not found or ambiguous"
     );
     let range = matches[0].get(1).context("missing admission")?.range();
-    let admitted_text = &operation[range];
+    let admitted_text =
+        &operation[operation_range.start + range.start..operation_range.start + range.end];
     ensure!(
         Regex::new(r#"^\s*"[a-z_]+"(?:\s*\|\s*"[a-z_]+")*\s*$"#)?.is_match(admitted_text),
         "invalid controller local admission"
@@ -36,18 +41,23 @@ pub fn kinds(operation: &str, local: &str) -> Result<BTreeSet<String>> {
             .is_match(&code[matches[0].get(0).context("missing route")?.end()..]),
         "remote single-attempt dispatch not found"
     );
-    let functions =
-        Regex::new(r"(?s)async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>")?;
+    let match_start = Regex::new(r"match\s+kind\s*\{")?
+        .find(local_code)
+        .context("controller local match not found")?;
+    let match_range = lex::block(local_code, match_start.end() - 1)?;
+    let match_code = &local_code[match_range.clone()];
+    let functions = Regex::new(r"(?s)(.*?)\n\s*_\s*=>")?;
     let regions = functions
-        .captures(&local_code)
-        .context("controller local dispatch or retry route not found")?;
+        .captures(match_code)
+        .context("controller local dispatch not found")?;
     let region = regions.get(1).context("missing local dispatch")?;
     let arm = Regex::new(r#"(?m)^\s*"([ ]*)"\s*=>"#)?;
     let valid = Regex::new(r"^[a-z_]+$")?;
     let mut arms = Vec::new();
     for item in arm.captures_iter(region.as_str()) {
         let range = item.get(1).context("missing arm")?.range();
-        let kind = &local[region.start() + range.start..region.start() + range.end];
+        let offset = local_range.start + match_range.start + region.start();
+        let kind = &local[offset + range.start..offset + range.end];
         ensure!(
             valid.is_match(kind),
             "invalid controller local dispatch arm"

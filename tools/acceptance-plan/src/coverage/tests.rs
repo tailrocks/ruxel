@@ -16,7 +16,7 @@ fn operation_classes_and_duplicates() -> Result<()> {
 }
 #[test]
 fn controller_dispatch_and_negative_cases() -> Result<()> {
-    let operation = "async fn execute_once() { if matches!(kind, \"assert\" | \"debug\") { return self.local_once( } let result = self.backend.execute_tracked(";
+    let operation = "async fn execute_once() { if matches!(kind, \"assert\" | \"debug\") { return self.local_once(); } let result = self.backend.execute_tracked(); }";
     let local = "async fn local_once() { match kind {\n \"assert\" => {},\n \"debug\" => {},\n _ => {}\n } }";
     assert_eq!(
         controller::kinds(operation, local)?,
@@ -32,6 +32,13 @@ fn controller_dispatch_and_negative_cases() -> Result<()> {
         ),
         (
             operation.replace("execute_tracked", "other"),
+            local.to_owned(),
+        ),
+        (
+            operation.replace(
+                "let result = self.backend.execute_tracked(); }",
+                "} async fn other() { let result = self.backend.execute_tracked(); }",
+            ),
             local.to_owned(),
         ),
         (format!("/* {operation} */"), local.to_owned()),
@@ -58,6 +65,10 @@ fn controller_dispatch_and_negative_cases() -> Result<()> {
             operation.to_owned(),
             local.replace("async fn local_once", "async fn other"),
         ),
+        (
+            operation.to_owned(),
+            local.replace(" _ => {}\n } }", " }\n _ => {}\n }"),
+        ),
     ];
     for (op, body) in cases {
         assert!(
@@ -69,11 +80,19 @@ fn controller_dispatch_and_negative_cases() -> Result<()> {
 }
 #[test]
 fn retry_routes_require_real_calls() -> Result<()> {
-    let source = "async fn execute() { let Some(condition) = task.get(\"until\") else { return self.execute_once(); }; for attempt in 1..=attempts { self.execute_once(); let current_scope = super::result_scope(); self.backend.evaluate_tracked(condition, &current_scope)";
+    let source = "async fn execute() { let Some(condition) = task.get(\"until\") else { return self.execute_once(); }; for attempt in 1..=attempts { self.execute_once(); let current_scope = super::result_scope(); self.backend.evaluate_tracked(condition, &current_scope); } }";
     retry::check(source)?;
     for bad in [
         source.replacen("self.execute_once(", "self.other(", 1),
         source.replace("task.get(\"until\")", "task.get(\"other\")"),
+        source.replace(
+            "for attempt in 1..=attempts { self.execute_once();",
+            "for attempt in 1..=attempts { self.other(); } self.execute_once();",
+        ),
+        source.replace(
+            "self.backend.evaluate_tracked(condition, &current_scope); } }",
+            "} } async fn other() { self.backend.evaluate_tracked(condition, &current_scope); }",
+        ),
         source.replace(
             "for attempt in 1..=attempts { self.execute_once(",
             "for attempt in 1..=attempts { self.other(",

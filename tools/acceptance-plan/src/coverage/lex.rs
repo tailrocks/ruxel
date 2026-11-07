@@ -100,3 +100,50 @@ pub fn mask(source: &str) -> Result<String> {
     }
     Ok(String::from_utf8(out)?)
 }
+
+pub fn block(source: &str, open: usize) -> Result<std::ops::Range<usize>> {
+    let bytes = source.as_bytes();
+    ensure!(bytes.get(open) == Some(&b'{'), "missing opening brace");
+    let mut depth = 1_usize;
+    let mut i = open + 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\'' {
+            // Character literals may contain braces; lifetimes have no closing quote here.
+            if bytes.get(i + 1) == Some(&b'\\') {
+                if let Some(end) = bytes[i + 2..].iter().position(|b| *b == b'\'') {
+                    let candidate = &bytes[i + 2..i + 2 + end];
+                    if !candidate.contains(&b'\n') {
+                        i += end + 3;
+                        continue;
+                    }
+                }
+            } else if bytes.get(i + 2) == Some(&b'\'') {
+                i += 3;
+                continue;
+            }
+        }
+        match bytes[i] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(open + 1..i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    bail!("unterminated code block")
+}
+
+pub fn function(source: &str, name: &str) -> Result<std::ops::Range<usize>> {
+    let pattern = format!(
+        r"(?s)\basync\s+fn\s+{}\s*\([^)]*\)\s*(?:->\s*[^{{]+)?\{{",
+        regex::escape(name)
+    );
+    let re = regex::Regex::new(&pattern)?;
+    let matches: Vec<_> = re.find_iter(source).collect();
+    ensure!(matches.len() == 1, "missing or ambiguous function {name}");
+    block(source, matches[0].end() - 1)
+}
