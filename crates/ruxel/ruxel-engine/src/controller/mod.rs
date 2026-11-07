@@ -56,8 +56,8 @@ pub trait Backend {
         })
     }
     /// Evaluate a task expression while resolving task variables as needed.
-    /// The default uses standard lazy expression semantics and delegates
-    /// accessed lookup nodes to `evaluate_tracked`.
+    /// The default conservatively resolves referenced variables; backends may
+    /// override it to preserve short-circuit evaluation within expressions.
     ///
     /// # Errors
     /// Returns an error if an accessed variable or expression cannot be evaluated.
@@ -73,9 +73,12 @@ pub trait Backend {
         fallback::evaluate(self, value, scope, vars)
     }
     /// Evaluate an expression with ordered variable definition layers.
-    /// The default resolves standard expression bindings on demand and delegates
-    /// accessed lookup nodes to `evaluate_tracked`. A single layer dispatches to
-    /// `evaluate_task_expression`, preserving backend overrides of that method.
+    /// The default materializes parent layers through the backend's existing
+    /// evaluation hooks before evaluating the child layer. This preserves opaque
+    /// backend semantics, including their scope and provenance handling.
+    /// Backends providing standard lazy expressions should override this method
+    /// using `evaluate_standard_layered`; the default can evaluate unused parent
+    /// bindings and does not provide lazy cross-layer references.
     ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
