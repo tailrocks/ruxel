@@ -30,6 +30,14 @@ pub(super) fn has_unchecked_delegates(config: &Value, checked: &BTreeSet<String>
         })
 }
 
+pub(super) fn requires_conservative(
+    config: &Value,
+    checked: &BTreeSet<String>,
+    failed_preconnect: bool,
+) -> bool {
+    failed_preconnect || has_unchecked_delegates(config, checked)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,5 +62,12 @@ mod tests {
             &json!({"plays":[{"tasks":[{"delegateTo":null}]}]}),
             &checked
         ));
+    }
+
+    #[test]
+    fn failed_handshake_keeps_unknown_state_conservative() {
+        let config = json!({"plays":[]});
+        assert!(requires_conservative(&config, &BTreeSet::new(), true));
+        assert!(!requires_conservative(&config, &BTreeSet::new(), false));
     }
 }

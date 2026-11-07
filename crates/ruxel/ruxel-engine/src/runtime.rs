@@ -305,7 +305,7 @@ pub async fn run(
     let result = async {
         let (facts, failed) = connect::preconnect(config, options, &execution).await?;
         let checked = execution.connections.lock().await.keys().cloned().collect();
-        if delegates::has_unchecked_delegates(config, &checked) {
+        if delegates::requires_conservative(config, &checked, !failed.is_empty()) {
             execution
                 .conservative_sensitive
                 .store(true, std::sync::atomic::Ordering::Release);
