@@ -35,6 +35,7 @@ mod until_sensitivity;
 
 #[derive(Default)]
 struct Fake {
+    conservative_sensitive: bool,
     calls: Vec<Request>,
     events: Vec<Value>,
     results: std::collections::VecDeque<Value>,
@@ -45,6 +46,9 @@ impl crate::expression::LookupResolver for Fake {
     }
 }
 impl Backend for Fake {
+    fn conservative_sensitive(&self) -> bool {
+        self.conservative_sensitive
+    }
     fn lazy_variable_layers(&self) -> bool {
         true
     }

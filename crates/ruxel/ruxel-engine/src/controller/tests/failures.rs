@@ -1,6 +1,28 @@
 use super::*;
 
 #[tokio::test]
+async fn conservative_context_sanitizes_early_condition_error() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"when":{"kind":"ref","path":["vars","synthetic_marker"]},"operation":{"kind":"debug","msg":"visible"}}]}]});
+    let mut backend = Fake {
+        conservative_sensitive: true,
+        ..Default::default()
+    };
+    let error = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await
+    .err()
+    .context("run should fail")?;
+    assert!(error.to_string().contains("sensitive execution failed"));
+    assert!(!error.to_string().contains("synthetic_marker"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn task_error_preserves_completed_recap() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"first","operation":{"kind":"command","cmd":"true"}},{"name":"bad","operation":{"kind":"debug","msg":{"kind":"ref","path":["vars","missing"]}}}]}]});
     let mut backend = Fake::default();

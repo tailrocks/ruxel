@@ -361,6 +361,11 @@ pub async fn run<B: Backend>(
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;
             if let Err(error) = execution {
+                let error = if layer.control_sensitive || runner.backend.conservative_sensitive() {
+                    anyhow::anyhow!("sensitive execution failed")
+                } else {
+                    error
+                };
                 return Err(RunFailure::new(error, totals).into());
             }
         }

@@ -128,17 +128,17 @@ impl<B: Backend> Runner<'_, B> {
         parent: &'a ContextLayer,
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
+            let mut layer = Self::layer(task, parent);
+            layer.control_sensitive |= self.backend.conservative_sensitive();
             if !self.handling
                 && !self.options.tags.is_empty()
                 && !super::tag_selection::selected(task, &parent.tags, &self.options.tags)
             {
                 if array(task, "block").is_empty() {
-                    self.skip_tagged_leaf(task, parent)?;
+                    self.skip_tagged_leaf(task, &layer)?;
                 }
                 return Ok(true);
             }
-            let mut layer = Self::layer(task, parent);
-            layer.control_sensitive |= self.backend.conservative_sensitive();
             if !array(task, "block").is_empty() {
                 let mut resolved = std::collections::BTreeSet::new();
                 if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {

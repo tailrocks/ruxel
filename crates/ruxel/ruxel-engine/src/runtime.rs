@@ -235,7 +235,13 @@ impl Backend for Execution {
         sensitive: bool,
     ) -> Result<TrackedValue> {
         if !self.connections.lock().await.contains_key(&request.host) {
-            self.connect(&request.host).await?;
+            self.connect(&request.host).await.map_err(|error| {
+                if sensitive || self.conservative_sensitive() {
+                    anyhow::anyhow!("sensitive connection failed")
+                } else {
+                    error
+                }
+            })?;
         }
         let gate = self.source_gate.clone();
         let _guard = gate.read().await;
