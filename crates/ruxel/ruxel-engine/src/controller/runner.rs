@@ -271,29 +271,26 @@ impl<B: Backend> Runner<'_, B> {
             if looped {
                 result.insert("item".into(), item.clone())?;
             }
-            let mut current_scope = result_scope(&scope, task, &result)?;
+            let current_scope = result_scope(&scope, task, &result)?;
             if let Some(expr) = task.get("failedWhen").filter(|v| !v.is_null()) {
                 let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
-                result.insert(
-                    "failed".into(),
-                    if condition.is_secret() {
-                        TrackedValue::secret(Value::Bool(truth(&condition.value)))
-                    } else {
-                        TrackedValue::public(Value::Bool(truth(&condition.value)))
-                    },
-                )?;
+                let outcome = if condition.is_secret() {
+                    TrackedValue::secret(Value::Bool(truth(&condition.value)))
+                } else {
+                    TrackedValue::public(Value::Bool(truth(&condition.value)))
+                };
+                result.insert("failed".into(), outcome.clone())?;
+                result.insert("failed_when_result".into(), outcome)?;
             }
             if let Some(expr) = task.get("changedWhen").filter(|v| !v.is_null()) {
-                current_scope = result_scope(&scope, task, &result)?;
                 let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
-                result.insert(
-                    "changed".into(),
-                    if condition.is_secret() {
-                        TrackedValue::secret(Value::Bool(truth(&condition.value)))
-                    } else {
-                        TrackedValue::public(Value::Bool(truth(&condition.value)))
-                    },
-                )?;
+                let outcome = if condition.is_secret() {
+                    TrackedValue::secret(Value::Bool(truth(&condition.value)))
+                } else {
+                    TrackedValue::public(Value::Bool(truth(&condition.value)))
+                };
+                result.insert("changed".into(), outcome.clone())?;
+                result.insert("changed_when_result".into(), outcome)?;
             }
             results.push(result);
         }

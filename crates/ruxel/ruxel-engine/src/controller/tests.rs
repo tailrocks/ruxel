@@ -15,6 +15,7 @@ mod more;
 mod persistence;
 mod plan_redaction;
 mod rescue_recap;
+mod result_conditions;
 mod retry_count;
 mod retry_preparation;
 mod retry_sensitive;
