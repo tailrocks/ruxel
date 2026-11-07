@@ -13,6 +13,7 @@ mod failures;
 mod flows;
 mod handler_control;
 mod handler_failure;
+mod handler_validation;
 mod inventory;
 mod layer_vars;
 mod lazy_layers;

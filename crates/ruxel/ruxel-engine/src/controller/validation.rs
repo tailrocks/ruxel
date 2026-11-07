@@ -1,6 +1,7 @@
 use super::{Result, Value, array, flag};
 
 pub(super) fn validate(config: &Value) -> Result<()> {
+    crate::model::notifications::validate(config)?;
     for play in array(config, "plays") {
         for phase in ["preTasks", "tasks", "handlers"] {
             validate_tasks(array(play, phase))?;

@@ -1,3 +1,4 @@
+pub(crate) mod notifications;
 mod operations;
 mod shapes;
 use anyhow::{Context, Result, ensure};
@@ -247,7 +248,9 @@ pub fn validate_config(value: &Value) -> Result<Value> {
         validate_tasks(&play.tasks)?;
         validate_tasks(&play.handlers)?;
     }
-    serde_json::to_value(config).context("normalize configuration")
+    let normalized = serde_json::to_value(config).context("normalize configuration")?;
+    notifications::validate(&normalized)?;
+    Ok(normalized)
 }
 
 #[cfg(test)]
