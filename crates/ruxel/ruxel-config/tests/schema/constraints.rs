@@ -2,6 +2,16 @@ use super::{Result, evaluate};
 use serde_json::json;
 
 #[test]
+fn onepassword_lookup_rejects_conflicting_selector_forms() -> Result {
+    for field in ["vault", "item", "section", "field"] {
+        assert!(evaluate(&format!(r#"new R.Lookup {{ provider = "op"; reference = "op://vault/item/field"; {field} = "other" }}"#)).is_err(), "{field}");
+    }
+    evaluate(r#"new R.Lookup { provider = "op"; reference = "op://vault/item/field" }"#)?;
+    evaluate(r#"new R.Lookup { provider = "op"; item = "fixture"; vault = "fixture" }"#)?;
+    Ok(())
+}
+
+#[test]
 fn rescue_and_always_require_block_tasks() -> Result {
     let child = r#"new R.Task { name = "cleanup"; operation = new R.Debug {} }"#;
     for section in ["rescue", "always"] {

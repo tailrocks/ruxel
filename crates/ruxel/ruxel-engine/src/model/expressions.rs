@@ -135,6 +135,13 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
         Some("fnox" | "synthetic") => ensure!(required("key"), "lookup requires key"),
         Some("op") => {
             ensure!(
+                object.get("reference").is_none_or(Value::is_null)
+                    || ["vault", "item", "section", "field"]
+                        .iter()
+                        .all(|key| object.get(*key).is_none_or(Value::is_null)),
+                "lookup reference conflicts with structured selectors"
+            );
+            ensure!(
                 object
                     .get("reference")
                     .is_none_or(|v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())),

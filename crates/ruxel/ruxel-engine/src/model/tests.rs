@@ -123,6 +123,7 @@ fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Res
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":null, "field":null}),
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":"username"}),
         json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password", "item":null}),
     ] {
         validate_config(&config(json!({"kind":"debug", "msg":lookup})))?;
     }
@@ -131,6 +132,10 @@ fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Res
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "reference":""}),
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":""}),
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":""}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password", "item":"other"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password", "vault":"other"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password", "section":"other"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password", "field":"other"}),
     ] {
         assert!(validate_config(&config(json!({"kind":"debug", "msg":lookup}))).is_err());
     }

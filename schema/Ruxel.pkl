@@ -15,7 +15,7 @@ class Lookup {
   item: String? = null
   section: String? = null
   field: String? = null
-  reference: String? = null
+  reference: String?(provider != "op" || this == null || (vault == null && item == null && section == null && field == null)) = null
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
