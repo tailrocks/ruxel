@@ -20,6 +20,7 @@ mod retry_count;
 mod retry_preparation;
 mod retry_sensitive;
 mod retry_source;
+mod skipped_result;
 mod smoke;
 mod until_sensitivity;
 
