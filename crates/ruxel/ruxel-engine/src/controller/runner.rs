@@ -1,45 +1,18 @@
 use super::{
-    Backend, Context, ContextLayer, Future, Map, Pin, Result, Runner, TrackedValue, Value, array,
-    bail, failed, flag, json, object, result_scope, string, truth,
+    Backend, Context, ContextLayer, Future, Pin, Result, Runner, TrackedValue, Value, array, bail,
+    failed, flag, json, object, result_scope, string, truth,
 };
 
 impl<B: Backend> Runner<'_, B> {
-    pub(super) fn extend_vars(
-        &mut self,
-        vars: &mut std::collections::BTreeMap<String, TrackedValue>,
-        incoming: &Map<String, Value>,
-    ) -> Result<()> {
-        if incoming.is_empty() {
-            return Ok(());
-        }
-        let facts = self.scope.get("setFacts");
-        let definitions = incoming
-            .iter()
-            .filter(|(name, _)| {
-                facts
-                    .as_ref()
-                    .is_none_or(|facts| facts.value.get(*name).is_none())
-            })
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
-        let scope = self.scope(
-            &ContextLayer {
-                vars: vars.clone(),
-                ..ContextLayer::default()
-            },
-            None,
-        );
-        let (_, resolved) = self.backend.evaluate_task_expression(
-            &json!({"kind":"ref","path":["vars"]}),
-            &scope,
-            &definitions,
-        )?;
-        vars.extend(resolved);
-        Ok(())
-    }
-
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
+        let definitions = object(task, "vars");
+        for name in definitions.keys() {
+            layer.resolved.remove(name);
+        }
+        if !definitions.is_empty() {
+            layer.definitions.push(definitions);
+        }
         layer.environment.extend(object(task, "environment"));
         layer.no_log |= flag(task, "noLog");
         if let Some(user) = string(task, "becomeUser") {
@@ -56,28 +29,20 @@ impl<B: Backend> Runner<'_, B> {
 
     fn evaluate_selection(
         &mut self,
-        task: &Value,
+        _task: &Value,
         layer: &mut ContextLayer,
         item: Option<(&str, &TrackedValue)>,
         expression: &Value,
         resolved: &mut std::collections::BTreeSet<String>,
     ) -> Result<TrackedValue> {
-        let facts = self.scope.get("setFacts");
-        let definitions = object(task, "vars")
-            .into_iter()
-            .filter(|(name, _)| {
-                !resolved.contains(name)
-                    && facts
-                        .as_ref()
-                        .is_none_or(|facts| facts.value.get(name).is_none())
-            })
-            .collect();
+        let definitions = self.variable_layers(layer);
         let scope = self.scope(layer, item);
         let (value, vars) =
             self.backend
-                .evaluate_task_expression(expression, &scope, &definitions)?;
+                .evaluate_layered_expression(expression, &scope, &definitions)?;
         for (name, value) in vars {
             resolved.insert(name.clone());
+            layer.resolved.insert(name.clone());
             layer.vars.insert(name, value);
         }
         Ok(value)
@@ -174,13 +139,6 @@ impl<B: Backend> Runner<'_, B> {
                         return Ok(true);
                     }
                 }
-                self.evaluate_selection(
-                    task,
-                    &mut layer,
-                    None,
-                    &json!({"kind":"ref","path":["vars"]}),
-                    &mut resolved,
-                )?;
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
                     self.recap.rescued += 1;
@@ -251,13 +209,6 @@ impl<B: Backend> Runner<'_, B> {
                     continue;
                 }
             }
-            self.evaluate_selection(
-                task,
-                &mut iteration_layer,
-                binding,
-                &json!({"kind":"ref","path":["vars"]}),
-                &mut resolved,
-            )?;
             let scope = self.scope(&iteration_layer, binding);
             let mut result = self
                 .execute(task, &iteration_layer, &scope, item)
@@ -277,7 +228,7 @@ impl<B: Backend> Runner<'_, B> {
             }
             let current_scope = result_scope(&scope, task, &result)?;
             if let Some(expr) = task.get("failedWhen").filter(|v| !v.is_null()) {
-                let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
+                let condition = self.evaluate_scoped(expr, &current_scope, &iteration_layer)?;
                 let outcome = if condition.is_secret() {
                     TrackedValue::secret(Value::Bool(truth(&condition.value)))
                 } else {
@@ -287,7 +238,7 @@ impl<B: Backend> Runner<'_, B> {
                 result.insert("failed_when_result".into(), outcome)?;
             }
             if let Some(expr) = task.get("changedWhen").filter(|v| !v.is_null()) {
-                let condition = self.backend.evaluate_tracked(expr, &current_scope)?;
+                let condition = self.evaluate_scoped(expr, &current_scope, &iteration_layer)?;
                 let outcome = if condition.is_secret() {
                     TrackedValue::secret(Value::Bool(truth(&condition.value)))
                 } else {

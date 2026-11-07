@@ -1,4 +1,25 @@
+use super::fact_control::Precise;
 use super::*;
+
+#[tokio::test]
+async fn lazy_sensitive_until_binding_prevents_agent_cache() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"private gate","noLog":true,"operation":{"kind":"set_fact","values":{"privateGate":true}}},
+        {"name":"retry","vars":{"gate":{"kind":"ref","path":["vars","privateGate"]}},"until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"fixture"}}
+    ]}]});
+    let mut backend = Precise::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert!(backend.0.calls[0].task.no_log);
+    assert_eq!(backend.0.events[1]["result"]["censored"], true);
+    Ok(())
+}
 
 #[tokio::test]
 async fn secret_retry_condition_censors_output_and_prevents_agent_cache() -> Result<()> {

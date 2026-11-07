@@ -12,6 +12,7 @@ mod handler_control;
 mod handler_failure;
 mod inventory;
 mod layer_vars;
+mod lazy_layers;
 mod local_retry;
 mod local_status;
 mod loop_labels;

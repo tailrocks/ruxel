@@ -1,15 +1,12 @@
-use super::{Backend, Context, Map, Result, Runner, TrackedValue, Value};
+use super::{Backend, Context, ContextLayer, Map, Result, Runner, TrackedValue, Value};
 use std::collections::BTreeMap;
 
 impl<B: Backend> Runner<'_, B> {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "ordered assertion evaluation shares sensitivity state"
-    )]
     pub(super) fn assertion_params(
         &mut self,
         params: &Map<String, Value>,
         scope: &TrackedValue,
+        layer: &ContextLayer,
         mut sensitive: bool,
     ) -> Result<TrackedValue> {
         let raw = params.get("that").context("assert requires that")?;
@@ -28,16 +25,13 @@ impl<B: Backend> Runner<'_, B> {
         let mut pass = true;
         if let Some(entries) = entries {
             for entry in entries {
-                let evaluated = self
-                    .backend
-                    .evaluate_tracked(entry, scope)
-                    .map_err(|error| {
-                        if sensitive {
-                            anyhow::anyhow!("sensitive assertion failed")
-                        } else {
-                            error
-                        }
-                    })?;
+                let evaluated = self.evaluate_scoped(entry, scope, layer).map_err(|error| {
+                    if sensitive {
+                        anyhow::anyhow!("sensitive assertion failed")
+                    } else {
+                        error
+                    }
+                })?;
                 sensitive |= evaluated.is_secret();
                 if !evaluated
                     .value
@@ -49,7 +43,7 @@ impl<B: Backend> Runner<'_, B> {
                 }
             }
         } else {
-            let evaluated = self.backend.evaluate_tracked(raw, scope).map_err(|error| {
+            let evaluated = self.evaluate_scoped(raw, scope, layer).map_err(|error| {
                 if sensitive {
                     anyhow::anyhow!("sensitive assertion failed")
                 } else {
@@ -82,16 +76,13 @@ impl<B: Backend> Runner<'_, B> {
             if key == "that" || (key == "fail_msg" && pass) {
                 continue;
             }
-            let value = self
-                .backend
-                .evaluate_tracked(value, scope)
-                .map_err(|error| {
-                    if sensitive {
-                        anyhow::anyhow!("sensitive assertion failed")
-                    } else {
-                        error
-                    }
-                })?;
+            let value = self.evaluate_scoped(value, scope, layer).map_err(|error| {
+                if sensitive {
+                    anyhow::anyhow!("sensitive assertion failed")
+                } else {
+                    error
+                }
+            })?;
             sensitive |= value.is_secret();
             fields.insert(key.clone(), value);
         }

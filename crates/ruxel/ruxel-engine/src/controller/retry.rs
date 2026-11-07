@@ -35,7 +35,7 @@ impl<B: super::Backend> super::Runner<'_, B> {
         }
         let attempts = max_attempts(task)?;
         let mut layer = layer.clone();
-        layer.control_sensitive |= super::operation::sensitive_condition(condition, scope);
+        layer.control_sensitive |= self.sensitive_layered_condition(condition, scope, &layer);
         let mut changed = false;
         for attempt in 1..=attempts {
             let tracked = self.execute_once(task, &layer, scope, item).await?;
@@ -52,8 +52,7 @@ impl<B: super::Backend> super::Runner<'_, B> {
             };
             let current_scope = super::result_scope(scope, task, &current)?;
             let evaluated = self
-                .backend
-                .evaluate_tracked(condition, &current_scope)
+                .evaluate_scoped(condition, &current_scope, &layer)
                 .map_err(|error| {
                     if layer.control_sensitive || layer.no_log {
                         anyhow::anyhow!("sensitive retry condition failed")

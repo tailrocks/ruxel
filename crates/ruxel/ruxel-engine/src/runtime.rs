@@ -160,6 +160,7 @@ impl Backend for Execution {
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        self.prefetch_lookups(value)?;
         lazy_vars::evaluate_layers(self, value, scope, layers)
     }
     async fn prepare_operation_tracked(

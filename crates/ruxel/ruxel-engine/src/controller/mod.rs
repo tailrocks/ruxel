@@ -13,6 +13,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 mod types;
+mod variables;
 pub use types::{Mode, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.
@@ -173,6 +174,8 @@ impl Default for Options {
 #[derive(Clone, Default)]
 struct ContextLayer {
     vars: BTreeMap<String, TrackedValue>,
+    definitions: Vec<Map<String, Value>>,
+    resolved: BTreeSet<String>,
     environment: Map<String, Value>,
     become_user: Option<String>,
     tags: Vec<String>,
@@ -336,11 +339,11 @@ pub async fn run<B: Backend>(
             let mut layer = ContextLayer::default();
             for name in ordered_groups(&groups)? {
                 if group_hosts(&name, &groups, &mut BTreeSet::new())?.contains(&host) {
-                    runner.extend_vars(&mut layer.vars, &object(&groups[&name], "vars"))?;
+                    layer.definitions.push(object(&groups[&name], "vars"));
                 }
             }
-            runner.extend_vars(&mut layer.vars, &object(&hosts[&host], "vars"))?;
-            runner.extend_vars(&mut layer.vars, &object(play, "vars"))?;
+            layer.definitions.push(object(&hosts[&host], "vars"));
+            layer.definitions.push(object(play, "vars"));
             layer.tags = array(play, "tags")
                 .iter()
                 .filter_map(Value::as_str)
