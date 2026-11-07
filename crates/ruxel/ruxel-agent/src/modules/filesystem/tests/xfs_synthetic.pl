@@ -78,4 +78,35 @@ for my $error (qw(ENOTTY EPERM EWOULDBLOCK EIO)) {
         die "lost ioctl error" unless $@ eq "synthetic $error\n" && join(',', @error_calls) eq join(',', @expected);
     }
 }
+for my $case (
+    ['zero block size', 0, 0],
+    ['non-power-of-two block size', 0, 768],
+    ['undersized allocation group', 8, 63],
+    ['invalid inode percentage', 28, 101],
+) {
+    my ($label, $offset, $value) = @$case;
+    for my $mode (qw(preflight check grow)) {
+        my @invalid_calls;
+        my $invalid_geometry = sub {
+            my ($request, $buf) = @_;
+            push @invalid_calls, $request;
+            die "unexpected mutation for $label" unless $request == 0x80705864;
+            substr($$buf, 0, 4, pack('L', 4096));
+            substr($$buf, 8, 4, pack('L', 1024));
+            substr($$buf, 28, 4, pack('L', 25));
+            substr($$buf, 32, 32, pack('Q4', 100, 0, 0, 64));
+            substr($$buf, $offset, 4, pack('L', $value));
+        };
+        eval { execute_xfs($mode, 2048 * 4096, 77, $id, $invalid_geometry) };
+        die "$mode accepted $label" unless $@ eq "invalid XFS geometry\n"
+            && join(',', @invalid_calls) eq 0x80705864;
+    }
+}
+for my $mode (qw(preflight check grow)) {
+    my @identity_calls;
+    my $unexpected_io = sub { push @identity_calls, $_[0]; die "unexpected identity ioctl"; };
+    eval { execute_xfs($mode, 2048 * 4096, 77, sub { return (77, 0); }, $unexpected_io) };
+    die "$mode accepted non-directory identity" unless $@ eq "mount descriptor identity mismatch\n"
+        && !@identity_calls;
+}
 print "ok\n";
