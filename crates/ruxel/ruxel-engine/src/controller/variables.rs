@@ -1,21 +1,65 @@
 use super::{Backend, ContextLayer, Map, Result, Runner, TrackedValue, Value};
 
-fn prune_literal_branches(value: &Value) -> Value {
+fn known_public_bool(
+    value: &Value,
+    scope: &TrackedValue,
+    definitions: &[Map<String, Value>],
+) -> Option<bool> {
+    match value.get("kind")?.as_str()? {
+        "literal" => value.get("value")?.as_bool(),
+        "ref" => {
+            let path = value.get("path")?.as_array()?;
+            let root = path.first()?.as_str()?;
+            if matches!(root, "vars" | "variables")
+                && path
+                    .get(1)
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| definitions.iter().any(|layer| layer.contains_key(name)))
+            {
+                return None;
+            }
+            let mut current = scope.clone();
+            for (index, part) in path.iter().enumerate() {
+                let part = part.as_str()?;
+                current = current.get(if index == 0 && part == "variables" {
+                    "vars"
+                } else {
+                    part
+                })?;
+            }
+            if current.is_secret() {
+                None
+            } else {
+                current.value.as_bool()
+            }
+        }
+        _ => None,
+    }
+}
+
+fn prune_known_branches(
+    value: &Value,
+    scope: &TrackedValue,
+    definitions: &[Map<String, Value>],
+) -> Value {
     match value {
         Value::Object(fields) => {
             if fields.get("kind").and_then(Value::as_str) == Some("call")
                 && let Some(args) = fields.get("args").and_then(Value::as_array)
                 && let Some(first) = args.first()
-                && first.get("kind").and_then(Value::as_str) == Some("literal")
-                && let Some(condition) = first.get("value").and_then(Value::as_bool)
+                && let Some(condition) = known_public_bool(first, scope, definitions)
             {
                 match (
                     fields.get("function").and_then(Value::as_str),
                     args.len(),
                     condition,
                 ) {
-                    (Some("if"), 3, true) => return prune_literal_branches(&args[1]),
-                    (Some("if"), 3, false) => return prune_literal_branches(&args[2]),
+                    (Some("if"), 3, true) => {
+                        return prune_known_branches(&args[1], scope, definitions);
+                    }
+                    (Some("if"), 3, false) => {
+                        return prune_known_branches(&args[2], scope, definitions);
+                    }
                     (Some("and"), 2, false) | (Some("or"), 2, true) => return first.clone(),
                     _ => {}
                 }
@@ -23,11 +67,18 @@ fn prune_literal_branches(value: &Value) -> Value {
             Value::Object(
                 fields
                     .iter()
-                    .map(|(key, item)| (key.clone(), prune_literal_branches(item)))
+                    .map(|(key, item)| {
+                        (key.clone(), prune_known_branches(item, scope, definitions))
+                    })
                     .collect(),
             )
         }
-        Value::Array(items) => Value::Array(items.iter().map(prune_literal_branches).collect()),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| prune_known_branches(item, scope, definitions))
+                .collect(),
+        ),
         _ => value.clone(),
     }
 }
@@ -39,11 +90,11 @@ impl<B: Backend> Runner<'_, B> {
         scope: &TrackedValue,
         layer: &ContextLayer,
     ) -> bool {
-        let value = prune_literal_branches(value);
+        let definitions = self.variable_layers(layer);
+        let value = prune_known_branches(value, scope, &definitions);
         if super::operation::sensitive_condition(&value, scope) {
             return true;
         }
-        let definitions = self.variable_layers(layer);
         let names: Map<_, _> = definitions
             .iter()
             .flat_map(|vars| vars.keys())
@@ -64,7 +115,7 @@ impl<B: Backend> Runner<'_, B> {
             if !visited.insert((index, name.clone())) {
                 continue;
             }
-            let definition = prune_literal_branches(&definitions[index][&name]);
+            let definition = prune_known_branches(&definitions[index][&name], scope, &definitions);
             if super::operation::sensitive_condition(&definition, scope) {
                 return true;
             }

@@ -105,3 +105,39 @@ fn nested_until_lookup_is_sensitive_before_dispatch() {
         &scope
     ));
 }
+
+#[test]
+fn known_public_branch_prunes_without_crossing_secret_or_shadowed_bindings() {
+    let mut backend = Fake::default();
+    let options = Options::default();
+    let runner = Runner {
+        backend: &mut backend,
+        options: &options,
+        host: "h".into(),
+        scope: TrackedValue::public(json!({})),
+        handlers: vec![],
+        notified: BTreeMap::new(),
+        handling: false,
+        recap: Recap::default(),
+        next_id: 1,
+    };
+    let expression = json!({"kind":"call","function":"and","args":[
+        {"kind":"ref","path":["vars","gate"]},
+        {"kind":"lookup","provider":"synthetic","key":"fixture"}
+    ]});
+    let make_scope = |gate| {
+        TrackedValue::object(BTreeMap::from([(
+            "vars".into(),
+            TrackedValue::object(BTreeMap::from([("gate".into(), gate)])),
+        )]))
+    };
+    let public = make_scope(TrackedValue::public(json!(false)));
+    assert!(!runner.sensitive_layered_condition(&expression, &public, &ContextLayer::default()));
+    let secret = make_scope(TrackedValue::secret(json!(false)));
+    assert!(runner.sensitive_layered_condition(&expression, &secret, &ContextLayer::default()));
+    let shadow = ContextLayer {
+        definitions: vec![Map::from_iter([("gate".into(), json!(true))])],
+        ..ContextLayer::default()
+    };
+    assert!(runner.sensitive_layered_condition(&expression, &public, &shadow));
+}
