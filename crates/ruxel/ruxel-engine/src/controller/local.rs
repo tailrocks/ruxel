@@ -120,11 +120,7 @@ impl<B: Backend> Runner<'_, B> {
                 .local_once(task, kind, layer, params, tracked_params, sensitive)
                 .await;
         };
-        let attempts = task
-            .get("retries")
-            .and_then(Value::as_u64)
-            .unwrap_or(1)
-            .max(1);
+        let attempts = super::retry::max_attempts(task)?;
         let mut changed = false;
         for attempt in 1..=attempts {
             let tracked = self
@@ -168,11 +164,9 @@ impl<B: Backend> Runner<'_, B> {
                     TrackedValue::public(result)
                 });
             }
-            tokio::time::sleep(std::time::Duration::from_secs(
-                task.get("delaySeconds")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-            ))
+            tokio::time::sleep(std::time::Duration::from_secs(super::retry::delay_seconds(
+                task,
+            )))
             .await;
         }
         bail!("retry loop did not execute")

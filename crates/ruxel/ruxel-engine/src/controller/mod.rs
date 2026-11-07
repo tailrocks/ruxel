@@ -386,6 +386,7 @@ mod local;
 mod loop_vars;
 mod operation;
 mod plan;
+mod retry;
 mod runner;
 
 #[cfg(test)]

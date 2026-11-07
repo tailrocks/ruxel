@@ -55,8 +55,8 @@ class Task {
   becomeUser: String? = null
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
-  retries: Int(this >= 1) = 1
-  delaySeconds: Int(this >= 0) = 0
+  retries: Int?(this == null || this >= 0) = null
+  delaySeconds: Int(this >= 0) = 5
   until: Expr? = null
   changedWhen: Expr? = null
   failedWhen: Expr? = null

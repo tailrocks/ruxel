@@ -12,6 +12,7 @@ mod loop_vars;
 mod more;
 mod persistence;
 mod plan_redaction;
+mod retry_count;
 mod smoke;
 mod until_sensitivity;
 

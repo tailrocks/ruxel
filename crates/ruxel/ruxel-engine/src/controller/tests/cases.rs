@@ -1,7 +1,7 @@
 use super::*;
 #[tokio::test]
 async fn until_uses_result_and_loop_label_uses_item() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","loop":["one"],"loopLabel":{"kind":"ref","path":["item"]},"retries":2,"until":{"kind":"ref","path":["result","ready"]},"operation":{"kind":"command","cmd":"test"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","loop":["one"],"loopLabel":{"kind":"ref","path":["item"]},"retries":2,"delaySeconds":0,"until":{"kind":"ref","path":["result","ready"]},"operation":{"kind":"command","cmd":"test"}}]}]});
     let mut backend = Fake {
         results: [json!({"ready":false}), json!({"ready":true,"changed":true})].into(),
         ..Fake::default()

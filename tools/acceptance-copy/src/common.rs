@@ -1,0 +1,134 @@
+use crate::process;
+use anyhow::{Context, Result, ensure};
+use serde_json::Value;
+use std::{
+    collections::BTreeMap,
+    ffi::OsString,
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use tempfile::TempDir;
+pub struct Harness<'a> {
+    pub temp: TempDir,
+    cli: &'a Path,
+    agent: &'a Path,
+    pub module: PathBuf,
+    pub payload: PathBuf,
+}
+impl<'a> Harness<'a> {
+    pub fn new(root: &Path, cli: &'a Path, agent: &'a Path) -> Result<Self> {
+        let temp = tempfile::Builder::new()
+            .prefix("ruxel-copy-acceptance-")
+            .tempdir()?;
+        for dir in ["schema", "fixtures", "payload"] {
+            fs::create_dir(temp.path().join(dir))?;
+        }
+        fs::copy(
+            root.join("schema/Ruxel.pkl"),
+            temp.path().join("schema/Ruxel.pkl"),
+        )?;
+        let module = temp.path().join("fixtures/copy.pkl");
+        let payload = temp.path().join("payload");
+        Ok(Self {
+            temp,
+            cli,
+            agent,
+            module,
+            payload,
+        })
+    }
+    pub fn write(&self, tasks: &str) -> Result<()> {
+        let text = format!(
+            r#"import "../schema/Ruxel.pkl"
+output {{ value = new Ruxel.Config {{
+ inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
+ plays {{ new {{ name = "copy acceptance"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}
+}} }}
+"#
+        );
+        fs::write(&self.module, text)?;
+        Ok(())
+    }
+    pub fn events(&self, mode: &str, limit: u64) -> Result<Vec<Value>> {
+        let events = process::run(
+            self.cli,
+            self.agent,
+            &self.module,
+            &self.temp.path().join("state"),
+            mode,
+            Duration::from_secs(limit),
+        )?;
+        validate_recap(&events)?;
+        Ok(events)
+    }
+    pub fn run(&self, mode: &str) -> Result<Value> {
+        let events = self.events(mode, 20)?;
+        Ok(task_result(&events, "copy")?.clone())
+    }
+    pub fn snapshot(&self) -> Result<BTreeMap<OsString, (u32, Vec<u8>)>> {
+        let mut result = BTreeMap::new();
+        for entry in fs::read_dir(&self.payload)? {
+            let entry = entry?;
+            if entry.path().is_file() {
+                result.insert(
+                    entry.file_name(),
+                    (mode(&entry.path())?, fs::read(entry.path())?),
+                );
+            }
+        }
+        Ok(result)
+    }
+    pub fn predict(&self, changed: bool) -> Result<()> {
+        let before = self.snapshot()?;
+        for mode in ["check", "diff"] {
+            ensure!(
+                self.run(mode)?["changed"] == changed && self.snapshot()? == before,
+                "{mode}: incorrect change prediction or payload mutation"
+            );
+        }
+        Ok(())
+    }
+}
+pub fn pkl(value: &str) -> Result<String> {
+    Ok(serde_json::to_string(value)?)
+}
+pub fn path(path: &Path) -> Result<String> {
+    pkl(path.to_str().context("path is not UTF-8")?)
+}
+pub fn shell(path: &Path) -> Result<String> {
+    Ok(format!(
+        "'{}'",
+        path.to_str()
+            .context("path is not UTF-8")?
+            .replace('\'', "'\\''")
+    ))
+}
+pub fn mode(path: &Path) -> Result<u32> {
+    Ok(fs::metadata(path)?.permissions().mode() & 0o7777)
+}
+fn validate_recap(events: &[Value]) -> Result<()> {
+    let recaps: Vec<_> = events
+        .iter()
+        .filter(|e| e["host"] == "fixture" && e.get("recap").is_some())
+        .collect();
+    ensure!(
+        recaps.len() == 1 && recaps[0]["recap"]["failed"] == 0,
+        "missing, duplicate, or failed fixture recap"
+    );
+    Ok(())
+}
+fn task_result<'a>(events: &'a [Value], name: &str) -> Result<&'a Value> {
+    let matches: Vec<_> = events
+        .iter()
+        .filter(|e| e["task"] == name && e.get("result").is_some())
+        .collect();
+    ensure!(
+        matches.len() == 1,
+        "missing or duplicate task result: {name}"
+    );
+    Ok(&matches[0]["result"])
+}
+#[cfg(test)]
+mod tests;

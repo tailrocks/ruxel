@@ -142,7 +142,10 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
                     && task.loop_var == "item"),
             "loop controls require an operation task"
         );
-        ensure!(task.retries >= 1, "retries must be positive");
+        ensure!(
+            task.retries != Some(u64::MAX),
+            "retries exceed supported range"
+        );
         if let Some(destination) = &task.delegate_to {
             if destination.is_object() {
                 expression(destination)?;

@@ -213,11 +213,7 @@ impl<B: Backend> Runner<'_, B> {
                 TrackedValue::public(json!({"changed":false,"planned":true}))
             });
         }
-        let attempts = task
-            .get("retries")
-            .and_then(Value::as_u64)
-            .unwrap_or(1)
-            .max(1);
+        let attempts = super::retry::max_attempts(task)?;
         let mut result = Value::Null;
         let mut changed = false;
         let mut executed = 0;
@@ -267,11 +263,9 @@ impl<B: Backend> Runner<'_, B> {
                 result["failed"] = Value::Bool(true);
             }
             if attempt + 1 < attempts {
-                tokio::time::sleep(std::time::Duration::from_secs(
-                    task.get("delaySeconds")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                ))
+                tokio::time::sleep(std::time::Duration::from_secs(super::retry::delay_seconds(
+                    task,
+                )))
                 .await;
             }
         }

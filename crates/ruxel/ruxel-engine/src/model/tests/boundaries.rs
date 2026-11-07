@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+fn retries_are_optional_nonnegative_and_cannot_overflow() -> Result<()> {
+    let mut value = config(json!({"kind":"debug"}));
+    assert_eq!(
+        validate_config(&value)?["plays"][0]["tasks"][0]["retries"],
+        Value::Null
+    );
+    for retries in [0, 1, 2] {
+        value["plays"][0]["tasks"][0]["retries"] = json!(retries);
+        assert_eq!(
+            validate_config(&value)?["plays"][0]["tasks"][0]["retries"],
+            retries
+        );
+    }
+    value["plays"][0]["tasks"][0]["retries"] = json!(-1);
+    assert!(validate_config(&value).is_err());
+    value["plays"][0]["tasks"][0]["retries"] = json!(u64::MAX);
+    assert!(validate_config(&value).is_err());
+    Ok(())
+}
+
+#[test]
+fn retry_delay_defaults_to_five_without_overriding_explicit_zero() -> Result<()> {
+    let mut value = config(json!({"kind":"debug"}));
+    assert_eq!(
+        validate_config(&value)?["plays"][0]["tasks"][0]["delaySeconds"],
+        5
+    );
+    for delay in [0, 2] {
+        value["plays"][0]["tasks"][0]["delaySeconds"] = json!(delay);
+        assert_eq!(
+            validate_config(&value)?["plays"][0]["tasks"][0]["delaySeconds"],
+            delay
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn rescue_and_always_require_block_tasks() {
     for section in ["rescue", "always"] {
         let child = json!({"name":"cleanup","operation":{"kind":"debug"}});

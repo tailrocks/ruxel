@@ -3,8 +3,51 @@ use prost::Message;
 use ruxel_proto::v1::envelope::Msg;
 use ruxel_proto::v1::{self, event::Msg as Event};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+fn native_fixture() -> anyhow::Result<&'static [u8]> {
+    static BINARY: OnceLock<Result<Vec<u8>, String>> = OnceLock::new();
+    BINARY
+        .get_or_init(|| {
+            let compile = || -> anyhow::Result<Vec<u8>> {
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_nanos();
+                let directory = std::env::temp_dir()
+                    .join(format!("ruxel-native-ssh-{}-{stamp}", std::process::id()));
+                std::fs::create_dir(&directory)?;
+                let build = (|| -> anyhow::Result<Vec<u8>> {
+                    let output = directory.join("fixture");
+                    let source = directory.join("fake_ssh.rs");
+                    std::fs::write(&source, include_str!("fake_ssh.rs"))?;
+                    std::fs::write(directory.join("fake_sftp.rs"), include_str!("fake_sftp.rs"))?;
+                    let status = std::process::Command::new(
+                        std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()),
+                    )
+                    .args(["--edition=2024", "-Dwarnings"])
+                    .arg(source)
+                    .arg("-o")
+                    .arg(&output)
+                    .output()?;
+                    anyhow::ensure!(
+                        status.status.success(),
+                        "compile native SSH fixture: {}",
+                        String::from_utf8_lossy(&status.stderr)
+                    );
+                    Ok(std::fs::read(output)?)
+                })();
+                std::fs::remove_dir_all(directory)?;
+                build
+            };
+            compile().map_err(|error| format!("{error:#}"))
+        })
+        .as_deref()
+        .map_err(|error| anyhow::anyhow!(error.clone()))
+}
 
 pub(super) struct Fixture {
     pub(super) root: PathBuf,
@@ -21,9 +64,14 @@ impl Fixture {
             std::fs::set_permissions(root.join(directory), std::fs::Permissions::from_mode(0o755))?;
         }
         let ssh = root.join("bin/ssh");
-        std::fs::write(&ssh, include_str!("fake_ssh.py"))?;
+        std::fs::write(&ssh, native_fixture()?)?;
         std::fs::set_permissions(ssh, std::fs::Permissions::from_mode(0o700))?;
         std::fs::write(root.join("agent"), b"synthetic uploaded agent bytes")?;
+        let mut digest = String::new();
+        for byte in Sha256::digest(b"synthetic uploaded agent bytes") {
+            write!(digest, "{byte:02x}")?;
+        }
+        std::fs::write(root.join("digest"), digest)?;
         let ack = v1::Event {
             msg: Some(Event::HelloAck(v1::HelloAck {
                 proto_version: ruxel_proto::PROTO_VERSION,
@@ -36,6 +84,21 @@ impl Fixture {
         };
         std::fs::write(root.join("ack"), ruxel_proto::frame::encode_frame(&ack))?;
         Ok(Self { root })
+    }
+    pub(super) fn override_owner(
+        &self,
+        path: &str,
+        uid: u32,
+        inode: Option<u64>,
+    ) -> anyhow::Result<()> {
+        std::fs::write(
+            self.root.join("metadata"),
+            format!(
+                "{path}\t{uid}\t{}\n",
+                inode.map_or_else(|| "*".into(), |value| value.to_string())
+            ),
+        )?;
+        Ok(())
     }
     fn host(&self) -> anyhow::Result<RemoteHost> {
         let path = std::env::join_paths(std::iter::once(self.root.join("bin")).chain(
