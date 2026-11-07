@@ -30,6 +30,7 @@ fn revisions_resolve_to_commits_and_missing_revision_preserves_head() -> Result<
         }
         let first = git(&directory, &["rev-parse", "HEAD"])?.0;
         assert!(git(&directory, &["commit", "--allow-empty", "-m", "second"])?.1);
+        let second = git(&directory, &["rev-parse", "HEAD"])?.0;
         let runner = |args: &[&str], _: Option<&str>| git(&directory, args);
         for version in ["release", first.as_str(), &first[..12], "main"] {
             resolved(
@@ -38,9 +39,8 @@ fn revisions_resolve_to_commits_and_missing_revision_preserves_head() -> Result<
                 &runner,
             )?;
             assert!(!git(&directory, &["symbolic-ref", "-q", "HEAD"])?.1);
-            if version != "main" {
-                assert_eq!(git(&directory, &["rev-parse", "HEAD"])?.0, first);
-            }
+            let expected = if version == "main" { &second } else { &first };
+            assert_eq!(&git(&directory, &["rev-parse", "HEAD"])?.0, expected);
         }
         let before = git(&directory, &["rev-parse", "HEAD"])?.0;
         assert!(resolved("missing-revision", "unused", &runner).is_err());
