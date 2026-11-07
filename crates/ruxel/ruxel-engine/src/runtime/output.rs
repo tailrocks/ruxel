@@ -2,6 +2,46 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::{fs::File, io::Write, path::Path, sync::Mutex};
 
+/// Project only controller-owned fields when the run has unknown provenance.
+pub(super) fn sensitive_event(value: &Value) -> Value {
+    let mut output = serde_json::Map::new();
+    if value.get("host").is_some() {
+        output.insert("host".into(), Value::String("[censored]".into()));
+    }
+    if let Some(task) = value.get("task") {
+        output.insert(
+            "task".into(),
+            if task.is_object() {
+                serde_json::json!({"censored":true})
+            } else {
+                Value::String("[censored]".into())
+            },
+        );
+    }
+    if let Some(phase) = value.get("phase").and_then(Value::as_str)
+        && ["preTask", "task", "handler"].contains(&phase)
+    {
+        output.insert("phase".into(), Value::String(phase.into()));
+    }
+    if let Some(planned) = value.get("planned").and_then(Value::as_bool) {
+        output.insert("planned".into(), Value::Bool(planned));
+    }
+    if let Some(result) = value.get("result") {
+        let mut censored = serde_json::Map::new();
+        censored.insert("censored".into(), Value::Bool(true));
+        for key in ["changed", "failed", "skipped"] {
+            if let Some(value) = result.get(key).and_then(Value::as_bool) {
+                censored.insert(key.into(), Value::Bool(value));
+            }
+        }
+        output.insert("result".into(), Value::Object(censored));
+    }
+    if value.get("pause").is_some() {
+        output.insert("pause".into(), Value::String("[censored]".into()));
+    }
+    Value::Object(output)
+}
+
 /// Presentation of redacted execution events.
 #[derive(Debug, Default, Clone, Copy)]
 pub enum OutputFormat {

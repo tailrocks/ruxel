@@ -2,6 +2,19 @@ use super::*;
 use std::path::PathBuf;
 
 #[test]
+fn sensitive_event_exposes_only_safe_metadata() -> Result<()> {
+    let projected = output::sensitive_event(
+        &json!({"host":"synthetic-marker", "task":"synthetic-marker", "item":"synthetic-marker", "pause":"synthetic-marker", "result":{"msg":"synthetic-marker", "changed":true, "failed":false}}),
+    );
+    assert!(!serde_json::to_string(&projected)?.contains("synthetic-marker"));
+    assert_eq!(projected["host"], "[censored]");
+    assert_eq!(projected["task"], "[censored]");
+    assert_eq!(projected["result"]["changed"], true);
+    assert_eq!(projected["result"]["failed"], false);
+    Ok(())
+}
+
+#[test]
 fn redaction_preserves_json_structure_for_short_and_escaped_secrets() -> Result<()> {
     let lookups = Lookups {
         resolver: Resolver::synthetic(),

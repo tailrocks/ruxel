@@ -250,7 +250,11 @@ impl Backend for Execution {
         }
     }
     fn event(&mut self, event: &Value) -> Result<()> {
-        let event = self.lookups.redact(event)?;
+        let event = if self.conservative_sensitive() {
+            output::sensitive_event(event)
+        } else {
+            self.lookups.redact(event)?
+        };
         self.output.event(&event)
     }
 }
@@ -311,7 +315,13 @@ pub async fn run(
         }),
     };
     let result = async {
-        let (facts, failed) = connect::preconnect(config, options, &execution).await?;
+        let (facts, failed) = connect::preconnect(config, options, &execution)
+            .await
+            .inspect_err(|_| {
+                execution
+                    .conservative_sensitive
+                    .store(true, std::sync::atomic::Ordering::Release);
+            })?;
         let checked = execution.connections.lock().await.keys().cloned().collect();
         if options.mode == Mode::Plan
             || delegates::requires_conservative(config, &checked, !failed.is_empty())
@@ -338,8 +348,8 @@ pub async fn run(
         }
     }
     let redact_error = |error: anyhow::Error| -> anyhow::Error {
-        if options.mode == Mode::Plan {
-            return anyhow::anyhow!("plan failed");
+        if execution.conservative_sensitive() {
+            return anyhow::anyhow!("sensitive execution failed");
         }
         match execution.lookups.redact(&Value::String(error.to_string())) {
             Ok(Value::String(message)) => anyhow::anyhow!(message),
@@ -365,7 +375,7 @@ pub async fn run(
                 }
             }
             for (host, total) in &recap {
-                let visible_host = if options.mode == Mode::Plan {
+                let visible_host = if execution.conservative_sensitive() {
                     "[censored]"
                 } else {
                     host

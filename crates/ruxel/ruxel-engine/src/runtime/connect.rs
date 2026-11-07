@@ -1,5 +1,5 @@
 use super::Execution;
-use crate::controller::{self, Mode, Options, Recap};
+use crate::controller::{self, Backend, Mode, Options, Recap};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -10,8 +10,8 @@ pub(super) fn report_failure(
     event: &str,
     error: &anyhow::Error,
 ) -> Result<()> {
-    let (host, message) = if execution.mode == Mode::Plan {
-        ("[censored]", "plan failed".to_owned())
+    let (host, message) = if execution.conservative_sensitive() {
+        ("[censored]", "sensitive execution failed".to_owned())
     } else {
         (host, error.to_string())
     };
@@ -40,6 +40,9 @@ pub(super) async fn preconnect(
                 facts.insert(host, json!({"default_ipv4_interface":gathered.default_ipv4_interface,"distribution_release":gathered.distribution_release,"architecture":gathered.architecture,"hostname":gathered.hostname}));
             }
             Err(error) => {
+                execution
+                    .conservative_sensitive
+                    .store(true, std::sync::atomic::Ordering::Release);
                 report_failure(execution, &host, "unreachable", &error)?;
                 failed.insert(
                     host,
