@@ -1,4 +1,5 @@
 use crate::{pins, process};
+mod privacy;
 use anyhow::{Context, Result, ensure};
 use std::{fs, path::Path, time::Duration};
 const SCENARIOS: [&str; 14] = [
@@ -63,6 +64,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         SCENARIOS.len()
     );
     ensure!(failures == 0, "plan matrix failed");
+    privacy::run(root, cli, agent)?;
     Ok(())
 }
 fn validate(events: &[serde_json::Value], payload: &Path) -> Result<()> {
