@@ -22,9 +22,14 @@ my $io = sub {
     } else { die "unexpected ioctl"; }
 };
 die "preflight" if execute_xfs('preflight', 0, 77, $id, $io);
+die "preflight wrote" unless join(',', @calls) eq 0x80705864;
+@calls = ();
 die "check" unless execute_xfs('check', 1034 * 4096, 77, $id, $io) && $blocks == 100;
+die "check wrote" unless join(',', @calls) eq 0x80705864;
+@calls = ();
 die "grow" unless execute_xfs('grow', 1034 * 4096, 77, $id, $io) && $blocks == 1024;
 die "repeat" if execute_xfs('grow', 1034 * 4096, 77, $id, $io);
+die "grow sequence" unless join(',', @calls) eq join(',', 0x80705864, 0x4010586e, 0x80705864, 0x80705864);
 my $old = scalar @calls;
 eval { execute_xfs('grow', 1, 77, sub { return (78, 1) }, $io) };
 die "identity" unless $@ =~ /identity/ && @calls == $old;
@@ -50,6 +55,31 @@ die "large grow" unless execute_xfs('grow', '4611686018427388416', 77, $id, $lar
 my $ignored = sub { my ($request, $buf) = @_; $io->($request, $buf) if $request == 0x80705864; };
 eval { execute_xfs('grow', 2048 * 4096, 77, $id, $ignored) };
 die "postcondition" unless $@ =~ /postcondition/;
+for my $offset (40, 48, 56) {
+    my @layout_calls;
+    my $bad_layout = sub {
+        my ($request, $buf) = @_;
+        push @layout_calls, $request;
+        $io->($request, $buf);
+        substr($$buf, $offset, 8, pack('Q', $offset == 56 ? 0 : 1));
+    };
+    eval { execute_xfs('preflight', 0, 77, $id, $bad_layout) };
+    die "unsupported layout" unless $@ =~ /layout unsupported/ && join(',', @layout_calls) eq 0x80705864;
+}
+for my $error (qw(ENOTTY EPERM EWOULDBLOCK EIO)) {
+    for my $failed_request (0x80705864, 0x4010586e) {
+        my @error_calls;
+        my $failure = sub {
+            my ($request, $buf) = @_;
+            push @error_calls, $request;
+            die "synthetic $error\n" if $request == $failed_request;
+            $io->($request, $buf);
+        };
+        eval { execute_xfs('grow', 2048 * 4096, 77, $id, $failure) };
+        my @expected = $failed_request == 0x80705864 ? (0x80705864) : (0x80705864, 0x4010586e);
+        die "lost ioctl error" unless $@ eq "synthetic $error\n" && join(',', @error_calls) eq join(',', @expected);
+    }
+}
 print "ok\n";
 "#
     );
