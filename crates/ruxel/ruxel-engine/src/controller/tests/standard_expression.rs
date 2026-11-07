@@ -5,6 +5,8 @@ use std::cell::Cell;
 #[derive(Default)]
 struct Custom {
     calls: Cell<usize>,
+    events: Vec<Value>,
+    executions: usize,
 }
 
 impl LookupResolver for Custom {
@@ -27,11 +29,87 @@ impl Backend for Custom {
         evaluate_standard_layered(self, value, scope, layers)
     }
     fn execute(&mut self, _: Request) -> impl Future<Output = Result<Value>> {
-        std::future::ready(Ok(json!({})))
+        self.executions += 1;
+        std::future::ready(Ok(json!({"changed":false,"rc":0})))
     }
-    fn event(&mut self, _: &Value) -> Result<()> {
+    fn event(&mut self, event: &Value) -> Result<()> {
+        self.events.push(event.clone());
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn custom_backend_resolves_retry_condition_from_current_result() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
+        "targets":["h"],"vars":{"status":{"kind":"ref","path":["results","run","rc"]}},
+        "tasks":[{"name":"run","register":"run","until":{"kind":"call","function":"eq","args":[{"kind":"ref","path":["vars","status"]},{"kind":"literal","value":0}]},"operation":{"kind":"command","cmd":"fixture"}}]
+    }]});
+    let mut backend = Custom::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ok, 1);
+    assert_eq!(backend.executions, 1);
+    assert_eq!(backend.events[0]["result"]["attempts"], 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_backend_runs_layered_controller_tasks_lazily() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
+        "targets":["h"],"vars":{"name":"parent","alias":{"kind":"ref","path":["vars","name"]},
+            "unused":{"kind":"lookup","provider":"synthetic","key":"unused"}},
+        "tasks":[{"name":"child","vars":{"name":"child"},"operation":{
+            "kind":"debug","msg":{"kind":"ref","path":["vars","alias"]}
+        }}]
+    }]});
+    let mut backend = Custom::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ok, 1);
+    assert_eq!(backend.events[0]["result"]["msg"], "child");
+    assert_eq!(backend.calls.get(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_backend_resolves_delayed_results_and_updated_facts() -> Result<()> {
+    let alias = json!({"kind":"ref","path":["vars","alias"]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
+        "targets":["h"],"vars":{"future":{"kind":"ref","path":["results","r","msg"]}},
+        "tasks":[
+            {"name":"old","operation":{"kind":"set_fact","values":{"source":"old"}}},
+            {"name":"block","vars":{"alias":{"kind":"ref","path":["vars","source"]}},
+             "when":{"kind":"call","function":"eq","args":[alias,{"kind":"literal","value":"old"}]},"block":[
+                {"name":"new","operation":{"kind":"set_fact","values":{"source":"new"}}},
+                {"name":"read","register":"r","operation":{"kind":"debug","msg":alias}}
+             ]},
+            {"name":"future","operation":{"kind":"debug","msg":{"kind":"ref","path":["vars","future"]}}}
+        ]
+    }]});
+    let mut backend = Custom::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ok, 4);
+    assert_eq!(backend.events[3]["result"]["msg"], "new");
+    Ok(())
 }
 
 #[test]
