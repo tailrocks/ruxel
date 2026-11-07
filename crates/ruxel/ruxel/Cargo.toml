@@ -1,36 +1,16 @@
-# The bare `ruxel` crate name is taken on crates.io (an unrelated, unmaintained
-# ray tracer), so the package is `ruxel-cli` while the installed binary stays
-# `ruxel` — same split as tailrocks/holla (`holla-cli` package, `holla` binary).
 [package]
-name = "ruxel-cli"
+name = "ruxel"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Rust-native automation without the YAML archaeology"
 license.workspace = true
-repository.workspace = true
-homepage.workspace = true
-keywords = ["automation", "infrastructure", "devops", "cli"]
-categories = ["command-line-utilities"]
-
-[[bin]]
-name = "ruxel"
-path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
-blake3.workspace = true
-clap.workspace = true
-futures.workspace = true
-minijinja.workspace = true
-openssh-sftp-client.workspace = true
-prost.workspace = true
-ruxel-core.workspace = true
-ruxel-proto.workspace = true
-serde_json.workspace = true
-serde_norway.workspace = true
-sha2.workspace = true
+ruxel-engine = { path = "../ruxel-engine", version = "0.1.0" }
 tokio.workspace = true
+clap.workspace = true
+ruxel-config.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

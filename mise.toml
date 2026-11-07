@@ -68,7 +68,10 @@ run = "cargo deny --locked check"
 
 [tasks."deny-ci"]
 description = "Verify cargo-deny CI inputs and run cargo-deny"
-run = ["python3 tools/ci/check-deny-inputs.py", "cargo deny --locked check"]
+run = [
+  "cargo run --locked -p ruxel-config --bin check-deny-inputs",
+  "cargo deny --locked check",
+]
 
 [tasks.machete]
 description = "Unused dependencies"
@@ -78,9 +81,44 @@ run = "cargo machete"
 description = "Repository policy (alint, rust-strict-v1)"
 run = ["alint validate-config", "alint check --fail-on-warning"]
 
+[tasks."acceptance-local"]
+description = "Safe native Pkl acceptance against actual local agent subprocesses"
+run = [
+  "cargo build --locked -p ruxel -p ruxel-agent 1>&2",
+  "perl -T -MConfig -MFcntl -MMath::BigInt -MPOSIX -e 1 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-xfs/Cargo.toml 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-plan/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-manifest/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-pty/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-pty/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --schema schema/Ruxel.pkl 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-control/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-control/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-files/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-files/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --schema schema/Ruxel.pkl --asset testdata/workloads/pr66/assets/template.pkl 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-copy/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-copy/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-cache/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-cache/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --schema schema/Ruxel.pkl 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-isolation/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-isolation/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-runtime/Cargo.toml 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-runtime/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+]
+
 [tasks.check]
 description = "Every local check; run before each commit"
-depends = ["fmt", "lint", "test", "doctest", "deny", "machete", "policy"]
+depends = [
+  "fmt",
+  "lint",
+  "test",
+  "doctest",
+  "deny",
+  "machete",
+  "policy",
+  "acceptance-local",
+]
 
 [tasks.ci]
 description = "Fresh-checkout aggregate: install, build, check"
@@ -88,4 +126,4 @@ run = ["mise run install", "mise run build", "mise run check"]
 
 [tasks.agent]
 description = "Static musl ruxel-agent for x86_64 Linux hosts"
-run = "cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"
+run = "tools/build-libblkid -- cargo zigbuild --target x86_64-unknown-linux-musl -p ruxel-agent --release --locked"

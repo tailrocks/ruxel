@@ -1,0 +1,83 @@
+[package]
+name        = "pklr"
+version     = "5.2.3"
+edition      = "2024"
+rust-version = "1.88"
+description = "Pure Rust pkl configuration language parser and evaluator"
+license     = "MIT"
+repository  = "https://github.com/jdx/pklr"
+homepage    = "https://github.com/jdx/pklr"
+keywords    = ["pkl", "config", "parser"]
+categories  = ["config", "parsing"]
+include     = ["/src/**/*", "/tests/**/*", "/Cargo.toml", "/README.md", "/LICENSE"]
+
+[features]
+default = [
+  "native-io",
+  "http",
+  "package-zip",
+  "miette-diagnostics",
+]
+# The evaluator without any host IO. Embedders supply their own
+# `EvalCapabilities`.
+eval-core = ["dep:fancy-regex", "dep:indexmap", "dep:md-5", "dep:rustc-hash", "dep:serde_json", "dep:sha1", "dep:sha2", "dep:url"]
+# `NativeCapabilities`: std file system and environment access.
+native-io = ["eval-core"]
+# HTTP imports and packages for `NativeCapabilities`, via ureq and rustls.
+http = ["native-io", "dep:rustls", "dep:ureq"]
+# `package://` zip archives.
+package-zip = ["eval-core", "dep:zip"]
+miette-diagnostics = ["dep:miette"]
+# Optional and additive: a reqwest HTTP backend that fetches on tokio.
+# The legacy `async` feature below additionally enables async evaluation entry
+# points that run on tokio's blocking pool.
+reqwest = ["native-io", "dep:reqwest", "dep:tokio"]
+# Kept for compatibility: enable both HTTP backends and the async evaluation
+# entry points. Select `reqwest` alone when a host supplies its own client and
+# does not need ureq.
+async = ["http", "reqwest"]
+
+[dependencies]
+fancy-regex = { version = "0.20", optional = true }
+indexmap    = { version = "2", optional = true }
+libm        = "0.2.16"
+md-5       = { version = "0.11", optional = true }
+miette     = { version = "7", features = ["derive"], optional = true }
+rustc-hash = { version = "2", optional = true }
+serde_json = { version = "1", optional = true }
+sha1       = { version = "0.11", optional = true }
+sha2       = { version = "0.11", optional = true }
+thiserror  = "2"
+reqwest         = { version = "0.13", default-features = false, features = ["rustls"], optional = true }
+rustls          = { version = "0.23", default-features = false, features = ["aws-lc-rs", "tls12"], optional = true }
+ureq            = { version = "3", default-features = false, features = ["platform-verifier", "rustls-no-provider"], optional = true }
+zip             = { version = "9", default-features = false, features = ["deflate"], optional = true }
+tokio           = { version = "1", features = ["rt", "rt-multi-thread", "sync"], optional = true }
+url             = { version = "2", optional = true }
+
+[dev-dependencies]
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "tls12"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "integration"
+required-features = ["http", "package-zip"]
+
+[[test]]
+name = "pkl_features"
+required-features = ["http", "package-zip"]
+
+[[test]]
+name = "native"
+required-features = ["http", "package-zip"]
+
+[[test]]
+name = "async"
+required-features = ["async", "package-zip"]
+
+[[test]]
+name = "reqwest"
+required-features = ["reqwest"]
+
+[profile.dev]
+debug = 1

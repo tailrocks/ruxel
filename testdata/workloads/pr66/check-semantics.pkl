@@ -1,0 +1,36 @@
+import "../../../schema/Ruxel.pkl"
+
+output {
+  value = new Ruxel.Config {
+    inventory {
+      hosts { ["fixture"] { address = "127.0.0.1" } }
+      groups { ["all"] { hosts { "fixture" } } }
+    }
+    plays {
+      new {
+        name = "Synthetic check-mode controller semantics"
+        targets { "all" }
+        tasks {
+          new {
+            name = "Predict a notifying file change"
+            operation = new Ruxel.Copy {
+              content = "synthetic"
+              dest = "__RUN_ROOT__/check-notify"
+            }
+            notify { "Record predicted handler" }
+          }
+          new {
+            name = "Prompt during check mode"
+            operation = new Ruxel.Pause { prompt = "Synthetic check-mode pause" }
+          }
+        }
+        handlers {
+          new {
+            name = "Record predicted handler"
+            operation = new Ruxel.Debug { msg = "predicted handler ran" }
+          }
+        }
+      }
+    }
+  }
+}

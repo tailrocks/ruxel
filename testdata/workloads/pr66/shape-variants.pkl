@@ -1,0 +1,175 @@
+import "../../../schema/Ruxel.pkl"
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+output { value = new Ruxel.Config {
+  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+  plays { new {
+    name = "Synthetic scalar and template shape variants"
+    targets { "all" }
+    vars {
+      ["fixture_name"] = literal("synthetic")
+      ["fixture_service"] = literal("ssh")
+      ["fixture_protocol"] = literal("tcp")
+      ["fixture_interface"] = literal("eth0")
+      ["fixture_destination"] = literal("192.0.2.2")
+      ["fixture_packages"] = new Ruxel.ListExpr { items { literal("ca-certificates") } }
+      ["fixture_enabled"] = literal(true)
+      ["fixture_lines"] = new Ruxel.ListExpr { items { literal("alpha"); literal("beta") } }
+      ["fixture_versions"] = new Ruxel.ListExpr { items { new Ruxel.MapExpr { entries { ["name"] = literal("one"); ["version"] = literal("HEAD") } }; new Ruxel.MapExpr { entries { ["name"] = literal("two"); ["version"] = ref(new Listing { "vars"; "fixture_name" }) } } } }
+    }
+    tasks {
+      new {
+        name = "Exercise exact copy source"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Copy { src = ref(new Listing { "vars"; "fixture_name" }); dest = "__RUN_ROOT__/exact-copy" }
+      }
+      new {
+        name = "Exercise literal template destination"
+        checkMode = true
+        operation = new Ruxel.Template { src = "__FIXTURE_ROOT__/assets/template.pkl"; dest = "__RUN_ROOT__/template" }
+      }
+      new {
+        name = "Exercise string block parameters"
+        checkMode = true
+        operation = new Ruxel.BlockInFile { path = "__RUN_ROOT__/block"; block = "synthetic"; create = true }
+      }
+      new {
+        name = "Exercise literal line path"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.LineInFile { path = "__RUN_ROOT__/line"; regexp = "synthetic"; line = "synthetic"; state = "present" }
+      }
+      new {
+        name = "Exercise literal replace path"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Replace { path = "__RUN_ROOT__/replace"; regexp = "synthetic"; replace = "replacement" }
+      }
+      new {
+        name = "Exercise literal stat path"
+        register = "literal_stat"
+        operation = new Ruxel.Stat { path = "__RUN_ROOT__/stat" }
+      }
+      new {
+        name = "Exercise exact stat path"
+        checkMode = true
+        operation = new Ruxel.Stat { path = ref(new Listing { "vars"; "fixture_name" }) }
+      }
+      new {
+        name = "Exercise literal slurp source"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Slurp { src = "__RUN_ROOT__/slurp" }
+      }
+      new {
+        name = "Exercise literal command args"
+        checkMode = true
+        operation = new Ruxel.Command { cmd = "/usr/bin/true"; chdir = "/tmp"; creates = "__RUN_ROOT__/command" }
+      }
+      new {
+        name = "Exercise literal shell args"
+        checkMode = true
+        operation = new Ruxel.Shell { cmd = "/usr/bin/true"; chdir = "/tmp"; creates = "__RUN_ROOT__/shell" }
+      }
+      new {
+        name = "Exercise string apt flags and literal name"
+        checkMode = true
+        operation = new Ruxel.Apt { name = "ca-certificates"; state = "latest"; update_cache = true; force = false; autoremove = false }
+      }
+      new {
+        name = "Exercise mixed apt package template"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Apt { name = call("concat", new Listing { literal("package-"); ref(new Listing { "vars"; "fixture_name" }) }); state = "latest" }
+      }
+      new {
+        name = "Exercise literal repository strings"
+        checkMode = true
+        operation = new Ruxel.AptRepository { repo = "deb http://deb.debian.org/debian bookworm main"; filename = "ruxel-fixture-literal"; state = "present"; update_cache = false }
+      }
+      new {
+        name = "Exercise mixed repository template"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.AptRepository { repo = call("concat", new Listing { literal("deb http://deb.debian.org/debian "); ref(new Listing { "vars"; "fixture_name" }); literal(" main") }); filename = "ruxel-fixture-mixed"; state = "present"; update_cache = false }
+      }
+      new {
+        name = "Exercise literal URL destination"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.GetUrl { url = "https://example.invalid/synthetic"; dest = "__RUN_ROOT__/download" }
+      }
+      new {
+        name = "Exercise literal git flags and exact version"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Git { repo = "file://__RUN_ROOT__/origin"; dest = "__RUN_ROOT__/checkout"; version = ref(new Listing { "vars"; "fixture_name" }); update = true; force = false; accept_hostkey = false }
+      }
+      new {
+        name = "Exercise mixed git version"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Git { repo = "file://__RUN_ROOT__/origin"; dest = "__RUN_ROOT__/checkout-mixed"; version = call("concat", new Listing { literal("release-"); ref(new Listing { "vars"; "fixture_name" }) }); update = false; force = false; accept_hostkey = false }
+      }
+      new {
+        name = "Exercise templated firewall fields"
+        checkMode = true
+        operation = new Ruxel.Firewall { chain = "OUTPUT"; destination = ref(new Listing { "vars"; "fixture_destination" }); protocol = ref(new Listing { "vars"; "fixture_protocol" }); out_interface = ref(new Listing { "vars"; "fixture_interface" }); jump = "DROP"; comment = call("concat", new Listing { literal("fixture-"); ref(new Listing { "vars"; "fixture_name" }) }) }
+      }
+      new {
+        name = "Exercise string sysctl flags"
+        checkMode = true
+        operation = new Ruxel.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; state = "present"; reload = true; sysctl_set = true }
+      }
+      new {
+        name = "Exercise templated systemd fields"
+        checkMode = true
+        operation = new Ruxel.Service { name = ref(new Listing { "vars"; "fixture_service" }); state = "restarted"; enabled = true; daemon_reload = false }
+      }
+      new {
+        name = "Exercise mixed systemd name"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Service { name = call("concat", new Listing { ref(new Listing { "vars"; "fixture_name" }); literal(".service") }); state = "stopped" }
+      }
+      new {
+        name = "Exercise string service enabled"
+        checkMode = true
+        operation = new Ruxel.Service { name = "ssh"; state = "started"; enabled = true }
+      }
+      new {
+        name = "Exercise string user flags"
+        checkMode = true
+        operation = new Ruxel.User { name = "ruxelfixture-absent"; group = "29871"; groups = "adm"; append = true; create_home = false; remove = true; system = false; state = "absent" }
+      }
+      new {
+        name = "Exercise mixed mount source"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Mount { path = "__RUN_ROOT__/mount-shape"; src = call("concat", new Listing { literal("device-"); ref(new Listing { "vars"; "fixture_name" }) }); fstype = "ext4"; opts = "defaults"; state = "mounted" }
+      }
+      new {
+        name = "Exercise string filesystem resize flag"
+        `when` = literal(false)
+        checkMode = true
+        operation = new Ruxel.Filesystem { dev = "/dev/null"; fstype = "ext4"; resizefs = true }
+      }
+      new {
+        name = "Exercise literal PostgreSQL names"
+        `when` = literal(false)
+        checkMode = true
+        becomeUser = "postgres"
+        operation = new Ruxel.PostgresDatabase { login_user = "postgres"; name = "ruxel_fixture_literal"; owner = "ruxel_fixture_owner"; state = "present"; login_port = 40000 }
+      }
+      new {
+        name = "Exercise scalar loop and nested task shapes"
+        changedWhen = literal(false)
+        environment { ["FIXTURE_LITERAL"] = literal("synthetic") }
+        `loop` = new Ruxel.ListExpr { items { literal("literal"); call("concat", new Listing { literal("mixed-"); ref(new Listing { "vars"; "fixture_name" }) }); new Ruxel.MapExpr { entries { ["name"] = literal("mapping") } } } }
+        operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("value="); call("string", new Listing { ref(new Listing { "item" }) }) }) }
+      }
+    }
+  } }
+} }

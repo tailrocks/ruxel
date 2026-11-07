@@ -1,94 +1,44 @@
-# OPERATOR-SETUP — Two One-Time Actions
+# Isolated fixture setup
 
-What the operator provides before M0, and exactly how. Everything here is
-designed so that afterwards the agent works autonomously **with hard
-isolation from production**: the fixture token physically cannot reach the
-dedicated servers, and the CI secret token physically cannot read real
-secrets.
+Remote tests require explicit operator authorization and disposable targets.
+Use an isolated Hetzner Cloud project dedicated to Ruxel fixtures, with a
+project-scoped token and no unrelated resources. Store credentials outside the
+repository, use the provider's supported authentication mechanism, and keep
+tokens and values out of command histories and logs. Do not use an existing
+production project as a fixture project.
 
----
+Before a remote run, verify the selected targets and applicable guard policy,
+provision host keys through the operator's approved process, and record the
+fixture identity and cleanup plan. Checks and diffs contact hosts. Reap
+fixture resources when the run ends and check for leftovers. A project-scoped
+cloud token does not itself authorize contacting any other host.
 
-## 1. Hetzner Cloud access (fixture VMs)
+Local synthetic acceptance is available through `mise run acceptance-local`;
+it runs real local agent processes and must be used only with disposable local
+workloads. Synthetic secret mode does not require a live secret account.
 
-Why it is safe by construction: the production servers are **Hetzner
-Robot dedicated machines** — a completely different API and account scope
-from Hetzner Cloud projects. A Cloud API token is scoped to **one project**
-and can only see resources inside it. A token for a fresh, empty project
-can create/destroy VMs there and nothing else, anywhere.
+## XFS growth prototype prerequisites
 
-Steps (≈2 minutes, in <https://console.hetzner.cloud>):
+The descriptor-based XFS growth prototype requires Linux x86_64 or aarch64
+and a 64-bit Perl interpreter with its standard `Config`, `Fcntl`, `Math::BigInt`,
+and `POSIX` modules. Provision Perl
+from the target distribution's official signed repository before requesting
+filesystem or logical-volume growth. The helper checks the pinned mount's
+geometry before logical-volume mutation; a missing interpreter or unsupported
+ABI or ioctl stops preflight.
 
-0. **Account check (the only moment it can be verified):** log in as
-   **<alexey@example-org.com>** — the example-org Hetzner account (credentials
-   in the example-org vault's existing `Hetzner` item), not a personal
-   account. The Cloud API has no account-identity endpoint, so a token's
-   owning account cannot be verified after creation; this console glance
-   is the verification.
-1. **New Project** → name it `ruxel-fixtures`. Keep it empty of anything
-   else, forever.
-2. Open the project → **Security → API tokens → Generate API token** →
-   description `ruxel-fixtures-agent`, permissions **Read & Write**.
-3. In a separate terminal (keeps the token out of any agent transcript),
-   create the local hcloud context — this is what makes the agent fully
-   autonomous, **no 1Password / fingerprint involved at runtime**:
+The operator must hold exclusive control of resizing and keep the filesystem
+unfrozen for the entire operation. The agent waits for and reaps the helper.
+Killing the agent or losing its connection does not establish that a kernel
+operation has stopped; establish process quiescence before another mutation.
+The prototype remains gated on isolated mounted-XFS acceptance. Its mocked
+geometry and allocation-group tests do not establish mounted-filesystem safety.
 
-   ```bash
-   hcloud context create ruxel-fixtures   # paste token at the hidden prompt
-   hcloud server-type list                # table prints → auth works
-   ```
+## Filesystem identity limits during migration
 
-   The token is stored once in `~/.config/hcloud/cli.toml` (mode 600) —
-   hcloud's standard mechanism, the same at-rest risk class as `~/.ssh`
-   keys, acceptable here because the token's blast radius is one empty
-   project with no path to production (Robot and Cloud are separate APIs).
-4. Optional, recommended: keep a backup copy in 1Password (vault
-   `example-org`, item `ruxel Hetzner Cloud`, field `token`). Runtime never
-   reads it.
-
-`tools/fixtures/` scripts (M0) use the `hcloud` context to create a
-cpx12 x86_64 Debian 12 VM (smallest available; no CX-line in this account) in
-the sin region per test session and destroy it afterwards
-(cost: cents per session; a forgotten VM is a few €/month and the scripts
-list+reap leftovers on every run).
-
-## 2. 1Password test vault + service account (CI secrets path)
-
-Why this exists: the playbooks' secrets all come from
-`lookup('community.general.onepassword', …)`. Ruxel's resolver must be
-tested against a real `op`, including in CI — but CI must never be able to
-read the real `example-org` vault, and your local `op` uses biometric
-unlock, which CI cannot do. The fix is 1Password's **service account**:
-a token-authenticated identity granted access to exactly one vault.
-
-Steps (≈3 minutes, on <https://my.1password.com>):
-
-1. **New vault** → name `ruxel-test`. (Leave it empty — the agent will
-   populate it with synthetic items that mirror the *shapes* of the real
-   ones: an item named like an SSH item with `private key`/`public key`
-   fields, a fake PostgreSQL password item, etc. Dummy values only.)
-2. **Developer → Service Accounts → New service account** → name
-   `ruxel-ci`, grant **read & write access to the `ruxel-test` vault
-   only** (write lets the test suite create its own fixtures; it can be
-   downgraded to read-only after M1 seeds them).
-3. Copy the token (`ops_…`) once and store it in **two places**:
-   - a local env file for the agent's fingerprint-free runs:
-     `printf 'OP_SERVICE_ACCOUNT_TOKEN=ops_…\n' > ~/.config/ruxel/op-ci.env
-     && chmod 600 ~/.config/ruxel/op-ci.env` (separate terminal again);
-   - optionally a 1Password backup item `ruxel CI service account`.
-
-The agent installs the GitHub Actions secret itself from the env file:
-
-```bash
-set -a; source ~/.config/ruxel/op-ci.env; set +a
-gh secret set OP_SERVICE_ACCOUNT_TOKEN --repo tailrocks/ruxel --body "$OP_SERVICE_ACCOUNT_TOKEN"
-```
-
-With `OP_SERVICE_ACCOUNT_TOKEN` in the environment, `op read`/`op item
-get` work non-interactively — against `ruxel-test` only — both in CI and
-in the agent's local autonomous runs. Your biometric session stays for
-human use of the real vaults; the agent needs no fingerprint for any
-routine work.
-
-After actions 1–2 the agent operates autonomously against synthetic fixtures.
-No production baseline is requested or accepted; committed disposable-twin
-evidence is the only comparison anchor.
+Attribute changes use held descriptors. On macOS, a target must be readable,
+or a directory must be searchable, to acquire a suitable descriptor. An
+unprivileged agent cannot repair an owned mode-`000` target through a pathname
+fallback: it returns an error before changing that target's attributes.
+Recursive operations also require access to enumerate directories. These
+remaining platform limitations keep full migration acceptance open.

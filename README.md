@@ -1,91 +1,123 @@
 # Ruxel
 
-> Rust-native automation without the YAML archaeology.
+Ruxel is a Rust automation controller and agent for configuring hosts from typed
+[Pkl](https://pkl-lang.org/) modules. A controller evaluates a local module,
+validates the resulting inventory and tasks, and runs operations through an
+agent. The project is pre-1.0 and under active development; interfaces and
+behavior can change.
 
-Ruxel is a drop-in, performance-first executor for the exact Ansible workload
-that provisions and maintains a dedicated-server workload. Same playbook
-files, same inventory, same check/diff/limit invocation shape — rebuilt in
-Rust around one goal: **never repeat work that is already done, and prove it
-in seconds.**
+The current migration replaces the former YAML and INI input with Pkl. The
+schema covers host configuration, storage, PostgreSQL, controller operations,
+expressions, and secret references. Coverage and end-to-end verification are
+still in progress; the presence of a schema class alone does not establish that
+an operation is verified on every platform.
 
-A converged server answers "0 changed, verified" in seconds instead of
-~15 minutes. A drifted server gets exactly the drifted tasks re-applied.
-A fresh server provisions with maximum parallelism. No Python on any target,
-ever.
+## Build and check
 
-## Status
+Use the pinned tools in `mise.toml`:
 
-Implementation is feature-complete: the closed-surface modules, the
-convergence ledger, the full `plan`/`apply` CLI, and the `op`-backed secret
-resolver are built and verified, with 6 of 16 workload playbooks gated
-three-way against pinned Ansible. Remaining work is verification breadth and
-the M5 performance proof. Read the docs in order:
-
-1. [docs/VISION.md](docs/VISION.md) — the problem, the vision, goals,
-   non-goals, and the hard safety rule.
-2. [docs/WORKLOAD.md](docs/WORKLOAD.md) — the closed compatibility spec:
-   every module and feature the playbooks use, with counts. Ruxel implements
-   this and nothing else.
-3. [docs/DIRECTION.md](docs/DIRECTION.md) — problem analysis, prior art,
-   recommended architecture, alternatives considered.
-4. [docs/SKEPTIC.md](docs/SKEPTIC.md) — the adversarial pass: churn
-   evidence, untuned-Ansible finding, NixOS/OpenTofu verdicts. Outcome:
-   the operator decided to build the full drop-in.
-5. [docs/SEMANTICS.md](docs/SEMANTICS.md) — **normative spec**: exactly
-   what Ansible does with these files (param- and value-scoped, closed
-   surface, ⚠-marked items pinned by parity experiments).
-6. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the detailed concept:
-   transport decision (SSH as carrier, "gRPC minus the g" protocol),
-   streaming execution, register-dependency pipelining, batched system
-   caches, the convergence ledger, warm-daemon tier.
-7. [docs/OPERATOR-SETUP.md](docs/OPERATOR-SETUP.md) — disposable fixture setup
-   and the operator-only production boundary.
-8. [docs/benchmarks/](docs/benchmarks/) — recorded benchmark evidence.
-9. [docs/PLAN.md](docs/PLAN.md) — milestones M0–M6 with acceptance gates and
-   the local spec-drift extractor (private-checkout CI wiring pending).
-
-## Hard safety rule
-
-The six target hosts in the reference workload are **production**. Nothing in
-this repository — code, tests, benchmarks, experiments — may ever connect to
-them. Development happens exclusively against disposable targets explicitly
-provided by the operator. See [AGENTS.md](AGENTS.md).
-
-## Usage (target shape)
-
-```bash
-ruxel plan  -i hosts.ini --limit fixture-host setup-fixture.yml
-ruxel apply -i hosts.ini --limit fixture-host setup-fixture.yml
-```
-
-## Development
-
-Tools and tasks come from `mise.toml`:
-
-```bash
+```sh
 mise run install
+mise run build
 mise run check
 ```
 
-Git hooks: `mise exec -- hk install --mise`.
+`mise run agent` builds a static x86-64 Linux agent. `mise run acceptance-local`
+runs the local synthetic acceptance suite. It uses disposable local files and
+processes; inspect the suite before running it on a machine with valuable data.
 
-Releases are lightweight while the project remains a single-operator pilot:
-update the workspace version and changelog, commit, then create an annotated
-milestone tag (`git tag -a vX.Y.Z -m "ruxel X.Y.Z"`). `ruxel --version`
-embeds that workspace version, so a deployed binary has a provenance handle.
-Publishing to crates.io is intentionally unsupported; build a selected commit
-or tag locally. Release asset automation can be added if distribution becomes
-a project goal.
+## Configuration
 
-The private workload checks are strictly offline parsers/spec extractors. They
-never invoke Ruxel or Ansible against workload files. Remote parity gates accept
-only synthetic playbooks under `tools/fixture-project/`.
+Create a module at the repository root, for example `example.pkl`:
 
-Run offline extraction locally with:
+```pkl
+import "schema/Ruxel.pkl" as R
 
-```bash
-cargo run -p ruxel-spec-extract -- /path/to/ansible-configs
+config = new R.Config {
+  inventory {
+    hosts { ["fixture"] = new R.Host { address = "localhost" } }
+  }
+  plays {
+    new R.Play {
+      name = "Example"
+      targets { "fixture" }
+      tasks {
+        new R.Task {
+          name = "Write a fixture file"
+          operation = new R.Copy {
+            dest = "/tmp/ruxel-example.txt"
+            content = "hello\n"
+            mode = "0644"
+          }
+        }
+      }
+    }
+  }
+}
 ```
+
+The `config` property contains an `R.Config`. Hosts and groups are selected by
+name in each play. Tasks can use typed operations, conditions, loops, registered
+results, handlers, and blocks. See [the schema](schema/Ruxel.pkl) for the
+available fields and [the architecture](docs/ARCHITECTURE.md) for evaluation
+and execution details. `R.Lookup` describes a secret or external lookup; keep
+secret values out of Pkl files and logs.
+
+Inspect evaluated configuration without executing tasks:
+
+```sh
+ruxel config dump example.pkl
+```
+
+`config dump` prints evaluated values. Do not use it to print secrets. Evaluation
+uses local Pkl files with an empty evaluator environment; runtime lookups are
+resolved by the controller.
+
+`Copy.src` supports regular controller files up to an aggregate 32 MiB per task
+request, including loop iterations. Sources already larger than the remaining
+limit are rejected before reading their content; reads remain bounded if a file
+grows after its size is checked. Every task plan must also fit the 64 MiB protocol
+frame limit.
+
+## Run
+
+```sh
+ruxel plan example.pkl --agent /path/to/ruxel-agent
+ruxel check example.pkl --agent /path/to/ruxel-agent
+ruxel diff example.pkl --agent /path/to/ruxel-agent
+ruxel apply example.pkl --agent /path/to/ruxel-agent
+```
+
+`plan` lists selected operations without connecting or resolving runtime values.
+`check` and `diff` connect to targets and request non-mutating operation checks;
+`apply` executes changes. A task with `checkMode = false` overrides check mode
+and can execute changes during `check` or `diff`; the default and `true` request
+a non-mutating check. Operation support for check and diff varies, so verify a
+new workflow on disposable targets first. `--hosts` and `--tags` select hosts and
+tasks, `--jobs` controls concurrency, and `--output human` selects readable
+progress. `--known-hosts` and `--ssh-key` configure SSH; strict host-key
+checking is the default. Use `--accept-new-host-key` only when the applicable
+SSH policy permits it. `--synthetic-secrets` supplies deterministic synthetic
+lookup values for tests. `--log-file` writes redacted JSONL events to a new
+private file and refuses to overwrite an existing file.
+
+The local agent mode is for disposable local workloads only. It requires both
+`--local` and `--state-dir`; operations can modify the local machine. Do not
+run a configuration against a target unless you are authorized to do so and
+have applied the guard policy required by your environment. `check` and `diff` still contact targets.
+
+Exit status is `0` on success, `2` for command-line usage, `4` for invalid
+configuration, and `8` for failed tasks. `--detailed-exitcode` returns `3` when
+successful execution reports changes; in plan mode, selected potential
+operations also produce `3`. Internal errors return `1`. Other
+reserved codes are defined in `crates/ruxel/ruxel/src/exit.rs`.
+
+## Development
+
+Install hooks with `mise exec -- hk install --mise`. See
+[operator setup](docs/OPERATOR-SETUP.md) for isolated fixture guidance and
+[handoff](docs/RESTORE.md) for verification status. Do not put real host
+identities or secrets in this public repository.
 
 ## License
 

@@ -1,0 +1,23 @@
+import "../schema/Ruxel.pkl"
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+ plays { new { name = "nested loops"; targets { "all" }
+  vars { ["parents"] = new Ruxel.ListExpr { items {
+   new Ruxel.MapExpr { entries { ["name"] = literal("alpha"); ["children"] = new Ruxel.ListExpr { items { literal("one"); literal("two") } } } }
+   new Ruxel.MapExpr { entries { ["name"] = literal("beta"); ["children"] = new Ruxel.ListExpr { items { literal("three") } } } }
+  } } }
+  tasks {
+   new { name = "pairs"; register = "pair_results"
+    `loop` = call("subelements", new Listing { ref(new Listing { "vars"; "parents" }); literal("children") })
+    loopLabel = call("concat", new Listing { ref(new Listing { "item"; "0"; "name" }); literal("/"); ref(new Listing { "item"; "1" }) })
+    operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { literal("/usr/bin/printf"); literal("%s:%s"); ref(new Listing { "item"; "0"; "name" }); ref(new Listing { "item"; "1" }) } } }
+   }
+   new { name = "registered assertion"; `when` = call("not", new Listing { ref(new Listing { "results"; "pair_results"; "skipped" }) })
+    operation = new Ruxel.Assert { that = call("eq", new Listing { ref(new Listing { "results"; "pair_results"; "results"; "2"; "stdout" }); literal("beta:three") }) }
+   }
+  }
+ } }
+} }

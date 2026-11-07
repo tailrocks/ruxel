@@ -1,0 +1,891 @@
+{
+  "version": 1,
+  "scenarios": {
+    "check-semantics": {
+      "fixture": "check-semantics.pkl",
+      "observations": [
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/check-notify",
+          "content": "synthetic"
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/check-notify",
+          "content": "drift"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true,
+          "changed": true
+        },
+        "converged": {
+          "observations_match": true,
+          "changed": false
+        },
+        "drift_repair": {
+          "observations_match": true,
+          "changed": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      }
+    },
+    "controller-delegation": {
+      "fixture": "controller-delegation.pkl",
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Read synthetic value on controller",
+          "field": "stdout",
+          "equals": "ruxel-fixture-controller"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "succeeds": true
+        },
+        "converged": {
+          "succeeds": true
+        },
+        "check": {
+          "state_unchanged": true,
+          "succeeds": false
+        },
+        "diff": {
+          "state_unchanged": true,
+          "succeeds": false
+        }
+      }
+    },
+    "multihost": {
+      "fixture": "multihost.pkl",
+      "observations": [
+        {
+          "kind": "task_result_each_host",
+          "hosts": [
+            "fixture-1",
+            "fixture-2",
+            "fixture-3",
+            "fixture-4",
+            "fixture-5",
+            "fixture-6"
+          ],
+          "task": "Run one-second independent host work",
+          "field": "rc",
+          "equals": 0
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "succeeds_on_each_host": 6
+        },
+        "converged": {
+          "succeeds_on_each_host": 6
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      }
+    },
+    "storage-ext4": {
+      "fixture": "storage-ext4.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_ext4",
+          "physical_volume_count": 2
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_ext4",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_ext4/data",
+          "type": "ext4"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        }
+      },
+      "pending": [
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_ext4/data",
+          "requires": "verified_disposable_fixture_volume"
+        }
+      ]
+    },
+    "storage-xfs": {
+      "fixture": "storage-xfs.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_xfs",
+          "physical_volume_count": 3
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_xfs",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_xfs/data",
+          "type": "xfs"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        }
+      },
+      "pending": [
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_xfs/data",
+          "requires": "verified_disposable_fixture_volume"
+        }
+      ]
+    },
+    "storage-two-tier": {
+      "fixture": "storage-two-tier.pkl",
+      "observations": [
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_data",
+          "physical_volume_count": 2
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_data",
+          "name": "data"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_data/data",
+          "type": "xfs"
+        },
+        {
+          "kind": "volume_group",
+          "name": "ruxel_fixture_hot",
+          "physical_volume_count": 1
+        },
+        {
+          "kind": "logical_volume",
+          "vg": "ruxel_fixture_hot",
+          "name": "hot"
+        },
+        {
+          "kind": "filesystem",
+          "device": "/dev/ruxel_fixture_hot/hot",
+          "type": "xfs"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        }
+      },
+      "pending": [
+        "guarded disposable-volume drift injection and repair execution; fresh filesystem creation currently fails closed"
+      ],
+      "drift": [
+        {
+          "kind": "clear_filesystem_signature",
+          "device": "/dev/ruxel_fixture_hot/hot",
+          "requires": "verified_disposable_fixture_volume"
+        }
+      ]
+    },
+    "postgresql-ownership": {
+      "fixture": "postgresql-ownership.pkl",
+      "observations": [
+        {
+          "kind": "postgres_role",
+          "port": 40000,
+          "name": "ruxel_fixture_owner",
+          "login": true
+        },
+        {
+          "kind": "postgres_role",
+          "port": 40000,
+          "name": "ruxel_fixture_reader"
+        },
+        {
+          "kind": "postgres_database_owner",
+          "port": 40000,
+          "database": "ruxel_fixture_database",
+          "owner": "ruxel_fixture_owner"
+        },
+        {
+          "kind": "postgres_schema_owner",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "ruxel_fixture_owner"
+        },
+        {
+          "kind": "postgres_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "database",
+          "object": "ruxel_fixture_database",
+          "role": "ruxel_fixture_reader",
+          "privilege": "CONNECT"
+        },
+        {
+          "kind": "postgres_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "schema",
+          "object": "ruxel_fixture_schema",
+          "role": "ruxel_fixture_reader",
+          "privilege": "USAGE"
+        },
+        {
+          "kind": "postgres_default_privilege",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "ruxel_fixture_owner",
+          "role": "ruxel_fixture_reader",
+          "object_type": "table",
+          "privilege": "SELECT"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        }
+      },
+      "pending": [
+        "database drift injection and repair execution"
+      ],
+      "drift": [
+        {
+          "kind": "postgres_schema_owner",
+          "port": 40000,
+          "database": "postgres",
+          "schema": "ruxel_fixture_schema",
+          "owner": "postgres"
+        },
+        {
+          "kind": "postgres_revoke",
+          "port": 40000,
+          "database": "postgres",
+          "object_type": "schema",
+          "object": "ruxel_fixture_schema",
+          "role": "ruxel_fixture_reader",
+          "privilege": "USAGE"
+        }
+      ]
+    },
+    "become-environment": {
+      "fixture": "become-environment.pkl",
+      "observations": [
+        {
+          "kind": "account",
+          "name": "ruxelbecome",
+          "home": "__RUN_ROOT__/become-home",
+          "shell": "/bin/sh"
+        },
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Capture synthetic become environment",
+          "field": "stdout_lines",
+          "equals": [
+            "__RUN_ROOT__/become-home",
+            "ruxelbecome",
+            "ruxelbecome",
+            "/bin/sh",
+            "synthetic"
+          ]
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        }
+      },
+      "pending": [
+        "account drift injection and repair execution"
+      ],
+      "drift": [
+        {
+          "kind": "account_shell",
+          "name": "ruxelbecome",
+          "shell": "/bin/false"
+        }
+      ]
+    },
+    "restart-actions": {
+      "fixture": "restart-actions.pkl",
+      "observations": [
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/restart",
+          "content": "#!/bin/sh\nexit 0\n",
+          "mode": "0755",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "task_loop_results",
+          "host": "fixture",
+          "task": "Restart synthetic workload units",
+          "items": [
+            "01",
+            "02",
+            "03",
+            "04",
+            "05",
+            "06",
+            "07",
+            "08",
+            "09",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36"
+          ],
+          "field": "rc",
+          "equals": 0
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/restart",
+          "content": "drift"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      }
+    },
+    "performance-snapshots": {
+      "fixture": "performance-snapshots.pkl",
+      "mode": "check",
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Resolve multiple fields from one synthetic secret item",
+          "field": "failed",
+          "equals": false
+        },
+        {
+          "kind": "output_excludes_synthetic_secrets"
+        }
+      ],
+      "phases": {
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "controller integration and independently instrumented snapshot counts",
+        "same-item secret deduplication requires a fake backend or enforced synthetic mode; never invoke 1Password"
+      ],
+      "snapshot_expectations": [
+        {
+          "provider": "apt",
+          "scope": "fixture",
+          "maximum_queries": 1
+        },
+        {
+          "provider": "systemd",
+          "scope": "fixture",
+          "maximum_queries": 1
+        },
+        {
+          "provider": "postgresql",
+          "scope": "fixture",
+          "maximum_sessions": 1
+        }
+      ]
+    },
+    "control-flow": {
+      "fixture": "control-flow.pkl",
+      "observations": [
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/nested-literal",
+          "content": "nested-literal",
+          "owner": "root"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/nested-mixed-synthetic",
+          "content": "nested-mixed-synthetic",
+          "owner": "root"
+        },
+        {
+          "kind": "file_exists",
+          "path": "__RUN_ROOT__/retry-marker"
+        },
+        {
+          "kind": "task_loop_stdout",
+          "host": "fixture",
+          "task": "Execute mapped loop with label and environment",
+          "values": [
+            "alpha:one",
+            "alpha:two",
+            "beta:three"
+          ]
+        },
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Exercise retries and until",
+          "field": "rc",
+          "equals": 0
+        },
+        {
+          "kind": "fact",
+          "host": "fixture",
+          "name": "fixture_rescued",
+          "equals": true
+        },
+        {
+          "kind": "output_excludes",
+          "values": [
+            "nested-literal",
+            "nested-mixed-synthetic"
+          ]
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/nested-literal",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_file",
+          "path": "__RUN_ROOT__/retry-marker"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true,
+          "retry_attempts": 2
+        },
+        "converged": {
+          "observations_match": true,
+          "retry_attempts": 1
+        },
+        "drift_repair": {
+          "observations_match": true,
+          "retry_attempts": 2
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "controller execution, including pause, block rescue, loop registration, and no-log redaction",
+        "scalar-to-string expression conversion for length interpolation"
+      ]
+    },
+    "files-content": {
+      "fixture": "files-content.pkl",
+      "observations": [
+        {
+          "kind": "directory",
+          "path": "__RUN_ROOT__/files/tree",
+          "mode": "0700",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "directory",
+          "path": "__RUN_ROOT__/files/dest-dir"
+        },
+        {
+          "kind": "symlink",
+          "path": "__RUN_ROOT__/files/tree-link",
+          "target": "__RUN_ROOT__/files/tree"
+        },
+        {
+          "kind": "absent",
+          "path": "__RUN_ROOT__/files/absent"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/copied.txt",
+          "content": "replaced\n",
+          "mode": "0644",
+          "owner": "root",
+          "group": "root"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/source.txt",
+          "content": "synthetic source\n"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/rendered.txt",
+          "content": "alpha\nbeta\njoined=alpha,beta\nhash=b3cc0475bb78a5026098858e9889acf666d31062d513d303314eca31d36e72f2\noptional=fallback\nencoded=synthetic%20value\nconditional=enabled\n",
+          "owner": "root",
+          "group": "root",
+          "mode": "0640"
+        },
+        {
+          "kind": "file_contains",
+          "path": "__RUN_ROOT__/files/block.txt",
+          "values": [
+            "alpha\nbeta"
+          ]
+        },
+        {
+          "kind": "file_exists",
+          "path": "__RUN_ROOT__/files/created-by-command"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/files/created-by-shell",
+          "content": "synthetic"
+        },
+        {
+          "kind": "fact",
+          "host": "fixture",
+          "name": "fixture_decoded",
+          "equals": "replaced"
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/files/copied.txt",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_file",
+          "path": "__RUN_ROOT__/files/source.txt"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "full files-content scenario and source asset execution",
+        "frozen baseline trailing newline verification",
+        "independent handler notification observation"
+      ]
+    },
+    "shape-variants": {
+      "fixture": "shape-variants.pkl",
+      "observations": [
+        {
+          "kind": "task_result",
+          "host": "fixture",
+          "task": "Exercise literal stat path",
+          "field": "stat.exists",
+          "equals": false
+        },
+        {
+          "kind": "task_loop_results",
+          "host": "fixture",
+          "task": "Exercise scalar loop and nested task shapes",
+          "items": [
+            "literal",
+            "mixed-synthetic",
+            {
+              "name": "mapping"
+            }
+          ]
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "state_unchanged": true
+        },
+        "converged": {
+          "state_unchanged": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "scalar-to-string interpolation of mapping loop item",
+        "controller-side template loading and rendering"
+      ],
+      "schema_rejections": [
+        "invalid/file-path-and-dest.pkl",
+        "invalid/copy-source-and-content.pkl"
+      ]
+    },
+    "system-surface": {
+      "fixture": "system-surface.pkl",
+      "observations": [
+        {
+          "kind": "package_installed",
+          "name": "ca-certificates"
+        },
+        {
+          "kind": "package_installed",
+          "name": "git"
+        },
+        {
+          "kind": "apt_repository",
+          "name": "ruxel-fixture",
+          "repo": "deb http://deb.debian.org/debian bookworm main"
+        },
+        {
+          "kind": "file",
+          "path": "__RUN_ROOT__/system/payload.txt",
+          "content": "synthetic-download"
+        },
+        {
+          "kind": "group",
+          "name": "ruxelfixture",
+          "gid": 29871
+        },
+        {
+          "kind": "group_absent",
+          "name": "ruxelfixture-absent"
+        },
+        {
+          "kind": "account_absent",
+          "name": "ruxelfixture-absent"
+        },
+        {
+          "kind": "authorized_key",
+          "user": "root",
+          "comment": "synthetic@fixture"
+        },
+        {
+          "kind": "sysctl",
+          "name": "net.ipv4.ip_forward",
+          "value": "0"
+        },
+        {
+          "kind": "sysctl",
+          "name": "vm.swappiness",
+          "value": "60"
+        },
+        {
+          "kind": "firewall_rule",
+          "chain": "OUTPUT",
+          "destination": "192.0.2.1",
+          "protocol": "tcp",
+          "out_interface": "eth0",
+          "jump": "DROP",
+          "comment": "ruxel synthetic fixture"
+        },
+        {
+          "kind": "timezone",
+          "name": "Etc/UTC"
+        },
+        {
+          "kind": "service",
+          "name": "ssh",
+          "enabled": true,
+          "active": true
+        },
+        {
+          "kind": "service",
+          "name": "ruxel-fixture.service",
+          "enabled": false,
+          "active": false
+        },
+        {
+          "kind": "mount",
+          "path": "/mnt/ruxel-fixture",
+          "source": "tmpfs",
+          "fstype": "tmpfs",
+          "options": [
+            "size=16m"
+          ]
+        },
+        {
+          "kind": "git_checkout",
+          "path": "__RUN_ROOT__/system/checkout",
+          "source": "__RUN_ROOT__/system/origin",
+          "clean": true,
+          "head_equals_source": true
+        }
+      ],
+      "drift": [
+        {
+          "kind": "write_file",
+          "path": "__RUN_ROOT__/system/payload.txt",
+          "content": "drift"
+        },
+        {
+          "kind": "remove_firewall_rule",
+          "chain": "OUTPUT",
+          "comment": "ruxel synthetic fixture"
+        }
+      ],
+      "phases": {
+        "fresh": {
+          "observations_match": true
+        },
+        "converged": {
+          "observations_match": true
+        },
+        "drift_repair": {
+          "observations_match": true
+        },
+        "check": {
+          "state_unchanged": true
+        },
+        "diff": {
+          "state_unchanged": true
+        }
+      },
+      "pending": [
+        "runtime and independent observation integration",
+        "check-mode forced HTTP server changes pid/log files; nonmutation expectation must be verified and this conflict resolved",
+        "fixed service, mount, account and firewall names require a dedicated disposable VM"
+      ]
+    }
+  }
+}

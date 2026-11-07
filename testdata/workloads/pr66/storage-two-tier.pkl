@@ -1,0 +1,68 @@
+import "../../../schema/Ruxel.pkl"
+
+output {
+  value = new Ruxel.Config {
+    inventory {
+      hosts { ["fixture"] { address = "127.0.0.1" } }
+      groups { ["storage"] { hosts { "fixture" } } }
+    }
+    plays {
+      new {
+        name = "Fixture two-tier storage"
+        targets { "storage" }
+        vars {
+          ["fixture_data_disks"] = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-data-1" }; new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-data-2" } } }
+          ["fixture_hot_disks"] = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-fixture-hot-1" } } }
+        }
+        tasks {
+          new {
+            name = "Resolve synthetic data disks"
+            operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "readlink" }; new Ruxel.Literal { value = "-f" }; new Ruxel.Ref { path { "item" } } } } }
+            `loop` = new Ruxel.Ref { path { "vars"; "fixture_data_disks" } }
+            register = "fixture_data_devices"
+            changedWhen = new Ruxel.Literal { value = false }
+            checkMode = false
+          }
+          new {
+            name = "Create synthetic data volume group"
+            operation = new Ruxel.VolumeGroup {
+              vg = "ruxel_fixture_data"
+              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "results"; "fixture_data_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
+            }
+          }
+          new {
+            name = "Create synthetic data logical volume"
+            operation = new Ruxel.LogicalVolume { lv = "data"; vg = "ruxel_fixture_data"; size = "+100%FREE"; resizefs = true }
+          }
+          new {
+            name = "Format synthetic data volume"
+            operation = new Ruxel.Filesystem { fstype = "xfs"; dev = "/dev/ruxel_fixture_data/data"; resizefs = true }
+          }
+          new {
+            name = "Resolve synthetic hot disks"
+            operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "readlink" }; new Ruxel.Literal { value = "-f" }; new Ruxel.Ref { path { "item" } } } } }
+            `loop` = new Ruxel.Ref { path { "vars"; "fixture_hot_disks" } }
+            register = "fixture_hot_devices"
+            changedWhen = new Ruxel.Literal { value = false }
+            checkMode = false
+          }
+          new {
+            name = "Create synthetic hot volume group"
+            operation = new Ruxel.VolumeGroup {
+              vg = "ruxel_fixture_hot"
+              pvs = new Ruxel.Call { `function` = "mapAttribute"; args { new Ruxel.Ref { path { "results"; "fixture_hot_devices"; "results" } }; new Ruxel.Literal { value = "stdout" } } }
+            }
+          }
+          new {
+            name = "Create synthetic hot logical volume"
+            operation = new Ruxel.LogicalVolume { lv = "hot"; vg = "ruxel_fixture_hot"; size = "+100%FREE"; resizefs = true }
+          }
+          new {
+            name = "Format synthetic hot volume"
+            operation = new Ruxel.Filesystem { fstype = "xfs"; dev = "/dev/ruxel_fixture_hot/hot"; resizefs = true }
+          }
+        }
+      }
+    }
+  }
+}

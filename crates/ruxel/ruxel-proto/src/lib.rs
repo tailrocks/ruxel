@@ -17,4 +17,4 @@ pub mod v1 {
     include!(concat!(env!("OUT_DIR"), "/ruxel.v1.rs"));
 }
 
-pub const PROTO_VERSION: u32 = 1;
+pub const PROTO_VERSION: u32 = 3;

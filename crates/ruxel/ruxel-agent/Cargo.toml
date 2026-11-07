@@ -13,16 +13,23 @@ name = "ruxel-agent"
 path = "src/main.rs"
 
 [dependencies]
-hmac.workspace = true
+rustix.workspace = true
 pbkdf2.workspace = true
+md5.workspace = true
 regex-lite.workspace = true
+hmac.workspace = true
 ruxel-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+signal-hook = "0.4.6"
 
-[dev-dependencies]
-ruxel-core.workspace = true
+[target.'cfg(target_os = "linux")'.dependencies]
+rsblkid.workspace = true
+rustix-linux-procfs.workspace = true
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc.workspace = true
 
 [lints]
 workspace = true

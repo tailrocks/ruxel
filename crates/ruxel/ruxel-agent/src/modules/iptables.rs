@@ -82,7 +82,10 @@ fn probe(binary: &str, args: &[&str]) -> Result<bool, String> {
         .args(args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    super::run_ok(command)
+    command
+        .status()
+        .map(|status| status.success())
+        .map_err(|error| format!("exec {binary}: {error}"))
 }
 
 fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {

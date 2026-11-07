@@ -1,0 +1,49 @@
+diff --git a/vendor/pklr/src/capabilities.rs b/vendor/pklr/src/capabilities.rs
+index 0e4da52..4341ca0 100644
+--- a/vendor/pklr/src/capabilities.rs
++++ b/vendor/pklr/src/capabilities.rs
+@@ -232,7 +232,7 @@ fn budget_spent(url: &str) -> crate::Error {
+ /// Batch fetches ([`EvalCapabilities::fetch_text_many`] and
+ /// [`EvalCapabilities::fetch_bytes_many`]) run up to
+ /// eight requests at once on scoped threads sharing the agent. With the
+-/// `reqwest` feature, [`NativeCapabilities::with_reqwest_client`] uses a
++/// `reqwest` feature, `NativeCapabilities::with_reqwest_client` uses a
+ /// `reqwest` client on tokio instead.
+ #[cfg(feature = "native-io")]
+ #[derive(Debug, Clone)]
+diff --git a/vendor/pklr/src/eval/stdlib/fdlibm.rs b/vendor/pklr/src/eval/stdlib/fdlibm.rs
+index 9fcb70d..f4544c6 100644
+--- a/vendor/pklr/src/eval/stdlib/fdlibm.rs
++++ b/vendor/pklr/src/eval/stdlib/fdlibm.rs
+@@ -5,12 +5,12 @@
+ //! oracle evidence generated from Java StrictMath; it is not implementation input.
+ //!
+ //! Source map:
+-//! - https://www.netlib.org/fdlibm/e_atan2.c -> atan2
+-//! - https://www.netlib.org/fdlibm/s_cbrt.c -> cbrt
+-//! - https://www.netlib.org/fdlibm/e_log10.c -> log10
+-//! - https://www.netlib.org/fdlibm/e_log.c -> log
+-//! - https://www.netlib.org/fdlibm/k_sin.c, k_cos.c, s_sin.c, s_cos.c -> sin, cos
+-//! - https://www.netlib.org/fdlibm/e_rem_pio2.c, k_rem_pio2.c -> trig reduction
++//! - <https://www.netlib.org/fdlibm/e_atan2.c> -> atan2
++//! - <https://www.netlib.org/fdlibm/s_cbrt.c> -> cbrt
++//! - <https://www.netlib.org/fdlibm/e_log10.c> -> log10
++//! - <https://www.netlib.org/fdlibm/e_log.c> -> log
++//! - <https://www.netlib.org/fdlibm/k_sin.c>, k_cos.c, s_sin.c, s_cos.c -> sin, cos
++//! - <https://www.netlib.org/fdlibm/e_rem_pio2.c>, k_rem_pio2.c -> trig reduction
+ //! - MIT Rust libm 0.2.16 -> the remaining wrappers.
+ //!
+ //! The pow wrapper also states the Java-compatible NaN special cases directly.
+diff --git a/vendor/pklr/src/lexer/token.rs b/vendor/pklr/src/lexer/token.rs
+index 00fedd0..575afd9 100644
+--- a/vendor/pklr/src/lexer/token.rs
++++ b/vendor/pklr/src/lexer/token.rs
+@@ -12,7 +12,7 @@ pub enum TokenKind {
+     Ident(String),
+     StringLit(String),
+     /// Interpolated string: alternating literal parts and expression-token groups.
+-    /// Parts[0] is always a literal (possibly empty), Parts[1] is tokens for first \(...), etc.
++    /// `Parts[0]` is always a literal (possibly empty), `Parts[1]` is tokens for first \(...), etc.
+     InterpolatedString(Vec<StringPart>),
+     /// A `///` doc comment line; its span covers the comment text.
+     DocComment,

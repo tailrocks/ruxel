@@ -1,0 +1,65 @@
+import "../../../schema/Ruxel.pkl"
+output {
+  value = new Ruxel.Config {
+    inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["nodes"] { hosts { "fixture" } } } }
+    plays { new {
+      name = "Fixture repeated restart actions"
+      targets { "nodes" }
+      tasks {
+        new {
+          name = "Install synthetic restart command"
+          operation = new Ruxel.Copy { content = "#!/bin/sh\nexit 0\n"; dest = "__RUN_ROOT__/restart"; owner = "root"; group = "root"; mode = "0755" }
+        }
+        new {
+          name = "Restart synthetic workload units"
+          operation = new Ruxel.Shell {
+            cmd = new Ruxel.Call {
+              `function` = "concat"
+              args { new Ruxel.Literal { value = "__RUN_ROOT__/restart " }; new Ruxel.Ref { path { "item" } } }
+            }
+          }
+          `loop` = new Ruxel.ListExpr {
+            items {
+                  new Ruxel.Literal { value = "01" }
+                  new Ruxel.Literal { value = "02" }
+                  new Ruxel.Literal { value = "03" }
+                  new Ruxel.Literal { value = "04" }
+                  new Ruxel.Literal { value = "05" }
+                  new Ruxel.Literal { value = "06" }
+                  new Ruxel.Literal { value = "07" }
+                  new Ruxel.Literal { value = "08" }
+                  new Ruxel.Literal { value = "09" }
+                  new Ruxel.Literal { value = "10" }
+                  new Ruxel.Literal { value = "11" }
+                  new Ruxel.Literal { value = "12" }
+                  new Ruxel.Literal { value = "13" }
+                  new Ruxel.Literal { value = "14" }
+                  new Ruxel.Literal { value = "15" }
+                  new Ruxel.Literal { value = "16" }
+                  new Ruxel.Literal { value = "17" }
+                  new Ruxel.Literal { value = "18" }
+                  new Ruxel.Literal { value = "19" }
+                  new Ruxel.Literal { value = "20" }
+                  new Ruxel.Literal { value = "21" }
+                  new Ruxel.Literal { value = "22" }
+                  new Ruxel.Literal { value = "23" }
+                  new Ruxel.Literal { value = "24" }
+                  new Ruxel.Literal { value = "25" }
+                  new Ruxel.Literal { value = "26" }
+                  new Ruxel.Literal { value = "27" }
+                  new Ruxel.Literal { value = "28" }
+                  new Ruxel.Literal { value = "29" }
+                  new Ruxel.Literal { value = "30" }
+                  new Ruxel.Literal { value = "31" }
+                  new Ruxel.Literal { value = "32" }
+                  new Ruxel.Literal { value = "33" }
+                  new Ruxel.Literal { value = "34" }
+                  new Ruxel.Literal { value = "35" }
+                  new Ruxel.Literal { value = "36" }
+            }
+          }
+        }
+      }
+    } }
+  }
+}

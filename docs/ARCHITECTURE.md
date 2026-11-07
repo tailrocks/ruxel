@@ -1,314 +1,69 @@
-# ARCHITECTURE — How Ruxel Works
+# Architecture
 
-Status: detailed concept, 2026-06-11. Companion to
-[SEMANTICS.md](SEMANTICS.md) (what must be reproduced) and
-[PLAN.md](PLAN.md) (build order). Scope rule inherited from the operator:
-**implement only the surface in SEMANTICS.md — the features, parameters,
-and values these playbooks use. Nothing else.** Unknown module, unknown
-parameter, unknown value → hard error at parse time, never silent
-acceptance.
+Ruxel evaluates typed Pkl into a configuration, validates it, and runs tasks
+through a Rust controller and agent. The implementation is under active
+migration; this document describes the current interfaces, not a claim of
+complete platform coverage.
 
----
+## Components
 
-## 1. Shape of the system
+- `crates/ruxel/ruxel` provides the command-line interface and exit codes.
+- `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
+  no inherited environment variables or external properties and permits local
+  file resources.
+- `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
+  lookup types. `ruxel-engine` validates the evaluated value as well, including
+  configurations that do not use the schema.
+- `crates/ruxel/ruxel-engine` contains the model, controller, expression and
+  secret resolution, runtime, and SSH transport.
+- `crates/ruxel/ruxel-proto` defines messages shared by controller and agent.
+- `crates/ruxel/ruxel-agent` executes host operations and returns results.
 
-```text
-controller (operator laptop)                    target host (Debian 12, root)
-┌──────────────────────────────────┐           ┌─────────────────────────────────┐
-│ ruxel CLI                        │           │ ruxel-agent                     │
-│                                  │           │  static x86_64-musl binary      │
-│ inventory + playbook parser      │           │  /var/lib/ruxel/agent/<b3sum>   │
-│ MiniJinja renderer (all Jinja    │  SSH      │                                 │
-│   stays controller-side)         │  conn     │  module runtime (native Rust)   │
-│ secret resolver (op, ‖, memoized)│  ──────▶  │  system caches (dpkg snapshot,  │
-│ plan compiler (loop expansion,   │  ch0:     │    sd-bus conn, pg conn, mounts)│
-│   register-dependency DAG)       │  protocol │  probe engine (‖)               │
-│ scheduler / register pipeline    │  ch1:     │  convergence ledger             │
-│ differ + reporter (tty/json)     │  SFTP     │    /var/lib/ruxel/ledger        │
-└──────────────────────────────────┘  blobs    └─────────────────────────────────┘
-        hosts run in parallel; per host: ONE ssh connection for the whole run
-```
+## Execution
 
-Two binaries, one repo, one protocol crate shared between them. The agent
-contains **no template engine, no YAML parser, no secret store** — it
-receives fully rendered, typed task structs and executes them.
+1. The CLI evaluates the root module. `config dump` prints that value; execution
+   commands also validate it against the model.
+2. The controller selects inventory hosts and tasks. It evaluates runtime
+   expressions against host variables, facts, loop items, and registered results.
+   Lookup references are resolved by the controller rather than embedded as
+   literal credentials in configuration.
+3. The runtime connects to selected hosts using SSH and runs an agent. It passes
+   operation requests and receives results through the protocol. A local agent
+   mode exists for disposable local testing.
+4. The controller handles task outcomes, conditions, retries, blocks and
+   handlers, and reports per-host results. Plan selects operations without
+   connecting, but censors task and host details because evaluated Pkl values
+   do not carry file provenance. Check and diff use
+   non-mutating checks where the operation supports them; a task with
+   `checkMode = false` can execute changes in either mode. Apply performs changes.
 
-## 2. Transport: the decision
+Controller and agent use protocol version 3 and reject older peers during
+handshake. The agent reports its durable sensitivity state in the handshake;
+an omitted state is an error. See [Secret provenance](secret-provenance.md)
+for the marker's scope and output consequences. `Copy.src` is read as bytes on
+the controller and sent in an optional binary iteration payload; an empty
+source differs from an absent source. Text
+`Copy.content` and rendered native templates retain their text representation.
+Source bytes are accepted only for Copy and cannot accompany explicit content.
+Binary diffs report sizes and SHA-256 hashes; `noLog` suppresses those results.
+The entire encoded request remains limited to 64 MiB, including all iterations
+and parameters. A streaming file channel is not implemented, so larger copies
+remain unsupported by this transport.
 
-Question asked: is SSH right at all? gRPC over SSH? Something else?
+The CLI supports JSON and human-readable output. Optional JSONL event logs are
+created as new private files. Treat generated output as sensitive: configuration
+dumps can contain values supplied directly in Pkl, and secret redaction must be
+verified for the workflow in use.
 
-### Options considered
+## Scope and safety
 
-| # | Option | Verdict |
-|---|---|---|
-| A | SSH exec per task (Ansible's model) | Rejected — the per-task session+upload tax is the problem being solved. |
-| B | **SSH as carrier + resident agent per run + framed binary protocol over stdio** | **Chosen.** One connection, one process, everything streamed. |
-| C | gRPC (tonic/h2) tunneled over an SSH channel | Rejected as framing: h2's stream multiplexing is redundant on a private 1:1 pipe (SSH already multiplexes channels), and it inserts an HTTP/2 state machine between us and the bytes. **But its schema discipline is kept** — see "gRPC minus the g" below. |
-| D | Standalone agent daemon with its own listener (gRPC/QUIC + mTLS) | Rejected for v1 on correctness grounds: a new open port, a CA, cert issuance/rotation, and firewall changes are new state that can drift and a second auth system to keep correct — on servers whose entire access model today is one SSH key. Revisited only as the optional warm-daemon tier (§9), which still rides SSH. |
-| E | Compile-to-shell, no agent (pyinfra/glidesh model) | Rejected: shell output parsing is a weaker correctness foundation than typed native checks; no place to keep the ledger logic; loses batched system caches. |
+Schema definitions describe the accepted configuration surface; implementation
+and regression evidence must be checked separately. The repository's local
+acceptance suite exercises synthetic scenarios, but passing a subset does not
+prove all providers or remote platforms are complete.
 
-### Why SSH stays (as carrier, not as executor)
-
-- **Auth is already solved and audited**: the exact root keys, `~/.ssh`
-  config, and host-key trust the operator uses today. Zero new attack
-  surface, zero new credentials, zero firewall changes.
-- **One connection is enough**: a single SSH connection natively
-  multiplexes channels — ruxel uses channel 0 for the protocol stream and a
-  second SFTP channel for content-addressed blob transfer, concurrently.
-  Post-handshake throughput (aes-gcm) is far beyond anything a config run
-  moves.
-- **Bootstrap is free**: the same connection uploads the agent binary the
-  first time (and never again until the version hash changes).
-
-Implementation: system OpenSSH driven directly through `tokio::process`, with
-**ControlMaster native-mux** for the protocol stream and
-`openssh-sftp-client` for blob transfer. The former `openssh` crate was
-dropped. Operator `~/.ssh/config`, agent auth, and known_hosts therefore
-behave like their `ansible-playbook` runs today. Pure-Rust `russh` remains the
-swap-in if controlling the SSH stack ever becomes necessary.
-
-### The protocol: "gRPC minus the g"
-
-Messages are defined in **protobuf** (`proto/ruxel.proto`, compiled with
-prost) — schema'd, versioned, evolvable — but framed directly on the SSH
-stdio stream as `varint length ‖ message bytes`. No HTTP/2, no TLS-in-TLS,
-no port. What gRPC would have provided (typed contract, streaming,
-versioning) is kept; what it would have cost (h2 framing/flow-control on a
-pipe that already has both) is dropped. If the warm-daemon tier ever wants
-a network protocol, the same `.proto` lifts into tonic unchanged.
-
-Message flow per host per run:
-
-> **Build status (2026-07):** controller-sent `PlanPatch`, blob negotiation,
-> task results, logs, and non-zero ledger generations are built. `ProbeResult`,
-> `PauseRequest`, and `Resume` remain reserved design protocol.
-
-```text
-controller → agent   Hello{proto_ver, agent_b3sum_expected, run_id, flags(check, diff, no_cache)}
-agent → controller   HelloAck{agent_ver, facts{default_ipv4_iface, distro_release, arch}, ledger_gen}
-controller → agent   Plan{tasks: [RenderedTask], handlers: [...], blobs_referenced: [b3sums]}
-agent → controller   BlobsNeeded{missing: [b3sums]}          // controller pushes via SFTP channel
-agent → controller   stream of Event:
-                       ProbeResult{task_id, verdict: CachedOk | NeedsCheck | NeedsApply, fingerprint_diff}
-                       TaskStart{task_id, item_label?}
-                       TaskResult{task_id, status, changed, rc/stdout/stderr?, diff?, timing, register_payload}
-                       PauseRequest{prompt}                  // controller relays to operator TTY, replies Resume
-                       Log{level, msg}
-controller → agent   PlanPatch{tasks: [...]}                 // register-dependent tasks rendered late (§4)
-controller → agent   Done → agent flushes ledger, exits      // (ephemeral mode)
-```
-
-`register_payload` carries the full result dict (rc, stdout, stat fields,
-…) so the controller can render dependent expressions — all Jinja stays on
-the controller.
-
-## 3. Execution pipeline (one run, end to end)
-
-1. **Parse** inventory + playbook into the typed model (SEMANTICS §1–§4).
-   Hard error on anything outside the closed surface.
-2. **Resolve secrets**: collect every distinct `onepassword`/`pipe` lookup
-   across the effective tasks; **group lookups by 1Password item** (an SSH
-   item's private+public key = two lookups, one `op item get <item>
-   --format json` fetch) and fetch all distinct items concurrently through
-   one `op` session; memoize for the run. (Specified deviation, SEMANTICS
-   §2.) The 52 lookups collapse to roughly half as many item fetches.
-3. **Compile**: evaluate statically renderable expressions; expand loops
-   whose source is already known (literal lists, play-var lists); build the
-   **register-dependency DAG** — each task is annotated with the registered
-   vars it reads (`when`, `loop`, params, `until`). Tasks whose inputs are
-   all static are fully rendered now; the rest become *deferred nodes*
-   rendered when their inputs arrive (§4).
-4. **Connect** to all target hosts in parallel; handshake; upload agent if
-   hash-missing; send `Plan` (ready tasks + deferred placeholders so the
-   agent knows the full shape and ordering).
-5. **Probe phase** (the speed heart, §6): agent concurrently evaluates
-   ledger fingerprints for every probeable task and streams verdicts.
-6. **Plan output / apply**: in `plan` mode, render the diff and stop. In
-   `apply` mode, agent executes the not-verified tasks **in playbook
-   order**, streaming results; the controller renders deferred nodes as
-   their register inputs arrive and streams `PlanPatch` continuations —
-   the agent never waits idle unless a true data dependency forces it.
-7. **Handlers** flush at end of play in definition order (only notified +
-   changed, SEMANTICS §4).
-8. **Ledger update** (per successful task), recap with per-task timing,
-   exit code.
-
-## 4. Register-dependency pipelining
-
-> **Build status (2026-07): BUILT.** `apply` consumes the compiler plan,
-> dispatches maximal runs of dependency-free agent tasks as one issue window,
-> and sends register-dependent tasks as `PlanPatch` messages. Controller-side
-> tasks and complex controls remain ordering boundaries.
-
-The workload's pattern: `stat` a set of disks → `register` → `when`/`loop`
-over results → `readlink` → `register` → LVM tasks templated from that.
-Ansible handles this by being fully sequential. Ruxel keeps **templating on
-the controller** (single Jinja implementation, single truth) without
-round-trip stalls becoming the bottleneck:
-
-- The compiler splits the task list into **issue windows**: maximal runs of
-  consecutive tasks whose params/conditions are already rendered.
-- The controller consumes each window's ordered result stream, binds arriving
-  register payloads, then renders and patches the next ready window. Added
-  latency is one controller round-trip per true dependency boundary, not per
-  task.
-- `assert`, `set_fact`, `debug`, `fail` and `when`-only evaluation execute
-  entirely on the controller (no agent round-trip at all).
-
-## 5. The agent: native modules over batched system caches
-
-> **Build status (2026-07): PARTIAL.** Package and systemd reads use lazy
-> per-run snapshots shared by modules and ledger verification. PostgreSQL reuses
-> one `psql` session per become-user/port/database tuple. Other listed snapshots
-> remain future work.
-
-One process per run (or resident, §9), tokio runtime, panic=abort with a
-structured crash report event. Module implementations follow SEMANTICS §6
-exactly. The performance design is **shared system snapshots** so that "65
-tasks" stops meaning "65 interrogations":
-
-| Cache | Built | Serves |
-|---|---|---|
-| dpkg status snapshot (one parse of `/var/lib/dpkg/status` + `apt-cache policy` batch for `latest`) | **built**; lazy once per run, invalidated on apt writes | all `apt` checks and package ledger probes |
-| systemd: batched `list-units` + `list-unit-files` snapshot | **built**; lazy, invalidated on unit writes | all `systemd`/`service` checks and unit ledger probes |
-| PostgreSQL: one `psql` connection per become-user/port/database tuple | **built**; lazy, closed at agent shutdown | all `postgresql_*` checks/changes |
-| `/proc/mounts` + `blkid` + `vgs/lvs --reportformat json` snapshot | once, invalidated on storage writes | mount/lvg/lvol/filesystem |
-| `getent passwd/group` snapshot | once, invalidated on user/group writes | user/group/authorized_key |
-| `iptables-save` parse | once per table, invalidated on writes | all 8 iptables checks |
-| blob store `/var/lib/ruxel/blobs/<b3sum>` | content-addressed, persistent | copy/template payloads — a file already delivered is never re-sent |
-
-**Apt batching rule** (the only cross-task merge, and it is
-status-preserving): a maximal run of *consecutive* `apt state=present`
-tasks with no intervening register consumption, `when` dependency, or
-non-apt task collapses into one `apt-get install` transaction; per-task
-changed/ok status is reconstructed from the dpkg snapshot delta so
-reporting and `notify` behave exactly as if run singly. No other module is
-cross-task merged in v1.
-
-Shell/command tasks run exactly as written (`/bin/bash -c`, `chdir`,
-`creates` guard, merged `environment`), streamed rc/stdout/stderr.
-
-## 6. The convergence ledger (why no-op is seconds)
-
-Per-host store: `/var/lib/ruxel/ledger/ledger.json` — currently an atomically
-replaced JSON map protected by a single-writer lock, keyed by **task identity**.
-An append-compacted database remains a future storage option:
-
-```text
-task_id  = blake3(playbook_rel_path ‖ play_name ‖ task_name ‖ module ‖ canonical(params))
-           where every secret-derived param value is replaced by
-           HMAC(host_ledger_key, value) — identity changes when a secret
-           changes, but no recoverable secret material is ever stored.
-record   = { agent_version, module_version, completed_at,
-             fingerprints: [Probe], last_status }
-Probe    = File{path, b3sum, len, mtime} | Pkg{name, version} |
-           UnitState{name, active, enabled, unitfile_b3} |
-           Mount{path, src_uuid, fstype, opts_norm} | SysctlKV |
-           VG{name, pv_ids} | LV{vg, name} | FsOnDev{dev, fstype} |
-           PgObject{kind, db, name, owner_or_acl_hash} |
-           PasswdEnt | GroupEnt | IptablesRule{table, chain, spec_hash} |
-           GitHead{dest, sha} | PathExists{path} | Marker{key}
-```
-
-Run-time verdict per task, computed concurrently for the whole plan:
-
-1. `task_id` present + **all fingerprints re-verify** (a few hundred stats
-   /reads ≈ <0.5 s total) → `CachedOk` — module logic not even invoked.
-2. Fingerprint mismatch (= drift) or unknown `task_id` (= edited task) →
-   full native check (SEMANTICS §6) → no-op or apply, and re-record.
-3. Ledger absent/corrupt/agent-version-changed → class 2 for everything
-   (graceful degradation: still no Python, still batched — minutes faster
-   than Ansible, just not instant). `--no-cache` forces class 2 globally.
-
-**Probe-class table** — every task type is explicitly classed; nothing
-defaults silently to "trust":
-
-| Class | Task types | No-op cost |
-|---|---|---|
-| Fingerprintable | file/copy/template/lineinfile/replace/blockinfile, apt, apt_repository, systemd/service *state=started,enabled*, sysctl, mount/lvg/lvol/filesystem, user/group/authorized_key, iptables, postgresql_*, timezone, git (HEAD sha + clean check) | µs–ms each, all parallel |
-| Always-execute | `systemd/service state=restarted` (an action), shell/command **without** `creates` (incl. the 26 `changed_when: false` check-commands — they *are* verification and still run, in parallel where the register DAG allows), `until` waits, pause, assert/fail/debug/set_fact (controller-side, ~free) | bounded by the commands themselves |
-| Guarded | shell with `creates` → `PathExists` probe short-circuits | µs |
-| Network-truth | `apt update_cache`, `apt state=latest`, `git update=yes`, `get_url` with missing dest | one network op each, parallelized |
-
-Honesty rule: a fingerprint match never overrides a *mandatory-execute*
-semantic. The ledger accelerates state checks; it never suppresses actions
-the playbook says happen every run.
-
-## 7. plan / apply / check / diff / tags / limit
-
-- `ruxel plan …` ≡ trustworthy `--check --diff` in seconds: probe phase +
-  class-2 checks only, **plus** honest annotation of what cannot be
-  predicted (shell tasks without `creates` report "would run", matching
-  Ansible's check-mode skip semantics for command/shell — SEMANTICS §3.5).
-- `ruxel apply …` = the full pipeline. `--check`/`--diff` are accepted as
-  aliases of plan behavior for drop-in muscle memory.
-- `--limit`, `--tags` (incl. `always`) behave per SEMANTICS §4. Tags keep
-  working — they just stop being a performance necessity.
-- Exit codes: 0 success, 1 any host failed, 2 usage/parse error;
-  `--detailed-exitcode` (opt-in) adds terraform-style "0 = converged,
-  2 = changes were applied/needed".
-- Output: ansible-shaped task lines with per-task timing and verdict
-  annotation (`ok (ledger)`, `ok (checked)`, `changed`, `would-run`),
-  recap table, `--output json` = stable JSON-lines event stream (the same
-  protocol events, serialized).
-- **Run log**: every run additionally writes its full JSON event stream
-  (secrets redacted) to `~/.local/state/ruxel/runs/<timestamp>-<run_id>.jsonl`
-  — forensics ("what exactly changed last Tuesday"), timing history, and
-  the raw material for future drift dashboards. Pruned by count, never a
-  dependency of execution.
-
-> **Build status (2026-07): BUILT.** `--detailed-exitcode`, persistent pruned
-> JSON run logs, normal exit codes, and `--output json` are implemented.
-- Inventory vs `~/.ssh/config` precedence: `ansible_ssh_host`/
-  `ansible_ssh_user` from `hosts.ini` always win (passed explicitly to the
-  connection); everything else (keys, agent, ciphers, ControlMaster paths)
-  comes from the operator's ssh config — exactly the effective behavior of
-  their `ansible-playbook` runs today.
-
-## 8. Failure, interruption, safety
-
-- Task failure: stop that host (no rescue) / jump to rescue (in block);
-  other hosts continue. Identical to today's semantics.
-- Connection loss / controller Ctrl-C: agent finishes the in-flight task
-  (never kills a half-applied module action mid-write), writes the ledger,
-  exits. Rerun converges — every module impl is re-entrant by the same
-  idempotence rules it checks with.
-- The agent refuses to run two overlapping runs (flock on the ledger).
-- Secrets: exist only in controller memory and in rendered params streamed
-  over SSH; never written to target disk (template/copy payload bytes
-  excepted — that *is* the operator's intent); `no_log` redacts protocol
-  logging, diffs, JSON output, and ledger identity hashing (§6).
-- Production-safety rule ([AGENTS.md](../AGENTS.md)) unchanged: all
-  development against disposable VMs; the tool grows up before it ever
-  sees a production host, and then only operator-driven.
-
-## 9. Warm-daemon tier (designed now, built later)
-
-The ephemeral agent already meets the seconds target. The same binary
-gains `ruxel-agent --resident`: stays up under a systemd unit (installed
-by ruxel itself like any other unit), holds the parsed system snapshots
-and ledger in memory, watches fingerprinted paths with inotify, and
-listens on a **unix socket only** — the controller reaches it through SSH
-unix-socket forwarding (`direct-streamlocal`), so the no-new-listener
-security posture is preserved. Effect: connect → verdicts in one RTT, and
-proactive drift reporting becomes possible (push to Slack/example-host).
-Protocol identical (§2). This is the path to "I glance at a dashboard and
-already know everything is correct."
-
-## 10. Performance budget (converged `setup-example-host.yml`, 65 tasks)
-
-| Step | Cost |
-|---|---|
-| ControlMaster connect + channel + agent spawn | ~0.3–0.5 s |
-| Parse + compile (local) | ~50 ms |
-| Secret resolution (52 lookups, deduplicated, ‖, warm `op` session) | ~1–3 s |
-| Plan stream + ledger probes (‖) + mandatory check-commands (‖ where DAG allows) | ~0.5–1.5 s |
-| Render + recap | ~50 ms |
-| **Total** | **≈ 2–5 s** (today: ~15 min) |
-
-Edit-one-task rerun = the same + that one task's real work. Fresh-server
-first run = real work (apt/mkfs/initdb) + seconds of overhead, hosts in
-parallel. These budgets are measured by the committed synthetic evidence in
-[`benchmarks/results/`](benchmarks/results/). The 65-task/52-lookup case has a
-1.785 s Ruxel median; the table remains a design budget, not a production
-workload claim.
+SSH uses strict host-key checking by default. The invoking environment is
+responsible for target admission and its own guard policy; do not assume the
+CLI alone supplies an allowlist. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
+for development. Never commit real credentials, host identities, or sensitive
+captures to this public repository.

@@ -1,0 +1,6 @@
+import "../../../../schema/Ruxel.pkl"
+output { value = new Ruxel.Copy {
+  src = "__FIXTURE_ROOT__/assets/synthetic.txt"
+  content = "prefix synthetic suffix"
+  dest = "__RUN_ROOT__/copy"
+} }

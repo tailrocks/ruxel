@@ -1,0 +1,39 @@
+import "../schema/Ruxel.pkl"
+function lit(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+ plays { new { name = "per-item vars"; targets { "all" }; tasks {
+  new { name = "default loop"; vars {
+   ["items"] = new Ruxel.ListExpr { items { lit("one"); lit("two"); lit("skip") } }
+   ["prefix"] = lit("default-")
+   ["part"] = ref(new Listing { "item" })
+   ["rendered"] = call("concat", new Listing { ref(new Listing { "vars"; "prefix" }); ref(new Listing { "vars"; "part" }) })
+  }
+   `loop` = ref(new Listing { "vars"; "items" })
+   `when` = call("ne", new Listing { ref(new Listing { "vars"; "part" }); lit("skip") })
+   loopLabel = ref(new Listing { "vars"; "rendered" })
+   environment { ["RUXEL_LOOP_VALUE"] = ref(new Listing { "vars"; "rendered" }) }
+   operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printenv"; "RUXEL_LOOP_VALUE" } }
+  }
+  new { name = "custom loop"; loopVar = "entry"; vars {
+   ["items"] = new Ruxel.ListExpr { items { lit("red"); lit("green"); lit("skip") } }
+   ["part"] = ref(new Listing { "entry" })
+   ["rendered"] = call("concat", new Listing { lit("custom-"); ref(new Listing { "vars"; "part" }) })
+  }
+   `loop` = ref(new Listing { "vars"; "items" })
+   `when` = call("ne", new Listing { ref(new Listing { "vars"; "part" }); lit("skip") })
+   loopLabel = ref(new Listing { "vars"; "rendered" })
+   environment { ["RUXEL_LOOP_VALUE"] = ref(new Listing { "vars"; "rendered" }) }
+   operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printenv"; "RUXEL_LOOP_VALUE" } }
+  }
+  new { name = "empty loop"; vars { ["never_evaluate"] = ref(new Listing { "item" }) }
+   `loop` = new Ruxel.ListExpr { items {} }; operation = new Ruxel.Debug { msg = ref(new Listing { "vars"; "never_evaluate" }) }
+  }
+  new { name = "private loop"; noLog = true; vars { ["value"] = ref(new Listing { "item" }) }
+   `loop` = new Ruxel.ListExpr { items { lit(SECRET) } }; loopLabel = ref(new Listing { "vars"; "value" })
+   operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { lit("/usr/bin/printf"); ref(new Listing { "vars"; "value" }) } } }
+  }
+ } } }
+} }

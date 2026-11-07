@@ -1,0 +1,100 @@
+use anyhow::{Result, ensure};
+use serde_json::{Map, Value};
+
+pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) -> Result<()> {
+    let present = |key| params.get(key).is_some_and(|v| !v.is_null());
+    if matches!(kind, "copy" | "template") {
+        ensure!(
+            present("src") != present("content"),
+            "copy requires exactly one of src or content"
+        );
+    }
+    if kind == "file" && params.get("state").and_then(Value::as_str) == Some("link") {
+        ensure!(present("src"), "link requires src");
+    }
+    if kind == "pause" {
+        ensure!(
+            !(present("seconds") && present("minutes")),
+            "pause accepts seconds or minutes"
+        );
+    }
+    if kind == "systemd" {
+        ensure!(
+            present("name") || (!present("state") && !present("enabled")),
+            "service state or enabled requires name"
+        );
+    }
+    if kind == "iptables" && present("policy") {
+        ensure!(
+            [
+                "protocol",
+                "destination",
+                "out_interface",
+                "jump",
+                "comment"
+            ]
+            .iter()
+            .all(|key| !present(key)),
+            "firewall policy cannot contain rule fields"
+        );
+    }
+    if kind == "lineinfile" && !(deferred && params.get("state").is_some_and(Value::is_object)) {
+        if params.get("state").and_then(Value::as_str) == Some("absent") {
+            ensure!(
+                present("line") || present("regexp"),
+                "line removal requires line or regexp"
+            );
+        } else {
+            ensure!(present("line"), "line insertion requires line");
+        }
+    }
+    commands(kind, params)?;
+    privileges(kind, params, deferred)?;
+    Ok(())
+}
+
+fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
+    let present = |key| params.get(key).is_some_and(|v| !v.is_null());
+    if matches!(kind, "command" | "shell") {
+        ensure!(
+            params
+                .get("cmd")
+                .and_then(Value::as_str)
+                .is_none_or(|cmd| !cmd.is_empty()),
+            "command cannot be empty"
+        );
+        ensure!(
+            present("cmd") != present("argv"),
+            "command requires exactly one of cmd or argv"
+        );
+        if let Some(v) = params
+            .get("argv")
+            .filter(|v| !v.is_null() && !v.is_object())
+        {
+            ensure!(
+                v.as_array().is_some_and(|v| !v.is_empty()),
+                "argv requires nonempty list"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn privileges(kind: &str, params: &Map<String, Value>, deferred: bool) -> Result<()> {
+    let present = |key| params.get(key).is_some_and(|v| !v.is_null());
+    if kind == "community.postgresql.postgresql_privs"
+        && !(deferred && params.get("type").is_some_and(Value::is_object))
+    {
+        let kind = params.get("type").and_then(Value::as_str);
+        ensure!(
+            kind != Some("database") || present("objs"),
+            "database privileges require objs"
+        );
+        ensure!(
+            !present("target_roles") || kind == Some("default_privs"),
+            "target roles require default privileges"
+        );
+    }
+
+    Ok(())
+}

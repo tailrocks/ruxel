@@ -4,7 +4,6 @@
 )]
 #![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
 
-use super::misc::run_cmd;
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -17,9 +16,89 @@ struct PasswdEntry {
     shell: String,
 }
 
+pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+    let obj = params_object(params)?;
+    let name = str_param(obj, "name").ok_or("group: name required")?;
+    if name.starts_with('-') {
+        return Err("group: name must not start with a hyphen".into());
+    }
+    let state = str_param(obj, "state").unwrap_or("present");
+    let gid = obj.get("gid").and_then(Value::as_u64);
+
+    let entry = group_entry(name)?;
+    let mut changed = false;
+
+    match state {
+        "present" => {
+            if let Some((_, current_gid)) = entry {
+                if let Some(want) = gid
+                    && current_gid != want
+                {
+                    changed = true;
+                    if !ctx.check_mode {
+                        run_cmd("groupmod", &["-g", &want.to_string(), name])?;
+                    }
+                }
+            } else {
+                changed = true;
+                if !ctx.check_mode {
+                    let gid_s;
+                    let mut args: Vec<&str> = Vec::new();
+                    if let Some(want) = gid {
+                        gid_s = want.to_string();
+                        args.push("-g");
+                        args.push(&gid_s);
+                    }
+                    args.push(name);
+                    run_cmd("groupadd", &args)?;
+                }
+            }
+        }
+        "absent" => {
+            if entry.is_some() {
+                changed = true;
+                if !ctx.check_mode {
+                    run_cmd("groupdel", &[name])?;
+                }
+            }
+        }
+        other => return Err(format!("group: state {other:?} outside the closed surface")),
+    }
+    Ok(json!({"changed": changed, "failed": false, "name": name}))
+}
+
+fn group_entry(name: &str) -> Result<Option<(String, u64)>, String> {
+    let content = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    group_entry_from(&content, name)
+}
+
+fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, String> {
+    for line in content.lines() {
+        let mut f = line.split(':');
+        if f.next() == Some(name) {
+            let gid = f
+                .nth(1)
+                .and_then(|g| g.parse().ok())
+                .ok_or("malformed group line")?;
+            return Ok(Some((name.to_string(), gid)));
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    super::run_checked(command)?;
+    Ok(())
+}
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("user: name required")?;
+    if name.starts_with('-') {
+        return Err("user: name must not start with a hyphen".into());
+    }
     let state = str_param(obj, "state").unwrap_or("present");
 
     let entry = passwd_entry(name)?;
@@ -226,6 +305,52 @@ mod tests {
     }
 
     #[test]
+    fn rejects_option_like_group_names_before_running_utilities() {
+        for check_mode in [true, false] {
+            let ctx = ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: Vec::new(),
+                become_user: None,
+            };
+            for state in ["present", "absent"] {
+                for name in ["--help", "-g"] {
+                    let error = group(&json!({"name":name, "state":state}), &ctx)
+                        .expect_err("option-like group name must be rejected");
+                    assert!(error.contains("group") && error.contains("name"));
+                }
+            }
+            if check_mode {
+                assert!(group(&json!({"name":"ruxel-synthetic-group"}), &ctx).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_option_like_user_names_before_running_utilities() {
+        for check_mode in [true, false] {
+            let ctx = ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: Vec::new(),
+                become_user: None,
+            };
+            for state in ["present", "absent"] {
+                for name in ["--help", "-u"] {
+                    let error = run(&json!({"name":name, "state":state}), &ctx)
+                        .expect_err("option-like user name must be rejected");
+                    assert!(error.contains("user") && error.contains("name"));
+                }
+            }
+            if check_mode {
+                assert!(run(&json!({"name":"ruxel-synthetic-user"}), &ctx).is_ok());
+            }
+        }
+    }
+
+    #[test]
     fn supplementary_group_reconciliation_is_set_based() {
         assert_eq!(
             desired_groups(&strings(&["a"]), &strings(&["b", "b"]), true),
@@ -256,5 +381,17 @@ mod tests {
             supplementary_groups_from("wheel:x:10:alice,bob\ndocker:x:20:bob\n", "alice"),
             strings(&["wheel"])
         );
+    }
+    #[test]
+    fn parses_group_entry_from_canned_content() {
+        assert_eq!(
+            super::group_entry_from("wheel:x:10:a,b\n", "wheel").unwrap(),
+            Some(("wheel".into(), 10))
+        );
+        assert_eq!(
+            super::group_entry_from("wheel:x:10:a,b\n", "missing").unwrap(),
+            None
+        );
+        assert!(super::group_entry_from("broken:x:nope:\n", "broken").is_err());
     }
 }

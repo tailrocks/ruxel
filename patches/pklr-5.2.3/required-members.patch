@@ -1,0 +1,42 @@
+--- a/src/eval/amend.rs
++++ b/src/eval/amend.rs
+@@ -414,6 +414,15 @@
+                         .flatten()
+                 });
+                 let Some(value) = value else {
++                    if !has_modifier(&prop.modifiers, Modifier::Local) {
++                        type_failures.insert(
++                            prop.name.clone(),
++                            PoisonedMember {
++                                message: format!("property '{}' is required", prop.name),
++                                rendered: !has_modifier(&prop.modifiers, Modifier::Hidden),
++                            },
++                        );
++                    }
+                     continue;
+                 };
+                 let check_scope: &Scope = if type_has_constraint(type_ann, &eval_scope) {
+--- a/src/eval/classes.rs
++++ b/src/eval/classes.rs
+@@ -731,6 +731,9 @@
+         None | Some(Value::String(_)) if ABSTRACT_STDLIB_CLASSES.contains(&resolved) => Err(
+             Error::Eval(format!("Cannot instantiate abstract class `{resolved}`.")),
+         ),
++        None => Err(Error::Eval(format!(
++            "Cannot instantiate unresolved type `{type_name}`."
++        ))),
+         _ => Ok(()),
+     }
+ }
+--- a/src/eval/entries.rs
++++ b/src/eval/entries.rs
+@@ -186,9 +186,6 @@
+                 let instance = self.eval_amended_object(map, source, &[], scope, depth);
+                 self.active_typed_defaults.remove(class_identity.as_str());
+                 let instance = instance?;
+-                if let Some(message) = rendered_member_failure(&instance) {
+-                    return Err(Error::Eval(message.to_string()));
+-                }
+                 default = Some(instance);
+             }
+             if let Some(default) = &mut default {

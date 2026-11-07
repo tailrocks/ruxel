@@ -113,7 +113,7 @@ pub(super) fn file_attrs(path: &Path) -> Option<(u32, u32, u32, bool)> {
     ))
 }
 
-fn bool_value(value: Option<&Value>, default: bool) -> bool {
+pub(super) fn bool_value(value: Option<&Value>, default: bool) -> bool {
     match value {
         None | Some(Value::Null) => default,
         Some(Value::Bool(value)) => *value,

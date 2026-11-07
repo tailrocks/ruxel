@@ -1,0 +1,357 @@
+module Ruxel
+
+// Runtime expressions are data: evaluation happens against each host's facts and results.
+typealias Expr = Literal|Ref|Call|ListExpr|MapExpr|Lookup
+class Literal { fixed kind = "literal"; value: Scalar? = null }
+class Ref { fixed kind = "ref"; path: Listing<String>(!this.isEmpty) }
+class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"subelements"|"mapAttribute"|"if"|"map"|"string"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup>(`function` == "concat" || (`function` == "if" && this.length == 3) || (List("not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 1) || (!List("concat", "if", "not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 2)) }
+class ListExpr { fixed kind = "list"; items: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
+class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
+class Lookup {
+  fixed kind = "lookup"
+  provider: "fnox"|"op"|"command"|"pipe"|"synthetic"
+  key: String?(provider != "pipe" || this != null) = null
+  vault: String? = null
+  item: String? = null
+  section: String? = null
+  field: String? = null
+  reference: String?(provider != "op" || this == null || (vault == null && item == null && section == null && field == null)) = null
+  argv: Listing<String>(provider != "command" || !this.isEmpty)
+}
+typealias Scalar = String|Boolean|Int|Float
+typealias Text = String|Expr
+typealias Flag = Boolean|Expr
+typealias NumberValue = Int(this >= 0)|Expr
+typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
+typealias TextList = String|Listing<String>|Expr
+typealias CommandArgs = Listing<String>(!this.isEmpty)|Expr
+typealias Port = Int(this >= 1 && this <= 65535)|Expr
+
+class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
+class Group { hosts: Listing<String>; children: Listing<String>; vars: Mapping<String, Expr> }
+class Inventory { hosts: Mapping<String, Host>; groups: Mapping<String, Group> }
+class Config { inventory: Inventory; plays: Listing<Play> }
+class Play {
+  name: String
+  targets: Listing<String>
+  preTasks: Listing<Task>
+  tasks: Listing<Task>
+  handlers: Listing<Task>
+  vars: Mapping<String, Expr>
+  environment: Mapping<String, Expr>
+  becomeUser: String? = null
+}
+class Task {
+  name: String
+  operation: Operation?(this != null && block.isEmpty && rescue.isEmpty && always.isEmpty || this == null && !block.isEmpty && `loop` == null && loopLabel == null && loopVar == "item") = null
+  `when`: Expr? = null
+  `loop`: Expr? = null
+  loopVar: String(!List("vars", "variables", "facts", "results", "inventoryHost", "setFacts").contains(this)) = "item"
+  loopLabel: Expr? = null
+  register: String?(this == null || block.isEmpty) = null
+  notify: Listing<String>
+  tags: Listing<String>
+  delegateTo: Text? = null
+  becomeUser: String? = null
+  vars: Mapping<String, Expr>
+  environment: Mapping<String, Expr>
+  retries: Int?(this == null || this >= 0) = null
+  delaySeconds: Int(this >= 0) = 5
+  until: Expr? = null
+  changedWhen: Expr? = null
+  failedWhen: Expr? = null
+  ignoreErrors: Boolean(!this || block.isEmpty) = false
+  checkMode: Boolean? = null
+  block: Listing<Task>
+  rescue: Listing<Task>
+  always: Listing<Task>
+  noLog: Boolean = false
+}
+typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
+
+class Apt {
+  fixed kind = "apt"
+  autoremove: Flag? = null
+  force: Flag? = null
+  name: TextList? = null
+  state: ("present"|"latest"|Expr)? = null
+  update_cache: Flag? = null
+  upgrade: ("dist"|Expr)? = null
+}
+
+class AptRepository {
+  fixed kind = "apt_repository"
+  filename: Text
+  repo: Text
+  state: ("present"|Expr)? = null
+  update_cache: Flag? = null
+}
+
+class AuthorizedKey {
+  fixed kind = "authorized_key"
+  key: Text
+  state: ("present"|Expr)? = null
+  user: Text
+}
+
+class BlockInFile {
+  fixed kind = "blockinfile"
+  block: Text
+  create: Flag? = null
+  group: Text? = null
+  mode: FileMode? = null
+  owner: Text? = null
+  path: Text
+}
+
+class Command {
+  fixed kind = "command"
+  argv: CommandArgs? = null
+  chdir: Text? = null
+  cmd: (String(this.length > 0)|Expr)?(this != null && argv == null || this == null && argv != null) = null
+  creates: Text? = null
+}
+
+class Copy {
+  fixed kind = "copy"
+  content: Text?(this != null && src == null || this == null && src != null) = null
+  dest: Text
+  force: Flag? = null
+  group: Text? = null
+  mode: FileMode? = null
+  owner: Text? = null
+  src: Text? = null
+}
+
+class File {
+  fixed kind = "file"
+  group: Text? = null
+  mode: FileMode? = null
+  owner: Text? = null
+  path: Text(state is Expr || state != "link" || src != null)
+  recurse: Flag? = null
+  src: Text? = null
+  state: ("file"|"directory"|"absent"|"link"|Expr)? = null
+}
+
+class Filesystem {
+  fixed kind = "filesystem"
+  dev: Text
+  fstype: "ext4"|"xfs"|Expr
+  resizefs: Flag? = null
+}
+
+class GetUrl {
+  fixed kind = "get_url"
+  dest: Text
+  url: Text
+}
+
+class Git {
+  fixed kind = "git"
+  accept_hostkey: Flag? = null
+  dest: Text
+  force: Flag? = null
+  repo: Text
+  update: Flag? = null
+  version: Text? = null
+}
+
+class SystemGroup {
+  fixed kind = "group"
+  gid: NumberValue? = null
+  name: Text
+  state: ("present"|"absent"|Expr)? = null
+}
+
+class Firewall {
+  fixed kind = "iptables"
+  chain: Text
+  comment: Text? = null
+  destination: Text? = null
+  ip_version: ("ipv4"|"ipv6"|Expr)? = null
+  jump: Text? = null
+  out_interface: Text? = null
+  policy: Text?(this == null || protocol == null && destination == null && out_interface == null && jump == null && comment == null) = null
+  protocol: Text? = null
+}
+
+class LineInFile {
+  fixed kind = "lineinfile"
+  line: Text?(state is Expr || (state == "absent" && (this != null || regexp != null)) || (state != "absent" && this != null)) = null
+  path: Text
+  regexp: Text? = null
+  state: ("present"|"absent"|Expr)? = null
+}
+
+class Replace {
+  fixed kind = "replace"
+  path: Text
+  regexp: Text
+  replace: Text? = null
+}
+
+class Shell {
+  fixed kind = "shell"
+  chdir: Text? = null
+  cmd: String(this.length > 0)|Expr
+  creates: Text? = null
+  executable: Text? = null
+}
+
+class Slurp {
+  fixed kind = "slurp"
+  src: Text
+}
+
+class Stat {
+  fixed kind = "stat"
+  follow: Flag? = null
+  path: Text
+}
+
+class Sysctl {
+  fixed kind = "sysctl"
+  name: Text
+  reload: Flag? = null
+  state: ("present"|Expr)? = null
+  sysctl_file: Text? = null
+  sysctl_set: Flag? = null
+  value: Scalar|Expr
+}
+
+class Service {
+  fixed kind = "systemd"
+  daemon_reload: Flag? = null
+  enabled: Flag? = null
+  name: Text?(this != null || state == null && enabled == null) = null
+  state: ("started"|"stopped"|"restarted"|Expr)? = null
+}
+
+class User {
+  fixed kind = "user"
+  append: Flag? = null
+  comment: Text? = null
+  create_home: Flag? = null
+  group: Text? = null
+  groups: TextList? = null
+  home: Text? = null
+  name: Text
+  remove: Flag? = null
+  shell: Text? = null
+  state: ("present"|"absent"|Expr)? = null
+  system: Flag? = null
+  uid: NumberValue? = null
+}
+
+class VolumeGroup {
+  fixed kind = "community.general.lvg"
+  pvs: TextList
+  vg: Text
+}
+
+class LogicalVolume {
+  fixed kind = "community.general.lvol"
+  lv: Text
+  resizefs: Flag? = null
+  size: Text
+  vg: Text
+}
+
+class Timezone {
+  fixed kind = "community.general.timezone"
+  name: Text
+}
+
+class Mount {
+  fixed kind = "ansible.posix.mount"
+  fstype: Text
+  opts: Text? = null
+  path: Text
+  src: Text
+  state: ("mounted"|Expr)? = null
+}
+
+class PostgresDatabase {
+  fixed kind = "community.postgresql.postgresql_db"
+  login_db: Text? = null
+  login_port: Port? = null
+  login_user: Text? = null
+  name: Text
+  owner: Text? = null
+  state: ("present"|Expr)? = null
+}
+
+class PostgresRole {
+  fixed kind = "community.postgresql.postgresql_user"
+  login_db: Text? = null
+  login_port: Port? = null
+  login_user: Text? = null
+  name: Text
+  password: Text? = null
+  role_attr_flags: Text? = null
+  state: ("present"|Expr)? = null
+}
+
+class PostgresSchema {
+  fixed kind = "community.postgresql.postgresql_schema"
+  login_db: Text
+  login_port: Port? = null
+  login_user: Text? = null
+  name: Text
+  owner: Text? = null
+  state: ("present"|Expr)? = null
+}
+
+class PostgresPrivileges {
+  fixed kind = "community.postgresql.postgresql_privs"
+  login_db: Text
+  login_port: Port? = null
+  login_user: Text? = null
+  objs: TextList?(type is Expr || type != "database" || this != null) = null
+  privs: TextList? = null
+  role: Text
+  schema: Text? = null
+  state: ("present"|Expr)? = null
+  target_roles: TextList?(this == null || type is Expr || type == "default_privs") = null
+  type: "database"|"schema"|"table"|"default_privs"|Expr
+}
+
+class Template {
+  fixed kind = "template"
+  content: Text?(this != null && src == null || this == null && src != null) = null
+  dest: Text
+  force: Flag? = null
+  group: Text? = null
+  mode: FileMode? = null
+  owner: Text? = null
+  src: Text? = null
+}
+
+class Assert {
+  fixed kind = "assert"
+  fail_msg: Text? = null
+  that: Boolean|Listing<Boolean|Expr>|Expr
+}
+
+class Debug {
+  fixed kind = "debug"
+  msg: Text? = null
+}
+
+class Fail {
+  fixed kind = "fail"
+  msg: Text? = null
+}
+
+class Pause {
+  fixed kind = "pause"
+  prompt: Text? = null
+  seconds: NumberValue? = null
+  minutes: NumberValue? = null
+}
+
+class SetFact {
+  fixed kind = "set_fact"
+  values: Mapping<String, Expr>
+}
