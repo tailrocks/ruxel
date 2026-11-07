@@ -53,3 +53,53 @@ async fn empty_loop_preserves_source_sensitivity_in_events_and_registered_result
     assert_eq!(backend.events[3]["result"]["censored"], true);
     Ok(())
 }
+
+#[tokio::test]
+async fn empty_loop_in_private_task_or_block_keeps_registered_result_private() -> Result<()> {
+    for inherited in [false, true] {
+        let empty = json!({"name":"private loop","noLog":!inherited,"register":"privateLoop","loop":{"kind":"literal","value":[]},"operation":{"kind":"debug","msg":"unused"}});
+        let private = if inherited {
+            json!({"name":"private block","noLog":true,"block":[empty]})
+        } else {
+            empty
+        };
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[private,
+            {"name":"observe","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","privateLoop","skip_reason"]}}}}
+        ]}]});
+        let mut backend = Fake::default();
+        let recap = run(
+            &config,
+            &BTreeMap::new(),
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await?;
+        assert_eq!(recap["h"].skipped, 1);
+        assert_eq!(backend.events[0]["result"]["censored"], true);
+        assert_eq!(backend.events[1]["result"]["censored"], true);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn sensitive_parent_condition_keeps_empty_loop_result_private() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"private condition","noLog":true,"operation":{"kind":"set_fact","values":{"gate":true}}},
+        {"name":"guarded block","when":{"kind":"ref","path":["vars","gate"]},"block":[{"name":"empty","register":"empty","loop":{"kind":"literal","value":[]},"operation":{"kind":"debug"}}]},
+        {"name":"observe","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","empty","skip_reason"]}}}}
+    ]}]});
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].skipped, 1);
+    assert_eq!(backend.events[1]["result"]["censored"], true);
+    assert_eq!(backend.events[2]["result"]["censored"], true);
+    Ok(())
+}

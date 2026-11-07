@@ -209,7 +209,7 @@ impl<B: Backend> Runner<'_, B> {
                 expr,
                 &mut std::collections::BTreeSet::new(),
             )?;
-            loop_source_sensitive = value.is_secret();
+            loop_source_sensitive = layer.no_log || layer.control_sensitive || value.is_secret();
             let items = value
                 .value
                 .as_array()
