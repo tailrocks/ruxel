@@ -1,8 +1,9 @@
 # Required-member evaluation prototype
 
-This patch is an inactive review artifact. Cargo still selects the registry
-release. No evaluator, resource allowlist, or dependency configuration changes
-are enabled by this directory.
+This patch is applied to the attributed local dependency in vendor/pklr.
+The dependency is selected by an exact-version path in ruxel-config. The Ruxel
+evaluator's resource configuration and the upstream resource-handling source
+are unchanged.
 
 The source is the MIT-licensed `pklr` 5.2.3 crates.io package, already pinned in
 `Cargo.lock`. Its package SHA-256 is
@@ -19,11 +20,10 @@ Unresolved constructor names are rejected instead of becoming bare objects.
 
 Apply `required-members.patch` with `patch -p1` to an extracted, disposable copy
 of the checksum-pinned package. Never patch the Cargo registry cache. The
-prototype was tested in an isolated Cargo workspace using a local
+prototype was first tested in an isolated Cargo workspace using a local
 `[patch.crates-io]` dependency and the existing schema suite with only its
-`evaluate_module` helper changed to `ruxel_config::eval`. The ordinary schema
-test helper still uses official Pkl until a reviewed native dependency is
-selected.
+`evaluate_module` helper changed to `ruxel_config::eval`. The schema helper now
+uses the native evaluator directly, with no external Pkl prerequisite.
 
 The isolated native suite passed all 12 groups: all 54 original invalid
 expressions, the valid schema fixture, 12 generic valid declarations, eight
@@ -39,8 +39,7 @@ inside the expression, preserving that known renderer difference rather than
 claiming byte-for-byte renderer parity.
 
 The full upstream package is approximately 2.5 MiB and 104 files; `src/` is
-approximately 1.6 MiB and 61 files. It has large source files and an embedded
-Rust standard-library MIT notice. Vendoring requires independent correctness,
-license/provenance and repository-policy review, preserving upstream notices
-and testing downstream templates. This prototype does not authorize a policy
-exception, vendor the package, pin a fork, or resolve the CI prerequisite.
+approximately 1.6 MiB and 61 files. The library-only vendor retains all library
+source and notices. Its exact scope, manifest changes and first-party policy
+boundary are documented in vendor/pklr/VENDORED.md. Independent review remains
+required before integrating this candidate.

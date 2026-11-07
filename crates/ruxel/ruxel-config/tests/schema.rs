@@ -39,17 +39,7 @@ fn evaluate_document(document: &str) -> Result<Value> {
 }
 
 fn evaluate_module(module: &Path) -> Result<Value> {
-    let output = std::process::Command::new("pkl")
-        .arg("eval")
-        .arg(module)
-        .args(["-f", "json"])
-        .env("MISE_AUTO_INSTALL", "false")
-        .env("MISE_EXEC_AUTO_INSTALL", "false")
-        .output()?;
-    if !output.status.success() {
-        return Err(std::io::Error::other(String::from_utf8_lossy(&output.stderr)).into());
-    }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    Ok(ruxel_config::eval(module)?)
 }
 
 #[test]

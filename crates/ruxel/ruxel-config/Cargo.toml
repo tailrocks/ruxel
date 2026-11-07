@@ -10,7 +10,7 @@ name = "check-deny-inputs"
 path = "src/bin/check_deny_inputs.rs"
 
 [dependencies]
-pklr = { version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+pklr = { path = "../../../vendor/pklr", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
 serde_json.workspace = true
 toml_edit = { version = "0.25.18", default-features = false, features = ["parse"] }
 

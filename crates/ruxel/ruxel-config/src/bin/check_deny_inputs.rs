@@ -40,7 +40,8 @@ fn verify(root: &Path, config: &str, metadata: &Value) -> Result<(), String> {
     let mut found = BTreeSet::new();
     for package in packages {
         let id = package["id"].as_str().ok_or("package missing id")?;
-        if !members.contains(id) {
+        let local_dependency = package.get("source").is_some_and(Value::is_null);
+        if !members.contains(id) && !local_dependency {
             continue;
         }
         let manifest = package["manifest_path"]
@@ -51,7 +52,9 @@ fn verify(root: &Path, config: &str, metadata: &Value) -> Result<(), String> {
             .map_err(|_| "manifest outside workspace")?;
         let relative = relative.to_str().ok_or("manifest path is not UTF-8")?;
         manifests.insert(relative.to_owned());
-        found.insert(id);
+        if members.contains(id) {
+            found.insert(id);
+        }
     }
     if found != members {
         return Err("workspace member metadata missing".into());
@@ -74,7 +77,7 @@ fn run() -> Result<(), String> {
     let config =
         std::fs::read_to_string(root.join(".velnor/config.toml")).map_err(|e| e.to_string())?;
     let output = Command::new("cargo")
-        .args(["metadata", "--no-deps", "--locked", "--format-version", "1"])
+        .args(["metadata", "--offline", "--locked", "--format-version", "1"])
         .current_dir(root)
         .output()
         .map_err(|e| e.to_string())?;
@@ -87,7 +90,7 @@ fn run() -> Result<(), String> {
     let metadata = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("invalid cargo metadata: {e}"))?;
     verify(root, &config, &metadata)?;
-    println!("cargo-deny manifest inputs match workspace members");
+    println!("cargo-deny manifest inputs match workspace members and local dependencies");
     Ok(())
 }
 
@@ -99,37 +102,5 @@ fn main() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::verify;
-    use serde_json::json;
-    use std::path::Path;
-
-    const CONFIG: &str =
-        "[[checks]]\nid = 'cargo-deny'\ninputs = ['Cargo.lock', 'crate/Cargo.toml']\n";
-
-    #[test]
-    fn validates_exact_member_set_and_rejects_mismatches() {
-        let metadata = json!({"workspace_members":["member"], "packages":[
-            {"id":"member", "manifest_path":"/work/crate/Cargo.toml"},
-            {"id":"dependency", "manifest_path":"/elsewhere/Cargo.toml"}
-        ]});
-        assert!(verify(Path::new("/work"), CONFIG, &metadata).is_ok());
-        for config in [
-            CONFIG.replace("crate/Cargo.toml", "wrong/Cargo.toml"),
-            format!("{CONFIG}[[checks]]\nid='cargo-deny'\ninputs=[]\n"),
-            CONFIG.replace("cargo-deny", "other"),
-            CONFIG.replace("'crate/Cargo.toml'", "false"),
-        ] {
-            assert!(verify(Path::new("/work"), &config, &metadata).is_err());
-        }
-        assert!(verify(Path::new("/other"), CONFIG, &metadata).is_err());
-        assert!(
-            verify(
-                Path::new("/work"),
-                CONFIG,
-                &json!({"workspace_members":["member"],"packages":[]})
-            )
-            .is_err()
-        );
-    }
-}
+#[path = "check_deny_inputs/tests.rs"]
+mod tests;
