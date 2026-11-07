@@ -110,6 +110,7 @@ fn escape_fstab(value: &str) -> String {
         .replace('\\', "\\134")
         .replace(' ', "\\040")
         .replace('\t', "\\011")
+        .replace('\n', "\\012")
 }
 
 fn opts_eq(a: &str, b: &str) -> bool {
@@ -312,6 +313,17 @@ mod tests {
         assert!(next.contains("/dev/a\\134b\t/mnt/a\\011b"));
         assert_eq!(
             super::rewrite_fstab(&next, "/dev/a\\b", "/mnt/a\tb", "ext4", "rw"),
+            (next, false)
+        );
+    }
+
+    #[test]
+    fn fstab_encodes_newlines_for_roundtrip() {
+        let (next, changed) = super::rewrite_fstab("", "/dev/a\nb", "/mnt/a\nb", "ext4", "rw");
+        assert!(changed);
+        assert_eq!(next, "/dev/a\\012b\t/mnt/a\\012b\text4\trw\t0\t0\n");
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/a\nb", "/mnt/a\nb", "ext4", "rw"),
             (next, false)
         );
     }
