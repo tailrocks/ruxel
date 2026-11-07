@@ -187,11 +187,9 @@ impl<B: Backend> Runner<'_, B> {
                 )?;
                 let mut success = self.tasks(array(task, "block"), &layer).await?;
                 if !success && !array(task, "rescue").is_empty() {
+                    self.recap.rescued += 1;
+                    self.recap.failed = self.recap.failed.saturating_sub(1);
                     success = self.tasks(array(task, "rescue"), &layer).await?;
-                    if success {
-                        self.recap.rescued += 1;
-                        self.recap.failed = self.recap.failed.saturating_sub(1);
-                    }
                 }
                 let always = self.tasks(array(task, "always"), &layer).await?;
                 return Ok(success && always);
