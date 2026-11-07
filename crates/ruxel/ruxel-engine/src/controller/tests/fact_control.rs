@@ -3,6 +3,14 @@ use super::*;
 #[derive(Default)]
 pub(super) struct Precise(pub(super) Fake);
 impl Backend for Precise {
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        super::super::fallback::evaluate_layers(self, value, scope, layers)
+    }
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
         self.0.evaluate(value, scope)
     }

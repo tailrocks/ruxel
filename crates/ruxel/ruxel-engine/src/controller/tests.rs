@@ -38,6 +38,16 @@ struct Fake {
     results: std::collections::VecDeque<Value>,
 }
 impl Backend for Fake {
+    // This test double retains its historical eager evaluator; production
+    // backends must implement demand-driven layered resolution.
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        super::fallback::evaluate_layers(self, value, scope, layers)
+    }
     fn evaluate_task_expression(
         &mut self,
         value: &Value,

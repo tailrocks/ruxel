@@ -71,8 +71,9 @@ pub trait Backend {
         fallback::evaluate(self, value, scope, vars)
     }
     /// Evaluate an expression with ordered variable definition layers.
-    /// The default conservatively materializes parent layers; backends can
-    /// override it to preserve lazy evaluation across layers.
+    /// Backends must override this method for multiple definition layers,
+    /// resolving bindings on demand in the current scope. The default retains
+    /// the single-layer compatibility API.
     ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
@@ -82,6 +83,9 @@ pub trait Backend {
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        if layers.len() > 1 {
+            anyhow::bail!("backend does not support layered variable evaluation");
+        }
         fallback::evaluate_layers(self, value, scope, layers)
     }
     /// Prepare source-backed operations before evaluating their parameter expressions.

@@ -1,5 +1,35 @@
 use super::*;
 
+#[derive(Default)]
+struct Opaque(Fake);
+impl Backend for Opaque {
+    fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
+        self.0.evaluate(value, scope)
+    }
+    async fn execute(&mut self, request: Request) -> Result<Value> {
+        self.0.execute(request).await
+    }
+    fn event(&mut self, event: &Value) -> Result<()> {
+        self.0.event(event)
+    }
+}
+
+#[test]
+fn opaque_backend_rejects_multilayer_resolution() -> Result<()> {
+    let mut backend = Opaque::default();
+    let definitions = json!({"x":"value"}).as_object().context("vars")?.clone();
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let error = backend
+        .evaluate_layered_expression(&json!(true), &scope, &[definitions.clone(), definitions])
+        .expect_err("unsupported layers must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("does not support layered variable evaluation")
+    );
+    Ok(())
+}
+
 #[test]
 fn layered_backend_fallback_keeps_inherited_self_override() -> Result<()> {
     let mut backend = Fake::default();
