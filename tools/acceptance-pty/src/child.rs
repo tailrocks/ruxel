@@ -29,15 +29,21 @@ fn kill_group(pid: Pid) -> Result<()> {
 
 fn cleanup_child(child: &mut Child) -> Result<()> {
     let pid = Pid::from_raw(i32::try_from(child.id())?).context("invalid child PID")?;
-    kill_group(pid)?;
     let _ = child.kill();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while child.try_wait()?.is_none() {
+    while waitid(
+        WaitId::Pid(pid),
+        WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+    )?
+    .is_none()
+    {
         if Instant::now() >= deadline {
-            bail!("child reap timed out");
+            bail!("child termination timed out");
         }
         thread::sleep(Duration::from_millis(5));
     }
+    kill_group(pid)?;
+    child.wait()?;
     Ok(())
 }
 

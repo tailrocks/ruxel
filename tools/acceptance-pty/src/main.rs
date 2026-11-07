@@ -7,6 +7,9 @@ fn run() -> Result<()> {
     if args.len() == 1 && args[0] == "--group-anchor" {
         return helper::group_anchor();
     }
+    if args.len() == 3 && args[0] == "--startup-gate" {
+        return helper::startup_gate(&PathBuf::from(&args[1]), &PathBuf::from(&args[2]));
+    }
     if args.first().is_some_and(|value| value == "--terminal-exec") {
         return helper::terminal_exec(&args[1..]);
     }

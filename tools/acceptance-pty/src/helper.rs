@@ -13,6 +13,11 @@ pub fn terminal_exec(args: &[OsString]) -> Result<()> {
     };
     rustix::process::setsid()?;
     rustix::process::ioctl_tiocsctty(std::io::stdin())?;
+    start_anchor()?;
+    Err(Command::new(program).args(arguments).exec().into())
+}
+
+fn start_anchor() -> Result<()> {
     let mut anchor = Command::new("/bin/sh")
         .arg("-c")
         .arg("trap '' INT HUP; exec \"$1\" --group-anchor")
@@ -33,7 +38,7 @@ pub fn terminal_exec(args: &[OsString]) -> Result<()> {
     if ready != "ready\n" {
         bail!("group anchor did not start");
     }
-    Err(Command::new(program).args(arguments).exec().into())
+    Ok(())
 }
 
 pub fn group_anchor() -> Result<()> {
@@ -44,8 +49,20 @@ pub fn group_anchor() -> Result<()> {
     }
 }
 
+pub fn startup_gate(release: &std::path::Path, marker: &std::path::Path) -> Result<()> {
+    println!("ready");
+    std::io::stdout().flush()?;
+    while !release.exists() {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    rustix::process::setsid()?;
+    std::fs::write(marker, b"started")?;
+    Ok(())
+}
+
 /// Deliberately incomplete JSON, used only by the bounded-reader regression.
 pub fn partial_output() -> Result<()> {
+    start_anchor()?;
     std::io::stdout().write_all(b"{")?;
     std::io::stdout().flush()?;
     std::thread::sleep(std::time::Duration::from_secs(30));
