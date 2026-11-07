@@ -82,16 +82,22 @@ impl<B: Backend> Runner<'_, B> {
                 source_sensitive || layer.no_log || layer.control_sensitive,
             )
             .await?;
-        let tracked_params = self
-            .backend
-            .evaluate_tracked(&Value::Object(params), scope)
-            .map_err(|error| {
-                if source_sensitive || layer.no_log || layer.control_sensitive {
-                    anyhow::anyhow!("sensitive operation evaluation failed")
-                } else {
-                    error
-                }
-            })?;
+        let tracked_params = if kind == "assert" {
+            self.assertion_params(
+                &params,
+                scope,
+                source_sensitive || layer.no_log || layer.control_sensitive,
+            )
+        } else {
+            self.backend.evaluate_tracked(&Value::Object(params), scope)
+        }
+        .map_err(|error| {
+            if source_sensitive || layer.no_log || layer.control_sensitive {
+                anyhow::anyhow!("sensitive operation evaluation failed")
+            } else {
+                error
+            }
+        })?;
         let mut sensitive = layer.no_log
             || layer.control_sensitive
             || source_sensitive

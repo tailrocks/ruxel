@@ -374,6 +374,7 @@ pub async fn run<B: Backend>(
     Ok(totals)
 }
 
+mod assertion;
 mod failure;
 mod handlers;
 pub(crate) use failure::RunFailure;

@@ -1,5 +1,6 @@
 use super::*;
 
+mod assertion;
 mod block_skip;
 mod block_tags;
 mod cases;
