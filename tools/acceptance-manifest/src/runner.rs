@@ -80,7 +80,11 @@ impl Env {
             .filter(|l| !l.is_empty())
             .map(serde_json::from_str)
             .collect::<std::result::Result<_, _>>()?;
-        checks::hosts(&events, &checks::expected_hosts(name), "recap")?;
+        if name == "controller-delegation" {
+            crate::delegation::verify(&events, expected != 0)?;
+        } else {
+            checks::hosts(&events, &checks::expected_hosts(name), "recap")?;
+        }
         ensure!(
             events
                 .iter()

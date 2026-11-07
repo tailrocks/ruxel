@@ -25,3 +25,13 @@ fn task_and_recap_checks_reject_missing_and_duplicate_events() {
     assert!(result(&[valid.clone(), valid], "task").is_err());
     assert!(recap(&[]).is_err());
 }
+
+#[test]
+fn plan_recap_requires_censored_host_and_rejects_duplicate_rows() {
+    let censored = serde_json::json!({"host":"[censored]","recap":{"failed":0,"changed":0}});
+    assert!(recap_for_host(std::slice::from_ref(&censored), "[censored]").is_ok());
+    assert!(recap(std::slice::from_ref(&censored)).is_err());
+    let visible = serde_json::json!({"host":"fixture","recap":{"failed":0,"changed":0}});
+    assert!(recap_for_host(&[visible], "[censored]").is_err());
+    assert!(recap_for_host(&[censored.clone(), censored], "[censored]").is_err());
+}

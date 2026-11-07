@@ -22,17 +22,20 @@ fn rejects_wrong_or_duplicate_hosts_and_missing_results() -> anyhow::Result<()> 
     Ok(())
 }
 #[test]
-fn delegation_requires_failed_assertion_and_skipped_command() {
+fn delegation_requires_censored_results_and_exact_preview_recap() {
     let mut events = vec![
-        json!({"host":"fixture","task":"Read synthetic value on controller","result":{"skipped":true,"changed":false}}),
-        json!({"host":"fixture","task":"Assert delegated result shape","result":{"failed":true}}),
-        json!({"host":"fixture","recap":{"changed":0,"failed":1}}),
+        json!({"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}),
+        json!({"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":true}}),
+        json!({"host":"[censored]","recap":{"planned":0,"ok":0,"changed":0,"failed":1,"skipped":1,"rescued":0,"ignored":0}}),
     ];
     assert!(assert_preview("controller-delegation", "check", &events).is_ok());
     events[1]["result"]["failed"] = json!(false);
     assert!(assert_preview("controller-delegation", "check", &events).is_err());
     events[1]["result"]["failed"] = json!(true);
-    events[0]["host"] = json!("wrong");
+    events[0]["host"] = json!("fixture");
+    assert!(assert_preview("controller-delegation", "check", &events).is_err());
+    events[0]["host"] = json!("[censored]");
+    events[2]["recap"]["skipped"] = json!(0);
     assert!(assert_preview("controller-delegation", "check", &events).is_err());
 }
 #[test]

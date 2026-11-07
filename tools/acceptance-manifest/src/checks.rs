@@ -43,11 +43,7 @@ pub fn assert_apply(name: &str, phase: &str, events: &[Value], payload: &Path) -
             );
         }
         "controller-delegation" => {
-            let results = task(events, "Read synthetic value on controller");
-            ensure!(
-                results.len() == 1 && results[0]["stdout"] == "ruxel-fixture-controller",
-                "delegated stdout mismatch"
-            );
+            crate::delegation::verify(events, false)?;
         }
         "multihost" => {
             let rows: Vec<_> = events

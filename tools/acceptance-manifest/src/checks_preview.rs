@@ -30,23 +30,7 @@ pub fn assert_preview(name: &str, mode: &str, events: &[Value]) -> Result<()> {
             }
         }
         "controller-delegation" => {
-            let commands = task(events, "Read synthetic value on controller");
-            let assertions = task(events, "Assert delegated result shape");
-            ensure!(
-                commands.len() == 1
-                    && commands[0]["skipped"] == true
-                    && commands[0]["changed"] == false
-                    && assertions.len() == 1
-                    && assertions[0]["failed"] == true,
-                "delegation preview mismatch"
-            );
-            ensure!(
-                events
-                    .iter()
-                    .filter_map(|e| e.get("recap"))
-                    .all(|r| r["changed"] == 0),
-                "unexpected reported change"
-            );
+            crate::delegation::verify(events, true)?;
         }
         "multihost" => {
             let rows: Vec<_> = events

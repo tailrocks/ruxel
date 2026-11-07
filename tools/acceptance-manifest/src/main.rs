@@ -1,5 +1,6 @@
 mod checks;
 mod checks_preview;
+mod delegation;
 
 mod contract;
 mod pins;

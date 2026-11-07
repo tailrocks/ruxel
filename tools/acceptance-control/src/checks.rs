@@ -63,11 +63,14 @@ fn result<'a>(events: &'a [Value], name: &str) -> Result<&'a Value> {
 }
 
 fn recap(events: &[Value]) -> Result<&Value> {
+    recap_for_host(events, "fixture")
+}
+
+fn recap_for_host<'a>(events: &'a [Value], host: &str) -> Result<&'a Value> {
     let matches: Vec<_> = events
         .iter()
         .filter(|event| {
-            event.get("host").and_then(Value::as_str) == Some("fixture")
-                && event.get("recap").is_some()
+            event.get("host").and_then(Value::as_str) == Some(host) && event.get("recap").is_some()
         })
         .collect();
     ensure!(matches.len() == 1, "missing or duplicate fixture recap");
@@ -121,7 +124,7 @@ pub fn check_semantics(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     let target = payload.join("check-notify");
     let events = run(cli, agent, &module, &state, "plan")?;
     ensure!(
-        recap(&events)?["changed"] == 0 && !target.exists(),
+        recap_for_host(&events, "[censored]")?["changed"] == 0 && !target.exists(),
         "plan mutated or reported a change"
     );
     for mode in ["check", "diff"] {

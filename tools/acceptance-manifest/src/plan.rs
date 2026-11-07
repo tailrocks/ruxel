@@ -30,7 +30,11 @@ fn valid(status: Option<i32>, stdout: &[u8], expected: &BTreeSet<String>) -> Res
         .filter(|v| !v.is_empty())
         .map(serde_json::from_str)
         .collect::<std::result::Result<_, _>>()?;
-    checks::hosts(&events, expected, "recap")?;
+    let recaps: Vec<_> = events.iter().filter(|e| e.get("recap").is_some()).collect();
+    ensure!(
+        recaps.len() == expected.len() && events.iter().all(|e| e["host"] == "[censored]"),
+        "plan recap host count or redaction mismatch"
+    );
     ensure!(
         events
             .iter()
