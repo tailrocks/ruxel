@@ -388,6 +388,7 @@ mod operation;
 mod plan;
 mod retry;
 mod runner;
+mod tag_selection;
 
 #[cfg(test)]
 mod tests;

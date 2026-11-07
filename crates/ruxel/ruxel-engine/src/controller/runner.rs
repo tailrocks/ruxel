@@ -144,14 +144,7 @@ impl<B: Backend> Runner<'_, B> {
         Box::pin(async move {
             if !self.handling
                 && !self.options.tags.is_empty()
-                && !parent
-                    .tags
-                    .iter()
-                    .map(String::as_str)
-                    .chain(array(task, "tags").iter().filter_map(Value::as_str))
-                    .any(|tag| {
-                        tag == "always" || self.options.tags.iter().any(|selected| selected == tag)
-                    })
+                && !super::tag_selection::selected(task, &parent.tags, &self.options.tags)
             {
                 return Ok(true);
             }
