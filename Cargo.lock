@@ -1556,6 +1556,7 @@ dependencies = [
  "openssh-sftp-client",
  "percent-encoding",
  "prost",
+ "rustix 1.1.6",
  "ruxel-config",
  "ruxel-proto",
  "serde",

@@ -16,7 +16,15 @@ pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<(
         let source = params.remove("src").filter(|value| !value.is_null());
         if let Some(source) = source.filter(|_| params.get("content").is_none_or(Value::is_null)) {
             let path = directory.join(source.as_str().context("source path must be text")?);
-            let file = File::open(path).context("open controller copy source")?;
+            let descriptor = rustix::fs::open(
+                path,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::NONBLOCK
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            )
+            .context("open controller copy source")?;
+            let file = File::from(descriptor);
             let metadata = file.metadata().context("inspect controller copy source")?;
             ensure!(
                 metadata.is_file(),

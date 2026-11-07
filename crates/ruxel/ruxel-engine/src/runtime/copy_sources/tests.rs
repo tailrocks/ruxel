@@ -103,3 +103,5 @@ fn empty_sources_and_inline_content_keep_existing_semantics() -> Result<()> {
     assert!(params.get("src").is_none());
     Ok(())
 }
+
+mod fifo;

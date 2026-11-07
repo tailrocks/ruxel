@@ -74,8 +74,10 @@ uses local Pkl files with an empty evaluator environment; runtime lookups are
 resolved by the controller.
 
 `Copy.src` supports regular controller files up to an aggregate 32 MiB per task
-request, including loop iterations. Larger sources are rejected before reading
-their content. Every task plan must also fit the 64 MiB protocol frame limit.
+request, including loop iterations. Sources already larger than the remaining
+limit are rejected before reading their content; reads remain bounded if a file
+grows after its size is checked. Every task plan must also fit the 64 MiB protocol
+frame limit.
 
 ## Run
 
