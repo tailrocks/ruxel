@@ -56,7 +56,7 @@ fn case(
             events = child.capture.read_prompt(Duration::from_secs(10))?;
             thread::sleep(Duration::from_millis(200));
             ensure!(
-                child.child.try_wait()?.is_none() && !marker.exists(),
+                !child.has_exited()? && !marker.exists(),
                 "{name}: pause did not block"
             );
             match name {

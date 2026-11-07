@@ -34,10 +34,7 @@ fn partial_json_times_out_after_child_is_ready_and_is_reaped() -> Result<()> {
             child.capture.pending == b"{",
             "reader did not consume the partial JSON byte"
         );
-        ensure!(
-            child.child.try_wait()?.is_none(),
-            "partial-output child exited early"
-        );
+        ensure!(!child.has_exited()?, "partial-output child exited early");
         Ok(())
     })();
     let pid = child.pid()?;

@@ -4,6 +4,9 @@ use std::{ffi::OsString, path::PathBuf};
 
 fn run() -> Result<()> {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if args.len() == 1 && args[0] == "--group-anchor" {
+        return helper::group_anchor();
+    }
     if args.first().is_some_and(|value| value == "--terminal-exec") {
         return helper::terminal_exec(&args[1..]);
     }

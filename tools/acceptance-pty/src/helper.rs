@@ -1,5 +1,10 @@
 use anyhow::{Result, bail};
-use std::{ffi::OsString, io::Write, os::unix::process::CommandExt, process::Command};
+use std::{
+    ffi::OsString,
+    io::{BufRead, BufReader, Write},
+    os::unix::process::CommandExt,
+    process::{Command, Stdio},
+};
 
 /// Establish the controlling terminal in a dedicated process before exec.
 pub fn terminal_exec(args: &[OsString]) -> Result<()> {
@@ -8,7 +13,35 @@ pub fn terminal_exec(args: &[OsString]) -> Result<()> {
     };
     rustix::process::setsid()?;
     rustix::process::ioctl_tiocsctty(std::io::stdin())?;
+    let mut anchor = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("trap '' INT HUP; exec \"$1\" --group-anchor")
+        .arg("anchor")
+        .arg(std::env::current_exe()?)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut ready = String::new();
+    BufReader::new(
+        anchor
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("missing anchor pipe"))?,
+    )
+    .read_line(&mut ready)?;
+    if ready != "ready\n" {
+        bail!("group anchor did not start");
+    }
     Err(Command::new(program).args(arguments).exec().into())
+}
+
+pub fn group_anchor() -> Result<()> {
+    println!("ready");
+    std::io::stdout().flush()?;
+    loop {
+        std::thread::park();
+    }
 }
 
 /// Deliberately incomplete JSON, used only by the bounded-reader regression.
