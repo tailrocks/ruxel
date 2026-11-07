@@ -161,15 +161,22 @@ impl<B: Backend> Runner<'_, B> {
                         return Ok(true);
                     }
                 }
-                self.materialize_inherited_variables(&mut layer, None)?;
-                let mut success = self.tasks(array(task, "block"), &layer).await?;
-                if !success && !array(task, "rescue").is_empty() {
-                    self.recap.rescued += 1;
-                    self.recap.failed = self.recap.failed.saturating_sub(1);
-                    success = self.tasks(array(task, "rescue"), &layer).await?;
+                let outcome: Result<bool> = async {
+                    self.materialize_inherited_variables(&mut layer, None)?;
+                    let mut success = self.tasks(array(task, "block"), &layer).await?;
+                    if !success && !array(task, "rescue").is_empty() {
+                        self.recap.rescued += 1;
+                        self.recap.failed = self.recap.failed.saturating_sub(1);
+                        success = self.tasks(array(task, "rescue"), &layer).await?;
+                    }
+                    Ok(success)
                 }
-                let always = self.tasks(array(task, "always"), &layer).await?;
-                return Ok(success && always);
+                .await;
+                let always = self.tasks(array(task, "always"), &layer).await;
+                return match (outcome, always) {
+                    (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+                    (Ok(success), Ok(always)) => Ok(success && always),
+                };
             }
             self.operation(task, &layer).await
         })
