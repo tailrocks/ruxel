@@ -533,3 +533,6 @@ fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
 
 #[path = "protocol/source_content.rs"]
 mod source_content;
+
+#[path = "protocol/sensitive_check.rs"]
+mod sensitive_check;

@@ -112,6 +112,7 @@ message HelloAck {
 
 
   uint64 ledger_generation = 4;
+  optional bool sensitive_effects = 5;
 }
 
 

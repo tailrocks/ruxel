@@ -1,6 +1,7 @@
 mod facts;
 mod ledger;
 mod modules;
+mod sensitivity;
 mod system_state;
 
 use ruxel_proto::PROTO_VERSION;
@@ -37,11 +38,6 @@ fn main() {
     std::process::exit(code);
 }
 
-fn state_dir() -> std::path::PathBuf {
-    std::env::var_os("RUXEL_STATE_DIR")
-        .map_or_else(|| ruxel_proto::constants::STATE_ROOT.into(), Into::into)
-}
-
 #[expect(
     clippy::too_many_lines,
     clippy::let_underscore_must_use,
@@ -58,7 +54,7 @@ fn serve() -> i32 {
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
-    let dir = state_dir();
+    let dir = sensitivity::state_dir();
     let _ = std::fs::create_dir_all(&dir);
     #[cfg(unix)]
     {
@@ -90,6 +86,15 @@ fn serve() -> i32 {
         );
         return 66;
     }
+
+    let Ok(mut sensitive_effects) = sensitivity::Marker::load(&dir) else {
+        log_event(
+            &mut stdout,
+            v1::log::Level::Error,
+            "sensitivity state unavailable".to_owned(),
+        );
+        return 66;
+    };
 
     let handshaken = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
@@ -146,6 +151,7 @@ fn serve() -> i32 {
                         proto_version: PROTO_VERSION,
                         facts: Some(facts::gather()),
                         ledger_generation: 0, // ledger lands in M3
+                        sensitive_effects: Some(sensitive_effects.is_marked()),
                     })),
                 };
                 if write_frame(&mut stdout, &ack).is_err() {
@@ -158,14 +164,17 @@ fn serve() -> i32 {
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
+                    let mut task = task.clone();
+                    task.no_log |= sensitive_effects.is_marked();
                     if execute_task(
                         &mut stdout,
-                        task,
+                        &task,
                         check_mode,
                         diff_mode,
                         no_cache,
                         &mut ledger,
                         &mut system_state,
+                        &mut sensitive_effects,
                     ) {
                         break;
                     }
@@ -192,8 +201,9 @@ fn serve() -> i32 {
 
 #[expect(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
     clippy::let_underscore_must_use,
-    reason = "replaced by the Ruxel rewrite"
+    reason = "task execution carries protocol, state and mode together"
 )]
 fn execute_task(
     out: &mut impl std::io::Write,
@@ -203,9 +213,24 @@ fn execute_task(
     no_cache: bool,
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
+    sensitive_effects: &mut sensitivity::Marker,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
+    if task.no_log && sensitive_effects.mark().is_err() {
+        if let Some(iteration) = task.iterations.first() {
+            send_result(
+                out,
+                task,
+                iteration,
+                "failed",
+                false,
+                &serde_json::json!({"failed":true,"msg":"sensitivity state unavailable"}),
+                std::time::Instant::now(),
+            );
+        }
+        return true;
+    }
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
         let _ = write_frame(
