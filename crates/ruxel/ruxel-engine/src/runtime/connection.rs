@@ -38,14 +38,21 @@ impl Connection {
     }
 }
 impl Execution {
+    pub(super) async fn connect(&self, host: &str) -> Result<v1::Facts> {
+        let gate = self.source_gate.write().await;
+        self.connect_guarded(host, &gate).await
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "connection setup validates and records handshake state"
     )]
-    pub(super) async fn connect(&self, host: &str) -> Result<v1::Facts> {
-        let _gate = self.source_gate.write().await;
-        let mut connections = self.connections.lock().await;
-        if connections.contains_key(host) {
+    pub(super) async fn connect_guarded(
+        &self,
+        host: &str,
+        _gate: &tokio::sync::RwLockWriteGuard<'_, ()>,
+    ) -> Result<v1::Facts> {
+        if self.connections.lock().await.contains_key(host) {
             return Ok(v1::Facts::default());
         }
         let spec = self.inventory.get(host);
@@ -130,7 +137,7 @@ impl Execution {
                 .clone();
             tracker.lock().await.mark_unknown();
         }
-        connections.insert(
+        self.connections.lock().await.insert(
             host.to_owned(),
             Arc::new(tokio::sync::Mutex::new(connection)),
         );
