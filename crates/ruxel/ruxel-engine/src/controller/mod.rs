@@ -163,7 +163,6 @@ impl Default for Options {
 struct ContextLayer {
     vars: BTreeMap<String, TrackedValue>,
     definitions: Vec<Map<String, Value>>,
-    resolved: BTreeSet<String>,
     environment: Map<String, Value>,
     become_user: Option<String>,
     tags: Vec<String>,

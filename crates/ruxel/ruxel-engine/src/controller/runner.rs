@@ -6,11 +6,6 @@ use super::{
 impl<B: Backend> Runner<'_, B> {
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
-        // A child runs with its own facts, results, item and override layers.
-        // Values memoized for the parent do not describe that environment.
-        for name in std::mem::take(&mut layer.resolved) {
-            layer.vars.remove(&name);
-        }
         let definitions = object(task, "vars");
         if !definitions.is_empty() {
             layer.definitions.push(definitions);
@@ -35,18 +30,13 @@ impl<B: Backend> Runner<'_, B> {
         layer: &mut ContextLayer,
         item: Option<(&str, &TrackedValue)>,
         expression: &Value,
-        resolved: &mut std::collections::BTreeSet<String>,
+        _resolved: &mut std::collections::BTreeSet<String>,
     ) -> Result<TrackedValue> {
         let definitions = self.variable_layers(layer);
         let scope = self.scope(layer, item);
-        let (value, vars) =
+        let (value, _) =
             self.backend
                 .evaluate_layered_expression(expression, &scope, &definitions)?;
-        for (name, value) in vars {
-            resolved.insert(name.clone());
-            layer.resolved.insert(name.clone());
-            layer.vars.insert(name, value);
-        }
         Ok(value)
     }
 

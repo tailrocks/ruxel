@@ -42,10 +42,9 @@ impl<B: Backend> Runner<'_, B> {
                 definitions
                     .iter()
                     .filter(|(name, _)| {
-                        !layer.resolved.contains(*name)
-                            && facts
-                                .as_ref()
-                                .is_none_or(|facts| facts.value.get(*name).is_none())
+                        facts
+                            .as_ref()
+                            .is_none_or(|facts| facts.value.get(*name).is_none())
                     })
                     .map(|(name, value)| (name.clone(), value.clone()))
                     .collect::<Map<_, _>>()
