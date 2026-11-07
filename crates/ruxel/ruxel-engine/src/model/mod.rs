@@ -115,8 +115,25 @@ fn expression_map(values: &BTreeMap<String, Value>) -> Result<()> {
     }
     Ok(())
 }
+pub(crate) fn validate_block_result_controls(
+    block: bool,
+    registered: bool,
+    ignore_errors: bool,
+) -> Result<()> {
+    ensure!(!block || !registered, "register requires an operation task");
+    ensure!(
+        !block || !ignore_errors,
+        "ignoreErrors requires an operation task"
+    );
+    Ok(())
+}
 fn validate_tasks(tasks: &[Task]) -> Result<()> {
     for task in tasks {
+        validate_block_result_controls(
+            !task.block.is_empty(),
+            task.register.is_some(),
+            task.ignore_errors,
+        )?;
         ensure!(
             task.operation.is_some() == task.block.is_empty(),
             "task requires operation or nonempty block"

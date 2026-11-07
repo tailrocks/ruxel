@@ -143,3 +143,23 @@ fn file_requires_canonical_path() -> Result {
     }
     Ok(())
 }
+
+#[test]
+fn blocks_reject_result_controls() -> Result {
+    let child = r#"new R.Task { name = "child"; operation = new R.Debug {} }"#;
+    for control in [r#"register = "result""#, "ignoreErrors = true"] {
+        assert!(
+            evaluate(&format!(
+                r#"new R.Task {{ name = "block"; {control}; block {{ {child} }} }}"#
+            ))
+            .is_err()
+        );
+        evaluate(&format!(
+            r#"new R.Task {{ name = "leaf"; {control}; operation = new R.Debug {{}} }}"#
+        ))?;
+    }
+    evaluate(&format!(
+        r#"new R.Task {{ name = "block"; register = null; ignoreErrors = false; block {{ {child} }} }}"#
+    ))?;
+    Ok(())
+}
