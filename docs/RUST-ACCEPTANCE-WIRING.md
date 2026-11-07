@@ -34,12 +34,11 @@ frozen oracle inputs explicitly.
 
 ## Pending XFS and aggregate gate
 
-The existing XFS helper test invocation remains required, unchanged and marked
-pending in `acceptance-local`. It was neither disabled nor run. The XFS runtime
-also still embeds its previous helper. Consequently `acceptance-local`, the
-aggregate `check`, and hosted CI must not be invoked under the operator's ban on
-Python. Workflow regeneration is source generation only; it does not execute
-acceptance or authorize a PR-head push.
+The XFS acceptance task runs the production Perl helper with synthetic ioctl
+callbacks through the `acceptance-xfs` Rust test crate. It also exercises
+descriptor handoff and, on Linux, ioctl failure on a procfs directory.
+Neither suite establishes mounted-XFS safety. Workflow regeneration is source
+generation only; it does not execute acceptance or authorize a PR-head push.
 
 The production default build still has native dependency work to resolve. Safe
 local verification uses matching controller/agent artifacts, locked offline

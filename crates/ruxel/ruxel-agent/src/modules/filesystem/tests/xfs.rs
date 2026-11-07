@@ -65,6 +65,7 @@ fn production_helper_reports_real_geometry_ioctl_error() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn real_perl_starts_with_directory_descriptor() {
     let directory = std::fs::File::open(".").unwrap();
     let error =
