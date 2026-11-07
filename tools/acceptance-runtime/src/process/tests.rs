@@ -40,12 +40,14 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
     let executable = temp.path().join("stalled");
     let started = temp.path().join("started");
     let marker = temp.path().join("marker");
+    let release = temp.path().join("release");
     let quote = |path: &Path| format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
     std::fs::write(
         &executable,
         format!(
-            "#!/bin/sh\nprintf x > {}; (sleep 2; printf leaked > {}) &\nwait\n",
+            "#!/bin/sh\nprintf x > {}; (while [ ! -f {} ]; do sleep 0.01; done; printf leaked > {}) &\nwait\n",
             quote(&started),
+            quote(&release),
             quote(&marker)
         ),
     )?;
@@ -58,6 +60,8 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
         "apply",
         Duration::from_secs(1),
     );
+    // Release writers only after cleanup, so scheduling delays cannot mimic a leak.
+    std::fs::write(&release, "release")?;
     ensure!(
         result.is_err_and(|error| error.to_string().contains("timed out")),
         "timeout not reported"
@@ -73,17 +77,20 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
 
 #[test]
 fn completed_cli_does_not_leave_descendants_running() -> Result<()> {
+    // The parent delay exceeds the old writer deadline and models scheduler pressure.
     for code in [0, 1] {
         let temp = tempfile::tempdir()?;
         let executable = temp.path().join("exits");
         let started = temp.path().join("started");
         let marker = temp.path().join("marker");
+        let release = temp.path().join("release");
         let quote = |path: &Path| format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
         std::fs::write(
             &executable,
             format!(
-                "#!/bin/sh\n(printf x > {}; sleep 0.5; printf leaked > {}) &\nwhile [ ! -f {} ]; do sleep 0.01; done\nprintf '{{}}\\n'\nexit {code}\n",
+                "#!/bin/sh\n(printf x > {}; while [ ! -f {} ]; do sleep 0.01; done; printf leaked > {}) &\nwhile [ ! -f {} ]; do sleep 0.01; done\nsleep 1\nprintf '{{}}\\n'\nexit {code}\n",
                 quote(&started),
+                quote(&release),
                 quote(&marker),
                 quote(&started)
             ),
@@ -97,6 +104,7 @@ fn completed_cli_does_not_leave_descendants_running() -> Result<()> {
             "apply",
             Duration::from_secs(5),
         );
+        std::fs::write(&release, "release")?;
         ensure!(
             outcome.is_ok() == (code == 0),
             "unexpected CLI status handling"
