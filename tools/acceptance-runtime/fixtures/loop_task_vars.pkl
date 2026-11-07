@@ -28,12 +28,12 @@ output { value = new Ruxel.Config {
    environment { ["RUXEL_LOOP_VALUE"] = ref(new Listing { "vars"; "rendered" }) }
    operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printenv"; "RUXEL_LOOP_VALUE" } }
   }
+  new { name = "empty loop"; vars { ["never_evaluate"] = ref(new Listing { "item" }) }
+   `loop` = new Ruxel.ListExpr { items {} }; operation = new Ruxel.Debug { msg = ref(new Listing { "vars"; "never_evaluate" }) }
+  }
   new { name = "private loop"; noLog = true; vars { ["value"] = ref(new Listing { "item" }) }
    `loop` = new Ruxel.ListExpr { items { lit(SECRET) } }; loopLabel = ref(new Listing { "vars"; "value" })
    operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { lit("/usr/bin/printf"); ref(new Listing { "vars"; "value" }) } } }
-  }
-  new { name = "empty loop"; vars { ["never_evaluate"] = ref(new Listing { "item" }) }
-   `loop` = new Ruxel.ListExpr { items {} }; operation = new Ruxel.Debug { msg = ref(new Listing { "vars"; "never_evaluate" }) }
   }
  } } }
 } }

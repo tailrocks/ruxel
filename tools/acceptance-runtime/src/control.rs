@@ -33,13 +33,15 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         .replace("SECRET", &serde_json::to_string(SECRET)?);
     let module = base.join("fixtures/control.pkl");
     fs::write(&module, source)?;
-    for mode in ["apply", "apply", "check", "diff"] {
+    // Isolate agent state so the final private command does not hide unrelated
+    // control-flow observations in the next invocation. Payload state is shared.
+    for (index, mode) in ["apply", "apply", "check", "diff"].into_iter().enumerate() {
         let before = fs::read(&marker).ok();
         let events = process::run_extra(
             cli,
             agent,
             &module,
-            &base.join("state"),
+            &base.join("state").join(index.to_string()),
             mode,
             Duration::from_secs(20),
             &[],
@@ -48,7 +50,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         )?;
         let recaps: Vec<_> = events
             .iter()
-            .filter(|e| e["host"] == "fixture" && e.get("recap").is_some())
+            .filter(|e| e["host"] == "[censored]" && e.get("recap").is_some())
             .collect();
         ensure!(
             recaps.len() == 1 && recaps[0]["recap"]["failed"] == 0,
@@ -72,7 +74,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         ensure!(
             result(&events, "retry")?["rc"] == 0
                 && marker.is_file()
-                && result(&events, "private")?["censored"] == true,
+                && result(&events, "[censored]")?["censored"] == true,
             "{mode}: retry or redaction failed"
         );
         let loop_result = result(&events, "loop")?;

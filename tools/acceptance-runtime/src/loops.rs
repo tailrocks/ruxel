@@ -43,6 +43,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path, item_vars: bool) -> Result<()>
     fs::write(&module, source)?;
     let label_path = base.join("labels.jsonl");
     let proxy = proxy::wrapper(base, agent, &label_path)?;
+    // Keep each invocation's private final item from hiding later public loops.
     for (index, mode) in ["apply", "apply", "check", "diff"].iter().enumerate() {
         if label_path.exists() {
             fs::remove_file(&label_path)?;
@@ -53,7 +54,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path, item_vars: bool) -> Result<()>
             cli,
             &proxy,
             &module,
-            &base.join("state"),
+            &base.join("state").join(index.to_string()),
             mode,
             Duration::from_secs(20),
             &args,
@@ -67,7 +68,10 @@ pub fn run(root: &Path, cli: &Path, agent: &Path, item_vars: bool) -> Result<()>
         );
         let recaps: Vec<_> = events
             .iter()
-            .filter(|e| e["host"] == "fixture" && e.get("recap").is_some())
+            .filter(|e| {
+                e["host"] == if item_vars { "[censored]" } else { "fixture" }
+                    && e.get("recap").is_some()
+            })
             .collect();
         ensure!(
             recaps.len() == 1 && recaps[0]["recap"]["failed"] == 0,

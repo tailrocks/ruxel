@@ -29,7 +29,7 @@ pub(super) fn check_vars(events: &[Value], mode: &str) -> Result<()> {
         }
     }
     ensure!(
-        result(events, "private loop")?["censored"] == true,
+        result(events, "[censored]")?["censored"] == true,
         "private loop not censored"
     );
     let empty = result(events, "empty loop")?;
