@@ -1,0 +1,12 @@
+import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { HOSTS }; groups { ["all"] { hosts { HOSTNAMES } } } }
+ plays {
+  new { name = "first"; targets { "all" }; tasks {
+   new { name = "instrument"; changedWhen = new Ruxel.Literal { value = false }; operation = new Ruxel.Command { argv = new Listing { ARGV } } }
+   new { name = "set distinct fact"; operation = new Ruxel.SetFact { values { ["answer"] = new Ruxel.Ref { path { "vars"; "token" } } } } }
+   new { name = "read distinct fact"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "vars"; "answer" } } } }
+  } }
+  new { name = "second"; targets { "all" }; tasks { new { name = "second play"; operation = new Ruxel.Debug { msg = "barrier" } } } }
+ }
+} }
