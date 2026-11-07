@@ -19,7 +19,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let current = match std::fs::read_to_string(p) {
         Ok(c) => c,
-        Err(_) if create => String::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && create => String::new(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Ok(json!({"changed": false, "failed": false, "msg": ""}));
         }
@@ -85,6 +85,41 @@ mod tests {
         };
         let result = run(&json!({"path": path, "block": "synthetic"}), &ctx).unwrap();
         assert_eq!(result["changed"], false);
+        let check = ExecContext {
+            check_mode: true,
+            ..ctx
+        };
+        let result = run(
+            &json!({"path": path, "block": "synthetic", "create": true}),
+            &check,
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn create_does_not_replace_invalid_existing_file() {
+        let path = std::env::temp_dir().join(format!("ruxel-block-read-{}", std::process::id()));
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        for check_mode in [true, false] {
+            let ctx = ExecContext {
+                check_mode,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            };
+            assert!(
+                run(
+                    &json!({"path": path, "block": "synthetic", "create": true}),
+                    &ctx
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), [0xff, 0xfe]);
+        }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

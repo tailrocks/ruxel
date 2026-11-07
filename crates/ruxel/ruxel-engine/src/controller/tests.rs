@@ -1,22 +1,36 @@
 use super::*;
 
+mod assertion;
+mod block_skip;
+mod block_tags;
 mod cases;
 mod excluded_vars;
+mod fact_control;
 mod failures;
 mod flows;
+mod handler_control;
 mod handler_failure;
 mod inventory;
 mod layer_vars;
+mod lazy_layers;
 mod local_retry;
+mod local_status;
+mod loop_labels;
+mod loop_result;
 mod loop_vars;
 mod more;
 mod persistence;
 mod plan_redaction;
+mod rescue_recap;
+mod result_conditions;
+mod retry_branch_privacy;
 mod retry_count;
 mod retry_preparation;
 mod retry_sensitive;
 mod retry_source;
+mod skipped_result;
 mod smoke;
+mod standard_expression;
 mod until_sensitivity;
 
 #[derive(Default)]
@@ -25,7 +39,23 @@ struct Fake {
     events: Vec<Value>,
     results: std::collections::VecDeque<Value>,
 }
+impl crate::expression::LookupResolver for Fake {
+    fn resolve(&self, _: &crate::expression::Expr) -> Result<Value> {
+        anyhow::bail!("unexpected lookup")
+    }
+}
 impl Backend for Fake {
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        evaluate_standard_layered(self, value, scope, layers)
+    }
     fn evaluate_task_expression(
         &mut self,
         value: &Value,

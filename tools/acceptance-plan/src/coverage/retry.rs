@@ -1,7 +1,7 @@
 use super::lex;
 use anyhow::{Context, Result, ensure};
 use regex::Regex;
-pub fn check(source: &str) -> Result<()> {
+pub fn check(source: &str, variables: &str) -> Result<()> {
     let source = lex::strip(source)?;
     let code = lex::mask(&source)?;
     let function = lex::function(&code, "execute")?;
@@ -30,9 +30,18 @@ pub fn check(source: &str) -> Result<()> {
         .find(&loop_code[call.end()..])
         .context("retry result scope not found")?;
     ensure!(
-        Regex::new(r"(?s)\.\s*evaluate_tracked\s*\(\s*condition\s*,\s*&current_scope\s*\)")?
+        Regex::new(r"(?s)self\s*\.\s*evaluate_scoped\s*\(\s*condition\s*,\s*&current_scope\s*,\s*&layer\s*\)")?
             .is_match(&loop_code[call.end() + scope.end()..]),
         "retry condition evaluation not found"
+    );
+    let variables = lex::strip(variables)?;
+    let variables = lex::mask(&variables)?;
+    let scoped = lex::sync_function(&variables, "evaluate_scoped")?;
+    let body = &variables[scoped];
+    ensure!(
+        Regex::new(r"let\s+definitions\s*=\s*self\s*\.\s*variable_layers\s*\(\s*layer\s*\)")?.is_match(body)
+            && Regex::new(r"self\s*\.\s*backend\s*\.\s*evaluate_layered_expression\s*\(\s*value\s*,\s*scope\s*,\s*&definitions\s*\)")?.is_match(body),
+        "scoped expression delegation not found"
     );
     Ok(())
 }

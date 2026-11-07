@@ -80,8 +80,9 @@ fn controller_dispatch_and_negative_cases() -> Result<()> {
 }
 #[test]
 fn retry_routes_require_real_calls() -> Result<()> {
-    let source = "async fn execute() { let Some(condition) = task.get(\"until\") else { return self.execute_once(); }; for attempt in 1..=attempts { self.execute_once(); let current_scope = super::result_scope(); self.backend.evaluate_tracked(condition, &current_scope); } }";
-    retry::check(source)?;
+    let source = "async fn execute() { let Some(condition) = task.get(\"until\") else { return self.execute_once(); }; for attempt in 1..=attempts { self.execute_once(); let current_scope = super::result_scope(); self.evaluate_scoped(condition, &current_scope, &layer); } }";
+    let variables = "fn evaluate_scoped() { let definitions = self.variable_layers(layer); self.backend.evaluate_layered_expression(value, scope, &definitions); }";
+    retry::check(source, variables)?;
     for bad in [
         source.replacen("self.execute_once(", "self.other(", 1),
         source.replace("task.get(\"until\")", "task.get(\"other\")"),
@@ -90,8 +91,8 @@ fn retry_routes_require_real_calls() -> Result<()> {
             "for attempt in 1..=attempts { self.other(); } self.execute_once();",
         ),
         source.replace(
-            "self.backend.evaluate_tracked(condition, &current_scope); } }",
-            "} } async fn other() { self.backend.evaluate_tracked(condition, &current_scope); }",
+            "self.evaluate_scoped(condition, &current_scope, &layer); } }",
+            "} } async fn other() { self.evaluate_scoped(condition, &current_scope, &layer); }",
         ),
         source.replace(
             "for attempt in 1..=attempts { self.execute_once(",
@@ -102,14 +103,25 @@ fn retry_routes_require_real_calls() -> Result<()> {
             "for attempt in 1..=attempts { /* self.execute_once( */ self.other(",
         ),
         source.replace(
-            "evaluate_tracked(condition, &current_scope)",
-            "other(condition, &current_scope)",
+            "evaluate_scoped(condition, &current_scope, &layer)",
+            "other(condition, &current_scope, &layer)",
         ),
         format!("/* {source} */"),
         format!("let inert = r#\"{source}\"#;"),
         format!("let inert = \"{}\";", source.replace('"', "\\\"")),
     ] {
-        assert!(retry::check(&bad).is_err(), "unexpectedly accepted {bad}");
+        assert!(
+            retry::check(&bad, variables).is_err(),
+            "unexpectedly accepted {bad}"
+        );
+    }
+    for bad in [
+        variables.replace("variable_layers", "other"),
+        variables.replace("evaluate_layered_expression", "other"),
+        variables.replace("self.backend.evaluate_layered_expression(value, scope, &definitions); }", "} fn unrelated() { self.backend.evaluate_layered_expression(value, scope, &definitions); }"),
+        format!("/* {variables} */"),
+    ] {
+        assert!(retry::check(source, &bad).is_err(), "unexpectedly accepted {bad}");
     }
     Ok(())
 }

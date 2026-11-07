@@ -138,8 +138,17 @@ pub fn block(source: &str, open: usize) -> Result<std::ops::Range<usize>> {
 }
 
 pub fn function(source: &str, name: &str) -> Result<std::ops::Range<usize>> {
+    function_with_prefix(source, name, r"async\s+")
+}
+
+pub fn sync_function(source: &str, name: &str) -> Result<std::ops::Range<usize>> {
+    function_with_prefix(source, name, "")
+}
+
+fn function_with_prefix(source: &str, name: &str, prefix: &str) -> Result<std::ops::Range<usize>> {
     let pattern = format!(
-        r"(?s)\basync\s+fn\s+{}\s*\([^)]*\)\s*(?:->\s*[^{{]+)?\{{",
+        r"(?s)\b{}fn\s+{}\s*\([^)]*\)\s*(?:->\s*[^{{]+)?\{{",
+        prefix,
         regex::escape(name)
     );
     let re = regex::Regex::new(&pattern)?;

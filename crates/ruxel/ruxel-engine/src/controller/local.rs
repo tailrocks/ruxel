@@ -30,7 +30,9 @@ impl<B: Backend> Runner<'_, B> {
                     || task.get("checkMode").and_then(Value::as_bool) == Some(true))
                     && task.get("checkMode").and_then(Value::as_bool) != Some(false)
                 {
-                    return Ok(result_value(json!({"changed":false,"skipped":true})));
+                    return Ok(result_value(
+                        json!({"changed":false,"failed":false,"skipped":true}),
+                    ));
                 }
                 let seconds = params.get("seconds").and_then(Value::as_u64).unwrap_or(0);
                 let minutes = params.get("minutes").and_then(Value::as_u64).unwrap_or(0);
@@ -55,10 +57,12 @@ impl<B: Backend> Runner<'_, B> {
                         .await??;
                     }
                 }
-                Ok(result_value(json!({"changed":false,"user_input":""})))
+                Ok(result_value(
+                    json!({"changed":false,"failed":false,"user_input":""}),
+                ))
             }
             "debug" => Ok(result_value(
-                json!({"changed":false, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Hello world!"))}),
+                json!({"changed":false, "failed":false, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Hello world!"))}),
             )),
             "fail" => Ok(result_value(
                 json!({"changed":false, "failed":true, "msg":params.get("msg").cloned().unwrap_or_else(|| json!("Failed as requested"))}),
@@ -81,7 +85,7 @@ impl<B: Backend> Runner<'_, B> {
                 let mut tracked_values = tracked_params
                     .get("values")
                     .context("set_fact requires values")?;
-                if layer.no_log {
+                if layer.no_log || layer.control_sensitive {
                     tracked_values.provenance = crate::expression::provenance::Provenance::Secret;
                 }
                 let mut facts = self
@@ -95,7 +99,9 @@ impl<B: Backend> Runner<'_, B> {
                     )?;
                 }
                 self.scope.insert("setFacts".into(), facts)?;
-                Ok(result_value(json!({"changed":false,"facts":values})))
+                Ok(result_value(
+                    json!({"changed":false,"failed":false,"facts":values}),
+                ))
             }
             _ => bail!("unsupported local operation"),
         }

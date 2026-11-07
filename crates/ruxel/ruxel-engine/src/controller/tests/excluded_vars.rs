@@ -1,5 +1,41 @@
 use super::*;
 
+#[derive(Default)]
+struct Opaque(Fake);
+impl Backend for Opaque {
+    fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
+        self.0.evaluate(value, scope)
+    }
+    async fn execute(&mut self, request: Request) -> Result<Value> {
+        self.0.execute(request).await
+    }
+    fn event(&mut self, event: &Value) -> Result<()> {
+        self.0.event(event)
+    }
+}
+
+mod opaque_hooks;
+mod opaque_lifetimes;
+
+#[test]
+fn layered_standard_backend_keeps_inherited_self_override() -> Result<()> {
+    let mut backend = Fake::default();
+    let parent = json!({"value":{"kind":"literal","value":"parent"}});
+    let child = json!({"value":{"kind":"ref","path":["vars","value"]}});
+    let layers = [
+        parent.as_object().context("parent")?.clone(),
+        child.as_object().context("child")?.clone(),
+    ];
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let (value, _) = backend.evaluate_layered_expression(
+        &json!({"kind":"ref","path":["vars","value"]}),
+        &scope,
+        &layers,
+    )?;
+    assert_eq!(value.value, "parent");
+    Ok(())
+}
+
 #[tokio::test]
 async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
@@ -22,7 +58,9 @@ async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
     )
     .await?;
     assert_eq!(backend.calls.len(), 1);
-    assert_eq!(recap["h"].skipped, 3);
+    assert_eq!(recap["h"].skipped, 4);
+    assert_eq!(backend.events[0]["task"], "tagged out");
+    assert_eq!(backend.events[0]["result"]["skipped"], true);
     assert_eq!(recap["h"].ok, 1);
     Ok(())
 }

@@ -1,6 +1,6 @@
 use crate::capture::Capture;
 use anyhow::{Context, Result, bail};
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
 use std::{
     process::{Child, Command, ExitStatus, Stdio},
     thread,
@@ -8,7 +8,7 @@ use std::{
 };
 
 pub struct ManagedChild {
-    pub child: Child,
+    child: Child,
     pub capture: Capture,
     cleaned: bool,
 }
@@ -29,21 +29,22 @@ fn kill_group(pid: Pid) -> Result<()> {
 
 fn cleanup_child(child: &mut Child) -> Result<()> {
     let pid = Pid::from_raw(i32::try_from(child.id())?).context("invalid child PID")?;
-    kill_group(pid)?;
-    if child.try_wait()?.is_none()
-        && let Err(error) = child.kill()
-        && child.try_wait()?.is_none()
-    {
-        return Err(error.into());
-    }
+    let _ = child.kill();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while child.try_wait()?.is_none() {
+    while waitid(
+        WaitId::Pid(pid),
+        WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+    )?
+    .is_none()
+    {
         if Instant::now() >= deadline {
-            bail!("child reap timed out");
+            bail!("child termination timed out");
         }
         thread::sleep(Duration::from_millis(5));
     }
-    kill_group(pid)
+    kill_group(pid)?;
+    child.wait()?;
+    Ok(())
 }
 
 impl ManagedChild {
@@ -71,12 +72,21 @@ impl ManagedChild {
         Pid::from_raw(i32::try_from(self.child.id())?).context("invalid child PID")
     }
 
+    pub fn has_exited(&self) -> Result<bool> {
+        Ok(waitid(
+            WaitId::Pid(self.pid()?),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        )?
+        .is_some())
+    }
+
     pub fn finish(&mut self, timeout: Duration) -> Result<ExitStatus> {
         let deadline = Instant::now() + timeout;
         loop {
-            if let Some(status) = self.child.try_wait()?
-                && self.capture.complete()
-            {
+            if self.has_exited()? && self.capture.complete() {
+                kill_group(self.pid()?)?;
+                let status = self.child.wait()?;
+                self.cleaned = true;
                 return Ok(status);
             }
             if Instant::now() >= deadline {

@@ -43,11 +43,7 @@ fn project(task: &Value, filter: &[String], inherited: &[String]) -> Option<(Val
             .filter_map(Value::as_str)
             .map(str::to_owned),
     );
-    if !filter.is_empty()
-        && !tags
-            .iter()
-            .any(|tag| tag == "always" || filter.contains(tag))
-    {
+    if !filter.is_empty() && !super::tag_selection::selected(task, inherited, filter) {
         return None;
     }
     let mut output = task.clone();

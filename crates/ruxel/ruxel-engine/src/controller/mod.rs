@@ -12,26 +12,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 
-/// Execution mode selected by the caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Plan,
-    Apply,
-    Check,
-    Diff,
-}
-
-/// An operation prepared for an agent, with its intended execution host.
-#[derive(Debug, Clone)]
-pub struct Request {
-    pub host: String,
-    pub task: v1::RenderedTask,
-}
+mod standard_expression;
+mod types;
+mod variables;
+pub use standard_expression::evaluate_standard_layered;
+pub use types::{Mode, Options, Recap, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
 #[expect(async_fn_in_trait, reason = "the backend is statically dispatched")]
 pub trait Backend {
+    /// Retain raw variable layers until expression access instead of eagerly
+    /// materializing inherited bindings. Requires a lazy layered evaluator.
+    fn lazy_variable_layers(&self) -> bool {
+        false
+    }
     /// Evaluate an expression in the current scope.
     ///
     /// # Errors
@@ -81,6 +76,25 @@ pub trait Backend {
         std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
     )> {
         fallback::evaluate(self, value, scope, vars)
+    }
+    /// Evaluate an expression with ordered variable definition layers.
+    /// The default materializes parent layers through the backend's existing
+    /// evaluation hooks before evaluating the child layer. This preserves opaque
+    /// backend semantics, including their scope and provenance handling.
+    /// Backends providing standard lazy expressions should override this method
+    /// using `evaluate_standard_layered` and enable `lazy_variable_layers`.
+    /// The default can evaluate unused parent bindings and does not provide lazy
+    /// cross-layer references.
+    ///
+    /// # Errors
+    /// Returns an error if a required expression or binding cannot be evaluated.
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        fallback::evaluate_layers(self, value, scope, layers)
     }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
@@ -140,38 +154,10 @@ pub trait Backend {
     fn event(&mut self, event: &Value) -> Result<()>;
 }
 
-/// Per-host execution totals.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Recap {
-    pub ok: u64,
-    pub changed: u64,
-    pub failed: u64,
-    pub skipped: u64,
-    pub rescued: u64,
-    pub ignored: u64,
-    pub planned: u64,
-}
-
-/// Options for a run. `hosts` restricts the play's targets when nonempty.
-#[derive(Debug, Clone)]
-pub struct Options {
-    pub mode: Mode,
-    pub hosts: Vec<String>,
-    pub tags: Vec<String>,
-}
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            mode: Mode::Apply,
-            hosts: Vec::new(),
-            tags: Vec::new(),
-        }
-    }
-}
-
 #[derive(Clone, Default)]
 struct ContextLayer {
     vars: BTreeMap<String, TrackedValue>,
+    definitions: Vec<Map<String, Value>>,
     environment: Map<String, Value>,
     become_user: Option<String>,
     tags: Vec<String>,
@@ -185,7 +171,7 @@ struct Runner<'a, B> {
     host: String,
     scope: TrackedValue,
     handlers: Vec<Value>,
-    notified: BTreeSet<String>,
+    notified: BTreeMap<String, bool>,
     handling: bool,
     recap: Recap,
     next_id: u64,
@@ -324,7 +310,7 @@ pub async fn run<B: Backend>(
                 host: host.clone(),
                 scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
-                notified: BTreeSet::new(),
+                notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),
                 next_id: 1,
@@ -335,11 +321,11 @@ pub async fn run<B: Backend>(
             let mut layer = ContextLayer::default();
             for name in ordered_groups(&groups)? {
                 if group_hosts(&name, &groups, &mut BTreeSet::new())?.contains(&host) {
-                    runner.extend_vars(&mut layer.vars, &object(&groups[&name], "vars"))?;
+                    layer.definitions.push(object(&groups[&name], "vars"));
                 }
             }
-            runner.extend_vars(&mut layer.vars, &object(&hosts[&host], "vars"))?;
-            runner.extend_vars(&mut layer.vars, &object(play, "vars"))?;
+            layer.definitions.push(object(&hosts[&host], "vars"));
+            layer.definitions.push(object(play, "vars"));
             layer.tags = array(play, "tags")
                 .iter()
                 .filter_map(Value::as_str)
@@ -348,6 +334,7 @@ pub async fn run<B: Backend>(
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
             let execution: Result<()> = async {
+                runner.materialize_inherited_variables(&mut layer, None)?;
                 let success = runner.tasks(array(play, "preTasks"), &layer).await?
                     && runner.tasks(array(play, "tasks"), &layer).await?;
                 if success {
@@ -374,9 +361,12 @@ pub async fn run<B: Backend>(
     Ok(totals)
 }
 
+mod assertion;
 mod failure;
+mod handlers;
 pub(crate) use failure::RunFailure;
 mod ledger;
+mod loop_result;
 mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
@@ -388,6 +378,7 @@ mod operation;
 mod plan;
 mod retry;
 mod runner;
+mod tag_selection;
 
 #[cfg(test)]
 mod tests;

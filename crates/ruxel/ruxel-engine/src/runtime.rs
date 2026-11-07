@@ -25,7 +25,7 @@ pub use output::OutputFormat;
 
 mod lookups;
 use lookups::Lookups;
-mod lazy_vars;
+pub(crate) mod lazy_vars;
 mod resources;
 use resources::Resources;
 
@@ -153,6 +153,18 @@ impl Backend for Execution {
         vars: &Map<String, Value>,
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
         lazy_vars::evaluate(self, value, scope, vars)
+    }
+    fn lazy_variable_layers(&self) -> bool {
+        true
+    }
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        self.prefetch_lookups(value)?;
+        lazy_vars::evaluate_layers(self, value, scope, layers)
     }
     async fn prepare_operation_tracked(
         &mut self,

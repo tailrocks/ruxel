@@ -21,7 +21,7 @@ fn exited_parent_does_not_leave_a_live_pipe_holding_descendant() -> Result<()> {
     let outcome = (|| -> Result<()> {
         wait_readable(&child.capture.stdout, Duration::from_secs(10))?;
         let deadline = Instant::now() + Duration::from_secs(5);
-        while child.child.try_wait()?.is_none() {
+        while !child.has_exited()? {
             ensure!(
                 Instant::now() < deadline,
                 "orphan helper parent did not exit"

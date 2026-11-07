@@ -69,7 +69,7 @@ impl<B: Backend> Runner<'_, B> {
             && params.get("content").is_none_or(Value::is_null)
             && let Some(source) = params.get("src")
         {
-            let source = self.backend.evaluate_tracked(source, scope)?;
+            let source = self.evaluate_scoped(source, scope, layer)?;
             source_sensitive = source.is_secret();
             params.insert("src".into(), source.value);
         }
@@ -82,22 +82,29 @@ impl<B: Backend> Runner<'_, B> {
                 source_sensitive || layer.no_log || layer.control_sensitive,
             )
             .await?;
-        let tracked_params = self
-            .backend
-            .evaluate_tracked(&Value::Object(params), scope)
-            .map_err(|error| {
-                if source_sensitive || layer.no_log || layer.control_sensitive {
-                    anyhow::anyhow!("sensitive operation evaluation failed")
-                } else {
-                    error
-                }
-            })?;
+        let tracked_params = if kind == "assert" {
+            self.assertion_params(
+                &params,
+                scope,
+                layer,
+                source_sensitive || layer.no_log || layer.control_sensitive,
+            )
+        } else {
+            self.evaluate_scoped(&Value::Object(params), scope, layer)
+        }
+        .map_err(|error| {
+            if source_sensitive || layer.no_log || layer.control_sensitive {
+                anyhow::anyhow!("sensitive operation evaluation failed")
+            } else {
+                error
+            }
+        })?;
         let mut sensitive = layer.no_log
             || layer.control_sensitive
             || source_sensitive
             || tracked_params.is_secret();
         if let Some(condition) = task.get("until").filter(|value| !value.is_null()) {
-            sensitive |= sensitive_condition(condition, scope);
+            sensitive |= self.sensitive_layered_condition(condition, scope, layer);
         }
         let params = tracked_params
             .value
@@ -118,7 +125,7 @@ impl<B: Backend> Runner<'_, B> {
         }
         let mut environment = std::collections::HashMap::new();
         for (key, value) in &layer.environment {
-            let value = self.backend.evaluate_tracked(value, scope)?;
+            let value = self.evaluate_scoped(value, scope, layer)?;
             sensitive |= value.is_secret();
             environment.insert(
                 key.clone(),
@@ -130,7 +137,7 @@ impl<B: Backend> Runner<'_, B> {
             );
         }
         let destination = if let Some(delegate) = task.get("delegateTo").filter(|v| !v.is_null()) {
-            let value = self.backend.evaluate_tracked(delegate, scope)?;
+            let value = self.evaluate_scoped(delegate, scope, layer)?;
             sensitive |= value.is_secret();
             value
                 .value
@@ -145,17 +152,25 @@ impl<B: Backend> Runner<'_, B> {
         let item_label = if layer.no_log {
             "[censored]".to_owned()
         } else if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
-            let value = self.backend.evaluate_tracked(label, scope)?;
+            let value = self.evaluate_scoped(label, scope, layer)?;
             sensitive |= value.is_secret();
-            value
-                .value
-                .as_str()
-                .map_or_else(|| value.value.to_string(), str::to_owned)
+            if value.is_secret() {
+                "[censored]".to_owned()
+            } else {
+                value
+                    .value
+                    .as_str()
+                    .map_or_else(|| value.value.to_string(), str::to_owned)
+            }
         } else if item.value.is_null() {
             String::new()
         } else {
             sensitive |= item.is_secret();
-            item.value.to_string()
+            if item.is_secret() {
+                "[censored]".to_owned()
+            } else {
+                item.value.to_string()
+            }
         };
         let free_form = if kind == "shell" {
             params
