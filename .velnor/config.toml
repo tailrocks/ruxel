@@ -190,6 +190,7 @@ inputs = [
   "tools/acceptance-pty/src/verify.rs",
   "tools/acceptance-pty/tests/orphan_output.rs",
   "tools/acceptance-pty/tests/partial_output.rs",
+  "tools/acceptance-pty/tests/terminal_anchor.rs",
   "tools/acceptance-runtime/Cargo.lock",
   "tools/acceptance-runtime/Cargo.toml",
   "tools/acceptance-runtime/README.md",
