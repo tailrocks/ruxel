@@ -27,6 +27,7 @@ use lookups::Lookups;
 pub(crate) mod lazy_vars;
 mod resources;
 use resources::Resources;
+mod copy_sources;
 mod delegates;
 
 #[derive(Clone)]
@@ -185,25 +186,7 @@ impl Backend for Execution {
         })
     }
     async fn execute(&mut self, mut request: Request) -> Result<Value> {
-        if request.task.module == "copy" {
-            for iteration in &mut request.task.iterations {
-                let mut params: Map<String, Value> =
-                    serde_json::from_slice(&iteration.params_json)?;
-                let source = params.remove("src").filter(|v| !v.is_null());
-                if let Some(src) =
-                    source.filter(|_| params.get("content").is_none_or(Value::is_null))
-                {
-                    let source = self
-                        .runtime
-                        .source_dir
-                        .join(src.as_str().context("source path must be text")?);
-                    iteration.source_content =
-                        Some(std::fs::read(source).context("read controller source file")?);
-                    params.remove("content");
-                }
-                iteration.params_json = serde_json::to_vec(&params)?;
-            }
-        }
+        copy_sources::prepare(&mut request.task, &self.runtime.source_dir)?;
         for index in 0..request.task.iterations.len() {
             let key = controller::ledger_key(&request.task, &request.task.iterations[index])?;
             request.task.iterations[index].ledger_key = key;
@@ -217,14 +200,8 @@ impl Backend for Execution {
             .context("execution host is not connected")?;
         let mut connection = connection.lock().await;
         let id = request.task.task_id;
-        connection
-            .send(&v1::Envelope {
-                msg: Some(v1::envelope::Msg::Plan(v1::Plan {
-                    tasks: vec![request.task],
-                    blobs_referenced: vec![],
-                })),
-            })
-            .await?;
+        let plan = copy_sources::plan(request.task)?;
+        connection.send(&plan).await?;
         loop {
             let event = connection
                 .next()
