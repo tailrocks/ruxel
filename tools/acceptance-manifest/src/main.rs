@@ -7,6 +7,8 @@ mod plan;
 
 mod process;
 mod process_guard;
+#[cfg(test)]
+mod restart;
 mod runner;
 mod state;
 use anyhow::{Context, Result, bail};
