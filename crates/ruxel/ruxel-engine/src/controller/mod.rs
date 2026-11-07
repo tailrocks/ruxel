@@ -65,6 +65,23 @@ pub trait Backend {
             TrackedValue::public(value)
         })
     }
+    /// Evaluate a task expression while resolving task variables as needed.
+    /// The default conservatively resolves referenced variables; backends may
+    /// override it to preserve short-circuit evaluation within expressions.
+    ///
+    /// # Errors
+    /// Returns an error if an accessed variable or expression cannot be evaluated.
+    fn evaluate_task_expression(
+        &mut self,
+        value: &Value,
+        scope: &crate::expression::provenance::TrackedValue,
+        vars: &Map<String, Value>,
+    ) -> Result<(
+        crate::expression::provenance::TrackedValue,
+        std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
+    )> {
+        fallback::evaluate(self, value, scope, vars)
+    }
     /// Prepare source-backed operations before evaluating their parameter expressions.
     ///
     /// # Errors
@@ -168,7 +185,7 @@ struct Runner<'a, B> {
     host: String,
     scope: TrackedValue,
     handlers: Vec<Value>,
-    notified: BTreeSet<String>,
+    notified: BTreeMap<String, bool>,
     handling: bool,
     recap: Recap,
     next_id: u64,
@@ -307,7 +324,7 @@ pub async fn run<B: Backend>(
                 host: host.clone(),
                 scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
-                notified: BTreeSet::new(),
+                notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),
                 next_id: 1,
@@ -330,11 +347,15 @@ pub async fn run<B: Backend>(
                 .collect();
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
-            let success = runner.tasks(array(play, "preTasks"), &layer).await?
-                && runner.tasks(array(play, "tasks"), &layer).await?;
-            if success {
-                runner.run_handlers(&layer).await?;
+            let execution: Result<()> = async {
+                let success = runner.tasks(array(play, "preTasks"), &layer).await?
+                    && runner.tasks(array(play, "tasks"), &layer).await?;
+                if success {
+                    runner.run_handlers(&layer).await?;
+                }
+                Ok(())
             }
+            .await;
             if let Some(persisted) = runner.scope.get("setFacts") {
                 set_facts.insert(host.clone(), persisted);
             }
@@ -345,19 +366,32 @@ pub async fn run<B: Backend>(
             recap.skipped += runner.recap.skipped;
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;
+            if let Err(error) = execution {
+                return Err(RunFailure::new(error, totals).into());
+            }
         }
     }
     Ok(totals)
 }
 
+mod assertion;
+mod failure;
+mod handlers;
+pub(crate) use failure::RunFailure;
 mod ledger;
+mod loop_result;
 mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
+mod fallback;
+mod local;
+mod loop_vars;
 mod operation;
 mod plan;
+mod retry;
 mod runner;
+mod tag_selection;
 
 #[cfg(test)]
 mod tests;

@@ -16,7 +16,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "upgrade" => false, FieldType::Choice(&["dist"]);
     ),
     operation!("apt_repository";
-        "filename" => false, FieldType::Text;
+        "filename" => true, FieldType::Text;
         "repo" => true, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
         "update_cache" => false, FieldType::Flag;
@@ -164,6 +164,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["mounted"]);
     ),
     operation!("community.postgresql.postgresql_db";
+        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;
@@ -171,6 +172,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "state" => false, FieldType::Choice(&["present"]);
     ),
     operation!("community.postgresql.postgresql_user";
+        "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "name" => true, FieldType::Text;
@@ -223,6 +225,6 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "minutes" => false, FieldType::Number;
     ),
     operation!("set_fact";
-        "values" => false, FieldType::ExprMap;
+        "values" => true, FieldType::ExprMap;
     ),
 ];

@@ -3,27 +3,73 @@ use super::{
     psql, str_param, validate_privs,
 };
 
+fn text_list(
+    obj: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<Option<Vec<String>>, String> {
+    match obj.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        )),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .ok_or_else(|| format!("postgresql_privs: {field} must contain text"))
+                    .and_then(|text| {
+                        if text.trim().is_empty() {
+                            Err(format!("postgresql_privs: {field} contains an empty item"))
+                        } else {
+                            Ok(text.to_owned())
+                        }
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some),
+        _ => Err(format!(
+            "postgresql_privs: {field} must be text or a list of text"
+        )),
+    }
+}
+
+fn validate_state(state: &str) -> Result<(), String> {
+    if state == "present" {
+        Ok(())
+    } else {
+        Err(format!(
+            "postgresql_privs: state {state:?} outside the closed surface"
+        ))
+    }
+}
+
 pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let login_db = str_param(obj, "login_db").ok_or("postgresql_privs: login_db required")?;
     let role = str_param(obj, "role").ok_or("postgresql_privs: role required")?;
     let typ = str_param(obj, "type").unwrap_or("table");
-    let privs_list = str_param(obj, "privs").unwrap_or("");
+    let privs_values = text_list(obj, "privs")?;
+    let privs_list = privs_values.as_deref().unwrap_or(&[]).join(",");
     let state = str_param(obj, "state").unwrap_or("present");
-    let objs = str_param(obj, "objs");
+    let objs_values = text_list(obj, "objs")?;
+    let objs = objs_values.as_deref();
     let schema = str_param(obj, "schema");
-    let target_roles = str_param(obj, "target_roles");
+    let target_values = text_list(obj, "target_roles")?;
+    let target_roles = target_values.as_deref();
     let port = login_port(obj);
-    if state != "present" {
-        return Err(format!(
-            "postgresql_privs: state {state:?} outside the closed surface"
-        ));
-    }
-    validate_privs(privs_list)?;
+    validate_state(state)?;
+    validate_privs(&privs_list)?;
     if target_roles.is_some() && typ != "default_privs" {
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
     }
@@ -40,7 +86,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     } else {
         0
     };
-    let probes = acl_privileges(privs_list, typ, server_version);
+    let probes = acl_privileges(&privs_list, typ, server_version);
 
     let needed = match typ {
         "database" => privs_missing_database(
@@ -50,13 +96,13 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             role,
             &probes,
         )?,
-        "schema" => privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(""), &probes)?,
+        "schema" => privs_missing_schema(ctx, &port, login_db, role, objs.unwrap_or(&[]), &probes)?,
         "table" => privs_missing_table(
             ctx,
             &port,
             login_db,
             role,
-            objs.unwrap_or(""),
+            objs.unwrap_or(&[]),
             schema,
             &probes,
         )?,
@@ -80,7 +126,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     if needed {
         changed = true;
         if !ctx.check_mode {
-            for sql in grant_sql(typ, role, privs_list, objs, schema, target_roles)? {
+            for sql in grant_sql(typ, role, &privs_list, objs, schema, target_roles)? {
                 psql(ctx, &port, Some(login_db), &sql)?;
             }
         }
@@ -91,11 +137,11 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 fn privs_missing_database(
     ctx: &PgContext<'_>,
     port: &str,
-    objs: &str,
+    objs: &[String],
     role: &str,
     privs: &[String],
 ) -> Result<bool, String> {
-    for db in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    for db in objs {
         for p in privs {
             let held = psql(
                 ctx,
@@ -123,10 +169,10 @@ fn privs_missing_schema(
     port: &str,
     db: &str,
     role: &str,
-    objs: &str,
+    objs: &[String],
     privs: &[String],
 ) -> Result<bool, String> {
-    for schema in objs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    for schema in objs {
         for p in privs {
             let held = psql(
                 ctx,
@@ -154,35 +200,26 @@ fn privs_missing_table(
     port: &str,
     db: &str,
     role: &str,
-    objs: &str,
+    objs: &[String],
     schema: Option<&str>,
     privs: &[String],
 ) -> Result<bool, String> {
     let role_oid_sql = format!("(SELECT oid FROM pg_roles WHERE rolname={})", lit(role));
-    let tables: Vec<(String, String)> = if objs == "ALL_IN_SCHEMA" {
+    let tables: Vec<(String, String)> = if objs.len() == 1 && objs[0] == "ALL_IN_SCHEMA" {
         let s = schema.ok_or("postgresql_privs: schema required for ALL_IN_SCHEMA")?;
         let rows = psql(
             ctx,
             port,
             Some(db),
             &format!(
-                "SELECT schemaname,tablename FROM pg_tables WHERE schemaname={}",
+                "SELECT COALESCE(json_agg(json_build_array(schemaname, tablename)), '[]'::json)::text FROM pg_tables WHERE schemaname={}",
                 lit(s)
             ),
         )?;
-        rows.lines()
-            .filter_map(|l| {
-                l.split_once('|')
-                    .map(|(a, b)| (a.to_string(), b.to_string()))
-            })
-            .collect()
+        parse_table_rows(&rows)?
     } else {
         let s = schema.unwrap_or("public");
-        objs.split(',')
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(|t| (s.to_string(), t.to_string()))
-            .collect()
+        objs.iter().map(|t| (s.to_string(), t.clone())).collect()
     };
     if tables.is_empty() {
         return Ok(false);
@@ -210,6 +247,11 @@ fn privs_missing_table(
         }
     }
     Ok(false)
+}
+
+pub(super) fn parse_table_rows(rows: &str) -> Result<Vec<(String, String)>, String> {
+    serde_json::from_str(rows)
+        .map_err(|error| format!("postgresql_privs: invalid table rows: {error}"))
 }
 
 pub(super) fn default_priv_query(
@@ -243,15 +285,10 @@ fn privs_missing_default(
     role: &str,
     schema: &str,
     privs: &[String],
-    target_roles: Option<&str>,
+    target_roles: Option<&[String]>,
 ) -> Result<bool, String> {
     let targets: Vec<Option<&str>> = match target_roles {
-        Some(roles) => roles
-            .split(',')
-            .map(str::trim)
-            .filter(|role| !role.is_empty())
-            .map(Some)
-            .collect(),
+        Some(roles) => roles.iter().map(|role| Some(role.as_str())).collect(),
         None => vec![None],
     };
     for target in targets {
@@ -274,29 +311,25 @@ pub(super) fn grant_sql(
     typ: &str,
     role: &str,
     privs: &str,
-    objs: Option<&str>,
+    objs: Option<&[String]>,
     schema: Option<&str>,
-    target_roles: Option<&str>,
+    target_roles: Option<&[String]>,
 ) -> Result<Vec<String>, String> {
     let r = ident(role);
     Ok(match typ {
         "database" => objs
             .ok_or("postgresql_privs: objs required for type=database")?
-            .split(',')
-            .map(str::trim)
-            .filter(|db| !db.is_empty())
+            .iter()
             .map(|db| format!("GRANT {privs} ON DATABASE {} TO {r}", ident(db)))
             .collect(),
         "schema" => objs
-            .unwrap_or("")
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+            .unwrap_or(&[])
+            .iter()
             .map(|s| format!("GRANT {privs} ON SCHEMA {} TO {r}", ident(s)))
             .collect(),
         "table" => {
-            let o = objs.unwrap_or("");
-            if o == "ALL_IN_SCHEMA" {
+            let o = objs.unwrap_or(&[]);
+            if o.len() == 1 && o[0] == "ALL_IN_SCHEMA" {
                 let s = schema.ok_or("postgresql_privs: schema required")?;
                 vec![format!(
                     "GRANT {privs} ON ALL TABLES IN SCHEMA {} TO {r}",
@@ -304,9 +337,7 @@ pub(super) fn grant_sql(
                 )]
             } else {
                 let s = schema.unwrap_or("public");
-                o.split(',')
-                    .map(str::trim)
-                    .filter(|t| !t.is_empty())
+                o.iter()
                     .map(|t| format!("GRANT {privs} ON TABLE {}.{} TO {r}", ident(s), ident(t)))
                     .collect()
             }
@@ -314,10 +345,7 @@ pub(super) fn grant_sql(
         "default_privs" => {
             let s = schema.unwrap_or("public");
             match target_roles {
-                Some(roles) => roles
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|role| !role.is_empty())
+                Some(roles) => roles.iter()
                     .map(|target| {
                         format!(
                             "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA {} GRANT {privs} ON TABLES TO {r}",

@@ -16,7 +16,7 @@ fn group_cycles_are_rejected() -> Result<()> {
 
 #[tokio::test]
 async fn retry_and_result_conditions_see_current_registered_iteration() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","register":"attempt","retries":2,"until":{"kind":"ref","path":["results","attempt","ready"]},"failedWhen":{"kind":"ref","path":["results","attempt","bad"]},"changedWhen":{"kind":"ref","path":["results","attempt","changed"]},"operation":{"kind":"command","cmd":"test"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","register":"attempt","retries":2,"delaySeconds":0,"until":{"kind":"ref","path":["results","attempt","ready"]},"failedWhen":{"kind":"ref","path":["results","attempt","bad"]},"changedWhen":{"kind":"ref","path":["results","attempt","changed"]},"operation":{"kind":"command","cmd":"test"}}]}]});
     let mut backend = Fake {
         results: [
             json!({"ready":false,"bad":true,"changed":false}),
@@ -36,6 +36,55 @@ async fn retry_and_result_conditions_see_current_registered_iteration() -> Resul
     assert_eq!(backend.calls.len(), 2);
     assert_eq!(recap["h"].changed, 1);
     assert_eq!(recap["h"].failed, 0);
+    assert_eq!(backend.events[0]["result"]["attempts"], 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn earlier_retry_change_notifies_handler_and_keeps_final_fields() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","register":"attempt","retries":2,"delaySeconds":0,"until":{"kind":"ref","path":["result","ready"]},"notify":["handler"],"operation":{"kind":"command","cmd":"test"}}],"handlers":[{"name":"handler","operation":{"kind":"debug","msg":"done"}}]}]});
+    let mut backend = Fake {
+        results: [
+            json!({"ready":false,"changed":true,"detail":"first"}),
+            json!({"ready":true,"changed":false,"detail":"last"}),
+        ]
+        .into(),
+        ..Fake::default()
+    };
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].changed, 1);
+    assert_eq!(backend.calls.len(), 2);
+    assert_eq!(backend.events[0]["result"]["detail"], "last");
+    assert_eq!(backend.events[0]["result"]["changed"], true);
+    assert_eq!(backend.events[1]["task"], "handler");
+    Ok(())
+}
+
+#[tokio::test]
+async fn exhausted_until_reports_attempt_count() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","retries":1,"delaySeconds":0,"until":{"kind":"ref","path":["result","ready"]},"operation":{"kind":"command","cmd":"test"}}]}]});
+    let mut backend = Fake {
+        results: [json!({"ready":false}), json!({"ready":false})].into(),
+        ..Fake::default()
+    };
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].failed, 1);
+    assert_eq!(backend.events[0]["result"]["attempts"], 2);
+    assert_eq!(backend.calls.len(), 2);
     Ok(())
 }
 

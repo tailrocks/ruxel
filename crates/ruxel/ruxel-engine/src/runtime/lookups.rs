@@ -30,13 +30,17 @@ impl Lookups {
             "fnox" => Lookup::Fnox {
                 key: required(key)?,
             },
-            "op" if reference.is_some() => Lookup::OnePasswordUri {
-                reference: required(reference)?,
-            },
+            "op" if reference.is_some() => {
+                let reference = required(reference)?;
+                if reference.is_empty() {
+                    bail!("lookup reference must not be empty");
+                }
+                Lookup::OnePasswordUri { reference }
+            }
             "op" => Lookup::OnePassword {
-                vault: required(vault)?,
+                vault: vault.clone().unwrap_or_else(|| "Private".to_owned()),
                 item: required(item)?,
-                field: required(field)?,
+                field: field.clone().unwrap_or_else(|| "password".to_owned()),
                 section: section.clone(),
             },
             "command" => Lookup::Command { argv: argv.clone() },
@@ -107,3 +111,6 @@ impl LookupResolver for Lookups {
         Ok(Value::String(value))
     }
 }
+
+#[cfg(test)]
+mod tests;

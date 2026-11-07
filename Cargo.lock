@@ -1525,6 +1525,7 @@ version = "0.1.0"
 dependencies = [
  "hmac",
  "libc",
+ "md-5",
  "pbkdf2",
  "regex-lite",
  "rsblkid",
@@ -1543,6 +1544,7 @@ dependencies = [
  "pklr",
  "serde_json",
  "thiserror 2.0.21",
+ "toml_edit",
 ]
 
 [[package]]

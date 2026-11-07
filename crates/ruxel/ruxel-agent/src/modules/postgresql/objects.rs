@@ -8,6 +8,7 @@ pub(crate) fn db(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_db: name required")?;
     let owner = str_param(obj, "owner");
@@ -68,6 +69,7 @@ pub(crate) fn user(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_user: name required")?;
     let password = str_param(obj, "password");
@@ -155,6 +157,19 @@ fn password_changed(
     )?;
     if stored.is_empty() {
         return Ok(true);
+    }
+    if stored.starts_with("md5") {
+        use md5::{Digest as _, Md5};
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut hash = Md5::new();
+        hash.update(password.as_bytes());
+        hash.update(name.as_bytes());
+        let mut expected = String::from("md5");
+        for byte in hash.finalize() {
+            expected.push(char::from(HEX[usize::from(byte >> 4)]));
+            expected.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        return Ok(stored != expected);
     }
     if !stored.starts_with("SCRAM-SHA-256$") {
         return Ok(true);
@@ -249,6 +264,7 @@ pub(crate) fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String>
     let ctx = &PgContext {
         exec: ctx,
         login_user: str_param(obj, "login_user"),
+        login_db: str_param(obj, "login_db"),
     };
     let name = str_param(obj, "name").ok_or("postgresql_schema: name required")?;
     let login_db = str_param(obj, "login_db").ok_or("postgresql_schema: login_db required")?;

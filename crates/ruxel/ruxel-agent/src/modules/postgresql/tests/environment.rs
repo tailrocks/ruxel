@@ -38,6 +38,7 @@ fn task_environment_is_applied_and_isolates_cached_sessions() {
             let pg = PgContext {
                 exec: &context,
                 login_user: None,
+                login_db: None,
             };
             assert_eq!(psql(&pg, "5432", None, "SELECT 1").unwrap(), "1");
         }

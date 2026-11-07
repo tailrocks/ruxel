@@ -133,10 +133,28 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
     );
     match object.get("provider").and_then(Value::as_str) {
         Some("fnox" | "synthetic") => ensure!(required("key"), "lookup requires key"),
-        Some("op") => ensure!(
-            required("reference") || (required("vault") && required("item") && required("field")),
-            "lookup requires item selectors or reference"
-        ),
+        Some("op") => {
+            ensure!(
+                object
+                    .get("reference")
+                    .is_none_or(|v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())),
+                "lookup reference must not be empty"
+            );
+            ensure!(
+                required("reference") || required("item"),
+                "lookup requires item or reference"
+            );
+            if !required("reference") {
+                for key in ["vault", "field"] {
+                    ensure!(
+                        object.get(key).is_none_or(
+                            |v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())
+                        ),
+                        "lookup selector must not be empty"
+                    );
+                }
+            }
+        }
         Some("command") => ensure!(
             argv.is_some_and(|v| !v.is_empty()),
             "command lookup requires argv"

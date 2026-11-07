@@ -85,9 +85,9 @@ pub(super) struct Task {
     pub(super) vars: BTreeMap<String, Value>,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, Value>,
-    #[serde(default = "default_retries")]
-    pub(super) retries: u64,
     #[serde(default)]
+    pub(super) retries: Option<u64>,
+    #[serde(default = "default_delay_seconds")]
     pub(super) delay_seconds: u64,
     #[serde(default)]
     pub(super) until: Option<Value>,
@@ -111,6 +111,6 @@ pub(super) struct Task {
 fn default_loop_var() -> String {
     "item".into()
 }
-fn default_retries() -> u64 {
-    1
+fn default_delay_seconds() -> u64 {
+    5
 }

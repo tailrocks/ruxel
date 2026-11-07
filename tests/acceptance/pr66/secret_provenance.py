@@ -164,9 +164,18 @@ output { value = new Ruxel.Config {
                                           '--state-dir', str(base / 'template-error-state'), '--synthetic-secrets',
                                           '--log-file', str(template_error_log)], stdin=subprocess.DEVNULL,
                                          capture_output=True, text=True, timeout=30)
-        if (failed_template.returncode == 0 or not template_error_source.exists()
-                or 'sensitive operation evaluation failed' not in failed_template.stderr):
-            raise RuntimeError(f'sensitive template error fixture did not reach evaluation: {failed_template.stderr}')
+        error_events = [json.loads(line) for line in failed_template.stdout.splitlines() if line]
+        errors = [event for event in error_events if event.get('event') == 'host_failed']
+        recaps = [event['recap'] for event in error_events if event.get('host') == 'fixture' and 'recap' in event]
+        if (failed_template.returncode != 8 or not template_error_source.exists()
+                or len(errors) != 1 or errors[0].get('host') != 'fixture'
+                or errors[0].get('failed') is not True
+                or errors[0].get('msg') != 'sensitive operation evaluation failed'
+                or len(recaps) != 1 or recaps[0].get('failed') != 1):
+            raise RuntimeError('sensitive template error did not produce the sanitized host failure and recap')
+        logged_errors = [json.loads(line) for line in template_error_log.read_text().splitlines() if line]
+        if [event for event in logged_errors if event.get('event') == 'host_failed'] != errors:
+            raise RuntimeError('sensitive template failure event missing from private JSONL log')
         for text in (failed_template.stdout, failed_template.stderr, template_error_log.read_text()):
             if FAKE_VALUE in text or encoded in text or encoded_twice in text:
                 raise RuntimeError('sensitive template expression failure exposed synthetic data')

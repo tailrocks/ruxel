@@ -10,8 +10,8 @@ pub(super) async fn run_plays(
     facts: &BTreeMap<String, Value>,
     options: &Options,
     execution: &Execution,
+    mut totals: BTreeMap<String, Recap>,
 ) -> Result<BTreeMap<String, Recap>> {
-    let mut totals: BTreeMap<String, Recap> = BTreeMap::new();
     let mut set_facts = BTreeMap::new();
     for play in config
         .get("plays")
@@ -35,10 +35,8 @@ pub(super) async fn run_plays(
             let config = &play_config;
             async move {
                 let result =
-                    controller::run(config, facts, &options, &mut backend, &mut host_facts)
-                        .await
-                        .map_err(|error| anyhow::anyhow!("{host}: {error}"));
-                (result, host_facts)
+                    controller::run(config, facts, &options, &mut backend, &mut host_facts).await;
+                (host, result, host_facts)
             }
         });
         // Collect every result before returning an error so sibling work cannot be cancelled halfway.
@@ -46,12 +44,24 @@ pub(super) async fn run_plays(
             .buffer_unordered(execution.runtime.jobs)
             .collect()
             .await;
-        let mut errors = Vec::new();
-        for (result, host_facts) in completed {
+        for (host, result, host_facts) in completed {
             set_facts.extend(host_facts);
             match result {
                 Err(failure) => {
-                    errors.push(failure.to_string());
+                    if let Some(partial) = failure.downcast_ref::<controller::RunFailure>() {
+                        for (name, recap) in &partial.recaps {
+                            let total = totals.entry(name.clone()).or_default();
+                            total.ok += recap.ok;
+                            total.planned += recap.planned;
+                            total.changed += recap.changed;
+                            total.failed += recap.failed;
+                            total.skipped += recap.skipped;
+                            total.rescued += recap.rescued;
+                            total.ignored += recap.ignored;
+                        }
+                    }
+                    super::connect::report_failure(execution, &host, "host_failed", &failure)?;
+                    totals.entry(host).or_default().failed += 1;
                 }
                 Ok(recaps) => {
                     for (host, recap) in recaps {
@@ -66,9 +76,6 @@ pub(super) async fn run_plays(
                     }
                 }
             }
-        }
-        if !errors.is_empty() {
-            anyhow::bail!(errors.join("; "));
         }
     }
     Ok(totals)

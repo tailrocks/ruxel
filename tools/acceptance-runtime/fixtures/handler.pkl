@@ -1,0 +1,10 @@
+import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+ plays { new { name = "handlers"; targets { "all" }; tasks {
+  new { name = "first"; tags { "config" }; notify { "failed handler" }; operation = new Ruxel.Copy { dest = FIRST; content = "one" } }
+  new { name = "second"; tags { "config" }; notify { "failed handler" }; operation = new Ruxel.Copy { dest = SECOND; content = "two" } }
+  new { name = "other"; tags { "other" }; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/touch"; OTHER } } }
+  new { name = "always"; tags { "always" }; operation = new Ruxel.Debug { msg = "always ran" } }
+ }; handlers { new { name = "failed handler"; operation = new Ruxel.Fail { msg = "expected handler failure" } } } } }
+} }

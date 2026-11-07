@@ -10,25 +10,11 @@ use ruxel_proto::v1;
 use serde_json::{Map, Value, json};
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
-/// Transport selection is explicit; local mode never calls SSH.
-#[derive(Debug, Clone)]
-pub struct RuntimeOptions {
-    pub agent: PathBuf,
-    pub jobs: usize,
-    pub no_cache: bool,
-    pub connection: transport::ConnectOptions,
-    pub output: OutputFormat,
-    pub log_file: Option<PathBuf>,
-    pub source_dir: PathBuf,
-    pub synthetic_secrets: bool,
-    pub local_state: Option<PathBuf>,
-    pub local_agent: Option<PathBuf>,
-    pub controller_state: Option<PathBuf>,
-}
+mod options;
+pub use options::RuntimeOptions;
 
 mod connection;
 use connection::Connection;
@@ -39,6 +25,7 @@ pub use output::OutputFormat;
 
 mod lookups;
 use lookups::Lookups;
+mod lazy_vars;
 mod resources;
 use resources::Resources;
 
@@ -158,6 +145,14 @@ impl Backend for Execution {
     fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
+    }
+    fn evaluate_task_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        vars: &Map<String, Value>,
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        lazy_vars::evaluate(self, value, scope, vars)
     }
     async fn prepare_operation_tracked(
         &mut self,
@@ -295,6 +290,7 @@ impl Backend for Execution {
     }
 }
 
+mod connect;
 mod scheduler;
 use scheduler::run_plays;
 
@@ -335,26 +331,21 @@ pub async fn run(
             values: Mutex::new(Vec::new()),
         }),
     };
-    let mut facts = BTreeMap::new();
     let result = async {
-        if options.mode != Mode::Plan {
-
-            for host in controller::selected_hosts(config, options)? {
-                let gathered = execution.connect(&host).await?;
-                facts.insert(host.clone(),json!({"default_ipv4_interface":gathered.default_ipv4_interface,"distribution_release":gathered.distribution_release,"architecture":gathered.architecture,"hostname":gathered.hostname}));
-
-            }
-        }
-        run_plays(config, &facts, options, &execution).await
-    }.await;
+        let (facts, failed) = connect::preconnect(config, options, &execution).await?;
+        run_plays(config, &facts, options, &execution, failed).await
+    }
+    .await;
     let mut shutdown_errors = Vec::new();
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
         match Arc::try_unwrap(connection) {
-            Err(_) => shutdown_errors.push(format!("{host}: agent connection still in use")),
+            Err(_) => {
+                shutdown_errors.push((host, anyhow::anyhow!("agent connection still in use")));
+            }
             Ok(connection) => {
                 if let Err(error) = connection.into_inner().shutdown().await {
-                    shutdown_errors.push(format!("{host}: {error}"));
+                    shutdown_errors.push((host, error));
                 }
             }
         }
@@ -367,12 +358,21 @@ pub async fn run(
     };
     match result {
         Err(error) => {
-            shutdown_errors.insert(0, error.to_string());
-            Err(redact_error(anyhow::anyhow!(shutdown_errors.join("; "))))
+            let mut errors = vec![error.to_string()];
+            errors.extend(
+                shutdown_errors
+                    .into_iter()
+                    .map(|(host, error)| format!("{host}: {error}")),
+            );
+            Err(redact_error(anyhow::anyhow!(errors.join("; "))))
         }
-        Ok(recap) => {
-            if !shutdown_errors.is_empty() {
-                return Err(redact_error(anyhow::anyhow!(shutdown_errors.join("; "))));
+        Ok(mut recap) => {
+            for (host, error) in shutdown_errors {
+                connect::report_failure(&execution, &host, "unreachable", &error)?;
+                let total = recap.entry(host).or_default();
+                if total.failed == 0 {
+                    total.failed = 1;
+                }
             }
             for (host, total) in &recap {
                 let event = json!({"host":host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});

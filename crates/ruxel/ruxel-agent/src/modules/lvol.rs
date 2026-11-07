@@ -7,51 +7,112 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let lv = str_param(obj, "lv").ok_or("lvol: lv required")?;
     let size = str_param(obj, "size").ok_or("lvol: size required")?;
     let resizefs = bool_param(obj, "resizefs", false);
+    if size.contains('%') {
+        validate_percentage(size.strip_prefix('+').unwrap_or(size))?;
+    }
 
     let exists = lv_exists(vg, lv)?;
-    let mut changed = false;
-
-    if exists {
-        let filesystem = if resizefs {
-            Some(super::filesystem::prepare_resize(&lv_path(vg, lv))?)
-        } else {
-            None
-        };
+    let changed = if exists {
         let relative = size.starts_with('+');
-        let needs_resize = if relative {
-            if size != "+100%FREE" {
-                return Err("lvol: only +100%FREE is supported for relative growth".into());
-            }
-            free_extents(vg)? > 0
-        } else {
-            let requested = size_bytes(size)?;
-            let (current, extent) = lv_geometry(vg, lv)?;
-            needs_absolute_resize(current, extent, requested)?
-        };
-        if !needs_resize && let Some(target) = &filesystem {
-            changed |= super::filesystem::resize_existing(target, ctx)?;
-        }
-        if needs_resize {
-            changed = true;
-            if !ctx.check_mode {
+        let needs_resize = needs_resize(size, || free_extents(vg), || lv_geometry(vg, lv))?;
+        reconcile_existing(
+            resizefs,
+            needs_resize,
+            ctx.check_mode,
+            || super::filesystem::prepare_resize(&lv_path(vg, lv)),
+            || {
                 let flag = if relative { "-l" } else { "-L" };
-                let mut args = vec![flag.to_string(), size.to_string()];
-                args.push(lv_path(vg, lv));
-                let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
-                run_cmd(if relative { "lvextend" } else { "lvresize" }, &args_ref)?;
-                if let Some(target) = &filesystem {
-                    super::filesystem::resize_existing(target, ctx)?;
-                }
-            }
-        }
+                let path = lv_path(vg, lv);
+                run_cmd(
+                    if relative { "lvextend" } else { "lvresize" },
+                    &[flag, size, &path],
+                )
+            },
+            |target| super::filesystem::resize_existing(target, ctx),
+        )?
     } else {
-        changed = true;
         if !ctx.check_mode {
             create(vg, lv, size)?;
         }
-    }
+        true
+    };
 
     Ok(json!({"changed": changed, "failed": false, "lv": lv, "vg": vg}))
+}
+
+fn needs_resize(
+    size: &str,
+    free: impl FnOnce() -> Result<u64, String>,
+    geometry: impl FnOnce() -> Result<(u64, u64), String>,
+) -> Result<bool, String> {
+    if size.starts_with('+') {
+        if size != "+100%FREE" {
+            return Err("lvol: only +100%FREE is supported for relative growth".into());
+        }
+        Ok(free()? > 0)
+    } else if size.contains('%') {
+        validate_percentage(size)?;
+        // Creation consumes the original free-space baseline, so a later run
+        // cannot derive the same absolute target from a percentage of it.
+        Ok(false)
+    } else {
+        let requested = size_bytes(size)?;
+        let (current, extent) = geometry()?;
+        needs_absolute_resize(current, extent, requested)
+    }
+}
+
+fn validate_percentage(size: &str) -> Result<(), String> {
+    let valid = size.split_once('%').is_some_and(|(number, kind)| {
+        number.bytes().all(|c| c.is_ascii_digit())
+            && number
+                .parse::<u32>()
+                .is_ok_and(|value| value > 0 && value < u32::MAX)
+            && matches!(
+                kind.to_ascii_uppercase().as_str(),
+                "V" | "VG"
+                    | "L"
+                    | "LV"
+                    | "P"
+                    | "PV"
+                    | "PVS"
+                    | "F"
+                    | "FR"
+                    | "FREE"
+                    | "O"
+                    | "OR"
+                    | "ORIGIN"
+            )
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("lvol: invalid percentage size {size:?}"))
+    }
+}
+
+fn reconcile_existing<T>(
+    resizefs: bool,
+    needs_resize: bool,
+    check_mode: bool,
+    prepare: impl FnOnce() -> Result<Option<T>, String>,
+    grow_volume: impl FnOnce() -> Result<(), String>,
+    grow_filesystem: impl FnOnce(&T) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let filesystem = if resizefs { prepare()? } else { None };
+    if needs_resize {
+        if !check_mode {
+            grow_volume()?;
+            if let Some(target) = &filesystem {
+                grow_filesystem(target)?;
+            }
+        }
+        Ok(true)
+    } else if let Some(target) = &filesystem {
+        grow_filesystem(target)
+    } else {
+        Ok(false)
+    }
 }
 
 fn size_bytes(size: &str) -> Result<u64, String> {
@@ -123,11 +184,45 @@ fn lv_path(vg: &str, lv: &str) -> String {
 }
 
 fn lv_exists(vg: &str, lv: &str) -> Result<bool, String> {
-    let out = std::process::Command::new("lvs")
-        .args(["--noheadings", "-o", "lv_name", &format!("{vg}/{lv}")])
-        .output()
-        .map_err(|e| format!("exec lvs: {e}"))?;
-    Ok(out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty())
+    let mut command = std::process::Command::new("lvs");
+    command.args([
+        "--all",
+        "--reportformat",
+        "json",
+        "--noheadings",
+        "-o",
+        "lv_name",
+        "--",
+        vg,
+    ]);
+    let out = super::run_checked(command)?;
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| "lvol: invalid lvs JSON report")?;
+    let reports = report
+        .get("report")
+        .and_then(Value::as_array)
+        .filter(|reports| reports.len() == 1)
+        .ok_or("lvol: invalid lvs report structure")?;
+    let volumes = reports[0]
+        .get("lv")
+        .and_then(Value::as_array)
+        .ok_or("lvol: invalid lvs volume list")?;
+    let mut found = false;
+    for volume in volumes {
+        let name = volume
+            .get("lv_name")
+            .and_then(Value::as_str)
+            .ok_or("lvol: invalid lvs volume name")?;
+        let normalized = name
+            .strip_prefix('[')
+            .and_then(|v| v.strip_suffix(']'))
+            .unwrap_or(name);
+        if normalized.trim().is_empty() {
+            return Err("lvol: invalid lvs volume name".into());
+        }
+        found |= normalized == lv;
+    }
+    Ok(found)
 }
 
 fn free_extents(vg: &str) -> Result<u64, String> {
@@ -166,6 +261,98 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn blank_lv_can_resume_without_formatting_or_filesystem_resize() {
+        use std::cell::RefCell;
+        for check in [true, false] {
+            for needs_resize in [true, false] {
+                let calls = RefCell::new(Vec::new());
+                let changed = super::reconcile_existing(
+                    true,
+                    needs_resize,
+                    check,
+                    || {
+                        calls.borrow_mut().push("probe_blank");
+                        Ok(None::<()>)
+                    },
+                    || {
+                        calls.borrow_mut().push("grow_lv");
+                        Ok(())
+                    },
+                    |()| {
+                        calls.borrow_mut().push("grow_fs");
+                        Ok(true)
+                    },
+                )
+                .unwrap();
+                assert_eq!(changed, needs_resize);
+                let expected = if needs_resize && !check {
+                    vec!["probe_blank", "grow_lv"]
+                } else {
+                    vec!["probe_blank"]
+                };
+                assert_eq!(*calls.borrow(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn existing_filesystem_recovers_interrupted_growth_and_errors_fail_closed() {
+        use std::cell::RefCell;
+        let calls = RefCell::new(Vec::new());
+        let changed = super::reconcile_existing(
+            true,
+            false,
+            false,
+            || {
+                calls.borrow_mut().push("probe_ext4");
+                Ok(Some(()))
+            },
+            || {
+                calls.borrow_mut().push("grow_lv");
+                Ok(())
+            },
+            |()| {
+                calls.borrow_mut().push("grow_fs");
+                Ok(true)
+            },
+        )
+        .unwrap();
+        assert!(changed);
+        assert_eq!(*calls.borrow(), ["probe_ext4", "grow_fs"]);
+        let calls = RefCell::new(Vec::new());
+        let result = super::reconcile_existing(
+            true,
+            true,
+            false,
+            || -> Result<Option<()>, String> { Err("ambiguous signature".into()) },
+            || {
+                calls.borrow_mut().push("grow_lv");
+                Ok(())
+            },
+            |()| {
+                calls.borrow_mut().push("grow_fs");
+                Ok(true)
+            },
+        );
+        assert!(result.is_err());
+        assert!(calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn resizefs_false_does_not_probe_or_touch_filesystem() {
+        let changed = super::reconcile_existing(
+            false,
+            true,
+            false,
+            || -> Result<Option<()>, String> { panic!("unexpected probe") },
+            || Ok(()),
+            |()| -> Result<bool, String> { panic!("unexpected filesystem resize") },
+        )
+        .unwrap();
+        assert!(changed);
+    }
+
+    #[test]
     fn absolute_size_reconciles_at_extent_boundaries() {
         assert_eq!(super::size_bytes("10G").unwrap(), 10 << 30);
         assert!(!super::needs_absolute_resize(16, 4, 13).unwrap());
@@ -180,3 +367,11 @@ mod tests {
         assert_eq!(super::lvcreate_size("10G"), "10G");
     }
 }
+
+#[cfg(test)]
+#[path = "lvol/tests/percent.rs"]
+mod percent_tests;
+
+#[cfg(test)]
+#[path = "lvol/tests/probe.rs"]
+mod probe_tests;

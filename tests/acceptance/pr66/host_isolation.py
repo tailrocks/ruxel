@@ -112,9 +112,17 @@ output { value = new Ruxel.Config {
         shutdown = subprocess.run([str(cli), 'apply', str(shutdown_module), '--local', '--agent', str(wrapper),
                                    '--state-dir', str(base / 'shutdown-state'), '--jobs', '2'],
                                   stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
-        require(shutdown.returncode == 1, f'expected shutdown error exit, got {shutdown.returncode}')
-        require(all(f'{host}: local agent exited unsuccessfully' in shutdown.stderr
-                    for host in ('fixture-a', 'fixture-b')), 'missing host shutdown errors')
+        require(shutdown.returncode == 8, f'expected host failure exit, got {shutdown.returncode}')
+        shutdown_events = [json.loads(line) for line in shutdown.stdout.splitlines() if line.strip()]
+        errors = [e for e in shutdown_events if e.get('event') == 'unreachable']
+        require(len(errors) == 2 and {e.get('host') for e in errors} == {'fixture-a', 'fixture-b'}
+                and all(e.get('unreachable') is True and e.get('changed') is False
+                        and 'local agent exited unsuccessfully' in e.get('msg', '') for e in errors),
+                'missing structured host shutdown errors')
+        recaps = [e for e in shutdown_events if 'recap' in e]
+        require(len(recaps) == 2 and {e.get('host') for e in recaps} == {'fixture-a', 'fixture-b'}
+                and all(e['recap']['failed'] == 1 and e['recap']['ok'] >= 1 for e in recaps),
+                'shutdown failure lost completed host recaps')
         closed_states = closed.read_text().splitlines() if closed.exists() else []
         require(len(closed_states) == 2 and len(set(closed_states)) == 2,
                 'both distinct local agents did not complete shutdown')

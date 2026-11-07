@@ -1,7 +1,8 @@
 use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 
-const HELPER: &str = include_str!("xfs.py");
+const HELPER: &str = concat!(include_str!("xfs.pl"), "\nmain_xfs(@ARGV);\n");
+const HANDOFF: &str = "exec 3<&0; exec </dev/null; exec \"$@\"";
 
 pub(super) fn prepare(device: &std::fs::File) -> Result<std::fs::File, String> {
     let mount = super::xfs_mount(device)?;
@@ -29,7 +30,7 @@ fn invoke(
     mode: &str,
     bytes: u64,
 ) -> Result<bool, String> {
-    invoke_with_program(device, mount, mode, bytes, "python3")
+    invoke_with_program(device, mount, mode, bytes, "perl")
 }
 
 fn invoke_with_program(
@@ -40,21 +41,28 @@ fn invoke_with_program(
     program: &str,
 ) -> Result<bool, String> {
     let rdev = device.metadata().map_err(|e| e.to_string())?.rdev();
-    let mut command = Command::new(program);
+    let mut command = Command::new("sh");
     command
         .args([
-            "-I",
-            "-S",
             "-c",
+            HANDOFF,
+            "ruxel-xfs-helper",
+            program,
+            "-T",
+            "-e",
             HELPER,
             mode,
             &bytes.to_string(),
             &rdev.to_string(),
         ])
+        .env_remove("PERL5OPT")
+        .env_remove("PERL5LIB")
+        .env_remove("PERLLIB")
+        .env_remove("PERL5DB")
         .stdin(Stdio::from(mount.try_clone().map_err(|e| e.to_string())?));
     let output = command
         .output()
-        .map_err(|e| format!("filesystem: XFS helper requires python3: {e}"))?;
+        .map_err(|e| format!("filesystem: XFS helper requires perl: {e}"))?;
     if !output.status.success() {
         return Err(format!(
             "filesystem: XFS helper failed: {}",
@@ -69,18 +77,9 @@ fn invoke_with_program(
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn missing_interpreter_fails_before_any_ioctl() {
-        let directory = std::fs::File::open(".").unwrap();
-        let error = super::invoke_with_program(
-            &directory,
-            &directory,
-            "preflight",
-            0,
-            "/__ruxel_missing_python3__",
-        )
-        .unwrap_err();
-        assert!(error.contains("requires python3"));
-    }
-}
+#[path = "tests/xfs.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/xfs_perl.rs"]
+mod synthetic_tests;

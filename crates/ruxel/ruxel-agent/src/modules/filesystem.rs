@@ -76,22 +76,24 @@ pub(super) struct ResizeTarget {
     mount: Option<std::fs::File>,
 }
 
-pub(super) fn prepare_resize(dev: &str) -> Result<ResizeTarget, String> {
+pub(super) fn prepare_resize(dev: &str) -> Result<Option<ResizeTarget>, String> {
     #[cfg(target_os = "linux")]
     {
         let file = open_locked_device(dev)?;
-        let fstype = probe_file(&file)?.ok_or("filesystem: no filesystem to resize")?;
+        let Some(fstype) = probe_file(&file)? else {
+            return Ok(None);
+        };
         mkfs_program(&fstype)?;
         let mount = if fstype == "xfs" {
             Some(xfs::prepare(&file)?)
         } else {
             None
         };
-        Ok(ResizeTarget {
+        Ok(Some(ResizeTarget {
             file,
             fstype,
             mount,
-        })
+        }))
     }
     #[cfg(not(target_os = "linux"))]
     {

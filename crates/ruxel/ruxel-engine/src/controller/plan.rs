@@ -1,5 +1,24 @@
 use super::{Backend, Result, Value, array, flag, json, string};
 
+fn redact_lookups(value: &mut Value) {
+    match value {
+        Value::Object(fields) if fields.get("kind").and_then(Value::as_str) == Some("lookup") => {
+            *value = json!({"kind":"lookup","censored":true});
+        }
+        Value::Object(fields) => {
+            for child in fields.values_mut() {
+                redact_lookups(child);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                redact_lookups(child);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn visible(task: &Value) -> Value {
     if flag(task, "noLog") {
         return json!({"name":string(task,"name"),"noLog":true,"censored":true});
@@ -12,6 +31,7 @@ fn visible(task: &Value) -> Value {
             }
         }
     }
+    redact_lookups(&mut output);
     output
 }
 
@@ -23,11 +43,7 @@ fn project(task: &Value, filter: &[String], inherited: &[String]) -> Option<(Val
             .filter_map(Value::as_str)
             .map(str::to_owned),
     );
-    if !filter.is_empty()
-        && !tags
-            .iter()
-            .any(|tag| tag == "always" || filter.contains(tag))
-    {
+    if !filter.is_empty() && !super::tag_selection::selected(task, inherited, filter) {
         return None;
     }
     let mut output = task.clone();

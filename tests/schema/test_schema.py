@@ -31,13 +31,64 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(tasks[1]["operation"]["kind"], "community.general.lvol")
         self.assertEqual(tasks[12]["operation"]["password"]["provider"], "synthetic")
 
+    def test_rescue_and_always_require_block_tasks(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        child = 'new R.Task { name = "cleanup"; operation = new R.Debug {} }'
+        for section in ("rescue", "always"):
+            with self.subTest(section=section):
+                invalid = f'new R.Task {{ name = "run"; operation = new R.Debug {{}}; {section} {{ {child} }} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + invalid).returncode, 0)
+                valid = f'new R.Task {{ name = "block"; block {{ {child} }}; {section} {{ {child} }} }}'
+                self.assertEqual(self.evaluate(prefix + 'value = ' + valid).returncode, 0)
+
+    def test_loop_variable_cannot_shadow_scope_roots(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        for name in ("vars", "variables", "facts", "results", "inventoryHost", "setFacts"):
+            with self.subTest(name=name):
+                task = f'new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+        for name in ("item", "entry"):
+            task = f'new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}'
+            self.assertEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+
+    def test_apt_repository_requires_filename(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        self.assertNotEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture" }').returncode, 0)
+        self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = "fixture" }').returncode, 0)
+        self.assertEqual(self.evaluate(prefix + 'value = new R.AptRepository { repo = "deb fixture"; filename = new R.Ref { path { "vars"; "filename" } } }').returncode, 0)
+
+    def test_set_fact_always_emits_values_mapping(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        result = self.evaluate(prefix + 'value = new R.SetFact {}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["value"]["values"], {})
+        result = self.evaluate(prefix + 'value = new R.SetFact { values { ["answer"] = new R.Literal { value = 42 } } }')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["value"]["values"]["answer"]["value"], 42)
+
+    def test_postgres_maintenance_database_selector(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        for kind in ("PostgresDatabase", "PostgresRole"):
+            with self.subTest(kind=kind):
+                result = self.evaluate(prefix + f'value = new R.{kind} {{ name = "fixture"; login_db = "maintenance" }}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["value"]["login_db"], "maintenance")
+
+    def test_blocks_reject_loop_controls(self):
+        prefix = 'import "../../schema/Ruxel.pkl" as R\n'
+        child = 'new R.Task { name = "child"; operation = new R.Debug {} }'
+        for control in ('`loop` = new R.ListExpr {}', 'loopLabel = new R.Literal { value = "label" }', 'loopVar = "entry"'):
+            with self.subTest(control=control):
+                task = f'new R.Task {{ name = "block"; {control}; block {{ {child} }} }}'
+                self.assertNotEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+        task = 'new R.Task { name = "operation"; `loop` = new R.ListExpr {}; loopVar = "entry"; loopLabel = new R.Literal { value = "label" }; operation = new R.Debug {} }'
+        self.assertEqual(self.evaluate(prefix + 'value = ' + task).returncode, 0)
+
     def test_rejects_invalid_types_and_missing_required_fields(self):
         prefix = 'import "../../schema/Ruxel.pkl" as R\n'
         for expression in [
             'new R.Command {}',
             'new R.Timezone { name = "UTC"; state = "present" }',
-            'new R.PostgresDatabase { name = "db"; login_db = "ignored" }',
-            'new R.PostgresRole { name = "role"; login_db = "ignored" }',
             'new R.Command { cmd = "true"; removes = "/tmp/a" }',
             'new R.Shell { cmd = "true"; removes = "/tmp/a" }',
             'new R.Shell {}',

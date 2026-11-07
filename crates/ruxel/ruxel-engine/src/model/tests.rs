@@ -84,19 +84,55 @@ fn unsupported_surface_fields_are_rejected_before_execution() -> anyhow::Result<
             "community.general.timezone",
             json!({"name":"UTC", "state":"present"}),
         ),
-        (
-            "community.postgresql.postgresql_db",
-            json!({"name":"fixture", "login_db":"fixture"}),
-        ),
-        (
-            "community.postgresql.postgresql_user",
-            json!({"name":"fixture", "login_db":"fixture"}),
-        ),
     ] {
         let params = value
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("fixture operation params"))?;
         assert!(validate_operation(kind, params).is_err(), "{kind}");
+    }
+    Ok(())
+}
+
+mod boundaries;
+
+#[test]
+fn postgres_database_and_role_accept_login_db() -> anyhow::Result<()> {
+    for kind in [
+        "community.postgresql.postgresql_db",
+        "community.postgresql.postgresql_user",
+    ] {
+        let params = json!({"name":"fixture", "login_db":"maintenance"});
+        assert!(
+            validate_operation(
+                kind,
+                params
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("expected params object"))?
+            )
+            .is_ok(),
+            "{kind}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Result<()> {
+    for lookup in [
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item"}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":null, "field":null}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":"username"}),
+        json!({"kind":"lookup", "provider":"op", "reference":"op://Private/synthetic-item/password"}),
+    ] {
+        validate_config(&config(json!({"kind":"debug", "msg":lookup})))?;
+    }
+    for lookup in [
+        json!({"kind":"lookup", "provider":"op"}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "reference":""}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":""}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":""}),
+    ] {
+        assert!(validate_config(&config(json!({"kind":"debug", "msg":lookup}))).is_err());
     }
     Ok(())
 }

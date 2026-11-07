@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "schema/Ruxel.pkl"
 AGENT = ROOT / "crates/ruxel/ruxel-agent/src/modules/mod.rs"
 CONTROLLER = ROOT / "crates/ruxel/ruxel-engine/src/controller/operation.rs"
+CONTROLLER_LOCAL = ROOT / "crates/ruxel/ruxel-engine/src/controller/local.rs"
 
 
 def operation_kinds(source):
@@ -35,14 +36,132 @@ def operation_kinds(source):
     return set(kinds)
 
 
-def controller_kinds(source):
-    match = re.search(r"match kind\s*\{(.*?)\n\s*_\s*=>", source, re.S)
-    if not match:
-        raise ValueError("controller dispatch match not found")
-    kinds = set(re.findall(r'^\s*"([^"]+)"\s*=>', match.group(1), re.M))
-    if not kinds:
-        raise ValueError("controller dispatch contains no recognizable arms")
-    return kinds
+def strip_rust_comments(source):
+    """Discard line and nested block comments while preserving string literals."""
+    out = []
+    i = 0
+    while i < len(source):
+        if source.startswith('//', i):
+            end = source.find('\n', i)
+            i = len(source) if end < 0 else end
+        elif source.startswith('/*', i):
+            i += 2
+            depth = 1
+            while i < len(source) and depth:
+                if source.startswith('/*', i):
+                    depth += 1
+                    i += 2
+                elif source.startswith('*/', i):
+                    depth -= 1
+                    i += 2
+                else:
+                    out.append('\n' if source[i] == '\n' else ' ')
+                    i += 1
+            if depth:
+                raise ValueError("unterminated Rust block comment")
+        elif source[i] == '"':
+            start = i
+            i += 1
+            while i < len(source):
+                if source[i] == '\\':
+                    i += 2
+                elif source[i] == '"':
+                    i += 1
+                    break
+                else:
+                    i += 1
+            else:
+                raise ValueError("unterminated Rust string")
+            out.append(source[start:i])
+        elif source[i] == 'r' and (raw := re.match(r'r(#{0,255})"', source[i:])):
+            start = i
+            i += len(raw.group(0))
+            end = source.find('"' + raw.group(1), i)
+            if end < 0:
+                raise ValueError("unterminated Rust raw string")
+            i = end + 1 + len(raw.group(1))
+            out.append(source[start:i])
+        else:
+            out.append(source[i])
+            i += 1
+    return ''.join(out)
+
+
+def mask_rust_literals(source):
+    """Mask string payloads while preserving positions and normal quote delimiters."""
+    out = list(source)
+    i = 0
+    while i < len(source):
+        raw = re.match(r'r(#{0,255})"', source[i:]) if source[i] == 'r' else None
+        if raw:
+            end = source.find('"' + raw.group(1), i + len(raw.group(0)))
+            if end < 0:
+                raise ValueError("unterminated Rust raw string")
+            end += 1 + len(raw.group(1))
+            for j in range(i, end):
+                if out[j] != '\n':
+                    out[j] = ' '
+            i = end
+        elif source[i] == '"':
+            start = i
+            i += 1
+            while i < len(source) and source[i] != '"':
+                if source[i] == '\\':
+                    i += 2
+                else:
+                    i += 1
+            if i >= len(source):
+                raise ValueError("unterminated Rust string")
+            for j in range(start + 1, i):
+                if out[j] != '\n':
+                    out[j] = ' '
+            i += 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def controller_kinds(operation, local):
+    """Require executable admission and dispatch on both local retry paths."""
+    operation = strip_rust_comments(operation)
+    local = strip_rust_comments(local)
+    code = mask_rust_literals(operation)
+    local_code = mask_rust_literals(local)
+    admission = list(re.finditer(
+        r'if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)'
+        r'\s*\{\s*return\s+self\s*\.\s*local_retry\s*\(', code, re.S))
+    if len(admission) != 1:
+        raise ValueError("controller local admission route not found or ambiguous")
+    a = admission[0]
+    admitted_text = operation[a.start(1):a.end(1)]
+    if not re.fullmatch(r'\s*"[a-z_]+"(?:\s*\|\s*"[a-z_]+")*\s*', admitted_text):
+        raise ValueError("invalid controller local admission")
+    admitted_list = re.findall(r'"([a-z_]+)"', admitted_text)
+    if not admitted_list or len(set(admitted_list)) != len(admitted_list):
+        raise ValueError("invalid controller local admission")
+    functions = re.search(r'async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>'
+                          r'.*?async\s+fn\s+local_retry\s*\((.*)', local_code, re.S)
+    if not functions:
+        raise ValueError("controller local dispatch or retry route not found")
+    retry = functions.group(2)
+    loop = re.search(r'for\s+attempt\s+in\s+1\s*\.\.\s*=\s*attempts\s*\{(.*?)\blet\s+scope\s*=\s*result_scope\s*\(', retry, re.S)
+    if not loop or not re.search(r'\.\s*local_once\s*\(', loop.group(1)):
+        raise ValueError("controller retry-loop local dispatch not found")
+    if not re.search(r'\.\s*local_once\s*\(', retry[:loop.start()]):
+        raise ValueError("controller non-retry local dispatch not found")
+    arms = []
+    for arm in re.finditer(r'^\s*"([ ]*)"\s*=>', functions.group(1), re.M):
+        start = functions.start(1) + arm.start(1)
+        end = functions.start(1) + arm.end(1)
+        kind = local[start:end]
+        if not re.fullmatch(r'[a-z_]+', kind):
+            raise ValueError("invalid controller local dispatch arm")
+        arms.append(kind)
+    if not arms or len(set(arms)) != len(arms):
+        raise ValueError("invalid controller local dispatch")
+    if set(admitted_list) != set(arms):
+        raise ValueError("controller local admission/dispatch mismatch")
+    return set(arms)
 
 
 def dispatch_kinds(source):
@@ -79,7 +198,7 @@ def main():
         agent = AGENT.read_text()
         implemented = dispatch_kinds(agent)
         admitted = admission_kinds(agent)
-        controller = controller_kinds(CONTROLLER.read_text())
+        controller = controller_kinds(CONTROLLER.read_text(), CONTROLLER_LOCAL.read_text())
     except (OSError, ValueError) as error:
         print(f"coverage error: {error}", file=sys.stderr)
         return 1

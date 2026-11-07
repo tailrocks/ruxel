@@ -28,10 +28,7 @@ async fn untrusted_directory_chain_is_refused_before_permission_changes() -> any
             std::fs::set_permissions(&local, std::fs::Permissions::from_mode(mode))?;
             if foreign_owner {
                 let owner = std::fs::metadata(&local)?.uid() + 1;
-                std::fs::write(
-                    fixture.root.join("metadata.json"),
-                    serde_json::to_vec(&json!({path: {"uid":owner}}))?,
-                )?;
+                fixture.override_owner(path, owner, None)?;
             }
             let error = fixture.connect().await.unwrap_err().to_string();
             assert!(
@@ -87,15 +84,12 @@ async fn unsafe_cached_objects_are_replaced_without_following_or_mutating_them()
     let relative = cached.strip_prefix(fixture.root.join("remote"))?;
     let remote_path = format!("/{}", relative.display());
     let old = std::fs::metadata(&cached)?;
-    std::fs::write(
-        fixture.root.join("metadata.json"),
-        serde_json::to_vec(&json!({remote_path: {"uid":old.uid()+1,"inode":old.ino()}}))?,
-    )?;
+    fixture.override_owner(&remote_path, old.uid() + 1, Some(old.ino()))?;
     let (connection, _) = fixture.connect().await?;
     assert!(connection.uploaded_agent);
     connection.shutdown().await?;
     assert_ne!(std::fs::metadata(&cached)?.ino(), old.ino());
-    std::fs::remove_file(fixture.root.join("metadata.json"))?;
+    std::fs::remove_file(fixture.root.join("metadata"))?;
     let victim = fixture.root.join("unrelated executable");
     std::fs::copy(fixture.root.join("agent"), &victim)?;
     std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o755))?;

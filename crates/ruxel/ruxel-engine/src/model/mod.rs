@@ -124,7 +124,28 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             task.operation.is_some() == task.block.is_empty(),
             "task requires operation or nonempty block"
         );
-        ensure!(task.retries >= 1, "retries must be positive");
+        ensure!(
+            task.operation.is_none() || (task.rescue.is_empty() && task.always.is_empty()),
+            "rescue and always require a block task"
+        );
+        ensure!(
+            !matches!(
+                task.loop_var.as_str(),
+                "vars" | "variables" | "facts" | "results" | "inventoryHost" | "setFacts"
+            ),
+            "loop variable shadows a reserved scope root"
+        );
+        ensure!(
+            task.block.is_empty()
+                || (task.loop_expr.is_none()
+                    && task.loop_label.is_none()
+                    && task.loop_var == "item"),
+            "loop controls require an operation task"
+        );
+        ensure!(
+            task.retries != Some(u64::MAX),
+            "retries exceed supported range"
+        );
         if let Some(destination) = &task.delegate_to {
             if destination.is_object() {
                 expression(destination)?;

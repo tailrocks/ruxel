@@ -1,0 +1,14 @@
+import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture-a"] { address = "127.0.0.1" }; ["fixture-b"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture-a"; "fixture-b" } } } }
+ plays {
+  new { name = "first"; targets { "all" }; tasks {
+   new { name = "write"; operation = new Ruxel.Copy { dest = new Ruxel.Call { `function` = "concat"; args { new Ruxel.Literal { value = PREFIX }; new Ruxel.Ref { path { "inventoryHost" } } } }; content = "synthetic" } }
+   new { name = "private failure"; noLog = PRIVATE
+    `when` = new Ruxel.Call { `function` = "eq"; args { new Ruxel.Ref { path { "inventoryHost" } }; new Ruxel.Literal { value = "fixture-a" } } }
+    operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "vars"; SECRET } } }
+   }
+  } }
+  new { name = "second"; targets { "all" }; tasks { new { name = "sibling continues"; operation = new Ruxel.Debug { msg = "continued" } } } }
+ }
+} }
