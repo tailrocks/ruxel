@@ -4,6 +4,8 @@ members = [
     "crates/ruxel/ruxel-agent",
     "crates/ruxel/ruxel-config",
     "crates/ruxel/ruxel-engine",
+    "crates/ruxel/ruxel-guard",
+
     "crates/ruxel/ruxel-proto",
 ]
 resolver = "3"
