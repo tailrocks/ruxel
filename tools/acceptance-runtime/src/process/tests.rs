@@ -60,7 +60,6 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
         "apply",
         Duration::from_secs(1),
     );
-    // Release writers only after cleanup, so scheduling delays cannot mimic a leak.
     std::fs::write(&release, "release")?;
     ensure!(
         result.is_err_and(|error| error.to_string().contains("timed out")),
@@ -77,7 +76,6 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
 
 #[test]
 fn completed_cli_does_not_leave_descendants_running() -> Result<()> {
-    // The parent delay exceeds the old writer deadline and models scheduler pressure.
     for code in [0, 1] {
         let temp = tempfile::tempdir()?;
         let executable = temp.path().join("exits");
