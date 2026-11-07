@@ -8,6 +8,8 @@ use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[expect(
     clippy::let_underscore_must_use,
@@ -48,6 +50,12 @@ fn serve() -> i32 {
     impl Drop for ModuleGuard {
         fn drop(&mut self) {
             modules::shutdown();
+        }
+    }
+    let interrupted = Arc::new(AtomicBool::new(false));
+    for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        if signal_hook::flag::register(signal, Arc::clone(&interrupted)).is_err() {
+            return 70;
         }
     }
     let _module_guard = ModuleGuard;
@@ -164,6 +172,10 @@ fn serve() -> i32 {
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
+                    if interrupted.load(Ordering::Relaxed) {
+                        ledger.flush();
+                        return 0;
+                    }
                     let mut task = task.clone();
                     task.no_log |= sensitive_effects.is_marked();
                     if execute_task(
@@ -175,9 +187,14 @@ fn serve() -> i32 {
                         &mut ledger,
                         &mut system_state,
                         &mut sensitive_effects,
+                        &interrupted,
                     ) {
                         break;
                     }
+                }
+                if interrupted.load(Ordering::Relaxed) {
+                    ledger.flush();
+                    return 0;
                 }
             }
             Some(Msg::Resume(_)) => {
@@ -214,6 +231,7 @@ fn execute_task(
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
     sensitive_effects: &mut sensitivity::Marker,
+    interrupted: &AtomicBool,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
@@ -232,6 +250,9 @@ fn execute_task(
         return true;
     }
     for iteration in &task.iterations {
+        if interrupted.load(Ordering::Relaxed) {
+            return true;
+        }
         let start = std::time::Instant::now();
         let _ = write_frame(
             out,

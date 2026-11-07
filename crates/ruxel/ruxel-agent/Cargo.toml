@@ -22,6 +22,7 @@ ruxel-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+signal-hook = "0.4.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rsblkid.workspace = true
