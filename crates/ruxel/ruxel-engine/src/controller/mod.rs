@@ -14,7 +14,7 @@ use std::pin::Pin;
 
 mod types;
 mod variables;
-pub use types::{Mode, Request};
+pub use types::{Mode, Recap, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
@@ -140,18 +140,6 @@ pub trait Backend {
     /// # Errors
     /// Returns an error if the event cannot be written.
     fn event(&mut self, event: &Value) -> Result<()>;
-}
-
-/// Per-host execution totals.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Recap {
-    pub ok: u64,
-    pub changed: u64,
-    pub failed: u64,
-    pub skipped: u64,
-    pub rescued: u64,
-    pub ignored: u64,
-    pub planned: u64,
 }
 
 /// Options for a run. `hosts` restricts the play's targets when nonempty.
