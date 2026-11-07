@@ -36,10 +36,12 @@ undeclared property first. Official Pkl 0.32.2 independently rejects the missing
 case and renders both assigned fields as "assigned" in the filled case. The
 integration delta is recorded in ../../patches/pklr-5.2.3/native-tests.patch.
 
-The only library-source delta is the reviewed patch at
+The only library behavior delta is the reviewed patch at
 ../../patches/pklr-5.2.3/required-members.patch: defer missing required instance
 members, permit amendment of incomplete typed defaults, and reject unresolved
-constructors. All other library files, including resource handling, are unchanged.
+constructors. Documentation-only markup corrections are recorded in
+../../patches/pklr-5.2.3/rustdoc.patch. All library implementation outside the
+required-member patch, including resource handling, is unchanged.
 The Ruxel evaluator's resource configuration is unchanged.
 
 The dependency is selected directly by path and exact version in ruxel-config;
