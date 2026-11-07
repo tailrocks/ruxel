@@ -22,7 +22,6 @@ ignore:
   - "crates/ruxel/ruxel/build.rs"
   - "crates/ruxel/ruxel-agent/src/main.rs"
   - "crates/ruxel/ruxel-agent/src/facts.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/apt.rs"
   - "crates/ruxel/ruxel-agent/src/modules/apt_repository.rs"
   - "crates/ruxel/ruxel-agent/src/modules/authorized_key.rs"
   - "crates/ruxel/ruxel-agent/src/modules/blockinfile.rs"
