@@ -2,6 +2,7 @@ use super::*;
 
 mod always_errors;
 mod assertion;
+mod block_delegation;
 mod block_skip;
 mod block_tags;
 mod cases;

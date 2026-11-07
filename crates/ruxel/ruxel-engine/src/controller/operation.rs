@@ -136,7 +136,7 @@ impl<B: Backend> Runner<'_, B> {
                     .to_owned(),
             );
         }
-        let destination = if let Some(delegate) = task.get("delegateTo").filter(|v| !v.is_null()) {
+        let destination = if let Some(delegate) = &layer.delegate_to {
             let value = self.evaluate_scoped(delegate, scope, layer)?;
             sensitive |= value.is_secret();
             value
