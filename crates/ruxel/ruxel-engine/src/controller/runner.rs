@@ -6,10 +6,12 @@ use super::{
 impl<B: Backend> Runner<'_, B> {
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
-        let definitions = object(task, "vars");
-        for name in definitions.keys() {
-            layer.resolved.remove(name);
+        // A child runs with its own facts, results, item and override layers.
+        // Values memoized for the parent do not describe that environment.
+        for name in std::mem::take(&mut layer.resolved) {
+            layer.vars.remove(&name);
         }
+        let definitions = object(task, "vars");
         if !definitions.is_empty() {
             layer.definitions.push(definitions);
         }

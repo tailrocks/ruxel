@@ -29,3 +29,55 @@ async fn play_and_block_variables_can_reference_later_results() -> Result<()> {
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn block_binding_reads_current_result_in_each_child() -> Result<()> {
+    let alias = json!({"kind":"ref","path":["vars","alias"]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
+        "targets":["h"], "tasks":[
+            {"name":"old","register":"r","operation":{"kind":"debug","msg":"old"}},
+            {"name":"block","vars":{"alias":{"kind":"ref","path":["results","r","msg"]}},
+                "when":{"kind":"call","function":"eq","args":[alias,"old"]},"block":[
+                    {"name":"new","register":"r","operation":{"kind":"debug","msg":"new"}},
+                    {"name":"read","operation":{"kind":"debug","msg":alias}}
+                ]}
+        ]
+    }]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events[2]["result"]["msg"], "new");
+    Ok(())
+}
+
+#[tokio::test]
+async fn block_binding_reads_current_fact_in_each_child() -> Result<()> {
+    let alias = json!({"kind":"ref","path":["vars","alias"]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
+        "targets":["h"], "tasks":[
+            {"name":"old","operation":{"kind":"set_fact","values":{"source":"old"}}},
+            {"name":"block","vars":{"alias":{"kind":"ref","path":["vars","source"]}},
+                "when":{"kind":"call","function":"eq","args":[alias,"old"]},"block":[
+                    {"name":"new","operation":{"kind":"set_fact","values":{"source":"new"}}},
+                    {"name":"read","operation":{"kind":"debug","msg":alias}}
+                ]}
+        ]
+    }]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events[2]["result"]["msg"], "new");
+    Ok(())
+}
