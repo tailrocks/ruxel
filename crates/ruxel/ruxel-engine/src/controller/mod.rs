@@ -16,7 +16,7 @@ mod standard_expression;
 mod types;
 mod variables;
 pub use standard_expression::evaluate_standard_layered;
-pub use types::{Mode, Recap, Request};
+pub use types::{Mode, Options, Recap, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
@@ -152,23 +152,6 @@ pub trait Backend {
     /// # Errors
     /// Returns an error if the event cannot be written.
     fn event(&mut self, event: &Value) -> Result<()>;
-}
-
-/// Options for a run. `hosts` restricts the play's targets when nonempty.
-#[derive(Debug, Clone)]
-pub struct Options {
-    pub mode: Mode,
-    pub hosts: Vec<String>,
-    pub tags: Vec<String>,
-}
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            mode: Mode::Apply,
-            hosts: Vec::new(),
-            tags: Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Default)]
