@@ -225,6 +225,7 @@ impl<B: Backend> Runner<'_, B> {
         for item in &items {
             let binding = looped.then_some((string(task, "loopVar").unwrap_or("item"), item));
             let mut iteration_layer = layer.clone();
+            iteration_layer.control_sensitive |= looped && item.is_secret();
             let mut resolved = std::collections::BTreeSet::new();
             if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {
                 let condition = self.evaluate_selection(
