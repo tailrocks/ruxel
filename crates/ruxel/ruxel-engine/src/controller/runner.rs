@@ -295,13 +295,7 @@ impl<B: Backend> Runner<'_, B> {
             results.push(result);
         }
         let result = if looped {
-            let sensitive = results.iter().any(TrackedValue::is_secret);
-            let result = json!({"changed":results.iter().any(|v| flag(&v.value,"changed")), "failed":results.iter().any(|v| failed(&v.value)), "skipped":results.iter().all(|v| flag(&v.value,"skipped")), "results":results.into_iter().map(|v| v.value).collect::<Vec<_>>()});
-            if sensitive {
-                TrackedValue::secret(result)
-            } else {
-                TrackedValue::public(result)
-            }
+            super::loop_result::aggregate(results)
         } else {
             results
                 .into_iter()

@@ -377,6 +377,7 @@ pub async fn run<B: Backend>(
 mod failure;
 pub(crate) use failure::RunFailure;
 mod ledger;
+mod loop_result;
 mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
