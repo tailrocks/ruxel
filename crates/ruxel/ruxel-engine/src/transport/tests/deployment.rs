@@ -126,7 +126,10 @@ async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Re
     assert!(
         error
             .to_string()
-            .contains("agent speaks proto v1, controller v2")
+            .contains("agent speaks proto v1, controller v3")
     );
     Ok(())
 }
+
+#[path = "deployment_sensitivity.rs"]
+mod sensitivity;

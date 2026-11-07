@@ -24,6 +24,10 @@ fn contains_path(value: &Value, paths: &BTreeSet<String>) -> bool {
 }
 
 impl Resources {
+    pub(super) fn mark_unknown(&mut self) {
+        self.unknown_effects = true;
+    }
+
     pub(super) fn has_sensitive_effects(&self) -> bool {
         self.unknown_effects || !self.paths.is_empty()
     }

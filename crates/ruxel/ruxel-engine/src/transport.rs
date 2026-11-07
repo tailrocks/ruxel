@@ -136,6 +136,7 @@ pub struct AgentConnection {
 #[derive(Debug)]
 pub struct HostFacts {
     pub facts: v1::Facts,
+    pub sensitive_effects: bool,
 }
 
 /// Connect and verify an agent over the PATH-selected SSH client.
@@ -232,6 +233,9 @@ async fn connect_remote(
         },
         HostFacts {
             facts: ack.facts.unwrap_or_default(),
+            sensitive_effects: ack
+                .sensitive_effects
+                .context("agent omitted sensitivity state")?,
         },
     ))
 }

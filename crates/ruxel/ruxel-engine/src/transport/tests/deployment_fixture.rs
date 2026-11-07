@@ -75,6 +75,7 @@ impl Fixture {
         let ack = v1::Event {
             msg: Some(Event::HelloAck(v1::HelloAck {
                 proto_version: ruxel_proto::PROTO_VERSION,
+                sensitive_effects: Some(false),
                 facts: Some(v1::Facts {
                     hostname: "synthetic-agent".into(),
                     ..Default::default()

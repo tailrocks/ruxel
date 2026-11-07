@@ -27,7 +27,7 @@ impl LocalConnection {
         check: bool,
         diff: bool,
         no_cache: bool,
-    ) -> Result<(Self, v1::Facts)> {
+    ) -> Result<(Self, v1::Facts, bool)> {
         let mut child = Command::new(binary)
             .env("RUXEL_STATE_DIR", state)
             .stdin(Stdio::piped())
@@ -60,7 +60,10 @@ impl LocalConnection {
                 .context("local agent handshake timeout")??;
         match event.and_then(|event| event.msg) {
             Some(v1::event::Msg::HelloAck(ack)) if ack.proto_version == PROTO_VERSION => {
-                Ok((connection, ack.facts.unwrap_or_default()))
+                let sensitive = ack
+                    .sensitive_effects
+                    .context("agent omitted sensitivity state")?;
+                Ok((connection, ack.facts.unwrap_or_default(), sensitive))
             }
             _ => bail!("local agent refused protocol handshake"),
         }
