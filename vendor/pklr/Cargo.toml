@@ -43,14 +43,8 @@ license = "MIT"
 repository = "https://github.com/jdx/pklr"
 
 [features]
-async = [
-    "http",
-    "reqwest",
-]
 default = [
     "native-io",
-    "http",
-    "package-zip",
     "miette-diagnostics",
 ]
 eval-core = [
@@ -63,22 +57,8 @@ eval-core = [
     "dep:sha2",
     "dep:url",
 ]
-http = [
-    "native-io",
-    "dep:rustls",
-    "dep:ureq",
-]
 miette-diagnostics = ["dep:miette"]
 native-io = ["eval-core"]
-package-zip = [
-    "eval-core",
-    "dep:zip",
-]
-reqwest = [
-    "native-io",
-    "dep:reqwest",
-    "dep:tokio",
-]
 
 [lib]
 name = "pklr"
@@ -104,24 +84,9 @@ version = "7"
 features = ["derive"]
 optional = true
 
-[dependencies.reqwest]
-version = "0.13"
-features = ["rustls"]
-optional = true
-default-features = false
-
 [dependencies.rustc-hash]
 version = "2"
 optional = true
-
-[dependencies.rustls]
-version = "0.23"
-features = [
-    "aws-lc-rs",
-    "tls12",
-]
-optional = true
-default-features = false
 
 [dependencies.serde_json]
 version = "1"
@@ -138,31 +103,14 @@ optional = true
 [dependencies.thiserror]
 version = "2"
 
-[dependencies.tokio]
-version = "1"
-features = [
-    "rt",
-    "rt-multi-thread",
-    "sync",
-]
-optional = true
-
-[dependencies.ureq]
-version = "3"
-features = [
-    "platform-verifier",
-    "rustls-no-provider",
-]
-optional = true
-default-features = false
-
 [dependencies.url]
 version = "2"
 optional = true
 
-[dependencies.zip]
-version = "9"
-features = ["deflate"]
-optional = true
-default-features = false
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("async", "http", "package-zip", "reqwest"))'] }
 
+[[test]]
+name = "pkl_features"
+path = "tests/pkl_features.rs"
+required-features = ["native-io"]

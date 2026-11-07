@@ -28,7 +28,7 @@ packages = ["ruxel-config"]
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
-inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-engine/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "deny.toml", "mise.toml", "mise.lock", "vendor/pklr/Cargo.toml", "vendor/pklr/LICENSE", "vendor/pklr/src/eval/stdlib/RUST-LICENSE-MIT"]
+inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-engine/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "deny.toml", "mise.toml", "mise.lock", "vendor/pklr/Cargo.toml", "vendor/pklr/Cargo.lock", "vendor/pklr/LICENSE", "vendor/pklr/src/eval/stdlib/RUST-LICENSE-MIT"]
 tools = ["rust", "cargo-deny"]
 timeout_minutes = 10
 [checks.runner]
@@ -41,6 +41,7 @@ id = "acceptance-local"
 task = "acceptance-local"
 inputs = [
   ".cargo/config.toml",
+  "vendor/pklr/Cargo.lock",
   "vendor/pklr/Cargo.toml",
   "vendor/pklr/LICENSE",
   "vendor/pklr/README.md",
@@ -108,6 +109,28 @@ inputs = [
   "vendor/pklr/src/parser/types.rs",
   "vendor/pklr/src/parser/validate.rs",
   "vendor/pklr/src/value.rs",
+  "vendor/pklr/tests/fixtures/amending_property_default_base.pkl",
+  "vendor/pklr/tests/fixtures/amending_property_default_child.pkl",
+  "vendor/pklr/tests/fixtures/amending_property_default_new_child.pkl",
+  "vendor/pklr/tests/fixtures/base.pkl",
+  "vendor/pklr/tests/fixtures/base_module.pkl",
+  "vendor/pklr/tests/fixtures/base_with_class.pkl",
+  "vendor/pklr/tests/fixtures/benchmark_hk.pkl",
+  "vendor/pklr/tests/fixtures/circular_a.pkl",
+  "vendor/pklr/tests/fixtures/circular_b.pkl",
+  "vendor/pklr/tests/fixtures/com.github.actions-1.9.0.zip",
+  "vendor/pklr/tests/fixtures/helper.pkl",
+  "vendor/pklr/tests/fixtures/hk.pkl",
+  "vendor/pklr/tests/fixtures/items/alpha.pkl",
+  "vendor/pklr/tests/fixtures/items/beta.pkl",
+  "vendor/pklr/tests/fixtures/readme.txt",
+  "vendor/pklr/tests/fixtures/trace_e2e.pkl",
+  "vendor/pklr/tests/pkl_features.rs",
+  "vendor/pklr/tests/pkl_features/imports.rs",
+  "vendor/pklr/tests/pkl_features/numbers.rs",
+  "vendor/pklr/tests/pkl_features/render.rs",
+  "vendor/pklr/tests/pkl_features/strings.rs",
+  "vendor/pklr/tests/pkl_features/syntax.rs",
   "Cargo.lock",
   "Cargo.toml",
   "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
