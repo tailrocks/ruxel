@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Default)]
-struct Precise(Fake);
+pub(super) struct Precise(pub(super) Fake);
 impl Backend for Precise {
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
         self.0.evaluate(value, scope)

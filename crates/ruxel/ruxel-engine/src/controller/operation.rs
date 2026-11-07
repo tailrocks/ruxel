@@ -147,15 +147,23 @@ impl<B: Backend> Runner<'_, B> {
         } else if let Some(label) = task.get("loopLabel").filter(|v| !v.is_null()) {
             let value = self.backend.evaluate_tracked(label, scope)?;
             sensitive |= value.is_secret();
-            value
-                .value
-                .as_str()
-                .map_or_else(|| value.value.to_string(), str::to_owned)
+            if value.is_secret() {
+                "[censored]".to_owned()
+            } else {
+                value
+                    .value
+                    .as_str()
+                    .map_or_else(|| value.value.to_string(), str::to_owned)
+            }
         } else if item.value.is_null() {
             String::new()
         } else {
             sensitive |= item.is_secret();
-            item.value.to_string()
+            if item.is_secret() {
+                "[censored]".to_owned()
+            } else {
+                item.value.to_string()
+            }
         };
         let free_form = if kind == "shell" {
             params
