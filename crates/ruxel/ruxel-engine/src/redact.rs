@@ -1,10 +1,13 @@
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{borrow::Cow, fmt};
+use zeroize::Zeroizing;
 
+/// Redacts secrets while keeping every stored pattern in zeroizing memory.
+///
+/// Matching scans the text so no non-zeroizing automaton retains copies of the
+/// secret patterns.
 pub struct Redactor {
-    matcher: Option<AhoCorasick>,
-    patterns: Vec<String>,
+    patterns: Vec<Zeroizing<String>>,
 }
 
 impl fmt::Debug for Redactor {
@@ -19,7 +22,6 @@ impl Redactor {
     #[must_use]
     pub fn new<'a>(values: impl IntoIterator<Item = &'a str>) -> Self {
         let mut this = Self {
-            matcher: None,
             patterns: Vec::new(),
         };
         this.rebuild(values);
@@ -29,44 +31,34 @@ impl Redactor {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            matcher: None,
             patterns: Vec::new(),
         }
     }
 
     pub fn extend<'a>(&mut self, values: impl IntoIterator<Item = &'a str>) {
         self.patterns.extend(collect_patterns(values));
-        self.patterns.sort();
-        self.patterns.dedup();
-        self.matcher = build(self.patterns.clone());
+        dedup_patterns(&mut self.patterns);
     }
 
     #[must_use]
     pub fn redact<'s>(&self, s: &'s str) -> Cow<'s, str> {
-        if let Some(matcher) = &self.matcher {
-            if !matcher.is_match(s) {
-                return Cow::Borrowed(s);
-            }
-            return Cow::Owned(matcher.replace_all(s, &vec!["[REDACTED]"; self.patterns.len()]));
-        }
         fallback_redact(s, &self.patterns)
     }
 
     fn rebuild<'a>(&mut self, values: impl IntoIterator<Item = &'a str>) {
         self.patterns = collect_patterns(values);
-        self.matcher = build(self.patterns.clone());
     }
 }
 
-fn collect_patterns<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+fn collect_patterns<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<Zeroizing<String>> {
     let mut patterns = Vec::new();
     for value in values {
         if value.len() >= 6 {
-            patterns.push(value.to_owned());
+            patterns.push(Zeroizing::new(value.to_owned()));
         }
-        let encoded = STANDARD.encode(value.as_bytes());
+        let encoded = Zeroizing::new(STANDARD.encode(value.as_bytes()));
         if encoded.len() >= 6 {
-            patterns.push(encoded.trim_end_matches('=').to_owned());
+            patterns.push(Zeroizing::new(encoded.trim_end_matches('=').to_owned()));
             patterns.push(encoded);
         }
         if value.contains('\n') {
@@ -74,33 +66,29 @@ fn collect_patterns<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String
                 value
                     .lines()
                     .filter(|line| line.len() >= 6)
-                    .map(str::to_owned),
+                    .map(|line| Zeroizing::new(line.to_owned())),
             );
         }
     }
-    patterns.sort();
-    patterns.dedup();
+    dedup_patterns(&mut patterns);
     patterns
 }
 
-fn build(patterns: Vec<String>) -> Option<AhoCorasick> {
-    if patterns.is_empty() {
-        None
-    } else {
-        AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns)
-            .ok()
-    }
+fn dedup_patterns(patterns: &mut Vec<Zeroizing<String>>) {
+    patterns.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    patterns.dedup_by(|a, b| a.as_str() == b.as_str());
 }
 
-fn fallback_redact<'s>(input: &'s str, patterns: &[String]) -> Cow<'s, str> {
+fn fallback_redact<'s>(input: &'s str, patterns: &[Zeroizing<String>]) -> Cow<'s, str> {
     let mut rest = input;
     let mut output = String::new();
     loop {
         let next = patterns
             .iter()
-            .filter_map(|pattern| rest.find(pattern).map(|start| (start, pattern.len())))
+            .filter_map(|pattern| {
+                rest.find(pattern.as_str())
+                    .map(|start| (start, pattern.len()))
+            })
             .min_by(|(a_start, a_len), (b_start, b_len)| {
                 a_start.cmp(b_start).then_with(|| b_len.cmp(a_len))
             });

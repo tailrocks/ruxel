@@ -1,6 +1,7 @@
 use crate::secret::Secret;
 use serde_json::Value;
 use std::fmt;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum LedgerKeyError {
@@ -59,7 +60,7 @@ fn canonical<'a>(
                 .unwrap_or_default();
             let value =
                 secret(name).ok_or_else(|| LedgerKeyError::MissingSecret(name.to_owned()))?;
-            let mut payload = name.as_bytes().to_vec();
+            let mut payload = Zeroizing::new(name.as_bytes().to_vec());
             payload.push(0);
             payload.extend_from_slice(value.expose().as_bytes());
             return serde_json::to_string(&format!(
