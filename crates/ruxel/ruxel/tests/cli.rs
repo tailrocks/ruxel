@@ -88,7 +88,7 @@ fn execution_rejects_untyped_output_as_config_error() -> Result<(), Box<dyn std:
         .output()?;
     assert_eq!(output.status.code(), Some(4));
     assert_eq!(output.stdout, Vec::<u8>::new());
-    assert!(String::from_utf8(output.stderr)?.contains("invalid configuration shape"));
+    assert_eq!(output.stderr, b"configuration validation failed\n");
     Ok(())
 }
 
