@@ -12,9 +12,9 @@ const PRIVATE_TASKS: &[&str] = &[
     "no-log-reference",
     "copy-sensitive",
     "read-sensitive",
-    "readback",
     "shell-cat",
     "shell-cat-result",
+    "readback",
     "command",
     "shell-read",
     "shell-readback",
@@ -39,10 +39,24 @@ pub fn output(env: &Env, module: &Path, state: &str, log: &Path) -> Result<crate
 pub fn redacted(stdout: &str, log: &str, names: &[&str]) -> Result<()> {
     for text in [stdout, log] {
         let values = events(text)?;
-        for name in names {
+        let rows: Vec<_> = values
+            .iter()
+            .filter(|value| {
+                value.get("result").is_some()
+                    && (value["task"] == "[censored]"
+                        || names.iter().any(|name| value["task"] == *name))
+            })
+            .collect();
+        ensure!(
+            rows.len() == names.len(),
+            "missing or duplicate private task events"
+        );
+        for (row, name) in rows.iter().zip(names) {
             ensure!(
-                task(&values, name)?["censored"] == true,
-                "task not censored: {name}"
+                row["result"]["censored"] == true
+                    && ((row["task"] == *name && row["host"] == "fixture")
+                        || (row["task"] == "[censored]" && row["host"] == "[censored]")),
+                "private task order, metadata or censorship mismatch"
             );
         }
     }

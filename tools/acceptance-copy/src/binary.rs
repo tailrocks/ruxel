@@ -44,7 +44,7 @@ pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     );
     fs::write(&source, FIRST)?;
     harness.write(&tasks.replace("name = \"copy\";", "name = \"copy\"; noLog = true;"))?;
-    let private = harness.run("diff")?;
+    let private = harness.private_run("diff")?;
     ensure!(
         private["censored"] == true
             && private
@@ -54,7 +54,7 @@ pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         "noLog prediction leaked a diff or mutated destination"
     );
     ensure!(
-        harness.run("apply")?["censored"] == true && fs::read(&dest)? == FIRST,
+        harness.private_run("apply")?["censored"] == true && fs::read(&dest)? == FIRST,
         "noLog binary copy failed"
     );
     println!(

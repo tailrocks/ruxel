@@ -35,10 +35,18 @@ fn run(
     module: &Path,
     state: &str,
     options: &[&str],
+    private: bool,
 ) -> Result<(serde_json::Value, String)> {
     let output = env.run(module, state, options)?;
     ensure!(output.status == 0, "cache apply failed: {}", output.stderr);
-    let event = task(&events(&output.stdout)?, "copy")?.clone();
+    let rows = events(&output.stdout)?;
+    if private {
+        ensure!(
+            rows.iter().all(|row| row["host"] == "[censored]"),
+            "private cache metadata was visible"
+        );
+    }
+    let event = task(&rows, if private { "[censored]" } else { "copy" })?.clone();
     Ok((event, format!("{}{}", output.stdout, output.stderr)))
 }
 pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
@@ -55,7 +63,7 @@ pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
     let placed = env.path("fixture/workload.pkl");
     fs::rename(&workload, &placed)?;
     workload = placed;
-    let (first, _) = run(&env, &workload, "state", &[])?;
+    let (first, _) = run(&env, &workload, "state", &[], false)?;
     ensure!(
         first["changed"] == true && fs::read(&dest)? == b"first-version",
         "fresh copy failed"
@@ -65,7 +73,7 @@ pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
     ensure!(files.len() == 1, "missing unique ledger");
     let initial = fs::read(&files[0])?;
     let inode = fs::metadata(&files[0])?.ino();
-    let (second, _) = run(&env, &workload, "state", &[])?;
+    let (second, _) = run(&env, &workload, "state", &[], false)?;
     ensure!(
         second["changed"] == false
             && fs::read(&dest)? == b"first-version"
@@ -73,19 +81,19 @@ pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
             && fs::metadata(&files[0])?.ino() == inode,
         "cache hit failed"
     );
-    let (bypass, _) = run(&env, &workload, "state", &["--no-cache"])?;
+    let (bypass, _) = run(&env, &workload, "state", &["--no-cache"], false)?;
     ensure!(
         bypass["changed"] == false && fs::read(&files[0])? != initial,
         "cache bypass failed"
     );
     fs::write(&dest, "drift")?;
-    let (repair, _) = run(&env, &workload, "state", &[])?;
+    let (repair, _) = run(&env, &workload, "state", &[], false)?;
     ensure!(
         repair["changed"] == true && fs::read(&dest)? == b"first-version",
         "drift not repaired"
     );
     fs::write(&source, "second-version")?;
-    let (changed, _) = run(&env, &workload, "state", &[])?;
+    let (changed, _) = run(&env, &workload, "state", &[], false)?;
     ensure!(
         changed["changed"] == true && fs::read(&dest)? == b"second-version",
         "source change ignored"
@@ -93,7 +101,7 @@ pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
     fs::write(&source, SECRET)?;
     let private = module(&env, &source, &dest, true)?;
     fs::rename(private, &workload)?;
-    let (event, output) = run(&env, &workload, "private-state", &[])?;
+    let (event, output) = run(&env, &workload, "private-state", &[], true)?;
     ensure!(
         event["censored"] == true && fs::read(&dest)? == SECRET.as_bytes(),
         "private copy failed"

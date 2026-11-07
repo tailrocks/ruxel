@@ -67,6 +67,29 @@ output {{ value = new Ruxel.Config {{
         let events = self.events(mode, 20)?;
         Ok(task_result(&events, "copy")?.clone())
     }
+    pub fn private_run(&self, mode: &str) -> Result<Value> {
+        let events = process::run(
+            self.cli,
+            self.agent,
+            &self.module,
+            &self.temp.path().join("state"),
+            mode,
+            Duration::from_secs(20),
+        )?;
+        validate_recap_for_host(&events, "[censored]")?;
+        ensure!(
+            events.iter().all(|event| event["host"] == "[censored]"),
+            "private copy exposed host metadata"
+        );
+        let result = task_result(&events, "[censored]")?;
+        let changed = result["changed"].as_bool().context("missing change flag")?;
+        ensure!(
+            events.len() == 2
+                && result == &serde_json::json!({"censored":true,"changed":changed,"failed":false}),
+            "private copy result or event count mismatch"
+        );
+        Ok(result.clone())
+    }
     pub fn snapshot(&self) -> Result<BTreeMap<OsString, (u32, Vec<u8>)>> {
         let mut result = BTreeMap::new();
         for entry in fs::read_dir(&self.payload)? {
@@ -109,9 +132,12 @@ pub fn mode(path: &Path) -> Result<u32> {
     Ok(fs::metadata(path)?.permissions().mode() & 0o7777)
 }
 fn validate_recap(events: &[Value]) -> Result<()> {
+    validate_recap_for_host(events, "fixture")
+}
+fn validate_recap_for_host(events: &[Value], host: &str) -> Result<()> {
     let recaps: Vec<_> = events
         .iter()
-        .filter(|e| e["host"] == "fixture" && e.get("recap").is_some())
+        .filter(|e| e["host"] == host && e.get("recap").is_some())
         .collect();
     ensure!(
         recaps.len() == 1 && recaps[0]["recap"]["failed"] == 0,

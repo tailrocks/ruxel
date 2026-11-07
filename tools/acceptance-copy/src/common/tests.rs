@@ -33,3 +33,13 @@ fn snapshot_detects_binary_and_mode_drift() -> Result<()> {
     assert_ne!(before, harness.snapshot()?);
     Ok(())
 }
+
+#[test]
+fn private_recap_requires_censored_identity_and_success() {
+    let censored = json!({"host":"[censored]","recap":{"failed":0}});
+    assert!(validate_recap_for_host(std::slice::from_ref(&censored), "[censored]").is_ok());
+    assert!(validate_recap(std::slice::from_ref(&censored)).is_err());
+    assert!(validate_recap_for_host(&[censored.clone(), censored], "[censored]").is_err());
+    let visible = json!({"host":"fixture","recap":{"failed":0}});
+    assert!(validate_recap_for_host(&[visible], "[censored]").is_err());
+}

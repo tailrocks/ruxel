@@ -31,7 +31,7 @@ pub fn run(env: &Env, encoded: &str, twice: &str) -> Result<()> {
     redacted(
         &result.stdout,
         &log,
-        &["environment read", "environment result"],
+        &["sensitive copy", "environment read", "environment result"],
     )?;
     let source = env.path("generated-template.pkl");
     let dest = env.path("template-output");
@@ -61,7 +61,12 @@ pub fn run(env: &Env, encoded: &str, twice: &str) -> Result<()> {
     redacted(
         &result.stdout,
         &log,
-        &["render template", "read template", "template result"],
+        &[
+            "write template",
+            "render template",
+            "read template",
+            "template result",
+        ],
     )?;
     crate::common::scan(&env.path("template-state"), &[FAKE, encoded, twice], false)?;
     Ok(())

@@ -30,16 +30,16 @@ pub fn run(env: &Env, encoded: &str, twice: &str) -> Result<()> {
         .collect();
     let recaps: Vec<_> = values
         .iter()
-        .filter(|v| v["host"] == "fixture")
+        .filter(|v| v["host"] == "[censored]")
         .filter_map(|v| v.get("recap"))
         .collect();
     ensure!(
         result.status == 8
             && source.is_file()
             && errors.len() == 1
-            && errors[0]["host"] == "fixture"
+            && errors[0]["host"] == "[censored]"
             && errors[0]["failed"] == true
-            && errors[0]["msg"] == "sensitive operation evaluation failed"
+            && errors[0]["msg"] == "sensitive execution failed"
             && recaps.len() == 1
             && recaps[0]["failed"] == 1,
         "sensitive template failure not sanitized"

@@ -6,6 +6,8 @@ function lit(v: String): Ruxel.Literal = new { value = v }
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "synthetic"; targets { "fixture" }; tasks {
+  new { name = "public-read"; operation = new Ruxel.Slurp { src = PUBLIC_PATH } }
+  new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
   new { name = "lookup"; operation = new Ruxel.Debug { msg = secret() } }
   new { name = "encoded"; operation = new Ruxel.Debug { msg = encode(secret()) } }
   new { name = "fact"; operation = new Ruxel.SetFact { values { ["private"] = secret() } } }
@@ -14,7 +16,6 @@ output { value = new Ruxel.Config {
   new { name = "no-log-reference"; operation = new Ruxel.Debug { msg = encode(ref("vars", "private_no_log")) } }
   new { name = "copy-sensitive"; operation = new Ruxel.Copy { dest = RESOURCE_PATH; content = encode(secret()) } }
   new { name = "read-sensitive"; register = "readback"; operation = new Ruxel.Slurp { src = RESOURCE_PATH } }
-  new { name = "public-read"; operation = new Ruxel.Slurp { src = PUBLIC_PATH } }
   new { name = "shell-cat"; register = "cat_result"; operation = new Ruxel.Shell { cmd = CAT_COMMAND } }
   new { name = "shell-cat-result"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cat_result"; "stdout" } } } }
   new { name = "readback"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "readback"; "content" } } } }
@@ -24,6 +25,5 @@ output { value = new Ruxel.Config {
   new { name = "registered"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "cmd"; "stdout" } } } }
   new { name = "conditional"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; operation = new Ruxel.Debug { msg = "controlled diagnostic" } }
   new { name = "conditional-block"; `when` = new Ruxel.Call { `function` = "eq"; args { secret(); secret() } }; block { new { name = "conditional-child"; operation = new Ruxel.Debug { msg = "controlled child" } } } }
-  new { name = "public"; operation = new Ruxel.Debug { msg = "public diagnostic" } }
  } } }
 } }

@@ -1,4 +1,4 @@
-use crate::common::{Harness, TWO_PLAYS, events, recaps, task};
+use crate::common::{Harness, TWO_PLAYS, events};
 use anyhow::{Result, ensure};
 use serde_json::Value;
 use std::{collections::BTreeSet, fs, path::Path};
@@ -34,18 +34,56 @@ pub fn check(root: &Path, cli: &Path, agent: &Path, post: bool) -> Result<()> {
 fn validate(events: &[Value], failed: usize) -> Result<()> {
     let names = ["fixture-a", "fixture-b"];
     let healthy = names[1 - failed];
-    for (name, text) in [("first command", "first"), ("second command", "second")] {
-        let rows = task(events, name);
-        ensure!(
-            rows.len() == 1 && rows[0]["host"] == healthy && rows[0]["result"]["stdout"] == text,
-            "healthy host missing {name}"
-        );
-    }
-    let (a, b) = recaps(events)?;
-    let rows = [a, b];
+    let tasks: Vec<_> = events
+        .iter()
+        .filter(|event| event.get("result").is_some())
+        .collect();
     ensure!(
-        rows[failed]["failed"].as_u64().is_some_and(|n| n > 0) && rows[1 - failed]["failed"] == 0,
+        tasks.len() == 4,
+        "healthy host did not complete both commands and assertions"
+    );
+    for (row, (name, stdout)) in tasks.iter().zip([
+        ("first command", Some("first")),
+        ("assert first", None),
+        ("second command", Some("second")),
+        ("assert second", None),
+    ]) {
+        ensure!(row["result"]["failed"] == false, "healthy task failed");
+        if row["task"] == "[censored]" {
+            ensure!(
+                row["host"] == "[censored]" && row["result"]["censored"] == true,
+                "private isolation metadata or result was visible"
+            );
+        } else {
+            ensure!(
+                row["task"] == name && row["host"] == healthy,
+                "healthy task identity mismatch"
+            );
+            if let Some(stdout) = stdout {
+                ensure!(
+                    row["result"]["stdout"] == stdout,
+                    "healthy command output mismatch"
+                );
+            }
+        }
+    }
+    let recaps: Vec<_> = events
+        .iter()
+        .filter_map(|event| event.get("recap"))
+        .collect();
+    ensure!(recaps.len() == 2, "missing or duplicate isolation recaps");
+    let healthy: Vec<_> = recaps.iter().filter(|recap| recap["failed"] == 0).collect();
+    let failed: Vec<_> = recaps
+        .iter()
+        .filter(|recap| recap["failed"].as_u64().is_some_and(|n| n > 0))
+        .collect();
+    ensure!(
+        healthy.len() == 1 && failed.len() == 1 && healthy[0]["ok"] == 4 && failed[0]["ok"] == 0,
         "incorrect failed/healthy recap"
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "isolation_tests.rs"]
+mod tests;
