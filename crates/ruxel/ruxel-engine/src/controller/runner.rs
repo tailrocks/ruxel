@@ -138,6 +138,7 @@ impl<B: Backend> Runner<'_, B> {
                 return Ok(true);
             }
             let mut layer = Self::layer(task, parent);
+            layer.control_sensitive |= self.backend.conservative_sensitive();
             if !array(task, "block").is_empty() {
                 let mut resolved = std::collections::BTreeSet::new();
                 if let Some(condition) = task.get("when").filter(|v| !v.is_null()) {

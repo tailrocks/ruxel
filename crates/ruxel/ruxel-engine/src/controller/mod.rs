@@ -22,6 +22,10 @@ pub use types::{Mode, Options, Recap, Request};
 /// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
 #[expect(async_fn_in_trait, reason = "the backend is statically dispatched")]
 pub trait Backend {
+    /// Whether the enclosing run requires conservative result handling.
+    fn conservative_sensitive(&self) -> bool {
+        false
+    }
     /// Retain raw variable layers until expression access instead of eagerly
     /// materializing inherited bindings. Requires a lazy layered evaluator.
     fn lazy_variable_layers(&self) -> bool {
@@ -318,7 +322,10 @@ pub async fn run<B: Backend>(
             if let Some(persisted) = set_facts.get(&host) {
                 runner.scope.insert("setFacts".into(), persisted.clone())?;
             }
-            let mut layer = ContextLayer::default();
+            let mut layer = ContextLayer {
+                control_sensitive: runner.backend.conservative_sensitive(),
+                ..ContextLayer::default()
+            };
             for name in ordered_groups(&groups)? {
                 if group_hosts(&name, &groups, &mut BTreeSet::new())?.contains(&host) {
                     layer.definitions.push(object(&groups[&name], "vars"));

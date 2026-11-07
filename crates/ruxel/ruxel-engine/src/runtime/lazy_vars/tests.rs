@@ -14,6 +14,7 @@ use std::{
 
 fn execution() -> Result<Execution> {
     Ok(Execution {
+        conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         inventory: Map::new(),
         runtime: RuntimeOptions {
             agent: PathBuf::new(),

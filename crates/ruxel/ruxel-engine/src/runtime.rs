@@ -28,9 +28,11 @@ use lookups::Lookups;
 pub(crate) mod lazy_vars;
 mod resources;
 use resources::Resources;
+mod delegates;
 
 #[derive(Clone)]
 struct Execution {
+    conservative_sensitive: Arc<std::sync::atomic::AtomicBool>,
     inventory: Map<String, Value>,
     runtime: RuntimeOptions,
     mode: Mode,
@@ -119,6 +121,8 @@ impl Execution {
                 )
             };
         if sensitive {
+            self.conservative_sensitive
+                .store(true, std::sync::atomic::Ordering::Release);
             let tracker = self
                 .resources
                 .lock()
@@ -139,6 +143,10 @@ mod evaluation;
 mod templates;
 
 impl Backend for Execution {
+    fn conservative_sensitive(&self) -> bool {
+        self.conservative_sensitive
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
     fn prepare_operation(
         &mut self,
         kind: &str,
@@ -233,6 +241,10 @@ impl Backend for Execution {
         // secret write before its provenance is recorded.
         let mut resources = tracker.lock().await;
         let sensitive = resources.observe(&request, sensitive)?;
+        if sensitive {
+            self.conservative_sensitive
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         request.task.no_log |= sensitive;
         let result = self.execute(request).await.map_err(|error| {
             if sensitive {
@@ -336,6 +348,7 @@ pub async fn run(
     let validated = crate::model::validate_config(config)?;
     let config = &validated;
     let execution = Execution {
+        conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         inventory: config
             .get("inventory")
             .and_then(|v| v.get("hosts"))
@@ -359,6 +372,12 @@ pub async fn run(
     };
     let result = async {
         let (facts, failed) = connect::preconnect(config, options, &execution).await?;
+        let checked = execution.connections.lock().await.keys().cloned().collect();
+        if delegates::has_unchecked_delegates(config, &checked) {
+            execution
+                .conservative_sensitive
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         run_plays(config, &facts, options, &execution, failed).await
     }
     .await;
