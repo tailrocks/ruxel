@@ -8,11 +8,11 @@ use std::{
     time::Duration,
 };
 
-struct Env {
-    root: tempfile::TempDir,
-    cli: PathBuf,
-    agent: PathBuf,
-    module: PathBuf,
+pub(super) struct Env {
+    pub(super) root: tempfile::TempDir,
+    pub(super) cli: PathBuf,
+    pub(super) agent: PathBuf,
+    pub(super) module: PathBuf,
     payload: PathBuf,
 }
 impl Env {
@@ -59,7 +59,7 @@ impl Env {
             payload,
         })
     }
-    fn run(&self, name: &str, mode: &str, expected: i32) -> Result<Vec<Value>> {
+    pub(super) fn run(&self, name: &str, mode: &str, expected: i32) -> Result<Vec<Value>> {
         let mut command = Command::new(&self.cli);
         command
             .arg(mode)
@@ -93,6 +93,10 @@ impl Env {
 }
 pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> {
     let env = Env::new(name, repo, cli, agent)?;
+    if name == "multihost" || name == "controller-delegation" {
+        crate::plan::verify(&env, name)?;
+    }
+
     for phase in ["fresh", "converged"] {
         let events = env.run(name, "apply", 0)?;
         checks::assert_apply(name, phase, &events, &env.payload)?;
@@ -107,6 +111,8 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
     }
     for mode in ["check", "diff"] {
         let before = state::snapshot(&env.payload)?;
+        let fixture_before = state::fixture_snapshot(env.root.path())?;
+
         let status = if name == "controller-delegation" {
             crate::pins::oracle(repo)?;
 
@@ -119,6 +125,11 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
             state::snapshot(&env.payload)? == before,
             "{mode} mutated payload"
         );
+        ensure!(
+            state::fixture_snapshot(env.root.path())? == fixture_before,
+            "{mode} mutated fixture or schema"
+        );
+
         checks::assert_preview(name, mode, &events)?;
     }
     if name == "check-semantics" {

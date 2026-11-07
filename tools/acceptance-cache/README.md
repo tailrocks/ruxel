@@ -13,4 +13,6 @@ cargo run --locked --offline --manifest-path tools/acceptance-cache/Cargo.toml -
 The tests cover ledger hit, bypass, drift, source changes and noLog; redaction
 through lookups, transforms, facts, commands, files, environment, templates,
 conditions, failures and handler failures; public output; and state leakage.
-This crate is not yet wired into CI and does not establish full matrix parity.
+The candidate `acceptance-local` task runs both commands. Aggregate execution
+remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`; these checks
+do not establish full matrix parity.

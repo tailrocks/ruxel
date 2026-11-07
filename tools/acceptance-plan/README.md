@@ -17,4 +17,6 @@ Optional `--root` selects the checkout. Linux and macOS are supported. A
 bounded-output process group is terminated on each outcome; descendants that
 create a separate process group or session are outside that cleanup boundary.
 Tests run with `cargo test --locked --offline --manifest-path
-tools/acceptance-plan/Cargo.toml`. This crate is not wired into CI.
+tools/acceptance-plan/Cargo.toml`. The candidate `acceptance-local` task runs both
+commands; aggregate execution remains blocked as documented in
+`docs/RUST-ACCEPTANCE-WIRING.md`.

@@ -1,6 +1,9 @@
 mod checks;
+mod checks_preview;
+
 mod contract;
 mod pins;
+mod plan;
 
 mod process;
 mod process_guard;

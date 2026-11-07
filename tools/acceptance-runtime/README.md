@@ -1,7 +1,9 @@
 # Local runtime acceptance
 
 This standalone safe Rust runner exercises the real Ruxel CLI and agent using
-temporary local fixtures. It is not wired into CI. The runner covers scoped
+temporary local fixtures. The candidate `acceptance-local` task runs its tests
+and runner; aggregate execution remains blocked as documented in
+`docs/RUST-ACCEPTANCE-WIRING.md`. The runner covers scoped
 variables and environment, handler ordering and notification, convergence,
 check/diff non-mutation, drift repair, and per-host cross-play private facts with redaction checks. It also covers control flow, failing handlers, nested loops and per-item
 variables, including wire-level item labels.

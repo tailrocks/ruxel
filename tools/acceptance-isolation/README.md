@@ -41,5 +41,6 @@ failure, output overflow, or timeout. Descendants that deliberately create new
 process groups or sessions remain outside that cleanup boundary. Fixture journals
 are limited to 1 MiB, and HelloAck frames to 4 MiB.
 
-This crate does not modify shared CI or remove old drivers; the consolidation
-owner handles their deletion and invocation wiring together.
+The candidate `acceptance-local` task runs both tests and runner. Aggregate
+execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.
+Former driver sources remain until coordinated removal.

@@ -4,7 +4,8 @@ This standalone safe Rust runner ports the registered retry, check-mode semantic
 and task check-mode override scenarios. It drives the supplied real Ruxel CLI and
 agent over local transport using temporary synthetic files. It does not connect to
 servers. The crate is intentionally separate from the main Cargo workspace and
-is not wired into CI.
+has tests and runner commands in the candidate `acceptance-local` task. Aggregate
+execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.
 
 From the repository root, using already-built matching binaries:
 

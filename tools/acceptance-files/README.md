@@ -14,4 +14,5 @@ cargo run --locked --offline --manifest-path tools/acceptance-files/Cargo.toml -
 The fixture checks fresh application, idempotence, drift repair, and check/diff
 nonmutation. It also checks source and scope changes against a pinned template.
 These tests do not establish parity for the complete files-content workload or
-any privileged scenario. Integrators must wire this standalone crate into CI.
+any privileged scenario. The candidate `acceptance-local` task runs both commands;
+aggregate execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.

@@ -15,5 +15,7 @@ cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.tom
 ```
 
 The actual CLI and local agent run with disposable temporary payloads only. This
-is not evidence for privileged workloads or full matrix parity. Integrators must
-wire the standalone crate into CI and remove superseded drivers after review.
+is not evidence for privileged workloads or full matrix parity. The candidate
+`acceptance-local` task runs both commands; aggregate execution remains blocked
+as documented in `docs/RUST-ACCEPTANCE-WIRING.md`. Former driver sources remain
+until coordinated removal.

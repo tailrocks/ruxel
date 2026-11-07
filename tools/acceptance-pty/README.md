@@ -29,5 +29,6 @@ Cleanup always kills the child process group, including after the CLI has
 exited, then reaps with a bounded wait. macOS transient group permission errors
 receive at most two seconds of retries. Cleanup failure fails the suite.
 
-CI should replace the two former PTY script invocations with both commands;
-building this crate alone does not exercise the real CLI integration cases.
+The candidate `acceptance-local` task runs both commands; building this crate
+alone does not exercise the real CLI integration cases. Aggregate execution
+remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.

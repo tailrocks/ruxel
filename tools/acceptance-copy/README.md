@@ -4,7 +4,8 @@ This standalone safe Rust runner ports the binary copy, `force=false` copy, and
 repeated shell-action acceptance scenarios. It drives already-built matching
 Ruxel CLI and agent binaries over local transport using temporary synthetic files.
 It never connects to servers and is intentionally separate from the workspace
-and CI.
+and has test and runner commands in the candidate `acceptance-local` task.
+Aggregate execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.
 
 From the repository root:
 

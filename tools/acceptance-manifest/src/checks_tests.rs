@@ -6,13 +6,17 @@ fn rejects_wrong_or_duplicate_hosts_and_missing_results() -> anyhow::Result<()> 
     let mut events = Vec::new();
     for n in 1..=6 {
         events.push(json!({"host":format!("fixture-{n}"),"recap":{"failed":0}}));
-        events.push(json!({"host":format!("fixture-{n}"),"task":"Run one-second independent host work","result":{"skipped":true}}));
+        events.push(json!({"host":format!("fixture-{n}"),"task":"Run one-second independent host work","result":{"skipped":true,"changed":false}}));
     }
     hosts(&events, &expected, "recap")?;
     assert_preview("multihost", "check", &events)?;
     events[0]["host"] = json!("fixture-2");
     assert!(hosts(&events, &expected, "recap").is_err());
     events[0]["host"] = json!("fixture-1");
+    events[1]["result"]["changed"] = json!(true);
+    assert!(assert_preview("multihost", "check", &events).is_err());
+    events[1]["result"]["changed"] = json!(false);
+
     events[1]["result"]["skipped"] = json!(false);
     assert!(assert_preview("multihost", "check", &events).is_err());
     Ok(())
