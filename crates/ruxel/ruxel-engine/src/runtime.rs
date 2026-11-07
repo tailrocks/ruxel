@@ -43,103 +43,6 @@ struct Execution {
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
     source_gate: Arc<tokio::sync::RwLock<()>>,
 }
-impl Execution {
-    async fn connect(&self, host: &str) -> Result<v1::Facts> {
-        let _gate = self.source_gate.write().await;
-        let mut connections = self.connections.lock().await;
-        if connections.contains_key(host) {
-            return Ok(v1::Facts::default());
-        }
-        let spec = self.inventory.get(host);
-        let controller_local = host == "localhost" && spec.is_none();
-        anyhow::ensure!(
-            spec.is_some() || controller_local,
-            "selected host is missing"
-        );
-        let check = matches!(self.mode, Mode::Check | Mode::Diff);
-        let diff = self.mode == Mode::Diff;
-        let (connection, gathered, sensitive) =
-            if self.runtime.local_state.is_some() || controller_local {
-                let state = self
-                    .runtime
-                    .local_state
-                    .as_ref()
-                    .or(self.runtime.controller_state.as_ref())
-                    .context("localhost delegation requires --controller-state-dir")?;
-                let binary = if self.runtime.local_state.is_some() {
-                    &self.runtime.agent
-                } else {
-                    self.runtime
-                        .local_agent
-                        .as_ref()
-                        .context("localhost delegation requires --local-agent")?
-                };
-                // Host names are inventory keys, never accepted as filesystem paths.
-                let path = state.join(blake3::hash(host.as_bytes()).to_hex().as_str());
-                let (c, f, sensitive) = transport::LocalConnection::connect(
-                    binary,
-                    &path,
-                    "pkl-local",
-                    check,
-                    diff,
-                    self.runtime.no_cache,
-                )
-                .await?;
-                (Connection::Local(Box::new(c)), f, sensitive)
-            } else {
-                let spec = spec.context("selected host is missing")?;
-                let address = spec
-                    .get("address")
-                    .and_then(Value::as_str)
-                    .context("host address is missing")?;
-                let destination = match spec.get("user").and_then(Value::as_str) {
-                    Some(user) => format!("{user}@{address}"),
-                    None => address.to_owned(),
-                };
-                let port = spec
-                    .get("port")
-                    .and_then(Value::as_u64)
-                    .map(u16::try_from)
-                    .transpose()?;
-                let transport_options = transport::ConnectOptions {
-                    diff_mode: diff,
-                    no_cache: self.runtime.no_cache,
-                    port,
-                    ..self.runtime.connection.clone()
-                };
-                let (c, f) = transport::connect_with(
-                    &destination,
-                    &self.runtime.agent,
-                    "pkl",
-                    check,
-                    &transport_options,
-                )
-                .await?;
-                (
-                    Connection::Remote(Box::new(c)),
-                    f.facts,
-                    f.sensitive_effects,
-                )
-            };
-        if sensitive {
-            self.conservative_sensitive
-                .store(true, std::sync::atomic::Ordering::Release);
-            let tracker = self
-                .resources
-                .lock()
-                .await
-                .entry(host.to_owned())
-                .or_default()
-                .clone();
-            tracker.lock().await.mark_unknown();
-        }
-        connections.insert(
-            host.to_owned(),
-            Arc::new(tokio::sync::Mutex::new(connection)),
-        );
-        Ok(gathered)
-    }
-}
 #[cfg(test)]
 mod effect_tests;
 mod evaluation;
@@ -360,6 +263,10 @@ use scheduler::run_plays;
 ///
 /// # Errors
 /// Returns a redacted evaluation, connection, protocol or output error.
+#[expect(
+    clippy::too_many_lines,
+    reason = "run owns startup, execution, and connection cleanup"
+)]
 pub async fn run(
     config: &Value,
     options: &Options,
