@@ -50,11 +50,10 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "src" => false, FieldType::Text;
     ),
     operation!("file";
-        "dest" => false, FieldType::Text;
         "group" => false, FieldType::Text;
         "mode" => false, FieldType::Mode;
         "owner" => false, FieldType::Text;
-        "path" => false, FieldType::Text;
+        "path" => true, FieldType::Text;
         "recurse" => false, FieldType::Flag;
         "src" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["file","directory","absent","link"]);

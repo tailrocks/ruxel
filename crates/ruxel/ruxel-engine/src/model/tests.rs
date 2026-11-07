@@ -141,3 +141,5 @@ fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Res
     }
     Ok(())
 }
+
+mod file_paths;

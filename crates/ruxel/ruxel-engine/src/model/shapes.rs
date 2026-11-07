@@ -9,14 +9,8 @@ pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) 
             "copy requires exactly one of src or content"
         );
     }
-    if kind == "file" {
-        ensure!(
-            present("path") != present("dest"),
-            "file requires exactly one of path or dest"
-        );
-        if params.get("state").and_then(Value::as_str) == Some("link") {
-            ensure!(present("src"), "link requires src");
-        }
+    if kind == "file" && params.get("state").and_then(Value::as_str) == Some("link") {
+        ensure!(present("src"), "link requires src");
     }
     if kind == "pause" {
         ensure!(
