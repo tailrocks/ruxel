@@ -25,7 +25,7 @@ pub use output::OutputFormat;
 
 mod lookups;
 use lookups::Lookups;
-mod lazy_vars;
+pub(crate) mod lazy_vars;
 mod resources;
 use resources::Resources;
 

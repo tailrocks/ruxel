@@ -1,14 +1,14 @@
 use super::{Execution, TrackedValue};
 use crate::expression::{
-    Expr,
+    Expr, LookupResolver,
     provenance::{self, Provenance, VariableResolver},
 };
 use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 use std::{cell::RefCell, collections::BTreeMap};
 
-struct TaskVariables<'a> {
-    execution: &'a Execution,
+struct TaskVariables<'a, R: LookupResolver> {
+    resolver: &'a R,
     definitions: &'a [Map<String, Value>],
     scope: &'a TrackedValue,
     resolved: RefCell<BTreeMap<(usize, String), TrackedValue>>,
@@ -16,7 +16,7 @@ struct TaskVariables<'a> {
     active: RefCell<Vec<(usize, String)>>,
 }
 
-impl TaskVariables<'_> {
+impl<R: LookupResolver> TaskVariables<'_, R> {
     fn get(&self, name: &str) -> Result<Option<TrackedValue>> {
         let ceiling = self
             .active
@@ -65,7 +65,7 @@ impl TaskVariables<'_> {
             return provenance::evaluate_with_variables(
                 &serde_json::from_value::<Expr>(value.clone())?,
                 self.scope,
-                self.execution.lookups.as_ref(),
+                self.resolver,
                 self,
             );
         }
@@ -93,7 +93,7 @@ impl TaskVariables<'_> {
     }
 }
 
-impl VariableResolver for TaskVariables<'_> {
+impl<R: LookupResolver> VariableResolver for TaskVariables<'_, R> {
     fn resolve(&self, path: &[String], scope: &TrackedValue) -> Result<Option<TrackedValue>> {
         if !matches!(path.first().map(String::as_str), Some("vars" | "variables")) {
             return Ok(None);
@@ -123,7 +123,7 @@ impl VariableResolver for TaskVariables<'_> {
                 path: path.to_vec(),
             },
             &temp,
-            self.execution.lookups.as_ref(),
+            self.resolver,
         )
         .map(Some)
     }
@@ -144,8 +144,17 @@ pub(super) fn evaluate_layers(
     scope: &TrackedValue,
     definitions: &[Map<String, Value>],
 ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+    evaluate_with_resolver(execution.lookups.as_ref(), value, scope, definitions)
+}
+
+pub(crate) fn evaluate_with_resolver<R: LookupResolver>(
+    resolver: &R,
+    value: &Value,
+    scope: &TrackedValue,
+    definitions: &[Map<String, Value>],
+) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
     let variables = TaskVariables {
-        execution,
+        resolver,
         definitions,
         scope,
         resolved: RefCell::new(BTreeMap::new()),
@@ -153,11 +162,11 @@ pub(super) fn evaluate_layers(
         active: RefCell::new(Vec::new()),
     };
     let result = variables.evaluate(value)?;
-    let mut resolved = BTreeMap::new();
+    let mut bindings = BTreeMap::new();
     for ((_, name), value) in variables.resolved.into_inner() {
-        resolved.insert(name, value);
+        bindings.insert(name, value);
     }
-    Ok((result, resolved))
+    Ok((result, bindings))
 }
 
 #[cfg(test)]

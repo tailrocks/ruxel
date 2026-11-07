@@ -12,8 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 
+mod standard_expression;
 mod types;
 mod variables;
+pub use standard_expression::evaluate_standard_layered;
 pub use types::{Mode, Recap, Request};
 
 /// The controller delegates expression evaluation and I/O to the caller.

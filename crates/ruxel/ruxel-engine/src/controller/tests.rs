@@ -29,6 +29,7 @@ mod retry_sensitive;
 mod retry_source;
 mod skipped_result;
 mod smoke;
+mod standard_expression;
 mod until_sensitivity;
 
 #[derive(Default)]
