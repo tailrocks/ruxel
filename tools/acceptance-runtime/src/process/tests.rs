@@ -45,7 +45,7 @@ fn timeout_stops_descendant_before_delayed_write() -> Result<()> {
     std::fs::write(
         &executable,
         format!(
-            "#!/bin/sh\nprintf x > {}; (while [ ! -f {} ]; do sleep 0.01; done; printf leaked > {}) &\nwait\n",
+            "#!/bin/sh\n(printf x > {}; while [ ! -f {} ]; do sleep 0.01; done; printf leaked > {}) &\nwait\n",
             quote(&started),
             quote(&release),
             quote(&marker)
@@ -105,10 +105,13 @@ fn completed_cli_does_not_leave_descendants_running() -> Result<()> {
             Duration::from_secs(5),
         );
         std::fs::write(&release, "release")?;
-        ensure!(
-            outcome.is_ok() == (code == 0),
-            "unexpected CLI status handling"
-        );
+        ensure!(started.is_file(), "background fixture did not start");
+        if code == 0 {
+            outcome?;
+        } else {
+            let error = outcome.expect_err("exit 1 must fail").to_string();
+            ensure!(error.starts_with("apply exited exit status: 1:"), "{error}");
+        }
         thread::sleep(Duration::from_millis(800));
         ensure!(!marker.exists(), "descendant survived completed CLI");
     }
