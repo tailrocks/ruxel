@@ -182,7 +182,6 @@ fn directory_anchor_flags() -> OFlags {
 
 #[cfg(target_os = "macos")]
 fn directory_anchor_flags() -> OFlags {
-    // Darwin O_EXEC | O_DIRECTORY is O_SEARCH; rustix doesn't expose it.
     OFlags::from_bits_retain(0x4000_0000) | OFlags::DIRECTORY | OFlags::CLOEXEC
 }
 

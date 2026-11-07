@@ -72,7 +72,6 @@ impl Execution {
                         .as_ref()
                         .context("localhost delegation requires --local-agent")?
                 };
-                // Host names are inventory keys, never accepted as filesystem paths.
                 let path = state.join(blake3::hash(host.as_bytes()).to_hex().as_str());
                 let (c, f, sensitive) = transport::LocalConnection::connect(
                     binary,

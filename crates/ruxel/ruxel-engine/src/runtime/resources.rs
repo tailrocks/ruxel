@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::{collections::BTreeSet, path::Path};
 
-/// Conservative, per-destination record of sensitive external side effects.
 #[derive(Default)]
 pub(super) struct Resources {
     paths: BTreeSet<String>,

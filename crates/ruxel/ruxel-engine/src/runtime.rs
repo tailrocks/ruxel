@@ -1,4 +1,3 @@
-//! Connect the typed task controller to actual agent processes.
 use crate::{
     controller::{self, Backend, Mode, Options, Recap, Request},
     expression::{Scope, provenance::TrackedValue},
@@ -165,8 +164,6 @@ impl Backend for Execution {
             let mut resources = self.resources.lock().await;
             resources.entry(host).or_default().clone()
         };
-        // Serialize requests to the same destination so a read cannot race a
-        // secret write before its provenance is recorded.
         let mut resources = tracker.lock().await;
         let sensitive = resources.observe(&request, sensitive)?;
         if sensitive {
@@ -264,8 +261,6 @@ mod connect;
 mod scheduler;
 use scheduler::run_plays;
 
-/// Run an evaluated, validated configuration through the controller and agent protocol.
-///
 /// # Errors
 /// Returns a redacted evaluation, connection, protocol or output error.
 #[expect(

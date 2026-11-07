@@ -27,8 +27,6 @@ fn parent_and_name(path: &Path) -> Result<(OwnedFd, &Path), String> {
     if path.as_os_str().is_empty() {
         return Err("attribute path is empty".into());
     }
-    // Initial parent resolution accepts the author's existing aliases and `..`.
-    // All subsequent attribute operations use this held directory descriptor.
     let raw = path.as_os_str().as_bytes();
     let directory_suffix = raw.ends_with(b"/") || raw.ends_with(b"/.");
     let (parent, name) = match path.file_name().filter(|_| !directory_suffix) {

@@ -108,7 +108,6 @@ pub fn block(source: &str, open: usize) -> Result<std::ops::Range<usize>> {
     let mut i = open + 1;
     while i < bytes.len() {
         if bytes[i] == b'\'' {
-            // Character literals may contain braces; lifetimes have no closing quote here.
             if bytes.get(i + 1) == Some(&b'\\') {
                 if let Some(end) = bytes[i + 2..].iter().position(|b| *b == b'\'') {
                     let candidate = &bytes[i + 2..i + 2 + end];

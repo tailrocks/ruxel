@@ -1,7 +1,6 @@
 use super::Recap;
 use std::collections::BTreeMap;
 
-/// A host run failed after zero or more tasks completed.
 pub(crate) struct RunFailure {
     pub(crate) recaps: BTreeMap<String, Recap>,
     source: anyhow::Error,

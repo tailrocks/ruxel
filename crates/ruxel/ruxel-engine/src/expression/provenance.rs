@@ -1,5 +1,3 @@
-//! Secret provenance for runtime values. This module does not alter execution by itself.
-
 use super::{Expr, LookupResolver, MissingReference, boolean, evaluate_call, is_missing_reference};
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
@@ -69,10 +67,6 @@ impl VariableResolver for NoVariables {
     }
 }
 
-/// Evaluate an expression with provenance. Scope is an object containing the
-/// same roots as the controller scope (`vars`, `facts`, `results`, and `item`).
-/// The caller must carry the returned provenance with the value.
-///
 /// # Errors
 /// Returns an error for an invalid expression or failed lookup. Errors from
 /// operations consuming sensitive values are replaced with a generic message.

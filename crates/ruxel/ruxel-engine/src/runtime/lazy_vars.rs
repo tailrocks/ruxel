@@ -18,8 +18,6 @@ struct TaskVariables<'a, R: LookupResolver> {
 
 impl<R: LookupResolver> TaskVariables<'_, R> {
     fn get(&self, name: &str) -> Result<Option<TrackedValue>> {
-        // Cross-name references use the newest visible binding. A direct
-        // self-reference starts below its layer for inherited self overrides.
         let ceiling = self
             .active
             .borrow()
