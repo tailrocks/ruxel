@@ -78,7 +78,7 @@ async fn custom_backend_runs_layered_controller_tasks_lazily() -> Result<()> {
     )
     .await?;
     assert_eq!(recap["h"].ok, 1);
-    assert_eq!(backend.events[0]["result"]["msg"], "parent");
+    assert_eq!(backend.events[0]["result"]["msg"], "child");
     assert_eq!(backend.calls.get(), 0);
     Ok(())
 }
@@ -127,7 +127,7 @@ fn custom_backend_delegates_lazy_layers_and_lookup_provenance() -> Result<()> {
     let (value, _) = backend.evaluate_layered_expression(&expression, &scope, &layers)?;
     assert_eq!(
         value.redacted(),
-        json!(["parent", "[REDACTED]", "[REDACTED]"])
+        json!(["child", "[REDACTED]", "[REDACTED]"])
     );
     assert_eq!(backend.calls.get(), 1);
     Ok(())

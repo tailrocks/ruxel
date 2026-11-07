@@ -18,13 +18,13 @@ struct TaskVariables<'a, R: LookupResolver> {
 
 impl<R: LookupResolver> TaskVariables<'_, R> {
     fn get(&self, name: &str) -> Result<Option<TrackedValue>> {
-        // A definition sees its own layer and ancestors. Its self-reference
-        // starts below that layer, preserving inherited self overrides.
+        // Cross-name references use the newest visible binding. A direct
+        // self-reference starts below its layer for inherited self overrides.
         let ceiling = self
             .active
             .borrow()
             .last()
-            .map(|(layer, active)| if active == name { *layer } else { layer + 1 })
+            .and_then(|(layer, active)| (active == name).then_some(*layer))
             .unwrap_or(self.definitions.len());
         let Some(index) = (0..ceiling)
             .rev()

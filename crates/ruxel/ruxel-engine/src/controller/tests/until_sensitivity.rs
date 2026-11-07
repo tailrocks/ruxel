@@ -107,7 +107,7 @@ fn nested_until_lookup_is_sensitive_before_dispatch() {
 }
 
 #[test]
-fn sensitivity_follows_the_defining_layer_for_cross_name_references() {
+fn sensitivity_follows_the_visible_binding_for_cross_name_references() {
     let mut backend = Fake::default();
     let options = Options::default();
     let runner = Runner {
@@ -123,8 +123,8 @@ fn sensitivity_follows_the_defining_layer_for_cross_name_references() {
     };
     let private = json!({"kind":"lookup","provider":"synthetic","key":"fixture"});
     for (parent, child, sensitive) in [
-        (json!(true), private.clone(), false),
-        (private, json!(true), true),
+        (json!(true), private.clone(), true),
+        (private, json!(true), false),
     ] {
         let layer = ContextLayer {
             definitions: vec![

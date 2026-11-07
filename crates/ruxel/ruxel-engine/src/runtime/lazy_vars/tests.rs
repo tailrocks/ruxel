@@ -147,7 +147,7 @@ fn execution_backend_uses_lazy_layered_resolver() -> Result<()> {
 }
 
 #[test]
-fn cross_name_parent_reference_uses_its_lexical_layer() -> Result<()> {
+fn cross_name_override_cycle_matches_frozen_scope() -> Result<()> {
     let execution = execution()?;
     let parent =
         json!({"a":{"kind":"literal","value":"outer"},"b":{"kind":"ref","path":["vars","a"]}});
@@ -158,15 +158,13 @@ fn cross_name_parent_reference_uses_its_lexical_layer() -> Result<()> {
     ];
     let scope = TrackedValue::public(json!({"vars":{}}));
     let expression = json!({"kind":"list","items":[{"kind":"ref","path":["vars","a"]},{"kind":"ref","path":["vars","b"]}]});
-    let (value, bindings) = evaluate_layers(&execution, &expression, &scope, &layers)?;
-    assert_eq!(value.value, json!(["outer-inner", "outer"]));
-    assert_eq!(bindings["a"].value, "outer-inner");
-    assert_eq!(bindings["b"].value, "outer");
+    let error = evaluate_layers(&execution, &expression, &scope, &layers).expect_err("cycle");
+    assert!(error.to_string().contains("cyclic task variable reference"));
     Ok(())
 }
 
 #[test]
-fn predecessor_cache_does_not_export_as_unread_child_binding() -> Result<()> {
+fn inherited_alias_observes_and_exports_child_binding() -> Result<()> {
     let execution = execution()?;
     let parent =
         json!({"a":{"kind":"literal","value":"outer"},"b":{"kind":"ref","path":["vars","a"]}});
@@ -182,8 +180,8 @@ fn predecessor_cache_does_not_export_as_unread_child_binding() -> Result<()> {
         &scope,
         &layers,
     )?;
-    assert_eq!(value.value, "outer");
-    assert!(!bindings.contains_key("a"));
-    assert_eq!(bindings["b"].value, "outer");
+    assert_eq!(value.value, "inner");
+    assert_eq!(bindings["a"].value, "inner");
+    assert_eq!(bindings["b"].value, "inner");
     Ok(())
 }
