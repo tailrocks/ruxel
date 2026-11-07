@@ -1595,6 +1595,7 @@ version = "0.1.0"
 dependencies = [
  "getrandom 0.3.4",
  "ipnet",
+ "rustix 1.1.6",
  "thiserror 2.0.21",
 ]
 

@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod cidr_file;
+mod mux;
 mod policy;
 mod resolve;
 mod scan;

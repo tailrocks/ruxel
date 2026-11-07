@@ -85,30 +85,15 @@ impl Guard {
         literals: &[&str],
         mut run: impl FnMut(&[OsString]) -> Result<String, String>,
     ) -> Result<Vec<GuardedTarget>, Refusals> {
-        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         let mut refusals = Vec::new();
         let mut targets = Vec::new();
-        if let Err(e) = std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&self.mux_dir)
-        {
-            return Err(Refusals(vec![Refusal {
+        let mux_dir = crate::mux::prepare(&self.mux_dir).map_err(|rule| {
+            Refusals(vec![Refusal {
                 host: String::new(),
                 resolved: String::new(),
-                rule: e.to_string(),
-            }]));
-        }
-        let private_dir = std::fs::symlink_metadata(&self.mux_dir).is_ok_and(|metadata| {
-            metadata.file_type().is_dir() && metadata.permissions().mode() & 0o777 == 0o700
-        });
-        if !private_dir {
-            return Err(Refusals(vec![Refusal {
-                host: String::new(),
-                resolved: String::new(),
-                rule: "mux directory must be a private directory with mode 0700".into(),
-            }]));
-        }
+                rule,
+            }])
+        })?;
         for spec in hosts {
             let result = self.policy.decide(spec.address).and_then(|()| {
                 let mut bytes = [0u8; 6];
@@ -122,9 +107,9 @@ impl Guard {
                         ]
                     })
                     .collect();
-                let mut path = self.mux_dir.join(&suffix);
+                let path = mux_dir.join(&suffix);
                 if path.as_os_str().len() > 100 {
-                    path = std::env::temp_dir().join(format!("ruxel-mux-{suffix}"));
+                    return Err("mux socket path exceeds 100 bytes".into());
                 }
                 let args = resolve::build_args(spec, &path, ArgsMode::Normal);
                 resolve::check_ssh_g(&run(&args)?, spec)?;
@@ -176,8 +161,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("ruxel-guard-test-{}-{suffix}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("g{}-{suffix:x}", std::process::id()));
         let policy = Policy::new(&["192.0.2.0/24".into()], &["198.51.100.0/24".into()]).unwrap();
         let guard = Guard::new(policy, dir.clone());
         let spec = |address: &str| HostSpec {
@@ -218,5 +202,40 @@ mod directory_tests {
         let refusal = guard.admit_all(&[], &[]).unwrap_err();
         assert!(refusal.0[0].rule.contains("mode 0700"));
         std::fs::remove_dir(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod long_path_test {
+    #![allow(clippy::unwrap_used, reason = "fixture setup must succeed")]
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn rejects_long_socket_path_before_ssh() {
+        let root = std::env::temp_dir().join(format!("guardlong{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let dir = root.join("a".repeat(100));
+        let guard = Guard::new(
+            Policy::new(&["192.0.2.0/24".into()], &[]).unwrap(),
+            dir.clone(),
+        );
+        let host = HostSpec {
+            name: "local-test".into(),
+            address: "192.0.2.10".parse().unwrap(),
+            port: 22,
+            user: "test".into(),
+            identity_file: "/tmp/key".into(),
+            known_hosts_file: "/tmp/known".into(),
+        };
+        let calls = Cell::new(0);
+        let result = guard.admit_with(&[host], &[], |_| {
+            calls.set(calls.get() + 1);
+            Err("unexpected".into())
+        });
+        assert!(result.is_err());
+        assert_eq!(calls.get(), 0);
+        std::fs::remove_dir(dir).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 }
