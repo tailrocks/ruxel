@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 #[test]
 fn malformed_events_do_not_pass_assertions() {
     let good =

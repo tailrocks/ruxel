@@ -5,11 +5,12 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     time::Duration,
 };
 use tempfile::TempDir;
+mod paths;
+pub use paths::{mode, path, pkl, shell};
 pub struct Harness<'a> {
     pub temp: TempDir,
     cli: &'a Path,
@@ -113,23 +114,6 @@ output {{ value = new Ruxel.Config {{
         }
         Ok(())
     }
-}
-pub fn pkl(value: &str) -> Result<String> {
-    Ok(serde_json::to_string(value)?)
-}
-pub fn path(path: &Path) -> Result<String> {
-    pkl(path.to_str().context("path is not UTF-8")?)
-}
-pub fn shell(path: &Path) -> Result<String> {
-    Ok(format!(
-        "'{}'",
-        path.to_str()
-            .context("path is not UTF-8")?
-            .replace('\'', "'\\''")
-    ))
-}
-pub fn mode(path: &Path) -> Result<u32> {
-    Ok(fs::metadata(path)?.permissions().mode() & 0o7777)
 }
 fn validate_recap(events: &[Value]) -> Result<()> {
     validate_recap_for_host(events, "fixture")
