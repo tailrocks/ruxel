@@ -24,7 +24,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let auth_file = ssh_dir.join("authorized_keys");
     let (uid, gid) = ids_of(user)?;
     validate_paths(&ssh_dir, &auth_file, uid)?;
-    let current = std::fs::read_to_string(&auth_file).unwrap_or_default();
+    let current = read_authorized_keys(&auth_file)?;
 
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
     let present = current
@@ -50,6 +50,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     Ok(json!({"changed": changed, "failed": false, "user": user}))
+}
+
+fn read_authorized_keys(path: &Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => Ok(content),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(format!(
+            "authorized_key: cannot read {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 fn validate_paths(ssh_dir: &Path, auth_file: &Path, uid: u32) -> Result<(), String> {
@@ -127,6 +138,17 @@ mod tests {
             key_material("from=\"10.0.0.1\" ssh-ed25519 AAAAC3Nza comment").unwrap(),
             ("ssh-ed25519".into(), "AAAAC3Nza".into())
         );
+    }
+
+    #[test]
+    fn unreadable_content_is_not_treated_as_missing() {
+        let root = scratch("auth-read");
+        let path = root.join("authorized_keys");
+        assert_eq!(super::read_authorized_keys(&path).unwrap(), "");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(super::read_authorized_keys(&path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), [0xff, 0xfe]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
