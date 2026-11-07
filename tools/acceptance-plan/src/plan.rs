@@ -2,6 +2,7 @@ use crate::{pins, process};
 mod privacy;
 mod privacy_errors;
 mod privacy_hosts;
+mod resource_lifetime;
 use anyhow::{Context, Result, ensure};
 use std::{fs, path::Path, time::Duration};
 const SCENARIOS: [&str; 14] = [
@@ -69,6 +70,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     privacy::run(root, cli, agent)?;
     privacy_errors::run(cli, agent)?;
     privacy_hosts::run(root, cli, agent)?;
+    resource_lifetime::run(root, cli, agent)?;
     Ok(())
 }
 fn validate(events: &[serde_json::Value], payload: &Path) -> Result<()> {

@@ -39,6 +39,31 @@ pub fn run_extra(
     secret: Option<&str>,
     expected_code: i32,
 ) -> Result<Vec<Value>> {
+    run_checked(
+        cli,
+        agent,
+        module,
+        state,
+        mode,
+        limit,
+        args,
+        secret.as_slice(),
+        expected_code,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_checked(
+    cli: &Path,
+    agent: &Path,
+    module: &Path,
+    state: &Path,
+    mode: &str,
+    limit: Duration,
+    args: &[&std::ffi::OsStr],
+    secrets: &[&str],
+    expected_code: i32,
+) -> Result<Vec<Value>> {
     let mut group = ProcessGroup::start()?;
     let mut child = Command::new(cli)
         .arg(mode)
@@ -88,9 +113,9 @@ pub fn run_extra(
     };
     let out = out?;
     let err = err?;
-    if let Some(secret) = secret {
+    for secret in secrets {
         ensure!(
-            !out.contains(secret) && !err.contains(secret),
+            !out.contains(*secret) && !err.contains(*secret),
             "{mode}: private value leaked in output"
         );
     }
@@ -103,5 +128,7 @@ pub fn run_extra(
         .map(|line| serde_json::from_str(line).context("invalid JSONL event"))
         .collect()
 }
+#[cfg(all(test, unix))]
+mod secrets_tests;
 #[cfg(all(test, unix))]
 mod tests;
