@@ -72,3 +72,31 @@ Final owner verification:7 tests passed with0 ignored, strict all-target Clippy,
 fmt and diff checks passed, and the ordinary rootless actual CLI/agent lifecycle
 passed again using the same fresh7ef8a90 binaries. Hostile paths were only pure
 string-validation inputs. Root/full acceptance remains unsupported.
+
+## Process-group ownership follow-up
+
+Independent review identified inherited cleanup reaping the leader before group
+signalling. This harness now owns separate process helpers rather than importing
+that implementation. A live shell anchor owns the group while the real command
+runs and after it finishes: a private stdin pipe keeps a builtin read blocked.
+Command stdin remains /dev/null. Exit status is reported by newline-terminated
+text in a private temporary file; output pipes are still drained with deadlines.
+No Child/reaping method is exposed to the collection loop. Cleanup checks owned
+child status through safe rustix waitid(EXITED|NOHANG|NOWAIT), signals the group
+before reaping, then waits for the anchor. ECHILD refuses signalling and cached
+cleanup never signals after reaping. Ambiguous signal failures are errors.
+
+A direct WNOWAIT-only attempt returned macOS EPERM for zombie-only groups
+(9/11 tests and actual replay failed); it was not accepted or silently ignored.
+The live anchor avoids that normal zombie-only condition. Ordinary command exit
+codes are preserved; a signaled command becomes shell128+signal (TERM143), still
+an error. This limited harness does not promise exact native signal-status
+representation or support stdin/environment-clear customization by callers.
+
+Final owner checks:11 tests passed,0 ignored; strict all-target Clippy, fmt and
+diff checks passed; ordinary rootless actual CLI/agent lifecycle passed with the
+same fresh7ef8a90 binaries. Tests cover live anchor ownership through cleanup,
+ECHILD after reap, ownership-loss refusal before signal, repeated cleanup,
+exit23/TERM failure, large dual-pipe output, timeouts and open/closed-output
+background descendants. All new source files remain below150 lines. This is
+still pending independent review, with root/full scenario acceptance unsupported.

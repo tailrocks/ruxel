@@ -1,8 +1,6 @@
 mod fixture;
 mod observations;
-#[path = "../../acceptance-manifest/src/process.rs"]
 mod process;
-#[path = "../../acceptance-manifest/src/process_guard.rs"]
 mod process_guard;
 #[path = "../../acceptance-manifest/src/state.rs"]
 mod state;
