@@ -27,11 +27,7 @@ pub(crate) fn copy_evaluation_error(error: &anyhow::Error) -> anyhow::Error {
 
 fn reference(path: &[String], scope: &TrackedValue) -> Result<TrackedValue> {
     let (root, rest) = path.split_first().context("empty reference")?;
-    let root = if root == "variables" {
-        "vars"
-    } else {
-        root.as_str()
-    };
+    let root = root.as_str();
     let mut value = &scope.value;
     let mut provenance = scope.provenance.validated(&scope.value);
     for part in std::iter::once(root).chain(rest.iter().map(String::as_str)) {

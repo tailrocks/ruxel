@@ -29,9 +29,7 @@ fn references_all_vars(value: &Value) -> bool {
             object
                 .get("path")
                 .and_then(Value::as_array)
-                .is_some_and(|path| {
-                    path.len() == 1 && matches!(path[0].as_str(), Some("vars" | "variables"))
-                })
+                .is_some_and(|path| path.len() == 1 && matches!(path[0].as_str(), Some("vars")))
         }
         Value::Object(object) => object.values().any(references_all_vars),
         Value::Array(items) => items.iter().any(references_all_vars),
@@ -55,7 +53,7 @@ fn dependencies(
                 {
                     *direct = true;
                 }
-                if matches!(root, Some("vars" | "variables"))
+                if matches!(root, Some("vars"))
                     && let Some(name) = path.get(1).and_then(Value::as_str)
                 {
                     names.insert(name.to_owned());
@@ -89,5 +87,26 @@ fn dependencies(
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn dependencies_use_only_the_canonical_vars_root() {
+        let vars = serde_json::json!({"value":1});
+        let vars = vars.as_object().expect("vars");
+        for tail in [vec![], vec!["value"]] {
+            let mut canonical = vec!["vars"];
+            canonical.extend(tail.clone());
+            let mut alias = vec!["variables"];
+            alias.extend(tail);
+            assert_eq!(
+                required(vars, &serde_json::json!({"kind":"ref","path":canonical})),
+                BTreeSet::from(["value".into()])
+            );
+            assert!(required(vars, &serde_json::json!({"kind":"ref","path":alias})).is_empty());
+        }
     }
 }

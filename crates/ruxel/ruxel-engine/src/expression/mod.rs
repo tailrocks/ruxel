@@ -104,7 +104,7 @@ fn reference<'a>(path: &[String], scope: &'a Scope) -> Result<&'a Value> {
     let mut value = match root.as_str() {
         "facts" => &scope.facts,
         "results" => &scope.results,
-        "variables" | "vars" => &scope.variables,
+        "vars" => &scope.variables,
         "item" => &scope.item,
         _ => scope
             .extra

@@ -10,13 +10,10 @@ pub(super) fn sensitive_condition(value: &Value, scope: &TrackedValue) -> bool {
                 return false;
             };
             let mut current = scope.clone();
-            for (index, part) in path.iter().enumerate() {
-                let Some(mut part) = part.as_str() else {
+            for part in path {
+                let Some(part) = part.as_str() else {
                     return false;
                 };
-                if index == 0 && part == "variables" {
-                    part = "vars";
-                }
                 let Some(next) = current.get(part) else {
                     return matches!(
                         current.provenance,

@@ -95,7 +95,7 @@ impl<R: LookupResolver> TaskVariables<'_, R> {
 
 impl<R: LookupResolver> VariableResolver for TaskVariables<'_, R> {
     fn resolve(&self, path: &[String], scope: &TrackedValue) -> Result<Option<TrackedValue>> {
-        if !matches!(path.first().map(String::as_str), Some("vars" | "variables")) {
+        if !matches!(path.first().map(String::as_str), Some("vars")) {
             return Ok(None);
         }
         if path.len() == 1 {

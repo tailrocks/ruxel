@@ -58,3 +58,30 @@ fn inherited_alias_observes_and_exports_child_binding() -> Result<()> {
     assert_eq!(bindings["b"].value, "inner");
     Ok(())
 }
+
+#[test]
+fn only_canonical_vars_root_resolves_lazy_bindings() -> Result<()> {
+    let execution = execution()?;
+    let vars = json!({"private":{"kind":"lookup","provider":"synthetic","key":"root-fixture"}});
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let definitions = vars.as_object().context("vars")?;
+    assert!(
+        evaluate(
+            &execution,
+            &json!({"kind":"ref","path":["variables","private"]}),
+            &scope,
+            definitions
+        )
+        .is_err()
+    );
+    assert!(execution.lookups.values.lock().expect("lock").is_empty());
+    let (value, _) = evaluate(
+        &execution,
+        &json!({"kind":"ref","path":["vars","private"]}),
+        &scope,
+        definitions,
+    )?;
+    assert!(value.is_secret());
+    assert_eq!(execution.lookups.values.lock().expect("lock").len(), 1);
+    Ok(())
+}

@@ -97,7 +97,7 @@ fn nested_until_lookup_is_sensitive_before_dispatch() {
         &scope
     ));
     assert!(super::super::operation::sensitive_condition(
-        &json!({"kind":"ref","path":["variables","private"]}),
+        &json!({"kind":"ref","path":["vars","private"]}),
         &scope
     ));
     assert!(!super::super::operation::sensitive_condition(

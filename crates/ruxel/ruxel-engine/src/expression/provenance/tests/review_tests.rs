@@ -64,3 +64,25 @@ fn malformed_tree_redacts_output_and_debug() {
     assert_eq!(value.redacted(), json!("[REDACTED]"));
     assert!(!format!("{value:?}").contains("synthetic-marker"));
 }
+
+#[test]
+fn canonical_vars_root_resolves_without_the_variables_alias() -> Result<()> {
+    let plain = crate::expression::Scope {
+        variables: json!({"private":"fixture"}),
+        ..Default::default()
+    };
+    let canonical: Expr = serde_json::from_value(json!({"kind":"ref","path":["vars","private"]}))?;
+    let alias: Expr = serde_json::from_value(json!({"kind":"ref","path":["variables","private"]}))?;
+    assert_eq!(
+        crate::expression::evaluate(&canonical, &plain, &Synthetic)?,
+        json!("fixture")
+    );
+    assert!(crate::expression::evaluate(&alias, &plain, &Synthetic).is_err());
+    let tracked = TrackedValue::object(BTreeMap::from([(
+        "vars".into(),
+        TrackedValue::secret(json!({"private":"fixture"})),
+    )]));
+    assert!(evaluate_tracked(&canonical, &tracked, &Synthetic)?.is_secret());
+    assert!(evaluate_tracked(&alias, &tracked, &Synthetic).is_err());
+    Ok(())
+}
