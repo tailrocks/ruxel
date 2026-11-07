@@ -1,6 +1,7 @@
 mod agent;
 mod controller;
 mod lex;
+mod retry;
 mod schema;
 use anyhow::{Result, ensure};
 use std::{fs, path::Path};
@@ -12,6 +13,9 @@ pub fn run(root: &Path) -> Result<()> {
     if let Some(admitted) = agent::admission(&agent_source)? {
         ensure!(admitted == implemented, "agent admission/dispatch mismatch");
     }
+    retry::check(&fs::read_to_string(
+        root.join("crates/ruxel/ruxel-engine/src/controller/retry.rs"),
+    )?)?;
     let controller = controller::kinds(
         &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/operation.rs"))?,
         &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/local.rs"))?,

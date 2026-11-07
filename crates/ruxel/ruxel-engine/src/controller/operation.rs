@@ -1,6 +1,6 @@
 use super::{
     Backend, Context, ContextLayer, Map, Mode, Request, Result, Runner, TrackedValue, Value, bail,
-    failed, json, ledger_key, result_scope, snake, string, truth, v1,
+    json, ledger_key, snake, string, v1,
 };
 
 pub(super) fn sensitive_condition(value: &Value, scope: &TrackedValue) -> bool {
@@ -113,15 +113,7 @@ impl<B: Backend> Runner<'_, B> {
         })?;
         if matches!(kind, "pause" | "debug" | "fail" | "assert" | "set_fact") {
             return self
-                .local_retry(
-                    task,
-                    kind,
-                    layer,
-                    scope,
-                    &params,
-                    &tracked_params,
-                    sensitive,
-                )
+                .local_once(task, kind, layer, &params, &tracked_params, sensitive)
                 .await;
         }
         let mut environment = std::collections::HashMap::new();
@@ -213,72 +205,10 @@ impl<B: Backend> Runner<'_, B> {
                 TrackedValue::public(json!({"changed":false,"planned":true}))
             });
         }
-        let attempts = super::retry::max_attempts(task)?;
-        let mut result = Value::Null;
-        let mut changed = false;
-        let mut executed = 0;
-        for attempt in 0..attempts {
-            let tracked = self
-                .backend
-                .execute_tracked(request.clone(), sensitive)
-                .await?;
-            sensitive |= tracked.is_secret();
-            result = tracked.value;
-            executed = attempt + 1;
-            if !result.is_object() {
-                bail!("operation result must be an object");
-            }
-            changed |= result.get("changed").and_then(Value::as_bool) == Some(true);
-            let result_scope = result_scope(
-                scope,
-                task,
-                &if sensitive {
-                    TrackedValue::secret(result.clone())
-                } else {
-                    TrackedValue::public(result.clone())
-                },
-            )?;
-            let done = match task.get("until").filter(|v| !v.is_null()) {
-                Some(expr) => {
-                    let condition =
-                        self.backend
-                            .evaluate_tracked(expr, &result_scope)
-                            .map_err(|error| {
-                                if sensitive {
-                                    anyhow::anyhow!("sensitive retry condition failed")
-                                } else {
-                                    error
-                                }
-                            })?;
-                    sensitive |= condition.is_secret();
-                    request.task.no_log |= sensitive;
-                    truth(&condition.value)
-                }
-                None => !failed(&result),
-            };
-            if done {
-                break;
-            }
-            if attempt + 1 == attempts {
-                result["failed"] = Value::Bool(true);
-            }
-            if attempt + 1 < attempts {
-                tokio::time::sleep(std::time::Duration::from_secs(super::retry::delay_seconds(
-                    task,
-                )))
-                .await;
-            }
+        let result = self.backend.execute_tracked(request, sensitive).await?;
+        if !result.value.is_object() {
+            bail!("operation result must be an object");
         }
-        if changed {
-            result["changed"] = Value::Bool(true);
-        }
-        if task.get("until").is_some_and(|value| !value.is_null()) {
-            result["attempts"] = Value::from(executed);
-        }
-        Ok(if sensitive {
-            TrackedValue::secret(result)
-        } else {
-            TrackedValue::public(result)
-        })
+        Ok(result)
     }
 }

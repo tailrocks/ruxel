@@ -34,16 +34,11 @@ impl<B: super::Backend> super::Runner<'_, B> {
             return self.execute_once(task, layer, scope, item).await;
         }
         let attempts = max_attempts(task)?;
-        let mut single = task.clone();
-        single
-            .as_object_mut()
-            .context("task must be an object")?
-            .remove("until");
         let mut layer = layer.clone();
         layer.control_sensitive |= super::operation::sensitive_condition(condition, scope);
         let mut changed = false;
         for attempt in 1..=attempts {
-            let tracked = self.execute_once(&single, &layer, scope, item).await?;
+            let tracked = self.execute_once(task, &layer, scope, item).await?;
             layer.control_sensitive |= tracked.is_secret();
             let mut result = tracked.value;
             if !result.is_object() {

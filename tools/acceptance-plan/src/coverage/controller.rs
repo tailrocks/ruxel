@@ -8,7 +8,7 @@ pub fn kinds(operation: &str, local: &str) -> Result<BTreeSet<String>> {
     let code = lex::mask(&operation)?;
     let local_code = lex::mask(&local)?;
     let admission = Regex::new(
-        r#"(?s)if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)\s*\{\s*return\s+self\s*\.\s*local_retry\s*\("#,
+        r#"(?s)async\s+fn\s+execute_once\s*\(.*?if\s+matches!\s*\(\s*kind\s*,\s*((?:"[ ]*"\s*(?:\|\s*)?)+)\)\s*\{\s*return\s+self\s*\.\s*local_once\s*\("#,
     )?;
     let matches: Vec<_> = admission.captures_iter(&code).collect();
     ensure!(
@@ -31,28 +31,16 @@ pub fn kinds(operation: &str, local: &str) -> Result<BTreeSet<String>> {
         !admitted.is_empty() && admitted.len() == admitted_set.len(),
         "invalid controller local admission"
     );
-    let functions = Regex::new(
-        r"(?s)async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>.*?async\s+fn\s+local_retry\s*\((.*)",
-    )?;
+    ensure!(
+        Regex::new(r"(?s)let\s+result\s*=\s*self\s*\.\s*backend\s*\.\s*execute_tracked\s*\(")?
+            .is_match(&code[matches[0].get(0).context("missing route")?.end()..]),
+        "remote single-attempt dispatch not found"
+    );
+    let functions =
+        Regex::new(r"(?s)async\s+fn\s+local_once\s*\(.*?match\s+kind\s*\{(.*?)\n\s*_\s*=>")?;
     let regions = functions
         .captures(&local_code)
         .context("controller local dispatch or retry route not found")?;
-    let retry = regions.get(2).context("missing retry")?.as_str();
-    let loop_re = Regex::new(
-        r"(?s)for\s+attempt\s+in\s+1\s*\.\.\s*=\s*attempts\s*\{(.*?)\blet\s+scope\s*=\s*result_scope\s*\(",
-    )?;
-    let body = loop_re
-        .captures(retry)
-        .context("controller retry-loop local dispatch not found")?;
-    let call = Regex::new(r"\.\s*local_once\s*\(")?;
-    ensure!(
-        call.is_match(&body[1]),
-        "controller retry-loop local dispatch not found"
-    );
-    ensure!(
-        call.is_match(&retry[..body.get(0).context("missing loop")?.start()]),
-        "controller non-retry local dispatch not found"
-    );
     let region = regions.get(1).context("missing local dispatch")?;
     let arm = Regex::new(r#"(?m)^\s*"([ ]*)"\s*=>"#)?;
     let valid = Regex::new(r"^[a-z_]+$")?;

@@ -1,6 +1,5 @@
 use super::{
-    Backend, Context, ContextLayer, Mode, Result, Runner, TrackedValue, Value, bail, json,
-    result_scope, truth,
+    Backend, Context, ContextLayer, Mode, Result, Runner, TrackedValue, Value, bail, json, truth,
 };
 use serde_json::Map;
 
@@ -9,7 +8,7 @@ impl<B: Backend> Runner<'_, B> {
         clippy::too_many_lines,
         reason = "local operations share controller dispatch"
     )]
-    async fn local_once(
+    pub(super) async fn local_once(
         &mut self,
         task: &Value,
         kind: &str,
@@ -100,75 +99,5 @@ impl<B: Backend> Runner<'_, B> {
             }
             _ => bail!("unsupported local operation"),
         }
-    }
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "retry retains the prepared local operation and scope"
-    )]
-    pub(super) async fn local_retry(
-        &mut self,
-        task: &Value,
-        kind: &str,
-        layer: &ContextLayer,
-        scope: &TrackedValue,
-        params: &Map<String, Value>,
-        tracked_params: &TrackedValue,
-        mut sensitive: bool,
-    ) -> Result<TrackedValue> {
-        let Some(condition) = task.get("until").filter(|value| !value.is_null()) else {
-            return self
-                .local_once(task, kind, layer, params, tracked_params, sensitive)
-                .await;
-        };
-        let attempts = super::retry::max_attempts(task)?;
-        let mut changed = false;
-        for attempt in 1..=attempts {
-            let tracked = self
-                .local_once(task, kind, layer, params, tracked_params, sensitive)
-                .await?;
-            sensitive |= tracked.is_secret();
-            let mut result = tracked.value;
-            changed |= result.get("changed").and_then(Value::as_bool) == Some(true);
-            let scope = result_scope(
-                scope,
-                task,
-                &if sensitive {
-                    TrackedValue::secret(result.clone())
-                } else {
-                    TrackedValue::public(result.clone())
-                },
-            )?;
-            let evaluated = self
-                .backend
-                .evaluate_tracked(condition, &scope)
-                .map_err(|error| {
-                    if sensitive {
-                        anyhow::anyhow!("sensitive retry condition failed")
-                    } else {
-                        error
-                    }
-                })?;
-            sensitive |= evaluated.is_secret();
-            let done = truth(&evaluated.value);
-            if done || attempt == attempts {
-                if !done {
-                    result["failed"] = Value::Bool(true);
-                }
-                if changed {
-                    result["changed"] = Value::Bool(true);
-                }
-                result["attempts"] = Value::from(attempt);
-                return Ok(if sensitive {
-                    TrackedValue::secret(result)
-                } else {
-                    TrackedValue::public(result)
-                });
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(super::retry::delay_seconds(
-                task,
-            )))
-            .await;
-        }
-        bail!("retry loop did not execute")
     }
 }
