@@ -20,8 +20,6 @@ pub(super) fn parent_flags() -> OFlags {
 
 #[cfg(target_vendor = "apple")]
 pub(super) fn clear_inherited_acl(directory: &File) -> Result<(), String> {
-    // chmod's ACL operation accepts the held directory on macOS, unlike pathname
-    // traversal through /dev/fd/N/.; never address the replaceable staging name.
     let status = std::process::Command::new("/bin/chmod")
         .args(["-N", "/dev/fd/0"])
         .env_clear()

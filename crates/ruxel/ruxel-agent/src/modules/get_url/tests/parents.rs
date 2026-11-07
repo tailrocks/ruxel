@@ -19,7 +19,6 @@ fn write_search_only_parent_remains_supported() {
     fs::create_dir(&parent).unwrap();
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o300)).unwrap();
     let stage = Download::new(&parent.join("result"));
-    // Restore traversal for assertion/panic cleanup; acquisition occurred without read.
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
     let stage = stage.unwrap();
     stage.publish(&parent.join("result")).unwrap();

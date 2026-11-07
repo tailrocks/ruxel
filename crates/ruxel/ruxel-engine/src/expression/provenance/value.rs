@@ -2,7 +2,6 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Sensitivity associated with a value or individual children of a collection.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum Provenance {
     #[default]
@@ -13,7 +12,6 @@ pub enum Provenance {
 }
 
 impl Provenance {
-    /// Whether this value or any descendant depends on a secret.
     #[must_use]
     pub fn is_secret(&self) -> bool {
         match self {
@@ -65,7 +63,6 @@ impl Provenance {
     }
 }
 
-/// A JSON value with independent provenance for its collection members.
 #[derive(Clone, PartialEq)]
 pub struct TrackedValue {
     pub value: Value,
@@ -101,7 +98,6 @@ impl TrackedValue {
         self.provenance.validated(&self.value).is_secret()
     }
 
-    /// Construct a tracked object from independently tracked fields.
     #[must_use]
     pub fn object(fields: BTreeMap<String, Self>) -> Self {
         Self {
@@ -117,7 +113,6 @@ impl TrackedValue {
         }
     }
 
-    /// Retrieve a child without discarding its provenance.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<Self> {
         let value = match &self.value {
@@ -131,8 +126,6 @@ impl TrackedValue {
         })
     }
 
-    /// Replace a field in a tracked object, preserving sensitivity of siblings.
-    ///
     /// # Errors
     /// Returns an error when this value or its provenance is not an object.
     pub fn insert(&mut self, key: String, value: Self) -> Result<()> {
@@ -155,7 +148,6 @@ impl TrackedValue {
         Ok(())
     }
 
-    /// Redact sensitive nodes while retaining public siblings and their structure.
     #[must_use]
     pub fn redacted(&self) -> Value {
         fn redact(value: &Value, provenance: &Provenance) -> Value {
@@ -181,7 +173,6 @@ impl TrackedValue {
                         .collect(),
                 ),
                 (_, Provenance::Public) => value.clone(),
-                // A mismatched tree cannot safely be treated as public.
                 _ => Value::String("[REDACTED]".into()),
             }
         }

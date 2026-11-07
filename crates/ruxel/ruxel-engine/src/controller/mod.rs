@@ -1,9 +1,3 @@
-//! Execution of an evaluated Pkl task graph.
-//!
-//! The backend owns transport and event presentation. The controller owns the
-//! per-host scope and issues one iteration at a time so that later expressions
-//! can observe prior results.
-
 use crate::expression::provenance::TrackedValue;
 use anyhow::{Context, Result, bail};
 use ruxel_proto::v1;
@@ -18,29 +12,17 @@ mod variables;
 pub use standard_expression::evaluate_standard_layered;
 pub use types::{Mode, Options, Recap, Request};
 
-/// The controller delegates expression evaluation and I/O to the caller.
-/// `evaluate` must recursively evaluate expression nodes within ordinary JSON.
 #[expect(async_fn_in_trait, reason = "the backend is statically dispatched")]
 pub trait Backend {
-    /// Whether the enclosing run requires conservative result handling.
     fn conservative_sensitive(&self) -> bool {
         false
     }
-    /// Retain raw variable layers until expression access instead of eagerly
-    /// materializing inherited bindings. Requires a lazy layered evaluator.
     fn lazy_variable_layers(&self) -> bool {
         false
     }
-    /// Evaluate an expression in the current scope.
-    ///
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
-    /// Evaluate while retaining secret provenance from the scope.
-    ///
-    /// Backends that do not implement provenance must conservatively mark the
-    /// result sensitive whenever the supplied scope contains a secret.
-    ///
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate_tracked(
@@ -64,10 +46,6 @@ pub trait Backend {
             TrackedValue::public(value)
         })
     }
-    /// Evaluate a task expression while resolving task variables as needed.
-    /// The default conservatively resolves referenced variables; backends may
-    /// override it to preserve short-circuit evaluation within expressions.
-    ///
     /// # Errors
     /// Returns an error if an accessed variable or expression cannot be evaluated.
     fn evaluate_task_expression(
@@ -81,15 +59,6 @@ pub trait Backend {
     )> {
         fallback::evaluate(self, value, scope, vars)
     }
-    /// Evaluate an expression with ordered variable definition layers.
-    /// The default materializes parent layers through the backend's existing
-    /// evaluation hooks before evaluating the child layer. This preserves opaque
-    /// backend semantics, including their scope and provenance handling.
-    /// Backends providing standard lazy expressions should override this method
-    /// using `evaluate_standard_layered` and enable `lazy_variable_layers`.
-    /// The default can evaluate unused parent bindings and does not provide lazy
-    /// cross-layer references.
-    ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
     fn evaluate_layered_expression(
@@ -100,8 +69,6 @@ pub trait Backend {
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
         fallback::evaluate_layers(self, value, scope, layers)
     }
-    /// Prepare source-backed operations before evaluating their parameter expressions.
-    ///
     /// # Errors
     /// Returns an error if the source cannot be prepared.
     fn prepare_operation(
@@ -112,7 +79,6 @@ pub trait Backend {
     ) -> Result<()> {
         Ok(())
     }
-    /// Prepare a source and report whether it is sensitive.
     async fn prepare_operation_tracked(
         &mut self,
         kind: &str,
@@ -131,7 +97,6 @@ pub trait Backend {
         Ok(sensitive)
     }
     async fn execute(&mut self, request: Request) -> Result<Value>;
-    /// Execute a request and retain sensitivity of its inputs and result.
     async fn execute_tracked(
         &mut self,
         mut request: Request,
@@ -151,8 +116,6 @@ pub trait Backend {
             TrackedValue::public(result)
         })
     }
-    /// Emit a structured execution event.
-    ///
     /// # Errors
     /// Returns an error if the event cannot be written.
     fn event(&mut self, event: &Value) -> Result<()>;
@@ -239,10 +202,6 @@ fn result_scope(scope: &TrackedValue, task: &Value, result: &TrackedValue) -> Re
     Ok(next)
 }
 
-/// Expand explicit host and group targets and execute each play in order.
-/// Facts are supplied by the caller, keyed by inventory host name. Set facts
-/// persist across plays through `set_facts`, including their provenance.
-///
 /// # Errors
 /// Returns an error if inventory, expression evaluation, or execution fails.
 #[expect(
@@ -256,7 +215,6 @@ pub async fn run<B: Backend>(
     backend: &mut B,
     set_facts: &mut BTreeMap<String, TrackedValue>,
 ) -> Result<BTreeMap<String, Recap>> {
-    // Validate every target before the first backend call.
     selected_hosts(config, options)?;
     let inventory = config.get("inventory").context("missing inventory")?;
     let hosts = object(inventory, "hosts");

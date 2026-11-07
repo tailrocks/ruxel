@@ -1,8 +1,6 @@
 use crate::ConfigError;
 use std::path::Path;
 
-/// Evaluate a local Pkl module in a restricted evaluator.
-///
 /// # Errors
 /// Returns a Pkl error when the module cannot be evaluated.
 pub fn eval(root: &Path) -> Result<serde_json::Value, ConfigError> {

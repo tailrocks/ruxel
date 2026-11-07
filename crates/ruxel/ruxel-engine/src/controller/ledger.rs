@@ -17,9 +17,6 @@ fn canonical(value: Value) -> Value {
     }
 }
 
-/// Fingerprint the material inputs to an iteration after source files are rendered.
-/// No-log operations return an empty key and are never cached.
-///
 /// # Errors
 /// Returns an error when the parameter bytes are not valid JSON.
 pub fn ledger_key(task: &v1::RenderedTask, iteration: &v1::Iteration) -> Result<String> {

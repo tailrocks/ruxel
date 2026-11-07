@@ -84,15 +84,11 @@ impl Download {
         };
         let metadata = staged.directory.metadata().map_err(|e| e.to_string())?;
         let payload = staged.file.metadata().map_err(|e| e.to_string())?;
-        // A different UID can replace the directory name in an untrusted parent,
-        // but cannot supply a private directory owned by our newly created file's UID.
         if metadata.uid() != payload.uid() || metadata.mode() & 0o777 != 0o700 {
             return Err("get_url: unsafe download directory".into());
         }
         #[cfg(target_vendor = "apple")]
         clear_inherited_acl(&staged.directory)?;
-        // The empty identity file may have inherited an ACL before sanitization.
-        // Unlink it, so any previously opened handle cannot access downloaded bytes.
         unlinkat(&staged.directory, "payload", AtFlags::empty()).map_err(|e| e.to_string())?;
         staged.file = File::from(
             openat(

@@ -1,5 +1,3 @@
-//! Observation prerequisites only. The scenario remains disabled until an
-//! authorized disposable Linux root fixture can exercise the unchanged workload.
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use std::{fs, os::unix::fs::MetadataExt, path::Path};

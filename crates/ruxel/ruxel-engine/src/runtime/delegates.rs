@@ -1,8 +1,6 @@
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-/// Detect syntactically possible delegates whose state has not been checked.
-/// This deliberately does not evaluate expressions, including in skipped tasks.
 pub(super) fn has_unchecked_delegates(config: &Value, checked: &BTreeSet<String>) -> bool {
     fn tasks(value: &Value, checked: &BTreeSet<String>) -> bool {
         value.as_array().is_some_and(|items| {

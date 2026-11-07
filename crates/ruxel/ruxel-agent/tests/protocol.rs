@@ -147,7 +147,7 @@ fn eof_without_done_exits_clean() {
     let dir = temp_dir("eof");
     let mut agent = spawn_agent(&dir);
     let stdin = agent.stdin.take().unwrap();
-    drop(stdin); // controller vanished
+    drop(stdin);
     assert_eq!(agent.wait().unwrap().code(), Some(0));
     let _ = std::fs::remove_dir_all(&dir);
 }

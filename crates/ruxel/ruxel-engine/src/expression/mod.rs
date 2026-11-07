@@ -18,7 +18,6 @@ pub mod provenance;
 mod values;
 use values::{compare, equal, render_string};
 
-/// An expression evaluated against a host's current execution scope.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Expr {
@@ -68,15 +67,12 @@ pub struct Scope {
     pub extra: Map<String, Value>,
 }
 
-/// Resolve external lookups at the boundary; implementations must avoid logging secrets.
 pub trait LookupResolver {
     /// # Errors
     /// Returns an error if the lookup cannot be resolved.
     fn resolve(&self, lookup: &Expr) -> Result<Value>;
 }
 
-/// Evaluate an expression in the supplied scope.
-///
 /// # Errors
 /// Returns an error for invalid expressions, missing values, or failed lookups.
 pub fn evaluate(expr: &Expr, scope: &Scope, resolver: &impl LookupResolver) -> Result<Value> {
@@ -144,7 +140,6 @@ fn call(
         | "mapAttribute" | "subelements" | "join" | "map" => arity(function, args, 2)?,
         _ => bail!("unknown expression function {function}"),
     }
-    // These operators must not evaluate an unused branch, which may reference absent data.
     match function {
         "if" => {
             let condition = boolean(&evaluate(&args[0], scope, resolver)?)?;

@@ -1,4 +1,3 @@
-//! Strict validation of evaluated Pkl, including inputs that bypass the Pkl schema.
 mod operations;
 mod shapes;
 use anyhow::{Context, Result, ensure};
@@ -104,8 +103,6 @@ fn operation(kind: &str, params: &Map<String, Value>, deferred: bool) -> Result<
     Ok(())
 }
 
-/// Validate evaluated operation parameters before any provider executes.
-///
 /// # Errors
 /// Rejects unknown operations, fields, invalid values and unresolved expressions.
 pub fn validate_operation(kind: &str, params: &Map<String, Value>) -> Result<()> {
@@ -188,8 +185,6 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
     }
     Ok(())
 }
-/// Validate and normalize Pkl output at the executable boundary.
-///
 /// # Errors
 /// Rejects malformed configuration, unknown fields and invalid typed variants.
 pub fn validate_config(value: &Value) -> Result<Value> {
@@ -241,7 +236,6 @@ pub fn validate_config(value: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests;
 
-/// Validate a typed template expression before evaluating it against runtime scope.
 pub(crate) fn validate_template(value: &Value) -> Result<()> {
     if value.is_string() {
         Ok(())

@@ -51,7 +51,6 @@ fn run(
 }
 pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
     let env = Env::new(cli, agent, schema)?;
-    // The cache fixture imports a schema one directory above its module.
     fs::create_dir(env.path("fixture"))?;
     fs::create_dir(env.path("schema"))?;
     fs::copy(schema, env.path("schema/Ruxel.pkl"))?;

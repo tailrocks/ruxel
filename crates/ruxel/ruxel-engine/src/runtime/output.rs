@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::{fs::File, io::Write, path::Path, sync::Mutex};
 
-/// Project only controller-owned fields when the run has unknown provenance.
 pub(super) fn sensitive_event(value: &Value) -> Value {
     let mut output = serde_json::Map::new();
     if value.get("host").is_some() {
@@ -42,7 +41,6 @@ pub(super) fn sensitive_event(value: &Value) -> Value {
     Value::Object(output)
 }
 
-/// Presentation of redacted execution events.
 #[derive(Debug, Default, Clone, Copy)]
 pub enum OutputFormat {
     #[default]
@@ -74,7 +72,6 @@ impl Output {
         })
     }
     pub(super) fn event(&self, value: &Value) -> Result<()> {
-        // Serialize stdout and the corresponding log entry together across host workers.
         let mut log = self
             .log
             .lock()

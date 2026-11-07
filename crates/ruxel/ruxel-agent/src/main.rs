@@ -150,7 +150,7 @@ fn serve() -> i32 {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
                         proto_version: PROTO_VERSION,
                         facts: Some(facts::gather()),
-                        ledger_generation: 0, // ledger lands in M3
+                        ledger_generation: 0,
                         sensitive_effects: Some(sensitive_effects.is_marked()),
                     })),
                 };

@@ -6,7 +6,6 @@ use std::{
     process::{Command, Stdio},
 };
 
-/// Establish the controlling terminal in a dedicated process before exec.
 pub fn terminal_exec(args: &[OsString]) -> Result<()> {
     let Some((program, arguments)) = args.split_first() else {
         bail!("terminal helper requires an executable");
@@ -60,7 +59,6 @@ pub fn startup_gate(release: &std::path::Path, marker: &std::path::Path) -> Resu
     Ok(())
 }
 
-/// Deliberately incomplete JSON, used only by the bounded-reader regression.
 pub fn partial_output() -> Result<()> {
     start_anchor()?;
     std::io::stdout().write_all(b"{")?;
@@ -69,7 +67,6 @@ pub fn partial_output() -> Result<()> {
     Ok(())
 }
 
-/// Leave a pipe-holding descendant behind an exited parent for cleanup testing.
 pub fn orphan_output(pid_file: &std::path::Path) -> Result<()> {
     let child = Command::new(std::env::current_exe()?)
         .arg("--partial-output")

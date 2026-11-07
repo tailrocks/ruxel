@@ -39,7 +39,6 @@ pub(super) async fn run_plays(
                 (host, result, host_facts)
             }
         });
-        // Collect every result before returning an error so sibling work cannot be cancelled halfway.
         let completed: Vec<_> = stream::iter(runs)
             .buffer_unordered(execution.runtime.jobs)
             .collect()
