@@ -32,7 +32,6 @@ pub(super) fn compare(left: &Value, right: &Value) -> Result<std::cmp::Ordering>
 fn compare_int_float(integer: i128, float: f64) -> Result<std::cmp::Ordering> {
     use std::cmp::Ordering;
     ensure!(float.is_finite(), "numbers cannot be compared");
-    // JSON integers fit in u64/i64, so values at or beyond 2^64 are outside their range.
     if float >= 18_446_744_073_709_551_616.0 {
         return Ok(Ordering::Less);
     }

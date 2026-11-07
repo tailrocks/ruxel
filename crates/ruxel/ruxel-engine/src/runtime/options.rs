@@ -2,7 +2,6 @@ use super::OutputFormat;
 use crate::transport;
 use std::path::PathBuf;
 
-/// Transport selection is explicit; local mode never calls SSH.
 #[derive(Debug, Clone)]
 pub struct RuntimeOptions {
     pub agent: PathBuf,

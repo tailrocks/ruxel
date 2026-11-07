@@ -1,4 +1,3 @@
-//! Local subprocess fixture; never starts SSH, network clients, or remote commands.
 #![forbid(unsafe_code)]
 mod fake_sftp;
 use std::fs::{self, OpenOptions};

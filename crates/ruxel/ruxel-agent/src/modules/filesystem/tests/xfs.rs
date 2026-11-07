@@ -36,7 +36,6 @@ fn handoff_preserves_directory_identity_and_replaces_stdin() {
 #[cfg(target_os = "linux")]
 #[test]
 fn production_helper_reports_real_geometry_ioctl_error() {
-    // procfs rejects XFS geometry requests; no block device is opened.
     let directory = std::fs::File::open("/proc/self").unwrap();
     let device_id = directory.metadata().unwrap().dev().to_string();
     let output = Command::new("sh")

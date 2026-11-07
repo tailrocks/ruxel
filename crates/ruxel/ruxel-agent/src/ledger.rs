@@ -99,7 +99,6 @@ pub(crate) struct Ledger {
 }
 
 pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
-    // Root-directory metadata cannot prove that recursive descendant attributes still match.
     !(module == "file" && probe::bool_value(params.get("recurse"), false))
 }
 

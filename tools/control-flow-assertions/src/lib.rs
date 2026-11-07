@@ -7,8 +7,6 @@ use anyhow::{Result, ensure};
 use serde_json::Value;
 use std::path::Path;
 
-/// Check supplied public observations without executing a scenario.
-///
 /// # Errors
 /// Returns an error when evidence is missing, ambiguous, unsafe or mismatched.
 pub fn assert_observations(
@@ -40,8 +38,6 @@ pub fn assert_observations(
     }
     Ok(())
 }
-/// Validate observed attempts against a positive expected integer.
-///
 /// # Errors
 /// Returns an error when counts are missing, non-integral, nonpositive or unequal.
 pub fn assert_retry_attempts(expected: &Value, observed: &Value) -> Result<()> {

@@ -118,8 +118,6 @@ pub(super) fn expand_selectors(
     Ok(selected)
 }
 
-/// Expand play targets and host filters to concrete inventory hosts.
-///
 /// # Errors
 /// Returns an error for invalid inventory or selectors that match no hosts.
 pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> {

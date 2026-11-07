@@ -74,7 +74,6 @@ pub(super) fn serve(fixture: &Fixture) -> Result<()> {
                 let path = request.text()?;
                 let flags = request.number()?;
                 assert_eq!(flags & (0x2 | 0x8 | 0x20), 0x2 | 0x8 | 0x20);
-                // OPEN attributes are followed by descriptor FSETSTAT below.
                 let handle = handles.len().to_string().into_bytes();
                 let file = OpenOptions::new()
                     .write(true)

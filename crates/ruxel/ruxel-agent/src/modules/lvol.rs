@@ -52,8 +52,6 @@ fn needs_resize(
         Ok(free()? > 0)
     } else if size.contains('%') {
         validate_percentage(size)?;
-        // Creation consumes the original free-space baseline, so a later run
-        // cannot derive the same absolute target from a percentage of it.
         Ok(false)
     } else {
         let requested = size_bytes(size)?;

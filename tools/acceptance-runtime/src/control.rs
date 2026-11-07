@@ -33,8 +33,6 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         .replace("SECRET", &serde_json::to_string(SECRET)?);
     let module = base.join("fixtures/control.pkl");
     fs::write(&module, source)?;
-    // Isolate agent state so the final private command does not hide unrelated
-    // control-flow observations in the next invocation. Payload state is shared.
     for (index, mode) in ["apply", "apply", "check", "diff"].into_iter().enumerate() {
         let before = fs::read(&marker).ok();
         let events = process::run_extra(

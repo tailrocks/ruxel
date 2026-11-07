@@ -139,8 +139,6 @@ pub struct HostFacts {
     pub sensitive_effects: bool,
 }
 
-/// Connect and verify an agent over the PATH-selected SSH client.
-///
 /// # Errors
 /// Returns an error when agent upload, verification, or protocol negotiation fails.
 pub async fn connect_with(
@@ -241,24 +239,18 @@ async fn connect_remote(
 }
 
 impl AgentConnection {
-    /// Send a framed request.
-    ///
     /// # Errors
     /// Returns protocol encoding or stream write errors.
     pub async fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
         write_frame(&mut self.stdin, envelope).await
     }
 
-    /// Read one framed event.
-    ///
     /// # Errors
     /// Returns malformed frame or stream read errors.
     pub async fn next_event(&mut self) -> Result<Option<v1::Event>> {
         read_frame(&mut self.stdout).await
     }
 
-    /// Flush the ledger and wait for agent termination.
-    ///
     /// # Errors
     /// Returns stream errors or an unsuccessful agent exit.
     pub async fn shutdown(mut self) -> Result<()> {

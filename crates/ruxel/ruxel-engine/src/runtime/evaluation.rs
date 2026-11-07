@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 
 impl Execution {
     pub(super) fn prefetch_lookups(&self, value: &Value) -> Result<()> {
-        // Prefetch independent direct lookup nodes only. Calls retain lazy branch semantics.
         fn direct_lookups(value: &Value, found: &mut Vec<Lookup>) -> Result<()> {
             if let Some(kind) = value.get("kind").and_then(Value::as_str) {
                 if kind == "lookup" {

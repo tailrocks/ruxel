@@ -2,8 +2,6 @@ use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
 pub fn verify(events: &[Value], preview: bool) -> Result<()> {
-    // The frozen fixture's second task asserts the exact delegated stdout.
-    // Successful apply therefore proves the value without publishing it.
     let expected = [
         json!({"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}),
         json!({"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":preview}}),

@@ -1,4 +1,3 @@
-//! Persistent, content-free indication that sensitive operations may have modified state.
 use std::{
     fs, io,
     path::{Path, PathBuf},

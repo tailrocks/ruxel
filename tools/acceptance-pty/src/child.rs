@@ -19,7 +19,6 @@ fn kill_group(pid: Pid) -> Result<()> {
         match kill_process_group(pid, Signal::KILL) {
             Ok(()) | Err(rustix::io::Errno::SRCH) => return Ok(()),
             Err(rustix::io::Errno::PERM) if Instant::now() < deadline => {
-                // macOS may briefly retain a group containing only orphan zombies.
                 thread::sleep(Duration::from_millis(20));
             }
             Err(error) => return Err(error.into()),

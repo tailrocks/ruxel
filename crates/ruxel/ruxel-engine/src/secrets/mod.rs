@@ -1,5 +1,3 @@
-//! Controller-side lookup resolution. Secret values never appear in diagnostics.
-
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -44,7 +42,6 @@ impl fmt::Debug for Lookup {
     }
 }
 
-/// Inject a backend to run lookups. Backend errors are deliberately not surfaced.
 pub trait Backend: Send + Sync {
     /// # Errors
     /// Returns an error if the backend cannot resolve the key.
@@ -165,7 +162,6 @@ impl Resolver {
         }
     }
 
-    /// Resolve every reference deterministically without invoking any backend.
     #[must_use]
     pub fn synthetic() -> Self {
         let mut resolver = Self::new(Arc::new(ProcessBackend::default()));
@@ -173,8 +169,6 @@ impl Resolver {
         resolver
     }
 
-    /// Resolve a lookup; concurrent requests for the same value share one fetch.
-    ///
     /// # Errors
     /// Returns a redacted error if the lookup fails.
     pub fn resolve(&self, lookup: &Lookup) -> Result<String, String> {
@@ -244,8 +238,6 @@ impl Resolver {
         select_field(document, field, section).ok_or_else(|| "secret field not found".to_owned())
     }
 
-    /// Fetch distinct lookups concurrently, with at most eight workers.
-    ///
     /// # Errors
     /// Returns a redacted error if any lookup fails.
     pub fn prefetch(&self, lookups: &[Lookup]) -> Result<(), String> {
