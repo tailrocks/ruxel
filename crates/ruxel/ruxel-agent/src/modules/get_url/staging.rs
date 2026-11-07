@@ -1,4 +1,6 @@
-use super::access::{clear_inherited_acl, parent_flags};
+#[cfg(target_vendor = "apple")]
+use super::access::clear_inherited_acl;
+use super::access::parent_flags;
 use rustix::fs::{AtFlags, Mode, OFlags, mkdirat, openat, renameat, unlinkat};
 use std::fs::File;
 use std::os::unix::fs::MetadataExt;
@@ -87,6 +89,7 @@ impl Download {
         if metadata.uid() != payload.uid() || metadata.mode() & 0o777 != 0o700 {
             return Err("get_url: unsafe download directory".into());
         }
+        #[cfg(target_vendor = "apple")]
         clear_inherited_acl(&staged.directory)?;
         // The empty identity file may have inherited an ACL before sanitization.
         // Unlink it, so any previously opened handle cannot access downloaded bytes.
