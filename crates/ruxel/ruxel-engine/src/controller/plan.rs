@@ -72,6 +72,11 @@ pub(super) fn plan_tasks<B: Backend>(
     inherited: &[String],
 ) -> Result<u64> {
     let mut count = 0;
+    let visible_host = if backend.conservative_sensitive() {
+        "[censored]"
+    } else {
+        host
+    };
     for task in tasks {
         if let Some((selected, task_count)) = project(task, filter, inherited) {
             let selected = if backend.conservative_sensitive() {
@@ -79,7 +84,9 @@ pub(super) fn plan_tasks<B: Backend>(
             } else {
                 selected
             };
-            backend.event(&json!({"host":host,"phase":phase,"planned":true,"task":selected}))?;
+            backend.event(
+                &json!({"host":visible_host,"phase":phase,"planned":true,"task":selected}),
+            )?;
             count += task_count;
         }
     }
@@ -91,13 +98,19 @@ pub(super) fn plan_handlers<B: Backend>(
     host: &str,
     handlers: &[Value],
 ) -> Result<()> {
+    let visible_host = if backend.conservative_sensitive() {
+        "[censored]"
+    } else {
+        host
+    };
     for handler in handlers {
         let handler = if backend.conservative_sensitive() {
             json!({"censored":true})
         } else {
             visible(handler)
         };
-        backend.event(&json!({"host":host,"phase":"handler","planned":true,"task":handler}))?;
+        backend
+            .event(&json!({"host":visible_host,"phase":"handler","planned":true,"task":handler}))?;
     }
     Ok(())
 }

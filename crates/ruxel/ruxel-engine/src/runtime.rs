@@ -276,10 +276,18 @@ pub async fn run(
         (1..=128).contains(&runtime.jobs),
         "jobs must be between 1 and 128"
     );
-    let validated = crate::model::validate_config(config)?;
+    let validated = crate::model::validate_config(config).map_err(|error| {
+        if options.mode == Mode::Plan {
+            anyhow::anyhow!("plan validation failed")
+        } else {
+            error
+        }
+    })?;
     let config = &validated;
     let execution = Execution {
-        conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(
+            options.mode == Mode::Plan,
+        )),
         effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         inventory: config
             .get("inventory")
@@ -330,6 +338,9 @@ pub async fn run(
         }
     }
     let redact_error = |error: anyhow::Error| -> anyhow::Error {
+        if options.mode == Mode::Plan {
+            return anyhow::anyhow!("plan failed");
+        }
         match execution.lookups.redact(&Value::String(error.to_string())) {
             Ok(Value::String(message)) => anyhow::anyhow!(message),
             _ => anyhow::anyhow!("execution failed"),
@@ -354,7 +365,12 @@ pub async fn run(
                 }
             }
             for (host, total) in &recap {
-                let event = json!({"host":host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
+                let visible_host = if options.mode == Mode::Plan {
+                    "[censored]"
+                } else {
+                    host
+                };
+                let event = json!({"host":visible_host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
                 execution.output.event(&execution.lookups.redact(&event)?)?;
             }
             Ok(recap)

@@ -75,5 +75,68 @@ output {{ value = new Ruxel.Config {{
         !fs::read_to_string(log)?.contains(MARKER),
         "private value leaked to log"
     );
+    let host_plan = base.join("fixtures/host-plan.pkl");
+    fs::write(
+        &host_plan,
+        format!(
+            r#"import "../schema/Ruxel.pkl"
+local key = read({file_uri}).text
+output {{ value = new Ruxel.Config {{
+ inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}
+ plays {{ new {{ name = "fixture"; targets {{ key }}; tasks {{ new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = "public" }} }} }} }} }}
+}} }}"#
+        ),
+    )?;
+    let host_log = base.join("host-plan.jsonl");
+    let events = process::run_extra(
+        cli,
+        agent,
+        &host_plan,
+        &state,
+        "plan",
+        Duration::from_secs(30),
+        &[OsStr::new("--log-file"), host_log.as_os_str()],
+        Some(MARKER),
+        0,
+    )?;
+    ensure!(
+        events
+            .iter()
+            .any(|event| event["planned"] == true && event["host"] == "[censored]"),
+        "missing censored plan host"
+    );
+    ensure!(
+        events
+            .iter()
+            .any(|event| event["recap"].is_object() && event["host"] == "[censored]"),
+        "missing censored recap host"
+    );
+    ensure!(
+        !fs::read_to_string(host_log)?.contains(MARKER),
+        "private host leaked to log"
+    );
+    let bad_target = base.join("fixtures/bad-target.pkl");
+    fs::write(
+        &bad_target,
+        format!(
+            r#"import "../schema/Ruxel.pkl"
+local key = read({file_uri}).text
+output {{ value = new Ruxel.Config {{
+ inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }} }}
+ plays {{ new {{ name = "fixture"; targets {{ key }}; tasks {{ new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = "public" }} }} }} }} }}
+}} }}"#
+        ),
+    )?;
+    process::run_extra(
+        cli,
+        agent,
+        &bad_target,
+        &state,
+        "plan",
+        Duration::from_secs(30),
+        &[],
+        Some(MARKER),
+        1,
+    )?;
     Ok(())
 }

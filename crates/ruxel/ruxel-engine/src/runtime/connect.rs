@@ -10,10 +10,15 @@ pub(super) fn report_failure(
     event: &str,
     error: &anyhow::Error,
 ) -> Result<()> {
-    let value = if event == "unreachable" {
-        json!({"host":host,"event":event,"unreachable":true,"changed":false,"msg":error.to_string()})
+    let (host, message) = if execution.mode == Mode::Plan {
+        ("[censored]", "plan failed".to_owned())
     } else {
-        json!({"host":host,"event":event,"failed":true,"msg":error.to_string()})
+        (host, error.to_string())
+    };
+    let value = if event == "unreachable" {
+        json!({"host":host,"event":event,"unreachable":true,"changed":false,"msg":message})
+    } else {
+        json!({"host":host,"event":event,"failed":true,"msg":message})
     };
     execution.output.event(&execution.lookups.redact(&value)?)
 }

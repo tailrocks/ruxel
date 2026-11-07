@@ -25,6 +25,12 @@ async fn conservative_plan_censors_tasks_and_handlers() -> Result<()> {
         backend
             .events
             .iter()
+            .all(|event| event["host"] == "[censored]")
+    );
+    assert!(
+        backend
+            .events
+            .iter()
             .all(|event| event["task"] == json!({"censored":true}))
     );
     assert!(!serde_json::to_string(&backend.events)?.contains("synthetic-marker"));
