@@ -77,6 +77,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
             );
         }
     }
+    let before_other = snapshot(&payload)?;
     let events = process::run_extra(
         cli,
         agent,
@@ -90,13 +91,25 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     )?;
     ensure!(
         payload.join("other").is_file()
-            && !events.iter().any(|e| ["first", "second", "failed handler"]
-                .iter()
-                .any(|task| e["task"] == *task))
+            && ["first", "second"].iter().all(|task| {
+                let matching: Vec<_> = events.iter().filter(|e| e["task"] == *task).collect();
+                matching.len() == 1
+                    && matching[0]["result"]["skipped"] == true
+                    && matching[0]["result"]["changed"] == false
+            })
+            && !events.iter().any(|e| e["task"] == "failed handler")
             && events
                 .iter()
                 .any(|e| e["task"] == "always" && e["result"]["msg"] == "always ran"),
         "other tag selection failed"
+    );
+    let after_other = snapshot(&payload)?;
+    ensure!(
+        after_other
+            .iter()
+            .filter(|(name, _)| name != "other")
+            .eq(before_other.iter()),
+        "excluded tasks modified payload"
     );
     let recaps: Vec<_> = events
         .iter()
