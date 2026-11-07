@@ -45,23 +45,17 @@ fn main() {
 }
 
 fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
-    let value = match ruxel_config::eval(&args.root) {
-        Ok(value) => value,
-        Err(error) => {
-            if writeln!(std::io::stderr().lock(), "{error}").is_err() {
-                return ExitCode::Internal;
-            }
-            return ExitCode::Config;
+    let Ok(value) = ruxel_config::eval(&args.root) else {
+        if writeln!(std::io::stderr().lock(), "configuration evaluation failed").is_err() {
+            return ExitCode::Internal;
         }
+        return ExitCode::Config;
     };
-    let value = match ruxel_engine::model::validate_config(&value) {
-        Ok(value) => value,
-        Err(error) => {
-            if writeln!(std::io::stderr().lock(), "{error}").is_err() {
-                return ExitCode::Internal;
-            }
-            return ExitCode::Config;
+    let Ok(value) = ruxel_engine::model::validate_config(&value) else {
+        if writeln!(std::io::stderr().lock(), "configuration validation failed").is_err() {
+            return ExitCode::Internal;
         }
+        return ExitCode::Config;
     };
     let options = ruxel_engine::controller::Options {
         mode,
