@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Ruxel.pkl schema v0.
 - Typed Pkl configuration, evaluation via pklr, and `ruxel config dump`.
 - Controller commands for plan, check, diff, and apply, with synthetic local acceptance coverage in progress.
 - alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.

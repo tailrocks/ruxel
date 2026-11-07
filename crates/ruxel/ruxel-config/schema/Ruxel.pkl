@@ -1,0 +1,112 @@
+// Authoring rules:
+// 1. Use explicit `new C { ... }` for Listing<C> elements and typed values.
+// 2. Define `fleet` with `R.Fleet`; never amend a schema module.
+// 3. Amend through Fleet → hosts → host → resources → resource.
+// 4. Use no Mixin bodies or method references; use lambdas.
+// 5. Use no stdlib UInt*, Int32, or NonNull; use Port and Seconds.
+// 6. Do not default a field from a sibling without a default.
+// 7. Use relative imports only; no PklProject or package imports.
+// 8. Avoid pkl:semver, pkl:reflect, pkl:platform, and pkl:yaml.
+// 9. Use Int seconds or bytes, not Duration or DataSize.
+// 10. Write TOML content as a string or Rendered value.
+// 11. Never read env or https resources; secrets use SecretRef.
+// 12. Do not rely on mapping order for semantics; use after/onChangeOf.
+
+module Ruxel
+
+typealias HostName = String(matches(Regex(#"[a-z][a-z0-9-]{0,62}"#)))
+typealias IpAddr = String(matches(Regex(#"[0-9.]{7,15}|[0-9a-fA-F:]{2,39}"#)))
+typealias Cidr = String(matches(Regex(#"[0-9a-fA-F:.]+/[0-9]{1,3}"#)))
+typealias ResourceId = String(matches(Regex(#"[a-z0-9][a-z0-9:._-]{0,127}"#)))
+typealias Ref = String(matches(Regex(#"([a-z][a-z0-9-]{0,62}/)?[a-z0-9][a-z0-9:._-]{0,127}"#)))
+typealias SecretName = String(matches(Regex(#"[A-Z_][A-Z0-9_]*"#)))
+typealias AbsPath = String(startsWith("/"))
+typealias Mode = String(matches(Regex("0[0-7]{3,4}")))
+typealias Sha256 = String(matches(Regex("[0-9a-f]{64}")))
+typealias Port = Int(isBetween(1, 65535))
+typealias Seconds = Int(isBetween(1, 86400))
+typealias SecretFormat = "kubeadmToken" | "hex16" | "hex32" | "base64-32" | "alnum32"
+
+class SecretRef { fixed kind = "secretRef"; name: SecretName; generate: SecretFormat? }
+class HostOutput { fixed kind = "hostOutput"; host: HostName; name: String }
+class Concat { fixed kind = "concat"; parts: Listing<String | SecretRef | HostOutput> }
+class Rendered { fixed kind = "rendered"; format: "json" | "yaml" | "toml"; value: Dynamic | Listing }
+
+typealias Val = String | SecretRef | HostOutput | Concat
+typealias Content = String | SecretRef | HostOutput | Concat | Rendered
+
+function secret(n: SecretName): SecretRef = new SecretRef { name = n }
+function generatedSecret(n: SecretName, f: SecretFormat): SecretRef = new SecretRef { name = n; generate = f }
+function output(h: HostName, n: String): HostOutput = new HostOutput { host = h; name = n }
+function concat(parts: Listing<String | SecretRef | HostOutput>): Concat = new Concat { parts = parts }
+
+abstract class Check { fixed kind: String }
+class CmdCheck extends Check { fixed kind = "cmd"; argv: Listing<Val>(!isEmpty); exitCode: Int = 0; stdoutContains: String? }
+class FileExistsCheck extends Check { fixed kind = "fileExists"; path: AbsPath }
+class TcpCheck extends Check { fixed kind = "tcp"; host: String; port: Port }
+class HttpCheck extends Check { fixed kind = "http"; url: String; status: Int = 200; insecure: Boolean = false; bodyContains: String? }
+class FactCheck extends Check { fixed kind = "fact"; name: String; equals: String }
+
+abstract class Resource {
+  fixed type: String
+  after: Listing<Ref> = new {}
+  onChangeOf: Listing<Ref> = new {}
+  label: String? = null
+}
+
+class File extends Resource {
+  fixed type = "file"
+  path: AbsPath
+  content: Content? = null
+  state: "present" | "absent" = "present"
+  owner: String = "root"
+  group: String = "root"
+  mode: Mode = "0644"
+}
+class Directory extends Resource {
+  fixed type = "directory"
+  path: AbsPath
+  state: "present" | "absent" = "present"
+  owner: String = "root"
+  group: String = "root"
+  mode: Mode = "0755"
+}
+class Packages extends Resource {
+  fixed type = "packages"
+  names: Listing<String>(!isEmpty)
+  versions: Mapping<String, String> = new {}
+  state: "present" | "absent" | "latest" = "present"
+  hold: Boolean = false
+  updateCache: "auto" | "always" | "never" = "auto"
+}
+class Service extends Resource {
+  fixed type = "service"
+  unit: String
+  enabled: Boolean = true
+  state: "started" | "stopped" | "unmanaged" = "started"
+  masked: Boolean = false
+  reaction: "restart" | "reload" = "restart"
+}
+class Command extends Resource {
+  fixed type = "command"
+  argv: Listing<Val>(!isEmpty)
+  env: Mapping<String, Val> = new {}
+  cwd: AbsPath? = null
+  runAs: String? = null
+  creates: AbsPath? = null
+  removes: AbsPath? = null
+  onlyIf: Check? = null
+  unless: Check? = null
+  timeoutSeconds: Seconds = 600
+}
+
+class Target { name: HostName; address: IpAddr; port: Port = 22 }
+class Host { name: HostName; address: IpAddr; port: Port = 22; resources: Mapping<ResourceId, Resource> }
+class Ssh { user: String = "root"; identityFile: String; knownHostsFile: String }
+class Fleet {
+  name: HostName
+  ssh: Ssh
+  maxParallelHosts: Int(isBetween(1, 256)) = 16
+  hosts: Mapping<HostName, Host>
+}
+class Guard { allow: Listing<Cidr>; deny: Listing<Cidr> }
