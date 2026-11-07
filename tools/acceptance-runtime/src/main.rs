@@ -4,6 +4,7 @@ compile_error!("the local acceptance runner supports Linux and macOS process gro
 mod control;
 mod cross_play;
 mod handler;
+mod lazy_layers;
 mod loops;
 mod process;
 mod proxy;
@@ -48,6 +49,7 @@ fn main() -> Result<()> {
     cross_play::run(&root, &cli, &agent)?;
     handler::run(&root, &cli, &agent)?;
     control::run(&root, &cli, &agent)?;
+    lazy_layers::run(&root, &cli, &agent)?;
     loops::run(&root, &cli, &agent, false)?;
     loops::run(&root, &cli, &agent, true)
 }
