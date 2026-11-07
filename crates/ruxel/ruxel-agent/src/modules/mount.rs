@@ -127,7 +127,7 @@ fn apply_mount(
         MountAction::Mount => {
             mount_explicit(path, desired, command)?;
             if let Err(error) = persist() {
-                return match command("umount", &[path]) {
+                return match command("umount", &["--", path]) {
                     Ok(()) => Err(format!(
                         "mount: fstab update failed; new mount removed: {error}"
                     )),
@@ -203,7 +203,7 @@ fn replace_mount(
     command: &mut impl FnMut(&str, &[&str]) -> Result<(), String>,
     persist: &mut impl FnMut() -> Result<(), String>,
 ) -> Result<(), String> {
-    command("umount", &[path])?;
+    command("umount", &["--", path])?;
     if let Err(error) = mount_explicit(path, desired, command) {
         return match mount_explicit(path, old, command) {
             Ok(()) => Err(format!(
@@ -215,7 +215,8 @@ fn replace_mount(
         };
     }
     if let Err(error) = persist() {
-        let restored = command("umount", &[path]).and_then(|()| mount_explicit(path, old, command));
+        let restored =
+            command("umount", &["--", path]).and_then(|()| mount_explicit(path, old, command));
         return match restored {
             Ok(()) => Err(format!(
                 "mount: fstab update failed; previous mount restored: {error}"
@@ -271,6 +272,7 @@ fn escape_fstab(value: &str) -> String {
         .replace('\\', "\\134")
         .replace(' ', "\\040")
         .replace('\t', "\\011")
+        .replace('\n', "\\012")
 }
 
 fn opts_eq(a: &str, b: &str) -> bool {

@@ -2,6 +2,7 @@ const FAKE_MOUNT: &str = r#"set -eu
 kind=$1
 shift
 if [ "$kind" = umount ]; then
+  [ "$1" = -- ] || exit 2
   if [ "$MOUNT_MODE" = fail_unmount ]; then echo synthetic-unmount-failure >&2; exit 1; fi
   printf '' > "$MOUNT_STATE"
   exit 0
@@ -101,6 +102,61 @@ fn normalizes_options_and_rewrites_matching_mountpoint() {
         super::rewrite_fstab(&next, "/dev/new", "/srv", "xfs", "rw"),
         (next, false)
     );
+}
+
+#[test]
+fn fstab_encodes_newlines_for_roundtrip() {
+    let (next, changed) = super::rewrite_fstab("", "/dev/a\nb", "/mnt/a\nb", "ext4", "rw");
+    assert!(changed);
+    assert_eq!(next, "/dev/a\\012b\t/mnt/a\\012b\text4\trw\t0\t0\n");
+    assert_eq!(
+        super::rewrite_fstab(&next, "/dev/a\nb", "/mnt/a\nb", "ext4", "rw"),
+        (next, false)
+    );
+}
+
+#[test]
+fn rollback_unmounts_protect_option_like_paths() {
+    let mount = super::Mounted {
+        source: "/dev/a".into(),
+        fstype: "ext4".into(),
+        options: "rw".into(),
+    };
+    for action in [super::MountAction::Mount, super::MountAction::Replace] {
+        let mut calls = Vec::new();
+        let mut command = |program: &str, args: &[&str]| {
+            calls.push((
+                program.to_owned(),
+                args.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ));
+            Ok(())
+        };
+        let mut persist = || Err("synthetic failure".into());
+        assert!(
+            super::apply_mount(
+                "-target",
+                Some(&mount),
+                &mount,
+                action,
+                &mut command,
+                &mut persist
+            )
+            .is_err()
+        );
+        let unmounts: Vec<_> = calls
+            .iter()
+            .filter(|(program, _)| program == "umount")
+            .collect();
+        assert_eq!(
+            unmounts.len(),
+            if action == super::MountAction::Replace {
+                2
+            } else {
+                1
+            }
+        );
+        assert!(unmounts.iter().all(|(_, args)| args == &["--", "-target"]));
+    }
 }
 
 #[test]
