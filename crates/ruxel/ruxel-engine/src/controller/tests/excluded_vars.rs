@@ -31,7 +31,7 @@ fn opaque_backend_rejects_multilayer_resolution() -> Result<()> {
 }
 
 #[test]
-fn layered_backend_fallback_keeps_inherited_self_override() -> Result<()> {
+fn layered_standard_backend_keeps_inherited_self_override() -> Result<()> {
     let mut backend = Fake::default();
     let parent = json!({"value":{"kind":"literal","value":"parent"}});
     let child = json!({"value":{"kind":"ref","path":["vars","value"]}});

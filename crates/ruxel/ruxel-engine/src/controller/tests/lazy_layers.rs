@@ -37,7 +37,7 @@ async fn block_binding_reads_current_result_in_each_child() -> Result<()> {
         "targets":["h"], "tasks":[
             {"name":"old","register":"r","operation":{"kind":"debug","msg":"old"}},
             {"name":"block","vars":{"alias":{"kind":"ref","path":["results","r","msg"]}},
-                "when":{"kind":"call","function":"eq","args":[alias,"old"]},"block":[
+                "when":{"kind":"call","function":"eq","args":[alias,{"kind":"literal","value":"old"}]},"block":[
                     {"name":"new","register":"r","operation":{"kind":"debug","msg":"new"}},
                     {"name":"read","operation":{"kind":"debug","msg":alias}}
                 ]}
@@ -63,7 +63,7 @@ async fn block_binding_reads_current_fact_in_each_child() -> Result<()> {
         "targets":["h"], "tasks":[
             {"name":"old","operation":{"kind":"set_fact","values":{"source":"old"}}},
             {"name":"block","vars":{"alias":{"kind":"ref","path":["vars","source"]}},
-                "when":{"kind":"call","function":"eq","args":[alias,"old"]},"block":[
+                "when":{"kind":"call","function":"eq","args":[alias,{"kind":"literal","value":"old"}]},"block":[
                     {"name":"new","operation":{"kind":"set_fact","values":{"source":"new"}}},
                     {"name":"read","operation":{"kind":"debug","msg":alias}}
                 ]}

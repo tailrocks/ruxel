@@ -2,6 +2,11 @@ use super::*;
 
 #[derive(Default)]
 pub(super) struct Precise(pub(super) Fake);
+impl crate::expression::LookupResolver for Precise {
+    fn resolve(&self, _: &crate::expression::Expr) -> Result<Value> {
+        anyhow::bail!("unexpected lookup")
+    }
+}
 impl Backend for Precise {
     fn evaluate_layered_expression(
         &mut self,
@@ -9,7 +14,7 @@ impl Backend for Precise {
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        super::super::fallback::evaluate_layers(self, value, scope, layers)
+        evaluate_standard_layered(self, value, scope, layers)
     }
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
         self.0.evaluate(value, scope)

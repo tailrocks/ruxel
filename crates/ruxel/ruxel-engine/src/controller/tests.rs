@@ -39,16 +39,19 @@ struct Fake {
     events: Vec<Value>,
     results: std::collections::VecDeque<Value>,
 }
+impl crate::expression::LookupResolver for Fake {
+    fn resolve(&self, _: &crate::expression::Expr) -> Result<Value> {
+        anyhow::bail!("unexpected lookup")
+    }
+}
 impl Backend for Fake {
-    // This test double retains its historical eager evaluator; production
-    // backends must implement demand-driven layered resolution.
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        super::fallback::evaluate_layers(self, value, scope, layers)
+        evaluate_standard_layered(self, value, scope, layers)
     }
     fn evaluate_task_expression(
         &mut self,
