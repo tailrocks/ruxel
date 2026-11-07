@@ -117,7 +117,7 @@ impl<B: Backend> Runner<'_, B> {
         })?;
         if matches!(kind, "pause" | "debug" | "fail" | "assert" | "set_fact") {
             return self
-                .local_once(task, kind, layer, &params, &tracked_params, sensitive)
+                .local_once(kind, layer, &params, &tracked_params, sensitive)
                 .await;
         }
         let mut environment = std::collections::HashMap::new();
@@ -192,13 +192,13 @@ impl<B: Backend> Runner<'_, B> {
                     ledger_key: String::new(),
                     source_content: None,
                 }],
-                check_mode_override: task.get("checkMode").and_then(Value::as_bool) == Some(false),
+                check_mode_override: layer.check_mode == Some(false),
                 no_log: sensitive,
                 become_user: layer.become_user.clone().unwrap_or_default(),
                 environment,
                 halt_on_failure: true,
                 force_check_mode: matches!(self.options.mode, Mode::Check | Mode::Diff)
-                    || task.get("checkMode").and_then(Value::as_bool) == Some(true),
+                    || layer.check_mode == Some(true),
             },
         };
         let key = ledger_key(&request.task, &request.task.iterations[0])?;
