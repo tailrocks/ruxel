@@ -111,3 +111,25 @@ fn retries_distinguish_omitted_zero_and_invalid_negative() -> Result {
     );
     Ok(())
 }
+
+#[test]
+fn file_requires_canonical_path() -> Result {
+    for expression in [
+        "new R.File {}",
+        r#"new R.File { dest = "/tmp/link" }"#,
+        r#"new R.File { path = "/tmp/link"; dest = "/tmp/other" }"#,
+        r#"new R.File { path = "/tmp/link"; state = "link" }"#,
+    ] {
+        assert!(evaluate(expression).is_err(), "{expression}");
+    }
+    for path in [
+        r#""/tmp/link""#,
+        r#"new R.Ref { path { "vars"; "target" } }"#,
+    ] {
+        let value = evaluate(&format!(
+            r#"new R.File {{ path = {path}; state = "link"; src = "/tmp/source" }}"#
+        ))?;
+        assert!(!value.as_object().ok_or("file object")?.contains_key("dest"));
+    }
+    Ok(())
+}

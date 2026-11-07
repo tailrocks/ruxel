@@ -125,11 +125,10 @@ class Copy {
 
 class File {
   fixed kind = "file"
-  dest: Text? = null
   group: Text? = null
   mode: FileMode? = null
   owner: Text? = null
-  path: Text?((this != null && dest == null || this == null && dest != null) && (state is Expr || state != "link" || src != null)) = null
+  path: Text(state is Expr || state != "link" || src != null)
   recurse: Flag? = null
   src: Text? = null
   state: ("file"|"directory"|"absent"|"link"|Expr)? = null

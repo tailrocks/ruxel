@@ -144,3 +144,6 @@ fn recursive_attributes_repair_unreadable_root() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[path = "tests/path.rs"]
+mod path;

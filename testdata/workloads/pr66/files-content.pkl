@@ -18,7 +18,7 @@ output {
       preTasks { new { name = "Create synthetic fixture root"; operation = new Ruxel.File { path = "__RUN_ROOT__/files"; state = "directory"; owner = "root"; group = "root"; mode = "0755" } } }
       tasks {
         new { name = "Exercise recursive directory attributes"; operation = new Ruxel.File { path = "__RUN_ROOT__/files/tree"; state = "directory"; owner = "root"; group = "root"; mode = "0700"; recurse = true } }
-        new { name = "Exercise destination alias"; operation = new Ruxel.File { dest = "__RUN_ROOT__/files/dest-dir"; state = "directory" } }
+        new { name = "Exercise directory path"; operation = new Ruxel.File { path = "__RUN_ROOT__/files/dest-dir"; state = "directory" } }
         new { name = "Exercise symbolic link"; operation = new Ruxel.File { path = "__RUN_ROOT__/files/tree-link"; src = "__RUN_ROOT__/files/tree"; state = "link" } }
         new { name = "Exercise absent path"; operation = new Ruxel.File { path = "__RUN_ROOT__/files/absent"; state = "absent" } }
         new {
