@@ -127,6 +127,7 @@ struct ContextLayer {
     definitions: Vec<Map<String, Value>>,
     environment: Map<String, Value>,
     become_user: Option<String>,
+    delegate_to: Option<Value>,
     tags: Vec<String>,
     no_log: bool,
     control_sensitive: bool,

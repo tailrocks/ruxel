@@ -36,6 +36,9 @@ impl<B: Backend> Runner<'_, B> {
         if let Some(user) = string(task, "becomeUser") {
             layer.become_user = Some(user.to_owned());
         }
+        if let Some(delegate) = task.get("delegateTo").filter(|value| !value.is_null()) {
+            layer.delegate_to = Some(delegate.clone());
+        }
         layer.tags.extend(
             array(task, "tags")
                 .iter()
