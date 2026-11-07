@@ -7,6 +7,7 @@ mod excluded_vars;
 mod fact_control;
 mod failures;
 mod flows;
+mod handler_control;
 mod handler_failure;
 mod inventory;
 mod layer_vars;

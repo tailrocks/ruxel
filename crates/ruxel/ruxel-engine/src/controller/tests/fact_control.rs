@@ -40,7 +40,7 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         host: "h".into(),
         scope: TrackedValue::public(json!({})),
         handlers: vec![],
-        notified: BTreeSet::new(),
+        notified: BTreeMap::new(),
         handling: false,
         recap: Recap::default(),
         next_id: 1,

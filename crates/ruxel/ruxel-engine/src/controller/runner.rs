@@ -329,12 +329,7 @@ impl<B: Backend> Runner<'_, B> {
         if flag(&result.value, "changed") {
             self.recap.changed += 1;
             if !is_failed {
-                self.notified.extend(
-                    array(task, "notify")
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned),
-                );
+                self.queue_handlers(task, &result);
             }
         }
         let visible = if layer.no_log || result.is_secret() {
@@ -346,41 +341,5 @@ impl<B: Backend> Runner<'_, B> {
             &json!({"host":self.host,"task":string(task,"name").unwrap_or(""),"result":visible}),
         )?;
         Ok(!is_failed || ignored)
-    }
-
-    pub(super) async fn run_handlers(&mut self, layer: &ContextLayer) -> Result<()> {
-        let handlers = self.handlers.clone();
-        let defined: std::collections::BTreeSet<_> = handlers
-            .iter()
-            .filter_map(|handler| string(handler, "name"))
-            .collect();
-        let mut executed = std::collections::BTreeSet::new();
-        for handler in &handlers {
-            if let Some(name) = string(handler, "name")
-                && !executed.contains(name)
-                && self.notified.remove(name)
-            {
-                executed.insert(name);
-                self.handling = true;
-                let result = self.task(handler, layer).await;
-                self.handling = false;
-                let result = result.map_err(|error| {
-                    if layer.no_log || flag(handler, "noLog") || layer.control_sensitive {
-                        anyhow::anyhow!("sensitive task failed")
-                    } else {
-                        error
-                    }
-                })?;
-                if !result {
-                    break;
-                }
-            }
-        }
-        self.notified
-            .retain(|name| !defined.contains(name.as_str()));
-        if !self.notified.is_empty() {
-            bail!("unknown notified handlers: {:?}", self.notified);
-        }
-        Ok(())
     }
 }

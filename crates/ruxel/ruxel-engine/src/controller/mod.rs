@@ -185,7 +185,7 @@ struct Runner<'a, B> {
     host: String,
     scope: TrackedValue,
     handlers: Vec<Value>,
-    notified: BTreeSet<String>,
+    notified: BTreeMap<String, bool>,
     handling: bool,
     recap: Recap,
     next_id: u64,
@@ -324,7 +324,7 @@ pub async fn run<B: Backend>(
                 host: host.clone(),
                 scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
-                notified: BTreeSet::new(),
+                notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),
                 next_id: 1,
@@ -375,6 +375,7 @@ pub async fn run<B: Backend>(
 }
 
 mod failure;
+mod handlers;
 pub(crate) use failure::RunFailure;
 mod ledger;
 mod loop_result;
