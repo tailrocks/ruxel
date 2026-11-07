@@ -10,7 +10,6 @@ pub(super) fn aggregate(results: Vec<TrackedValue>, source_sensitive: bool) -> T
     let mut result = json!({"changed":changed,"failed":failed,"skipped":skipped,"results":results.into_iter().map(|value| value.value).collect::<Vec<_>>()});
     if empty {
         result["skip_reason"] = json!("No items in the list");
-        result["skipped_reason"] = json!("No items in the list");
     } else {
         result["msg"] = json!(if failed {
             "One or more items failed"

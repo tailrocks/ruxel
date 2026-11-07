@@ -23,6 +23,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
+- Duplicate legacy loop-result reason field; empty loops expose `skip_reason`.
 - YAML and INI configuration input and MiniJinja authoring.
 - Ansible parity tooling, Ansible-era docs, and agent modules no schema reaches; recoverable from tag `ansible-parity-final`.
 - `justfile`; `mise run check` replaces `just check`. The Python Ansible-parity suites no longer run by default.
