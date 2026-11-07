@@ -1,7 +1,8 @@
 use super::{TrackedValue, failed, flag, json};
 
-pub(super) fn aggregate(results: Vec<TrackedValue>) -> TrackedValue {
-    let sensitive = results.iter().any(TrackedValue::is_secret);
+pub(super) fn aggregate(results: Vec<TrackedValue>, source_sensitive: bool) -> TrackedValue {
+    let sensitive =
+        (results.is_empty() && source_sensitive) || results.iter().any(TrackedValue::is_secret);
     let changed = results.iter().any(|value| flag(&value.value, "changed"));
     let failed = results.iter().any(|value| failed(&value.value));
     let skipped = results.iter().all(|value| flag(&value.value, "skipped"));

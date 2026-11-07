@@ -200,6 +200,7 @@ impl<B: Backend> Runner<'_, B> {
     )]
     pub(super) async fn operation(&mut self, task: &Value, layer: &ContextLayer) -> Result<bool> {
         let mut loop_layer = layer.clone();
+        let mut loop_source_sensitive = false;
         let items = if let Some(expr) = task.get("loop").filter(|v| !v.is_null()) {
             let value = self.evaluate_selection(
                 task,
@@ -208,6 +209,7 @@ impl<B: Backend> Runner<'_, B> {
                 expr,
                 &mut std::collections::BTreeSet::new(),
             )?;
+            loop_source_sensitive = value.is_secret();
             let items = value
                 .value
                 .as_array()
@@ -295,7 +297,7 @@ impl<B: Backend> Runner<'_, B> {
             results.push(result);
         }
         let result = if looped {
-            super::loop_result::aggregate(results)
+            super::loop_result::aggregate(results, loop_source_sensitive)
         } else {
             results
                 .into_iter()

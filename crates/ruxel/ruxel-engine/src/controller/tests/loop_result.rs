@@ -26,3 +26,30 @@ async fn loop_summary_fields_are_available_in_registered_results() -> Result<()>
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn empty_loop_preserves_source_sensitivity_in_events_and_registered_result() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"public loop","loop":{"kind":"literal","value":[]},"operation":{"kind":"debug","msg":"unused"}},
+        {"name":"private fact","noLog":true,"operation":{"kind":"set_fact","values":{"privateList":{"kind":"literal","value":[]}}}},
+        {"name":"private loop","register":"privateLoop","loop":{"kind":"ref","path":["vars","privateList"]},"operation":{"kind":"debug","msg":"unused"}},
+        {"name":"private result","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","privateLoop","skip_reason"]}}}}
+    ]}]});
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].skipped, 2);
+    assert_eq!(
+        backend.events[0]["result"]["skip_reason"],
+        "No items in the list"
+    );
+    assert_eq!(backend.events[2]["result"]["censored"], true);
+    assert_eq!(backend.events[3]["result"]["censored"], true);
+    Ok(())
+}
