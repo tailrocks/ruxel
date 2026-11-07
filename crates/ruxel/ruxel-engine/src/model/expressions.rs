@@ -135,6 +135,12 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
         Some("fnox" | "synthetic") => ensure!(required("key"), "lookup requires key"),
         Some("op") => {
             ensure!(
+                object
+                    .get("reference")
+                    .is_none_or(|v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())),
+                "lookup reference must not be empty"
+            );
+            ensure!(
                 required("reference") || required("item"),
                 "lookup requires item or reference"
             );

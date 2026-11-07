@@ -30,9 +30,13 @@ impl Lookups {
             "fnox" => Lookup::Fnox {
                 key: required(key)?,
             },
-            "op" if reference.is_some() => Lookup::OnePasswordUri {
-                reference: required(reference)?,
-            },
+            "op" if reference.is_some() => {
+                let reference = required(reference)?;
+                if reference.is_empty() {
+                    bail!("lookup reference must not be empty");
+                }
+                Lookup::OnePasswordUri { reference }
+            }
             "op" => Lookup::OnePassword {
                 vault: vault.clone().unwrap_or_else(|| "Private".to_owned()),
                 item: required(item)?,

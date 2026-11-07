@@ -41,6 +41,10 @@ fn item_lookups_default_vault_and_field_without_losing_explicit_values() -> Resu
             "default-value",
         ),
         (
+            json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "reference":null}),
+            "default-value",
+        ),
+        (
             json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":"username"}),
             "named-value",
         ),
@@ -59,5 +63,9 @@ fn item_lookups_default_vault_and_field_without_losing_explicit_values() -> Resu
             json!(expected)
         );
     }
+    let empty_reference: Expr = serde_json::from_value(
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "reference":""}),
+    )?;
+    assert!(evaluate(&empty_reference, &Scope::default(), &resolver).is_err());
     Ok(())
 }

@@ -128,6 +128,7 @@ fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Res
     }
     for lookup in [
         json!({"kind":"lookup", "provider":"op"}),
+        json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "reference":""}),
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "vault":""}),
         json!({"kind":"lookup", "provider":"op", "item":"synthetic-item", "field":""}),
     ] {
