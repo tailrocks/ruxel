@@ -48,7 +48,7 @@ class Task {
   `loop`: Expr? = null
   loopVar: String(!List("vars", "variables", "facts", "results", "inventoryHost", "setFacts").contains(this)) = "item"
   loopLabel: Expr? = null
-  register: String? = null
+  register: String?(this == null || block.isEmpty) = null
   notify: Listing<String>
   tags: Listing<String>
   delegateTo: Text? = null
@@ -60,7 +60,7 @@ class Task {
   until: Expr? = null
   changedWhen: Expr? = null
   failedWhen: Expr? = null
-  ignoreErrors: Boolean = false
+  ignoreErrors: Boolean(!this || block.isEmpty) = false
   checkMode: Boolean? = null
   block: Listing<Task>
   rescue: Listing<Task>

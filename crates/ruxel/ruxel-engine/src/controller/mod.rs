@@ -8,6 +8,7 @@ use std::pin::Pin;
 
 mod standard_expression;
 mod types;
+mod validation;
 mod variables;
 pub use standard_expression::evaluate_standard_layered;
 pub use types::{Mode, Options, Recap, Request};
@@ -216,6 +217,7 @@ pub async fn run<B: Backend>(
     backend: &mut B,
     set_facts: &mut BTreeMap<String, TrackedValue>,
 ) -> Result<BTreeMap<String, Recap>> {
+    validation::validate(config)?;
     selected_hosts(config, options)?;
     let inventory = config.get("inventory").context("missing inventory")?;
     let hosts = object(inventory, "hosts");
