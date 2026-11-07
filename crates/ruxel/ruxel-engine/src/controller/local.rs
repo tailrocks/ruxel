@@ -85,7 +85,7 @@ impl<B: Backend> Runner<'_, B> {
                 let mut tracked_values = tracked_params
                     .get("values")
                     .context("set_fact requires values")?;
-                if layer.no_log {
+                if layer.no_log || layer.control_sensitive {
                     tracked_values.provenance = crate::expression::provenance::Provenance::Secret;
                 }
                 let mut facts = self

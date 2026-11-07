@@ -4,6 +4,7 @@ mod block_skip;
 mod block_tags;
 mod cases;
 mod excluded_vars;
+mod fact_control;
 mod failures;
 mod flows;
 mod handler_failure;
