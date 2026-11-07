@@ -1,5 +1,5 @@
 use crate::COMPILED_DENY;
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv6Net};
 use std::net::IpAddr;
 
 #[derive(Debug, thiserror::Error)]
@@ -15,11 +15,31 @@ pub struct Policy {
 pub(crate) fn normalize(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v) => v.to_ipv4_mapped().map_or(ip, IpAddr::V4),
-        _ => ip,
+        IpAddr::V4(_) => ip,
     }
 }
 
+fn mapped(net: IpNet) -> IpNet {
+    match net {
+        IpNet::V4(v4) => IpNet::V6(
+            Ipv6Net::new(v4.network().to_ipv6_mapped(), 96 + v4.prefix_len())
+                .unwrap_or_else(|_| unreachable!("IPv4 prefix is at most 32")),
+        ),
+        IpNet::V6(_) => net,
+    }
+}
+
+pub(crate) fn intersects(a: IpNet, b: IpNet) -> bool {
+    let a = mapped(a);
+    let b = mapped(b);
+    a.contains(&b.network()) || b.contains(&a.network())
+}
+
 impl Policy {
+    /// Construct a policy with the union of the compiled and runtime denies.
+    ///
+    /// # Errors
+    /// Returns an error if any address or network is invalid.
     pub fn new(runtime_allow: &[String], runtime_deny: &[String]) -> Result<Self, PolicyError> {
         let parse = |s: &str| {
             s.parse::<IpNet>()
@@ -39,12 +59,17 @@ impl Policy {
                 .collect::<Result<_, _>>()?,
         })
     }
+    #[must_use]
     pub fn compiled_entries() -> usize {
         COMPILED_DENY.len()
     }
     pub(crate) fn decide(&self, ip: IpAddr) -> Result<(), String> {
         let ip = normalize(ip);
-        if let Some(net) = self.deny.iter().find(|net| net.contains(&ip)) {
+        if let Some(net) = self
+            .deny
+            .iter()
+            .find(|net| intersects(**net, IpNet::from(ip)))
+        {
             return Err(format!("deny {net}"));
         }
         if !self.allow.iter().any(|net| net.contains(&ip)) {
