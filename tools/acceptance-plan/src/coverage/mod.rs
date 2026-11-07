@@ -13,9 +13,10 @@ pub fn run(root: &Path) -> Result<()> {
     if let Some(admitted) = agent::admission(&agent_source)? {
         ensure!(admitted == implemented, "agent admission/dispatch mismatch");
     }
-    retry::check(&fs::read_to_string(
-        root.join("crates/ruxel/ruxel-engine/src/controller/retry.rs"),
-    )?)?;
+    retry::check(
+        &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/retry.rs"))?,
+        &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/variables.rs"))?,
+    )?;
     let controller = controller::kinds(
         &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/operation.rs"))?,
         &fs::read_to_string(root.join("crates/ruxel/ruxel-engine/src/controller/local.rs"))?,
