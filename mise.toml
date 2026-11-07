@@ -1,7 +1,6 @@
 min_version = "2026.11.2"
 
 [tools]
-pkl = "0.32.2"
 # Operator repository standard. rust-toolchain.toml mirrors this rust
 # entry exactly; generated CI reads every version in this table.
 mr-boxington = { version = "1.29.2", workflow = "release.yml@refs/heads/main" }
