@@ -1,3 +1,5 @@
+#[path = "lvol/percentage.rs"]
+mod percentage;
 use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 
@@ -7,25 +9,42 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let lv = str_param(obj, "lv").ok_or("lvol: lv required")?;
     let size = str_param(obj, "size").ok_or("lvol: size required")?;
     let resizefs = bool_param(obj, "resizefs", false);
-    if size.contains('%') {
-        validate_percentage(size.strip_prefix('+').unwrap_or(size))?;
-    }
+    let percent = percentage::parse(size)?;
 
     let exists = lv_exists(vg, lv)?;
     let changed = if exists {
         let relative = size.starts_with('+');
-        let needs_resize = needs_resize(size, || free_extents(vg), || lv_geometry(vg, lv))?;
+        let target = percent
+            .map(|percent| {
+                let (current, extent) = lv_geometry(vg, lv)?;
+                percentage::target(
+                    percent,
+                    current,
+                    extent,
+                    geometry_value("vgs", "vg_extent_count", vg)?,
+                )
+            })
+            .transpose()?;
+        let extent_argument = target.as_ref().map(|target| target.extents.to_string());
+        let needs_resize = target.map_or_else(
+            || needs_resize(size, || free_extents(vg), || lv_geometry(vg, lv)),
+            |target| Ok(target.changed),
+        )?;
         reconcile_existing(
             resizefs,
             needs_resize,
             ctx.check_mode,
             || super::filesystem::prepare_resize(&lv_path(vg, lv)),
             || {
-                let flag = if relative { "-l" } else { "-L" };
+                let flag = if relative || extent_argument.is_some() {
+                    "-l"
+                } else {
+                    "-L"
+                };
                 let path = lv_path(vg, lv);
                 run_cmd(
                     if relative { "lvextend" } else { "lvresize" },
-                    &[flag, size, &path],
+                    &[flag, extent_argument.as_deref().unwrap_or(size), &path],
                 )
             },
             |target| super::filesystem::resize_existing(target, ctx),
@@ -46,12 +65,15 @@ fn needs_resize(
     geometry: impl FnOnce() -> Result<(u64, u64), String>,
 ) -> Result<bool, String> {
     if size.starts_with('+') {
-        if size != "+100%FREE" {
+        if !size.eq_ignore_ascii_case("+100%FREE") {
             return Err("lvol: only +100%FREE is supported for relative growth".into());
         }
         Ok(free()? > 0)
     } else if size.contains('%') {
         validate_percentage(size)?;
+        if percentage::parse(size)?.is_some() {
+            return Err("lvol: percentage target requires VG geometry".into());
+        }
         Ok(false)
     } else {
         let requested = size_bytes(size)?;
@@ -61,32 +83,7 @@ fn needs_resize(
 }
 
 fn validate_percentage(size: &str) -> Result<(), String> {
-    let valid = size.split_once('%').is_some_and(|(number, kind)| {
-        number.bytes().all(|c| c.is_ascii_digit())
-            && number
-                .parse::<u32>()
-                .is_ok_and(|value| value > 0 && value < u32::MAX)
-            && matches!(
-                kind.to_ascii_uppercase().as_str(),
-                "V" | "VG"
-                    | "L"
-                    | "LV"
-                    | "P"
-                    | "PV"
-                    | "PVS"
-                    | "F"
-                    | "FR"
-                    | "FREE"
-                    | "O"
-                    | "OR"
-                    | "ORIGIN"
-            )
-    });
-    if valid {
-        Ok(())
-    } else {
-        Err(format!("lvol: invalid percentage size {size:?}"))
-    }
+    percentage::parse(size).map(|_| ())
 }
 
 fn reconcile_existing<T>(
@@ -148,32 +145,37 @@ fn needs_absolute_resize(current: u64, extent: u64, requested: u64) -> Result<bo
     Ok(rounded > current)
 }
 
-fn lv_geometry(vg: &str, lv: &str) -> Result<(u64, u64), String> {
-    fn value(program: &str, field: &str, target: &str) -> Result<u64, String> {
-        let mut command = std::process::Command::new(program);
-        command.args([
-            "--noheadings",
-            "--units",
-            "b",
-            "--nosuffix",
-            "-o",
-            field,
-            target,
-        ]);
-        let out = super::run_checked(command)?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        let whole = text
-            .trim()
-            .split('.')
-            .next()
-            .ok_or("lvol: empty geometry")?;
+fn geometry_value(program: &str, field: &str, target: &str) -> Result<u64, String> {
+    let mut command = std::process::Command::new(program);
+    command.args([
+        "--noheadings",
+        "--units",
+        "b",
+        "--nosuffix",
+        "-o",
+        field,
+        target,
+    ]);
+    let out = super::run_checked(command)?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let text = text.trim();
+    let whole = if let Some((whole, fraction)) = text.split_once('.') {
+        if fraction.is_empty() || !fraction.bytes().all(|b| b == b'0') {
+            return Err(format!("lvol: fractional {field} geometry"));
+        }
         whole
-            .parse()
-            .map_err(|_| format!("lvol: invalid {field} geometry"))
-    }
+    } else {
+        text
+    };
+    whole
+        .parse()
+        .map_err(|_| format!("lvol: invalid {field} geometry"))
+}
+
+fn lv_geometry(vg: &str, lv: &str) -> Result<(u64, u64), String> {
     Ok((
-        value("lvs", "lv_size", &format!("{vg}/{lv}"))?,
-        value("vgs", "vg_extent_size", vg)?,
+        geometry_value("lvs", "lv_size", &format!("{vg}/{lv}"))?,
+        geometry_value("vgs", "vg_extent_size", vg)?,
     ))
 }
 
@@ -373,3 +375,7 @@ mod percent_tests;
 #[cfg(test)]
 #[path = "lvol/tests/probe.rs"]
 mod probe_tests;
+
+#[cfg(test)]
+#[path = "lvol/tests/geometry.rs"]
+mod geometry_tests;
