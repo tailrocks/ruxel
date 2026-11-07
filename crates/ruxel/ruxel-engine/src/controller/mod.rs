@@ -56,8 +56,8 @@ pub trait Backend {
         })
     }
     /// Evaluate a task expression while resolving task variables as needed.
-    /// The default conservatively resolves referenced variables; backends may
-    /// override it to preserve short-circuit evaluation within expressions.
+    /// The default uses standard lazy expression semantics and delegates
+    /// accessed lookup nodes to `evaluate_tracked`.
     ///
     /// # Errors
     /// Returns an error if an accessed variable or expression cannot be evaluated.
@@ -73,9 +73,9 @@ pub trait Backend {
         fallback::evaluate(self, value, scope, vars)
     }
     /// Evaluate an expression with ordered variable definition layers.
-    /// Backends must override this method for multiple definition layers,
-    /// resolving bindings on demand in the current scope. The default retains
-    /// the single-layer compatibility API.
+    /// The default resolves standard expression bindings on demand and delegates
+    /// accessed lookup nodes to `evaluate_tracked`. A single layer dispatches to
+    /// `evaluate_task_expression`, preserving backend overrides of that method.
     ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
@@ -85,9 +85,6 @@ pub trait Backend {
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
     ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        if layers.len() > 1 {
-            anyhow::bail!("backend does not support layered variable evaluation");
-        }
         fallback::evaluate_layers(self, value, scope, layers)
     }
     /// Prepare source-backed operations before evaluating their parameter expressions.
