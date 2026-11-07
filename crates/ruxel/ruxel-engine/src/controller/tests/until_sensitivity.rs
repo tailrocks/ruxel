@@ -1,6 +1,36 @@
 use super::fact_control::Precise;
 use super::*;
 
+#[test]
+fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
+    let mut backend = Fake::default();
+    let options = Options::default();
+    let runner = Runner {
+        backend: &mut backend,
+        options: &options,
+        host: "h".into(),
+        scope: TrackedValue::public(json!({"vars":{}})),
+        handlers: vec![],
+        notified: BTreeMap::new(),
+        handling: false,
+        recap: Recap::default(),
+        next_id: 1,
+    };
+    let layer = ContextLayer {
+        definitions: vec![
+            json!({"gate":{"kind":"lookup","provider":"synthetic","key":"fixture"}})
+                .as_object()
+                .context("parent")?
+                .clone(),
+            json!({"gate":true}).as_object().context("child")?.clone(),
+        ],
+        ..ContextLayer::default()
+    };
+    let condition = json!({"kind":"ref","path":["vars","gate"]});
+    assert!(!runner.sensitive_layered_condition(&condition, &runner.scope, &layer));
+    Ok(())
+}
+
 #[tokio::test]
 async fn lazy_sensitive_until_binding_prevents_agent_cache() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[

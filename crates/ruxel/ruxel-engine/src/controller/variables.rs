@@ -11,26 +11,40 @@ impl<B: Backend> Runner<'_, B> {
             return true;
         }
         let definitions = self.variable_layers(layer);
-        let mut names = std::collections::BTreeSet::new();
-        for variables in &definitions {
-            names.extend(super::loop_vars::required(variables, value));
-        }
-        loop {
-            let before = names.len();
-            for variables in &definitions {
-                for name in names.clone() {
-                    if let Some(definition) = variables.get(&name) {
-                        if super::operation::sensitive_condition(definition, scope) {
-                            return true;
-                        }
-                        names.extend(super::loop_vars::required(variables, definition));
-                    }
-                }
+        let names: Map<_, _> = definitions
+            .iter()
+            .flat_map(|vars| vars.keys())
+            .map(|name| (name.clone(), Value::Null))
+            .collect();
+        let mut pending: Vec<_> = super::loop_vars::required(&names, value)
+            .into_iter()
+            .map(|name| (definitions.len(), name))
+            .collect();
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some((ceiling, name)) = pending.pop() {
+            let Some(index) = (0..ceiling)
+                .rev()
+                .find(|index| definitions[*index].contains_key(&name))
+            else {
+                continue;
+            };
+            if !visited.insert((index, name.clone())) {
+                continue;
             }
-            if names.len() == before {
-                return false;
+            let definition = &definitions[index][&name];
+            if super::operation::sensitive_condition(definition, scope) {
+                return true;
+            }
+            for dependency in super::loop_vars::required(&names, definition) {
+                let ceiling = if dependency == name {
+                    index
+                } else {
+                    definitions.len()
+                };
+                pending.push((ceiling, dependency));
             }
         }
+        false
     }
 
     pub(super) fn variable_layers(&self, layer: &ContextLayer) -> Vec<Map<String, Value>> {
