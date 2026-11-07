@@ -85,6 +85,7 @@ run = ["alint validate-config", "alint check --fail-on-warning"]
 description = "Safe native Pkl acceptance against actual local agent subprocesses"
 run = [
   "cargo build --locked -p ruxel -p ruxel-agent",
+  "perl -T -MConfig -MFcntl -MMath::BigInt -MPOSIX -e 1",
   "cargo test --locked --manifest-path tools/acceptance-xfs/Cargo.toml",
   "cargo test --locked --manifest-path tools/acceptance-plan/Cargo.toml",
   "cargo run --locked --manifest-path tools/acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent",

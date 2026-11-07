@@ -11,6 +11,15 @@ jobs = ["alint"]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
 
+[[stacks.rust.inputs]]
+globs = [
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
+  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
+]
+packages = ["ruxel-acceptance-xfs"]
+
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
