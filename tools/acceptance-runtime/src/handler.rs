@@ -116,7 +116,9 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         .filter(|e| e["host"] == "fixture" && e.get("recap").is_some())
         .collect();
     ensure!(
-        recaps.len() == 1 && recaps[0]["recap"]["failed"] == 0,
+        recaps.len() == 1
+            && recaps[0]["recap"]["failed"] == 0
+            && recaps[0]["recap"]["skipped"] == 2,
         "other selection failed recap"
     );
     let before = snapshot(&payload)?;
