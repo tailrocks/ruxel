@@ -21,6 +21,10 @@ globs = [
 ]
 packages = ["ruxel-acceptance-xfs"]
 
+[[stacks.rust.inputs]]
+globs = ["schema/Ruxel.pkl", "tests/schema/valid.pkl"]
+packages = ["ruxel-config"]
+
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
