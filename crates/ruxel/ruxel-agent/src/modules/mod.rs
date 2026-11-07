@@ -4,7 +4,6 @@
 )]
 #![expect(
     clippy::let_underscore_must_use,
-    clippy::match_same_arms,
     reason = "replaced by the Ruxel rewrite"
 )]
 
