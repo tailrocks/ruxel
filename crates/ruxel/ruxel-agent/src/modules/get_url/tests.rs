@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-struct Root(PathBuf);
+pub(super) struct Root(pub(super) PathBuf);
 
 impl Root {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
             "ruxel-download-test-{}-{}",
             std::process::id(),

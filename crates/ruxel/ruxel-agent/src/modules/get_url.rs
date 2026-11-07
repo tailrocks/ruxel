@@ -159,3 +159,11 @@ mod tests {
 #[cfg(test)]
 #[path = "get_url/tests.rs"]
 mod download_tests;
+
+#[cfg(all(test, target_vendor = "apple"))]
+#[path = "get_url/tests/acl.rs"]
+mod acl_tests;
+
+#[cfg(test)]
+#[path = "get_url/tests/parents.rs"]
+mod parent_tests;

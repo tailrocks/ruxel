@@ -16,8 +16,14 @@ pub(super) struct Download {
 impl Download {
     pub(super) fn new(dest: &Path) -> Result<Self, String> {
         let parent_path = dest.parent().filter(|p| !p.as_os_str().is_empty());
-        let parent =
-            File::open(parent_path.unwrap_or_else(|| Path::new("."))).map_err(|e| e.to_string())?;
+        let parent = File::from(
+            rustix::fs::open(
+                parent_path.unwrap_or_else(|| Path::new(".")),
+                parent_flags(),
+                Mode::empty(),
+            )
+            .map_err(|e| e.to_string())?,
+        );
         for _ in 0..128 {
             let name = format!(
                 ".ruxel-download-{}-{}",
@@ -36,28 +42,38 @@ impl Download {
 
     fn open(parent: File, name: String) -> Result<Self, String> {
         let opened = (|| {
-            let directory = File::from(openat(
-                &parent,
-                name.as_str(),
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::empty(),
-            )?);
-            let file = File::from(openat(
-                &directory,
-                "payload",
-                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::from_raw_mode(0o666),
-            )?);
-            Ok::<_, rustix::io::Errno>((directory, file))
+            let directory = File::from(
+                openat(
+                    &parent,
+                    name.as_str(),
+                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|e| e.to_string())?,
+            );
+            let file = File::from(
+                openat(
+                    &directory,
+                    "payload",
+                    OFlags::WRONLY
+                        | OFlags::CREATE
+                        | OFlags::EXCL
+                        | OFlags::NOFOLLOW
+                        | OFlags::CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|e| e.to_string())?,
+            );
+            Ok::<_, String>((directory, file))
         })();
         let (directory, file) = match opened {
             Ok(pair) => pair,
             Err(e) => {
                 let _ = unlinkat(&parent, name.as_str(), AtFlags::REMOVEDIR);
-                return Err(e.to_string());
+                return Err(e);
             }
         };
-        let staged = Self {
+        let mut staged = Self {
             parent,
             directory,
             name,
@@ -70,6 +86,19 @@ impl Download {
         if metadata.uid() != payload.uid() || metadata.mode() & 0o777 != 0o700 {
             return Err("get_url: unsafe download directory".into());
         }
+        clear_inherited_acl(&staged.directory)?;
+        // The empty identity file may have inherited an ACL before sanitization.
+        // Unlink it, so any previously opened handle cannot access downloaded bytes.
+        unlinkat(&staged.directory, "payload", AtFlags::empty()).map_err(|e| e.to_string())?;
+        staged.file = File::from(
+            openat(
+                &staged.directory,
+                "payload",
+                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::from_raw_mode(0o666),
+            )
+            .map_err(|e| e.to_string())?,
+        );
         Ok(staged)
     }
 
@@ -80,6 +109,42 @@ impl Download {
         self.file.sync_all().map_err(|e| e.to_string())?;
         renameat(&self.directory, "payload", &self.parent, name).map_err(|e| e.to_string())
     }
+}
+
+fn parent_flags() -> OFlags {
+    let flags = OFlags::DIRECTORY | OFlags::CLOEXEC;
+    #[cfg(target_os = "linux")]
+    {
+        flags | OFlags::PATH
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        flags | OFlags::from_bits_retain(libc::O_SEARCH.cast_unsigned())
+    }
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+    {
+        flags | OFlags::RDONLY
+    }
+}
+
+pub(super) fn clear_inherited_acl(directory: &File) -> Result<(), String> {
+    // chmod's ACL operation accepts the held directory on macOS, unlike pathname
+    // traversal through /dev/fd/N/.; never address the replaceable staging name.
+    #[cfg(target_vendor = "apple")]
+    {
+        let status = std::process::Command::new("/bin/chmod")
+            .args(["-N", "/dev/fd/0"])
+            .env_clear()
+            .stdin(directory.try_clone().map_err(|e| e.to_string())?)
+            .output()
+            .map_err(|e| format!("get_url: cannot clear staging ACL: {e}"))?;
+        if !status.status.success() {
+            return Err("get_url: cannot clear staging ACL".into());
+        }
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    let _ = directory;
+    Ok(())
 }
 
 impl Drop for Download {
