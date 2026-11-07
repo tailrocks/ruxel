@@ -163,7 +163,18 @@ impl<B: Backend> Runner<'_, B> {
                         self.evaluate_selection(task, &mut layer, None, condition, &mut resolved)?;
                     layer.control_sensitive |= condition.is_secret();
                     if !truth(&condition.value) {
-                        self.recap.skipped += 1;
+                        for child in array(task, "block") {
+                            self.recap.skipped += 1;
+                            let result = if layer.no_log
+                                || flag(child, "noLog")
+                                || layer.control_sensitive
+                            {
+                                json!({"censored":true,"changed":false,"failed":false})
+                            } else {
+                                json!({"skipped":true,"changed":false})
+                            };
+                            self.backend.event(&json!({"host":self.host,"task":string(child,"name").unwrap_or(""),"result":result}))?;
+                        }
                         return Ok(true);
                     }
                 }

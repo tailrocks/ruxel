@@ -1,5 +1,6 @@
 use super::*;
 
+mod block_skip;
 mod cases;
 mod excluded_vars;
 mod failures;
