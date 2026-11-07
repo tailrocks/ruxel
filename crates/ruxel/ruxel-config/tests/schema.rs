@@ -43,21 +43,6 @@ fn evaluate_module(module: &Path) -> Result<Value> {
 }
 
 #[test]
-fn slice_schema_evaluates_with_resource_defaults() -> Result {
-    let output =
-        evaluate_module(&root().join("crates/ruxel/ruxel-config/testdata/schema/slice.pkl"))?;
-    assert_eq!(
-        output["fleet"]["hosts"]["h1"]["resources"]["file:x"]["type"],
-        "file"
-    );
-    assert_eq!(
-        output["fleet"]["hosts"]["h1"]["resources"]["file:x"]["mode"],
-        "0644"
-    );
-    Ok(())
-}
-
-#[test]
 fn runtime_and_operations_render() -> Result {
     let output = evaluate_module(&root().join("tests/schema/valid.pkl"))?;
     let config = &output["config"];

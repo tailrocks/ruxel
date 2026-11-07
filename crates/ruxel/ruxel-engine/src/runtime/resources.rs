@@ -1,7 +1,10 @@
 use crate::controller::Request;
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::{Component, Path},
+};
 
 #[derive(Default)]
 pub(super) struct Resources {
@@ -12,14 +15,26 @@ pub(super) struct Resources {
 fn contains_path(value: &Value, paths: &BTreeSet<String>) -> bool {
     match value {
         Value::String(candidate) => paths.iter().any(|tracked| {
-            let a = Path::new(candidate);
-            let b = Path::new(tracked);
+            let Some(a) = comparable_path(candidate) else {
+                return true;
+            };
+            let Some(b) = comparable_path(tracked) else {
+                return true;
+            };
             a.starts_with(b) || b.starts_with(a)
         }),
         Value::Array(values) => values.iter().any(|v| contains_path(v, paths)),
         Value::Object(values) => values.values().any(|v| contains_path(v, paths)),
         _ => false,
     }
+}
+
+fn comparable_path(value: &str) -> Option<&Path> {
+    let path = Path::new(value);
+    // Remote cwd and symlink identities are unavailable here. Collapsing `..`
+    // locally could select the wrong path when a preceding component is a link.
+    (path.is_absolute() && !path.components().any(|part| part == Component::ParentDir))
+        .then_some(path)
 }
 
 impl Resources {
@@ -57,7 +72,11 @@ impl Resources {
                     };
                     for value in &params {
                         if let Some(path) = value.get(key).and_then(Value::as_str) {
-                            self.paths.insert(path.to_owned());
+                            if comparable_path(path).is_some() {
+                                self.paths.insert(path.to_owned());
+                            } else {
+                                self.unknown_effects = true;
+                            }
                         } else {
                             self.unknown_effects = true;
                         }
@@ -72,48 +91,4 @@ impl Resources {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ruxel_proto::v1;
-    use serde_json::json;
-
-    fn request(module: &str, params: &Value) -> Result<Request> {
-        Ok(Request {
-            host: "fixture".into(),
-            task: v1::RenderedTask {
-                module: module.into(),
-                iterations: vec![v1::Iteration {
-                    params_json: serde_json::to_vec(params)?,
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-        })
-    }
-
-    #[test]
-    fn tracks_sensitive_paths_and_unknown_side_effects_per_destination() -> Result<()> {
-        let mut resources = Resources::default();
-        assert!(resources.observe(
-            &request("copy", &json!({"dest":"/tmp/fixture-private"}))?,
-            true
-        )?);
-        assert!(!resources.observe(
-            &request("slurp", &json!({"src":"/tmp/fixture-public"}))?,
-            false
-        )?);
-        assert!(resources.observe(
-            &request("slurp", &json!({"src":"/tmp/fixture-private"}))?,
-            false
-        )?);
-        assert!(resources.observe(
-            &request("shell", &json!({"cmd":"cat /tmp/fixture-private"}))?,
-            false
-        )?);
-        assert!(resources.observe(&request("shell", &json!({"cmd":"synthetic"}))?, true)?);
-        assert!(resources.observe(&request("slurp", &json!({"src":"/tmp/any"}))?, false)?);
-        let mut other_destination = Resources::default();
-        assert!(!other_destination.observe(&request("slurp", &json!({"src":"/tmp/any"}))?, false)?);
-        Ok(())
-    }
-}
+mod tests;

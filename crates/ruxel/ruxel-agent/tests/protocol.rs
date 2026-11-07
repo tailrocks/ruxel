@@ -451,6 +451,70 @@ fn failed_task_halts_remaining_batch_when_requested() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn sigterm_finishes_inflight_task_and_flushes_ledger() {
+    let dir = temp_dir("sigterm-batch");
+    let first = dir.join("first");
+    let last = dir.join("must-not-exist");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("sigterm", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    let task = |id, module: &str, params| v1::RenderedTask {
+        task_id: id,
+        module: module.into(),
+        rendered: true,
+        iterations: vec![v1::Iteration {
+            params_json: serde_json::to_vec(&params).unwrap(),
+            ledger_key: format!("signal-{id}"),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![
+                    task(
+                        1,
+                        "copy",
+                        serde_json::json!({"dest": first, "content": "saved"}),
+                    ),
+                    task(2, "command", serde_json::json!({"argv": ["sleep", "1"]})),
+                    task(
+                        3,
+                        "copy",
+                        serde_json::json!({"dest": last, "content": "wrong"}),
+                    ),
+                ],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "changed");
+    let start: v1::Event = read_frame(&mut stdout).unwrap().expect("second task start");
+    assert!(matches!(start.msg, Some(v1::event::Msg::TaskStart(_))));
+    assert!(
+        Command::new("kill")
+            .args(["-TERM", &agent.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("in-flight result");
+    assert!(matches!(event.msg, Some(v1::event::Msg::TaskResult(_))));
+    assert_eq!(agent.wait().unwrap().code(), Some(0));
+    assert!(!last.exists());
+    assert_ne!(
+        std::fs::read(dir.join("ledger/ledger.json")).unwrap(),
+        [] as [u8; 0]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn assert_reconnects(state_dir: &std::path::Path, run_id: &str) {
     let mut agent = spawn_agent(state_dir);
     let mut stdin = agent.stdin.take().unwrap();

@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Ruxel.pkl schema v0.
 - Engine secret wrappers, value redaction, and secret-aware ledger keys.
+- JSON, YAML-compatible JSON, and TOML rendering for resolved configuration values.
 - Typed Pkl configuration, evaluation via pklr, and `ruxel config dump`.
 - Controller commands for plan, check, diff, and apply, with synthetic local acceptance coverage in progress.
 - alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
@@ -17,6 +17,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Agents finish the current iteration and flush the ledger on SIGTERM or SIGINT during a batch.
+- Sensitive-resource tracking treats parent traversal and relative remote paths conservatively.
 - Block check mode reaches nested tasks, rescue/always tasks and controller pauses; child overrides take precedence.
 - Workspace lints from the operator's repository standard, clippy configuration.
 - Crates moved to `crates/<group>/<package>` (repository policy).
