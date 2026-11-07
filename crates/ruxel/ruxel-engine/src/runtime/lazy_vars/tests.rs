@@ -5,6 +5,7 @@ use crate::{
     secrets::Resolver,
     transport,
 };
+use anyhow::Context;
 use serde_json::json;
 use std::{
     path::PathBuf,
@@ -76,5 +77,52 @@ fn inherited_override_and_secret_memo_keep_provenance() -> Result<()> {
     );
     assert_eq!(evaluated.len(), 2);
     assert_eq!(execution.lookups.values.lock().expect("lock").len(), 1);
+    Ok(())
+}
+
+#[test]
+fn layered_bindings_resolve_self_overrides_lazily_with_provenance() -> Result<()> {
+    let execution = execution()?;
+    let parent = json!({"name":{"kind":"literal","value":"parent"},"unused":{"kind":"ref","path":["results","future"]},"secret":{"kind":"lookup","provider":"synthetic","key":"synthetic-marker"}});
+    let child = json!({"name":{"kind":"call","function":"concat","args":[{"kind":"ref","path":["vars","name"]},{"kind":"literal","value":"-child"}]}});
+    let layers = [
+        parent.as_object().context("parent")?.clone(),
+        child.as_object().context("child")?.clone(),
+    ];
+    let scope = TrackedValue::public(json!({"vars":{},"results":{}}));
+    let expression = json!({"kind":"list","items":[{"kind":"ref","path":["vars","name"]},{"kind":"ref","path":["vars","secret"]},{"kind":"ref","path":["vars","secret"]}]});
+    let (value, resolved) = evaluate_layers(&execution, &expression, &scope, &layers)?;
+    assert_eq!(
+        value.redacted(),
+        json!(["parent-child", "[REDACTED]", "[REDACTED]"])
+    );
+    assert_eq!(resolved["name"].value, "parent-child");
+    assert!(!resolved.contains_key("unused"));
+    assert_eq!(execution.lookups.values.lock().expect("lock").len(), 1);
+    Ok(())
+}
+
+#[test]
+fn layered_binding_cycles_fail_without_resolving_unrelated_definitions() -> Result<()> {
+    let execution = execution()?;
+    let definitions = json!({"left":{"kind":"ref","path":["vars","right"]},"right":{"kind":"ref","path":["vars","left"]},"safe":{"kind":"literal","value":"ok"}});
+    let layers = [definitions.as_object().context("definitions")?.clone()];
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let (safe, _) = evaluate_layers(
+        &execution,
+        &json!({"kind":"ref","path":["vars","safe"]}),
+        &scope,
+        &layers,
+    )?;
+    assert_eq!(safe.value, "ok");
+    assert!(
+        evaluate_layers(
+            &execution,
+            &json!({"kind":"ref","path":["vars","left"]}),
+            &scope,
+            &layers
+        )
+        .is_err()
+    );
     Ok(())
 }

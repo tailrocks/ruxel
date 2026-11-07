@@ -9,44 +9,50 @@ use std::{cell::RefCell, collections::BTreeMap};
 
 struct TaskVariables<'a> {
     execution: &'a Execution,
-    definitions: &'a Map<String, Value>,
+    definitions: &'a [Map<String, Value>],
     scope: &'a TrackedValue,
-    resolved: RefCell<BTreeMap<String, TrackedValue>>,
-    errors: RefCell<BTreeMap<String, anyhow::Error>>,
-    active: RefCell<Vec<String>>,
+    resolved: RefCell<BTreeMap<(usize, String), TrackedValue>>,
+    errors: RefCell<BTreeMap<(usize, String), anyhow::Error>>,
+    active: RefCell<Vec<(usize, String)>>,
 }
 
 impl TaskVariables<'_> {
     fn get(&self, name: &str) -> Result<Option<TrackedValue>> {
-        if let Some(value) = self.resolved.borrow().get(name) {
-            return Ok(Some(value.clone()));
-        }
-        if let Some(error) = self.errors.borrow().get(name) {
-            return Err(provenance::copy_evaluation_error(error));
-        }
-        let Some(definition) = self.definitions.get(name) else {
+        let ceiling = self
+            .active
+            .borrow()
+            .last()
+            .and_then(|(layer, active)| (active == name).then_some(*layer))
+            .unwrap_or(self.definitions.len());
+        let Some(index) = (0..ceiling)
+            .rev()
+            .find(|index| self.definitions[*index].contains_key(name))
+        else {
             return Ok(None);
         };
-        if self.active.borrow().last().is_some_and(|key| key == name) {
-            return Ok(None);
+        let binding = (index, name.to_owned());
+        if let Some(value) = self.resolved.borrow().get(&binding) {
+            return Ok(Some(value.clone()));
         }
-        if self.active.borrow().iter().any(|key| key == name) {
+        if let Some(error) = self.errors.borrow().get(&binding) {
+            return Err(provenance::copy_evaluation_error(error));
+        }
+        if self.active.borrow().contains(&binding) {
             bail!("cyclic task variable reference");
         }
-        self.active.borrow_mut().push(name.to_owned());
+        let definition = &self.definitions[index][name];
+        self.active.borrow_mut().push(binding.clone());
         let result = self.evaluate(definition);
         self.active.borrow_mut().pop();
         let value = match result {
             Ok(value) => value,
             Err(error) => {
                 let copy = provenance::copy_evaluation_error(&error);
-                self.errors.borrow_mut().insert(name.to_owned(), error);
+                self.errors.borrow_mut().insert(binding, error);
                 return Err(copy);
             }
         };
-        self.resolved
-            .borrow_mut()
-            .insert(name.to_owned(), value.clone());
+        self.resolved.borrow_mut().insert(binding, value.clone());
         Ok(Some(value))
     }
 
@@ -96,7 +102,7 @@ impl VariableResolver for TaskVariables<'_> {
             let mut vars = scope
                 .get("vars")
                 .unwrap_or_else(|| TrackedValue::public(serde_json::json!({})));
-            for name in self.definitions.keys() {
+            for name in self.definitions.iter().flat_map(|layer| layer.keys()) {
                 if let Some(value) = self.get(name)? {
                     vars.insert(name.clone(), value)?;
                 }
@@ -129,6 +135,15 @@ pub(super) fn evaluate(
     scope: &TrackedValue,
     definitions: &Map<String, Value>,
 ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+    evaluate_layers(execution, value, scope, std::slice::from_ref(definitions))
+}
+
+fn evaluate_layers(
+    execution: &Execution,
+    value: &Value,
+    scope: &TrackedValue,
+    definitions: &[Map<String, Value>],
+) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
     let variables = TaskVariables {
         execution,
         definitions,
@@ -138,7 +153,11 @@ pub(super) fn evaluate(
         active: RefCell::new(Vec::new()),
     };
     let result = variables.evaluate(value)?;
-    Ok((result, variables.resolved.into_inner()))
+    let mut resolved = BTreeMap::new();
+    for ((_, name), value) in variables.resolved.into_inner() {
+        resolved.insert(name, value);
+    }
+    Ok((result, resolved))
 }
 
 #[cfg(test)]
