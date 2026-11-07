@@ -105,3 +105,44 @@ fn nested_until_lookup_is_sensitive_before_dispatch() {
         &scope
     ));
 }
+
+#[test]
+fn sensitivity_follows_the_defining_layer_for_cross_name_references() {
+    let mut backend = Fake::default();
+    let options = Options::default();
+    let runner = Runner {
+        backend: &mut backend,
+        options: &options,
+        host: "h".into(),
+        scope: TrackedValue::public(json!({"vars":{}})),
+        handlers: vec![],
+        notified: BTreeMap::new(),
+        handling: false,
+        recap: Recap::default(),
+        next_id: 1,
+    };
+    let private = json!({"kind":"lookup","provider":"synthetic","key":"fixture"});
+    for (parent, child, sensitive) in [
+        (json!(true), private.clone(), false),
+        (private, json!(true), true),
+    ] {
+        let layer = ContextLayer {
+            definitions: vec![
+                json!({"gate":parent,"alias":{"kind":"ref","path":["vars","gate"]}})
+                    .as_object()
+                    .expect("parent")
+                    .clone(),
+                json!({"gate":child}).as_object().expect("child").clone(),
+            ],
+            ..ContextLayer::default()
+        };
+        assert_eq!(
+            runner.sensitive_layered_condition(
+                &json!({"kind":"ref","path":["vars","alias"]}),
+                &runner.scope,
+                &layer
+            ),
+            sensitive
+        );
+    }
+}

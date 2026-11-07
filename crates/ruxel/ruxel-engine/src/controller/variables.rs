@@ -69,11 +69,7 @@ impl<B: Backend> Runner<'_, B> {
                 return true;
             }
             for dependency in super::loop_vars::required(&names, &definition) {
-                let ceiling = if dependency == name {
-                    index
-                } else {
-                    definitions.len()
-                };
+                let ceiling = if dependency == name { index } else { index + 1 };
                 pending.push((ceiling, dependency));
             }
         }

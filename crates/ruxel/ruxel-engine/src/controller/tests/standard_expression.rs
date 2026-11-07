@@ -78,7 +78,7 @@ async fn custom_backend_runs_layered_controller_tasks_lazily() -> Result<()> {
     )
     .await?;
     assert_eq!(recap["h"].ok, 1);
-    assert_eq!(backend.events[0]["result"]["msg"], "child");
+    assert_eq!(backend.events[0]["result"]["msg"], "parent");
     assert_eq!(backend.calls.get(), 0);
     Ok(())
 }
@@ -115,7 +115,7 @@ async fn custom_backend_resolves_delayed_results_and_updated_facts() -> Result<(
 #[test]
 fn custom_backend_delegates_lazy_layers_and_lookup_provenance() -> Result<()> {
     let mut backend = Custom::default();
-    let parent = json!({"unused":{"kind":"lookup","provider":"synthetic","key":"unused"},"alias":{"kind":"ref","path":["vars","name"]}});
+    let parent = json!({"name":"parent","unused":{"kind":"lookup","provider":"synthetic","key":"unused"},"alias":{"kind":"ref","path":["vars","name"]}});
     let child =
         json!({"name":"child","private":{"kind":"lookup","provider":"synthetic","key":"used"}});
     let layers = [
@@ -127,7 +127,7 @@ fn custom_backend_delegates_lazy_layers_and_lookup_provenance() -> Result<()> {
     let (value, _) = backend.evaluate_layered_expression(&expression, &scope, &layers)?;
     assert_eq!(
         value.redacted(),
-        json!(["child", "[REDACTED]", "[REDACTED]"])
+        json!(["parent", "[REDACTED]", "[REDACTED]"])
     );
     assert_eq!(backend.calls.get(), 1);
     Ok(())

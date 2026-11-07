@@ -18,11 +18,13 @@ struct TaskVariables<'a, R: LookupResolver> {
 
 impl<R: LookupResolver> TaskVariables<'_, R> {
     fn get(&self, name: &str) -> Result<Option<TrackedValue>> {
+        // A definition sees its own layer and ancestors. Its self-reference
+        // starts below that layer, preserving inherited self overrides.
         let ceiling = self
             .active
             .borrow()
             .last()
-            .and_then(|(layer, active)| (active == name).then_some(*layer))
+            .map(|(layer, active)| if active == name { *layer } else { layer + 1 })
             .unwrap_or(self.definitions.len());
         let Some(index) = (0..ceiling)
             .rev()
@@ -163,8 +165,13 @@ pub(crate) fn evaluate_with_resolver<R: LookupResolver>(
     };
     let result = variables.evaluate(value)?;
     let mut bindings = BTreeMap::new();
-    for ((_, name), value) in variables.resolved.into_inner() {
-        bindings.insert(name, value);
+    for ((index, name), value) in variables.resolved.into_inner() {
+        if definitions[index + 1..]
+            .iter()
+            .all(|layer| !layer.contains_key(&name))
+        {
+            bindings.insert(name, value);
+        }
     }
     Ok((result, bindings))
 }

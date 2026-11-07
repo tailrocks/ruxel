@@ -145,3 +145,45 @@ fn execution_backend_uses_lazy_layered_resolver() -> Result<()> {
     assert_eq!(value.value, "parent");
     Ok(())
 }
+
+#[test]
+fn cross_name_parent_reference_uses_its_lexical_layer() -> Result<()> {
+    let execution = execution()?;
+    let parent =
+        json!({"a":{"kind":"literal","value":"outer"},"b":{"kind":"ref","path":["vars","a"]}});
+    let child = json!({"a":{"kind":"call","function":"concat","args":[{"kind":"ref","path":["vars","b"]},{"kind":"literal","value":"-inner"}]}});
+    let layers = [
+        parent.as_object().context("parent")?.clone(),
+        child.as_object().context("child")?.clone(),
+    ];
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let expression = json!({"kind":"list","items":[{"kind":"ref","path":["vars","a"]},{"kind":"ref","path":["vars","b"]}]});
+    let (value, bindings) = evaluate_layers(&execution, &expression, &scope, &layers)?;
+    assert_eq!(value.value, json!(["outer-inner", "outer"]));
+    assert_eq!(bindings["a"].value, "outer-inner");
+    assert_eq!(bindings["b"].value, "outer");
+    Ok(())
+}
+
+#[test]
+fn predecessor_cache_does_not_export_as_unread_child_binding() -> Result<()> {
+    let execution = execution()?;
+    let parent =
+        json!({"a":{"kind":"literal","value":"outer"},"b":{"kind":"ref","path":["vars","a"]}});
+    let child = json!({"a":{"kind":"literal","value":"inner"}});
+    let layers = [
+        parent.as_object().context("parent")?.clone(),
+        child.as_object().context("child")?.clone(),
+    ];
+    let scope = TrackedValue::public(json!({"vars":{}}));
+    let (value, bindings) = evaluate_layers(
+        &execution,
+        &json!({"kind":"ref","path":["vars","b"]}),
+        &scope,
+        &layers,
+    )?;
+    assert_eq!(value.value, "outer");
+    assert!(!bindings.contains_key("a"));
+    assert_eq!(bindings["b"].value, "outer");
+    Ok(())
+}
