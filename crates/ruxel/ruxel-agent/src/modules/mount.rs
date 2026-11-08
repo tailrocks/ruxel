@@ -246,12 +246,12 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
 
         if f.len() >= 2 && unescape_mount(f[1]) == path {
             found = true;
-            let matches = f.len() == 6
+            let matches = (4..=6).contains(&f.len())
                 && unescape_mount(f[0]) == src
                 && unescape_mount(f[2]) == fstype
                 && unescape_mount(f[3]) == opts
-                && f[4] == "0"
-                && f[5] == "0";
+                && f.get(4).is_none_or(|value| *value == "0")
+                && f.get(5).is_none_or(|value| *value == "0");
             if !matches {
                 let suffix = comment.map(|i| {
                     let start = line[..i].trim_end().len();

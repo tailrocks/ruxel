@@ -119,8 +119,6 @@ fn fstab_corrects_dump_and_pass_drift_and_converges() {
         "/dev/a /srv xfs rw 1 0\n",
         "/dev/a /srv xfs rw 0 2\n",
         "/dev/a /srv xfs rw 1 2\n",
-        "/dev/a /srv xfs rw\n",
-        "/dev/a /srv xfs rw 0\n",
     ] {
         let (next, changed) = super::rewrite_fstab(current, "/dev/a", "/srv", "xfs", "rw");
         assert!(changed, "{current:?}");
@@ -128,6 +126,12 @@ fn fstab_corrects_dump_and_pass_drift_and_converges() {
         assert_eq!(
             super::rewrite_fstab(&next, "/dev/a", "/srv", "xfs", "rw"),
             (next, false)
+        );
+    }
+    for current in ["/dev/a /srv xfs rw\n", "/dev/a /srv xfs rw 0 # keep\n"] {
+        assert_eq!(
+            super::rewrite_fstab(current, "/dev/a", "/srv", "xfs", "rw"),
+            (current.to_string(), false)
         );
     }
     let current = "/dev/a /srv xfs noatime,rw 0 0 # keep\n";
