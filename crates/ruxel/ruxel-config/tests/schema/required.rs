@@ -106,3 +106,18 @@ fn command_requires_explicit_nonempty_argv() -> super::Result {
     );
     Ok(())
 }
+
+#[test]
+fn postgres_privileges_accept_lists_and_runtime_expressions() -> super::Result {
+    for value in [
+        r#""SELECT,UPDATE""#,
+        r#"new Listing<String> { "SELECT"; "UPDATE" }"#,
+        r#"new R.Ref { path { "vars"; "privileges" } }"#,
+    ] {
+        let source = format!(
+            r#"new R.PostgresPrivileges {{ login_db = "db"; role = "a"; type = "table"; privs = {value} }}"#
+        );
+        super::evaluate(&source)?;
+    }
+    Ok(())
+}

@@ -169,7 +169,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "owner" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
     ),
-    operation!("postgres_user";
+    operation!("postgres_role";
         "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
@@ -191,7 +191,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
         "objs" => false, FieldType::TextList;
-        "privs" => false, FieldType::TextList;
+        "privs" => true, FieldType::PrivilegeList;
         "role" => true, FieldType::Text;
         "schema" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);

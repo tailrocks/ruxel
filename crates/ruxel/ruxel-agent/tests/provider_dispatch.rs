@@ -16,7 +16,7 @@ const CASES: &[(&str, &str, bool)] = &[
     ("timezone", "", true),
     ("mount", "", true),
     ("postgres_database", "", true),
-    ("postgres_user", "", true),
+    ("postgres_role", "", true),
     ("postgres_schema", "", true),
     ("postgres_privileges", "", true),
     ("community.general.lvg", "", false),

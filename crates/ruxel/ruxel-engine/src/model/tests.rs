@@ -151,7 +151,7 @@ mod boundaries;
 
 #[test]
 fn postgres_database_and_role_accept_login_db() -> anyhow::Result<()> {
-    for kind in ["postgres_database", "postgres_user"] {
+    for kind in ["postgres_database", "postgres_role"] {
         let params = json!({"name":"fixture", "login_db":"maintenance"});
         assert!(
             validate_operation(

@@ -20,6 +20,7 @@ enum FieldType {
     Port,
     Mode,
     TextList,
+    PrivilegeList,
     StringList,
     NonEmptyStringList,
     ExprMap,
@@ -76,6 +77,17 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
             (3..=4).contains(&s.len()) && s.bytes().all(|b| (b'0'..=b'7').contains(&b))
         }),
         FieldType::TextList => text_list(value),
+        FieldType::PrivilegeList => {
+            value
+                .as_str()
+                .is_some_and(|s| s.split(',').any(|part| !part.trim().is_empty()))
+                || value.as_array().is_some_and(|items| {
+                    !items.is_empty()
+                        && items
+                            .iter()
+                            .all(|item| item.as_str().is_some_and(|s| !s.trim().is_empty()))
+                })
+        }
         FieldType::StringList => value
             .as_array()
             .is_some_and(|v| v.iter().all(Value::is_string)),

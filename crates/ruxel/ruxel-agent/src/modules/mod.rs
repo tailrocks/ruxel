@@ -121,7 +121,7 @@ pub(crate) fn execute(
             "command"
                 | "shell"
                 | "postgres_database"
-                | "postgres_user"
+                | "postgres_role"
                 | "postgres_schema"
                 | "postgres_privileges"
         )
@@ -140,7 +140,7 @@ pub(crate) fn execute(
         "logical_volume" => lvol::run(params, ctx),
         "mount" => mount::run(params, ctx),
         "postgres_database" => postgresql::db(params, ctx),
-        "postgres_user" => postgresql::user(params, ctx),
+        "postgres_role" => postgresql::user(params, ctx),
         "postgres_schema" => postgresql::schema(params, ctx),
         "postgres_privileges" => postgresql::privs(params, ctx),
         "replace" => replace::run(params, ctx),

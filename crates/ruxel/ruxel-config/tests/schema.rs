@@ -67,7 +67,7 @@ fn runtime_and_operations_render() -> Result {
         (1, "logical_volume"),
         (4, "mount"),
         (6, "postgres_privileges"),
-        (12, "postgres_user"),
+        (12, "postgres_role"),
         (13, "volume_group"),
         (14, "timezone"),
         (15, "postgres_schema"),

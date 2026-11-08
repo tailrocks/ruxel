@@ -64,7 +64,7 @@ fn native_operation_kinds_replace_collection_names() -> Result<()> {
             json!({"name":"app"}),
         ),
         (
-            "postgres_user",
+            "postgres_role",
             "community.postgresql.postgresql_user",
             json!({"name":"app"}),
         ),
@@ -76,13 +76,15 @@ fn native_operation_kinds_replace_collection_names() -> Result<()> {
         (
             "postgres_privileges",
             "community.postgresql.postgresql_privs",
-            json!({"login_db":"db", "role":"app", "type":"default_privs"}),
+            json!({"login_db":"db", "role":"app", "type":"default_privs", "privs":"SELECT"}),
         ),
     ] {
         let params = params.as_object().context("operation params")?;
         validate_operation(kind, params)?;
         assert!(validate_operation(legacy, params).is_err(), "{legacy}");
     }
+    let role = json!({"name":"app"});
+    assert!(validate_operation("postgres_user", role.as_object().context("role")?).is_err());
     let invalid = json!({"login_db":"db", "role":"app", "type":"table", "target_roles":"creator"});
     assert!(
         validate_operation(
@@ -91,5 +93,30 @@ fn native_operation_kinds_replace_collection_names() -> Result<()> {
         )
         .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn privileges_require_nonempty_literals_and_accept_deferred_values() -> Result<()> {
+    let mut params = json!({"login_db":"db", "role":"app", "type":"table"});
+    assert!(
+        validate_operation("postgres_privileges", params.as_object().context("params")?).is_err()
+    );
+    for value in [json!(""), json!(" , "), json!([]), json!(["SELECT", " "])] {
+        params["privs"] = value;
+        let object = params.as_object().context("params")?;
+        assert!(validate_operation("postgres_privileges", object).is_err());
+        assert!(operation("postgres_privileges", object, true).is_err());
+    }
+    for value in [json!("SELECT"), json!(["SELECT", "UPDATE"])] {
+        params["privs"] = value;
+        validate_operation("postgres_privileges", params.as_object().context("params")?)?;
+    }
+    params["privs"] = json!({"kind":"ref", "path":["vars", "privileges"]});
+    operation(
+        "postgres_privileges",
+        params.as_object().context("params")?,
+        true,
+    )?;
     Ok(())
 }

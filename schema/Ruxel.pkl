@@ -25,6 +25,7 @@ typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
 typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
 typealias TextList = String|Listing<String>|Expr
+typealias PrivilegeList = String(contains(Regex("[^,\\s]")))|Listing<String>(!this.isEmpty && this.every((value) -> !value.trim().isEmpty))|Expr
 typealias CommandArgs = Listing<String>(!this.isEmpty)|Expr
 typealias Port = Int(this >= 1 && this <= 65535)|Expr
 
@@ -285,7 +286,7 @@ class PostgresDatabase {
 }
 
 class PostgresRole {
-  fixed kind = "postgres_user"
+  fixed kind = "postgres_role"
   login_db: Text? = null
   login_port: Port? = null
   login_user: Text? = null
@@ -311,7 +312,7 @@ class PostgresPrivileges {
   login_port: Port? = null
   login_user: Text? = null
   objs: TextList?(type is Expr || type != "database" || this != null) = null
-  privs: TextList? = null
+  privs: PrivilegeList
   role: Text
   schema: Text? = null
   state: ("present"|Expr)? = null
