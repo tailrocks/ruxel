@@ -77,6 +77,8 @@ fn verify_preview(events: &[Value], home: &str) -> Result<()> {
 fn verify_drift_preview(events: &[Value], home: &str) -> Result<()> {
     ensure!(
         events.len() == 4
+            && events[0]["host"] == "fixture"
+            && events[0]["task"] == "Create synthetic become account"
             && events[0]["result"]["changed"] == true
             && events[0]["result"]["failed"] == false,
         "drift preview account result mismatch"
@@ -96,10 +98,13 @@ fn verify_drift_preview(events: &[Value], home: &str) -> Result<()> {
         "drift preview environment mismatch"
     );
     ensure!(
-        events[2]["task"] == "Verify explicit become environment"
+        events[2]["host"] == "fixture"
+            && events[2]["task"] == "Verify explicit become environment"
             && events[2]["result"]["failed"] == true
             && events[2]["result"]["msg"] == "Assertion failed"
-            && events[3]["recap"]["failed"] == 1,
+            && events[3]["host"] == "fixture"
+            && events[3]["recap"]["failed"] == 1
+            && events[3]["recap"]["skipped"] == 0,
         "drift preview failure mismatch"
     );
     Ok(())
@@ -153,7 +158,7 @@ pub(super) fn execute(env: &Guest) -> Result<()> {
 }
 #[cfg(test)]
 mod tests {
-    use super::verify_preview;
+    use super::{verify_drift_preview, verify_preview};
     use serde_json::json;
     #[test]
     fn preview_requires_correct_environment_and_successful_assertion() -> anyhow::Result<()> {
@@ -166,6 +171,30 @@ mod tests {
         verify_preview(&events, "/tmp/home")?;
         events[1]["result"]["skipped"] = json!(true);
         assert!(verify_preview(&events, "/tmp/home").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn drift_preview_requires_prediction_observed_environment_and_failure() -> anyhow::Result<()> {
+        let events = vec![
+            json!({"host":"fixture","task":"Create synthetic become account","result":{"changed":true,"failed":false}}),
+            json!({"host":"fixture","task":"Capture synthetic become environment","result":{"failed":false,"stdout_lines":["/tmp/home","ruxelbecome","ruxelbecome","/bin/false","synthetic"]}}),
+            json!({"host":"fixture","task":"Verify explicit become environment","result":{"failed":true,"msg":"Assertion failed"}}),
+            json!({"host":"fixture","recap":{"failed":1,"skipped":0}}),
+        ];
+        verify_drift_preview(&events, "/tmp/home")?;
+        let mut not_predicted = events.clone();
+        not_predicted[0]["result"]["changed"] = json!(false);
+        assert!(verify_drift_preview(&not_predicted, "/tmp/home").is_err());
+        let mut repaired_environment = events.clone();
+        repaired_environment[1]["result"]["stdout_lines"][3] = json!("/bin/sh");
+        assert!(verify_drift_preview(&repaired_environment, "/tmp/home").is_err());
+        let mut assertion_passed = events.clone();
+        assertion_passed[2]["result"]["failed"] = json!(false);
+        assert!(verify_drift_preview(&assertion_passed, "/tmp/home").is_err());
+        let mut wrong_host = events;
+        wrong_host[3]["host"] = json!("other");
+        assert!(verify_drift_preview(&wrong_host, "/tmp/home").is_err());
         Ok(())
     }
 }
