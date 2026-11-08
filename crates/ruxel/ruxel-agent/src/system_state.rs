@@ -40,22 +40,38 @@ impl SystemState {
         names: &[String],
         latest: bool,
     ) -> Result<Vec<String>, String> {
+        let requests: Vec<_> = names
+            .iter()
+            .map(|name| match name.split_once('=') {
+                Some((package, version)) if !package.is_empty() && !version.is_empty() => {
+                    Ok((name, package, Some(version)))
+                }
+                Some(_) => Err(format!("apt: invalid package version request {name:?}")),
+                None => Ok((name, name.as_str(), None)),
+            })
+            .collect::<Result<_, _>>()?;
         self.ensure_packages()?;
         if latest {
-            self.ensure_candidates(names)?;
+            let unpinned: Vec<_> = requests
+                .iter()
+                .filter(|(_, _, version)| version.is_none())
+                .map(|(name, _, _)| (*name).clone())
+                .collect();
+            self.ensure_candidates(&unpinned)?;
         }
         let packages = self.packages.as_ref().ok_or("packages not initialized")?;
-        Ok(names
+        Ok(requests
             .iter()
-            .filter(|name| match packages.get(*name) {
+            .filter(|(_, package, version)| match packages.get(*package) {
                 None => true,
+                Some(installed) if version.is_some() => version != &Some(installed.as_str()),
                 Some(installed) if latest => self
                     .candidates
-                    .get(*name)
+                    .get(*package)
                     .is_some_and(|candidate| candidate != installed && candidate != "(none)"),
                 Some(_) => false,
             })
-            .cloned()
+            .map(|(name, _, _)| (*name).clone())
             .collect())
     }
 
@@ -168,23 +184,31 @@ fn systemctl(args: &[&str]) -> Result<String, String> {
 }
 
 fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
-    text.split("\n\n")
-        .filter_map(|paragraph| {
-            let mut name = None;
-            let mut version = None;
-            let mut installed = false;
-            for line in paragraph.lines() {
-                if let Some(value) = line.strip_prefix("Package: ") {
-                    name = Some(value.to_string());
-                } else if let Some(value) = line.strip_prefix("Version: ") {
-                    version = Some(value.to_string());
-                } else if line == "Status: install ok installed" {
-                    installed = true;
-                }
+    let mut packages = HashMap::new();
+    for paragraph in text.split("\n\n") {
+        let mut name = None;
+        let mut version = None;
+        let mut architecture = None;
+        let mut installed = false;
+        for line in paragraph.lines() {
+            if let Some(value) = line.strip_prefix("Package: ") {
+                name = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("Version: ") {
+                version = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("Architecture: ") {
+                architecture = Some(value);
+            } else if line == "Status: install ok installed" {
+                installed = true;
             }
-            installed.then(|| Some((name?, version?))).flatten()
-        })
-        .collect()
+        }
+        if let (true, Some(name), Some(version)) = (installed, name, version) {
+            if let Some(architecture) = architecture {
+                packages.insert(format!("{name}:{architecture}"), version.clone());
+            }
+            packages.insert(name, version);
+        }
+    }
+    packages
 }
 
 fn parse_apt_policy(text: &str) -> HashMap<String, String> {
