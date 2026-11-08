@@ -9,6 +9,7 @@ use std::{
 };
 
 fn checked(mut command: Command, limit: u64) -> Result<Vec<u8>> {
+    crate::isolation::configure(&mut command);
     let (status, stdout, _) = process::run(&mut command, Duration::from_secs(limit))?;
     ensure!(status.success(), "isolated postgres command failed");
     Ok(stdout)
@@ -52,21 +53,10 @@ pub(super) struct Cluster {
 }
 impl Cluster {
     pub fn start(root: &Path) -> Result<Self> {
+        crate::isolation::guard("RUXEL_POSTGRES_FIXTURE")?;
         ensure!(
-            rustix::process::geteuid().as_raw() == 0,
-            "postgres fixture requires root guest"
-        );
-        ensure!(
-            std::env::var("RUXEL_POSTGRES_FIXTURE").as_deref() == Ok("isolated")
-                && Path::new("/.dockerenv").is_file(),
-            "postgres fixture requires an isolated Docker guest"
-        );
-        let interfaces = fs::read_dir("/sys/class/net")?
-            .map(|entry| entry.map(|v| v.file_name()))
-            .collect::<std::io::Result<Vec<_>>>()?;
-        ensure!(
-            interfaces.len() == 1 && interfaces[0] == "lo",
-            "postgres fixture guest has external network interfaces"
+            root.parent() == Some(Path::new("/tmp")),
+            "postgres fixture is outside private tmpfs"
         );
         let mut config = Command::new("/usr/bin/pg_config");
         config.arg("--bindir").stdin(Stdio::null());

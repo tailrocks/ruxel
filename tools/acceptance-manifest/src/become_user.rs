@@ -8,58 +8,6 @@ use std::{
     time::Duration,
 };
 
-fn mounts_safe(info: &str) -> bool {
-    let mut overlay = false;
-    for line in info.lines() {
-        let Some((left, right)) = line.split_once(" - ") else {
-            return false;
-        };
-        let Some(path) = left.split_whitespace().nth(4) else {
-            return false;
-        };
-        let Some(kind) = right.split_whitespace().next() else {
-            return false;
-        };
-        if path == "/" {
-            overlay = kind == "overlay";
-        }
-        if path == "/etc"
-            || path.starts_with("/etc/")
-                && !["/etc/hosts", "/etc/hostname", "/etc/resolv.conf"].contains(&path)
-            || path == "/var"
-            || path.starts_with("/var/")
-        {
-            return false;
-        }
-        if ["/tmp", "/work"].contains(&path) && kind != "tmpfs" {
-            return false;
-        }
-        if path.starts_with("/tmp/") || path.starts_with("/work/") {
-            return false;
-        }
-    }
-    overlay
-}
-fn guard() -> Result<()> {
-    ensure!(
-        rustix::process::geteuid().as_raw() == 0
-            && std::env::var("RUXEL_BECOME_FIXTURE").as_deref() == Ok("isolated")
-            && Path::new("/.dockerenv").is_file(),
-        "become fixture requires an isolated root Docker guest"
-    );
-    let interfaces = fs::read_dir("/sys/class/net")?
-        .map(|e| e.map(|v| v.file_name()))
-        .collect::<std::io::Result<Vec<_>>>()?;
-    ensure!(
-        interfaces.len() == 1 && interfaces[0] == "lo",
-        "become fixture guest has external network interfaces"
-    );
-    ensure!(
-        mounts_safe(&fs::read_to_string("/proc/self/mountinfo")?),
-        "become fixture guest has unsafe mounts"
-    );
-    Ok(())
-}
 fn account() -> Result<Option<Vec<String>>> {
     let passwd = fs::read_to_string("/etc/passwd")?;
     let matches: Vec<_> = passwd
@@ -90,8 +38,10 @@ fn verify_account(env: &Env, shell: &str) -> Result<()> {
 fn drift(env: &Env) -> Result<()> {
     verify_account(env, "/bin/sh")?;
     let mut command = Command::new("/usr/sbin/usermod");
+    crate::isolation::configure(&mut command);
     command
         .args(["--shell", "/bin/false", "ruxelbecome"])
+        .current_dir(env.root.path())
         .stdin(Stdio::null());
     let (status, _, _) = process::run(&mut command, Duration::from_secs(10))?;
     ensure!(status.success(), "fixture account drift failed");
@@ -191,7 +141,11 @@ fn verify_drift_limitation(env: &Env, home: &str) -> Result<()> {
     Ok(())
 }
 pub(super) fn execute(env: &Env) -> Result<()> {
-    guard()?;
+    crate::isolation::guard("RUXEL_BECOME_FIXTURE")?;
+    ensure!(
+        env.root.path().parent() == Some(Path::new("/tmp")),
+        "become fixture is outside private tmpfs"
+    );
     ensure!(account()?.is_none(), "fixture account already exists");
     let home = env.payload.join("become-home");
     let home = home.to_str().context("home path")?;
@@ -233,27 +187,8 @@ pub(super) fn execute(env: &Env) -> Result<()> {
 }
 #[cfg(test)]
 mod tests {
-    use super::{mounts_safe, verify_preview};
+    use super::verify_preview;
     use serde_json::json;
-    #[test]
-    fn rejects_account_and_workspace_bind_mounts() {
-        let root = "1 0 0:1 / / rw - overlay overlay rw\n2 1 0:2 / /tmp rw - tmpfs tmpfs rw";
-        assert!(mounts_safe(root));
-        for path in [
-            "/etc",
-            "/etc/passwd",
-            "/etc/shadow",
-            "/var",
-            "/var/log",
-            "/tmp/host",
-            "/work/host",
-        ] {
-            assert!(!mounts_safe(&format!(
-                "{root}\n3 1 0:3 / {path} rw - ext4 disk rw"
-            )));
-        }
-        assert!(!mounts_safe("1 0 0:1 / / rw - ext4 disk rw"));
-    }
     #[test]
     fn preview_requires_correct_environment_and_successful_assertion() -> anyhow::Result<()> {
         let mut events = vec![

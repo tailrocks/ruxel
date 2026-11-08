@@ -4,6 +4,7 @@ mod checks_preview;
 mod control_observer;
 mod control_run;
 mod delegation;
+mod isolation;
 mod postgres_cluster;
 mod postgres_run;
 

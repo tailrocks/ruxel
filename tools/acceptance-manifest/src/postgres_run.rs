@@ -18,6 +18,8 @@ const DRIFT: &str = "ALTER SCHEMA ruxel_fixture_schema OWNER TO postgres; REVOKE
 fn run_cli(env: &Env, cluster: &Cluster, mode: &str) -> Result<()> {
     let mut command = Command::new(&env.cli);
     postgres_cluster::clear_pg(&mut command);
+    crate::isolation::configure(&mut command);
+    command.current_dir(env.root.path());
     command
         .env("PGHOST", &cluster.socket)
         .arg(mode)

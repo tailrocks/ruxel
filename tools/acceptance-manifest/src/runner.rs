@@ -26,9 +26,18 @@ impl Env {
         if name == "controller-delegation" {
             crate::pins::oracle(repo)?;
         }
-        let root = tempfile::Builder::new()
-            .prefix("ruxel-pr66-manifest-")
-            .tempdir()?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("ruxel-pr66-manifest-");
+        let root = if matches!(name, "become-environment" | "postgresql-ownership") {
+            crate::isolation::guard(if name == "become-environment" {
+                "RUXEL_BECOME_FIXTURE"
+            } else {
+                "RUXEL_POSTGRES_FIXTURE"
+            })?;
+            builder.tempdir_in("/tmp")?
+        } else {
+            builder.tempdir()?
+        };
         fs::create_dir_all(root.path().join("testdata/workloads/pr66"))?;
         fs::create_dir(root.path().join("schema"))?;
         fs::copy(
@@ -61,6 +70,10 @@ impl Env {
     }
     pub(super) fn run(&self, name: &str, mode: &str, expected: i32) -> Result<Vec<Value>> {
         let mut command = Command::new(&self.cli);
+        if name == "become-environment" {
+            command.current_dir(self.root.path());
+            crate::isolation::configure(&mut command);
+        }
         command
             .arg(mode)
             .arg(&self.module)
