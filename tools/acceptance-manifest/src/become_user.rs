@@ -1,15 +1,9 @@
-use crate::{process, runner::Env, state};
+use crate::host_fixture::Guest;
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Stdio},
-    time::Duration,
-};
 
-fn account() -> Result<Option<Vec<String>>> {
-    let passwd = fs::read_to_string("/etc/passwd")?;
+fn account(env: &Guest) -> Result<Option<Vec<String>>> {
+    let passwd = env.text(&["/bin/cat", "/etc/passwd"])?;
     let matches: Vec<_> = passwd
         .lines()
         .filter(|line| line.split(':').next() == Some("ruxelbecome"))
@@ -19,32 +13,23 @@ fn account() -> Result<Option<Vec<String>>> {
         .first()
         .map(|line| line.split(':').map(str::to_owned).collect()))
 }
-fn verify_account(env: &Env, shell: &str) -> Result<()> {
-    let fields = account()?.context("fixture account absent")?;
+fn verify_account(env: &Guest, shell: &str) -> Result<()> {
+    let fields = account(env)?.context("fixture account absent")?;
     ensure!(
         fields.len() == 7
             && fields[2].parse::<u32>()? >= 1000
-            && fields[5]
-                == env
-                    .payload
-                    .join("become-home")
-                    .to_str()
-                    .context("home path")?
+            && fields[5] == "/tmp/work/payload/become-home"
             && fields[6] == shell,
         "fixture account mismatch"
     );
     Ok(())
 }
-fn drift(env: &Env) -> Result<()> {
+fn drift(env: &Guest) -> Result<()> {
     verify_account(env, "/bin/sh")?;
-    let mut command = Command::new("/usr/sbin/usermod");
-    crate::isolation::configure(&mut command);
-    command
-        .args(["--shell", "/bin/false", "ruxelbecome"])
-        .current_dir(env.root.path())
-        .stdin(Stdio::null());
-    let (status, _, _) = process::run(&mut command, Duration::from_secs(10))?;
-    ensure!(status.success(), "fixture account drift failed");
+    env.docker.exec(
+        &["/usr/sbin/usermod", "--shell", "/bin/false", "ruxelbecome"],
+        0,
+    )?;
     verify_account(env, "/bin/false")
 }
 fn verify_result(events: &[Value], home: &str) -> Result<()> {
@@ -119,67 +104,48 @@ fn verify_drift_preview(events: &[Value], home: &str) -> Result<()> {
     );
     Ok(())
 }
-fn verify_drift_limitation(env: &Env, home: &str) -> Result<()> {
+fn verify_drift_limitation(env: &Guest, home: &str) -> Result<()> {
     drift(env)?;
     for mode in ["check", "diff"] {
-        let etc = state::snapshot(Path::new("/etc"))?;
-        let logs = state::snapshot(Path::new("/var/log"))?;
-        let payload = state::snapshot(&env.payload)?;
-        let fixture = state::fixture_snapshot(env.root.path())?;
-        let events = env.run("become-environment", mode, 8)?;
+        let before = env.snapshot()?;
+        let events = env.run(mode, 8)?;
         verify_drift_preview(&events, home)?;
-        ensure!(
-            state::snapshot(Path::new("/etc"))? == etc
-                && state::snapshot(Path::new("/var/log"))? == logs
-                && state::snapshot(&env.payload)? == payload
-                && state::fixture_snapshot(env.root.path())? == fixture,
-            "drift preview mutated state"
-        );
+        ensure!(env.snapshot()? == before, "drift preview mutated state");
         verify_account(env, "/bin/false")?;
         println!("LIMITATION become-environment drifted {mode}: assertion fails, state unchanged");
     }
     Ok(())
 }
-pub(super) fn execute(env: &Env) -> Result<()> {
-    crate::isolation::guard("RUXEL_BECOME_FIXTURE")?;
-    ensure!(
-        env.root.path().parent() == Some(Path::new("/tmp")),
-        "become fixture is outside private tmpfs"
-    );
-    ensure!(account()?.is_none(), "fixture account already exists");
-    let home = env.payload.join("become-home");
-    let home = home.to_str().context("home path")?;
+pub(super) fn execute(env: &Guest) -> Result<()> {
+    ensure!(account(env)?.is_none(), "fixture account already exists");
+    let home = "/tmp/work/payload/become-home";
     for phase in ["fresh", "converged", "drift_repair", "check", "diff"] {
         if phase == "drift_repair" {
             drift(env)?;
         }
         let preview = matches!(phase, "check" | "diff");
-        let etc = state::snapshot(Path::new("/etc"))?;
-        let logs = state::snapshot(Path::new("/var/log"))?;
-        let payload = state::snapshot(&env.payload)?;
-        let fixture = state::fixture_snapshot(env.root.path())?;
-        let events = env.run(
-            "become-environment",
-            if preview { phase } else { "apply" },
-            0,
-        )?;
+        let before = env.snapshot()?;
+        let events = env.run(if preview { phase } else { "apply" }, 0)?;
         if preview {
             verify_preview(&events, home)?;
-            ensure!(
-                state::snapshot(Path::new("/etc"))? == etc
-                    && state::snapshot(Path::new("/var/log"))? == logs
-                    && state::snapshot(&env.payload)? == payload
-                    && state::fixture_snapshot(env.root.path())? == fixture,
-                "become preview mutated state"
-            );
+            ensure!(env.snapshot()? == before, "become preview mutated state");
             verify_account(env, "/bin/sh")?;
         } else {
             verify_account(env, "/bin/sh")?;
             ensure!(
-                env.payload.join("become-home").is_dir(),
+                env.docker.exec(&["/usr/bin/test", "-d", home], 0).is_ok(),
                 "fixture home missing"
             );
             verify_result(&events, home)?;
+        }
+        if phase == "converged" {
+            ensure!(
+                events
+                    .iter()
+                    .filter_map(|e| e.get("result"))
+                    .all(|r| r["changed"] == false),
+                "converged become task changed"
+            );
         }
         println!("PASS become-environment {phase}");
     }

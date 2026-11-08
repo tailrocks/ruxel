@@ -25,16 +25,11 @@ impl Env {
         );
         let mut builder = tempfile::Builder::new();
         builder.prefix("ruxel-pr66-manifest-");
-        let root = if matches!(name, "become-environment" | "postgresql-ownership") {
-            crate::isolation::guard(if name == "become-environment" {
-                "RUXEL_BECOME_FIXTURE"
-            } else {
-                "RUXEL_POSTGRES_FIXTURE"
-            })?;
-            builder.tempdir_in("/tmp")?
-        } else {
-            builder.tempdir()?
-        };
+        ensure!(
+            !matches!(name, "become-environment" | "postgresql-ownership"),
+            "privileged fixtures require host Docker orchestration"
+        );
+        let root = builder.tempdir()?;
         fs::create_dir_all(root.path().join("testdata/workloads/pr66"))?;
         fs::create_dir(root.path().join("schema"))?;
         fs::copy(
@@ -67,10 +62,6 @@ impl Env {
     }
     pub(super) fn run(&self, name: &str, mode: &str, expected: i32) -> Result<Vec<Value>> {
         let mut command = Command::new(&self.cli);
-        if name == "become-environment" {
-            command.current_dir(self.root.path());
-            crate::isolation::configure(&mut command);
-        }
         command
             .arg(mode)
             .arg(&self.module)
@@ -119,12 +110,6 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
         return crate::control_run::execute(&cli_env);
     }
     let env = Env::new(name, repo, cli, agent)?;
-    if name == "become-environment" {
-        return crate::become_user::execute(&env);
-    }
-    if name == "postgresql-ownership" {
-        return crate::postgres_run::execute(&env);
-    }
     if name == "restart-actions" {
         return crate::restart_run::execute(&env);
     }

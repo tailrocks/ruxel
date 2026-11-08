@@ -40,14 +40,20 @@ fn control_contract_rejects_unreviewed_observations() -> anyhow::Result<()> {
 
 #[test]
 fn postgres_contract_fails_closed() -> anyhow::Result<()> {
-    let manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
+    let mut manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
+    validate_case("postgresql-ownership", &manifest)?;
+    manifest["scenarios"]["postgresql-ownership"]["phases"]["check"]["state_unchanged"] =
+        json!(false);
     assert!(validate_case("postgresql-ownership", &manifest).is_err());
     Ok(())
 }
 
 #[test]
 fn become_contract_fails_closed() -> anyhow::Result<()> {
-    let manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
+    let mut manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
+    validate_case("become-environment", &manifest)?;
+    manifest["scenarios"]["become-environment"]["phases"]["check"]["state_unchanged"] =
+        json!(false);
     assert!(validate_case("become-environment", &manifest).is_err());
     Ok(())
 }

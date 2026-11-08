@@ -19,6 +19,9 @@ fn unsupported_case_fails_without_launching_cli() -> anyhow::Result<()> {
         "postgresql-ownership",
     ] {
         let result = Command::new(env!("CARGO_BIN_EXE_ruxel-acceptance-manifest"))
+            .env("RUXEL_POSTGRES_FIXTURE", "isolated")
+            .env("RUXEL_BECOME_FIXTURE", "isolated")
+            .env("DOCKER_HOST", "tcp://untrusted.invalid:2375")
             .arg("--root")
             .arg(temp.path())
             .arg("--ruxel")
@@ -30,7 +33,13 @@ fn unsupported_case_fails_without_launching_cli() -> anyhow::Result<()> {
         assert!(!result.status.success());
         assert!(!marker.exists());
         assert!(
-            String::from_utf8_lossy(&result.stdout).contains("no reviewed safe local adapter"),
+            String::from_utf8_lossy(&result.stdout).contains(
+                if matches!(name, "become-environment" | "postgresql-ownership") {
+                    "requires --fixture-image"
+                } else {
+                    "no reviewed safe local adapter"
+                }
+            ),
             "stdout={} stderr={}",
             String::from_utf8_lossy(&result.stdout),
             String::from_utf8_lossy(&result.stderr)

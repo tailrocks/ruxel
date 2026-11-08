@@ -1,11 +1,11 @@
 # Local manifest acceptance
 
-Standalone safe Rust port for five reviewed manifest scenarios:
-`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, and `control-flow`. Each contract must
+Standalone Rust manifest acceptance with five local adapters and two host-orchestrated Docker adapters:
+`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, `postgresql-ownership`, and `become-environment`. Each contract must
 exactly match the frozen reviewed contract in `contracts.json`; fixture hashes
 are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
-expected to fail while nine scenarios have no enabled adapter.
+expected to fail while seven scenarios have no enabled adapter.
 
 For controller delegation, the actual apply runs must pass the fixture's
 assertion on the delegated command's registered stdout. Separate check and diff
@@ -38,20 +38,49 @@ is not evidence for privileged workloads or full matrix parity. The candidate
 as documented in `docs/RUST-ACCEPTANCE-WIRING.md`. Former driver sources remain
 until coordinated removal.
 
-The PostgreSQL and become-environment adapters are disabled pending a reliable
-way to establish that `/tmp` is not a host bind mount. Their previous isolated
-guest results do not prove that this guard would reject all host mounts.
+PostgreSQL and privilege escalation run only through host-side Docker
+orchestration. Each selected scenario creates a fresh container from a complete
+local `sha256:` image ID. The launcher uses a fixed local Unix socket and an
+empty Docker client configuration, clears inherited Docker environment settings,
+and never pulls images. There is no guest adapter mode or environment-marker
+bypass. Native host binaries are rejected; supply matching Linux ELF controller
+and agent binaries built from the reviewed source.
 
-The PostgreSQL adapter starts a new disposable PostgreSQL cluster with TCP
-listening disabled and a private Unix socket. It requires a network-isolated
-Docker guest without host mounts, PostgreSQL server and client packages, a
-`postgres` account, and `RUXEL_POSTGRES_FIXTURE=isolated`. It checks explicit
-catalog ownership and grants and captures catalog state across preview runs.
+Before starting the dormant container, and before every subsequent execution or
+input transfer, the launcher checks its immutable image, namespace, capability,
+mount and resource configuration. Bind mounts, named volumes, image-declared
+volumes, custom devices, exposed ports, privileged mode and external networking
+are refused. `/tmp` is a runtime-created tmpfs. Inputs are copied by bounded
+stdin streaming, never mounted from the host. Executables reside on the
+container's disposable image layer; fixture data stays in the private tmpfs.
+Only CHOWN, DAC_OVERRIDE, FOWNER, SETGID and SETUID capabilities are admitted;
+SYS_ADMIN is never granted. Container removal runs after success and failure,
+with a removal retry during unwinding. AutoRemove and a 900-second dormant process provide best-effort expiry after
+launcher interruption. This is not a hard lifetime guarantee against guest-root
+interference; normal explicit container removal remains authoritative.
 
+The already provisioned image must contain PostgreSQL server/client tools,
+`runuser`, account-management tools, Bash and GNU coreutils/findutils. Package
+provisioning belongs to the separately reviewed image build. Run the host driver:
 
-The become-environment adapter creates and modifies an account, so it requires
-an ephemeral Docker guest with no external network or writable host mounts and
-`RUXEL_BECOME_FIXTURE=isolated`. It verifies account metadata, environment
-results, shell drift and repair, and preview filesystem state.
-Its previews run after drift repair. A preview against the drifted shell fails
-the fixture's environment assertion, so drifted preview success is not covered.
+```sh
+cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml \
+  --features ruxel-engine/pure -- \
+  --root . --ruxel /absolute/Linux/ruxel --agent /absolute/Linux/ruxel-agent \
+  --fixture-image sha256:COMPLETE_LOCAL_IMAGE_ID \
+  --scenario postgresql-ownership --scenario become-environment
+```
+
+PostgreSQL uses a new cluster, a private Unix socket and disabled TCP listeners.
+Its catalog assertions check ownership, roles, database/schema/default grants,
+and absence of the deliberately predicted schema. Convergence requires unchanged
+actual operations while that explicit `checkMode = true` schema task continues
+to predict creation. Grant-removal negative controls must fail the observation;
+check/diff compare catalog state and fixture filesystem snapshots.
+
+The account adapter checks account metadata, exact become environment results,
+shell drift/repair and converged unchanged results. Filesystem snapshots hash
+contents, links, ownership, modes, inode and modification/change timestamps for
+`/etc`, `/var/log`, payload, workload and schema. Its normal previews run after
+repair. Drifted previews intentionally fail the environment assertion with exit
+8 and must preserve those snapshots; this remains a documented contract limit.

@@ -4,8 +4,8 @@ mod checks_preview;
 mod control_observer;
 mod control_run;
 mod delegation;
-mod isolation;
-mod postgres_cluster;
+mod docker_fixture;
+mod host_fixture;
 mod postgres_run;
 
 mod contract;
@@ -25,6 +25,7 @@ fn run() -> Result<bool> {
     let mut cli = None;
     let mut agent = None;
     let mut root = None;
+    let mut fixture_image = None;
     let mut scenarios = Vec::new();
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     for pair in args.chunks(2) {
@@ -41,6 +42,14 @@ fn run() -> Result<bool> {
             }
             Some("--scenario") => {
                 scenarios.push(pair[1].to_str().context("invalid scenario")?.to_owned())
+            }
+            Some("--fixture-image") if fixture_image.is_none() => {
+                fixture_image = Some(
+                    pair[1]
+                        .to_str()
+                        .context("invalid fixture image")?
+                        .to_owned(),
+                );
             }
             _ => bail!("unknown or duplicate argument"),
         }
@@ -62,8 +71,21 @@ fn run() -> Result<bool> {
     }
     let mut failures = 0;
     for name in &scenarios {
-        let result = contract::validate_case(name, &manifest)
-            .and_then(|()| runner::execute(name, &root, &cli, &agent));
+        let result = contract::validate_case(name, &manifest).and_then(|()| {
+            if matches!(name.as_str(), "postgresql-ownership" | "become-environment") {
+                host_fixture::execute(
+                    name,
+                    &root,
+                    &cli,
+                    &agent,
+                    fixture_image.as_deref().context(
+                        "isolated fixture requires --fixture-image sha256:ID and Linux binaries",
+                    )?,
+                )
+            } else {
+                runner::execute(name, &root, &cli, &agent)
+            }
+        });
         match result {
             Ok(()) => println!("PASS {name}: declared expectations verified"),
             Err(error) => {
