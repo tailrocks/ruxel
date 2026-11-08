@@ -7,7 +7,11 @@ pub(super) fn run(fixture: &mut Fixture<'_>) -> Result<()> {
     let code = format!(
         r#"output {{ value = new Dynamic {{ kind = "ref"; path = new Listing {{ "{MARKER}" }} }} }}"#
     );
-    let task = write(&source, &code, "delegateTo = \"b\";")?;
+    let task = write(
+        &source,
+        &code,
+        "delegateTo = \"b\"; delegateAllow = new Listing { \"b\" };",
+    )?;
     let events = fixture.run(&play("a", &task), "deferred-state", 0)?;
     censored(&events, 1)?;
     ensure!(
@@ -15,7 +19,7 @@ pub(super) fn run(fixture: &mut Fixture<'_>) -> Result<()> {
         "deferred source was not written"
     );
     let render = format!(
-        r#"new {{ name = "render"; delegateTo = "b"; operation = new Ruxel.Template {{ src = {}; dest = {} }} }}"#,
+        r#"new {{ name = "render"; delegateTo = "b"; delegateAllow = new Listing {{ "b" }}; operation = new Ruxel.Template {{ src = {}; dest = {} }} }}"#,
         text(&source)?,
         text(&dest)?
     );

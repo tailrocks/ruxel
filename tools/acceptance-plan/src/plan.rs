@@ -67,10 +67,10 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         SCENARIOS.len()
     );
     ensure!(failures == 0, "plan matrix failed");
-    privacy::run(root, cli, agent)?;
-    privacy_errors::run(cli, agent)?;
-    privacy_hosts::run(root, cli, agent)?;
-    resource_lifetime::run(root, cli, agent)?;
+    privacy::run(root, cli, agent).context("privacy checks")?;
+    privacy_errors::run(cli, agent).context("privacy error checks")?;
+    privacy_hosts::run(root, cli, agent).context("host privacy checks")?;
+    resource_lifetime::run(root, cli, agent).context("resource lifetime checks")?;
     Ok(())
 }
 fn validate(events: &[serde_json::Value], payload: &Path) -> Result<()> {
