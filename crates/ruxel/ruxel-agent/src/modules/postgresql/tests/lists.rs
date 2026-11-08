@@ -29,12 +29,12 @@ fn list_fields_drive_probes_and_grants() {
     let script = dir.join("psql");
     let log = dir.join("sql");
     std::fs::write(&script, "#!/bin/sh\nwhile IFS= read -r line; do\n case \"$line\" in\n  '\\echo '*) printf '%s\\n' \"${line#\\\\echo }\";;\n  '\\q') exit 0;;\n  *) printf '%s\\n' \"$line\" >> \"$RUXEL_PG_LIST_LOG\";;\n esac\ndone\n").unwrap();
-    std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
         .arg("list_fields_drive_probes_and_grants")
         .env("RUXEL_PG_LIST_CHILD", "1")
         .env("RUXEL_PG_LIST_LOG", &log)
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .status()
         .unwrap();
     assert!(status.success());

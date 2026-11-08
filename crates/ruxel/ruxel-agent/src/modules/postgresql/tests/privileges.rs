@@ -56,7 +56,7 @@ fn maintain_requires_postgres_17_before_any_acl_query() {
     let script = dir.join("psql");
     let log = dir.join("sql");
     std::fs::write(&script, "#!/bin/sh\nwhile IFS= read -r line; do\n case \"$line\" in\n  '\\echo '*) printf '%s\\n' \"${line#\\\\echo }\";;\n  '\\q') exit 0;;\n  *) printf '%s\\n' \"$line\" >> \"$RUXEL_PG_MAINTAIN_LOG\"; case \"$line\" in 'SHOW server_version_num;'*) printf '%s\\n' \"$RUXEL_PG_MAINTAIN_VERSION\";; esac;;\n esac\ndone\n").unwrap();
-    std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     for version in ["160000", "170000"] {
         for kind in ["table", "default_privs"] {
             for check in ["0", "1"] {
@@ -67,7 +67,7 @@ fn maintain_requires_postgres_17_before_any_acl_query() {
                     .env("RUXEL_PG_MAINTAIN_KIND", kind)
                     .env("RUXEL_PG_MAINTAIN_CHECK", check)
                     .env("RUXEL_PG_MAINTAIN_LOG", &log)
-                    .env("PATH", &dir)
+                    .env("RUXEL_TEST_PSQL_PATH", &script)
                     .status()
                     .unwrap();
                 assert!(status.success());

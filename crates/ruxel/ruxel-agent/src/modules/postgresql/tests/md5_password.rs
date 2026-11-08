@@ -35,7 +35,7 @@ fn md5_password_check_and_apply_converge() {
         .env("RUXEL_MD5_TEST_CHILD", "1")
         .env("RUXEL_MD5_TEST_LOG", &log)
         .env("RUXEL_MD5_TEST_STATE", dir.join("verifier"))
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .output()
         .unwrap();
     assert!(

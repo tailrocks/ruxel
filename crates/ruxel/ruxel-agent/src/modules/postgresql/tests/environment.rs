@@ -55,7 +55,7 @@ fn task_environment_is_applied_and_isolates_cached_sessions() {
         .arg("task_environment_is_applied_and_isolates_cached_sessions")
         .env("RUXEL_ENV_TEST_CHILD", "1")
         .env("RUXEL_FAKE_PSQL_LOG", &log)
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .env_remove("PGHOST")
         .env_remove("PGPASSWORD")
         .status()

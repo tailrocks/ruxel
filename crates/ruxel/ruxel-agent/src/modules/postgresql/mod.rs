@@ -7,7 +7,7 @@
     reason = "replaced by the Ruxel rewrite"
 )]
 
-use super::{ExecContext, become_command, params_object, str_param};
+use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::HashMap;

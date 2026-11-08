@@ -98,7 +98,7 @@ impl PsqlSession {
             args.push("-d");
             args.push(database);
         }
-        let mut child = become_command(ctx, "psql", &args)?
+        let mut child = super::super::subprocess::psql_command(ctx, &args)?
             .spawn()
             .map_err(|error| format!("exec psql: {error}"))?;
         let stdin = child.stdin.take().ok_or("psql stdin")?;

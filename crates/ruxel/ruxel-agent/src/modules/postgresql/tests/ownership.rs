@@ -25,14 +25,14 @@ while IFS= read -r line; do
  esac
 done
 "#).unwrap();
-    std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .arg("database_and_schema_ownership_create_and_repair_converge")
         .env("RUXEL_PG_OWNER_CHILD", "1")
         .env("RUXEL_PG_OWNER_DB", dir.join("db"))
         .env("RUXEL_PG_OWNER_SCHEMA", dir.join("schema"))
         .env("RUXEL_PG_OWNER_LOG", &log)
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .output()
         .unwrap();
     assert!(

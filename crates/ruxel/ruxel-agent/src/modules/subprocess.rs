@@ -103,6 +103,46 @@ fn piped_command(mut command: Command, environment_script: Option<Vec<u8>>) -> T
     }
 }
 
+pub(super) fn psql_command(ctx: &ExecContext, args: &[&str]) -> Result<TaskCommand, String> {
+    if ctx.become_user.is_some() {
+        return become_command(ctx, "psql", args);
+    }
+    for (key, value) in &ctx.environment {
+        if key.is_empty() || key.contains(['=', '\0']) || value.contains('\0') {
+            return Err("invalid task environment variable".into());
+        }
+    }
+    #[cfg(test)]
+    let executable =
+        std::env::var_os("RUXEL_TEST_PSQL_PATH").unwrap_or_else(|| "/usr/bin/psql".into());
+    #[cfg(not(test))]
+    let executable = "/usr/bin/psql";
+    let mut command = Command::new(executable);
+    command.args(args).envs(ctx.environment.iter().cloned());
+    for (key, _) in std::env::vars_os() {
+        if key.to_str().is_some_and(untrusted_loader_environment) {
+            command.env_remove(key);
+        }
+    }
+    for (key, _) in &ctx.environment {
+        if untrusted_loader_environment(key) {
+            command.env_remove(key);
+        }
+    }
+    command.env("PATH", WRAPPER_PATH);
+    Ok(piped_command(command, None))
+}
+
+fn untrusted_loader_environment(key: &str) -> bool {
+    key.starts_with("LD_")
+        || key.starts_with("DYLD_")
+        || key.starts_with("PERL5")
+        || matches!(
+            key,
+            "PERLLIB" | "GCONV_PATH" | "LOCPATH" | "GLIBC_TUNABLES" | "BASH_ENV" | "ENV"
+        )
+}
+
 fn switched_command(
     ctx: &ExecContext,
     user: &str,

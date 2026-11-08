@@ -31,7 +31,7 @@ fn all_in_schema_handles_pipes_and_converges() {
         .env("RUXEL_ROWS_TEST_CHILD", "1")
         .env("RUXEL_ROWS_TEST_STATE", &state)
         .env("RUXEL_ROWS_TEST_BAD", &bad)
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .output()
         .unwrap();
     assert!(

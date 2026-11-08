@@ -19,6 +19,35 @@ fn context() -> ExecContext {
 }
 
 #[test]
+fn direct_psql_uses_fixed_path_and_removes_loader_inputs() {
+    let mut ctx = context();
+    ctx.become_user = None;
+    ctx.environment.push(("PERL5OPT".into(), "-Mbad".into()));
+    let prepared = psql_command(&ctx, &["-X"]).unwrap();
+    assert_eq!(prepared.command.get_program(), "/usr/bin/psql");
+    let env = prepared
+        .command
+        .get_envs()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for key in [
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_LIBRARY_PATH",
+        "PERL5OPT",
+    ] {
+        assert_eq!(env.get(std::ffi::OsStr::new(key)), Some(&None));
+    }
+    assert_eq!(
+        env.get(std::ffi::OsStr::new("PATH")),
+        Some(&Some(std::ffi::OsStr::new(WRAPPER_PATH)))
+    );
+    assert_eq!(
+        env.get(std::ffi::OsStr::new("PGHOST")),
+        Some(&Some(std::ffi::OsStr::new("synthetic-host")))
+    );
+}
+
+#[test]
 fn privilege_wrapper_uses_fixed_absolute_program_and_environment() {
     let ctx = context();
     for (program, args) in [

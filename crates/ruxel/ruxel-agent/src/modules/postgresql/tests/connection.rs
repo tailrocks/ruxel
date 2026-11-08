@@ -17,7 +17,7 @@ fn login_identity_is_passed_and_sessions_are_isolated() {
         .arg("login_identity_is_passed_and_sessions_are_isolated")
         .env("RUXEL_FAKE_PSQL_CHILD", "1")
         .env("RUXEL_FAKE_PSQL_LOG", &log)
-        .env("PATH", &dir)
+        .env("RUXEL_TEST_PSQL_PATH", &script)
         .status()
         .unwrap();
     assert!(status.success());
