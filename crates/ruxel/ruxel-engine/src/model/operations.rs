@@ -133,7 +133,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "comment" => false, FieldType::Text;
         "create_home" => false, FieldType::Flag;
         "group" => false, FieldType::Text;
-        "groups" => false, FieldType::TextList;
+        "groups" => false, FieldType::StringList;
         "home" => false, FieldType::Text;
         "name" => true, FieldType::Text;
         "remove" => false, FieldType::Flag;
@@ -143,7 +143,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "uid" => false, FieldType::Number;
     ),
     operation!("volume_group";
-        "pvs" => true, FieldType::TextList;
+        "pvs" => true, FieldType::StringList;
         "vg" => true, FieldType::Text;
     ),
     operation!("logical_volume";

@@ -142,7 +142,7 @@ output { value = new Ruxel.Config {
       new {
         name = "Exercise string user flags"
         checkMode = true
-        operation = new Ruxel.User { name = "ruxelfixture-absent"; group = "29871"; groups = "adm"; append = true; create_home = false; remove = true; system = false; state = "absent" }
+        operation = new Ruxel.User { name = "ruxelfixture-absent"; group = "29871"; groups { "adm" }; append = true; create_home = false; remove = true; system = false; state = "absent" }
       }
       new {
         name = "Exercise mixed mount source"

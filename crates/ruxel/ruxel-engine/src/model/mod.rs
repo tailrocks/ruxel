@@ -20,6 +20,7 @@ enum FieldType {
     Port,
     Mode,
     TextList,
+    StringList,
     ExprMap,
     Choice(&'static [&'static str]),
 }
@@ -74,6 +75,9 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
             (3..=4).contains(&s.len()) && s.bytes().all(|b| (b'0'..=b'7').contains(&b))
         }),
         FieldType::TextList => text_list(value),
+        FieldType::StringList => value
+            .as_array()
+            .is_some_and(|v| v.iter().all(Value::is_string)),
         FieldType::Choice(choices) => value.as_str().is_some_and(|s| choices.contains(&s)),
         FieldType::ExprMap => {
             for expr in value

@@ -47,7 +47,6 @@ fn run_with_identity(
                     .ok_or("lvg: pvs entries must be strings".to_string())
             })
             .collect::<Result<_, _>>()?,
-        Some(Value::String(s)) => s.split(',').map(|p| p.trim().to_string()).collect(),
         _ => return Err("lvg: pvs required (list of device paths)".into()),
     };
     if vg.is_empty()
@@ -228,6 +227,16 @@ mod tests {
     }
     fn pvs() -> CommandOutput {
         output(&json!({"report":[{"pv":[{"vg_name":"vg", "pv_name":"/dev/a"}]}]}))
+    }
+
+    #[test]
+    fn pvs_reject_scalars_and_non_string_entries_before_commands() {
+        for pvs in [json!("/dev/a,/dev/b"), json!(["/dev/a", 2])] {
+            let mut command = |_: &str, _: &[&str]| -> Result<CommandOutput, String> {
+                panic!("invalid pvs must not run a command")
+            };
+            assert!(run_with(&json!({"vg":"vg", "pvs":pvs}), true, &mut command).is_err());
+        }
     }
 
     #[test]

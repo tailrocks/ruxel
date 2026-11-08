@@ -1,6 +1,28 @@
 use super::{Result, evaluate};
 
 #[test]
+fn user_groups_and_volume_pvs_are_lists_or_expressions() -> Result {
+    for (class, base, field) in [
+        ("User", "name = \"fixture\"", "groups"),
+        ("VolumeGroup", "vg = \"fixture\"", "pvs"),
+    ] {
+        for value in [r#""one,two""#, "42", "Listing(\"one\", 2)"] {
+            assert!(
+                evaluate(&format!("new R.{class} {{ {base}; {field} = {value} }}")).is_err(),
+                "{class} {value}"
+            );
+        }
+        for value in [
+            r#"Listing("one", "two")"#,
+            r#"new R.Ref { path { "vars"; "values" } }"#,
+        ] {
+            evaluate(&format!("new R.{class} {{ {base}; {field} = {value} }}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn become_user_requires_nonempty_valid_usernames() -> Result {
     for class in ["Play", "Task"] {
         let operation = if class == "Task" {

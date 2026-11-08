@@ -33,7 +33,7 @@ config = new R.Config {
         new R.Task { name = "template"; operation = new R.Template { dest = "/tmp/template"; content = new R.Call { `function` = "string"; args { new R.Literal { value = 42 } } } } }
         new R.Task { name = "copy"; operation = new R.Copy { dest = "/tmp/copy"; content = "data" } }
         new R.Task { name = "secret"; operation = new R.PostgresRole { name = "app"; password = new R.Lookup { provider = "synthetic"; key = "password" } } }
-        new R.Task { name = "volume group"; operation = new R.VolumeGroup { vg = "vg"; pvs = "/dev/example" } }
+        new R.Task { name = "volume group"; operation = new R.VolumeGroup { vg = "vg"; pvs { "/dev/example" } } }
         new R.Task { name = "timezone"; operation = new R.Timezone { name = "UTC" } }
         new R.Task { name = "schema"; operation = new R.PostgresSchema { name = "app"; login_db = "db" } }
       }

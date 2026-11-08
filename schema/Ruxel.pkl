@@ -237,7 +237,7 @@ class User {
   comment: Text? = null
   create_home: Flag? = null
   group: Text? = null
-  groups: TextList? = null
+  groups: (Listing<String>(this.every((value) -> value is String))|Expr)? = null
   home: Text? = null
   name: Text
   remove: Flag? = null
@@ -249,7 +249,7 @@ class User {
 
 class VolumeGroup {
   fixed kind = "volume_group"
-  pvs: TextList
+  pvs: Listing<String>(this.every((value) -> value is String))|Expr
   vg: Text
 }
 

@@ -69,7 +69,7 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Exercise closed absent-user surface"
-        operation = new Ruxel.User { name = "ruxelfixture-absent"; uid = 29871; group = ref(new Listing { "vars"; "fixture_group" }); groups = "adm"; append = true; comment = "Synthetic Ruxel Fixture"; home = "/var/lib/ruxelfixture"; shell = "/bin/sh"; create_home = false; system = false; state = "absent"; remove = true }
+        operation = new Ruxel.User { name = "ruxelfixture-absent"; uid = 29871; group = ref(new Listing { "vars"; "fixture_group" }); groups { "adm" }; append = true; comment = "Synthetic Ruxel Fixture"; home = "/var/lib/ruxelfixture"; shell = "/bin/sh"; create_home = false; system = false; state = "absent"; remove = true }
       }
       new {
         name = "Install synthetic authorized key"

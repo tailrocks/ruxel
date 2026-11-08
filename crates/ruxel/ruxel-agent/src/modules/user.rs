@@ -120,12 +120,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let group = str_param(obj, "group");
     let groups: Option<Vec<String>> = match obj.get("groups") {
         None => None,
-        Some(Value::String(s)) => Some(s.split(',').map(|g| g.trim().to_string()).collect()),
         Some(Value::Array(items)) => Some(
             items
                 .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect(),
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .ok_or("user: groups entries must be strings")
+                })
+                .collect::<Result<_, _>>()?,
         ),
         Some(other) => return Err(format!("user: invalid groups {other:?}")),
     };
@@ -302,6 +305,33 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn groups_reject_scalars_and_non_string_entries() {
+        let ctx = ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+        for groups in [json!("wheel,docker"), json!(["wheel", 2])] {
+            assert!(
+                run(
+                    &json!({"name":"ruxel-synthetic-user", "groups":groups}),
+                    &ctx
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            run(
+                &json!({"name":"ruxel-synthetic-user", "groups":["wheel", "docker"]}),
+                &ctx
+            )
+            .is_ok()
+        );
     }
 
     #[test]

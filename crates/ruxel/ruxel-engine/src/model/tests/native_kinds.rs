@@ -1,12 +1,42 @@
 use super::*;
 
 #[test]
+fn groups_and_pvs_require_lists_before_dispatch() -> Result<()> {
+    for (kind, field, base) in [
+        ("user", "groups", json!({"name":"fixture"})),
+        ("volume_group", "pvs", json!({"vg":"fixture"})),
+    ] {
+        for value in [json!(["one", "two"]), json!([])] {
+            let mut params = base.clone();
+            params[field] = value;
+            validate_operation(kind, params.as_object().context("params")?)?;
+        }
+        for value in [
+            json!("one,two"),
+            json!(["one", 2]),
+            json!({"kind":"ref", "path":["vars", "values"]}),
+        ] {
+            let mut params = base.clone();
+            params[field] = value;
+            let params = params.as_object().context("params")?;
+            assert!(validate_operation(kind, params).is_err());
+            if params[field].is_object() {
+                operation(kind, params, true)?;
+            } else {
+                assert!(operation(kind, params, true).is_err());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn native_operation_kinds_replace_collection_names() -> Result<()> {
     for (kind, legacy, params) in [
         (
             "volume_group",
             "community.general.lvg",
-            json!({"vg":"vg", "pvs":"/dev/example"}),
+            json!({"vg":"vg", "pvs":["/dev/example"]}),
         ),
         (
             "logical_volume",
