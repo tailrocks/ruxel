@@ -19,7 +19,7 @@ manifest are retained unchanged for attribution. Inactive feature names remain
 known to check-cfg so retaining that source does not produce spurious warnings.
 This lets mandatory standalone CI test the actual embedded feature set without
 C-backed TLS or unrelated downloads during all-feature metadata discovery.
-Ruxel's selected feature set and resource behavior are unchanged. Cargo.lock
+Ruxel's selected feature set is unchanged. Cargo.lock
 independently pins this excluded-workspace package's native test graph.
 The native syntax, imports, numbers, strings and rendering integration modules
 and their fixtures are retained. Their test entry point selects those five
@@ -36,13 +36,23 @@ undeclared property first. Official Pkl 0.32.2 independently rejects the missing
 case and renders both assigned fields as "assigned" in the filled case. The
 integration delta is recorded in ../../patches/pklr-5.2.3/native-tests.patch.
 
-The only library behavior delta is the reviewed patch at
-../../patches/pklr-5.2.3/required-members.patch: defer missing required instance
-members, permit amendment of incomplete typed defaults, and reject unresolved
-constructors. Documentation-only markup corrections are recorded in
-../../patches/pklr-5.2.3/rustdoc.patch. All library implementation outside the
-required-member patch, including resource handling, is unchanged.
-The Ruxel evaluator's resource configuration is unchanged.
+The local library changes include:
+
+- The patch at ../../patches/pklr-5.2.3/required-members.patch defers missing
+  required instance members, permits amendment of incomplete typed defaults,
+  and rejects unresolved constructors.
+- `eval_source_json_blocking` evaluates supplied source at a logical module
+  path and renders its output as JSON (commit c7f6dc4).
+- The parser records glob import expressions and exposes parsed module
+  references, including whether each is a glob (commit d90fbf2).
+- An optional `ModuleSource` interface supplies module identity, existence,
+  and reads separately from resource and package IO. When configured, module
+  glob imports are unavailable and module source errors are propagated
+  (commit 0e8007c).
+
+Documentation-only markup corrections are recorded in
+../../patches/pklr-5.2.3/rustdoc.patch. The patch files do not include all later
+changes; Git history records the additional changes to the vendored source.
 
 The dependency is selected directly by path and exact version in ruxel-config;
 there is no Cargo patch table. It is excluded from the first-party workspace.
