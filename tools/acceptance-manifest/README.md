@@ -40,6 +40,12 @@ cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.tom
   --scenario check-semantics --scenario multihost --scenario controller-delegation
 ```
 
+The local task also runs the `secret_dedup` example against the actual controller
+and agent. It uses a temporary fake `op` executable and synthetic fields to check
+same-item deduplication and output redaction in check and diff, including a
+wrong-field negative control. It does not contact 1Password or establish full
+performance-snapshots acceptance.
+
 The actual CLI and local agent run with disposable temporary payloads only. This
 is not evidence for privileged workloads or full matrix parity. The candidate
 `acceptance-local` task runs both commands; aggregate execution remains blocked
