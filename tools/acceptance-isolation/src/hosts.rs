@@ -104,7 +104,7 @@ fn shutdown(h: &Harness<'_>) -> Result<()> {
     let log = h.path("closed");
     let wrapper = h.wrapper("shutdown-wrapper", "shutdown", &log, 0)?;
     h.write(include_str!("../fixtures/shutdown.pkl"))?;
-    let e = events(&h.run(&wrapper, "shutdown-state", "2", None)?, 8)?;
+    let e = events(&h.run(&wrapper, "shutdown-state", "2", None)?, 7)?;
     let errors: Vec<_> = e.iter().filter(|e| e["event"] == "unreachable").collect();
     ensure!(
         errors.len() == 2

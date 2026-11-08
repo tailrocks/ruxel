@@ -10,7 +10,7 @@ pub fn check(root: &Path, cli: &Path, agent: &Path, post: bool) -> Result<()> {
         let mode = if post { "post-handshake" } else { "handshake" };
         let wrapper = h.wrapper(&format!("wrapper-{failed}"), mode, &log, failed)?;
         let output = h.run(&wrapper, &format!("state-{failed}"), "1", None)?;
-        let events = events(&output, 8)?;
+        let events = events(&output, 7)?;
         validate(&events, failed)?;
         let rows: Vec<Value> = fs::read_to_string(&log)?
             .lines()
@@ -78,7 +78,8 @@ fn validate(events: &[Value], failed: usize) -> Result<()> {
         .filter(|recap| recap["failed"].as_u64().is_some_and(|n| n > 0))
         .collect();
     ensure!(
-        healthy.len() == 1 && failed.len() == 1 && healthy[0]["ok"] == 4 && failed[0]["ok"] == 0,
+        healthy.len() == 1 && failed.len() == 1 && healthy[0]["ok"] == 4 && failed[0]["ok"] == 0
+            && failed[0]["unreachable"] == 1,
         "incorrect failed/healthy recap"
     );
     Ok(())
