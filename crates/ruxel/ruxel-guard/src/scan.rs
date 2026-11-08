@@ -1,4 +1,7 @@
-use crate::{Policy, policy::normalize};
+use crate::{
+    Policy,
+    policy::{intersects, mapped_network},
+};
 use ipnet::IpNet;
 use std::net::IpAddr;
 
@@ -31,20 +34,12 @@ pub fn deny_hits(policy: &Policy, literals: &[&str]) -> Vec<(String, String)> {
                         .map(IpNet::from)
                 });
             if let Some(net) = candidate {
-                let ip = normalize(net.network());
-                let host = if net.prefix_len() == net.max_prefix_len() {
-                    Some(ip)
-                } else {
-                    None
-                };
-                if host.is_none() && net.prefix_len() < if net.addr().is_ipv4() { 8 } else { 16 } {
+                let net = mapped_network(net);
+                if net.prefix_len() < if net.addr().is_ipv4() { 8 } else { 16 } {
                     continue;
                 }
                 for deny in &policy.deny {
-                    if host.is_some_and(|ip| deny.contains(&ip))
-                        || (host.is_none()
-                            && (deny.contains(&net.network()) || net.contains(&deny.network())))
-                    {
+                    if intersects(*deny, net) {
                         hits.push(((*literal).to_owned(), format!("deny {deny}")));
                     }
                 }
