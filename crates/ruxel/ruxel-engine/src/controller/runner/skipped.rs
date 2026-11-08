@@ -37,7 +37,7 @@ impl<B: Backend> Runner<'_, B> {
             self.recap.skipped += 1;
             let private = layer.no_log || layer.control_sensitive;
             if let Some(name) = string(task, "register") {
-                let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip_reason":"Conditional result was False"});
+                let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip":{"cause":"condition_false"}});
                 let skipped = if private {
                     TrackedValue::secret(skipped)
                 } else {

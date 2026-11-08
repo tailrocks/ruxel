@@ -6,7 +6,7 @@ mod nested;
 async fn skipped_block_registers_child_results() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
         {"name":"block","when":false,"block":[{"name":"child","register":"child","operation":{"kind":"debug"}}]},
-        {"name":"observe","operation":{"kind":"set_fact","values":{"failed":{"kind":"ref","path":["results","child","failed"]},"reason":{"kind":"ref","path":["results","child","skip_reason"]}}}}
+        {"name":"observe","operation":{"kind":"set_fact","values":{"failed":{"kind":"ref","path":["results","child","failed"]},"reason":{"kind":"ref","path":["results","child","skip","cause"]}}}}
     ]}]});
     let mut backend = Fake::default();
     run(
@@ -20,7 +20,7 @@ async fn skipped_block_registers_child_results() -> Result<()> {
     assert_eq!(backend.events[1]["result"]["facts"]["failed"], false);
     assert_eq!(
         backend.events[1]["result"]["facts"]["reason"],
-        "Conditional result was False"
+        "condition_false"
     );
     Ok(())
 }
@@ -29,7 +29,7 @@ async fn skipped_block_registers_child_results() -> Result<()> {
 async fn skipped_block_registered_child_keeps_no_log() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
         {"name":"block","when":false,"block":[{"name":"child","noLog":true,"register":"child","operation":{"kind":"debug"}}]},
-        {"name":"observe","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","child","skip_reason"]}}}}
+        {"name":"observe","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","child","skip","cause"]}}}}
     ]}]});
     let mut backend = Fake::default();
     run(

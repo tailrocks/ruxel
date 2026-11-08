@@ -202,7 +202,7 @@ impl<B: Backend> Runner<'_, B> {
                 )?;
                 iteration_layer.control_sensitive |= condition.is_secret();
                 if !truth(&condition.value) {
-                    let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip_reason":"Conditional result was False"});
+                    let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip":{"cause":"condition_false"}});
                     let mut skipped = if iteration_layer.control_sensitive || iteration_layer.no_log
                     {
                         TrackedValue::secret(skipped)
@@ -242,8 +242,7 @@ impl<B: Backend> Runner<'_, B> {
                 } else {
                     TrackedValue::public(Value::Bool(truth(&condition.value)))
                 };
-                result.insert("failed".into(), outcome.clone())?;
-                result.insert("failed_when_result".into(), outcome)?;
+                result.insert("failed".into(), outcome)?;
             }
             if let Some(expr) = task.get("changedWhen").filter(|v| !v.is_null()) {
                 let condition = self.evaluate_scoped(expr, &current_scope, &iteration_layer)?;
@@ -252,8 +251,7 @@ impl<B: Backend> Runner<'_, B> {
                 } else {
                     TrackedValue::public(Value::Bool(truth(&condition.value)))
                 };
-                result.insert("changed".into(), outcome.clone())?;
-                result.insert("changed_when_result".into(), outcome)?;
+                result.insert("changed".into(), outcome)?;
             }
             results.push(result);
         }

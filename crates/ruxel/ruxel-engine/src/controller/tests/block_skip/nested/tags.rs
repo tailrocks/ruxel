@@ -36,7 +36,7 @@ async fn conditional_skips_preserve_leaf_and_block_tag_selection() -> Result<()>
     assert_eq!(keys, ["chosen", "inherited"]);
     for key in keys {
         assert_eq!(observed[key]["skipped"], true);
-        assert_eq!(observed[key]["skip_reason"], "Conditional result was False");
+        assert_eq!(observed[key]["skip"]["cause"], "condition_false");
     }
     let names: Vec<_> = backend
         .events

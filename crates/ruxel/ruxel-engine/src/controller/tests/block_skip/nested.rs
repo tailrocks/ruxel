@@ -18,7 +18,7 @@ fn observe_registered_leaves() -> Value {
         "one":{"kind":"ref","path":["results","one","skipped"]},
         "two":{"kind":"ref","path":["results","two","skipped"]},
         "failed":{"kind":"ref","path":["results","two","failed"]},
-        "reason":{"kind":"ref","path":["results","one","skip_reason"]}
+        "reason":{"kind":"ref","path":["results","one","skip","cause"]}
     }}})
 }
 
@@ -61,7 +61,7 @@ async fn skipped_nested_block_registers_only_leaves_in_entered_sections() -> Res
         let observed = backend.events.last().context("observer event")?;
         assert_eq!(
             observed["result"]["facts"],
-            json!({"one":true,"two":true,"failed":false,"reason":"Conditional result was False"})
+            json!({"one":true,"two":true,"failed":false,"reason":"condition_false"})
         );
         assert!(backend.calls.is_empty());
     }
@@ -86,7 +86,7 @@ async fn skipped_nested_block_inherits_private_registers() -> Result<()> {
     for event in &backend.events {
         assert_eq!(event["result"]["censored"], true);
         assert!(event["result"].get("facts").is_none());
-        assert!(event["result"].get("skip_reason").is_none());
+        assert!(event["result"].get("skip").is_none());
     }
     assert!(backend.calls.is_empty());
     Ok(())
