@@ -1,4 +1,4 @@
-pub(super) fn requested<F>(version: &str, dest: &str, git: &F) -> Result<(), String>
+pub(super) fn requested<F>(version: &str, dest: &str, force: bool, git: &F) -> Result<(), String>
 where
     F: Fn(&[&str], Option<&str>) -> Result<(String, bool), String>,
 {
@@ -7,10 +7,15 @@ where
         &["rev-parse", "--verify", "--end-of-options", &remote_branch],
         Some(dest),
     )?;
-    resolved(if found { &remote_branch } else { version }, dest, git)
+    resolved(
+        if found { &remote_branch } else { version },
+        dest,
+        force,
+        git,
+    )
 }
 
-pub(super) fn resolved<F>(version: &str, dest: &str, git: &F) -> Result<(), String>
+pub(super) fn resolved<F>(version: &str, dest: &str, force: bool, git: &F) -> Result<(), String>
 where
     F: Fn(&[&str], Option<&str>) -> Result<(String, bool), String>,
 {
@@ -22,7 +27,12 @@ where
     if !found {
         return Err(format!("git: cannot resolve version {version} to a commit"));
     }
-    let (_, checked_out) = git(&["checkout", "--detach", &commit, "--"], Some(dest))?;
+    let mut args = vec!["checkout", "--detach"];
+    if force {
+        args.push("--force");
+    }
+    args.extend([commit.as_str(), "--"]);
+    let (_, checked_out) = git(&args, Some(dest))?;
     if !checked_out {
         return Err(format!(
             "git: checkout resolved commit for {version} failed"
@@ -45,7 +55,7 @@ mod tests {
                 .push(args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>());
             Ok((String::new(), false))
         };
-        assert!(resolved("missing-revision", "synthetic", &git).is_err());
+        assert!(resolved("missing-revision", "synthetic", false, &git).is_err());
         assert_eq!(calls.borrow().len(), 1);
         assert_eq!(
             calls.borrow()[0],
@@ -68,7 +78,7 @@ mod tests {
                 .push(args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>());
             Ok((commit.to_owned(), true))
         };
-        resolved("release", "synthetic", &git)?;
+        resolved("release", "synthetic", false, &git)?;
         assert_eq!(calls.borrow()[1], ["checkout", "--detach", commit, "--"]);
         Ok(())
     }

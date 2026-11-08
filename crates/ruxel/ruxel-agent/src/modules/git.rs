@@ -73,7 +73,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             return Err(format!("git clone {repo} failed"));
         }
         if let Some(v) = clone_branch(version) {
-            checkout::requested(v, dest, &git)?;
+            checkout::requested(v, dest, force, &git)?;
         }
         let after = head()?;
         return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
@@ -166,8 +166,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err("git fetch failed".into());
     }
     match version {
-        Some(v) => checkout::requested(v, dest, &git)?,
-        None => checkout::resolved("FETCH_HEAD", dest, &git)?,
+        Some(v) => checkout::requested(v, dest, force, &git)?,
+        None => checkout::resolved("FETCH_HEAD", dest, force, &git)?,
     }
     let after = head()?;
     let (after_status, ok) = git(&["status", "--porcelain"], Some(dest))?;
@@ -378,3 +378,7 @@ mod head_tests;
 #[cfg(test)]
 #[path = "git/tests/branches.rs"]
 mod branch_tests;
+
+#[cfg(test)]
+#[path = "git/tests/collision.rs"]
+mod collision_tests;

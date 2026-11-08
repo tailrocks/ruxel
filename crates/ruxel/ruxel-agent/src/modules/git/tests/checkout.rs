@@ -36,6 +36,7 @@ fn revisions_resolve_to_commits_and_missing_revision_preserves_head() -> Result<
             resolved(
                 version,
                 directory.to_str().ok_or("non-text fixture path")?,
+                false,
                 &runner,
             )?;
             assert!(!git(&directory, &["symbolic-ref", "-q", "HEAD"])?.1);
@@ -43,7 +44,7 @@ fn revisions_resolve_to_commits_and_missing_revision_preserves_head() -> Result<
             assert_eq!(&git(&directory, &["rev-parse", "HEAD"])?.0, expected);
         }
         let before = git(&directory, &["rev-parse", "HEAD"])?.0;
-        assert!(resolved("missing-revision", "unused", &runner).is_err());
+        assert!(resolved("missing-revision", "unused", false, &runner).is_err());
         assert_eq!(git(&directory, &["rev-parse", "HEAD"])?.0, before);
         Ok(())
     })();
