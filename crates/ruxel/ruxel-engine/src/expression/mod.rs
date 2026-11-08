@@ -133,17 +133,41 @@ fn call(
 ) -> Result<Value> {
     match function {
         "concat" => {}
-        "if" => arity(function, args, 3)?,
+        "if" | "flatMap" => arity(function, args, 3)?,
         "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "bool" | "trim"
         | "urlencode" | "list" | "string" => arity(function, args, 1)?,
         "default" | "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains"
-        | "mapAttribute" | "subelements" | "join" | "map" => arity(function, args, 2)?,
+        | "mapAttribute" | "join" | "map" => arity(function, args, 2)?,
         _ => bail!("unknown expression function {function}"),
     }
     match function {
         "if" => {
             let condition = boolean(&evaluate(&args[0], scope, resolver)?)?;
             return evaluate(&args[if condition { 1 } else { 2 }], scope, resolver);
+        }
+        "flatMap" => {
+            let source = evaluate(&args[0], scope, resolver)?;
+            let items = source.as_array().context("flatMap expects a list")?;
+            let binding = evaluate(&args[1], scope, resolver)?;
+            let binding = binding.as_str().context("flatMap expects a binding name")?;
+            ensure!(
+                !binding.is_empty() && !["item", "vars", "facts", "results"].contains(&binding),
+                "invalid flatMap binding"
+            );
+            let mut child = scope.clone();
+            let mut result = Vec::new();
+            for item in items {
+                child.extra.insert(binding.to_owned(), item.clone());
+                let value = evaluate(&args[2], &child, resolver)?;
+                result.extend(
+                    value
+                        .as_array()
+                        .context("flatMap body must return a list")?
+                        .iter()
+                        .cloned(),
+                );
+            }
+            return Ok(Value::Array(result));
         }
         "map" => {
             let source = evaluate(&args[0], scope, resolver)?;
@@ -311,10 +335,7 @@ fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result
             arity(function, args, 2)?;
             map_attribute(&values[0], &values[1])
         }
-        "subelements" => {
-            arity(function, args, 2)?;
-            subelements(&values[0], &values[1])
-        }
+
         _ => bail!("unknown expression function {function}"),
     }
 }
@@ -350,26 +371,5 @@ fn map_attribute(items: &Value, key: &Value) -> Result<Value> {
         .collect::<Result<Vec<_>>>()
         .map(Value::Array)
 }
-fn subelements(parents: &Value, key: &Value) -> Result<Value> {
-    let parents = parents.as_array().context("subelements expects a list")?;
-    let key = key.as_str().context("subelements expects a field name")?;
-    let mut result = Vec::new();
-    for parent in parents {
-        let mut children = parent;
-        for part in key.split('.') {
-            children = children
-                .get(part)
-                .with_context(|| format!("missing subelements field {key}"))?;
-        }
-        for child in children
-            .as_array()
-            .context("subelements field must be a list")?
-        {
-            result.push(json!([parent, child]));
-        }
-    }
-    Ok(Value::Array(result))
-}
-
 #[cfg(test)]
 mod tests;

@@ -11,7 +11,7 @@ output { value = new Ruxel.Config {
   } } }
   tasks {
    new { name = "pairs"; register = "pair_results"
-    `loop` = call("subelements", new Listing { ref(new Listing { "vars"; "parents" }); literal("children") })
+    `loop` = call("flatMap", new Listing { ref(new Listing { "vars"; "parents" }); literal("parent"); call("map", new Listing { ref(new Listing { "parent"; "children" }); new Ruxel.ListExpr { items { ref(new Listing { "parent" }); ref(new Listing { "item" }) } } }) })
     loopLabel = call("concat", new Listing { ref(new Listing { "item"; "0"; "name" }); literal("/"); ref(new Listing { "item"; "1" }) })
     operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { literal("/usr/bin/printf"); literal("%s:%s"); ref(new Listing { "item"; "0"; "name" }); ref(new Listing { "item"; "1" }) } } }
    }

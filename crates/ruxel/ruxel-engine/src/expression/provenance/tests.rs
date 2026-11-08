@@ -105,3 +105,18 @@ fn sensitive_failures_are_generic_and_public_errors_remain_useful() {
 }
 
 mod review_tests;
+
+#[test]
+fn flat_map_preserves_nested_secret_provenance() -> Result<()> {
+    let source = json!({"kind":"list", "items":[lookup(), {"kind":"literal", "value":"visible"}]});
+    let body = json!({"kind":"list", "items":[{"kind":"ref", "path":["entry"]}]});
+    let result = eval(
+        call(
+            "flatMap",
+            &[source, json!({"kind":"literal", "value":"entry"}), body],
+        ),
+        &empty_scope(),
+    )?;
+    assert_eq!(result.redacted(), json!(["[REDACTED]", "visible"]));
+    Ok(())
+}

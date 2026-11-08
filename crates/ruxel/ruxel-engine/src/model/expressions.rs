@@ -81,11 +81,11 @@ fn validate_call(object: &Map<String, Value>) -> Result<()> {
         .context("call requires args")?;
     let arity = match function {
         "concat" => None,
-        "if" => Some(3),
+        "if" | "flatMap" => Some(3),
         "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "string" | "bool"
         | "trim" | "urlencode" | "list" => Some(1),
         "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or" | "default" | "contains"
-        | "subelements" | "mapAttribute" | "join" | "map" => Some(2),
+        | "mapAttribute" | "join" | "map" => Some(2),
         _ => bail!("unknown expression function"),
     };
     ensure!(

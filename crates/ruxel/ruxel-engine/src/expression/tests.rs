@@ -74,7 +74,7 @@ fn default_and_boolean_operators_are_lazy() -> Result<()> {
 }
 
 #[test]
-fn transformations_and_subelements() -> Result<()> {
+fn transformations_and_flat_map() -> Result<()> {
     let scope = Scope::default();
     assert_eq!(
         run(call("sha256", vec![lit(json!("abc"))]), &scope)?,
@@ -93,11 +93,18 @@ fn transformations_and_subelements() -> Result<()> {
     assert_eq!(
         run(
             call(
-                "subelements",
+                "flatMap",
                 vec![
                     lit(json!([{"name":"x","children":[1,2]}])),
-                    lit(json!("children"))
-                ]
+                    lit(json!("parent")),
+                    call(
+                        "map",
+                        vec![
+                            json!({"kind":"ref", "path":["parent","children"]}),
+                            json!({"kind":"list", "items":[{"kind":"ref", "path":["parent"]}, {"kind":"ref", "path":["item"]}]}),
+                        ]
+                    ),
+                ],
             ),
             &scope
         )?,

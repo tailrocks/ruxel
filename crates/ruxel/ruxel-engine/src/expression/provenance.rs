@@ -142,11 +142,11 @@ fn call(
 ) -> Result<TrackedValue> {
     let expected = match function {
         "concat" => None,
-        "if" => Some(3),
+        "if" | "flatMap" => Some(3),
         "not" | "length" | "sha256" | "base64Encode" | "base64Decode" | "bool" | "trim"
         | "urlencode" | "list" | "string" => Some(1),
         "default" | "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains"
-        | "mapAttribute" | "subelements" | "join" | "map" => Some(2),
+        | "mapAttribute" | "join" | "map" => Some(2),
         _ => bail!("unknown expression function {function}"),
     };
     if let Some(expected) = expected {
@@ -213,6 +213,69 @@ fn call(
                 TrackedValue::secret(value)
             } else {
                 TrackedValue::public(value)
+            });
+        }
+        "flatMap" => {
+            let mut source = evaluate_with_variables(&args[0], scope, resolver, variables)?;
+            source.provenance = source.provenance.validated(&source.value);
+            let binding = evaluate_with_variables(&args[1], scope, resolver, variables)?;
+            let sensitive = source.is_secret() || binding.is_secret();
+            let name = binding
+                .value
+                .as_str()
+                .context("flatMap expects a binding name")
+                .map_err(|e| sensitive_error(e, sensitive))?;
+            if name.is_empty() || ["item", "vars", "facts", "results"].contains(&name) {
+                return Err(sensitive_error(
+                    anyhow::anyhow!("invalid flatMap binding"),
+                    sensitive,
+                ));
+            }
+            let items = source
+                .value
+                .as_array()
+                .context("flatMap expects a list")
+                .map_err(|e| sensitive_error(e, sensitive))?;
+            let mut values = Vec::new();
+            let mut provenance = Vec::new();
+            for (index, item) in items.iter().enumerate() {
+                let mut child = scope.clone();
+                child
+                    .value
+                    .as_object_mut()
+                    .context("scope must be an object")?
+                    .insert(name.to_owned(), item.clone());
+                let mut tree = match child.provenance {
+                    Provenance::Public | Provenance::Secret => BTreeMap::new(),
+                    Provenance::Object(v) => v,
+                    Provenance::Array(_) => bail!("scope provenance must be an object"),
+                };
+                if scope.provenance == Provenance::Secret {
+                    child.provenance = Provenance::Secret;
+                } else {
+                    tree.insert(name.to_owned(), source.provenance.child(&index.to_string()));
+                    child.provenance = Provenance::Object(tree);
+                }
+                let result = evaluate_with_variables(&args[2], &child, resolver, variables)
+                    .map_err(|e| sensitive_error(e, sensitive))?;
+                let result_provenance = result.provenance.validated(&result.value);
+                let list = result
+                    .value
+                    .as_array()
+                    .context("flatMap body must return a list")
+                    .map_err(|e| sensitive_error(e, sensitive || result.is_secret()))?;
+                for (i, value) in list.iter().enumerate() {
+                    values.push(value.clone());
+                    provenance.push(result_provenance.child(&i.to_string()));
+                }
+            }
+            return Ok(TrackedValue {
+                value: Value::Array(values),
+                provenance: if source.provenance == Provenance::Secret || binding.is_secret() {
+                    Provenance::Secret
+                } else {
+                    Provenance::Array(provenance)
+                },
             });
         }
         "map" => {
