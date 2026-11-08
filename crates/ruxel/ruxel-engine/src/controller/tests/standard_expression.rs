@@ -20,9 +20,6 @@ impl Backend for Custom {
     fn evaluate(&mut self, _: &Value, _: &Map<String, Value>) -> Result<Value> {
         anyhow::bail!("unexpected opaque evaluation")
     }
-    fn lazy_variable_layers(&self) -> bool {
-        true
-    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,

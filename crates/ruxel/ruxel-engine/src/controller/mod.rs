@@ -18,9 +18,6 @@ pub trait Backend {
     fn conservative_sensitive(&self) -> bool {
         false
     }
-    fn lazy_variable_layers(&self) -> bool {
-        false
-    }
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
@@ -47,19 +44,9 @@ pub trait Backend {
             TrackedValue::public(value)
         })
     }
-    /// # Errors
-    /// Returns an error if an accessed variable or expression cannot be evaluated.
-    fn evaluate_task_expression(
-        &mut self,
-        value: &Value,
-        scope: &crate::expression::provenance::TrackedValue,
-        vars: &Map<String, Value>,
-    ) -> Result<(
-        crate::expression::provenance::TrackedValue,
-        std::collections::BTreeMap<String, crate::expression::provenance::TrackedValue>,
-    )> {
-        fallback::evaluate(self, value, scope, vars)
-    }
+    /// Evaluates only accessed bindings, preserving shadowing, runtime scope and provenance.
+    /// Implementations must not materialize unused layers or unselected branches.
+    ///
     /// # Errors
     /// Returns an error if a required expression or binding cannot be evaluated.
     fn evaluate_layered_expression(
@@ -67,9 +54,7 @@ pub trait Backend {
         value: &Value,
         scope: &TrackedValue,
         layers: &[Map<String, Value>],
-    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        fallback::evaluate_layers(self, value, scope, layers)
-    }
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)>;
     /// # Errors
     /// Returns an error if the source cannot be prepared.
     fn prepare_operation(
@@ -303,7 +288,6 @@ pub async fn run<B: Backend>(
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
             let execution: Result<()> = async {
-                runner.materialize_inherited_variables(&mut layer, None)?;
                 let success = runner.tasks(array(play, "preTasks"), &layer).await?
                     && runner.tasks(array(play, "tasks"), &layer).await?;
                 if success {
@@ -345,7 +329,6 @@ mod selection;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};
-mod fallback;
 mod local;
 mod loop_vars;
 mod operation;

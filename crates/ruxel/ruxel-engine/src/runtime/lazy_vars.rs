@@ -129,15 +129,6 @@ impl<R: LookupResolver> VariableResolver for TaskVariables<'_, R> {
     }
 }
 
-pub(super) fn evaluate(
-    execution: &Execution,
-    value: &Value,
-    scope: &TrackedValue,
-    definitions: &Map<String, Value>,
-) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-    evaluate_layers(execution, value, scope, std::slice::from_ref(definitions))
-}
-
 pub(super) fn evaluate_layers(
     execution: &Execution,
     value: &Value,

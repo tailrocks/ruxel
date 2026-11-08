@@ -77,17 +77,6 @@ impl Backend for Execution {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
     }
-    fn evaluate_task_expression(
-        &mut self,
-        value: &Value,
-        scope: &TrackedValue,
-        vars: &Map<String, Value>,
-    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        lazy_vars::evaluate(self, value, scope, vars)
-    }
-    fn lazy_variable_layers(&self) -> bool {
-        true
-    }
     fn evaluate_layered_expression(
         &mut self,
         value: &Value,

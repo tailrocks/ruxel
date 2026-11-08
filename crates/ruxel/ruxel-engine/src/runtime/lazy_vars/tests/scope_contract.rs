@@ -66,20 +66,20 @@ fn only_canonical_vars_root_resolves_lazy_bindings() -> Result<()> {
     let scope = TrackedValue::public(json!({"vars":{}}));
     let definitions = vars.as_object().context("vars")?;
     assert!(
-        evaluate(
+        evaluate_layers(
             &execution,
             &json!({"kind":"ref","path":["variables","private"]}),
             &scope,
-            definitions
+            std::slice::from_ref(definitions)
         )
         .is_err()
     );
     assert!(execution.lookups.values.lock().expect("lock").is_empty());
-    let (value, _) = evaluate(
+    let (value, _) = evaluate_layers(
         &execution,
         &json!({"kind":"ref","path":["vars","private"]}),
         &scope,
-        definitions,
+        std::slice::from_ref(definitions),
     )?;
     assert!(value.is_secret());
     assert_eq!(execution.lookups.values.lock().expect("lock").len(), 1);

@@ -54,7 +54,8 @@ fn lazy_branches_leave_bad_variables_unresolved() -> Result<()> {
         json!({"kind":"call","function":"or","args":[{"kind":"literal","value":true},bad]}),
         json!({"kind":"call","function":"if","args":[{"kind":"literal","value":true},{"kind":"list","items":[]},bad]}),
     ] {
-        let (_, evaluated) = evaluate(&execution, &expression, &scope, vars)?;
+        let (_, evaluated) =
+            evaluate_layers(&execution, &expression, &scope, std::slice::from_ref(vars))?;
         assert!(evaluated.is_empty());
     }
     Ok(())
@@ -66,11 +67,11 @@ fn inherited_override_and_secret_memo_keep_provenance() -> Result<()> {
     let vars = json!({"name":{"kind":"call","function":"concat","args":[{"kind":"ref","path":["vars","name"]},{"kind":"literal","value":"-child"}]},"secret":{"kind":"lookup","provider":"synthetic","key":"synthetic-marker"}});
     let scope = TrackedValue::public(json!({"vars":{"name":"parent"}}));
     let expression = json!({"kind":"list","items":[{"kind":"ref","path":["vars","name"]},{"kind":"ref","path":["vars","secret"]},{"kind":"ref","path":["vars","secret"]}]});
-    let (value, evaluated) = evaluate(
+    let (value, evaluated) = evaluate_layers(
         &execution,
         &expression,
         &scope,
-        vars.as_object().expect("object"),
+        std::slice::from_ref(vars.as_object().expect("object")),
     )?;
     assert_eq!(value.value[0], "parent-child");
     assert_eq!(

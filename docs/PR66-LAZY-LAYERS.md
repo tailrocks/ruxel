@@ -1,57 +1,50 @@
-# Lazy variable layers: unfinished runtime work
+# Demand-driven variable layers
 
-At the starting revision, the controller materializes every group, host and play variable in
-`Runner::extend_vars`, and every block variable before running the block. It
-also materializes all remaining task variables before operation dispatch. A
-variable that is never referenced can therefore fail a host, and a variable
-that references a result produced by an earlier task can fail before that task
-runs. The frozen scheduler retained raw definitions in its scope and resolved
-names on access.
+The controller retains group, host, play, block and task variable definitions
+until an expression accesses them. An unused binding must not fail execution or
+perform a lookup. A binding that reads a registered result sees the result
+available at its point of use, including the current retry attempt.
 
-The local-only Pkl fixtures in `testdata/workloads/pr66/lazy-layers` make this
-observable. Each should emit `before`, `future`, then `after` with message
-`available`, and finish with three successful tasks. At the time of writing,
-both previously failed before the first task with a missing `results.future.msg`
-reference. The current isolated work-in-progress executes both successfully.
-They use a synthetic local inventory entry and do not require a network target
-or credentials.
+`Backend::evaluate_layered_expression` is a required backend method. Its contract
+is demand-driven evaluation: preserve layer precedence, inherited self-overrides,
+current runtime scope, lazy conditional branches and per-value provenance.
+There is no eager fallback or opt-in flag. The controller does not materialize
+all inherited variables at play entry, block selection or task dispatch, and it
+does not persist resolved selection bindings into later scopes.
 
-A complete implementation needs to retain layered definitions until an
-expression accesses them. It must preserve distinct binding identities across
-group, host, play, block and task layers, inherited self-overrides, dependency
-cycles, fact precedence, loop item scope, per-value sensitivity, and lazy
-conditional branches. Resolution must see results and facts available at the
-point of use, without replaying side-effecting lookups unnecessarily. Bare
-`vars` references must materialize the visible layer, and shadowed definitions
-must not be evaluated merely because a later definition exists.
+Backends using the standard Pkl runtime expression semantics implement this
+method by calling `controller::evaluate_standard_layered` with their own
+`LookupResolver`. The Rust runtime uses the same layered resolver. Backends with
+custom expression semantics must implement the demand-driven contract explicitly;
+the controller does not infer their dependencies by scanning expressions or
+flattening variable layers.
 
-This cannot be fixed by scanning descendants for references or flattening the
-layers: those approaches either evaluate unused branches or lose inherited
-self-overrides. Operation parameters, environment, delegation, loop labels,
-retry conditions, assertions and template preparation currently consume a
-materialized scope, so a layered resolver must be threaded through those paths
-and through the default backend contract. Existing sensitive-control,
-no-logging, per-item scope, cross-play facts and handler tests remain required.
-This branch remains under independent review. The default custom-backend API
-retains eager inherited-variable materialization and delegates evaluation to the
-backend's existing hooks. Group, host and play bindings materialize once at play
-entry, block bindings once after block selection, and task bindings once per
-iteration. Unused inherited bindings can still fail before execution; this is
-the opaque backend's compatibility behavior, not lazy parity.
+Each binding has a distinct layer identity. Cross-name references see the newest
+visible definition. A direct self-reference in an override can resolve the
+inherited binding, while a genuine dependency cycle fails. Resolution preserves
+fact precedence, loop item scope and secret provenance. Accessed bindings and
+errors are memoized within an evaluation; later evaluations use the current
+results, facts and item scope. An explicit reference to the complete `vars` map
+requests all visible bindings. The controller must not synthesize such a
+reference to prepare an unrelated expression.
 
-Backends opt into demand-driven layers by returning `true` from
-`Backend::lazy_variable_layers` and overriding `evaluate_layered_expression`.
-Backends using standard expression semantics can delegate that method to
-`controller::evaluate_standard_layered` with their own lookup resolver. This is
-an explicit opt-in and does not preserve backend-specific expression extensions.
-The Rust runtime uses this path. Cross-name references see the newest visible
-definition, matching the frozen scheduler; direct inherited self-overrides are
-an explicit behavior extension. Retry sensitivity is conservative for dynamic branches whose outcome
-cannot be known before dispatch; this avoids placing potentially sensitive agent
-results in the cache, but can censor results unnecessarily.
+Operation parameters, environment, delegation, loop labels, retry conditions,
+assertions and template preparation use layered evaluation. Existing
+sensitive-control, no-logging, per-item scope, cross-play facts and handler tests
+remain required. Retry sensitivity is conservative for dynamic branches whose
+outcome cannot be known before dispatch; this avoids placing potentially
+sensitive agent results in the cache, but can censor results unnecessarily.
 
-The local Rust runtime acceptance runner passes its six scenarios with the
-revised tag check, which requires exactly one skipped event for each excluded
-leaf and confirms that the existing payload is unchanged. The play and block
-fixtures, focused custom-backend tests, and those acceptance scenarios cover
-bounded cases; they do not establish full parity or replace independent review.
+The local-only Pkl fixtures in `testdata/workloads/pr66/lazy-layers` exercise
+play and block variables that read a later registered result. Each should emit
+`before`, `future`, then `after` with message `available`, and finish with three
+successful tasks. They use a synthetic local inventory entry and require no
+network target or credentials.
+
+Focused custom-backend tests check that unused parent errors and lookup effects
+remain untouched, accessed secrets retain provenance, and unused play and block
+bindings stay lazy across skipped tasks, empty loops and a successful child
+variable task. Standard-expression and runtime tests cover inherited overrides,
+current retry results, short-circuit branches and item scope. These bounded tests
+do not replace the migration workload evidence or independent review of the
+final integrated head.

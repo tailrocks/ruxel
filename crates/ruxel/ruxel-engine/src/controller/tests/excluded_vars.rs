@@ -1,21 +1,6 @@
 use super::*;
 
-#[derive(Default)]
-struct Opaque(Fake);
-impl Backend for Opaque {
-    fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
-        self.0.evaluate(value, scope)
-    }
-    async fn execute(&mut self, request: Request) -> Result<Value> {
-        self.0.execute(request).await
-    }
-    fn event(&mut self, event: &Value) -> Result<()> {
-        self.0.event(event)
-    }
-}
-
-mod opaque_hooks;
-mod opaque_lifetimes;
+mod demand_contract;
 
 #[test]
 fn layered_standard_backend_keeps_inherited_self_override() -> Result<()> {
@@ -100,16 +85,16 @@ async fn set_fact_takes_precedence_over_task_vars_in_condition() -> Result<()> {
 }
 
 #[test]
-fn custom_backend_fallback_resolves_referenced_task_variable() -> Result<()> {
-    let mut backend = Fake::default();
+fn standard_backend_resolves_referenced_task_variable() -> Result<()> {
+    let backend = Fake::default();
     let vars = json!({"value":{"kind":"literal","value":"ready"},"unused":{"kind":"ref","path":["results","missing"]}});
     let expr = json!({"kind":"ref","path":["vars","value"]});
     let scope = TrackedValue::public(json!({"vars":{},"results":{}}));
-    let (value, resolved) = super::super::fallback::evaluate(
-        &mut backend,
+    let (value, resolved) = evaluate_standard_layered(
+        &backend,
         &expr,
         &scope,
-        vars.as_object().context("vars")?,
+        std::slice::from_ref(vars.as_object().context("vars")?),
     )?;
     assert_eq!(value.value, "ready");
     assert_eq!(resolved.len(), 1);
@@ -117,16 +102,16 @@ fn custom_backend_fallback_resolves_referenced_task_variable() -> Result<()> {
 }
 
 #[test]
-fn custom_backend_fallback_resolves_shadowed_dependencies_in_order() -> Result<()> {
-    let mut backend = Fake::default();
+fn standard_backend_resolves_shadowed_dependencies_in_order() -> Result<()> {
+    let backend = Fake::default();
     let vars = json!({"alias":{"kind":"ref","path":["vars","derived"]},"derived":{"kind":"literal","value":"new"}});
     let expr = json!({"kind":"ref","path":["vars","alias"]});
     let scope = TrackedValue::public(json!({"vars":{"derived":"inherited"}}));
-    let (value, _) = super::super::fallback::evaluate(
-        &mut backend,
+    let (value, _) = evaluate_standard_layered(
+        &backend,
         &expr,
         &scope,
-        vars.as_object().context("vars")?,
+        std::slice::from_ref(vars.as_object().context("vars")?),
     )?;
     assert_eq!(value.value, "new");
     Ok(())

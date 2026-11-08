@@ -6,6 +6,14 @@ struct Changing {
     preparations: usize,
 }
 impl Backend for Changing {
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        self.inner.evaluate_layered_expression(value, scope, layers)
+    }
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value> {
         self.inner.evaluate(value, scope)
     }
