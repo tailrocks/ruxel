@@ -38,7 +38,7 @@ fn matches_zone(localtime: &std::path::Path, zoneinfo: &std::path::Path, name: &
     let Ok(target) = zoneinfo.join(zone).canonicalize() else {
         return false;
     };
-    if !target.starts_with(root) {
+    if !target.starts_with(root) || !target.is_file() {
         return false;
     }
     if metadata.file_type().is_symlink() {
@@ -86,6 +86,9 @@ mod tests {
         let local = dir.join("localtime");
         symlink(zones.join("Asia/Tokyo"), &local).unwrap();
         assert!(super::matches_zone(&local, &zones, "aliases/nested/Tokyo"));
+        std::fs::remove_file(&local).unwrap();
+        symlink(zones.join("Asia"), &local).unwrap();
+        assert!(!super::matches_zone(&local, &zones, "Asia"));
         std::fs::remove_file(&local).unwrap();
         let outside = dir.join("outside/zoneinfo/Asia");
         std::fs::create_dir_all(&outside).unwrap();
