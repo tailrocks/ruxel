@@ -51,6 +51,16 @@ impl SystemState {
                 None => Ok((name, name.as_str(), None)),
             })
             .collect::<Result<_, _>>()?;
+        for (_, package, version) in &requests {
+            if package.ends_with(":any") {
+                return Err(format!(
+                    "apt: :any package selectors are not supported: {package:?}"
+                ));
+            }
+            if version.is_some_and(|version| version.contains(['?', '[', ']'])) {
+                return Err(format!("apt: unsupported version pattern for {package:?}"));
+            }
+        }
         let mut pins = HashMap::new();
         for (_, package, version) in &requests {
             if let Some(version) = version
@@ -68,11 +78,18 @@ impl SystemState {
             for (_, package, version) in &requests {
                 let normalized = package
                     .rsplit_once(':')
-                    .filter(|(_, requested)| requested == architecture)
+                    .filter(|(name, requested)| {
+                        *requested == "native"
+                            || requested == architecture
+                            || (*requested == "all"
+                                && self.packages.as_ref().is_some_and(|packages| {
+                                    packages.contains_key(&format!("{name}:all"))
+                                }))
+                    })
                     .map_or(*package, |(name, _)| name);
-                if let Some(version) = version
-                    && let Some(previous) = normalized_pins.insert(normalized, *version)
-                    && previous != *version
+                if let Some(previous) = normalized_pins.insert(normalized, *version)
+                    && ((previous.is_some() && version.is_some() && previous != *version)
+                        || (latest && previous.is_some() != version.is_some()))
                 {
                     return Err(format!(
                         "apt: conflicting versions requested for {normalized:?}"
@@ -91,14 +108,36 @@ impl SystemState {
         let packages = self.packages.as_ref().ok_or("packages not initialized")?;
         Ok(requests
             .iter()
-            .filter(|(_, package, version)| match packages.get(*package) {
-                None => true,
-                Some(installed) if version.is_some() => version != &Some(installed.as_str()),
-                Some(installed) if latest => self
-                    .candidates
-                    .get(*package)
-                    .is_some_and(|candidate| candidate != installed && candidate != "(none)"),
-                Some(_) => false,
+            .filter(|(_, package, version)| {
+                match packages.get(*package).or_else(|| {
+                    package
+                        .strip_suffix(":native")
+                        .and_then(|name| packages.get(name))
+                }) {
+                    None => true,
+                    Some(installed) if version.is_some() => {
+                        let pattern = version.unwrap_or_default();
+                        if pattern.contains('*') {
+                            let regex = format!(
+                                "^{}$",
+                                pattern
+                                    .split('*')
+                                    .map(regex_lite::escape)
+                                    .collect::<Vec<_>>()
+                                    .join(".*")
+                            );
+                            !regex_lite::Regex::new(&regex)
+                                .is_ok_and(|regex| regex.is_match(installed))
+                        } else {
+                            pattern != installed
+                        }
+                    }
+                    Some(installed) if latest => self
+                        .candidates
+                        .get(*package)
+                        .is_some_and(|candidate| candidate != installed && candidate != "(none)"),
+                    Some(_) => false,
+                }
             })
             .map(|(name, _, _)| (*name).clone())
             .collect())
@@ -214,7 +253,9 @@ impl SystemState {
         if let Some(architecture) = &self.native_architecture {
             for name in missing {
                 if let Some((package, requested_architecture)) = name.rsplit_once(':')
-                    && requested_architecture == architecture
+                    && (requested_architecture == architecture
+                        || requested_architecture == "native"
+                        || requested_architecture == "all")
                     && let Some(candidate) = self.candidates.get(package).cloned()
                 {
                     self.candidates.entry(name.clone()).or_insert(candidate);
