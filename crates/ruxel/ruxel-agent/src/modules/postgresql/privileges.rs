@@ -69,6 +69,17 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     let target_roles = target_values.as_deref();
     let port = login_port(obj);
     validate_state(state)?;
+    if privs_values.as_ref().is_none_or(Vec::is_empty) {
+        return Err("postgresql_privs: at least one privilege is required".into());
+    }
+    if matches!(typ, "database" | "schema" | "table")
+        && objs_values.as_ref().is_none_or(Vec::is_empty)
+    {
+        return Err("postgresql_privs: at least one object is required".into());
+    }
+    if target_values.as_ref().is_some_and(Vec::is_empty) {
+        return Err("postgresql_privs: target_roles must not be empty".into());
+    }
     validate_privs(&privs_list)?;
     if target_roles.is_some() && typ != "default_privs" {
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
