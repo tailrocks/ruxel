@@ -11,7 +11,7 @@ use std::{
 };
 use tempfile::TempDir;
 
-const FIXTURE_HASH: &str = "1e6b201dc0db963ef6b94be616341c99a063a6cc06c40a4cf469167efc476a94";
+const FIXTURE_HASH: &str = "a9782cd9cb9169d83684f3d1f41c1f479592226efba9f7c35775b5f94153c05b";
 
 fn prepare(root: &Path) -> Result<TempDir> {
     let temp = tempfile::Builder::new()

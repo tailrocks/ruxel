@@ -33,6 +33,11 @@ pub fn check_semantics(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
             recap(&events)?["changed"].as_u64().unwrap_or(0) > 0 && !target.exists(),
             "{mode} failed to predict without writing"
         );
+        let pause = result(&events, "Prompt during check mode")?;
+        ensure!(
+            pause["skipped"] == true && pause["changed"] == false,
+            "{mode} pause was not skipped"
+        );
         let handler = result(&events, "Record predicted handler")?;
         ensure!(
             handler["msg"] == "predicted handler ran"

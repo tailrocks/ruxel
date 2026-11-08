@@ -6,6 +6,11 @@ use std::collections::BTreeSet;
 pub fn assert_preview(name: &str, mode: &str, events: &[Value]) -> Result<()> {
     match name {
         "check-semantics" => {
+            let pause = task(events, "Prompt during check mode");
+            ensure!(
+                pause.len() == 1 && pause[0]["skipped"] == true && pause[0]["changed"] == false,
+                "check-mode pause was not skipped"
+            );
             let handler = task(events, "Record predicted handler");
             ensure!(
                 handler.len() == 1

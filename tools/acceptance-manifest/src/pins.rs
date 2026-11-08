@@ -14,7 +14,7 @@ pub(super) fn pin(name: &str) -> &'static str {
             "70e1b192f9d4df7b15828a0e482a40c8147ec2d87b340d42636e54a9ac85531d"
         }
         "restart-actions" => "8188b88f5da95d7326e6b07efdd00908c09ee11958ff1e52a695e3c5a4d14d5b",
-        "check-semantics" => "1e6b201dc0db963ef6b94be616341c99a063a6cc06c40a4cf469167efc476a94",
+        "check-semantics" => "a9782cd9cb9169d83684f3d1f41c1f479592226efba9f7c35775b5f94153c05b",
         "multihost" => "a3b777ab764eefabf32d4b6d0f700d481c427bf8d9d4a598b13e24c38361fd25",
         "controller-delegation" => {
             "e737869712661708b13416544cab5126759e8448789e52859c045c33cd95e909"

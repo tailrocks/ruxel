@@ -21,7 +21,7 @@ output {
           }
           new {
             name = "Prompt during check mode"
-            operation = new Ruxel.Pause { prompt = "Synthetic check-mode pause" }
+            operation = new Ruxel.Pause { prompt = "Synthetic check-mode pause"; seconds = 0 }
           }
         }
         handlers {
