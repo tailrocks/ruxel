@@ -1,5 +1,5 @@
 use crate::common::{Env, events, no_leak, qpath, scan, task};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use std::{
     fs,
     os::unix::fs::MetadataExt,
@@ -25,7 +25,7 @@ fn module(env: &Env, source: &Path, dest: &Path, private: bool) -> Result<PathBu
         include_str!("../fixtures/cache.pkl"),
         &[
             ("NOLOG", if private { "noLog = true;" } else { "" }.into()),
-            ("SOURCE", qpath(source)?),
+            ("SOURCE", qpath(Path::new(source.file_name().context("fixture source has no filename")?))?),
             ("DEST", qpath(dest)?),
         ],
     )
@@ -55,7 +55,7 @@ pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
     fs::create_dir(env.path("schema"))?;
     fs::copy(schema, env.path("schema/Ruxel.pkl"))?;
 
-    let source = env.path("source");
+    let source = env.path("fixture/source");
     let dest = env.path("destination");
     fs::write(&source, "first-version")?;
     let mut workload = module(&env, &source, &dest, false)?;
