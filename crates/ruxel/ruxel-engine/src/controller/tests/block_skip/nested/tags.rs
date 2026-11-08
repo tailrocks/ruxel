@@ -33,7 +33,7 @@ async fn conditional_skips_preserve_leaf_and_block_tag_selection() -> Result<()>
         .map(String::as_str)
         .collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["always", "chosen", "inherited"]);
+    assert_eq!(keys, ["chosen", "inherited"]);
     for key in keys {
         assert_eq!(observed[key]["skipped"], true);
         assert_eq!(observed[key]["skip_reason"], "Conditional result was False");

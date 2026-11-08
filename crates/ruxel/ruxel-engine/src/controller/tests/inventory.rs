@@ -34,10 +34,10 @@ async fn plan_counts_selected_operations_without_evaluating_them() -> Result<()>
         &mut BTreeMap::new(),
     )
     .await?;
-    assert_eq!(recaps["h"].planned, 3);
+    assert_eq!(recaps["h"].planned, 2);
     assert_eq!(recaps["h"].changed, 0);
     assert_eq!(backend.calls.len(), 0);
-    assert_eq!(backend.events.len(), 4);
+    assert_eq!(backend.events.len(), 3);
     assert!(
         !backend
             .events

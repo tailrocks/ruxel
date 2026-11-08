@@ -8,10 +8,7 @@ pub(super) fn selected(task: &Value, inherited: &[String], filter: &[String]) ->
             .filter_map(Value::as_str)
             .map(str::to_owned),
     );
-    if tags
-        .iter()
-        .any(|tag| tag == "always" || filter.contains(tag))
-    {
+    if tags.iter().any(|tag| filter.contains(tag)) {
         return true;
     }
     !array(task, "block").is_empty()

@@ -29,13 +29,13 @@ async fn tagged_descendants_survive_untagged_blocks_in_plan_and_apply() -> Resul
         let events = serde_json::to_string(&backend.events)?;
         assert!(events.contains("chosen"));
         assert!(events.contains("inherited child"));
-        assert!(events.contains("always child"));
+        assert!(!events.contains("always child"));
         assert!(!events.contains("excluded block"));
         assert!(!events.contains("not selected"));
         if mode == Mode::Plan {
-            assert_eq!(recap["h"].planned, 3);
+            assert_eq!(recap["h"].planned, 2);
         } else {
-            assert_eq!(recap["h"].ok, 3);
+            assert_eq!(recap["h"].ok, 2);
             assert_eq!(recap["h"].failed, 0);
             assert_eq!(recap["h"].skipped, 1);
         }
@@ -79,5 +79,40 @@ async fn reached_rescue_and_always_skip_unselected_leaves_with_inherited_censors
         assert_eq!(event["result"]["censored"], true);
     }
     assert_eq!(backend.events[3]["task"], "selected always");
+    Ok(())
+}
+
+#[tokio::test]
+async fn always_is_selected_only_when_requested_or_inherited() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"always leaf","tags":["always"],"operation":{"kind":"debug"}},
+        {"name":"always block","tags":["always"],"block":[{"name":"inherited leaf","operation":{"kind":"debug"}}]},
+        {"name":"other","tags":["other"],"operation":{"kind":"fail"}}
+    ]}]});
+    for mode in [Mode::Apply, Mode::Plan] {
+        let mut backend = Fake::default();
+        let options = Options {
+            mode,
+            tags: vec!["always".into()],
+            ..Options::default()
+        };
+        let recap = run(
+            &config,
+            &BTreeMap::new(),
+            &options,
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await?;
+        let events = serde_json::to_string(&backend.events)?;
+        assert!(events.contains("always leaf"));
+        assert!(events.contains("inherited leaf"));
+        assert_eq!(recap["h"].failed, 0);
+        if mode == Mode::Plan {
+            assert_eq!(recap["h"].planned, 2);
+        } else {
+            assert_eq!(recap["h"].ok, 2);
+        }
+    }
     Ok(())
 }

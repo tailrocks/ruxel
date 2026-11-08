@@ -89,7 +89,7 @@ async fn exhausted_until_reports_attempt_count() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tagged_trigger_runs_untagged_handler_and_always_tasks() -> Result<()> {
+async fn tagged_trigger_runs_untagged_handler() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"trigger","tags":["chosen"],"notify":["handler"],"operation":{"kind":"command","cmd":"trigger"}},{"name":"always","tags":["always"],"operation":{"kind":"command","cmd":"always"}},{"name":"excluded","operation":{"kind":"command","cmd":"excluded"}}],"handlers":[{"name":"handler","operation":{"kind":"command","cmd":"handler"}}]}]});
     let mut backend = Fake::default();
     let options = Options {
@@ -109,6 +109,6 @@ async fn tagged_trigger_runs_untagged_handler_and_always_tasks() -> Result<()> {
         .iter()
         .map(|call| call.task.name.as_str())
         .collect();
-    assert_eq!(names, ["trigger", "always", "handler"]);
+    assert_eq!(names, ["trigger", "handler"]);
     Ok(())
 }
