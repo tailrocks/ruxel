@@ -668,6 +668,17 @@ impl Evaluator {
         self.module_json(module)
     }
 
+    /// Evaluate source at its logical module path and render its output as JSON.
+    #[cfg(feature = "native-io")]
+    pub fn eval_source_json_blocking(
+        &mut self,
+        source: &str,
+        path: &Path,
+    ) -> Result<serde_json::Value> {
+        let module = self.eval_source(source, path)?;
+        self.module_json(module)
+    }
+
     #[cfg(feature = "native-io")]
     fn module_json(&mut self, module: Value) -> Result<serde_json::Value> {
         let (value, top_kind) = self.output_value(module);

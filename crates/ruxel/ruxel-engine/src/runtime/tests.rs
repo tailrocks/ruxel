@@ -62,6 +62,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
+        template_root: Arc::new(templates::SourceRoot::open(&directory)?),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),
             values: Mutex::new(Vec::new()),
@@ -110,6 +111,73 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
             .prepare_operation("template", &mut jinja, &scope)
             .is_err()
     );
+    let dynamic_scope = json!({"vars":{"source":"source.pkl", "name":"dynamic"}})
+        .as_object()
+        .context("scope")?
+        .clone();
+    let mut dynamic = json!({"src":{"kind":"ref","path":["vars","source"]}})
+        .as_object()
+        .context("params")?
+        .clone();
+    execution.prepare_operation("template", &mut dynamic, &dynamic_scope)?;
+    assert_eq!(
+        execution.evaluate(&Value::Object(dynamic), &dynamic_scope)?["content"],
+        "dynamic"
+    );
+    let mut absolute = json!({"src":directory.join("source.pkl")})
+        .as_object()
+        .context("params")?
+        .clone();
+    execution.prepare_operation("template", &mut absolute, &scope)?;
+    #[cfg(unix)]
+    {
+        let outside = directory.with_extension("outside.pkl");
+        std::fs::write(&outside, "output { value = \"outside\" }")?;
+        let traversal = format!(
+            "../{}",
+            outside
+                .file_name()
+                .context("outside name")?
+                .to_string_lossy()
+        );
+        std::os::unix::fs::symlink("source.pkl", directory.join("link.pkl"))?;
+        std::os::unix::fs::symlink(&directory, directory.join("linkdir"))?;
+        for source in [
+            traversal.as_str(),
+            outside.to_str().context("outside path")?,
+            "link.pkl",
+            "linkdir/source.pkl",
+        ] {
+            let mut params = json!({"src": source})
+                .as_object()
+                .context("params")?
+                .clone();
+            assert!(
+                execution
+                    .prepare_operation("template", &mut params, &scope)
+                    .is_err(),
+                "accepted {source}"
+            );
+        }
+        std::fs::remove_file(outside)?;
+    }
+    let moved = directory.with_extension("moved");
+    std::fs::rename(&directory, &moved)?;
+    std::fs::create_dir(&directory)?;
+    std::fs::write(
+        directory.join("source.pkl"),
+        "output { value = \"replacement\" }",
+    )?;
+    let mut pinned = json!({"src":"source.pkl"})
+        .as_object()
+        .context("params")?
+        .clone();
+    execution.prepare_operation("template", &mut pinned, &scope)?;
+    assert_eq!(
+        execution.evaluate(&Value::Object(pinned), &scope)?["content"],
+        "rendered-value"
+    );
+    std::fs::remove_dir_all(moved)?;
     std::fs::remove_dir_all(directory)?;
     Ok(())
 }

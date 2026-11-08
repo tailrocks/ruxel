@@ -56,6 +56,7 @@ fn execution() -> Result<Execution> {
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
+        template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),

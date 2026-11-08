@@ -43,6 +43,7 @@ struct Execution {
     output: Arc<Output>,
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
     source_gate: Arc<tokio::sync::RwLock<()>>,
+    template_root: Arc<templates::SourceRoot>,
 }
 #[cfg(test)]
 #[path = "runtime/tests/effects.rs"]
@@ -281,6 +282,7 @@ pub async fn run(
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
+        template_root: Arc::new(templates::SourceRoot::open(&runtime.source_dir)?),
         lookups: Arc::new(Lookups {
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()

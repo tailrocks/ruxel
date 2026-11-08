@@ -1,4 +1,4 @@
-use super::eval;
+use super::{eval, eval_source};
 use std::path::Path;
 
 #[test]
@@ -10,6 +10,24 @@ fn minimal_evaluates() {
         )))
         .is_ok()
     );
+}
+
+#[test]
+fn source_evaluation_preserves_output_and_relative_imports()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::temp_dir().join(format!("ruxel-source-eval-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("main.pkl");
+    let source = "import \"dependency.pkl\" as dep\noutput { value = dep.value }";
+    std::fs::write(dir.join("dependency.pkl"), "value = \"rendered\"")?;
+    std::fs::write(&path, source)?;
+    assert_eq!(eval(&path)?, serde_json::json!("rendered"));
+    assert_eq!(eval_source(source, &path)?, eval(&path)?);
+    std::fs::write(&path, "output { value = \"replacement\" }")?;
+    assert_eq!(eval_source(source, &path)?, serde_json::json!("rendered"));
+    assert_eq!(eval(&path)?, serde_json::json!("replacement"));
+    std::fs::remove_dir_all(dir)?;
+    Ok(())
 }
 
 #[test]
