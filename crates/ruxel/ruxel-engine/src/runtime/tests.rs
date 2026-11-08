@@ -1,6 +1,8 @@
 use super::*;
 use std::path::PathBuf;
 
+mod prefetch;
+
 #[test]
 fn sensitive_event_exposes_only_safe_metadata() -> Result<()> {
     let projected = output::sensitive_event(
