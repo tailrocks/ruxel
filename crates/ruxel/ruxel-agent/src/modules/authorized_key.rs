@@ -28,10 +28,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let home = home_of(user)?;
     let (uid, gid) = ids_of(user)?;
+    let changed = update(Path::new(&home), uid, gid, key, ctx.check_mode)?;
+    Ok(json!({"changed": changed, "failed": false, "user": user}))
+}
+
+fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Result<bool, String> {
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
-    let home =
-        File::from(open(Path::new(&home), dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
-    let ssh = open_ssh(&home, uid, gid, !ctx.check_mode)?;
+    let home = File::from(open(home, dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
+    // Lock before inspecting .ssh so concurrent first-time creation is serialized too.
+    flock(&home, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
+    let ssh = open_ssh(&home, uid, gid, !check_mode)?;
     if let Some(dir) = &ssh {
         flock(dir, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
         ensure_attached(&home, dir)?;
@@ -45,7 +51,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         .filter_map(key_material)
         .any(|m| m == want_material);
     let changed = !present;
-    if changed && !ctx.check_mode {
+    if changed && !check_mode {
         let mut next = current;
         if !next.is_empty() && !next.ends_with('\n') {
             next.push('\n');
@@ -64,7 +70,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if let Some(dir) = &ssh {
         ensure_attached(&home, dir)?;
     }
-    Ok(json!({"changed": changed, "failed": false, "user": user}))
+    Ok(changed)
 }
 
 fn dir_flags() -> OFlags {
@@ -344,25 +350,18 @@ mod tests {
     #[test]
     fn concurrent_updates_preserve_both_keys() {
         let root = scratch("concurrent");
-        std::fs::create_dir(root.join(".ssh")).unwrap();
+
         let meta = std::fs::metadata(&root).unwrap();
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let threads: Vec<_> = ["first\n", "second\n"]
+        let threads: Vec<_> = ["ssh-ed25519 FIRST first", "ssh-ed25519 SECOND second"]
             .into_iter()
             .map(|key| {
                 let root = root.clone();
                 let barrier = barrier.clone();
                 let meta = meta.clone();
                 std::thread::spawn(move || {
-                    let home = File::open(root).unwrap();
-                    let ssh = open_ssh(&home, meta.uid(), meta.gid(), false)
-                        .unwrap()
-                        .unwrap();
                     barrier.wait();
-                    flock(&ssh, FlockOperation::LockExclusive).unwrap();
-                    let mut current = read_authorized_keys(&ssh).unwrap();
-                    current.push_str(key);
-                    publish(&ssh, current.as_bytes(), meta.uid(), meta.gid()).unwrap();
+                    assert!(update(&root, meta.uid(), meta.gid(), key, false).unwrap());
                 })
             })
             .collect();
@@ -370,7 +369,10 @@ mod tests {
             thread.join().unwrap();
         }
         let keys = std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap();
-        assert!(keys.contains("first\n") && keys.contains("second\n"));
+        assert!(
+            keys.contains("ssh-ed25519 FIRST first\n")
+                && keys.contains("ssh-ed25519 SECOND second\n")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
