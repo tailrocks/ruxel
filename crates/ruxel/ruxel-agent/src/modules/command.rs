@@ -26,7 +26,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 .ok_or_else(|| "argv entries must be strings".to_string())
         })
         .collect::<Result<_, _>>()?;
-    if argv.is_empty() {
+    if argv.first().is_none_or(String::is_empty) {
         return Err("empty command".into());
     }
 
