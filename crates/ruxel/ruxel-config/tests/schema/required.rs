@@ -95,3 +95,14 @@ fn unassigned_required_members_and_nonclass_types_fail() {
         "accepted invalid declarations: {accepted:#?}"
     );
 }
+
+#[test]
+fn command_requires_explicit_nonempty_argv() -> super::Result {
+    assert!(super::evaluate("new R.Command {}").is_err());
+    assert!(super::evaluate("new R.Command { argv = new Listing<String> {} }").is_err());
+    assert_eq!(
+        super::evaluate(r#"new R.Command { argv { "true" } }"#)?["argv"],
+        json!(["true"])
+    );
+    Ok(())
+}
