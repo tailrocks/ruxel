@@ -111,13 +111,7 @@ pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
             !probe::bool_value(params.get("daemon_reload"), false)
                 && params.get("state").and_then(Value::as_str) != Some("restarted")
         }
-        "copy"
-        | "template"
-        | "lineinfile"
-        | "replace"
-        | "blockinfile"
-        | "sysctl"
-        | "ansible.posix.sysctl" => true,
+        "copy" | "template" | "lineinfile" | "replace" | "blockinfile" | "sysctl" => true,
         _ => false,
     }
 }

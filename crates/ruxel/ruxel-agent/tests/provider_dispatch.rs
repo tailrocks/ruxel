@@ -36,6 +36,7 @@ fn migrated_shell_is_reachable_and_unknown_modules_fail_cleanly() -> Result<()> 
     for (id, module, command) in [
         (1, "shell", "printf synthetic-shell"),
         (2, "unknown-operation", ""),
+        (3, "ansible.posix.sysctl", ""),
     ] {
         write_frame(
             &mut input,

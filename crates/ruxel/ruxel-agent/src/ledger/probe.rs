@@ -57,7 +57,7 @@ pub(super) fn probe_for(
                 enabled: system_state.unit(name).ok()?.enabled,
             }])
         }
-        "sysctl" | "ansible.posix.sysctl" => {
+        "sysctl" => {
             let name = s("name")?;
             let file = s("sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
             let value = sysctl_file_value(file, name)?;

@@ -129,7 +129,7 @@ pub(crate) fn execute(
         "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx),
         "blockinfile" => blockinfile::run(params, ctx),
-        "sysctl" | "ansible.posix.sysctl" => sysctl::run(params, ctx),
+        "sysctl" => sysctl::run(params, ctx),
         "group" => user::group(params, ctx),
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
