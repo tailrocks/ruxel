@@ -1,3 +1,6 @@
+#[path = "saslprep.rs"]
+mod saslprep;
+
 use super::{
     ExecContext, PgContext, Value, b64_decode, b64_encode, ident, json, lit, login_port,
     params_object, psql, role_flag_tokens, str_param, validate_role_attr_flags,
@@ -194,6 +197,8 @@ pub(super) fn scram_stored_key(
     type H = Hmac<Sha256>;
 
     let salt = b64_decode(b64salt).ok_or("bad scram salt b64")?;
+    let normalized = saslprep::prepare(password)?;
+    let password = normalized.as_deref().unwrap_or(password);
     let mut salted = [0u8; 32];
     pbkdf2::pbkdf2::<H>(password.as_bytes(), &salt, iterations, &mut salted)
         .map_err(|_| "pbkdf2".to_string())?;

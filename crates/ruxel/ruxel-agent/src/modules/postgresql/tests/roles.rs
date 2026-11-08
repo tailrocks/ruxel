@@ -14,6 +14,18 @@ fn scram_stored_key_matches_postgres() {
 }
 
 #[test]
+fn scram_unicode_and_raw_fallback_match_postgres_verifiers() {
+    assert_eq!(
+        super::scram_stored_key("I\u{ad}X", "NRomlZ/76mInmJVcVAWwbQ==", 4096).unwrap(),
+        "LQcBrYvWXrPnADjvh/bqaQznzfnWXeocK5vlJKvuT4E="
+    );
+    assert_eq!(
+        super::scram_stored_key("\u{1d2c}", "fMo3oNP3ejrm88d6dVe1HA==", 4096).unwrap(),
+        "YcdRqCSXlnK+KcNcyiufqcvBwdBIA5oz9RSWDGC6FDs="
+    );
+}
+
+#[test]
 fn b64_decode_partial_groups() {
     assert_eq!(super::b64_decode("nA==").unwrap(), vec![0x9c]);
     assert_eq!(super::b64_decode("tA==").unwrap().len(), 1);
