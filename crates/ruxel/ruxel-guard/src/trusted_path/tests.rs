@@ -22,6 +22,24 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn identity_requires_existing_trusted_regular_file() {
+    let fixture = Fixture::new();
+    let path = fixture.file();
+    assert!(identity(&path).is_err());
+    fs::write(&path, b"key").unwrap();
+    assert!(identity(&path).is_ok());
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o622)).unwrap();
+    assert!(identity(&path).is_err());
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let link = fixture.0.join("link");
+    symlink(&path, &link).unwrap();
+    assert!(identity(&link).is_err());
+    assert!(identity(&fixture.0).is_err());
+    fs::set_permissions(&fixture.0, fs::Permissions::from_mode(0o722)).unwrap();
+    assert!(identity(&path).is_err());
+}
+
+#[test]
 fn precreates_private_file_and_keeps_existing_keys() {
     let fixture = Fixture::new();
     let path = fixture.file();

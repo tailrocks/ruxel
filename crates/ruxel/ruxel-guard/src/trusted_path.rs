@@ -113,6 +113,19 @@ pub(crate) fn known_hosts(path: &Path) -> Result<(), String> {
     }
 }
 
+pub(crate) fn identity(path: &Path) -> Result<(), String> {
+    crate::resolve::validate_path(path)?;
+    if path.components().any(|part| part == Component::ParentDir) {
+        return Err("SSH trust paths must not contain parent traversal".into());
+    }
+    ancestors(path.parent().ok_or("identity file must have a parent")?)?;
+    let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err("identity file must be a regular file, without symlinks".into());
+    }
+    writable_only_by_owner(path, &metadata)
+}
+
 fn validate_known_hosts(path: &Path, metadata: &Metadata) -> Result<(), String> {
     if !metadata.is_file() {
         return Err("known_hosts must be a regular file, without symlinks".into());

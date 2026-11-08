@@ -105,6 +105,7 @@ impl Guard {
         for spec in hosts {
             let result = self.policy.decide(spec.address).and_then(|()| {
                 resolve::validate_paths(spec)?;
+                crate::trusted_path::identity(&spec.identity_file)?;
                 crate::trusted_path::known_hosts(&spec.known_hosts_file)?;
                 let mut bytes = [0u8; 6];
                 getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
@@ -170,6 +171,7 @@ mod tests {
     fn admission_uses_simulated_ssh_only_for_allowed_hosts() {
         let root = crate::mux::test_directory().unwrap();
         let dir = root.join("mux");
+        std::fs::write(root.join("identity"), b"key").unwrap();
         let policy = Policy::new(&["192.0.2.0/24".into()], &["198.51.100.0/24".into()]).unwrap();
         let guard = Guard::new(policy, dir.clone());
         let spec = |address: &str| HostSpec {
@@ -177,7 +179,7 @@ mod tests {
             address: address.parse().unwrap(),
             port: 22,
             user: "test".into(),
-            identity_file: "/tmp/key".into(),
+            identity_file: root.join("identity"),
             known_hosts_file: root.join("known"),
         };
         let calls = Cell::new(0);
@@ -196,6 +198,7 @@ mod tests {
         assert_eq!(result.unwrap().len(), 1);
         std::fs::remove_dir(dir).unwrap();
         std::fs::remove_file(root.join("known")).unwrap();
+        std::fs::remove_file(root.join("identity")).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
 
@@ -204,6 +207,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let root = crate::mux::test_directory().unwrap();
         let known = root.join("known");
+        std::fs::write(root.join("identity"), b"key").unwrap();
         std::fs::write(&known, b"untrusted keys").unwrap();
         std::fs::set_permissions(&known, std::fs::Permissions::from_mode(0o666)).unwrap();
         let guard = Guard::new(
@@ -259,6 +263,7 @@ mod long_path_test {
     fn rejects_long_socket_path_before_ssh() {
         let root = crate::mux::test_directory().unwrap();
         let dir = root.join("a".repeat(100));
+        std::fs::write(root.join("identity"), b"key").unwrap();
         let guard = Guard::new(
             Policy::new(&["192.0.2.0/24".into()], &[]).unwrap(),
             dir.clone(),
@@ -268,7 +273,7 @@ mod long_path_test {
             address: "192.0.2.10".parse().unwrap(),
             port: 22,
             user: "test".into(),
-            identity_file: "/tmp/key".into(),
+            identity_file: root.join("identity"),
             known_hosts_file: root.join("known"),
         };
         let calls = Cell::new(0);
@@ -281,6 +286,7 @@ mod long_path_test {
         assert_eq!(calls.get(), 0);
         std::fs::remove_dir(dir).unwrap();
         std::fs::remove_file(root.join("known")).unwrap();
+        std::fs::remove_file(root.join("identity")).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
 }
