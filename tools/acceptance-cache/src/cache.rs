@@ -25,7 +25,14 @@ fn module(env: &Env, source: &Path, dest: &Path, private: bool) -> Result<PathBu
         include_str!("../fixtures/cache.pkl"),
         &[
             ("NOLOG", if private { "noLog = true;" } else { "" }.into()),
-            ("SOURCE", qpath(Path::new(source.file_name().context("fixture source has no filename")?))?),
+            (
+                "SOURCE",
+                qpath(Path::new(
+                    source
+                        .file_name()
+                        .context("fixture source has no filename")?,
+                ))?,
+            ),
             ("DEST", qpath(dest)?),
         ],
     )
