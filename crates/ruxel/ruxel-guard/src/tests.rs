@@ -1,3 +1,9 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::assert_is_empty,
+    reason = "test fixtures and assertions fail the test on invalid data"
+)]
+
 use crate::{
     HostSpec, Policy, cidr_file,
     resolve::{self, ArgsMode},
@@ -138,3 +144,5 @@ fn scan_intersection() {
 fn ip_type() {
     assert!("192.0.2.10".parse::<IpAddr>().is_ok());
 }
+
+mod mapped;

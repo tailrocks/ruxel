@@ -5,6 +5,7 @@ use crate::{
 use ipnet::IpNet;
 use std::net::IpAddr;
 
+#[must_use]
 pub fn deny_hits(policy: &Policy, literals: &[&str]) -> Vec<(String, String)> {
     let mut hits = Vec::new();
     for literal in literals {

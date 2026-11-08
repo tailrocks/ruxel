@@ -18,7 +18,7 @@ pub struct Policy {
 pub(crate) fn normalize(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v) => v.to_ipv4_mapped().map_or(ip, IpAddr::V4),
-        _ => ip,
+        IpAddr::V4(_) => ip,
     }
 }
 
@@ -51,6 +51,10 @@ pub(crate) fn intersects(a: IpNet, b: IpNet) -> bool {
 }
 
 impl Policy {
+    /// Construct a policy with the union of the compiled and runtime denies.
+    ///
+    /// # Errors
+    /// Returns an error if any address or network is invalid.
     pub fn new(runtime_allow: &[String], runtime_deny: &[String]) -> Result<Self, PolicyError> {
         let parse = |s: &str| {
             s.parse::<IpNet>()
@@ -71,6 +75,7 @@ impl Policy {
                 .collect::<Result<_, _>>()?,
         })
     }
+    #[must_use]
     pub fn compiled_entries() -> usize {
         COMPILED_DENY.len()
     }
