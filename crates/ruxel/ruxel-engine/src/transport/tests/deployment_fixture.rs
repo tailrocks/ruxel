@@ -7,7 +7,10 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 fn native_fixture() -> anyhow::Result<&'static [u8]> {
     static BINARY: OnceLock<Result<Vec<u8>, String>> = OnceLock::new();
@@ -54,11 +57,17 @@ pub(super) struct Fixture {
 }
 impl Fixture {
     pub(super) fn new() -> anyhow::Result<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("ruxel-sftp-{}-{stamp}", std::process::id()));
-        std::fs::create_dir_all(root.join("bin"))?;
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "ruxel-sftp-{}-{stamp}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root)?;
+        std::fs::create_dir(root.join("bin"))?;
         std::fs::create_dir_all(root.join("remote/var/lib"))?;
         for directory in ["remote", "remote/var", "remote/var/lib"] {
             std::fs::set_permissions(root.join(directory), std::fs::Permissions::from_mode(0o755))?;
@@ -186,4 +195,30 @@ impl Drop for Fixture {
             eprintln!("remove synthetic transport fixture: {error}");
         }
     }
+}
+
+#[test]
+fn concurrent_fixtures_have_distinct_roots() -> anyhow::Result<()> {
+    let barrier = std::sync::Barrier::new(16);
+    let fixtures = std::thread::scope(|scope| {
+        let barrier = &barrier;
+        let threads = (0..16)
+            .map(|_| {
+                scope.spawn(move || {
+                    barrier.wait();
+                    Fixture::new()
+                })
+            })
+            .collect::<Vec<_>>();
+        threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<anyhow::Result<Vec<_>>>()
+    })?;
+    let roots = fixtures
+        .iter()
+        .map(|fixture| &fixture.root)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(roots.len(), fixtures.len());
+    Ok(())
 }
