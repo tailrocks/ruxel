@@ -18,13 +18,11 @@ pub const SCENARIOS: [&str; 14] = [
     "storage-xfs",
     "system-surface",
 ];
-pub const SUPPORTED: [&str; 7] = [
-    "become-environment",
+pub const SUPPORTED: [&str; 5] = [
     "check-semantics",
     "control-flow",
     "controller-delegation",
     "multihost",
-    "postgresql-ownership",
     "restart-actions",
 ];
 pub fn validate_manifest(manifest: &Value) -> Result<()> {

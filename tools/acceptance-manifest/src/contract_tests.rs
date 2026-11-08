@@ -39,19 +39,15 @@ fn control_contract_rejects_unreviewed_observations() -> anyhow::Result<()> {
 }
 
 #[test]
-fn postgres_contract_rejects_modified_drift() -> anyhow::Result<()> {
-    let mut manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
-    validate_case("postgresql-ownership", &manifest)?;
-    manifest["scenarios"]["postgresql-ownership"]["drift"][0]["owner"] = json!("unexpected");
+fn postgres_contract_fails_closed() -> anyhow::Result<()> {
+    let manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
     assert!(validate_case("postgresql-ownership", &manifest).is_err());
     Ok(())
 }
 
 #[test]
-fn become_contract_rejects_modified_shell_drift() -> anyhow::Result<()> {
-    let mut manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
-    validate_case("become-environment", &manifest)?;
-    manifest["scenarios"]["become-environment"]["drift"][0]["shell"] = json!("/bin/sh");
+fn become_contract_fails_closed() -> anyhow::Result<()> {
+    let manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
     assert!(validate_case("become-environment", &manifest).is_err());
     Ok(())
 }
