@@ -52,7 +52,7 @@ pub(super) fn run(fixture: &mut Fixture<'_>) -> Result<()> {
     ensure!(fs::read(marker)?.is_empty(), "marker contains data");
     fs::remove_file(marker)?;
     symlink(fixture.base().join("absent"), marker)?;
-    let events = fixture.run(&play("a", &read(&restart)?), "restart-state", 8)?;
+    let events = fixture.run(&play("a", &read(&restart)?), "restart-state", 7)?;
     ensure!(
         events.iter().any(|event| event["unreachable"] == true),
         "malformed marker accepted"
