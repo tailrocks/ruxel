@@ -5,6 +5,7 @@ use std::io::{Read as _, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 const RUNUSER: &str = "/usr/sbin/runuser";
 const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
@@ -75,22 +76,26 @@ pub(super) fn become_command(
         }
     }
     if let Some(user) = &ctx.become_user {
-        let output = Command::new("/usr/bin/getent")
-            .env_clear()
-            .env("PATH", WRAPPER_PATH)
-            .args(["passwd", user])
-            .output()
-            .map_err(|_| "failed to look up become_user identity")?;
-        if !output.status.success() {
-            return Err("failed to look up become_user identity".into());
+        if user.is_empty()
+            || user.starts_with('-')
+            || !user
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err("invalid become user".into());
         }
-        let passwd = std::str::from_utf8(&output.stdout)
-            .map_err(|_| "invalid become_user identity record")?;
+        let output = lookup_user(user)?;
+        let passwd =
+            std::str::from_utf8(&output).map_err(|_| "invalid become_user identity record")?;
         let identity =
             user_environment_from(passwd, user).ok_or("invalid become_user identity record")?;
+        let canonical_user = passwd
+            .split(':')
+            .next()
+            .ok_or("invalid become_user identity record")?;
         switched_command(
             ctx,
-            user,
+            canonical_user,
             program,
             args,
             Path::new(RUNUSER),
@@ -102,6 +107,60 @@ pub(super) fn become_command(
         command.args(args).envs(ctx.environment.iter().cloned());
         Ok(piped_command(command, None))
     }
+}
+
+fn lookup_user(user: &str) -> Result<Vec<u8>, String> {
+    const LIMIT: usize = 64 * 1024;
+    let mut child = Command::new("/usr/bin/getent")
+        .env_clear()
+        .env("PATH", WRAPPER_PATH)
+        .args(["--", "passwd", user])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "failed to look up become_user identity")?;
+    let result = (|| {
+        let mut stdout = child.stdout.take().ok_or("identity lookup failed")?;
+        let flags = rustix::fs::fcntl_getfl(&stdout).map_err(|_| "identity lookup failed")?;
+        rustix::fs::fcntl_setfl(&stdout, flags | rustix::fs::OFlags::NONBLOCK)
+            .map_err(|_| "identity lookup failed")?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut output = Vec::new();
+        let mut eof = false;
+        let mut status = None;
+        loop {
+            let mut buffer = [0; 4096];
+            if !eof {
+                match stdout.read(&mut buffer) {
+                    Ok(0) => eof = true,
+                    Ok(n) if output.len() + n <= LIMIT => output.extend_from_slice(&buffer[..n]),
+                    Ok(_) => return Err("identity lookup output too large"),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(_) => return Err("identity lookup failed"),
+                }
+            }
+            if status.is_none() {
+                status = child.try_wait().map_err(|_| "identity lookup failed")?;
+            }
+            if eof && let Some(status) = status {
+                return if status.success() {
+                    Ok(output)
+                } else {
+                    Err("identity lookup failed")
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err("identity lookup timed out");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result.map_err(str::to_string)
 }
 
 fn piped_command(mut command: Command, environment_script: Option<Vec<u8>>) -> TaskCommand {
@@ -288,16 +347,17 @@ fn shell_name(key: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-pub(super) fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
+pub(super) fn user_environment_from<'a>(
+    passwd: &'a str,
+    _user: &str,
+) -> Option<(&'a str, &'a str)> {
     let mut lines = passwd.lines();
     let fields = lines.next()?.split(':').collect::<Vec<_>>();
     if lines.next().is_some()
         || fields.len() != 7
-        || fields[0] != user
+        || fields[0].is_empty()
         || fields[2].parse::<u32>().is_err()
         || fields[3].parse::<u32>().is_err()
-        || fields[5].is_empty()
-        || fields[6].is_empty()
         || fields.iter().any(|field| field.contains('\0'))
     {
         return None;
