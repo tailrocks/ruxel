@@ -128,12 +128,18 @@ fn install(
             args.push("--allow-downgrades");
         }
         args.extend(missing.iter().map(String::as_str));
+        args.extend(
+            names
+                .iter()
+                .filter(|name| name.contains('=') && !missing.contains(name))
+                .map(String::as_str),
+        );
         let (stdout, rc, stderr) = command(&args, ctx)?;
         if rc != 0 {
             return Err(format!("apt install failed: {stderr}"));
         }
         system_state.invalidate_packages();
-        let pinned: Vec<_> = missing
+        let pinned: Vec<_> = names
             .iter()
             .filter(|name| name.contains('='))
             .cloned()

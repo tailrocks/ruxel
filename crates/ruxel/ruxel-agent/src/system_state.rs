@@ -50,6 +50,17 @@ impl SystemState {
                 None => Ok((name, name.as_str(), None)),
             })
             .collect::<Result<_, _>>()?;
+        let mut pins = HashMap::new();
+        for (_, package, version) in &requests {
+            if let Some(version) = version
+                && let Some(previous) = pins.insert(*package, *version)
+                && previous != *version
+            {
+                return Err(format!(
+                    "apt: conflicting versions requested for {package:?}"
+                ));
+            }
+        }
         self.ensure_packages()?;
         if latest {
             let unpinned: Vec<_> = requests
