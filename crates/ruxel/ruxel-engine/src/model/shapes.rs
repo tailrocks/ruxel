@@ -70,13 +70,13 @@ fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
             "command cannot be empty"
         );
     }
-    if kind == "command" {
-        if let Some(v) = params.get("argv").filter(|v| !v.is_object()) {
-            ensure!(
-                v.as_array().is_some_and(|v| !v.is_empty()),
-                "argv requires nonempty list"
-            );
-        }
+    if kind == "command"
+        && let Some(v) = params.get("argv").filter(|v| !v.is_object())
+    {
+        ensure!(
+            v.as_array().is_some_and(|v| !v.is_empty()),
+            "argv requires nonempty list"
+        );
     }
     Ok(())
 }

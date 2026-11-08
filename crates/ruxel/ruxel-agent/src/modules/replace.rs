@@ -1,5 +1,3 @@
-#![expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")]
-
 use super::{ExecContext, params_object, str_param, write_atomic};
 use regex_lite::Regex;
 use serde_json::{Value, json};
@@ -26,6 +24,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use super::*;
 

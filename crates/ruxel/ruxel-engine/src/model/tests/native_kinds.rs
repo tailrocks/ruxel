@@ -6,11 +6,9 @@ fn groups_and_pvs_require_lists_before_dispatch() -> Result<()> {
         ("user", "groups", json!({"name":"fixture"})),
         ("volume_group", "pvs", json!({"vg":"fixture"})),
     ] {
-        for value in [json!(["one", "two"])] {
-            let mut params = base.clone();
-            params[field] = value;
-            validate_operation(kind, params.as_object().context("params")?)?;
-        }
+        let mut params = base.clone();
+        params[field] = json!(["one", "two"]);
+        validate_operation(kind, params.as_object().context("params")?)?;
         for value in [
             json!("one,two"),
             json!(["one", 2]),
