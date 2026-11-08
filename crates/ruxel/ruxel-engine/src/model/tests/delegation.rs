@@ -31,6 +31,7 @@ fn literal_delegation_must_exist_in_inventory_at_any_depth() {
     for destination in ["synthetic", "localhost"] {
         value["plays"][0]["tasks"][0]["delegateTo"] = json!(destination);
         value["plays"][0]["tasks"][0]["delegateAllow"] = json!([destination]);
+        value["plays"][0]["tasks"][0]["delegateLocalhost"] = json!(true);
         assert!(validate_config(&value).is_ok());
     }
     value["plays"][0]["tasks"][0]["delegateTo"] = json!("missing");
@@ -40,4 +41,19 @@ fn literal_delegation_must_exist_in_inventory_at_any_depth() {
     assert!(validate_config(&value).is_ok());
     value["plays"][0]["tasks"][0] = json!({"name":"block", "block":[{"name":"nested", "delegateTo":"missing", "delegateAllow":["missing"], "operation":{"kind":"debug"}}]});
     assert!(validate_config(&value).is_err());
+}
+
+#[test]
+fn literal_delegation_requires_authorization_during_validation() {
+    let mut value = config(json!({"kind":"debug"}));
+    value["plays"][0]["tasks"][0]["delegateTo"] = json!("synthetic");
+    value["plays"][0]["tasks"][0]["delegateAllow"] = json!(["other"]);
+    assert!(validate_config(&value).is_err());
+    value["plays"][0]["tasks"][0]["delegateTo"] = json!("localhost");
+    value["plays"][0]["tasks"][0]["delegateAllow"] = json!(["localhost"]);
+    assert!(validate_config(&value).is_err());
+    value["plays"][0]["tasks"][0]["delegateLocalhost"] = json!(false);
+    assert!(validate_config(&value).is_err());
+    value["plays"][0]["tasks"][0]["delegateLocalhost"] = json!(true);
+    assert!(validate_config(&value).is_ok());
 }

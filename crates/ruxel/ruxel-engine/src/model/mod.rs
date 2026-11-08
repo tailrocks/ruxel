@@ -207,6 +207,16 @@ fn validate_delegation(task: &Task, hosts: &BTreeMap<String, config::Host>) -> R
                 host == "localhost" || hosts.contains_key(host),
                 "literal delegation target is not in inventory"
             );
+            ensure!(
+                task.delegate_allow
+                    .as_ref()
+                    .is_some_and(|allowed| allowed.iter().any(|allowed| allowed == host)),
+                "delegation target is not explicitly authorized"
+            );
+            ensure!(
+                host != "localhost" || task.delegate_localhost == Some(true),
+                "localhost delegation requires explicit opt-in"
+            );
         }
     } else {
         ensure!(
