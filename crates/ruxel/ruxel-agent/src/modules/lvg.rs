@@ -1,16 +1,40 @@
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::process::Stdio;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
-    run_with(params, ctx.check_mode, &mut run_command)
+    run_with_identity(params, ctx.check_mode, &mut run_command, &device_identity)
 }
 
+fn device_identity(path: &str) -> Result<u64, String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("lvg: cannot inspect {path}: {e}"))?;
+    if !metadata.file_type().is_block_device() {
+        return Err(format!("lvg: {path} is not a block device"));
+    }
+    Ok(metadata.rdev())
+}
+
+#[cfg(test)]
 fn run_with(
     params: &Value,
     check_mode: bool,
     command: &mut impl FnMut(&str, &[&str]) -> Result<CommandOutput, String>,
+) -> Result<Value, String> {
+    run_with_identity(params, check_mode, command, &|path| match path {
+        "/dev/a" => Ok(1),
+        "/dev/b" => Ok(2),
+        _ => Err("unknown mock device".into()),
+    })
+}
+
+fn run_with_identity(
+    params: &Value,
+    check_mode: bool,
+    command: &mut impl FnMut(&str, &[&str]) -> Result<CommandOutput, String>,
+    identity: &impl Fn(&str) -> Result<u64, String>,
 ) -> Result<Value, String> {
     let obj = params_object(params)?;
     let vg = str_param(obj, "vg").ok_or("lvg: vg required")?;
@@ -36,7 +60,7 @@ fn run_with(
 
     let existing = current_pvs(vg, command)?;
     let missing = match &existing {
-        Some(have) => missing_pvs(&pvs, have),
+        Some(have) => missing_pvs(&pvs, have, identity)?,
         None => pvs.iter().collect(),
     };
     let changed = existing.is_none() || !missing.is_empty();
@@ -53,8 +77,30 @@ fn run_with(
     Ok(json!({"changed": changed, "failed": false, "vg": vg}))
 }
 
-fn missing_pvs<'a>(want: &'a [String], have: &BTreeSet<String>) -> Vec<&'a String> {
-    want.iter().filter(|pv| !have.contains(*pv)).collect()
+fn missing_pvs<'a>(
+    want: &'a [String],
+    have: &BTreeSet<String>,
+    identity: &impl Fn(&str) -> Result<u64, String>,
+) -> Result<Vec<&'a String>, String> {
+    let have_ids = have
+        .iter()
+        .map(|path| identity(path))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if have_ids.len() != have.len() {
+        return Err("lvg: duplicate physical volume device identity".into());
+    }
+    let mut requested = BTreeSet::new();
+    let mut missing = Vec::new();
+    for path in want {
+        let id = identity(path)?;
+        if !requested.insert(id) {
+            return Err("lvg: duplicate requested physical volume device identity".into());
+        }
+        if !have_ids.contains(&id) {
+            missing.push(path);
+        }
+    }
+    Ok(missing)
 }
 
 struct CommandOutput {
@@ -324,5 +370,34 @@ mod tests {
             run_with(&params, false, &mut fake).unwrap()["changed"],
             false
         );
+    }
+
+    #[test]
+    fn aliases_compare_by_device_identity_and_uninspectable_devices_fail_closed() {
+        let params = json!({"vg":"vg", "pvs":["/dev/disk/by-id/example"]});
+        let mut calls = Vec::new();
+        let mut fake = |name: &str, _: &[&str]| {
+            calls.push(name.to_string());
+            Ok(if name == "vgs" { groups() } else { pvs() })
+        };
+        let identity = |path: &str| match path {
+            "/dev/a" | "/dev/disk/by-id/example" => Ok(42),
+            _ => Err("device is unavailable".to_string()),
+        };
+        assert_eq!(
+            run_with_identity(&params, false, &mut fake, &identity).unwrap()["changed"],
+            false
+        );
+        assert_eq!(calls, ["vgs", "pvs"]);
+
+        calls.clear();
+        let mut fake = |name: &str, _: &[&str]| {
+            calls.push(name.to_string());
+            Ok(if name == "vgs" { groups() } else { pvs() })
+        };
+        assert!(
+            run_with_identity(&params, false, &mut fake, &|_| Err("unavailable".into())).is_err()
+        );
+        assert_eq!(calls, ["vgs", "pvs"]);
     }
 }
