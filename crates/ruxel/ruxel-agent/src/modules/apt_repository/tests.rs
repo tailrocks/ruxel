@@ -275,3 +275,85 @@ fn failed_refresh_is_retried_after_restart_with_matching_source() {
     .unwrap();
     assert_eq!(converged["changed"], false);
 }
+
+#[test]
+fn overlapping_refreshes_cannot_clear_a_later_failure_marker() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let dir = TestDir::new("overlap");
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let (second_tx, second_rx) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let path = dir.path();
+        let first = scope.spawn(move || {
+            let ctx = ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            };
+            run_in(
+                &json!({"repo": "first", "filename": "vendor"}),
+                &ctx,
+                &mut SystemState::default(),
+                path,
+                &mut || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap()
+        });
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let second = scope.spawn(move || {
+            let ctx = ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            };
+            run_in(
+                &json!({"repo": "second", "filename": "vendor"}),
+                &ctx,
+                &mut SystemState::default(),
+                path,
+                &mut || {
+                    second_tx.send(()).unwrap();
+                    Err("failed".into())
+                },
+            )
+            .unwrap()
+        });
+        assert!(second_rx.recv_timeout(Duration::from_millis(100)).is_err());
+        release_tx.send(()).unwrap();
+        assert_eq!(first.join().unwrap()["failed"], false);
+        assert_eq!(second.join().unwrap()["failed"], true);
+        second_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    assert!(dir.path().join(".vendor.ruxel-update-pending").exists());
+    let ctx = ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let mut calls = 0;
+    let result = run_in(
+        &json!({"repo": "second", "filename": "vendor"}),
+        &ctx,
+        &mut SystemState::default(),
+        dir.path(),
+        &mut || {
+            calls += 1;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(result["failed"], false);
+    assert_eq!(calls, 1);
+}

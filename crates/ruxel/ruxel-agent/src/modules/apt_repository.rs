@@ -44,6 +44,22 @@ fn run_in(
     let update_cache = bool_param(obj, "update_cache", true);
 
     validate_filename(filename)?;
+    // Keep the lock file in place: removing it would let waiters lock a stale inode.
+    let _lock = if ctx.check_mode {
+        None
+    } else {
+        let lock_path = directory.join(format!(".{filename}.ruxel-update-lock"));
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|error| format!("apt_repository: cannot open refresh lock: {error}"))?;
+        lock.lock()
+            .map_err(|error| format!("apt_repository: cannot lock refresh: {error}"))?;
+        Some(lock)
+    };
     let path = directory.join(format!("{filename}.list"));
     let pending_path = directory.join(format!(".{filename}.ruxel-update-pending"));
     let pending = pending_path
