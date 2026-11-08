@@ -12,12 +12,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let re = Regex::new(&format!("(?m){pattern}")).map_err(|e| format!("replace regexp: {e}"))?;
     let current = std::fs::read_to_string(path).map_err(|e| format!("read {path}: {e}"))?;
-    let replacement = parse_replacement(replacement)?;
-    let next = re
-        .replace_all(&current, |captures: &regex_lite::Captures<'_>| {
-            replacement.expand(captures)
-        })
-        .to_string();
+    let next = re.replace_all(&current, replacement).to_string();
     let changed = next != current;
 
     if changed && !ctx.check_mode {
@@ -30,89 +25,30 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(result)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum ReplacementPart {
-    Literal(String),
-    Group(usize),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct AnsibleReplacement(Vec<ReplacementPart>);
-
-impl AnsibleReplacement {
-    fn expand(&self, captures: &regex_lite::Captures<'_>) -> String {
-        let mut out = String::new();
-        for part in &self.0 {
-            match part {
-                ReplacementPart::Literal(value) => out.push_str(value),
-                ReplacementPart::Group(index) => {
-                    if let Some(value) = captures.get(*index) {
-                        out.push_str(value.as_str());
-                    }
-                }
-            }
-        }
-        out
-    }
-}
-
-fn parse_replacement(input: &str) -> Result<AnsibleReplacement, String> {
-    let mut parts = Vec::new();
-    let mut literal = String::new();
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            literal.push(ch);
-            continue;
-        }
-        let Some(next) = chars.next() else {
-            return Err("replace: trailing backslash in replacement".into());
-        };
-        if next.is_ascii_digit() {
-            if !literal.is_empty() {
-                parts.push(ReplacementPart::Literal(std::mem::take(&mut literal)));
-            }
-            let mut digits = next.to_string();
-            while chars.peek().is_some_and(char::is_ascii_digit) {
-                digits.push(chars.next().unwrap());
-            }
-            parts.push(ReplacementPart::Group(
-                digits
-                    .parse()
-                    .map_err(|_| "replace: invalid numeric backreference")?,
-            ));
-        } else {
-            literal.push(match next {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                other => {
-                    return Err(format!("replace: unsupported replacement escape \\{other}"));
-                }
-            });
-        }
-    }
-    if !literal.is_empty() {
-        parts.push(ReplacementPart::Literal(literal));
-    }
-    Ok(AnsibleReplacement(parts))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn dollar_is_literal_and_numeric_backrefs_expand() {
-        let regex = Regex::new("(value)").unwrap();
-        let replacement = parse_replacement(r"$PATH-\1").unwrap();
+    fn expands_native_capture_references_and_literal_dollars() {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-replace-captures-{}", std::process::id()));
+        std::fs::write(&path, "hello world\n").unwrap();
+        let context = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let params = json!({"path": path, "regexp": "(?P<first>hello) (world)", "replace": r"${first}-$2-$$-\1"});
+        assert_eq!(run(&params, &context).unwrap()["changed"], true);
         assert_eq!(
-            regex.replace_all("value", |captures: &regex_lite::Captures<'_>| {
-                replacement.expand(captures)
-            }),
-            "$PATH-value"
+            std::fs::read_to_string(&path).unwrap(),
+            "hello-world-$-\\1\n"
         );
+        assert_eq!(run(&params, &context).unwrap()["changed"], false);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
