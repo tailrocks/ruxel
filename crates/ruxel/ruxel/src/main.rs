@@ -77,11 +77,7 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
             cli::OutputFormat::Human => ruxel_engine::runtime::OutputFormat::Human,
         },
         log_file: args.presentation.log_file,
-        source_dir: args
-            .root
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .to_path_buf(),
+        source_dir: source_dir(&args.root).to_path_buf(),
         synthetic_secrets: args.synthetic_secrets,
         local_state: args.state_dir,
         local_agent: args.local_agent,
@@ -114,5 +110,24 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
             drop(writeln!(std::io::stderr().lock(), "{error}"));
             ExitCode::Internal
         }
+    }
+}
+
+fn source_dir(root: &std::path::Path) -> &std::path::Path {
+    root.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bare_config_uses_current_directory_for_sources() {
+        use std::path::Path;
+        assert_eq!(super::source_dir(Path::new("config.pkl")), Path::new("."));
+        assert_eq!(
+            super::source_dir(Path::new("dir/config.pkl")),
+            Path::new("dir")
+        );
     }
 }
