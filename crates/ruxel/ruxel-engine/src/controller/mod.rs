@@ -114,6 +114,8 @@ struct ContextLayer {
     environment: Map<String, Value>,
     become_user: Option<String>,
     delegate_to: Option<Value>,
+    delegate_allow: Vec<String>,
+    delegate_localhost: bool,
     check_mode: Option<bool>,
     tags: Vec<String>,
     no_log: bool,

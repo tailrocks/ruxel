@@ -5,11 +5,11 @@ async fn block_delegation_inherits_overrides_and_does_not_leak_to_handlers() -> 
     let config = json!({"inventory":{"hosts":{"h":{},"a":{},"b":{}},"groups":{}},"plays":[{
     "targets":["h"],
     "handlers":[{"name":"handler","operation":{"kind":"command","cmd":"handler"}}],
-    "tasks":[{"name":"block","delegateTo":{"kind":"ref","path":["vars","destination"]},
+    "tasks":[{"name":"block","delegateTo":{"kind":"ref","path":["vars","destination"]},"delegateAllow":["a"],
         "vars":{"destination":"a"},"noLog":true,
         "block":[
             {"name":"inherited","operation":{"kind":"command","cmd":"one"},"notify":["handler"]},
-            {"name":"nested","delegateTo":"b","block":[
+            {"name":"nested","delegateTo":"b","delegateAllow":["b"],"block":[
                 {"name":"override","operation":{"kind":"command","cmd":"two"}},
                 {"name":"failure","operation":{"kind":"command","cmd":"three"}}
             ],"rescue":[{"name":"rescue","operation":{"kind":"command","cmd":"four"}}],
@@ -51,10 +51,10 @@ async fn block_delegation_inherits_overrides_and_does_not_leak_to_handlers() -> 
 async fn inherited_expression_uses_each_iteration_and_leaf_override() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{},"a":{},"b":{}},"groups":{}},"plays":[{
     "targets":["h"],"tasks":[{"name":"block",
-        "delegateTo":{"kind":"ref","path":["item"]},"noLog":true,
+        "delegateTo":{"kind":"ref","path":["item"]},"delegateAllow":["a","b"],"noLog":true,
         "block":[
             {"name":"loop","loop":["a","b"],"operation":{"kind":"command","cmd":"loop"}},
-            {"name":"override","delegateTo":"a","operation":{"kind":"command","cmd":"override"}}
+            {"name":"override","delegateTo":"a","delegateAllow":["a"],"operation":{"kind":"command","cmd":"override"}}
         ]}]}]});
     let mut backend = Fake::default();
     run(
@@ -72,5 +72,77 @@ async fn inherited_expression_uses_each_iteration_and_leaf_override() -> Result<
         .collect();
     assert_eq!(hosts, ["a", "b", "a"]);
     assert!(backend.calls.iter().all(|call| call.task.no_log));
+    Ok(())
+}
+
+#[tokio::test]
+async fn dynamic_delegation_requires_task_allowlist_and_localhost_opt_in() -> Result<()> {
+    for (destination, allow, local, succeeds) in [
+        ("a", vec!["a"], false, true),
+        ("b", vec!["a"], false, false),
+        ("localhost", vec!["localhost"], false, false),
+        ("localhost", vec!["localhost"], true, true),
+        ("b", vec![], false, false),
+    ] {
+        let config = json!({"inventory":{"hosts":{"h":{},"a":{},"b":{}},"groups":{}},
+            "plays":[{"targets":["h"],"tasks":[{"name":"delegate",
+            "delegateTo":{"kind":"ref","path":["facts","target"]},
+            "delegateAllow":allow,"delegateLocalhost":local,
+            "operation":{"kind":"command","cmd":"fixture"}}]}]});
+        let facts = BTreeMap::from([("h".to_owned(), json!({"target":destination}))]);
+        let mut backend = Fake::default();
+        let result = run(
+            &config,
+            &facts,
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(result.is_ok(), succeeds, "target {destination}");
+        assert_eq!(
+            backend.calls.len(),
+            usize::from(succeeds),
+            "target {destination}"
+        );
+        if succeeds {
+            assert_eq!(backend.calls[0].host, destination);
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn inherited_delegation_rejects_child_authorization_without_new_target() -> Result<()> {
+    for override_fields in [
+        json!({"delegateAllow":["a"]}),
+        json!({"delegateLocalhost":false}),
+    ] {
+        let mut child = json!({"name":"child", "operation":{"kind":"command","cmd":"fixture"}});
+        child
+            .as_object_mut()
+            .unwrap()
+            .extend(override_fields.as_object().unwrap().clone());
+        let config = json!({"inventory":{"hosts":{"h":{},"a":{}},"groups":{}},
+            "plays":[{"targets":["h"],"tasks":[{"name":"parent",
+            "delegateTo":"localhost", "delegateAllow":["localhost","a"],
+            "delegateLocalhost":true, "block":[child]}]}]});
+        let mut backend = Fake::default();
+        let error = run(
+            &config,
+            &BTreeMap::new(),
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("authorization requires delegateTo")
+        );
+        assert!(backend.calls.is_empty());
+    }
     Ok(())
 }

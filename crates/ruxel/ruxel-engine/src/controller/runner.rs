@@ -20,6 +20,12 @@ impl<B: Backend> Runner<'_, B> {
         }
         if let Some(delegate) = task.get("delegateTo").filter(|value| !value.is_null()) {
             layer.delegate_to = Some(delegate.clone());
+            layer.delegate_allow = array(task, "delegateAllow")
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            layer.delegate_localhost = flag(task, "delegateLocalhost");
         }
         layer.tags.extend(
             array(task, "tags")
@@ -105,6 +111,16 @@ impl<B: Backend> Runner<'_, B> {
         parent: &'a ContextLayer,
     ) -> Pin<Box<dyn Future<Output = Result<bool>> + 'a>> {
         Box::pin(async move {
+            if task.get("delegateTo").is_none_or(Value::is_null)
+                && (task
+                    .get("delegateAllow")
+                    .is_some_and(|value| !value.is_null())
+                    || task
+                        .get("delegateLocalhost")
+                        .is_some_and(|value| !value.is_null()))
+            {
+                bail!("delegation authorization requires delegateTo on the same task");
+            }
             let mut layer = Self::layer(task, parent);
             layer.control_sensitive |= self.backend.conservative_sensitive();
             if !self.handling

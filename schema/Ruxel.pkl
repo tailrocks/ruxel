@@ -52,6 +52,8 @@ class Task {
   notify: Listing<String>
   tags: Listing<String>
   delegateTo: Text? = null
+  delegateAllow: Listing<String>?(this == null || delegateTo != null) = null
+  delegateLocalhost: Boolean?(this == null || delegateTo != null) = null
   becomeUser: String? = null
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>

@@ -2,6 +2,25 @@ use super::{Result, evaluate};
 use serde_json::json;
 
 #[test]
+fn delegation_authorization_requires_a_target_on_the_same_task() -> Result {
+    for property in [
+        "delegateAllow = new Listing { \"a\" }",
+        "delegateLocalhost = false",
+    ] {
+        assert!(
+            evaluate(&format!(
+                r#"new R.Task {{ name = "child"; operation = new R.Debug {{}}; {property} }}"#
+            ))
+            .is_err()
+        );
+    }
+    evaluate(
+        r#"new R.Task { name = "delegate"; operation = new R.Debug {}; delegateTo = "localhost"; delegateAllow = new Listing { "localhost" }; delegateLocalhost = true }"#,
+    )?;
+    Ok(())
+}
+
+#[test]
 fn onepassword_lookup_rejects_conflicting_selector_forms() -> Result {
     for field in ["vault", "item", "section", "field"] {
         assert!(evaluate(&format!(r#"new R.Lookup {{ provider = "op"; reference = "op://vault/item/field"; {field} = "other" }}"#)).is_err(), "{field}");

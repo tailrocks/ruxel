@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn retry_delegation_and_unrescued_always() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","cmd":"try"}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","cmd":"never"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","delegateAllow":["other"],"retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","cmd":"try"}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","cmd":"never"}}]}]});
     let mut backend = Fake {
         results: [
             json!({"failed":true}),

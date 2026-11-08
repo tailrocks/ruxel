@@ -80,6 +80,10 @@ pub(super) struct Task {
     #[serde(default)]
     pub(super) delegate_to: Option<Value>,
     #[serde(default)]
+    pub(super) delegate_allow: Option<Vec<String>>,
+    #[serde(default)]
+    pub(super) delegate_localhost: Option<bool>,
+    #[serde(default)]
     pub(super) become_user: Option<String>,
     #[serde(default)]
     pub(super) vars: BTreeMap<String, Value>,

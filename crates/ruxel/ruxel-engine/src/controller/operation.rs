@@ -136,11 +136,23 @@ impl<B: Backend> Runner<'_, B> {
         let destination = if let Some(delegate) = &layer.delegate_to {
             let value = self.evaluate_scoped(delegate, scope, layer)?;
             sensitive |= value.is_secret();
-            value
+            let destination = value
                 .value
                 .as_str()
                 .context("delegateTo must evaluate to a host name")?
-                .to_owned()
+                .to_owned();
+            anyhow::ensure!(
+                layer
+                    .delegate_allow
+                    .iter()
+                    .any(|allowed| allowed == &destination),
+                "delegation target is not explicitly authorized"
+            );
+            anyhow::ensure!(
+                destination != "localhost" || layer.delegate_localhost,
+                "localhost delegation requires explicit opt-in"
+            );
+            destination
         } else {
             self.host.clone()
         };

@@ -17,6 +17,7 @@ fn rejects_untyped_unknown_fields_and_operation_variants() {
         .is_err()
     );
 }
+
 #[test]
 fn rejects_invalid_evaluated_expression_results() {
     assert!(
@@ -143,6 +144,7 @@ fn onepassword_lookup_accepts_item_defaults_and_rejects_empty_selectors() -> Res
 }
 
 mod block_controls;
+mod delegation;
 mod file_paths;
 
 mod notifications;
