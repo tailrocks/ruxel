@@ -75,7 +75,19 @@ pub(super) fn become_command(
         }
     }
     if let Some(user) = &ctx.become_user {
-        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        let output = Command::new("/usr/bin/getent")
+            .env_clear()
+            .env("PATH", WRAPPER_PATH)
+            .args(["passwd", user])
+            .output()
+            .map_err(|_| "failed to look up become_user identity")?;
+        if !output.status.success() {
+            return Err("failed to look up become_user identity".into());
+        }
+        let passwd = std::str::from_utf8(&output.stdout)
+            .map_err(|_| "invalid become_user identity record")?;
+        let identity =
+            user_environment_from(passwd, user).ok_or("invalid become_user identity record")?;
         switched_command(
             ctx,
             user,
@@ -83,7 +95,7 @@ pub(super) fn become_command(
             args,
             Path::new(RUNUSER),
             std::env::vars_os().collect(),
-            user_environment_from(&passwd, user),
+            Some(identity),
         )
     } else {
         let mut command = Command::new(program);
@@ -277,10 +289,20 @@ fn shell_name(key: &str) -> bool {
 }
 
 pub(super) fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
-    passwd.lines().find_map(|line| {
-        let fields = line.split(':').collect::<Vec<_>>();
-        (fields.len() >= 7 && fields[0] == user).then(|| (fields[5], fields[6]))
-    })
+    let mut lines = passwd.lines();
+    let fields = lines.next()?.split(':').collect::<Vec<_>>();
+    if lines.next().is_some()
+        || fields.len() != 7
+        || fields[0] != user
+        || fields[2].parse::<u32>().is_err()
+        || fields[3].parse::<u32>().is_err()
+        || fields[5].is_empty()
+        || fields[6].is_empty()
+        || fields.iter().any(|field| field.contains('\0'))
+    {
+        return None;
+    }
+    Some((fields[5], fields[6]))
 }
 
 #[cfg(test)]
