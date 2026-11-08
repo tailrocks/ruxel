@@ -84,7 +84,23 @@ pub fn run(cli: &Path, agent: &Path, schema: &Path, asset: &Path) -> Result<()> 
             .parent()
             .ok_or_else(|| anyhow::anyhow!("missing parent"))?,
     )?;
-    fs::write(&source, bytes)?;
+    let source_text = std::str::from_utf8(&bytes)?;
+    let import = "import \"../../../../schema/Ruxel.pkl\"";
+    ensure!(
+        source_text.matches(import).count() == 1,
+        "unexpected template import"
+    );
+    let local_schema = env
+        .module
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("missing parent"))?
+        .join("schema");
+    fs::create_dir_all(&local_schema)?;
+    fs::copy(schema, local_schema.join("Ruxel.pkl"))?;
+    fs::write(
+        &source,
+        source_text.replace(import, "import \"../schema/Ruxel.pkl\""),
+    )?;
     let dest = env.payload.join("rendered");
     write_module(&env, &source, &dest, true)?;
     apply(&env, &dest, true, false, true)?;
