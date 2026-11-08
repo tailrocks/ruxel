@@ -158,8 +158,6 @@ inputs = [
   "testdata/workloads/pr66/storage-two-tier.pkl",
   "testdata/workloads/pr66/storage-xfs.pkl",
   "testdata/workloads/pr66/system-surface.pkl",
-  "tests/acceptance/pr66/oracles/README.md",
-  "tests/acceptance/pr66/oracles/controller-delegation-check-diff.jsonl",
   "tools/acceptance-cache/Cargo.lock",
   "tools/acceptance-cache/Cargo.toml",
   "tools/acceptance-cache/README.md",
