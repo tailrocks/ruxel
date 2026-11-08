@@ -2,6 +2,7 @@
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 compile_error!("the local acceptance runner supports Linux and macOS process groups");
 mod coverage;
+mod http_preview;
 mod pins;
 mod plan;
 mod process;
@@ -13,13 +14,14 @@ fn main() -> Result<()> {
         process::sentinel();
     }
     let mut args = args.into_iter();
-    let (mut root, mut cli, mut agent) = (None, None, None);
+    let (mut root, mut cli, mut agent, mut http) = (None, None, None, None);
     while let Some(arg) = args.next() {
         let value = PathBuf::from(args.next().context("missing value")?);
         match arg.to_str() {
             Some("--root") if root.is_none() => root = Some(value),
             Some("--ruxel") if cli.is_none() => cli = Some(value),
             Some("--agent") if agent.is_none() => agent = Some(value),
+            Some("--http-fixture") if http.is_none() => http = Some(value),
             _ => bail!("unknown or duplicate option"),
         }
     }
@@ -33,5 +35,9 @@ fn main() -> Result<()> {
     let cli = cli.context("missing --ruxel")?.canonicalize()?;
     let agent = agent.context("missing --agent")?.canonicalize()?;
     coverage::run(&root)?;
-    plan::run(&root, &cli, &agent)
+    plan::run(&root, &cli, &agent)?;
+    if let Some(http) = http {
+        http_preview::run(&root, &cli, &agent, &http.canonicalize()?)?;
+    }
+    Ok(())
 }

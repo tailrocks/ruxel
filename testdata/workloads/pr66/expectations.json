@@ -883,7 +883,7 @@
       },
       "pending": [
         "runtime and independent observation integration",
-        "check-mode forced HTTP server changes pid/log files; nonmutation expectation must be verified and this conflict resolved",
+        "check and diff HTTP preview nonmutation and skipped readiness require end-to-end verification",
         "fixed service, mount, account and firewall names require a dedicated disposable VM"
       ]
     }

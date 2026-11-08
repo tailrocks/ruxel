@@ -27,11 +27,9 @@ retry task, GetUrl task, and stop task. No runtime compiler or interpreter is
 required on the fixture VM. **Artifact staging remains an unresolved harness
 dependency; this change does not establish VM execution readiness.**
 
-Stage the artifact before the first scenario invocation, including check or
-diff. The workload's server-start and stop tasks explicitly use
-`checkMode = false`; they need the executable even when provider changes are
-being predicted. A normal checked Copy task cannot supply this prerequisite,
-and forcing that Copy to execute would introduce another check-mode mutation.
+Stage the artifact before the first apply. The workload's server-start and stop
+tasks inherit check mode and are skipped during check and diff. Preview does not
+test HTTP readiness or connectivity.
 Preparation therefore belongs in the disposable harness's separately authorized
 setup phase. The current local manifest runner has no system-surface adapter;
 its successful three-case run does not perform or verify this staging step.

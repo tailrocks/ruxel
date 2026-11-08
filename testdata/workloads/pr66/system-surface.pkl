@@ -38,7 +38,6 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Start disposable payload server"
-        checkMode = false
         changedWhen = literal(false)
         operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\ntest -x __RUN_ROOT__/ruxel-http-fixture || { echo missing-staged-native-http-fixture >&2; exit 1; }\ntest \"$( __RUN_ROOT__/ruxel-http-fixture --version )\" = \"ruxel-http-fixture 0.1.0\" || { echo incompatible-native-http-fixture >&2; exit 1; }\nnohup __RUN_ROOT__/ruxel-http-fixture --port 18080 \\\n  --directory "); ref(new Listing { "vars"; "fixture_root" }); literal(" </dev/null \\\n  >__RUN_ROOT__/http.log 2>&1 &\nserver_pid=$!\necho \"$server_pid\" >__RUN_ROOT__/http.pid\nfor attempt in 1 2 3 4 5 6 7 8 9 10; do\n  if kill -0 \"$server_pid\" 2>/dev/null &&\n    grep -Fx \"listening 127.0.0.1:18080 pid=$server_pid\" __RUN_ROOT__/http.log >/dev/null &&\n    /usr/bin/curl --fail --silent \\\n    http://127.0.0.1:18080/payload-source.txt >/dev/null; then\n    exit 0\n  fi\n  sleep 0.1\ndone\nexit 1\n") }) }
       }
@@ -57,7 +56,6 @@ output { value = new Ruxel.Config {
       }
       new {
         name = "Stop disposable payload server"
-        checkMode = false
         changedWhen = literal(false)
         operation = new Ruxel.Shell { cmd = "kill \"$(cat __RUN_ROOT__/http.pid)\"" }
       }
