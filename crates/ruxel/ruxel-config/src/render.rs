@@ -43,7 +43,7 @@ pub fn render(format: Format, value: &Value) -> Result<String, RenderError> {
                 return Err(RenderError::TomlRoot);
             };
             let mut value = value.clone();
-            drop_nulls(&mut value);
+            drop_nulls(&mut value)?;
             toml::to_string(&value).map_err(|error| RenderError::Toml(error.to_string()))
         }
     }
@@ -53,22 +53,27 @@ fn pretty_json(value: &Value) -> Result<String, RenderError> {
     serde_json::to_string_pretty(value).map_err(|error| RenderError::Json(error.to_string()))
 }
 
-fn drop_nulls(value: &mut Value) {
+fn drop_nulls(value: &mut Value) -> Result<(), RenderError> {
     match value {
         Value::Object(object) => {
             object.retain(|_, value| !value.is_null());
             for value in object.values_mut() {
-                drop_nulls(value);
+                drop_nulls(value)?;
             }
         }
         Value::Array(array) => {
-            array.retain(|value| !value.is_null());
             for value in array {
-                drop_nulls(value);
+                if value.is_null() {
+                    return Err(RenderError::Toml(
+                        "null array elements are not supported".into(),
+                    ));
+                }
+                drop_nulls(value)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 #[cfg(test)]

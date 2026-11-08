@@ -49,6 +49,32 @@ fn toml_rejects_non_object_root() {
 }
 
 #[test]
+fn toml_rejects_null_array_elements_at_any_depth() {
+    for value in [
+        json!({"items": [null, "second"]}),
+        json!({"items": [[1, null]]}),
+        json!({"items": [{"nested": [null]}]}),
+    ] {
+        assert!(matches!(
+            render(Format::Toml, &value),
+            Err(RenderError::Toml(_))
+        ));
+    }
+}
+
+#[test]
+fn toml_omits_null_properties_inside_array_objects() -> Result<(), RenderError> {
+    assert_eq!(
+        render(
+            Format::Toml,
+            &json!({"items": [{"name": "one", "optional": null}]})
+        )?,
+        "[[items]]\nname = \"one\"\n"
+    );
+    Ok(())
+}
+
+#[test]
 fn key_order_is_preserved_in_every_format() -> Result<(), RenderError> {
     let value = json!({"b": 1, "a": 2});
     for format in [Format::Json, Format::Yaml, Format::Toml] {
