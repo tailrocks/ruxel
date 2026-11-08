@@ -101,6 +101,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     let state = str_param(obj, "state").unwrap_or("present");
 
+    let groups: Option<Vec<String>> = match obj.get("groups") {
+        None => None,
+        Some(Value::Array(items)) => Some(
+            items
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .ok_or("user: groups entries must be strings")
+                })
+                .collect::<Result<_, _>>()?,
+        ),
+        Some(other) => return Err(format!("user: invalid groups {other:?}")),
+    };
+
     let entry = passwd_entry(name)?;
 
     if state == "absent" {
@@ -118,20 +133,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let uid = obj.get("uid").and_then(Value::as_u64);
     let group = str_param(obj, "group");
-    let groups: Option<Vec<String>> = match obj.get("groups") {
-        None => None,
-        Some(Value::Array(items)) => Some(
-            items
-                .iter()
-                .map(|v| {
-                    v.as_str()
-                        .map(str::to_string)
-                        .ok_or("user: groups entries must be strings")
-                })
-                .collect::<Result<_, _>>()?,
-        ),
-        Some(other) => return Err(format!("user: invalid groups {other:?}")),
-    };
     let append = bool_param(obj, "append", false);
     let home = str_param(obj, "home");
     let create_home = bool_param(obj, "create_home", true);
@@ -320,6 +321,13 @@ mod tests {
             assert!(
                 run(
                     &json!({"name":"ruxel-synthetic-user", "groups":groups}),
+                    &ctx
+                )
+                .is_err()
+            );
+            assert!(
+                run(
+                    &json!({"name":"ruxel-synthetic-user", "state":"absent", "groups":groups}),
                     &ctx
                 )
                 .is_err()

@@ -143,7 +143,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "uid" => false, FieldType::Number;
     ),
     operation!("volume_group";
-        "pvs" => true, FieldType::StringList;
+        "pvs" => true, FieldType::NonEmptyStringList;
         "vg" => true, FieldType::Text;
     ),
     operation!("logical_volume";

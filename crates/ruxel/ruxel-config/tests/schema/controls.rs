@@ -19,6 +19,8 @@ fn user_groups_and_volume_pvs_are_lists_or_expressions() -> Result {
             evaluate(&format!("new R.{class} {{ {base}; {field} = {value} }}"))?;
         }
     }
+    assert!(evaluate(r#"new R.VolumeGroup { vg = "fixture"; pvs = Listing() }"#).is_err());
+    evaluate(r#"new R.User { name = "fixture"; groups = Listing() }"#)?;
     Ok(())
 }
 

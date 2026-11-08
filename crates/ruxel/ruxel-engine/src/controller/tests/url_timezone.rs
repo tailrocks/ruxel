@@ -1,6 +1,29 @@
 use super::*;
 
 #[tokio::test]
+async fn evaluated_volume_devices_are_checked_before_dispatch() -> Result<()> {
+    for (items, accepted) in [
+        (json!([]), false),
+        (json!([{"kind":"literal", "value":"/dev/example"}]), true),
+        (json!([{"kind":"literal", "value":2}]), false),
+    ] {
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"devices":{"kind":"list", "items":items}},"tasks":[{"operation":{"kind":"volume_group", "vg":"fixture", "pvs":{"kind":"ref", "path":["vars", "devices"]}}}]}]});
+        let mut backend = Fake::default();
+        let result = run(
+            &config,
+            &BTreeMap::new(),
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(result.is_ok(), accepted);
+        assert_eq!(backend.calls.len(), usize::from(accepted));
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn evaluated_url_and_timezone_are_validated_before_dispatch() -> Result<()> {
     for (kind, field, value, accepted) in [
         ("get_url", "url", "file:///tmp/x", false),

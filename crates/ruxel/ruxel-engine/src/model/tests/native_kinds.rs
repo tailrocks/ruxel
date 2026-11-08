@@ -6,7 +6,7 @@ fn groups_and_pvs_require_lists_before_dispatch() -> Result<()> {
         ("user", "groups", json!({"name":"fixture"})),
         ("volume_group", "pvs", json!({"vg":"fixture"})),
     ] {
-        for value in [json!(["one", "two"]), json!([])] {
+        for value in [json!(["one", "two"])] {
             let mut params = base.clone();
             params[field] = value;
             validate_operation(kind, params.as_object().context("params")?)?;
@@ -27,6 +27,11 @@ fn groups_and_pvs_require_lists_before_dispatch() -> Result<()> {
             }
         }
     }
+    let groups = json!({"name":"fixture", "groups":[]});
+    validate_operation("user", groups.as_object().context("groups")?)?;
+    let pvs = json!({"vg":"fixture", "pvs":[]});
+    assert!(validate_operation("volume_group", pvs.as_object().context("pvs")?).is_err());
+    assert!(operation("volume_group", pvs.as_object().context("pvs")?, true).is_err());
     Ok(())
 }
 

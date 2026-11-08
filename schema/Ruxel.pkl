@@ -249,7 +249,7 @@ class User {
 
 class VolumeGroup {
   fixed kind = "volume_group"
-  pvs: Listing<String>(this.every((value) -> value is String))|Expr
+  pvs: Listing<String>(!this.isEmpty && this.every((value) -> value is String))|Expr
   vg: Text
 }
 

@@ -21,6 +21,7 @@ enum FieldType {
     Mode,
     TextList,
     StringList,
+    NonEmptyStringList,
     ExprMap,
     Choice(&'static [&'static str]),
 }
@@ -78,6 +79,9 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
         FieldType::StringList => value
             .as_array()
             .is_some_and(|v| v.iter().all(Value::is_string)),
+        FieldType::NonEmptyStringList => value
+            .as_array()
+            .is_some_and(|v| !v.is_empty() && v.iter().all(Value::is_string)),
         FieldType::Choice(choices) => value.as_str().is_some_and(|s| choices.contains(&s)),
         FieldType::ExprMap => {
             for expr in value
