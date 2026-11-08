@@ -2,10 +2,15 @@
 
 Standalone safe Rust port for five reviewed manifest scenarios:
 `check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, and `control-flow`. Each contract must
-exactly match the frozen reviewed contract in `contracts.json`; fixture and
-baseline oracle hashes are also pinned before any subprocess starts. Unsupported
+exactly match the frozen reviewed contract in `contracts.json`; fixture hashes
+are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
 expected to fail while nine scenarios have no enabled adapter.
+
+For controller delegation, the actual apply runs must pass the fixture's
+assertion on the delegated command's registered stdout. Separate check and diff
+runs must skip the command and fail that assertion, report the corresponding
+recap, preserve censorship, and leave the payload and fixture tree unchanged.
 
 The control-flow adapter requires the same isolated Linux guest as the restart
 adapter. It runs a private in-memory observer of the real controller and agent

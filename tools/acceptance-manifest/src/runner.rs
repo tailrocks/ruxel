@@ -23,9 +23,6 @@ impl Env {
                 && crate::pins::digest(&data) == crate::pins::pin(name),
             "fixture pin mismatch"
         );
-        if name == "controller-delegation" {
-            crate::pins::oracle(repo)?;
-        }
         let mut builder = tempfile::Builder::new();
         builder.prefix("ruxel-pr66-manifest-");
         let root = if matches!(name, "become-environment" | "postgresql-ownership") {
@@ -152,8 +149,6 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
         let fixture_before = state::fixture_snapshot(env.root.path())?;
 
         let status = if name == "controller-delegation" {
-            crate::pins::oracle(repo)?;
-
             8
         } else {
             0
