@@ -53,14 +53,7 @@ fn rescue_and_always_require_block_tasks() {
 
 #[test]
 fn loop_variables_cannot_shadow_scope_roots() {
-    for name in [
-        "vars",
-        "variables",
-        "facts",
-        "results",
-        "inventoryHost",
-        "setFacts",
-    ] {
+    for name in ["vars", "facts", "results", "inventoryHost", "setFacts"] {
         let mut value = config(json!({"kind":"debug"}));
         value["plays"][0]["tasks"][0]["loopVar"] = json!(name);
         assert!(
@@ -68,7 +61,7 @@ fn loop_variables_cannot_shadow_scope_roots() {
             "reserved loop variable {name}"
         );
     }
-    for name in ["item", "entry"] {
+    for name in ["item", "entry", "variables"] {
         let mut value = config(json!({"kind":"debug"}));
         value["plays"][0]["tasks"][0]["loopVar"] = json!(name);
         assert!(

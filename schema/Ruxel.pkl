@@ -46,7 +46,7 @@ class Task {
   operation: Operation?(this != null && block.isEmpty && rescue.isEmpty && always.isEmpty || this == null && !block.isEmpty && `loop` == null && loopLabel == null && loopVar == "item") = null
   `when`: Expr? = null
   `loop`: Expr? = null
-  loopVar: String(!List("vars", "variables", "facts", "results", "inventoryHost", "setFacts").contains(this)) = "item"
+  loopVar: String(!List("vars", "facts", "results", "inventoryHost", "setFacts").contains(this)) = "item"
   loopLabel: Expr? = null
   register: String?(this == null || block.isEmpty) = null
   notify: Listing<String>

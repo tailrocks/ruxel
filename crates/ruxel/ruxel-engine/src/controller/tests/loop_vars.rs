@@ -1,6 +1,44 @@
 use super::*;
 
 #[tokio::test]
+async fn retired_variables_name_is_a_custom_loop_binding() -> Result<()> {
+    let config = crate::model::validate_config(&json!({
+        "inventory":{"hosts":{"h":{"address":"fixture.invalid"}},"groups":{}},
+        "plays":[{"name":"custom binding","targets":["h"],"vars":{"prefix":{"kind":"literal","value":"canonical"}},"tasks":[{
+            "name":"loop","loopVar":"variables","loop":{"kind":"list","items":[
+                {"kind":"literal","value":"one"},{"kind":"literal","value":"two"}
+            ]},
+            "operation":{"kind":"debug","msg":{"kind":"call","function":"concat","args":[
+                {"kind":"ref","path":["vars","prefix"]},
+                {"kind":"literal","value":"|"},
+                {"kind":"ref","path":["variables"]},
+                {"kind":"literal","value":"|"},
+                {"kind":"ref","path":["item"]}
+            ]}}
+        }]}]
+    }))?;
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].failed, 0);
+    assert_eq!(
+        backend.events[0]["result"]["results"][0]["msg"],
+        "canonical|one|one"
+    );
+    assert_eq!(
+        backend.events[0]["result"]["results"][1]["msg"],
+        "canonical|two|two"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn task_variables_resolve_for_each_custom_item_with_dependencies() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"derived":{"kind":"literal","value":"inherited"}},"tasks":[{"name":"loop","loopVar":"entry","loop":{"kind":"ref","path":["vars","inputs"]},"vars":{"inputs":{"kind":"literal","value":["one","two"]},"alias":{"kind":"ref","path":["vars","derived"]},"derived":{"kind":"ref","path":["entry"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","alias"]}}}]}]});
     let mut backend = Fake::default();

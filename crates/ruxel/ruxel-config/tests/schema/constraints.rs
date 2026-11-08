@@ -44,17 +44,10 @@ fn rescue_and_always_require_block_tasks() -> Result {
 
 #[test]
 fn loop_variable_cannot_shadow_scope_roots() -> Result {
-    for name in [
-        "vars",
-        "variables",
-        "facts",
-        "results",
-        "inventoryHost",
-        "setFacts",
-    ] {
+    for name in ["vars", "facts", "results", "inventoryHost", "setFacts"] {
         assert!(evaluate(&format!(r#"new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}"#)).is_err(), "{name}");
     }
-    for name in ["item", "entry"] {
+    for name in ["item", "entry", "variables"] {
         evaluate(&format!(
             r#"new R.Task {{ name = "loop"; loopVar = "{name}"; operation = new R.Debug {{}} }}"#
         ))?;

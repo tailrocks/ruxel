@@ -170,7 +170,7 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
         ensure!(
             !matches!(
                 task.loop_var.as_str(),
-                "vars" | "variables" | "facts" | "results" | "inventoryHost" | "setFacts"
+                "vars" | "facts" | "results" | "inventoryHost" | "setFacts"
             ),
             "loop variable shadows a reserved scope root"
         );
