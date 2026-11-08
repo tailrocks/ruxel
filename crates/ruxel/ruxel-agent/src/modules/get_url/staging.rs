@@ -1,7 +1,7 @@
 #[cfg(target_vendor = "apple")]
 use super::access::clear_inherited_acl;
 use super::access::parent_flags;
-use rustix::fs::{AtFlags, Mode, OFlags, mkdirat, openat, renameat, unlinkat};
+use rustix::fs::{AtFlags, Mode, OFlags, mkdirat, openat, unlinkat};
 use std::fs::File;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -107,8 +107,44 @@ impl Download {
             .file_name()
             .ok_or("get_url: destination filename required")?;
         self.file.sync_all().map_err(|e| e.to_string())?;
-        renameat(&self.directory, "payload", &self.parent, name).map_err(|e| e.to_string())
+        publish_noreplace(&self.directory, &self.parent, name)
     }
+}
+
+#[cfg(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+))]
+fn publish_noreplace(
+    directory: &File,
+    parent: &File,
+    name: &std::ffi::OsStr,
+) -> Result<(), String> {
+    rustix::fs::renameat_with(
+        directory,
+        "payload",
+        parent,
+        name,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|e| format!("get_url: cannot publish without replacing destination: {e}"))
+}
+
+#[cfg(not(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+)))]
+fn publish_noreplace(
+    directory: &File,
+    parent: &File,
+    name: &std::ffi::OsStr,
+) -> Result<(), String> {
+    rustix::fs::linkat(directory, "payload", parent, name, AtFlags::empty())
+        .map_err(|e| format!("get_url: cannot publish without replacing destination: {e}"))
 }
 
 impl Drop for Download {

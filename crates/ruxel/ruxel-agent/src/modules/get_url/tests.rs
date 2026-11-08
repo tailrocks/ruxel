@@ -146,3 +146,35 @@ fn clients_write_to_stdout_descriptor_and_wget_remains_fallback() {
         fs::remove_file(root.0.join("result")).unwrap();
     }
 }
+
+#[test]
+fn concurrent_destination_creation_is_never_overwritten() {
+    let root = Root::new();
+    let dest = root.0.join("result");
+    let params = json!({"url":"https://example.invalid/file", "dest":dest});
+    let error = run_with_fetch(&params, &context(false), |_, file| {
+        fs::write(&dest, b"concurrent content").map_err(|e| e.to_string())?;
+        write_bytes(file)
+    })
+    .unwrap_err();
+    assert!(error.contains("cannot publish without replacing destination"));
+    assert_eq!(fs::read(&dest).unwrap(), b"concurrent content");
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+}
+
+#[test]
+fn concurrent_dangling_symlink_is_never_replaced() {
+    let root = Root::new();
+    let dest = root.0.join("result");
+    let target = root.0.join("missing");
+    let params = json!({"url":"https://example.invalid/file", "dest":dest});
+    let error = run_with_fetch(&params, &context(false), |_, file| {
+        symlink(&target, &dest).map_err(|e| e.to_string())?;
+        write_bytes(file)
+    })
+    .unwrap_err();
+    assert!(error.contains("cannot publish without replacing destination"));
+    assert_eq!(fs::read_link(&dest).unwrap(), target);
+    assert!(!target.exists());
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+}
