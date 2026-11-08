@@ -81,56 +81,5 @@ fn failure_and_check_leave_no_download_objects() {
 #[path = "tests/staging_cases.rs"]
 mod staging_cases;
 
-#[test]
-fn download_clients_receive_task_environment() {
-    use super::fetch_with_programs;
-
-    let root = Root::new();
-    let client = root.0.join("client");
-    fs::write(&client, "#!/bin/sh\nprintf '%s' \"$RUXEL_DOWNLOAD_TEST\"\n").unwrap();
-    fs::set_permissions(&client, fs::Permissions::from_mode(0o700)).unwrap();
-    let missing = root.0.join("missing");
-    let mut ctx = context(false);
-    ctx.environment = vec![("RUXEL_DOWNLOAD_TEST".into(), "task value".into())];
-
-    for (name, curl, wget) in [("curl", &client, &missing), ("wget", &missing, &client)] {
-        let output = root.0.join(name);
-        let file = File::create(&output).unwrap();
-        assert!(
-            fetch_with_programs("https://example.invalid/file", &file, curl, wget, &ctx).unwrap()
-        );
-        assert_eq!(fs::read(output).unwrap(), b"task value");
-    }
-}
-
-#[test]
-fn production_download_uses_task_path_for_curl_and_wget_fallback() {
-    let root = Root::new();
-    for client in ["curl", "wget"] {
-        let directory = root.0.join(client);
-        fs::create_dir(&directory).unwrap();
-        let executable = directory.join(client);
-        fs::write(
-            &executable,
-            "#!/bin/sh\nprintf '%s' \"$RUXEL_DOWNLOAD_TEST\"\n",
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        let mut ctx = context(false);
-        ctx.environment = vec![
-            ("PATH".into(), directory.to_string_lossy().into_owned()),
-            ("RUXEL_DOWNLOAD_TEST".into(), format!("{client} task value")),
-        ];
-        let dest = root.0.join(format!("{client}-result"));
-        let result = super::run(
-            &json!({"url":"https://example.invalid/file", "dest":dest}),
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(result["changed"], true);
-        assert_eq!(
-            fs::read_to_string(dest).unwrap(),
-            format!("{client} task value")
-        );
-    }
-}
+#[path = "tests/clients.rs"]
+mod clients;

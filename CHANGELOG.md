@@ -18,6 +18,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
 - Apt tasks run requested autoremove after distribution upgrades in apply and check mode.
 - Agents require one successful handshake before executing batches and reject duplicate handshakes.

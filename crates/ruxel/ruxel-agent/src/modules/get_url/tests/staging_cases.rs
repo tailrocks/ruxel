@@ -55,16 +55,16 @@ fn renamed_stage_cannot_redirect_publication_through_symlink() {
 fn clients_write_to_stdout_descriptor_and_wget_remains_fallback() {
     let root = Root::new();
     let script = root.0.join("client");
-    fs::write(&script, "#!/bin/sh\ncase \"$1\" in\n-fsSL) test \"$2\" = -- || exit 9;;\n-q) test \"$2\" = -O && test \"$3\" = - && test \"$4\" = -- || exit 10;;\n*) exit 11;;\nesac\nprintf 'client bytes'\n").unwrap();
+    fs::write(&script, "#!/bin/sh\ncase \"$1\" in\n--disable) test \"$2\" = -fsSL && test \"$3\" = -- || exit 9;;\n--no-config) test \"$2\" = -q && test \"$3\" = -O && test \"$4\" = - && test \"$5\" = -- || exit 10;;\n*) exit 11;;\nesac\nprintf 'client bytes'\n").unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
-    for curl in [&script, &root.0.join("missing")] {
+    for curl in [Some(script.as_path()), None] {
         let stage = Download::new(&root.0.join("result")).unwrap();
         assert!(
             super::super::fetch_with_programs(
                 "https://example.invalid/file",
                 &stage.file,
                 curl,
-                &script,
+                Some(&script),
                 &super::context(false),
             )
             .unwrap()

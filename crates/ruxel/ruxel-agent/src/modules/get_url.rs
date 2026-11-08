@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 mod access;
+mod client;
 mod staging;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -77,27 +78,29 @@ fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-fn curl_args(url: &str) -> [&str; 3] {
-    ["-fsSL", "--", url]
+fn curl_args(url: &str) -> [&str; 4] {
+    ["--disable", "-fsSL", "--", url]
 }
 
 fn fetch(url: &str, dest: &std::fs::File, ctx: &ExecContext) -> Result<bool, String> {
-    fetch_with_programs(url, dest, Path::new("curl"), Path::new("wget"), ctx)
+    let curl = client::resolve("curl")?;
+    let wget = client::resolve("wget")?;
+    fetch_with_programs(url, dest, curl.as_deref(), wget.as_deref(), ctx)
 }
 
 fn fetch_with_programs(
     url: &str,
     dest: &std::fs::File,
-    curl: &Path,
-    wget: &Path,
+    curl: Option<&Path>,
+    wget: Option<&Path>,
     ctx: &ExecContext,
 ) -> Result<bool, String> {
-    let curl = std::process::Command::new(curl)
-        .args(curl_args(url))
-        .envs(ctx.environment.iter().cloned())
-        .stdout(dest.try_clone().map_err(|e| e.to_string())?)
-        .output();
-    if let Ok(out) = curl {
+    if let Some(curl) = curl {
+        let out = client::command(curl, ctx)
+            .args(curl_args(url))
+            .stdout(dest.try_clone().map_err(|e| e.to_string())?)
+            .output()
+            .map_err(|e| format!("curl could not start: {e}"))?;
         if out.status.success() {
             return Ok(true);
         }
@@ -106,8 +109,11 @@ fn fetch_with_programs(
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let wget = std::process::Command::new(wget)
-        .envs(ctx.environment.iter().cloned())
+    let Some(wget) = wget else {
+        return Ok(false);
+    };
+    let wget = client::command(wget, ctx)
+        .arg("--no-config")
         .arg("-q")
         .arg("-O")
         .arg("-")
@@ -121,7 +127,7 @@ fn fetch_with_programs(
             "wget failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         )),
-        Err(_) => Ok(false),
+        Err(e) => Err(format!("wget could not start: {e}")),
     }
 }
 
@@ -135,8 +141,9 @@ mod tests {
         assert!(super::validate_url("https://example.test/a").is_ok());
         assert!(super::validate_url("file:///etc/passwd").is_err());
         let args = super::curl_args("https://example.test/a");
-        assert_eq!(args[1], "--");
-        assert_eq!(args[2], "https://example.test/a");
+        assert_eq!(args[0], "--disable");
+        assert_eq!(args[2], "--");
+        assert_eq!(args[3], "https://example.test/a");
     }
 
     #[test]
