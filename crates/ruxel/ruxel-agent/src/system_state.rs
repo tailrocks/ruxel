@@ -52,9 +52,9 @@ impl SystemState {
             })
             .collect::<Result<_, _>>()?;
         for (_, package, version) in &requests {
-            if package.ends_with(":any") {
+            if package.ends_with(":any") && version.is_some() {
                 return Err(format!(
-                    "apt: :any package selectors are not supported: {package:?}"
+                    "apt: pinned :any package selectors are not supported: {package:?}"
                 ));
             }
             if let Some(version) = version
