@@ -88,7 +88,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     let port = login_port(obj);
     validate_state(state)?;
     validate_targets(typ, privs_values.as_deref(), objs, target_roles)?;
-    validate_privs(&privs_list)?;
+    validate_privs(&privs_list, typ)?;
     if target_roles.is_some() && typ != "default_privs" {
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
     }

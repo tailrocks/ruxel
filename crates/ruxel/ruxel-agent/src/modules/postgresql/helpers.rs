@@ -1,26 +1,29 @@
-pub(super) fn validate_privs(privs: &str) -> Result<(), String> {
-    const ALLOWED: &[&str] = &[
-        "SELECT",
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-        "TRUNCATE",
-        "REFERENCES",
-        "TRIGGER",
-        "USAGE",
-        "CREATE",
-        "CONNECT",
-        "TEMPORARY",
-        "TEMP",
-        "EXECUTE",
-        "MAINTAIN",
-        "ALL",
-        "ALL PRIVILEGES",
-    ];
-    for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        if !ALLOWED.contains(&p.to_uppercase().as_str()) {
+pub(super) fn validate_privs(privs: &str, object_type: &str) -> Result<(), String> {
+    let allowed: &[&str] = match object_type {
+        "database" => &["CREATE", "CONNECT", "TEMPORARY", "TEMP"],
+        "schema" => &["CREATE", "USAGE"],
+        "table" | "default_privs" => &[
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+            "MAINTAIN",
+        ],
+        _ => {
             return Err(format!(
-                "postgresql_privs: privilege {p:?} outside the closed surface"
+                "postgresql_privs: type {object_type:?} outside the closed surface"
+            ));
+        }
+    };
+    for p in privs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let upper = p.to_uppercase();
+        if !matches!(upper.as_str(), "ALL" | "ALL PRIVILEGES") && !allowed.contains(&upper.as_str())
+        {
+            return Err(format!(
+                "postgresql_privs: privilege {p:?} is invalid for type {object_type:?}"
             ));
         }
     }

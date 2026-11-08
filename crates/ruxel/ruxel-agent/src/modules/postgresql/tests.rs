@@ -22,6 +22,8 @@ fn privilege_requests_reject_empty_privileges_and_targets() {
         json!({"login_db":"db", "role":"r", "type":"table", "objs":["t"], "privs":[]}),
         json!({"login_db":"db", "role":"r", "type":"schema", "objs":[], "privs":["USAGE"]}),
         json!({"login_db":"db", "role":"r", "type":"table", "privs":["SELECT"]}),
+        json!({"login_db":"db", "role":"r", "type":"table", "objs":["t"], "privs":["EXECUTE"]}),
+        json!({"login_db":"db", "role":"r", "type":"database", "objs":["db"], "privs":["SELECT"]}),
         json!({"login_db":"db", "role":"r", "type":"default_privs", "privs":["SELECT"], "target_roles":[]}),
     ] {
         assert!(privileges::privs(&params, &ctx).is_err(), "{params}");
@@ -90,7 +92,7 @@ fn all_table_acl_probes_follow_server_version() {
         assert!(current.iter().any(|p| !old.contains(p)));
         assert!(super::acl_privileges("all", kind, 180_000).contains(&"MAINTAIN".into()));
     }
-    assert!(super::validate_privs("MAINTAIN").is_ok());
+    assert!(super::validate_privs("MAINTAIN", "table").is_ok());
 }
 
 #[test]
@@ -103,8 +105,14 @@ fn b64_roundtrip() {
 
 #[test]
 fn sql_inputs_are_allowlisted_and_quoted() {
-    assert!(validate_privs("SELECT,UPDATE").is_ok());
-    assert!(validate_privs("SELECT; DROP TABLE users").is_err());
+    assert!(validate_privs("SELECT,UPDATE", "table").is_ok());
+    assert!(validate_privs("SELECT; DROP TABLE users", "table").is_err());
+    assert!(validate_privs("EXECUTE", "table").is_err());
+    assert!(validate_privs("SELECT", "database").is_err());
+    assert!(validate_privs("connect,temp", "database").is_ok());
+    assert!(validate_privs("usage,create", "schema").is_ok());
+    assert!(validate_privs("all privileges", "default_privs").is_ok());
+    assert!(validate_privs("ALL", "unknown").is_err());
     assert_eq!(lit("it's"), "'it''s'");
     assert_eq!(ident("odd\"name"), "\"odd\"\"name\"");
 }
