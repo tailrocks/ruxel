@@ -28,7 +28,7 @@ packages = ["ruxel-config"]
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
-inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-engine/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "deny.toml", "mise.toml", "mise.lock", "vendor/pklr/Cargo.toml", "vendor/pklr/Cargo.lock", "vendor/pklr/LICENSE", "vendor/pklr/src/eval/stdlib/RUST-LICENSE-MIT"]
+inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-engine/Cargo.toml", "crates/ruxel/ruxel-guard/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "deny.toml", "mise.toml", "mise.lock", "vendor/pklr/Cargo.toml", "vendor/pklr/Cargo.lock", "vendor/pklr/LICENSE", "vendor/pklr/src/eval/stdlib/RUST-LICENSE-MIT"]
 tools = ["rust", "cargo-deny"]
 timeout_minutes = 10
 [checks.runner]
