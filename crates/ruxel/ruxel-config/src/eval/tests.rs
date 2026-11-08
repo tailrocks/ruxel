@@ -2,6 +2,38 @@ use super::{eval, eval_source};
 use std::path::Path;
 
 #[test]
+fn parsed_module_inventory_covers_import_forms() -> Result<(), Box<dyn std::error::Error>> {
+    for (source, expected) in [
+        (r#"amends "base.pkl""#, vec![("base.pkl", false)]),
+        (r#"extends "base.pkl""#, vec![("base.pkl", false)]),
+        (r#"import "one.pkl" as one"#, vec![("one.pkl", false)]),
+        (r#"import* "*.pkl" as all"#, vec![("*.pkl", true)]),
+        (r#"value = import("one.pkl")"#, vec![("one.pkl", false)]),
+        (r#"value = import*("*.pkl")"#, vec![("*.pkl", true)]),
+        (
+            r#"value = "\(import("one.pkl")) \(import*("*.pkl"))""#,
+            vec![("one.pkl", false), ("*.pkl", true)],
+        ),
+        (
+            r#"function f() = import*("nested/*.pkl")"#,
+            vec![("nested/*.pkl", true)],
+        ),
+        (r#"value = read("file:resource.txt")"#, vec![]),
+        (r##"value = import(#"raw.pkl"#)"##, vec![("raw.pkl", false)]),
+        (r#"value = "import(\"fake.pkl\")""#, vec![]),
+    ] {
+        let tokens = pklr::lexer::lex(source)?;
+        let module = pklr::parser::parse_named(&tokens, source, "fixture.pkl")?;
+        assert_eq!(
+            module.module_references().collect::<Vec<_>>(),
+            expected,
+            "{source}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn minimal_evaluates() {
     assert!(
         eval(Path::new(concat!(
