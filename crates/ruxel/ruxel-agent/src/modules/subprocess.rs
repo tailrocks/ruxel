@@ -11,7 +11,7 @@ const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
 const READY: &[u8] = b"RUXEL_ENV_READY\n";
 // read consumes exactly one line, leaving the rest of stdin for the workload.
 // The evaluated line is generated solely from validated names and octal bytes.
-const BOOTSTRAP: &str = "IFS= read -r RUXEL_ENV_SCRIPT || exit 125; eval \"$RUXEL_ENV_SCRIPT\" || exit 125; if [ -n \"${BASH_VERSION-}\" ]; then SHLVL=$((SHLVL + 1)); export SHLVL; fi; printf 'RUXEL_ENV_READY\\n'; exec \"$@\"";
+const BOOTSTRAP: &str = "IFS= read -r RUXEL_ENV_SCRIPT || exit 125; eval \"$RUXEL_ENV_SCRIPT\" || exit 125; printf 'RUXEL_ENV_READY\\n'; exec \"$@\"";
 
 pub(super) struct TaskCommand {
     command: Command,
@@ -117,20 +117,17 @@ fn switched_command(
     // passwords never become command arguments or privileged loader inputs.
     let mut command = Command::new(wrapper);
     command.env_clear().env("PATH", WRAPPER_PATH);
-    command
-        .args([
-            "-u",
-            user,
-            "--",
-            "/usr/bin/env",
-            "-i",
-            "/bin/sh",
-            "-c",
-            BOOTSTRAP,
-            "ruxel-env",
-        ])
-        .arg(program)
-        .args(args);
+    command.args([
+        "-u",
+        user,
+        "--",
+        "/usr/bin/env",
+        "-i",
+        "/bin/sh",
+        "-c",
+        BOOTSTRAP,
+        "ruxel-env",
+    ]);
     if let Some((home, shell)) = identity {
         for (key, value) in [
             ("HOME", home),
@@ -144,6 +141,16 @@ fn switched_command(
     for (key, value) in &ctx.environment {
         environment.insert(key.into(), value.into());
     }
+    let has_shell_level = environment.contains_key(std::ffi::OsStr::new("SHLVL"));
+    if !has_shell_level {
+        // Bash creates SHLVL even if unset. This post-drop env invocation
+        // removes that shell metadata without putting a value into argv.
+        if program.contains('=') {
+            return Err("become_user requires SHLVL for assignment-like executable names".into());
+        }
+        command.args(["/usr/bin/env", "-u", "SHLVL", "--"]);
+    }
+    command.arg(program).args(args);
     let mut scratch = String::from("RUXEL_ENV_VALUE");
     while environment.contains_key(std::ffi::OsStr::new(&scratch)) {
         scratch.push('_');
@@ -158,8 +165,9 @@ fn switched_command(
         // that, while dash does not. Restrict its numeric shell representation.
         if key == "SHLVL"
             && !value.to_str().is_some_and(|value| {
-                value.parse::<u16>().is_ok_and(|level| level < 999)
-                    && value.bytes().all(|byte| byte.is_ascii_digit())
+                value
+                    .parse::<u16>()
+                    .is_ok_and(|level| level < 999 && level.to_string() == value)
             })
         {
             return Err("become_user requires a numeric SHLVL below 999".into());
@@ -181,6 +189,11 @@ fn switched_command(
         script.push_str("%x}\"");
         script.push_str(" || exit 125; ");
     }
+    if has_shell_level {
+        script.push_str(
+            "if [ -n \"${BASH_VERSION-}\" ]; then SHLVL=$((SHLVL + 1)); export SHLVL; fi; ",
+        );
+    }
     script.push_str(":\n");
     Ok(piped_command(command, Some(script.into_bytes())))
 }
@@ -189,31 +202,32 @@ fn shell_managed_name(key: &str) -> bool {
     // These names have shell arithmetic, array, identity, or descriptor side
     // effects. Reject them before launching anything instead of interpreting
     // their values as shell state. SHLVL remains a normal numeric assignment.
-    matches!(
-        key,
-        "RANDOM"
-            | "SRANDOM"
-            | "SECONDS"
-            | "OPTIND"
-            | "LINENO"
-            | "HISTCMD"
-            | "BASHPID"
-            | "UID"
-            | "EUID"
-            | "PPID"
-            | "GROUPS"
-            | "DIRSTACK"
-            | "FUNCNAME"
-            | "PIPESTATUS"
-            | "BASHOPTS"
-            | "SHELLOPTS"
-            | "BASH_XTRACEFD"
-            | "BASH_VERSINFO"
-            | "BASH_ARGV"
-            | "BASH_ARGC"
-            | "BASH_LINENO"
-            | "BASH_SOURCE"
-    )
+    (key.starts_with("BASH_") && key != "BASH_ENV")
+        || matches!(
+            key,
+            "RANDOM"
+                | "SRANDOM"
+                | "SECONDS"
+                | "OPTIND"
+                | "LINENO"
+                | "HISTCMD"
+                | "BASHPID"
+                | "UID"
+                | "EUID"
+                | "PPID"
+                | "GROUPS"
+                | "DIRSTACK"
+                | "FUNCNAME"
+                | "PIPESTATUS"
+                | "BASHOPTS"
+                | "SHELLOPTS"
+                | "BASH_XTRACEFD"
+                | "BASH_VERSINFO"
+                | "BASH_ARGV"
+                | "BASH_ARGC"
+                | "BASH_LINENO"
+                | "BASH_SOURCE"
+        )
 }
 
 fn shell_name(key: &str) -> bool {

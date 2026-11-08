@@ -262,7 +262,7 @@ fn unsupported_switched_environment_names_fail_before_spawning() {
             "become_user requires shell-compatible environment variable names"
         );
     }
-    for value in ["not-numeric", "1000", "-1"] {
+    for value in ["not-numeric", "1000", "-1", "007", "08"] {
         ctx.environment = vec![("SHLVL".into(), value.into())];
         assert_eq!(
             become_command(&ctx, "never-executed", &[]).err().unwrap(),
@@ -273,4 +273,48 @@ fn unsupported_switched_environment_names_fail_before_spawning() {
         user_environment_from("# comment\ninvalid\n", "synthetic-user"),
         None
     );
+}
+
+#[test]
+fn shell_level_presence_and_value_survive_bash_and_dash_bootstraps() {
+    let dir = std::env::temp_dir().join(format!("ruxel-wrapper-shlvl-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let wrapper = dir.join("fake-runuser");
+    for shell in ["/bin/sh", "/bin/bash", "/bin/dash"] {
+        if !Path::new(shell).is_file() {
+            continue;
+        }
+        // Replace only the fixed post-drop shell in the fake wrapper. This
+        // executes both implementations locally without switching identity.
+        std::fs::write(&wrapper, format!(
+            "#!/bin/sh\nshift 3\n[ \"$1\" = /usr/bin/env ] && [ \"$2\" = -i ] && [ \"$3\" = /bin/sh ] || exit 8\nshift 3\nexec /usr/bin/env -i {shell} \"$@\"\n",
+        )).unwrap();
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        for level in [None, Some("0"), Some("7"), Some("998")] {
+            let mut ctx = context();
+            if let Some(level) = level {
+                ctx.environment.push(("SHLVL".into(), level.into()));
+            }
+            let output = switched_command(
+                &ctx,
+                "synthetic-user",
+                "/usr/bin/printenv",
+                &["SHLVL"],
+                &wrapper,
+                BTreeMap::new(),
+                None,
+            )
+            .unwrap()
+            .output()
+            .unwrap();
+            if let Some(level) = level {
+                assert!(output.status.success(), "{shell} {level}");
+                assert_eq!(output.stdout, format!("{level}\n").as_bytes(), "{shell}");
+            } else {
+                assert_eq!(output.status.code(), Some(1), "{shell}");
+                assert_eq!(output.stdout, b"");
+            }
+        }
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }
