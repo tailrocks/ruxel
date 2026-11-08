@@ -12,6 +12,10 @@ use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
 use std::process::{Child, Command, Stdio};
 
+#[cfg(unix)]
+#[path = "protocol/signals.rs"]
+mod signals;
+
 fn spawn_agent(state_dir: &std::path::Path) -> Child {
     Command::new(env!("CARGO_BIN_EXE_ruxel-agent"))
         .env("RUXEL_STATE_DIR", state_dir)
@@ -132,7 +136,7 @@ fn proto_version_mismatch_refused() {
     let mut stdin = agent.stdin.take().unwrap();
     let mut stdout = agent.stdout.take().unwrap();
 
-    write_frame(&mut stdin, &hello("t2", PROTO_VERSION + 1)).unwrap();
+    write_frame(&mut stdin, &hello("t2", 1)).unwrap();
     let event: v1::Event = read_frame(&mut stdout).unwrap().expect("an event");
     assert!(
         matches!(event.msg, Some(v1::event::Msg::Log(l)) if l.message.contains("mismatch")),
@@ -143,11 +147,52 @@ fn proto_version_mismatch_refused() {
 }
 
 #[test]
+fn batch_before_hello_is_refused_without_mutation() {
+    let dir = temp_dir("batch-before-hello");
+    let dest = dir.join("must-not-exist");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &copy_plan(1, &dest, "wrong", "key")).unwrap();
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("refusal");
+    assert!(
+        matches!(event.msg, Some(v1::event::Msg::Log(log)) if log.message.contains("expected Hello"))
+    );
+    assert_eq!(agent.wait().unwrap().code(), Some(64));
+    assert!(!dest.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn duplicate_hello_is_refused_and_flushes_prior_ledger() {
+    let dir = temp_dir("duplicate-hello");
+    let dest = dir.join("managed");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("first", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    write_frame(&mut stdin, &copy_plan(1, &dest, "saved", "key")).unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "changed");
+    write_frame(&mut stdin, &hello("second", PROTO_VERSION)).unwrap();
+    let event: v1::Event = read_frame(&mut stdout).unwrap().expect("refusal");
+    assert!(
+        matches!(event.msg, Some(v1::event::Msg::Log(log)) if log.message.contains("duplicate Hello"))
+    );
+    assert_eq!(agent.wait().unwrap().code(), Some(64));
+    assert_ne!(
+        std::fs::read(dir.join("ledger/ledger.json")).unwrap(),
+        [] as [u8; 0]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn eof_without_done_exits_clean() {
     let dir = temp_dir("eof");
     let mut agent = spawn_agent(&dir);
     let stdin = agent.stdin.take().unwrap();
-    drop(stdin); // controller vanished
+    drop(stdin);
     assert_eq!(agent.wait().unwrap().code(), Some(0));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -370,6 +415,93 @@ fn ledger_replays_converged_task() {
 }
 
 #[test]
+fn become_request_cannot_replay_a_cached_unprivileged_result() {
+    let dir = temp_dir("become-cache");
+    let dest = dir.join("managed");
+    for use_become in [false, true] {
+        let mut agent = spawn_agent(&dir);
+        let mut stdin = agent.stdin.take().unwrap();
+        let mut stdout = agent.stdout.take().unwrap();
+        write_frame(&mut stdin, &hello("become-cache", PROTO_VERSION)).unwrap();
+        let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+        let mut plan = copy_plan(42, &dest, "stable", "same-copy-key");
+        if use_become {
+            let Some(Msg::Plan(ref mut plan)) = plan.msg else {
+                unreachable!()
+            };
+            plan.tasks[0].become_user = "synthetic-user".into();
+        }
+        write_frame(&mut stdin, &plan).unwrap();
+        let result = read_task_result(&mut stdout);
+        if use_become {
+            assert_eq!(result.status, "failed");
+            assert!(!result.changed);
+            let body: serde_json::Value = serde_json::from_slice(&result.result_json).unwrap();
+            assert!(
+                body["msg"]
+                    .as_str()
+                    .unwrap()
+                    .contains("does not support become_user")
+            );
+        } else {
+            assert_eq!(result.status, "changed");
+        }
+        finish_agent(&mut agent, &mut stdin);
+    }
+    assert_eq!(std::fs::read_to_string(dest).unwrap(), "stable");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn daemon_reload_bypasses_a_matching_ledger_record() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = temp_dir("reload-cache");
+    let fake = dir.join("systemctl");
+    let calls = dir.join("calls");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$RUXEL_TEST_CALLS\"\nexit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_ruxel-agent"))
+        .env("RUXEL_STATE_DIR", &dir)
+        .env("RUXEL_TEST_CALLS", &calls)
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("reload-cache", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+
+    // Seed a valid, matching record to model a cache entry from an older agent.
+    write_frame(
+        &mut stdin,
+        &copy_plan(1, &dir.join("seed"), "stable", "same-key"),
+    )
+    .unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "changed");
+    let params = serde_json::to_vec(&serde_json::json!({
+        "name": "test.service", "daemon_reload": true
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &plan_with_params(2, "systemd", params, "same-key"),
+    )
+    .unwrap();
+    assert_eq!(read_task_result(&mut stdout).status, "ok");
+    finish_agent(&mut agent, &mut stdin);
+    assert_eq!(std::fs::read_to_string(&calls).unwrap(), "daemon-reload\n");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn malformed_params_fail_without_killing_agent() {
     let dir = temp_dir("bad-params");
     let dest = dir.join("after-error");
@@ -530,3 +662,9 @@ fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
     finish_agent(&mut rerun, &mut rerun_stdin);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[path = "protocol/source_content.rs"]
+mod source_content;
+
+#[path = "protocol/sensitive_check.rs"]
+mod sensitive_check;

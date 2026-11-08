@@ -1,0 +1,42 @@
+import "../../schema/Ruxel.pkl" as R
+config = new R.Config {
+  inventory {
+    hosts { ["node"] = new R.Host { address = "localhost" } }
+    groups { ["all"] = new R.Group { hosts { "node" } } }
+  }
+  plays {
+    new R.Play {
+      name = "exercise"
+      targets { "all" }
+      preTasks {
+        new R.Task { name = "shell"; operation = new R.Shell { cmd = "printf ok" } }
+        new R.Task { name = "prepare"; operation = new R.Command { argv = new Listing<String> { "true" } } }
+        new R.Task { name = "wait"; operation = new R.Pause { seconds = 1 } }
+      }
+      tasks {
+        new R.Task {
+          name = "create database"
+          operation = new R.PostgresDatabase { name = "app"; owner = new R.Ref { path { "vars"; "owner" } } }
+          `when` = new R.Call { `function` = "eq"; args { new R.Literal { value = true }; new R.Literal { value = true } } }
+          register = "result"
+          loopLabel = new R.Literal { value = "database" }
+        }
+        new R.Task { name = "logical volume"; operation = new R.LogicalVolume { vg = "vg"; lv = "data"; size = "1G" } }
+        new R.Task { name = "block"; block { new R.Task { name = "file"; operation = new R.File { path = "/tmp/example"; mode = "0644" } } } }
+        new R.Task { name = "link"; operation = new R.File { path = "/tmp/link"; state = "link"; src = "/tmp/source" } }
+        new R.Task { name = "mount"; operation = new R.Mount { path = "/tmp/mount"; src = "/dev/example"; fstype = "ext4" } }
+        new R.Task { name = "dynamic line"; operation = new R.LineInFile { path = "/tmp/example"; state = new R.Literal { value = "absent" }; regexp = "^a" } }
+        new R.Task { name = "dynamic privileges"; operation = new R.PostgresPrivileges { login_db = "db"; role = "reader"; privs = "SELECT"; type = new R.Literal { value = "default_privs" }; target_roles = "creator" } }
+        new R.Task { name = "conditional"; operation = new R.Debug { msg = new R.Call { `function` = "if"; args { new R.Literal { value = true }; new R.Literal { value = "yes" }; new R.Literal { value = "no" } } } } }
+        new R.Task { name = "mapping"; operation = new R.Debug { msg = new R.Call { `function` = "map"; args { new R.ListExpr { items { new R.Literal { value = "a" } } }; new R.Ref { path { "item" } } } } } }
+        new R.Task { name = "assert"; operation = new R.Assert { that = true } }
+        new R.Task { name = "template"; operation = new R.Template { dest = "/tmp/template"; content = new R.Call { `function` = "string"; args { new R.Literal { value = 42 } } } } }
+        new R.Task { name = "copy"; operation = new R.Copy { dest = "/tmp/copy"; content = "data" } }
+        new R.Task { name = "secret"; operation = new R.PostgresRole { name = "app"; password = new R.Lookup { provider = "synthetic"; key = "password" } } }
+        new R.Task { name = "volume group"; operation = new R.VolumeGroup { vg = "vg"; pvs { "/dev/example" } } }
+        new R.Task { name = "timezone"; operation = new R.Timezone { name = "UTC" } }
+        new R.Task { name = "schema"; operation = new R.PostgresSchema { name = "app"; login_db = "db" } }
+      }
+    }
+  }
+}

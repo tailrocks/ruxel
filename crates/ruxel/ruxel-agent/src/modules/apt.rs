@@ -1,42 +1,45 @@
-#![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
-
 use super::{ExecContext, bool_param, params_object, str_param};
-use serde_json::{Value, json};
+use crate::system_state::SystemState;
+use serde_json::{Map, Value, json};
+
+type CommandResult = Result<(String, i32, String), String>;
 
 pub(super) fn run(
     params: &Value,
     ctx: &ExecContext,
-    system_state: &mut crate::system_state::SystemState,
+    system_state: &mut SystemState,
+) -> Result<Value, String> {
+    run_with(params, ctx, system_state, &mut apt_get)
+}
+
+fn run_with(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
 ) -> Result<Value, String> {
     let obj = params_object(params)?;
     let update_cache = bool_param(obj, "update_cache", false);
     let upgrade = str_param(obj, "upgrade");
     let autoremove = bool_param(obj, "autoremove", false);
-    let names: Vec<String> = match obj.get("name") {
-        None => vec![],
-        Some(Value::String(s)) => vec![s.clone()],
-        Some(Value::Array(items)) => items
-            .iter()
-            .map(|v| {
-                v.as_str()
-                    .map(str::to_string)
-                    .ok_or_else(|| "apt: name entries must be strings".to_string())
-            })
-            .collect::<Result<_, _>>()?,
-        Some(other) => return Err(format!("apt: invalid name {other:?}")),
-    };
+    let names = package_names(obj)?;
     let state = str_param(obj, "state").unwrap_or("present");
-
     let mut result = json!({"changed": false});
     let mut changed = false;
-
     if update_cache {
         if !ctx.check_mode {
-            let out = apt_get(&["update"], ctx)?;
-            if out.1 != 0 {
-                return Err(format!("apt update failed: {}", out.2));
-            }
+            let out = command(&["update"], ctx);
             system_state.invalidate_packages();
+            let out = match out {
+                Ok(out) => out,
+                Err(error) => return Ok(json!({"failed": true, "changed": true, "msg": error})),
+            };
+            if out.1 != 0 {
+                return Ok(
+                    json!({"failed": true, "changed": true, "msg": format!("apt update failed: {}", out.2)}),
+                );
+            }
+            changed = true;
         }
         result["cache_updated"] = json!(!ctx.check_mode);
         result["cache_update_time"] = json!(
@@ -45,79 +48,97 @@ pub(super) fn run(
                 .map_or(0, |d| d.as_secs())
         );
     }
-
     if let Some(kind) = upgrade {
         let action = match kind {
             "dist" => "dist-upgrade",
             other => return Err(format!("apt: upgrade={other:?} outside the closed surface")),
         };
-        if ctx.check_mode {
-            let (stdout, rc, stderr) = apt_get(&["-s", action], ctx)?;
-            if rc != 0 {
-                return Err(format!("apt {action} -s failed: {stderr}"));
-            }
-            changed |= summary_changed(&stdout);
-            fill_exec_fields(&mut result, &stdout, &stderr, true);
-        } else {
-            let (stdout, rc, stderr) = apt_get(&[action], ctx)?;
-            if rc != 0 {
-                return Err(format!("apt {action} failed: {stderr}"));
-            }
-            system_state.invalidate_packages();
-            changed |= summary_changed(&stdout);
-            fill_exec_fields(&mut result, &stdout, &stderr, true);
-        }
+        changed |= maintenance(action, true, ctx, system_state, &mut result, command)?;
     }
-
-    if autoremove && upgrade.is_none() {
-        let args: &[&str] = if ctx.check_mode {
-            &["-s", "autoremove"]
-        } else {
-            &["autoremove"]
-        };
-        let (stdout, rc, stderr) = apt_get(args, ctx)?;
-        if rc != 0 {
-            return Err(format!("apt autoremove failed: {stderr}"));
-        }
-        if !ctx.check_mode {
-            system_state.invalidate_packages();
-        }
-        changed |= summary_changed(&stdout);
-        fill_exec_fields(&mut result, &stdout, &stderr, false);
+    if autoremove {
+        changed |= maintenance("autoremove", false, ctx, system_state, &mut result, command)?;
         result["diff"] = json!({});
-    } else if autoremove && upgrade.is_some() {
     }
-
     if !names.is_empty() {
-        let missing = system_state.missing_packages(&names, state == "latest")?;
-        if !missing.is_empty() {
-            changed = true;
-            if !ctx.check_mode {
-                let mut args: Vec<&str> = vec!["install"];
-                if bool_param(obj, "force", false) {
-                    args.push("--allow-downgrades");
-                }
-                let owned: Vec<String> = missing.clone();
-                let mut full: Vec<&str> = args;
-                for p in &owned {
-                    full.push(p);
-                }
-                let (stdout, rc, stderr) = apt_get(&full, ctx)?;
-                if rc != 0 {
-                    return Err(format!("apt install failed: {stderr}"));
-                }
-                system_state.invalidate_packages();
-                fill_exec_fields(&mut result, &stdout, &stderr, false);
-            }
-        }
+        changed |= install(&names, state, obj, ctx, system_state, &mut result, command)?;
     }
-
     result["changed"] = json!(changed);
     result["failed"] = json!(false);
     Ok(result)
 }
 
-fn apt_get(args: &[&str], ctx: &ExecContext) -> Result<(String, i32, String), String> {
+fn package_names(obj: &Map<String, Value>) -> Result<Vec<String>, String> {
+    match obj.get("name") {
+        None => Ok(vec![]),
+        Some(Value::String(name)) => Ok(vec![name.clone()]),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| "apt: name entries must be strings".to_string())
+            })
+            .collect(),
+        Some(other) => Err(format!("apt: invalid name {other:?}")),
+    }
+}
+
+fn maintenance(
+    action: &str,
+    with_msg: bool,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    result: &mut Value,
+    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
+) -> Result<bool, String> {
+    let args = if ctx.check_mode {
+        vec!["-s", action]
+    } else {
+        vec![action]
+    };
+    let (stdout, rc, stderr) = command(&args, ctx)?;
+    if rc != 0 {
+        let simulation = if ctx.check_mode { " -s" } else { "" };
+        return Err(format!("apt {action}{simulation} failed: {stderr}"));
+    }
+    if !ctx.check_mode {
+        system_state.invalidate_packages();
+    }
+    fill_exec_fields(result, &stdout, &stderr, with_msg);
+    Ok(summary_changed(&stdout))
+}
+
+fn install(
+    names: &[String],
+    state: &str,
+    obj: &Map<String, Value>,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    result: &mut Value,
+    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
+) -> Result<bool, String> {
+    let missing = system_state.missing_packages(names, state == "latest")?;
+    if missing.is_empty() {
+        return Ok(false);
+    }
+    if !ctx.check_mode {
+        let mut args = vec!["install"];
+        if bool_param(obj, "force", false) {
+            args.push("--allow-downgrades");
+        }
+        args.extend(missing.iter().map(String::as_str));
+        let (stdout, rc, stderr) = command(&args, ctx)?;
+        if rc != 0 {
+            return Err(format!("apt install failed: {stderr}"));
+        }
+        system_state.invalidate_packages();
+        fill_exec_fields(result, &stdout, &stderr, false);
+    }
+    Ok(true)
+}
+
+fn apt_get(args: &[&str], ctx: &ExecContext) -> CommandResult {
     let mut cmd = std::process::Command::new("apt-get");
     cmd.arg("-y")
         .arg("-o")
@@ -173,22 +194,4 @@ fn fill_exec_fields(result: &mut Value, stdout: &str, stderr: &str, with_msg: bo
 }
 
 #[cfg(test)]
-mod tests {
-    use super::summary_changed;
-
-    #[test]
-    fn summary_parsing() {
-        assert!(!summary_changed(
-            "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."
-        ));
-        assert!(summary_changed(
-            "12 upgraded, 1 newly installed, 0 to remove and 3 not upgraded."
-        ));
-        assert!(summary_changed(
-            "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded."
-        ));
-        assert!(!summary_changed(
-            "0 upgraded, 0 newly installed, 0 to remove and 7 not upgraded."
-        ));
-    }
-}
+mod tests;

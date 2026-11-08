@@ -4,10 +4,31 @@
 )]
 
 use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
+use crate::system_state::SystemState;
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::Path;
 
-pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+) -> Result<Value, String> {
+    run_in(
+        params,
+        ctx,
+        system_state,
+        Path::new("/etc/apt/sources.list.d"),
+        &mut update,
+    )
+}
+
+fn run_in(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    directory: &Path,
+    update: &mut impl FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
     let obj = params_object(params)?;
     let repo = str_param(obj, "repo").ok_or("apt_repository: repo required")?;
     let state = str_param(obj, "state").unwrap_or("present");
@@ -23,24 +44,59 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let update_cache = bool_param(obj, "update_cache", true);
 
     validate_filename(filename)?;
-    let path = PathBuf::from(format!("/etc/apt/sources.list.d/{filename}.list"));
+    // Keep the lock file in place: removing it would let waiters lock a stale inode.
+    let _lock = if ctx.check_mode {
+        None
+    } else {
+        let lock_path = directory.join(format!(".{filename}.ruxel-update-lock"));
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|error| format!("apt_repository: cannot open refresh lock: {error}"))?;
+        lock.lock()
+            .map_err(|error| format!("apt_repository: cannot lock refresh: {error}"))?;
+        Some(lock)
+    };
+    let path = directory.join(format!("{filename}.list"));
+    let pending_path = directory.join(format!(".{filename}.ruxel-update-pending"));
+    let pending = pending_path
+        .try_exists()
+        .map_err(|error| format!("apt_repository: cannot inspect refresh marker: {error}"))?;
     let want = format!("{repo}\n");
-    let current = std::fs::read_to_string(&path).unwrap_or_default();
-    let changed = current != want;
+    let current = match std::fs::read_to_string(&path) {
+        Ok(content) => Some(content),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "apt_repository: cannot read {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    let source_changed = current.as_deref() != Some(want.as_str());
+    let changed = source_changed || (update_cache && pending);
 
     if changed && !ctx.check_mode {
-        write_atomic(&path, want.as_bytes())?;
         if update_cache {
-            let out = std::process::Command::new("apt-get")
-                .arg("update")
-                .env("DEBIAN_FRONTEND", "noninteractive")
-                .output()
-                .map_err(|e| format!("apt-get update: {e}"))?;
-            if !out.status.success() {
-                return Err(format!(
-                    "apt-get update after repo change failed: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
+            write_atomic(&pending_path, b"pending\n")?;
+        }
+        if source_changed && let Err(error) = write_atomic(&path, want.as_bytes()) {
+            return Ok(json!({"failed": true, "changed": update_cache, "msg": error}));
+        }
+        if update_cache {
+            let refreshed = update();
+            // A failed update can still replace some package indexes.
+            system_state.invalidate_packages();
+            if let Err(error) = refreshed {
+                return Ok(json!({"failed": true, "changed": true, "msg": error}));
+            }
+            if let Err(error) = std::fs::remove_file(&pending_path) {
+                return Ok(
+                    json!({"failed": true, "changed": true, "msg": format!("apt_repository: cannot clear refresh marker: {error}")}),
+                );
             }
         }
     }
@@ -52,9 +108,24 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         "state": state,
     });
     if changed && ctx.diff_mode && !ctx.no_log {
-        result["diff"] = json!(super::unified_diff(&current, &want));
+        result["diff"] = json!(super::unified_diff(current.as_deref().unwrap_or(""), &want));
     }
     Ok(result)
+}
+
+fn update() -> Result<(), String> {
+    let out = std::process::Command::new("apt-get")
+        .arg("update")
+        .env("DEBIAN_FRONTEND", "noninteractive")
+        .output()
+        .map_err(|e| format!("apt-get update: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "apt-get update after repo change failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
 }
 
 fn validate_filename(filename: &str) -> Result<(), String> {
@@ -66,41 +137,4 @@ fn validate_filename(filename: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn filename_is_single_safe_component() {
-        assert!(super::validate_filename("vendor").is_ok());
-        for bad in ["", "../vendor", "a/b", "vendor..backup"] {
-            assert!(super::validate_filename(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn check_mode_diff_reports_repository_content() {
-        let name = format!("ruxel-test-{}", std::process::id());
-        let context = ExecContext {
-            check_mode: true,
-            diff_mode: true,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        let result = run(
-            &json!({
-                "repo": "deb https://example.invalid stable main",
-                "filename": name,
-                "update_cache": false,
-            }),
-            &context,
-        )
-        .unwrap();
-        assert!(
-            result["diff"]
-                .as_str()
-                .unwrap()
-                .contains("+deb https://example.invalid")
-        );
-    }
-}
+mod tests;

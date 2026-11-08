@@ -1,0 +1,68 @@
+use super::{SCENARIOS, validate_case, validate_manifest};
+use serde_json::{Value, json};
+#[test]
+fn rejects_mutations_pending_and_unsupported() -> anyhow::Result<()> {
+    let cases: Value = serde_json::from_str(include_str!("../contracts.json"))?;
+    let mut scenarios = serde_json::Map::new();
+    for name in SCENARIOS {
+        scenarios.insert(name.into(), cases.get(name).cloned().unwrap_or(json!({})));
+    }
+    let mut manifest = json!({"version":1,"scenarios":scenarios});
+    validate_manifest(&manifest)?;
+    validate_case("check-semantics", &manifest)?;
+    manifest["scenarios"]["restart-actions"] =
+        serde_json::from_str(include_str!("../restart-contract.json"))?;
+    validate_case("restart-actions", &manifest)?;
+    manifest["scenarios"]["restart-actions"]["phases"]["fresh"]["observations_match"] =
+        json!(false);
+    assert!(validate_case("restart-actions", &manifest).is_err());
+    assert!(validate_case("storage-ext4", &manifest).is_err());
+    manifest["scenarios"]["check-semantics"]["phases"]["fresh"]["changed"] = json!(false);
+    assert!(validate_case("check-semantics", &manifest).is_err());
+    manifest["scenarios"]["controller-delegation"]["pending"] = json!(["unverified"]);
+    assert!(validate_case("controller-delegation", &manifest).is_err());
+    manifest["scenarios"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("missing object"))?
+        .remove("storage-ext4");
+    assert!(validate_manifest(&manifest).is_err());
+    Ok(())
+}
+
+#[test]
+fn control_contract_rejects_unreviewed_observations() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"control-flow": serde_json::from_str::<Value>(include_str!("../control-contract.json"))?}});
+    validate_case("control-flow", &manifest)?;
+    manifest["scenarios"]["control-flow"]["observations"][3]["values"][0] = json!("unexpected");
+    assert!(validate_case("control-flow", &manifest).is_err());
+    Ok(())
+}
+
+#[test]
+fn postgres_contract_fails_closed() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
+    validate_case("postgresql-ownership", &manifest)?;
+    manifest["scenarios"]["postgresql-ownership"]["phases"]["check"]["state_unchanged"] =
+        json!(false);
+    assert!(validate_case("postgresql-ownership", &manifest).is_err());
+    Ok(())
+}
+
+#[test]
+fn become_contract_fails_closed() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
+    validate_case("become-environment", &manifest)?;
+    manifest["scenarios"]["become-environment"]["phases"]["check"]["state_unchanged"] =
+        json!(false);
+    assert!(validate_case("become-environment", &manifest).is_err());
+    Ok(())
+}
+
+#[test]
+fn files_contract_fails_closed() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"files-content": serde_json::from_str::<Value>(include_str!("../files-contract.json"))?}});
+    validate_case("files-content", &manifest)?;
+    manifest["scenarios"]["files-content"]["observations"][4]["content"] = json!("tampered");
+    assert!(validate_case("files-content", &manifest).is_err());
+    Ok(())
+}

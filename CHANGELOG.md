@@ -7,12 +7,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Embed the canonical Pkl schema for configuration tooling.
+- Engine secret wrappers, value redaction, and secret-aware ledger keys.
+- JSON, YAML-compatible JSON, and TOML rendering for resolved configuration values.
+- Typed Pkl configuration, evaluation via pklr, and `ruxel config dump`.
+- Controller commands for plan, check, diff, and apply, with synthetic local acceptance coverage in progress.
 - alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
 - `hk.pkl` git hooks (mise, gitleaks, cargo fmt, check, clippy, deny, rumdl).
 - Initial research implementation and closed-workload CLI/agent surface.
 
 ### Changed
 
+- Downloads use trusted system clients with an isolated environment that preserves proxy settings.
+- Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
+- Apt tasks run requested autoremove after distribution upgrades in apply and check mode.
+- Agents require one successful handshake before executing batches and reject duplicate handshakes.
+- Agents finish the current iteration and flush the ledger on SIGTERM or SIGINT during a batch.
+- Sensitive-resource tracking treats parent traversal and relative remote paths conservatively.
+- Block check mode reaches nested tasks, rescue/always tasks and controller pauses; child overrides take precedence.
 - Workspace lints from the operator's repository standard, clippy configuration.
 - Crates moved to `crates/<group>/<package>` (repository policy).
 - Dependencies updated to their newest versions.
@@ -21,4 +33,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
+- Duplicate legacy loop-result reason field; empty loops expose `skip_reason`.
+- YAML and INI configuration input and MiniJinja authoring.
+- Ansible parity tooling, Ansible-era docs, and agent modules no schema reaches; recoverable from tag `ansible-parity-final`.
 - `justfile`; `mise run check` replaces `just check`. The Python Ansible-parity suites no longer run by default.

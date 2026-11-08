@@ -1,0 +1,18 @@
+import "../../../../schema/Ruxel.pkl"
+
+output { value = new Ruxel.Config {
+  inventory { hosts { ["fixture"] { address = "127.0.0.1" } } }
+  plays { new {
+    name = "Block variable resolved after its dependency"
+    targets { "fixture" }
+    tasks { new {
+      name = "block"
+      vars { ["delayed"] = new Ruxel.Ref { path { "results"; "future"; "msg" } } }
+      block {
+        new { name = "before"; operation = new Ruxel.Debug { msg = "before" } }
+        new { name = "future"; register = "future"; operation = new Ruxel.Debug { msg = "available" } }
+        new { name = "after"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "vars"; "delayed" } } } }
+      }
+    } }
+  } }
+} }

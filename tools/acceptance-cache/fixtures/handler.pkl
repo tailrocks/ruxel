@@ -1,0 +1,7 @@
+import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "handler"; targets { "fixture" }; tasks {
+  new { name = "trigger"; changedWhen = new Ruxel.Literal { value = true }; notify { "private handler" }; operation = new Ruxel.Debug { msg = "trigger" } }
+ }; handlers { new { name = "private handler"; noLog = true; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "synthetic-handler-path-marker" } } } } } } }
+} }

@@ -1,0 +1,26 @@
+import "../../../../schema/Ruxel.pkl"
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+function renderedTemplate(): Ruxel.Expr = call("concat", new Listing {
+  call("join", new Listing { call("map", new Listing { ref(new Listing { "vars"; "fixture_lines" }); call("string", new Listing { call("default", new Listing { ref(new Listing { "item" }); literal("missing") }) }) }); literal("\n") })
+  literal("\njoined=")
+  call("join", new Listing { ref(new Listing { "vars"; "fixture_lines" }); literal(",") })
+  literal("\nhash=")
+  call("sha256", new Listing { literal("synthetic") })
+  literal("\noptional=")
+  call("if", new Listing {
+    call("eq", new Listing { call("default", new Listing { ref(new Listing { "vars"; "fixture_optional" }); literal("") }); literal("") })
+    literal("fallback")
+    ref(new Listing { "vars"; "fixture_optional" })
+  })
+  literal("\nencoded=")
+  call("urlencode", new Listing { literal("synthetic value") })
+  literal("\n")
+  call("if", new Listing {
+    call("and", new Listing { call("eq", new Listing { ref(new Listing { "vars"; "fixture_enabled" }); literal(true) }); call("eq", new Listing { ref(new Listing { "vars"; "fixture_lines"; "0" }); literal("alpha") }) })
+    literal("conditional=enabled\n")
+    literal("")
+  })
+})
+output { value = renderedTemplate() }

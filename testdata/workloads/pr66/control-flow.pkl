@@ -1,0 +1,99 @@
+import "../../../schema/Ruxel.pkl"
+
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+
+output {
+  value = new Ruxel.Config {
+    inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+    plays { new {
+      name = "Synthetic control-flow surface"
+      targets { "all" }
+      vars {
+        ["fixture_enabled"] = literal(true)
+        ["fixture_environment"] = new Ruxel.MapExpr { entries { ["FIXTURE_VALUE"] = literal("synthetic") } }
+        ["fixture_matrix"] = new Ruxel.ListExpr { items {
+          new Ruxel.MapExpr { entries {
+            ["name"] = literal("alpha")
+            ["children"] = new Ruxel.ListExpr { items { literal("one"); literal("two") } }
+          } }
+          new Ruxel.MapExpr { entries {
+            ["name"] = literal("beta")
+            ["children"] = new Ruxel.ListExpr { items { literal("three") } }
+          } }
+        } }
+        ["fixture_pairs"] = call("flatMap", new Listing { ref(new Listing { "vars"; "fixture_matrix" }); literal("parent"); call("map", new Listing { ref(new Listing { "parent"; "children" }); new Ruxel.ListExpr { items { ref(new Listing { "parent" }); ref(new Listing { "item" }) } } }) })
+        ["fixture_pipe"] = new Ruxel.Lookup { provider = "command"; argv { "printf"; "synthetic" } }
+        ["fixture_nested"] = new Ruxel.ListExpr { items { new Ruxel.ListExpr { items { literal("nested"); ref(new Listing { "vars"; "fixture_pipe" }) } } } }
+      }
+      preTasks { new {
+        name = "Validate synthetic controller lookup"
+        operation = new Ruxel.Assert { that = call("gt", new Listing { call("length", new Listing { ref(new Listing { "vars"; "fixture_pipe" }) }); literal(0) }) }
+      } }
+      tasks {
+        new {
+          name = "Exercise indexed equality and boolean conjunction"
+          `when` = call("and", new Listing { call("eq", new Listing { ref(new Listing { "vars"; "fixture_enabled" }); literal(true) }); call("eq", new Listing { ref(new Listing { "vars"; "fixture_matrix"; "0"; "name" }); literal("alpha") }) })
+          operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("first="); ref(new Listing { "vars"; "fixture_matrix"; "0"; "name" }) }) }
+        }
+        new {
+          name = "Exercise block inheritance and list condition"
+          `when` = call("and", new Listing { call("bool", new Listing { ref(new Listing { "vars"; "fixture_enabled" }) }); call("gt", new Listing { call("length", new Listing { ref(new Listing { "vars"; "fixture_pipe" }) }); literal(0) }) })
+          tags { "synthetic"; "always" }
+          block {
+            new {
+              name = "Exercise nested mapping scalar variants"
+              noLog = true
+              `loop` = new Ruxel.ListExpr { items { literal("literal"); call("concat", new Listing { literal("mixed-"); ref(new Listing { "vars"; "fixture_pipe" }) }) } }
+              operation = new Ruxel.Copy {
+                content = call("concat", new Listing { literal("nested-"); ref(new Listing { "item" }) })
+                dest = call("concat", new Listing { literal("__RUN_ROOT__/nested-"); ref(new Listing { "item" }) })
+                owner = "root"
+              }
+            }
+            new {
+              name = "Exercise exact expression nested in a literal loop"
+              `loop` = new Ruxel.ListExpr { items { ref(new Listing { "vars"; "fixture_pairs" }) } }
+              changedWhen = literal(false)
+              operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("nested-count="); call("string", new Listing { call("length", new Listing { ref(new Listing { "item" }) }) }) }) }
+            }
+            new {
+              name = "Execute mapped loop with label and environment"
+              `loop` = ref(new Listing { "vars"; "fixture_pairs" })
+              loopLabel = call("default", new Listing { ref(new Listing { "item"; "0"; "name" }); literal("synthetic") })
+              environment { ["FIXTURE_VALUE"] = ref(new Listing { "vars"; "fixture_pipe" }) }
+              register = "fixture_loop"
+              changedWhen = call("eq", new Listing { ref(new Listing { "results"; "fixture_loop"; "rc" }); literal(0) })
+              failedWhen = call("not", new Listing { call("contains", new Listing { new Ruxel.ListExpr { items { literal(0); literal(1) } }; ref(new Listing { "results"; "fixture_loop"; "rc" }) }) })
+              ignoreErrors = true
+              checkMode = false
+              operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("printf '%s:%s' '"); ref(new Listing { "item"; "0"; "name" }); literal("' '"); ref(new Listing { "item"; "1" }); literal("'") }) }
+            }
+          }
+          rescue { new { name = "Record rescued synthetic state"; operation = new Ruxel.SetFact { values = new Mapping { ["fixture_rescued"] = literal(true) } } } }
+        }
+        new {
+          name = "Exercise retries and until"
+          operation = new Ruxel.Shell { cmd = "test -f __RUN_ROOT__/retry-marker && exit 0; touch __RUN_ROOT__/retry-marker; exit 1" }
+          register = "fixture_retry"
+          until = call("eq", new Listing { ref(new Listing { "results"; "fixture_retry"; "rc" }); literal(0) })
+          retries = 3
+          delaySeconds = 1
+          changedWhen = literal(false)
+          failedWhen = literal(false)
+        }
+        new { name = "Exercise ignored failure"; operation = new Ruxel.Command { argv { "/usr/bin/false" } }; ignoreErrors = true }
+        new {
+          name = "Exercise rescue transition"
+          block { new { name = "Trigger synthetic rescue"; operation = new Ruxel.Command { argv { "/usr/bin/false" } } } }
+          rescue { new { name = "Record rescued synthetic state"; operation = new Ruxel.SetFact { values = new Mapping { ["fixture_rescued"] = literal(true) } } } }
+        }
+        new { name = "Exercise literal assertion failure message"; operation = new Ruxel.Assert { that = ref(new Listing { "vars"; "fixture_enabled" }); fail_msg = "synthetic assertion failed" } }
+        new { name = "Exercise check-mode string value"; operation = new Ruxel.Command { argv { "/usr/bin/true" } }; checkMode = false; changedWhen = literal(false) }
+        new { name = "Exercise interactive pause"; operation = new Ruxel.Pause { prompt = "Synthetic fixture pause; press Enter" }; tags { "synthetic" } }
+        new { name = "Exercise always tag scalar"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("pairs="); call("string", new Listing { call("length", new Listing { ref(new Listing { "vars"; "fixture_pairs" }) }) }); literal(" pipe="); ref(new Listing { "vars"; "fixture_pipe" }) }) }; tags { "always" } }
+      }
+    } }
+  }
+}

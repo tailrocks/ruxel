@@ -1,0 +1,26 @@
+import "../schema/Ruxel.pkl"
+function lit(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(n: String): Ruxel.Ref = new { path { "vars"; n } }
+output { value = new Ruxel.Config {
+ inventory {
+  hosts { ["fixture"] { address = "127.0.0.1"; vars { ["host_only"] = lit("H"); ["shared"] = lit("host") } } }
+  groups { ["group"] { hosts { "fixture" }; vars { ["group_only"] = lit("G"); ["shared"] = lit("group") } } }
+ }
+ plays { new { name = "scopes"; targets { "group" }; vars { ["play_only"] = lit("P"); ["shared"] = lit("play") }
+  environment { ["RUXEL_SCOPE_A"] = lit("play-a"); ["RUXEL_SCOPE_SHARED"] = lit("play-shared") }
+  preTasks { new { name = "prefact"; operation = new Ruxel.SetFact { values { ["fact"] = lit("fact") } } } }
+  tasks { new { name = "block"; vars { ["block_only"] = lit("B"); ["shared"] = lit("block") }
+   environment { ["RUXEL_SCOPE_B"] = lit("block-b"); ["RUXEL_SCOPE_SHARED"] = lit("block-shared") }
+   block {
+    new { name = "environment"; checkMode = false; changedWhen = lit(false)
+     environment { ["RUXEL_SCOPE_C"] = lit("task-c"); ["RUXEL_SCOPE_SHARED"] = lit("task-shared") }
+     operation = new Ruxel.Command { argv = new Listing { "/bin/sh"; "-c"; ENV_COMMAND } }
+    }
+    new { name = "scoped copy"; vars { ["task_only"] = lit("T"); ["shared"] = lit("task") }; notify { "handler" }
+     operation = new Ruxel.Copy { dest = TARGET; content = new Ruxel.Call { `function` = "concat"; args { ref("group_only"); lit("|"); ref("host_only"); lit("|"); ref("play_only"); lit("|"); ref("block_only"); lit("|"); ref("task_only"); lit("|"); ref("shared"); lit("|"); ref("fact") } } }
+    }
+   }
+  } }
+  handlers { new { name = "handler"; operation = new Ruxel.Debug { msg = "handled" } } }
+ } }
+} }

@@ -1,12 +1,14 @@
 mod facts;
 mod ledger;
 mod modules;
+mod sensitivity;
 mod system_state;
 
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
+use std::sync::atomic::Ordering;
 
 #[expect(
     clippy::let_underscore_must_use,
@@ -37,11 +39,6 @@ fn main() {
     std::process::exit(code);
 }
 
-fn state_dir() -> std::path::PathBuf {
-    std::env::var_os("RUXEL_STATE_DIR")
-        .map_or_else(|| ruxel_proto::constants::STATE_ROOT.into(), Into::into)
-}
-
 #[expect(
     clippy::too_many_lines,
     clippy::let_underscore_must_use,
@@ -58,7 +55,7 @@ fn serve() -> i32 {
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
-    let dir = state_dir();
+    let dir = sensitivity::state_dir();
     let _ = std::fs::create_dir_all(&dir);
     #[cfg(unix)]
     {
@@ -90,6 +87,15 @@ fn serve() -> i32 {
         );
         return 66;
     }
+
+    let Ok(mut sensitive_effects) = sensitivity::Marker::load(&dir) else {
+        log_event(
+            &mut stdout,
+            v1::log::Level::Error,
+            "sensitivity state unavailable".to_owned(),
+        );
+        return 66;
+    };
 
     let handshaken = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
@@ -123,9 +129,23 @@ fn serve() -> i32 {
                 return 64;
             }
         };
+        let is_hello = matches!(&envelope.msg, Some(Msg::Hello(_)));
+        if is_hello == handshaken.load(Ordering::Relaxed) {
+            log_event(
+                &mut stdout,
+                v1::log::Level::Error,
+                if is_hello {
+                    "duplicate Hello"
+                } else {
+                    "expected Hello before other messages"
+                }
+                .to_owned(),
+            );
+            ledger.flush();
+            return 64;
+        }
         match envelope.msg {
             Some(Msg::Hello(hello)) => {
-                handshaken.store(true, std::sync::atomic::Ordering::Relaxed);
                 check_mode = hello.check_mode;
                 diff_mode = hello.diff_mode;
                 no_cache = hello.no_cache;
@@ -140,12 +160,14 @@ fn serve() -> i32 {
                     );
                     return 65;
                 }
+                handshaken.store(true, Ordering::Relaxed);
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
                         proto_version: PROTO_VERSION,
                         facts: Some(facts::gather()),
-                        ledger_generation: 0, // ledger lands in M3
+                        ledger_generation: 0,
+                        sensitive_effects: Some(sensitive_effects.is_marked()),
                     })),
                 };
                 if write_frame(&mut stdout, &ack).is_err() {
@@ -158,14 +180,17 @@ fn serve() -> i32 {
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 for task in &tasks {
+                    let mut task = task.clone();
+                    task.no_log |= sensitive_effects.is_marked();
                     if execute_task(
                         &mut stdout,
-                        task,
+                        &task,
                         check_mode,
                         diff_mode,
                         no_cache,
                         &mut ledger,
                         &mut system_state,
+                        &mut sensitive_effects,
                     ) {
                         break;
                     }
@@ -192,8 +217,9 @@ fn serve() -> i32 {
 
 #[expect(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
     clippy::let_underscore_must_use,
-    reason = "replaced by the Ruxel rewrite"
+    reason = "task execution carries protocol, state and mode together"
 )]
 fn execute_task(
     out: &mut impl std::io::Write,
@@ -203,9 +229,24 @@ fn execute_task(
     no_cache: bool,
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
+    sensitive_effects: &mut sensitivity::Marker,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
+    if task.no_log && sensitive_effects.mark().is_err() {
+        if let Some(iteration) = task.iterations.first() {
+            send_result(
+                out,
+                task,
+                iteration,
+                "failed",
+                false,
+                &serde_json::json!({"failed":true,"msg":"sensitivity state unavailable"}),
+                std::time::Instant::now(),
+            );
+        }
+        return true;
+    }
     for iteration in &task.iterations {
         let start = std::time::Instant::now();
         let _ = write_frame(
@@ -218,30 +259,36 @@ fn execute_task(
             },
         );
 
-        let params: serde_json::Value = if iteration.params_json.is_empty() {
-            serde_json::json!({})
+        let parsed = if iteration.params_json.is_empty() {
+            Ok(serde_json::json!({}))
         } else {
-            match serde_json::from_slice(&iteration.params_json) {
-                Ok(v) => v,
-                Err(e) => {
-                    send_result(
-                        out,
-                        task,
-                        iteration,
-                        "failed",
-                        true,
-                        &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
-                        start,
-                    );
-                    if task.halt_on_failure {
-                        return true;
-                    }
-                    continue;
+            serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
+        };
+        let params = match parsed.and_then(|params| {
+            modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
+            Ok(params)
+        }) {
+            Ok(params) => params,
+            Err(e) => {
+                send_result(
+                    out,
+                    task,
+                    iteration,
+                    "failed",
+                    true,
+                    &serde_json::json!({"failed": true, "msg": format!("bad params: {e}")}),
+                    start,
+                );
+                if task.halt_on_failure {
+                    return true;
                 }
+                continue;
             }
         };
 
         if !no_cache
+            && task.become_user.is_empty()
+            && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
@@ -270,6 +317,7 @@ fn execute_task(
             &task.module,
             &params,
             &iteration.free_form,
+            iteration.source_content.as_deref(),
             &ctx,
             system_state,
         );

@@ -1,0 +1,12 @@
+import "Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
+ plays { new { name = "template"; targets { "fixture" }; tasks {
+  new { name = "write template"; operation = new Ruxel.Copy { dest = SOURCE; content = new Ruxel.Call { `function` = "concat"; args {
+   new Ruxel.Literal { value = PREFIX }; new Ruxel.Call { `function` = "base64Encode"; args { new Ruxel.Lookup { provider = "synthetic"; key = FAKE_VALUE } } }; new Ruxel.Literal { value = SUFFIX }
+  } } } }
+  new { name = "render template"; operation = new Ruxel.Template { src = SOURCE; dest = DEST } }
+  new { name = "read template"; register = "rendered"; operation = new Ruxel.Slurp { src = DEST } }
+  new { name = "template result"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "results"; "rendered"; "content" } } } }
+ } } }
+} }

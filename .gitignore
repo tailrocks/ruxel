@@ -1,4 +1,5 @@
 /target
+/.cache/native/
 __pycache__/
 *.py[cod]
 tools/fixture-project/chaos/large-payload.txt

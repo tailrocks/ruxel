@@ -2,9 +2,11 @@
 members = [
     "crates/ruxel/ruxel",
     "crates/ruxel/ruxel-agent",
-    "crates/legacy/ruxel-core",
+    "crates/ruxel/ruxel-config",
+    "crates/ruxel/ruxel-engine",
+    "crates/ruxel/ruxel-guard",
+
     "crates/ruxel/ruxel-proto",
-    "crates/legacy/ruxel-spec-extract",
 ]
 resolver = "3"
 
@@ -17,27 +19,32 @@ repository = "https://github.com/tailrocks/ruxel"
 homepage = "https://github.com/tailrocks/ruxel"
 
 [workspace.dependencies]
-ruxel-core = { path = "crates/legacy/ruxel-core", version = "0.1.0" }
+ruxel-config = { path = "crates/ruxel/ruxel-config", version = "0.1.0" }
 ruxel-proto = { path = "crates/ruxel/ruxel-proto", version = "0.1.0" }
 
+base64 = "0.22"
+aho-corasick = "1.1"
+percent-encoding = "2"
+pbkdf2 = "0.13"
+md5 = { package = "md-5", version = "0.11.0" }
+regex-lite = "0.1"
+rsblkid = "=0.4.1"
+rustix = { version = "1.1.6", features = ["fs"] }
+rustix-linux-procfs = "0.1.1"
+libc = "0.2"
+futures-util = "0.3"
 anyhow = "1.0.104"
-base64 = "0.22.1"
 blake3 = "1.8.7"
-clap = { version = "4.6.7", features = ["derive", "color", "env", "help", "usage"] }
-futures = "0.3.34"
-hmac = "0.13.0"
 openssh-sftp-client = "0.15.12"
-pbkdf2 = { version = "0.13.0", default-features = false }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "time", "process", "signal"] }
-minijinja = { version = "2.24.0", features = ["loader", "json", "loop_controls", "builtins", "unicode", "urlencode"] }
+clap = { version = "4.6.7", features = ["derive", "color", "env", "help", "usage"] }
+hmac = "0.13.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "time", "process", "signal", "sync"] }
 prost = "0.14.4"
-regex-lite = "0.1.9"
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.3.0"
 proptest = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-serde_norway = "0.9.42"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
 sha2 = "0.11.1"
 thiserror = "2.0.21"
 

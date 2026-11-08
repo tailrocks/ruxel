@@ -1,0 +1,14 @@
+import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture-a"] { address = "127.0.0.1" }; ["fixture-b"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture-a"; "fixture-b" } } } }
+ plays {
+  new { name = "first"; targets { "all" }; tasks {
+   new { name = "first command"; register = "observed"; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printf"; "first" } } }
+   new { name = "assert first"; operation = new Ruxel.Assert { that = new Ruxel.Call { `function` = "eq"; args { new Ruxel.Ref { path { "results"; "observed"; "stdout" } }; new Ruxel.Literal { value = "first" } } } } }
+  } }
+  new { name = "second"; targets { "all" }; tasks {
+   new { name = "second command"; register = "observed"; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printf"; "second" } } }
+   new { name = "assert second"; operation = new Ruxel.Assert { that = new Ruxel.Call { `function` = "eq"; args { new Ruxel.Ref { path { "results"; "observed"; "stdout" } }; new Ruxel.Literal { value = "second" } } } } }
+  } }
+ }
+} }

@@ -46,7 +46,7 @@ pub(super) fn probe_for(
             }
             Some(probes)
         }
-        "systemd" | "service" => {
+        "systemd" => {
             let name = s("name")?;
             if s("state") == Some("restarted") {
                 return None;
@@ -57,7 +57,7 @@ pub(super) fn probe_for(
                 enabled: system_state.unit(name).ok()?.enabled,
             }])
         }
-        "sysctl" | "ansible.posix.sysctl" => {
+        "sysctl" => {
             let name = s("name")?;
             let file = s("sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
             let value = sysctl_file_value(file, name)?;
@@ -113,7 +113,7 @@ pub(super) fn file_attrs(path: &Path) -> Option<(u32, u32, u32, bool)> {
     ))
 }
 
-fn bool_value(value: Option<&Value>, default: bool) -> bool {
+pub(super) fn bool_value(value: Option<&Value>, default: bool) -> bool {
     match value {
         None | Some(Value::Null) => default,
         Some(Value::Bool(value)) => *value,
@@ -138,6 +138,7 @@ pub(super) fn read_sysctl(name: &str) -> Option<String> {
 
 pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     let content = std::fs::read_to_string(file).ok()?;
+    let mut value = None;
     for line in content.lines() {
         let t = line.trim();
         if t.starts_with('#') {
@@ -146,8 +147,11 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
         if let Some((k, v)) = t.split_once('=')
             && k.trim() == name
         {
-            return Some(v.split_whitespace().collect::<Vec<_>>().join(" "));
+            if value.is_some() {
+                return None;
+            }
+            value = Some(v.split_whitespace().collect::<Vec<_>>().join(" "));
         }
     }
-    None
+    value
 }

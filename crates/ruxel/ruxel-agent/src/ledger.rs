@@ -98,6 +98,24 @@ pub(crate) struct Ledger {
     dirty: bool,
 }
 
+pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
+    match module {
+        "file" => !probe::bool_value(params.get("recurse"), false),
+        "apt" => {
+            !probe::bool_value(params.get("update_cache"), false)
+                && !probe::bool_value(params.get("autoremove"), false)
+                && params.get("upgrade").and_then(Value::as_str).is_none()
+                && params.get("state").and_then(Value::as_str) != Some("latest")
+        }
+        "systemd" => {
+            !probe::bool_value(params.get("daemon_reload"), false)
+                && params.get("state").and_then(Value::as_str) != Some("restarted")
+        }
+        "copy" | "template" | "lineinfile" | "replace" | "blockinfile" | "sysctl" => true,
+        _ => false,
+    }
+}
+
 impl Ledger {
     #[cfg(test)]
     pub(crate) fn cached_ok(&self, key: &str) -> Option<Value> {
@@ -152,7 +170,11 @@ impl Ledger {
         result: &Value,
         system_state: &mut crate::system_state::SystemState,
     ) {
-        if key.is_empty() || status == "failed" || status == "skipped" {
+        if key.is_empty()
+            || status == "failed"
+            || status == "skipped"
+            || !cache_allowed(module, params)
+        {
             return;
         }
         let Some(probes) = probe_for(module, params, system_state) else {
@@ -190,7 +212,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests;
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for &byte in bytes {

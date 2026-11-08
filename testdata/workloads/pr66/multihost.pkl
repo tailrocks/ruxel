@@ -1,0 +1,32 @@
+import "../../../schema/Ruxel.pkl"
+
+output {
+  value = new Ruxel.Config {
+    inventory {
+      hosts {
+        ["fixture-1"] { address = "127.0.0.1" }
+        ["fixture-2"] { address = "127.0.0.1" }
+        ["fixture-3"] { address = "127.0.0.1" }
+        ["fixture-4"] { address = "127.0.0.1" }
+        ["fixture-5"] { address = "127.0.0.1" }
+        ["fixture-6"] { address = "127.0.0.1" }
+      }
+      groups {
+        ["multihost"] { hosts { "fixture-1"; "fixture-2"; "fixture-3"; "fixture-4"; "fixture-5"; "fixture-6" } }
+      }
+    }
+    plays {
+      new {
+        name = "Synthetic six-host scheduling workload"
+        targets { "multihost" }
+        tasks {
+          new {
+            name = "Run one-second independent host work"
+            operation = new Ruxel.Command { argv { "/bin/sleep"; "1" } }
+            changedWhen = new Ruxel.Literal { value = false }
+          }
+        }
+      }
+    }
+  }
+}

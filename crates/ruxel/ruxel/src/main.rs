@@ -1,147 +1,136 @@
+mod cli;
 mod commands;
 
-use clap::{Parser, Subcommand};
-use std::process::ExitCode;
+use clap::Parser;
+use cli::{Cli, Command, ConfigCommand};
+use ruxel::exit::ExitCode;
+use std::io::Write;
 
-#[derive(Parser)]
-#[command(
-    name = "ruxel",
-    version = env!("RUXEL_VERSION"),
-    about = "Rust-native automation without the YAML archaeology"
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Show what would change, without touching anything
-    Plan(commands::plan::PlanArgs),
-    /// Apply the desired state to an environment
-    Apply(commands::apply::ApplyArgs),
-}
-
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let result = match cli.command {
-        Command::Plan(args) => commands::plan::execute(args),
-        Command::Apply(args) => commands::apply::execute(args),
-    };
-    match result {
-        Ok(code) => ExitCode::from(code),
+fn main() {
+    let code = match Cli::try_parse() {
+        Ok(cli) => match cli.command {
+            Command::Plan(args) => run(args, ruxel_engine::controller::Mode::Plan),
+            Command::Apply(args) => run(args, ruxel_engine::controller::Mode::Apply),
+            Command::Check(args) => run(args, ruxel_engine::controller::Mode::Check),
+            Command::Diff(args) => run(args, ruxel_engine::controller::Mode::Diff),
+            Command::Config(config) => match config.command {
+                ConfigCommand::Dump { root } => match commands::config::dump(&root) {
+                    Ok(()) => ExitCode::Success,
+                    Err(error) => {
+                        if writeln!(std::io::stderr().lock(), "{error}").is_err()
+                            || !error.is::<ruxel_config::ConfigError>()
+                        {
+                            ExitCode::Internal
+                        } else {
+                            ExitCode::Config
+                        }
+                    }
+                },
+            },
+        },
         Err(error) => {
-            eprintln!("{error:#}");
-            ExitCode::from(exit_code_for_error(&error))
+            let code = if error.use_stderr() {
+                ExitCode::Usage
+            } else {
+                ExitCode::Success
+            };
+            if error.print().is_err() {
+                ExitCode::Internal
+            } else {
+                code
+            }
+        }
+    };
+    std::process::exit(i32::from(code.code()));
+}
+
+fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
+    let Ok(value) = ruxel_config::eval(&args.root) else {
+        if writeln!(std::io::stderr().lock(), "configuration evaluation failed").is_err() {
+            return ExitCode::Internal;
+        }
+        return ExitCode::Config;
+    };
+    let Ok(value) = ruxel_engine::model::validate_config(&value) else {
+        if writeln!(std::io::stderr().lock(), "configuration validation failed").is_err() {
+            return ExitCode::Internal;
+        }
+        return ExitCode::Config;
+    };
+    let options = ruxel_engine::controller::Options {
+        mode,
+        hosts: args.hosts,
+        tags: args.tags,
+    };
+    let runtime_options = ruxel_engine::runtime::RuntimeOptions {
+        agent: args.agent,
+        jobs: usize::from(args.jobs),
+        no_cache: args.no_cache,
+        connection: ruxel_engine::transport::ConnectOptions {
+            keyfile: args.connection.ssh_key,
+            known_hosts_file: args.connection.known_hosts,
+            accept_new_host_key: args.connection.accept_new_host_key,
+            ..Default::default()
+        },
+        output: match args.presentation.output {
+            cli::OutputFormat::Json => ruxel_engine::runtime::OutputFormat::Json,
+            cli::OutputFormat::Human => ruxel_engine::runtime::OutputFormat::Human,
+        },
+        log_file: args.presentation.log_file,
+        source_dir: source_dir(&args.root).to_path_buf(),
+        synthetic_secrets: args.synthetic_secrets,
+        local_state: args.state_dir,
+        local_agent: args.local_agent,
+        controller_state: args.controller_state_dir,
+    };
+    let result = tokio::runtime::Runtime::new()
+        .map_err(|error| error.to_string())
+        .and_then(|runtime| {
+            runtime
+                .block_on(ruxel_engine::runtime::run(
+                    &value,
+                    &options,
+                    &runtime_options,
+                ))
+                .map_err(|error| error.to_string())
+        });
+    match result {
+        Ok(recaps) => {
+            let unreachable = recaps.values().any(|r| r.unreachable != 0);
+            let failed = recaps.values().any(|r| r.failed != 0);
+            let changed = recaps.values().any(|r| r.changed != 0 || r.planned != 0);
+            if unreachable {
+                ExitCode::Unreachable
+            } else if failed {
+                ExitCode::Failed
+            } else if changed && args.presentation.detailed_exitcode {
+                ExitCode::Changes
+            } else {
+                ExitCode::Success
+            }
+        }
+        Err(error) => {
+            drop(writeln!(std::io::stderr().lock(), "{error}"));
+            ExitCode::Internal
         }
     }
 }
 
-fn exit_code_for_error(error: &anyhow::Error) -> u8 {
-    if error
-        .downcast_ref::<ruxel_core::playbook::ParseError>()
-        .is_some()
-        || error
-            .downcast_ref::<Box<ruxel_core::playbook::ParseError>>()
-            .is_some()
-        || error
-            .downcast_ref::<ruxel_core::inventory::InventoryError>()
-            .is_some()
-        || error
-            .downcast_ref::<ruxel_core::compiler::CompileError>()
-            .is_some()
-        || error
-            .downcast_ref::<Box<ruxel_core::compiler::CompileError>>()
-            .is_some()
-    {
-        2
-    } else {
-        1
-    }
+fn source_dir(root: &std::path::Path) -> &std::path::Path {
+    root.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")]
 mod tests {
-    use super::*;
-    use clap::CommandFactory;
-
     #[test]
-    fn cli_definition_is_valid() {
-        Cli::command().debug_assert();
-    }
-
-    #[test]
-    fn parses_the_drop_in_plan_shape() {
-        let cli = Cli::try_parse_from([
-            "ruxel",
-            "plan",
-            "-i",
-            "hosts.ini",
-            "--limit",
-            "fixture_10",
-            "setup-fixture_10.yml",
-        ])
-        .unwrap();
-        let Command::Plan(args) = cli.command else {
-            panic!("expected plan subcommand");
-        };
-        assert_eq!(args.inventory.to_str(), Some("hosts.ini"));
-        assert_eq!(args.limit.as_deref(), Some("fixture_10"));
-        assert_eq!(args.playbook.to_str(), Some("setup-fixture_10.yml"));
-    }
-
-    #[test]
-    fn plan_requires_inventory_and_playbook() {
-        assert!(Cli::try_parse_from(["ruxel", "plan"]).is_err());
-        assert!(Cli::try_parse_from(["ruxel", "plan", "-i", "hosts.ini"]).is_err());
-    }
-
-    #[test]
-    fn parses_apply_with_check_and_tags() {
-        let cli = Cli::try_parse_from([
-            "ruxel",
-            "apply",
-            "-i",
-            "hosts.ini",
-            "--check",
-            "--tags",
-            "fixture_3,velnor",
-            "setup-fixture_3.yml",
-        ])
-        .unwrap();
-        let Command::Apply(args) = cli.command else {
-            panic!("expected apply subcommand");
-        };
-        assert!(args.check);
-        assert_eq!(args.tags, vec!["fixture_3", "velnor"]);
-    }
-
-    #[test]
-    fn rejects_unknown_subcommand() {
-        assert!(Cli::try_parse_from(["ruxel", "run", "webservers"]).is_err());
-    }
-
-    #[test]
-    fn classifies_contract_errors_separately_from_runtime_errors() {
-        let parse: anyhow::Error = ruxel_core::playbook::parse("bad.yml", "not-a-playbook")
-            .unwrap_err()
-            .into();
-        assert_eq!(exit_code_for_error(&parse), 2);
-
-        let inventory: anyhow::Error =
-            ruxel_core::inventory::Inventory::parse("host unsupported=value")
-                .unwrap_err()
-                .into();
-        assert_eq!(exit_code_for_error(&inventory), 2);
-
-        let compile: anyhow::Error = ruxel_core::compiler::CompileError::Surface {
-            playbook: "synthetic.yml".into(),
-            task: "synthetic".into(),
-            kind: ruxel_core::playbook::ErrorKind::NoModule,
-        }
-        .into();
-        assert_eq!(exit_code_for_error(&compile), 2);
-        assert_eq!(exit_code_for_error(&anyhow::anyhow!("host down")), 1);
+    fn bare_config_uses_current_directory_for_sources() {
+        use std::path::Path;
+        assert_eq!(super::source_dir(Path::new("config.pkl")), Path::new("."));
+        assert_eq!(
+            super::source_dir(Path::new("dir/config.pkl")),
+            Path::new("dir")
+        );
     }
 }

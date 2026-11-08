@@ -1,0 +1,137 @@
+use super::evaluate_document;
+use serde_json::json;
+
+#[test]
+fn sysctl_name_requires_valid_literal_or_expression() -> super::Result {
+    for name in ["", "-bad", "net key", "net.key=bad"] {
+        let expression = format!(
+            "new R.Sysctl {{ name = {}; value = 1 }}",
+            serde_json::to_string(name)?
+        );
+        assert!(super::evaluate(&expression).is_err(), "{name:?}");
+    }
+    super::evaluate(r#"new R.Sysctl { name = "net.ipv4.ip_forward"; value = 1 }"#)?;
+    super::evaluate(r#"new R.Sysctl { name = new R.Ref { path { "vars"; "key" } }; value = 1 }"#)?;
+    Ok(())
+}
+
+#[test]
+fn required_members_preserve_lazy_defaults_and_amendments() {
+    let mut failures = Vec::new();
+    for (source, expected) in [
+        ("class Required { text: String }\nvalue = 1", json!(1)),
+        (
+            "class Required { text: String }\nhidden ignored = new Required {}\nvalue = 42",
+            json!(42),
+        ),
+        (
+            r#"class Required { text: String }
+value = new Required { text = "direct" }"#,
+            json!({"text":"direct"}),
+        ),
+        (
+            r#"class Required { text: String }
+value = (new Required {}) { text = "late" }"#,
+            json!({"text":"late"}),
+        ),
+        (
+            r#"open class Base { text: String }
+class Child extends Base {}
+value = new Child { text = "inherited" }"#,
+            json!({"text":"inherited"}),
+        ),
+        (
+            "class Required { hidden text: String; visible = 42 }\nvalue = new Required {}",
+            json!({"visible":42}),
+        ),
+        (
+            r#"class Required { local text = "private"; visible = text }
+value = new Required {}"#,
+            json!({"visible":"private"}),
+        ),
+        (
+            "class Required { text: String?; items: Listing<String>; dict: Mapping<String, Int> }\nhidden instance = new Required {}\nvalue = new { isNull = instance.text == null; items = instance.items; dict = instance.dict }",
+            json!({"isNull":true,"items":[],"dict":{}}),
+        ),
+        (
+            r#"class Child { text: String }
+class Parent { child: Child }
+value = new Parent { child { text = "nested" } }"#,
+            json!({"child":{"text":"nested"}}),
+        ),
+        (
+            r#"class Required { text: String }
+typealias Alias = Required
+value = new Alias { text = "alias" }"#,
+            json!({"text":"alias"}),
+        ),
+        (
+            r#"typealias Label = "one"|"two"
+class Required { label: Label }
+value = new Required { label = "one" }"#,
+            json!({"label":"one"}),
+        ),
+        (
+            "class Required { enabled: Boolean }\nvalue = new Required { enabled = false }",
+            json!({"enabled":false}),
+        ),
+    ] {
+        match evaluate_document(source) {
+            Ok(actual) if actual["value"] == expected => {}
+            actual => failures.push(format!("{source}\nexpected {expected}\nactual {actual:?}")),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "valid declarations failed: {failures:#?}"
+    );
+}
+
+#[test]
+fn unassigned_required_members_and_nonclass_types_fail() {
+    let mut accepted = Vec::new();
+    for source in [
+        "class Required { text: String }\nvalue = new Required {}",
+        "class Required { text: String }\nvalue = (new Required {}).text",
+        "open class Base { text: String }\nclass Child extends Base {}\nvalue = new Child {}",
+        "class Required { hidden text: String }\nvalue = (new Required {}).text",
+        "class Child { text: String }\nclass Parent { child: Child }\nvalue = new Parent {}",
+        "class Required { enabled: Boolean }\nvalue = new Required {}",
+        "value = new Unknown {}",
+        "class Left { x = 1 }\nclass Right { y = 2 }\ntypealias Choice = Left|Right\nvalue = new Choice {}",
+    ] {
+        if evaluate_document(source).is_ok() {
+            accepted.push(source);
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "accepted invalid declarations: {accepted:#?}"
+    );
+}
+
+#[test]
+fn command_requires_explicit_nonempty_argv() -> super::Result {
+    assert!(super::evaluate("new R.Command {}").is_err());
+    assert!(super::evaluate("new R.Command { argv = new Listing<String> {} }").is_err());
+    assert_eq!(
+        super::evaluate(r#"new R.Command { argv { "true" } }"#)?["argv"],
+        json!(["true"])
+    );
+    Ok(())
+}
+
+#[test]
+fn postgres_privileges_accept_lists_and_runtime_expressions() -> super::Result {
+    for value in [
+        r#""SELECT,UPDATE""#,
+        r#"new Listing<String> { "SELECT"; "UPDATE" }"#,
+        r#"new R.Ref { path { "vars"; "privileges" } }"#,
+    ] {
+        let source = format!(
+            r#"new R.PostgresPrivileges {{ login_db = "db"; role = "a"; type = "table"; privs = {value} }}"#
+        );
+        super::evaluate(&source)?;
+    }
+    Ok(())
+}

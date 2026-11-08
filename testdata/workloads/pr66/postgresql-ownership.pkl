@@ -1,0 +1,128 @@
+import "../../../schema/Ruxel.pkl"
+output {
+  value = new Ruxel.Config {
+    inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["postgresql"] { hosts { "fixture" } } } }
+    plays { new {
+      name = "Fixture PostgreSQL ownership and default privileges"
+      targets { "postgresql" }
+      tasks {
+        new {
+          name = "Create fixture owner"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresRole {
+            login_user = "postgres"
+            name = "ruxel_fixture_owner"
+            password = "synthetic-fixture-password"
+            role_attr_flags = "LOGIN"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Create fixture reader"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresRole {
+            login_user = "postgres"
+            name = "ruxel_fixture_reader"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Create fixture database"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresDatabase {
+            login_user = "postgres"
+            name = "ruxel_fixture_database"
+            owner = "ruxel_fixture_owner"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Create owned fixture schema"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresSchema {
+            login_user = "postgres"
+            login_db = "postgres"
+            name = "ruxel_fixture_schema"
+            owner = "ruxel_fixture_owner"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Exercise literal PostgreSQL schema names"
+          becomeUser = "postgres"
+          checkMode = true
+          operation = new Ruxel.PostgresSchema {
+            login_user = "postgres"
+            login_db = "postgres"
+            name = "ruxel_fixture_literal_schema"
+            owner = "ruxel_fixture_owner"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Grant fixture default table reads"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresPrivileges {
+            login_db = "postgres"
+            type = "default_privs"
+            objs = "TABLES"
+            privs = "SELECT"
+            role = "ruxel_fixture_reader"
+            schema = "ruxel_fixture_schema"
+            target_roles = "ruxel_fixture_owner"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Grant fixture database access"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresPrivileges {
+            login_user = "postgres"
+            login_db = "postgres"
+            type = "database"
+            objs = "ruxel_fixture_database"
+            privs = "CONNECT"
+            role = "ruxel_fixture_reader"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Grant fixture schema access"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresPrivileges {
+            login_user = "postgres"
+            login_db = "postgres"
+            type = "schema"
+            objs = "ruxel_fixture_schema"
+            privs = "USAGE"
+            role = "ruxel_fixture_reader"
+            state = "present"
+            login_port = 40000
+          }
+        }
+        new {
+          name = "Grant fixture table access shape"
+          becomeUser = "postgres"
+          operation = new Ruxel.PostgresPrivileges {
+            login_user = "postgres"
+            login_db = "postgres"
+            type = "table"
+            schema = "ruxel_fixture_schema"
+            objs = "ALL_IN_SCHEMA"
+            privs = "SELECT"
+            role = "ruxel_fixture_reader"
+            state = "present"
+            login_port = 40000
+          }
+        }
+      }
+    } }
+  }
+}

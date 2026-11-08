@@ -4,10 +4,15 @@
 )]
 #![expect(
     clippy::let_underscore_must_use,
-    clippy::match_same_arms,
-    clippy::similar_names,
     reason = "replaced by the Ruxel rewrite"
 )]
+
+mod attrs;
+#[cfg(target_vendor = "apple")]
+use attrs::apply_attrs_at;
+#[cfg(test)]
+use attrs::open_attrs;
+use attrs::{apply_attrs, apply_attrs_fd};
 
 mod apt;
 mod apt_repository;
@@ -23,15 +28,16 @@ mod iptables;
 mod lineinfile;
 mod lvg;
 mod lvol;
-mod misc;
 mod mount;
 mod postgresql;
 mod replace;
 mod shell;
 mod slurp;
 mod stat;
+mod subprocess;
 mod sysctl;
 mod systemd;
+mod timezone;
 mod user;
 
 use serde_json::{Map, Value, json};
@@ -39,6 +45,9 @@ use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use subprocess::become_command;
+#[cfg(test)]
+use subprocess::user_environment_from;
 
 pub(crate) struct ExecContext {
     pub check_mode: bool,
@@ -96,51 +105,69 @@ impl Outcome {
     }
 }
 
+pub(crate) use copy::validate_source;
+
 pub(crate) fn execute(
     module: &str,
     params: &Value,
     free_form: &str,
+    source: Option<&[u8]>,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
 ) -> Outcome {
-    if !is_implemented(module) {
+    if ctx.become_user.is_some()
+        && !matches!(
+            module,
+            "command"
+                | "shell"
+                | "postgres_database"
+                | "postgres_role"
+                | "postgres_schema"
+                | "postgres_privileges"
+        )
+    {
         return Outcome::from_result(json!({
             "failed": true,
             "changed": false,
-            "msg": format!("module {module:?} is not implemented in this agent build"),
+            "msg": format!("module {module:?} does not support become_user"),
         }));
     }
     let result = match module {
-        "apt" => apt::run(params, ctx, system_state),
-        "apt_repository" => apt_repository::run(params, ctx),
-        "blockinfile" => blockinfile::run(params, ctx),
-        "lineinfile" => lineinfile::run(params, ctx),
-        "replace" => replace::run(params, ctx),
-        "sysctl" | "ansible.posix.sysctl" => sysctl::run(params, ctx),
-        "community.general.timezone" => misc::timezone(params, ctx),
-        "group" => misc::group(params, ctx),
-        "user" => user::run(params, ctx),
-        "authorized_key" => authorized_key::run(params, ctx),
+        "filesystem" => filesystem::run(params, ctx),
         "git" => git::run(params, ctx),
         "iptables" => iptables::run(params, ctx),
-        "community.general.lvg" => lvg::run(params, ctx),
-        "community.general.lvol" => lvol::run(params, ctx),
-        "filesystem" => filesystem::run(params, ctx),
-        "ansible.posix.mount" => mount::run(params, ctx),
-        "template" => copy::run(params, ctx),
-        "get_url" => get_url::run(params, ctx),
-        "command" => command::run(params, free_form, ctx),
+        "lineinfile" => lineinfile::run(params, ctx),
+        "logical_volume" => lvol::run(params, ctx),
+        "mount" => mount::run(params, ctx),
+        "postgres_database" => postgresql::db(params, ctx),
+        "postgres_role" => postgresql::user(params, ctx),
+        "postgres_schema" => postgresql::schema(params, ctx),
+        "postgres_privileges" => postgresql::privs(params, ctx),
+        "replace" => replace::run(params, ctx),
         "shell" => shell::run(params, free_form, ctx),
-        "file" => file::run(params, ctx),
         "stat" => stat::run(params),
-        "copy" => copy::run(params, ctx),
+        "timezone" => timezone::run(params, ctx),
+        "apt" => apt::run(params, ctx, system_state),
+        "apt_repository" => apt_repository::run(params, ctx, system_state),
+        "blockinfile" => blockinfile::run(params, ctx),
+        "sysctl" => sysctl::run(params, ctx),
+        "group" => user::group(params, ctx),
+        "user" => user::run(params, ctx),
+        "authorized_key" => authorized_key::run(params, ctx),
+        "volume_group" => lvg::run(params, ctx),
+        "template" => copy::run(params, None, ctx),
+        "get_url" => get_url::run(params, ctx),
+        "command" if !free_form.is_empty() => {
+            Err("command requires argv, not free-form input".into())
+        }
+        "command" => command::run(params, ctx),
+        "file" => file::run(params, ctx),
+        "copy" => copy::run(params, source, ctx),
         "slurp" => slurp::run(params),
-        "systemd" | "service" => systemd::run(params, ctx, system_state),
-        "community.postgresql.postgresql_db" => postgresql::db(params, ctx),
-        "community.postgresql.postgresql_user" => postgresql::user(params, ctx),
-        "community.postgresql.postgresql_schema" => postgresql::schema(params, ctx),
-        "community.postgresql.postgresql_privs" => postgresql::privs(params, ctx),
-        _ => unreachable!("is_implemented and execute dispatch must stay aligned"),
+        "systemd" => systemd::run(params, ctx, system_state),
+        _ => Err(format!(
+            "module {module:?} is not implemented in this agent build"
+        )),
     };
     match result {
         Ok(value) => Outcome::from_result(value),
@@ -150,43 +177,6 @@ pub(crate) fn execute(
             "msg": msg,
         })),
     }
-}
-
-pub(crate) fn is_implemented(module: &str) -> bool {
-    matches!(
-        module,
-        "ansible.posix.mount"
-            | "ansible.posix.sysctl"
-            | "apt"
-            | "apt_repository"
-            | "authorized_key"
-            | "blockinfile"
-            | "command"
-            | "community.general.lvg"
-            | "community.general.lvol"
-            | "community.general.timezone"
-            | "community.postgresql.postgresql_db"
-            | "community.postgresql.postgresql_privs"
-            | "community.postgresql.postgresql_schema"
-            | "community.postgresql.postgresql_user"
-            | "copy"
-            | "file"
-            | "filesystem"
-            | "get_url"
-            | "git"
-            | "group"
-            | "iptables"
-            | "lineinfile"
-            | "replace"
-            | "service"
-            | "shell"
-            | "slurp"
-            | "stat"
-            | "sysctl"
-            | "systemd"
-            | "template"
-            | "user"
-    )
 }
 
 pub(crate) fn shutdown() {
@@ -283,6 +273,7 @@ pub(super) fn run_checked(
     }
 }
 
+#[cfg(test)]
 pub(super) fn run_ok(mut command: std::process::Command) -> Result<bool, String> {
     command
         .status()
@@ -296,44 +287,6 @@ fn command_display(command: &std::process::Command) -> String {
         .map(|part| part.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-pub(super) fn become_command(
-    ctx: &ExecContext,
-    program: &str,
-    args: &[&str],
-) -> std::process::Command {
-    if let Some(user) = &ctx.become_user {
-        let mut cmd = std::process::Command::new("runuser");
-        cmd.arg("-u").arg(user).arg("--");
-        if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
-            && let Some((home, shell)) = user_environment_from(&passwd, user)
-        {
-            cmd.arg("/usr/bin/env")
-                .arg(format!("HOME={home}"))
-                .arg(format!("USER={user}"))
-                .arg(format!("LOGNAME={user}"))
-                .arg(format!("SHELL={shell}"));
-        }
-        cmd.arg(program);
-        for a in args {
-            cmd.arg(a);
-        }
-        cmd
-    } else {
-        let mut cmd = std::process::Command::new(program);
-        for a in args {
-            cmd.arg(a);
-        }
-        cmd
-    }
-}
-
-fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
-    passwd.lines().find_map(|line| {
-        let fields = line.split(':').collect::<Vec<_>>();
-        (fields.len() >= 7 && fields[0] == user).then_some((fields[5], fields[6]))
-    })
 }
 
 fn params_object(params: &Value) -> Result<&Map<String, Value>, String> {
@@ -416,158 +369,10 @@ pub(super) fn default_file_mode(status: &str) -> u32 {
     0o666 & !umask
 }
 
-fn apply_attrs(
-    path: &std::path::Path,
-    obj: &Map<String, Value>,
-    changed: &mut bool,
-    check_mode: bool,
-) -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-
-    if let Some(mode_v) = obj.get("mode") {
-        let want = parse_mode(mode_v)?;
-        if meta.permissions().mode() & 0o7777 != want {
-            *changed = true;
-            if !check_mode {
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(want))
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-    }
-    let want_uid = match str_param(obj, "owner") {
-        Some(o) => Some(resolve_uid(o)?),
-        None => None,
-    };
-    let want_gid = match str_param(obj, "group") {
-        Some(g) => Some(resolve_gid(g)?),
-        None => None,
-    };
-    if want_uid.is_some_and(|u| u != meta.uid()) || want_gid.is_some_and(|g| g != meta.gid()) {
-        *changed = true;
-        if !check_mode {
-            std::os::unix::fs::chown(path, want_uid, want_gid).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
+#[cfg(test)]
+#[path = "tests/security.rs"]
+mod security_tests;
 
 #[cfg(test)]
-mod security_tests {
-    use super::{
-        bool_param, default_file_mode, parse_mode, resolve_gid_from, resolve_uid_from,
-        user_environment_from, write_atomic,
-    };
-    use serde_json::json;
-    use std::os::unix::fs::symlink;
-
-    #[test]
-    fn atomic_write_replaces_symlink_not_its_target() {
-        let root = std::env::temp_dir().join(format!("ruxel-atomic-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir(&root).unwrap();
-        let victim = root.join("victim");
-        let dest = root.join("dest");
-        std::fs::write(&victim, "safe").unwrap();
-        symlink(&victim, &dest).unwrap();
-        write_atomic(&dest, b"replacement").unwrap();
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "safe");
-        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "replacement");
-        assert!(
-            !std::fs::symlink_metadata(&dest)
-                .unwrap()
-                .file_type()
-                .is_symlink()
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn parses_modes_booleans_and_identity_files() {
-        assert_eq!(parse_mode(&json!("0755")).unwrap(), 0o755);
-        assert_eq!(parse_mode(&json!(644)).unwrap(), 0o644);
-        for value in [
-            json!("yes"),
-            json!("true"),
-            json!("on"),
-            json!("1"),
-            json!(1),
-        ] {
-            let obj = json!({"value": value});
-            assert!(bool_param(obj.as_object().unwrap(), "value", false));
-        }
-        assert_eq!(
-            resolve_uid_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice").unwrap(),
-            1001
-        );
-        assert_eq!(
-            resolve_gid_from("staff:x:1002:alice\n", "staff").unwrap(),
-            1002
-        );
-        assert_eq!(
-            user_environment_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice"),
-            Some(("/home/alice", "/bin/sh"))
-        );
-    }
-
-    #[test]
-    fn derives_new_file_mode_from_process_umask_without_mutating_it() {
-        assert_eq!(default_file_mode("Name:\truxel\nUmask:\t0022\n"), 0o644);
-        assert_eq!(default_file_mode("Name:\truxel\nUmask:\t0077\n"), 0o600);
-    }
-
-    #[test]
-    fn checked_runner_preserves_program_args_and_stderr() {
-        let mut command = std::process::Command::new("sh");
-        command.args(["-c", "printf synthetic-error >&2; exit 7"]);
-        let error = super::run_checked(command).unwrap_err();
-        assert!(error.starts_with("sh -c printf synthetic-error >&2; exit 7:"));
-        assert!(error.ends_with("synthetic-error"));
-
-        let mut ok = std::process::Command::new("sh");
-        ok.args(["-c", "exit 0"]);
-        assert!(super::run_ok(ok).unwrap());
-    }
-
-    #[test]
-    fn every_remote_core_module_has_agent_dispatch() {
-        const CONTROLLER_ONLY: &[&str] = &["assert", "debug", "fail", "pause", "set_fact"];
-        let missing: Vec<_> = ruxel_core::modules::MODULES
-            .iter()
-            .map(|surface| surface.name)
-            .filter(|name| !CONTROLLER_ONLY.contains(name))
-            .filter(|name| !super::is_implemented(name))
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "core modules missing agent dispatch: {missing:?}"
-        );
-        let context = super::ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        for module in ruxel_core::modules::MODULES
-            .iter()
-            .map(|surface| surface.name)
-            .filter(|name| !CONTROLLER_ONLY.contains(name))
-        {
-            let outcome = super::execute(
-                module,
-                &serde_json::Value::Null,
-                "",
-                &context,
-                &mut crate::system_state::SystemState::default(),
-            );
-            assert!(
-                !outcome.result["msg"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("not implemented"),
-                "{module} is advertised but has no execute arm"
-            );
-        }
-    }
-}
+#[path = "tests/systemd_wire.rs"]
+mod systemd_wire_tests;

@@ -85,6 +85,7 @@ message Iteration {
 
 
   string ledger_key = 4;
+  optional bytes source_content = 5;
 }
 
 
@@ -111,6 +112,7 @@ message HelloAck {
 
 
   uint64 ledger_generation = 4;
+  optional bool sensitive_effects = 5;
 }
 
 

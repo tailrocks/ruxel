@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+real_pkg_config=$(command -v pkg-config)
+needs_blkid=no
+for argument in "$@"; do
+    case "$argument" in blkid|'blkid '*) needs_blkid=yes ;; esac
+done
+if test "$needs_blkid" = no; then exec "$real_pkg_config" "$@"; fi
+if test -n "${PKG_CONFIG_SYSROOT_DIR:-}"; then
+    "$real_pkg_config" --exact-version=2.41.6 blkid
+    exec "$real_pkg_config" "$@"
+fi
+if test "$(uname -s)" != Linux; then
+    echo 'Cross-compiling libblkid requires tools/build-libblkid -- cargo zigbuild ...' >&2
+    exit 1
+fi
+case "${TARGET:-}" in
+    x86_64-*) test "$(uname -m)" = x86_64 || { echo 'Supply a matching cross sysroot for libblkid.' >&2; exit 1; } ;;
+    aarch64-*) test "$(uname -m)" = aarch64 || { echo 'Supply a matching cross sysroot for libblkid.' >&2; exit 1; } ;;
+esac
+sysroot=$("$repo_root/tools/build-libblkid" --native --sysroot)
+include="$repo_root/.cache/native/include"
+mkdir -p "$(dirname "$include")"
+if test -e "$include" && ! test -L "$include"; then
+    echo 'Refusing to replace a real native include directory.' >&2
+    exit 1
+fi
+trap 'rm -f "$include.tmp.$$"' EXIT
+ln -s "$sysroot/usr/include" "$include.tmp.$$"
+mv -f -T "$include.tmp.$$" "$include"
+trap - EXIT
+export PKG_CONFIG_PATH="$sysroot/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+"$real_pkg_config" --exact-version=2.41.6 blkid
+exec "$real_pkg_config" "$@"

@@ -1,0 +1,16 @@
+import "../schema/Ruxel.pkl"
+output { value = new Ruxel.Config {
+ inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
+ plays { new { name = "flow"; targets { "all" }; tasks {
+  new { name = "set fact"; operation = new Ruxel.SetFact { values { ["answer"] = new Ruxel.Literal { value = "local-fact" } } } }
+  new { name = "read fact"; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "vars"; "answer" } } } }
+  new { name = "skip condition"; `when` = new Ruxel.Literal { value = false }; operation = new Ruxel.Fail { msg = "should not execute" } }
+  new { name = "loop"; `loop` = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "one" }; new Ruxel.Literal { value = "two" }; new Ruxel.Literal { value = "three" } } }; operation = new Ruxel.Command { argv = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "/usr/bin/printf" }; new Ruxel.Ref { path { "item" } } } } } }
+  new { name = "environment"; environment { ["RUXEL_FIXTURE_VALUE"] = new Ruxel.Literal { value = "injected-value" } }; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printenv"; "RUXEL_FIXTURE_VALUE" } }; changedWhen = new Ruxel.Literal { value = false } }
+  new { name = "overrides"; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/false" } }; changedWhen = new Ruxel.Literal { value = false }; failedWhen = new Ruxel.Literal { value = false } }
+  new { name = "ignore"; ignoreErrors = true; operation = new Ruxel.Fail { msg = "expected ignored" } }
+  new { name = "block"; block { new { name = "fail inside"; operation = new Ruxel.Fail { msg = "expected rescue" } } }; rescue { new { name = "rescue"; operation = new Ruxel.Debug { msg = "rescued" } } }; always { new { name = "always"; operation = new Ruxel.Debug { msg = "always ran" } } } }
+  new { name = "retry"; checkMode = false; operation = new Ruxel.Shell { cmd = RETRY }; register = "retry_result"; retries = 3; delaySeconds = 1; until = new Ruxel.Call { `function` = "eq"; args { new Ruxel.Ref { path { "results"; "retry_result"; "rc" } }; new Ruxel.Literal { value = 0 } } }; changedWhen = new Ruxel.Literal { value = false } }
+  new { name = "private"; noLog = true; operation = new Ruxel.Command { argv = new Listing { "/usr/bin/printf"; SECRET } } }
+ } } }
+} }

@@ -1,4 +1,4 @@
-use super::command::{check_mode_guard, command_result, creates_guard};
+use super::command::{check_mode_guard, command_result, creates_guard, validate_become_options};
 use super::{ExecContext, params_object, str_param};
 use serde_json::Value;
 
@@ -8,6 +8,7 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
         return Err("shell needs a free-form body".into());
     }
 
+    validate_become_options(obj, ctx)?;
     if let Some(result) = creates_guard(obj, Value::from(free_form)) {
         return Ok(result);
     }
@@ -16,12 +17,9 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     }
 
     let executable = str_param(obj, "executable").unwrap_or("/bin/sh");
-    let mut cmd = super::become_command(ctx, executable, &["-c", free_form]);
+    let mut cmd = super::become_command(ctx, executable, &["-c", free_form])?;
     if let Some(chdir) = str_param(obj, "chdir") {
         cmd.current_dir(chdir);
-    }
-    for (k, v) in &ctx.environment {
-        cmd.env(k, v);
     }
     let output = cmd
         .output()
