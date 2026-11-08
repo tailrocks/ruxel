@@ -17,6 +17,27 @@ pub(crate) fn verify(
         ensure!(!marker.exists(), "{case}: post-pause task executed");
         return Ok(());
     }
+    if case == "eof" {
+        ensure!(
+            status.code() == Some(8),
+            "{case}: expected task failure, got {status}"
+        );
+        ensure!(!marker.exists(), "{case}: post-pause task executed");
+        ensure!(
+            events.iter().any(|event| event["event"] == "host_failed"
+                && event["host"] == "fixture"
+                && event["failed"] == true
+                && event["msg"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("end of input")))
+                && events
+                    .iter()
+                    .any(|event| event["host"] == "fixture" && event["recap"]["failed"] == 1),
+            "{case}: missing EOF failure: {events:?}; {}",
+            String::from_utf8_lossy(errors)
+        );
+        return Ok(());
+    }
     ensure!(
         status.success(),
         "{case}: exit {status}: {}",
