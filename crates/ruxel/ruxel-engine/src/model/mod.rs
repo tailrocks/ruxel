@@ -13,6 +13,8 @@ enum FieldType {
     Flags,
     Scalar,
     Text,
+    HttpUrl,
+    Timezone,
     Flag,
     Number,
     Port,
@@ -59,6 +61,12 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
             }
         }
         FieldType::Text => value.is_string(),
+        FieldType::HttpUrl => value
+            .as_str()
+            .is_some_and(|s| s.starts_with("http://") || s.starts_with("https://")),
+        FieldType::Timezone => value
+            .as_str()
+            .is_some_and(|s| !s.is_empty() && !s.starts_with('-')),
         FieldType::Flag => value.is_boolean(),
         FieldType::Number => value.as_u64().is_some(),
         FieldType::Port => value.as_u64().is_some_and(|n| (1..=65535).contains(&n)),

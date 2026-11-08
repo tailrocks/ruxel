@@ -77,6 +77,20 @@ fn runtime_and_operations_render() -> Result {
     Ok(())
 }
 
+#[test]
+fn url_and_timezone_accept_literals_and_deferred_expressions() -> Result {
+    for expression in [
+        r#"new R.GetUrl { dest = "/tmp/x"; url = "http://example.invalid/x" }"#,
+        r#"new R.GetUrl { dest = "/tmp/x"; url = "https://example.invalid/x" }"#,
+        r#"new R.GetUrl { dest = "/tmp/x"; url = new R.Ref { path { "vars"; "url" } } }"#,
+        r#"new R.Timezone { name = "UTC" }"#,
+        r#"new R.Timezone { name = new R.Ref { path { "vars"; "zone" } } }"#,
+    ] {
+        evaluate(expression)?;
+    }
+    Ok(())
+}
+
 #[path = "schema/constraints.rs"]
 mod constraints;
 

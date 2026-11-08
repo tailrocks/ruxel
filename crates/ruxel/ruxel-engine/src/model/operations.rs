@@ -65,7 +65,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
     ),
     operation!("get_url";
         "dest" => true, FieldType::Text;
-        "url" => true, FieldType::Text;
+        "url" => true, FieldType::HttpUrl;
     ),
     operation!("git";
         "accept_hostkey" => false, FieldType::Flag;
@@ -153,7 +153,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "vg" => true, FieldType::Text;
     ),
     operation!("timezone";
-        "name" => true, FieldType::Text;
+        "name" => true, FieldType::Timezone;
     ),
     operation!("mount";
         "fstype" => true, FieldType::Text;

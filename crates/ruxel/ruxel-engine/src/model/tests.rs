@@ -12,6 +12,57 @@ fn config(operation: Value) -> Value {
 mod environment;
 
 #[test]
+fn url_and_timezone_validate_literals_and_evaluated_results() -> Result<()> {
+    for (kind, field, valid, invalid) in [
+        (
+            "get_url",
+            "url",
+            vec!["http://example.invalid/x", "https://example.invalid/x"],
+            vec!["", "file:///tmp/x", "HTTPS://example.invalid/x"],
+        ),
+        (
+            "timezone",
+            "name",
+            vec!["UTC", "Asia/Tokyo"],
+            vec!["", "--help"],
+        ),
+    ] {
+        for (values, expected) in [(valid, true), (invalid, false)] {
+            for value in values {
+                let mut params = Map::new();
+                params.insert(field.into(), json!(value));
+                if kind == "get_url" {
+                    params.insert("dest".into(), json!("/tmp/x"));
+                }
+                assert_eq!(
+                    validate_operation(kind, &params).is_ok(),
+                    expected,
+                    "{kind}: {value:?}"
+                );
+                let mut op = params.clone();
+                op.insert("kind".into(), json!(kind));
+                assert_eq!(
+                    validate_config(&config(Value::Object(op))).is_ok(),
+                    expected,
+                    "{kind}: {value:?}"
+                );
+            }
+        }
+        let mut op = Map::new();
+        op.insert("kind".into(), json!(kind));
+        op.insert(
+            field.into(),
+            json!({"kind":"ref", "path":["vars", "value"]}),
+        );
+        if kind == "get_url" {
+            op.insert("dest".into(), json!("/tmp/x"));
+        }
+        validate_config(&config(Value::Object(op)))?;
+    }
+    Ok(())
+}
+
+#[test]
 fn rejects_untyped_unknown_fields_and_operation_variants() {
     assert!(validate_config(&json!({"anything":true})).is_err());
     assert!(validate_config(&config(json!({"kind":"unknown"}))).is_err());

@@ -147,7 +147,7 @@ class Filesystem {
 class GetUrl {
   fixed kind = "get_url"
   dest: Text
-  url: Text
+  url: String(startsWith("http://") || startsWith("https://"))|Expr
 }
 
 class Git {
@@ -263,7 +263,7 @@ class LogicalVolume {
 
 class Timezone {
   fixed kind = "timezone"
-  name: Text
+  name: String(!isEmpty && !startsWith("-"))|Expr
 }
 
 class Mount {

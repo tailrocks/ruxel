@@ -3,6 +3,9 @@ fn rejects_invalid_types_and_missing_required_fields() {
     let mut accepted = Vec::new();
     for expression in [
         r"new R.Command {}",
+        r#"new R.GetUrl { dest = "/tmp/x"; url = "file:///tmp/x" }"#,
+        r#"new R.Timezone { name = "" }"#,
+        r#"new R.Timezone { name = "--help" }"#,
         r#"new R.Timezone { name = "UTC"; state = "present" }"#,
         r#"new R.Command { cmd = "true"; removes = "/tmp/a" }"#,
         r#"new R.Shell { cmd = "true"; removes = "/tmp/a" }"#,
