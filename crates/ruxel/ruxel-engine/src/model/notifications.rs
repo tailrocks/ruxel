@@ -3,10 +3,13 @@ use std::collections::BTreeSet;
 
 pub(crate) fn validate(config: &Value) -> Result<()> {
     for play in array(config, "plays") {
-        let handlers: BTreeSet<_> = array(play, "handlers")
+        let mut handlers = BTreeSet::new();
+        for name in array(play, "handlers")
             .iter()
             .filter_map(|handler| handler.get("name").and_then(Value::as_str))
-            .collect();
+        {
+            ensure!(handlers.insert(name), "duplicate handler name: {name}");
+        }
         for phase in ["preTasks", "tasks", "handlers"] {
             validate_tasks(array(play, phase), &handlers)?;
         }
