@@ -77,6 +77,13 @@ fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
             v.as_array().is_some_and(|v| !v.is_empty()),
             "argv requires nonempty list"
         );
+        ensure!(
+            v.as_array()
+                .and_then(|v| v.first())
+                .and_then(Value::as_str)
+                .is_some_and(|program| !program.is_empty()),
+            "command program cannot be empty"
+        );
     }
     Ok(())
 }
