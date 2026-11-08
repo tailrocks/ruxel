@@ -181,7 +181,7 @@ jobs:
           VELNOR_DEFAULT_REF: ${{ format('refs/heads/{0}', github.event.repository.default_branch) }}
           VELNOR_MBX_BUNDLE_TOOLCHAIN: ${{ env.VELNOR_TOOL_RUST }}
           VELNOR_MBX_BUNDLE_VERSION: ${{ env.VELNOR_TOOL_MR_BOXINGTON }}
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; d=\"$RUNNER_TEMP/velnor/cache-keys\"; rm -rf \"$d\"; mkdir -p \"$d\"; s256() { sha256sum \"$1\" > \"$d/sum\"; h=; rest=; read -r h rest < \"$d/sum\" || [ -n \"$h\" ]; case \"$h\" in '\\'''\\''|*[!0-9a-f]*) printf '\\''%s\\n'\\'' '\\''sha256sum returned no digest'\\'' >&2; exit 1 ;; esac; [ \"${#h}\" -eq 64 ] || exit 1; }; uname -s > \"$d/platform\"; uname -m >> \"$d/platform\"; default_ref=\"${VELNOR_DEFAULT_REF:-}\"; trust=none; if [ \"${GITHUB_EVENT_NAME:-}\" = push ] && [ -n \"${default_ref#refs/heads/}\" ] && [ \"${GITHUB_REF:-}\" = \"$default_ref\" ] && [ \"${GITHUB_REF_PROTECTED:-}\" = true ]; then trust=trusted; fi; check_key() { [ \"${#1}\" -le 512 ] || { printf '\\''cache key exceeds 512 bytes: %s\\n'\\'' \"$1\" >&2; exit 1; }; }; printf '\\''%s\\n'\\'' \"family=sources\" \"schema=2\" \"$RUNNER_TEMP/velnor/cargo/registry/index\" \"$RUNNER_TEMP/velnor/cargo/registry/cache\" \"$RUNNER_TEMP/velnor/cargo/git/db\" > \"$d/sources-compat\"; cat \"$d/platform\" >> \"$d/sources-compat\"; printf '\\''%s\\n'\\'' \"$RUNNER_TEMP/velnor/cargo\" >> \"$d/sources-compat\"; s256 \"$d/sources-compat\"; compat=\"s256-$h\"; : > \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \".\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-cache\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-control\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-copy\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-files\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-isolation\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-manifest\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-plan\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-pty\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-restart-rootless\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-runtime\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-xfs\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/control-flow-assertions\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/http-fixture\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"vendor/pklr\" \"$h\" >> \"$d/sources-locks\"; LC_ALL=C sort \"$d/sources-locks\" > \"$d/sources-snapshot\"; s256 \"$d/sources-snapshot\"; snap=\"s256-$h\"; trusted=\"velnor-v2-sources-trusted-$compat-\"; key=\"$trusted$snap\"; check_key \"$key\"; save=false; [ \"$trust\" = none ] || save=true; printf '\\''%s\\n'\\'' \"sources_key=$key\" \"sources_save=$save\" \"sources_snapshot=$snap\" '\\''sources_restore_keys<<VELNOR_CACHE_KEYS_EOF'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' \"$trusted\" '\\''VELNOR_CACHE_KEYS_EOF'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''velnor: cache trust=%s sources key=%s save=%s\\n'\\'' \"$trust\" \"$key\" \"$save\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)schema/Ruxel.pkl'\\'' '\\'':(glob)testdata/workloads/pr66/*.pkl'\\'' '\\'':(glob)testdata/workloads/pr66/assets/template.pkl'\\'' '\\'':(glob)tests/schema/valid.pkl'\\'' '\\'':(glob)vendor/pklr/**'\\'' '\\''Cargo.toml'\\'' '\\''crates/ruxel/ruxel'\\'' '\\''crates/ruxel/ruxel-agent'\\'' '\\''crates/ruxel/ruxel-config'\\'' '\\''crates/ruxel/ruxel-engine'\\'' '\\''crates/ruxel/ruxel-proto'\\'') > \"$d/rust-inputs-0\" 2>/dev/null; then s256 \"$d/rust-inputs-0\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-c69e5ecb6cb78792e74177d502191f9cd74f3443d13a865567c3b93674f17f4b\" \"producer_recipe=s256-04d208a6a36ffe2f41d2ba9358d33812c4389983af045c2d0a27f2a530573878\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_root_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root root'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=.\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_root_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-cache/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-cache'\\'' '\\''tools/acceptance-cache/.cargo'\\'' '\\''tools/acceptance-cache/Cargo.toml'\\'') > \"$d/rust-inputs-1\" 2>/dev/null; then s256 \"$d/rust-inputs-1\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-2561e2648a89b08a556c6e378a9cab8fe7755d19e8d744fe57eb0648ec549e15\" \"producer_recipe=s256-ccf47aa5d683ddf047b9a6741beb3ab4c304c3fcd28830f4cd1a95789537aaf5\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_cache_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-cache'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-cache\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_cache_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-control/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-control'\\'' '\\''tools/acceptance-control/.cargo'\\'' '\\''tools/acceptance-control/Cargo.toml'\\'') > \"$d/rust-inputs-2\" 2>/dev/null; then s256 \"$d/rust-inputs-2\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-f9fd758ea3bb2d36bc6806858dbc839d7ab119d8d4ed177fc2cf58f78416121a\" \"producer_recipe=s256-1d10c900bf90a0e8a8b724d3998eb82cb7b847326f0d76c53c871f16717be69d\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_control_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-control'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-control\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_control_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-copy/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-copy'\\'' '\\''tools/acceptance-copy/.cargo'\\'' '\\''tools/acceptance-copy/Cargo.toml'\\'') > \"$d/rust-inputs-3\" 2>/dev/null; then s256 \"$d/rust-inputs-3\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-814f4cd772ef9d1a183b86e496be3efa914890a24c5adc32a4b1ee4977c8173b\" \"producer_recipe=s256-1edbaaaaf241559d38b3fc4eec83ba02e9c77e839277f9c8bfdef94ea07053b5\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_copy_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-copy'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-copy\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_copy_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-files/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-files'\\'' '\\''tools/acceptance-files/.cargo'\\'' '\\''tools/acceptance-files/Cargo.toml'\\'') > \"$d/rust-inputs-4\" 2>/dev/null; then s256 \"$d/rust-inputs-4\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-b0b4e58742e664cea8ffa27b47881bfc96d1d80f304ef2a768c35894183d4d16\" \"producer_recipe=s256-8b478a65fa3d8825d002ee50252feb7d890fa69f2fd611cd80c9cac898d1d261\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_files_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-files'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-files\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_files_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-isolation/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-isolation'\\'' '\\''tools/acceptance-isolation/.cargo'\\'' '\\''tools/acceptance-isolation/Cargo.toml'\\'') > \"$d/rust-inputs-5\" 2>/dev/null; then s256 \"$d/rust-inputs-5\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-b35b14851c39e857c7f121878c9b62480c5c022a1a395d6181938cd8b21fdfcc\" \"producer_recipe=s256-31f9f30ad5f4c5d2643ad7e7aaa75b834c3e26de762d88e8a047983ffe008487\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_isolation_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-isolation'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-isolation\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_isolation_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-manifest/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-manifest'\\'' '\\''tools/acceptance-manifest/.cargo'\\'' '\\''tools/acceptance-manifest/Cargo.toml'\\'') > \"$d/rust-inputs-6\" 2>/dev/null; then s256 \"$d/rust-inputs-6\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-bdd5274418458f72ae9b2c0acb55846666ca890e185a10eace51b6a7192a4a57\" \"producer_recipe=s256-8e8febb8fa2ad577beb30d3e1d511807e3368e76eda337ca3f2e917e23b98729\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_manifest_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-manifest'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-manifest\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_manifest_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-plan/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-plan'\\'' '\\''tools/acceptance-plan/.cargo'\\'' '\\''tools/acceptance-plan/Cargo.toml'\\'') > \"$d/rust-inputs-7\" 2>/dev/null; then s256 \"$d/rust-inputs-7\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-7c574ccd22cb999d6ffac7f172e3401f1014df761fd3c16920250f1f50c41ede\" \"producer_recipe=s256-bc0ed8dee153ae345b761206beb68d60b8d132c708d7ae47f9a269121ef27d63\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_plan_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-plan'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-plan\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_plan_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-pty/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-pty'\\'' '\\''tools/acceptance-pty/.cargo'\\'' '\\''tools/acceptance-pty/Cargo.toml'\\'') > \"$d/rust-inputs-8\" 2>/dev/null; then s256 \"$d/rust-inputs-8\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-9172b19c81f2540dd9bd745294dd4094cb43b106cb1c65d36a8a2b28ad56428c\" \"producer_recipe=s256-9cf36a021372bb70b8b18d525ed28af4e57f3b5f1dab5b37717f79db079eab03\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_pty_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-pty'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-pty\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_pty_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-restart-rootless/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-restart-rootless'\\'' '\\''tools/acceptance-restart-rootless/.cargo'\\'' '\\''tools/acceptance-restart-rootless/Cargo.toml'\\'') > \"$d/rust-inputs-9\" 2>/dev/null; then s256 \"$d/rust-inputs-9\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-cc8694c21144172d3887e61947dac04589ccc32db0612c20400119e0835e6e12\" \"producer_recipe=s256-0206b70d813dd5b1b593e0c0a870bb8269dc586d312e336743b7377f7b70cdf3\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_restart_rootless_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-restart-rootless'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-restart-rootless\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_restart_rootless_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-runtime/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-runtime'\\'' '\\''tools/acceptance-runtime/.cargo'\\'' '\\''tools/acceptance-runtime/Cargo.toml'\\'') > \"$d/rust-inputs-10\" 2>/dev/null; then s256 \"$d/rust-inputs-10\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-c4df55c20ed13be541c6a53b252e68863ae970ae367529f196cc3b6e9686119b\" \"producer_recipe=s256-70bb11b14d2954701de795684875f90e2194c4c7bef5c1da786cc4783be1611e\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_runtime_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-runtime'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-runtime\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_runtime_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-xfs/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-xfs'\\'' '\\''tools/acceptance-xfs/.cargo'\\'' '\\''tools/acceptance-xfs/Cargo.toml'\\'') > \"$d/rust-inputs-11\" 2>/dev/null; then s256 \"$d/rust-inputs-11\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-0f5b55a9319fc59f5097518835ac3f8e83890189187382b103a0b45689f2d979\" \"producer_recipe=s256-d8101499d348d468d12f7ef3fec951df53903efa6a8dd4dd031d24f71b1135e2\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_xfs_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-xfs'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-xfs\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_xfs_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/control-flow-assertions/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/control-flow-assertions'\\'' '\\''tools/control-flow-assertions/.cargo'\\'' '\\''tools/control-flow-assertions/Cargo.toml'\\'') > \"$d/rust-inputs-12\" 2>/dev/null; then s256 \"$d/rust-inputs-12\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-85e06760146441d66cf37768c5c752e65f33c310f7821743233f38c460f2c7ff\" \"producer_recipe=s256-931e005685d0e70bc8a990c051ad0314c94876d8de3080f4d042163e3063092e\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_control_flow_assertions_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-control-flow-assertions'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/control-flow-assertions\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_control_flow_assertions_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/http-fixture/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/http-fixture'\\'' '\\''tools/http-fixture/.cargo'\\'' '\\''tools/http-fixture/Cargo.toml'\\'') > \"$d/rust-inputs-13\" 2>/dev/null; then s256 \"$d/rust-inputs-13\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-993c910cf6120ce1c79ef1aeab5afb516fd800bd6964e5287b3d0d80d6dc4583\" \"producer_recipe=s256-c3e47669928d95341f30bcc029be01832c9a386836757a5859d290fc6db3d9d7\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_http_fixture_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-http-fixture'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/http-fixture\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_http_fixture_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)vendor/pklr/rust-toolchain*'\\'' '\\'':(glob)vendor/rust-toolchain*'\\'' '\\''vendor/.cargo'\\'' '\\''vendor/pklr'\\'' '\\''vendor/pklr/.cargo'\\'' '\\''vendor/pklr/Cargo.toml'\\'') > \"$d/rust-inputs-14\" 2>/dev/null; then s256 \"$d/rust-inputs-14\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-2072b03805ee9571d017852533f262191e1143c4225ddd744c81f611e97f81c9\" \"producer_recipe=s256-9fb079fc43431a8446893608cefe9556b6b88a5aea917fbef0147193841d1d15\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_vendor_pklr_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root vendor-pklr'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=vendor/pklr\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_vendor_pklr_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' \"trust=$trust\" >> \"$GITHUB_OUTPUT\"'"
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; d=\"$RUNNER_TEMP/velnor/cache-keys\"; rm -rf \"$d\"; mkdir -p \"$d\"; s256() { sha256sum \"$1\" > \"$d/sum\"; h=; rest=; read -r h rest < \"$d/sum\" || [ -n \"$h\" ]; case \"$h\" in '\\'''\\''|*[!0-9a-f]*) printf '\\''%s\\n'\\'' '\\''sha256sum returned no digest'\\'' >&2; exit 1 ;; esac; [ \"${#h}\" -eq 64 ] || exit 1; }; uname -s > \"$d/platform\"; uname -m >> \"$d/platform\"; default_ref=\"${VELNOR_DEFAULT_REF:-}\"; trust=none; if [ \"${GITHUB_EVENT_NAME:-}\" = push ] && [ -n \"${default_ref#refs/heads/}\" ] && [ \"${GITHUB_REF:-}\" = \"$default_ref\" ] && [ \"${GITHUB_REF_PROTECTED:-}\" = true ]; then trust=trusted; fi; check_key() { [ \"${#1}\" -le 512 ] || { printf '\\''cache key exceeds 512 bytes: %s\\n'\\'' \"$1\" >&2; exit 1; }; }; printf '\\''%s\\n'\\'' \"family=sources\" \"schema=2\" \"$RUNNER_TEMP/velnor/cargo/registry/index\" \"$RUNNER_TEMP/velnor/cargo/registry/cache\" \"$RUNNER_TEMP/velnor/cargo/git/db\" > \"$d/sources-compat\"; cat \"$d/platform\" >> \"$d/sources-compat\"; printf '\\''%s\\n'\\'' \"$RUNNER_TEMP/velnor/cargo\" >> \"$d/sources-compat\"; s256 \"$d/sources-compat\"; compat=\"s256-$h\"; : > \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \".\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-cache\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-control\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-copy\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-files\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-isolation\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-manifest\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-plan\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-pty\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-restart-rootless\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-runtime\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/acceptance-xfs\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/control-flow-assertions\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"tools/http-fixture\" \"$h\" >> \"$d/sources-locks\"; s256 \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\"; printf '\\''%s\\t%s\\n'\\'' \"vendor/pklr\" \"$h\" >> \"$d/sources-locks\"; LC_ALL=C sort \"$d/sources-locks\" > \"$d/sources-snapshot\"; s256 \"$d/sources-snapshot\"; snap=\"s256-$h\"; trusted=\"velnor-v2-sources-trusted-$compat-\"; key=\"$trusted$snap\"; check_key \"$key\"; save=false; [ \"$trust\" = none ] || save=true; printf '\\''%s\\n'\\'' \"sources_key=$key\" \"sources_save=$save\" \"sources_snapshot=$snap\" '\\''sources_restore_keys<<VELNOR_CACHE_KEYS_EOF'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' \"$trusted\" '\\''VELNOR_CACHE_KEYS_EOF'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''velnor: cache trust=%s sources key=%s save=%s\\n'\\'' \"$trust\" \"$key\" \"$save\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)schema/Ruxel.pkl'\\'' '\\'':(glob)testdata/workloads/pr66/*.pkl'\\'' '\\'':(glob)testdata/workloads/pr66/assets/template.pkl'\\'' '\\'':(glob)tests/schema/valid.pkl'\\'' '\\'':(glob)vendor/pklr/**'\\'' '\\''Cargo.toml'\\'' '\\''crates/ruxel/ruxel'\\'' '\\''crates/ruxel/ruxel-agent'\\'' '\\''crates/ruxel/ruxel-config'\\'' '\\''crates/ruxel/ruxel-engine'\\'' '\\''crates/ruxel/ruxel-guard'\\'' '\\''crates/ruxel/ruxel-proto'\\'') > \"$d/rust-inputs-0\" 2>/dev/null; then s256 \"$d/rust-inputs-0\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-e91c9cf78934a084c95f267233dfe7574811538491536a8d2bc5b0e2c36523bc\" \"producer_recipe=s256-592b4463083eafdccb8017748db623b7eb0ce6bdf78dab2350e25f0177d4211b\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_root_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root root'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=.\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_root_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-cache/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-cache/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-cache'\\'' '\\''tools/acceptance-cache/.cargo'\\'' '\\''tools/acceptance-cache/Cargo.toml'\\'') > \"$d/rust-inputs-1\" 2>/dev/null; then s256 \"$d/rust-inputs-1\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-2561e2648a89b08a556c6e378a9cab8fe7755d19e8d744fe57eb0648ec549e15\" \"producer_recipe=s256-ccf47aa5d683ddf047b9a6741beb3ab4c304c3fcd28830f4cd1a95789537aaf5\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_cache_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-cache'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-cache\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_cache_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-control/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-control/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-control'\\'' '\\''tools/acceptance-control/.cargo'\\'' '\\''tools/acceptance-control/Cargo.toml'\\'') > \"$d/rust-inputs-2\" 2>/dev/null; then s256 \"$d/rust-inputs-2\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-f9fd758ea3bb2d36bc6806858dbc839d7ab119d8d4ed177fc2cf58f78416121a\" \"producer_recipe=s256-1d10c900bf90a0e8a8b724d3998eb82cb7b847326f0d76c53c871f16717be69d\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_control_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-control'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-control\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_control_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-copy/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-copy/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-copy'\\'' '\\''tools/acceptance-copy/.cargo'\\'' '\\''tools/acceptance-copy/Cargo.toml'\\'') > \"$d/rust-inputs-3\" 2>/dev/null; then s256 \"$d/rust-inputs-3\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-814f4cd772ef9d1a183b86e496be3efa914890a24c5adc32a4b1ee4977c8173b\" \"producer_recipe=s256-1edbaaaaf241559d38b3fc4eec83ba02e9c77e839277f9c8bfdef94ea07053b5\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_copy_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-copy'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-copy\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_copy_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-files/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-files/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-files'\\'' '\\''tools/acceptance-files/.cargo'\\'' '\\''tools/acceptance-files/Cargo.toml'\\'') > \"$d/rust-inputs-4\" 2>/dev/null; then s256 \"$d/rust-inputs-4\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-b0b4e58742e664cea8ffa27b47881bfc96d1d80f304ef2a768c35894183d4d16\" \"producer_recipe=s256-8b478a65fa3d8825d002ee50252feb7d890fa69f2fd611cd80c9cac898d1d261\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_files_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-files'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-files\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_files_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-isolation/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-isolation/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-isolation'\\'' '\\''tools/acceptance-isolation/.cargo'\\'' '\\''tools/acceptance-isolation/Cargo.toml'\\'') > \"$d/rust-inputs-5\" 2>/dev/null; then s256 \"$d/rust-inputs-5\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-b35b14851c39e857c7f121878c9b62480c5c022a1a395d6181938cd8b21fdfcc\" \"producer_recipe=s256-31f9f30ad5f4c5d2643ad7e7aaa75b834c3e26de762d88e8a047983ffe008487\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_isolation_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-isolation'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-isolation\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_isolation_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-manifest/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-manifest/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-manifest'\\'' '\\''tools/acceptance-manifest/.cargo'\\'' '\\''tools/acceptance-manifest/Cargo.toml'\\'') > \"$d/rust-inputs-6\" 2>/dev/null; then s256 \"$d/rust-inputs-6\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-bdd5274418458f72ae9b2c0acb55846666ca890e185a10eace51b6a7192a4a57\" \"producer_recipe=s256-8e8febb8fa2ad577beb30d3e1d511807e3368e76eda337ca3f2e917e23b98729\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_manifest_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-manifest'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-manifest\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_manifest_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-plan/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-plan/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-plan'\\'' '\\''tools/acceptance-plan/.cargo'\\'' '\\''tools/acceptance-plan/Cargo.toml'\\'') > \"$d/rust-inputs-7\" 2>/dev/null; then s256 \"$d/rust-inputs-7\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-7c574ccd22cb999d6ffac7f172e3401f1014df761fd3c16920250f1f50c41ede\" \"producer_recipe=s256-bc0ed8dee153ae345b761206beb68d60b8d132c708d7ae47f9a269121ef27d63\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_plan_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-plan'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-plan\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_plan_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-pty/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-pty/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-pty'\\'' '\\''tools/acceptance-pty/.cargo'\\'' '\\''tools/acceptance-pty/Cargo.toml'\\'') > \"$d/rust-inputs-8\" 2>/dev/null; then s256 \"$d/rust-inputs-8\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-9172b19c81f2540dd9bd745294dd4094cb43b106cb1c65d36a8a2b28ad56428c\" \"producer_recipe=s256-9cf36a021372bb70b8b18d525ed28af4e57f3b5f1dab5b37717f79db079eab03\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_pty_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-pty'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-pty\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_pty_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-restart-rootless/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-restart-rootless/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-restart-rootless'\\'' '\\''tools/acceptance-restart-rootless/.cargo'\\'' '\\''tools/acceptance-restart-rootless/Cargo.toml'\\'') > \"$d/rust-inputs-9\" 2>/dev/null; then s256 \"$d/rust-inputs-9\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-cc8694c21144172d3887e61947dac04589ccc32db0612c20400119e0835e6e12\" \"producer_recipe=s256-0206b70d813dd5b1b593e0c0a870bb8269dc586d312e336743b7377f7b70cdf3\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_restart_rootless_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-restart-rootless'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-restart-rootless\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_restart_rootless_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-runtime/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-runtime/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-runtime'\\'' '\\''tools/acceptance-runtime/.cargo'\\'' '\\''tools/acceptance-runtime/Cargo.toml'\\'') > \"$d/rust-inputs-10\" 2>/dev/null; then s256 \"$d/rust-inputs-10\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-c4df55c20ed13be541c6a53b252e68863ae970ae367529f196cc3b6e9686119b\" \"producer_recipe=s256-70bb11b14d2954701de795684875f90e2194c4c7bef5c1da786cc4783be1611e\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_runtime_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-runtime'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-runtime\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_runtime_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/acceptance-xfs/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl'\\'' '\\'':(glob)crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/acceptance-xfs/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/acceptance-xfs'\\'' '\\''tools/acceptance-xfs/.cargo'\\'' '\\''tools/acceptance-xfs/Cargo.toml'\\'') > \"$d/rust-inputs-11\" 2>/dev/null; then s256 \"$d/rust-inputs-11\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-0f5b55a9319fc59f5097518835ac3f8e83890189187382b103a0b45689f2d979\" \"producer_recipe=s256-d8101499d348d468d12f7ef3fec951df53903efa6a8dd4dd031d24f71b1135e2\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_xfs_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-acceptance-xfs'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/acceptance-xfs\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_acceptance_xfs_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/control-flow-assertions/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/control-flow-assertions/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/control-flow-assertions'\\'' '\\''tools/control-flow-assertions/.cargo'\\'' '\\''tools/control-flow-assertions/Cargo.toml'\\'') > \"$d/rust-inputs-12\" 2>/dev/null; then s256 \"$d/rust-inputs-12\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-85e06760146441d66cf37768c5c752e65f33c310f7821743233f38c460f2c7ff\" \"producer_recipe=s256-931e005685d0e70bc8a990c051ad0314c94876d8de3080f4d042163e3063092e\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_control_flow_assertions_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-control-flow-assertions'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/control-flow-assertions\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_control_flow_assertions_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/tools/http-fixture/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)tools/http-fixture/rust-toolchain*'\\'' '\\'':(glob)tools/rust-toolchain*'\\'' '\\''tools/.cargo'\\'' '\\''tools/http-fixture'\\'' '\\''tools/http-fixture/.cargo'\\'' '\\''tools/http-fixture/Cargo.toml'\\'') > \"$d/rust-inputs-13\" 2>/dev/null; then s256 \"$d/rust-inputs-13\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-993c910cf6120ce1c79ef1aeab5afb516fd800bd6964e5287b3d0d80d6dc4583\" \"producer_recipe=s256-c3e47669928d95341f30bcc029be01832c9a386836757a5859d290fc6db3d9d7\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_tools_http_fixture_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root tools-http-fixture'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=tools/http-fixture\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_tools_http_fixture_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; lock_h=; if [ -f \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\" ] && [ ! -L \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\" ]; then s256 \"$GITHUB_WORKSPACE/vendor/pklr/Cargo.lock\"; lock_h=\"s256-$h\"; fi; if [ -z \"$lock_h\" ]; then printf '\\''%s\\n'\\'' absent > \"$d/absent\"; s256 \"$d/absent\"; lock_h=\"s256-$h\"; fi; if (cd \"$GITHUB_WORKSPACE\" && git ls-files -s -- '\\''.cargo'\\'' '\\'':(glob)rust-toolchain*'\\'' '\\'':(glob)vendor/pklr/rust-toolchain*'\\'' '\\'':(glob)vendor/rust-toolchain*'\\'' '\\''vendor/.cargo'\\'' '\\''vendor/pklr'\\'' '\\''vendor/pklr/.cargo'\\'' '\\''vendor/pklr/Cargo.toml'\\'') > \"$d/rust-inputs-14\" 2>/dev/null; then s256 \"$d/rust-inputs-14\"; ri_h=\"s256-$h\"; printf '\\''%s\\n'\\'' \"lock=$lock_h\" \"rust_inputs=$ri_h\" \"task_set=s256-2072b03805ee9571d017852533f262191e1143c4225ddd744c81f611e97f81c9\" \"producer_recipe=s256-9fb079fc43431a8446893608cefe9556b6b88a5aea917fbef0147193841d1d15\" > \"$d/snapshot\"; s256 \"$d/snapshot\"; snap=\"s256-$h\"; printf '\\''%s\\n'\\'' \"state_vendor_pklr_snapshot=$snap\" >> \"$GITHUB_OUTPUT\"; else printf '\\''%s\\n'\\'' '\\''::warning::state snapshot unavailable for root vendor-pklr'\\''; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=vendor/pklr\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; printf '\\''%s\\n'\\'' \"state_vendor_pklr_compat=s256-$h\" >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' \"trust=$trust\" >> \"$GITHUB_OUTPUT\"'"
       - name: Select attested state
         id: state-select
         env:
@@ -618,6 +618,28 @@ jobs:
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-7e6a50bdddb74c92bf0f9385eb8972dfbd839ed83738bad7bf5db33b774902b7"}
+      - name: Clippy
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-5000acb2e2edf19dd7efca47dbd1616e3b4b96ed65dd31d374c02a9eb989604f"}
+      - name: Doctests
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-95ba59d87dadcb63ea43aba9ffb7c2000f5967882abc19c85efe6de37702a41b"}
+      - name: Documentation
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-fc33b2501ca2c6803d0a9c68b32b8f87b89c087c516d83bd49789a4ee596b6b4"}
+      - name: Wait for parallel checks
+        wait-all:
+      - &s44
+        name: Build test executables
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
         with: {"digest": "b3-97f016940e9d31e74bec1376e82b744ec4d2644a1fcf1603ba420d3f7b05e6e2"}
       - name: Clippy
         background: true
@@ -636,7 +658,7 @@ jobs:
         with: {"digest": "b3-2c23c62eb66724e75ee81052b75dceec45fa113f03364ea8b72ee03c980e7340"}
       - name: Wait for parallel checks
         wait-all:
-      - &s44
+      - &s45
         name: Restore workspace sources
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; [ -n \"${MBX_CACHE_DIR-}\" ] && [ \"$MBX_CACHE_DIR\" = \"$RUNNER_TEMP/velnor/mbx\" ] || { printf '\\''%s\\n'\\'' '\\''MBX_CACHE_DIR is not the store path'\\'' >&2; exit 1; }; d=\"$RUNNER_TEMP/velnor/state-skeleton\"; ws=\"${GITHUB_WORKSPACE%/}\"; reports=\"$RUNNER_TEMP/velnor/r${GITHUB_RUN_ID:?}-a${VELNOR_RUN_KEY_ATTEMPT:?}\"; [ -s \"$d/stubbed\" ] || { printf '\\''%s\\n'\\'' '\\''state skeleton record is missing'\\'' >&2; exit 1; }; [ -d \"$d/task-manifests\" ] || { printf '\\''%s\\n'\\'' '\\''state skeleton manifest record is missing'\\'' >&2; exit 1; }; [ -s \"$d/metadata.json\" ] || { printf '\\''%s\\n'\\'' '\\''state skeleton metadata record is missing'\\'' >&2; exit 1; }; jq -r '\\''.target_directory'\\'' \"$d/metadata.json\" > \"$d/target\"; tdir=; read -r tdir < \"$d/target\"; [ -d \"$tdir\" ] || { printf '\\''state skeleton target directory is missing: %s\\n'\\'' \"$tdir\" >&2; exit 1; }; jq -r '\\''[.packages[].targets[] | select(.kind | index(\"custom-build\") | not) | .name | gsub(\"-\"; \"_\")] | unique[]'\\'' \"$d/metadata.json\" > \"$d/member-crates\"; jq -r '\\''.packages[] | select(any(.targets[]; .kind | index(\"custom-build\"))) | .name'\\'' \"$d/metadata.json\" > \"$d/member-builds\"; cd \"$ws\"; while IFS= read -r rel; do git checkout -- \"$rel\"; done < \"$d/stubbed\"; git diff --quiet || { printf '\\''%s\\n'\\'' '\\''workspace sources differ after the skeleton phase'\\'' >&2; exit 1; }; rm -rf \"$MBX_CACHE_DIR/actions/task-manifests\"; mkdir -p \"$MBX_CACHE_DIR/actions/task-manifests\"; cp -R \"$d/task-manifests/.\" \"$MBX_CACHE_DIR/actions/task-manifests\"; rm -rf \"$MBX_CACHE_DIR/incremental\"; find \"$tdir\" -type d \\( -name deps -o -name build \\) -prune -print > \"$d/output-dirs\"; while IFS= read -r out; do case \"${out##*/}\" in deps) while IFS= read -r crate; do rm -rf \"$out/$crate\"-???????????????? \"$out/$crate\"-????????????????.*; for ext in rlib rmeta so dylib dll a; do rm -rf \"$out/lib$crate\"-????????????????.\"$ext\"; done; done < \"$d/member-crates\" ;; build) while IFS= read -r pkg; do rm -rf \"$out/$pkg\"-????????????????; done < \"$d/member-builds\" ;; esac; done < \"$d/output-dirs\"; rm -rf \"$reports\"/m-*; printf '\\''%s\\n'\\'' '\\''MBX_BUILD_SCRIPT_EXECUTION=0'\\'' >> \"$GITHUB_ENV\"; wc -l < \"$d/stubbed\" > \"$d/count\"; count=; read -r count < \"$d/count\"; printf '\\''velnor: state skeleton restored files=%s\\n'\\'' \"$count\"'"
@@ -712,6 +734,24 @@ jobs:
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-5000acb2e2edf19dd7efca47dbd1616e3b4b96ed65dd31d374c02a9eb989604f"}
+      - name: Doctests
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-95ba59d87dadcb63ea43aba9ffb7c2000f5967882abc19c85efe6de37702a41b"}
+      - name: Documentation
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-fc33b2501ca2c6803d0a9c68b32b8f87b89c087c516d83bd49789a4ee596b6b4"}
+      - name: Wait for parallel checks
+        wait-all:
+      - *s44
+      - name: Clippy
+        background: true
+        if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
         with: {"digest": "b3-4ff407833c63fca64151369a1244120743c62635a054c1459302157eaab6b265"}
       - name: Doctests
         background: true
@@ -730,13 +770,13 @@ jobs:
         continue-on-error: true
         env:
           VELNOR_MBX_STATS_JOB: state-producer-root
-          VELNOR_MBX_STATS_WORKSPACE: build_script_build check_deny_inputs cli eval frame ledger_key protocol provider_dispatch render ruxel ruxel_agent ruxel_config ruxel_engine ruxel_proto schema source_content transport
+          VELNOR_MBX_STATS_WORKSPACE: admit build_script_build check_deny_inputs cli eval frame ledger_key protocol provider_dispatch render ruxel ruxel_agent ruxel_config ruxel_engine ruxel_guard ruxel_proto schema source_content transport
         run: &r30 "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; job=\"${VELNOR_MBX_STATS_JOB-}\"; members=\"${VELNOR_MBX_STATS_WORKSPACE-}\"; out=\"${RUNNER_TEMP:?}/velnor-mbx-stats.line\"; set -- \"${MBX_CACHE_DIR-}\"/actions/sessions/v1/*.jsonl; if [ -z \"${MBX_CACHE_DIR-}\" ] || [ ! -f \"$1\" ]; then printf '\\''mbx-stats job=%s sessions=0\\n'\\'' \"$job\" > \"$out\"; else jq -r -n -R --arg job \"$job\" --arg members \"$members\" '\\''[inputs | fromjson? | select(type == \"object\" and .type == \"action\")] as $a | ($members | split(\" \") | map(select(length > 0) | {key: ., value: true}) | from_entries) as $m | def benign: .outcome.kind == \"bypass\" and (.outcome.reason == \"compiler-query\" or .outcome.reason == \"standard-input\"); def n($c; $k): [$a[] | select((benign | not) and .outcome.kind == $k and ((if $m[.crate_name // \"\"] then \"workspace\" else \"registry\" end) == $c))] | length; def group($c): \"\\($c) hit=\\(n($c; \"hit\")) miss=\\(n($c; \"miss\")) not_looked_up=\\(n($c; \"unconsulted\")) bypassed=\\(n($c; \"bypass\"))\"; def named: (.crate_name // \"unnamed\") | gsub(\" \"; \"_\"); def class: if $m[.crate_name // \"\"] then \"workspace\" else \"registry\" end; def outcome: if .outcome.kind == \"unconsulted\" then \"not_looked_up\" else .outcome.kind end; def bounded: unique | if length == 0 then \"none\" elif length > 40 then (.[:40] + [\"+\\(length - 40)\"]) | join(\",\") else join(\",\") end; [$a[] | select(benign | not)] as $c | \"mbx-stats job=\\($job) \\(group(\"registry\")) \\(group(\"workspace\")) bypassed_benign=\\([$a[] | select(benign)] | length) nonhit=\\([$c[] | select(.outcome.kind != \"hit\") | \"\\(class):\\(outcome):\\(named)\"] | bounded) bypass=\\([$c[] | select(.outcome.kind == \"bypass\") | \"\\(.outcome.reason // \"unrecorded\"):\\(named)\"] | bounded)\"'\\'' \"$@\" > \"$out\"; fi; read -r line < \"$out\"; printf '\\''%s\\n'\\'' \"$line\"; if [ -n \"${GITHUB_STEP_SUMMARY-}\" ]; then printf '\\''%s\\n'\\'' \"$line\" >> \"$GITHUB_STEP_SUMMARY\"; fi'"
-      - &s45
+      - &s46
         name: Record state producer success
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; mkdir -p \"$RUNNER_TEMP/velnor\"; : > \"$RUNNER_TEMP/velnor/state-producer-ok\"'"
-      - &s46
+      - &s47
         name: Publish state snapshot
         id: mbx-bundle-export
         if: steps.mbx-bundle-key.outputs.save == 'true' && steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -751,7 +791,7 @@ jobs:
           name: velnor-state-root-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - &s47
+      - &s48
         name: Record state produced
         id: state-produced
         if: steps.mbx-bundle-export.outputs.exported == 'true' && steps.state-seal-upload.outcome == 'success'
@@ -820,7 +860,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-cache
         run: *r28
-      - &s48
+      - &s49
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -837,8 +877,8 @@ jobs:
         with: {"digest": "b3-f8dd93aa3a84ef2c2ba510665d262ba672bfe5e956ffa6dec224003e7607ea49"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s48
+      - *s45
+      - *s49
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -858,8 +898,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-cache
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_cache
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -869,7 +909,7 @@ jobs:
           name: velnor-state-tools-acceptance-cache-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -934,7 +974,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-control
         run: *r28
-      - &s49
+      - &s50
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -951,8 +991,8 @@ jobs:
         with: {"digest": "b3-5e6c8613fed48f6ce9ebb6e2d039064a9bd377e23b09f39548daf18a0c364030"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s49
+      - *s45
+      - *s50
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -972,8 +1012,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-control
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_control
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -983,7 +1023,7 @@ jobs:
           name: velnor-state-tools-acceptance-control-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1048,7 +1088,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-copy
         run: *r28
-      - &s50
+      - &s51
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1065,8 +1105,8 @@ jobs:
         with: {"digest": "b3-b2a81790170bdbda122b4cbbb56ed900b67b141e5b7ab86e37d73b8ca4163440"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s50
+      - *s45
+      - *s51
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1086,8 +1126,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-copy
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_copy
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1097,7 +1137,7 @@ jobs:
           name: velnor-state-tools-acceptance-copy-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1162,7 +1202,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-files
         run: *r28
-      - &s51
+      - &s52
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1179,8 +1219,8 @@ jobs:
         with: {"digest": "b3-84bec2ac9d280ea6ba0e85486b6f9fc760a1028d2d3cf83e87a318984331a08e"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s51
+      - *s45
+      - *s52
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1200,8 +1240,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-files
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_files
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1211,7 +1251,7 @@ jobs:
           name: velnor-state-tools-acceptance-files-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1276,7 +1316,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-isolation
         run: *r28
-      - &s52
+      - &s53
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1293,8 +1333,8 @@ jobs:
         with: {"digest": "b3-594ab9336b3b00d46c5cf77a836c224f5d68e892f6dd9073ea7b82799bf928c6"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s52
+      - *s45
+      - *s53
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1314,8 +1354,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-isolation
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_isolation
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1325,7 +1365,7 @@ jobs:
           name: velnor-state-tools-acceptance-isolation-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1390,7 +1430,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-manifest
         run: *r28
-      - &s53
+      - &s54
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1407,8 +1447,8 @@ jobs:
         with: {"digest": "b3-f4db4cffdfd45052c7552b099ca7510c0ce16148415e3aa34fae9ea17f64b88a"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s53
+      - *s45
+      - *s54
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1428,8 +1468,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-manifest
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_manifest unsupported
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1439,7 +1479,7 @@ jobs:
           name: velnor-state-tools-acceptance-manifest-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1504,7 +1544,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-plan
         run: *r28
-      - &s54
+      - &s55
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1521,8 +1561,8 @@ jobs:
         with: {"digest": "b3-c2a6277654c897849ac0e940a635bfe09df067b07a3a0f907b90d191dd04c2e2"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s54
+      - *s45
+      - *s55
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1542,8 +1582,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-plan
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_plan
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1553,7 +1593,7 @@ jobs:
           name: velnor-state-tools-acceptance-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1618,7 +1658,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-pty
         run: *r28
-      - &s55
+      - &s56
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1640,8 +1680,8 @@ jobs:
         with: {"digest": "b3-81687e909f0cad2e532cf013aa3746c53863eea3e967e3682e350bee1742f265"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s55
+      - *s45
+      - *s56
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1666,8 +1706,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-pty
           VELNOR_MBX_STATS_WORKSPACE: orphan_output partial_output ruxel_acceptance_pty terminal_anchor
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1677,7 +1717,7 @@ jobs:
           name: velnor-state-tools-acceptance-pty-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1742,7 +1782,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-restart-rootless
         run: *r28
-      - &s56
+      - &s57
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1759,8 +1799,8 @@ jobs:
         with: {"digest": "b3-cc2ed3dbb163a1c07915114ab056657decd3e5c2f47279df5dc29bb69cefa4e4"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s56
+      - *s45
+      - *s57
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1780,8 +1820,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-restart-rootless
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_restart_rootless
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1791,7 +1831,7 @@ jobs:
           name: velnor-state-tools-acceptance-restart-rootless-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1856,7 +1896,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-runtime
         run: *r28
-      - &s57
+      - &s58
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1873,8 +1913,8 @@ jobs:
         with: {"digest": "b3-2d9f2a84b31307bac51346e64ba18348f9edb0bcd3be3b47c3c89bb396be8706"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s57
+      - *s45
+      - *s58
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -1894,8 +1934,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-runtime
           VELNOR_MBX_STATS_WORKSPACE: proxy_entry ruxel_acceptance_runtime
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -1905,7 +1945,7 @@ jobs:
           name: velnor-state-tools-acceptance-runtime-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -1970,7 +2010,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/acceptance-xfs
         run: *r28
-      - &s58
+      - &s59
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1992,8 +2032,8 @@ jobs:
         with: {"digest": "b3-0e14120f7575c59bc645135b9cefc08d572ffb74b7501eacdaafcb64eb8d181f"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s58
+      - *s45
+      - *s59
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -2018,8 +2058,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-acceptance-xfs
           VELNOR_MBX_STATS_WORKSPACE: ruxel_acceptance_xfs
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -2029,7 +2069,7 @@ jobs:
           name: velnor-state-tools-acceptance-xfs-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -2094,7 +2134,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/control-flow-assertions
         run: *r28
-      - &s59
+      - &s60
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -2116,8 +2156,8 @@ jobs:
         with: {"digest": "b3-2151f1e2f9534b42856616b807fba47548f4625dd7d7e6afe269c9bff901efa7"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s59
+      - *s45
+      - *s60
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -2142,8 +2182,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-control-flow-assertions
           VELNOR_MBX_STATS_WORKSPACE: ruxel_control_flow_assertions
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -2153,7 +2193,7 @@ jobs:
           name: velnor-state-tools-control-flow-assertions-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -2218,7 +2258,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: tools/http-fixture
         run: *r28
-      - &s60
+      - &s61
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -2240,8 +2280,8 @@ jobs:
         with: {"digest": "b3-1661a3322e67f7843ca0143ddc50c08b4256cae3bef93668f617a689341c1806"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s60
+      - *s45
+      - *s61
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -2266,8 +2306,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-tools-http-fixture
           VELNOR_MBX_STATS_WORKSPACE: binary deadline http ruxel_http_fixture
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -2277,7 +2317,7 @@ jobs:
           name: velnor-state-tools-http-fixture-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -2342,7 +2382,7 @@ jobs:
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           VELNOR_MBX_BUNDLE_ROOT: vendor/pklr
         run: *r28
-      - &s61
+      - &s62
         name: Build test executables
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -2364,8 +2404,8 @@ jobs:
         with: {"digest": "b3-d6e582e8e3acc2d7ba739e75d41d47b229d74fe7eaea988e749b894d1bce0329"}
       - name: Wait for parallel checks
         wait-all:
-      - *s44
-      - *s61
+      - *s45
+      - *s62
       - name: Clippy
         background: true
         if: steps.mbx-bundle-import.outputs.producer_skip != 'true'
@@ -2390,8 +2430,8 @@ jobs:
           VELNOR_MBX_STATS_JOB: state-producer-vendor-pklr
           VELNOR_MBX_STATS_WORKSPACE: pkl_features pklr
         run: *r30
-      - *s45
       - *s46
+      - *s47
       - name: Upload state payload
         id: state-seal-upload
         if: steps.mbx-bundle-export.outputs.exported == 'true'
@@ -2401,7 +2441,7 @@ jobs:
           name: velnor-state-vendor-pklr-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
           retention-days: "1"
-      - *s47
+      - *s48
       - name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
         env: *m15
@@ -2441,7 +2481,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-root-${{needs.plan.outputs.state_root_compat}}-${{needs.plan.outputs.state_root_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-root-
         run: &r34 "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; payload=\"$RUNNER_TEMP/velnor-gc1/transport/state/payload.tar.zst\"; d=\"$RUNNER_TEMP/velnor/state-seal\"; rm -rf \"$d\"; mkdir -p \"$d\"; refuse() { printf '\\''%s\\n'\\'' \"::warning::cache_unavailable: state seal refused ($1)\"; printf '\\''%s\\n'\\'' '\\''sealed=false'\\'' >> \"$GITHUB_OUTPUT\"; exit 0; }; s256() { sha256sum \"$1\" > \"$d/sum\" || return 1; h=; rest=; read -r h rest < \"$d/sum\" || [ -n \"$h\" ]; case \"$h\" in '\\'''\\''|*[!0-9a-f]*) return 1 ;; esac; [ \"${#h}\" -eq 64 ] || return 1; }; prefix=\"${VELNOR_STATE_SEAL_PREFIX-}\"; scope=\"${VELNOR_STATE_SEAL_SCOPE-}\"; [ -n \"$prefix\" ] && [ -n \"$scope\" ] || refuse prefix_missing; case \"$prefix\" in \"$scope\"?*) ;; *) refuse prefix_scope ;; esac; printf '\\''%s\\n'\\'' \"${prefix#\"$scope\"}\" | grep -Eq '\\''^s256-[0-9a-f]{64}-s256-[0-9a-f]{64}-$'\\'' || refuse prefix_shape; if [ -L \"$payload\" ] || [ ! -f \"$payload\" ]; then refuse payload_not_regular; fi; size=; wc -c < \"$payload\" > \"$d/size\" || refuse size_unreadable; read -r size < \"$d/size\" || :; case \"$size\" in '\\'''\\''|*[!0-9]*) refuse size_unreadable ;; esac; if [ \"$size\" -eq 0 ]; then refuse payload_empty; fi; if [ \"$size\" -gt 1610612736 ]; then refuse \"over_stored stored=$size ceiling=1610612736\"; fi; s256 \"$payload\" || refuse digest_unreadable; key=\"${prefix}s256-$h\"; [ \"${#key}\" -le 512 ] || refuse key_too_long; printf '\\''%s\\n'\\'' '\\''sealed=true'\\'' \"key=$key\" >> \"$GITHUB_OUTPUT\"; printf '\\''velnor: state seal subject %s\\n'\\'' \"$key\"'"
-      - &s62
+      - &s63
         name: Check state tip
         id: state-seal-tip
         if: steps.state-seal-subject.outputs.sealed == 'true'
@@ -2456,7 +2496,7 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: &r36 "sh -c 'set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; payload=\"$RUNNER_TEMP/velnor-gc1/transport/state/payload.tar.zst\"; d=\"$RUNNER_TEMP/velnor/state-admit\"; rm -rf \"$d\"; mkdir -p \"$d\"; number() { case \"$1\" in '\\'''\\''|*[!0-9]*) return 1 ;; esac; }; bound_of() { awk -v n=\"$1\" '\\''BEGIN { b = int((n + 512 - 1) / 512) * 512; f = b + 6656; t = int((f + 10240 - 1) / 10240) * 10240; m = 0; if (t < 131072) m = int((131072 - t) / 2048); printf \"%.0f\\n\", t + int(t / 256) + m }'\\'' > \"$d/bound\" || return 1; bound=; read -r bound < \"$d/bound\" || return 1; number \"$bound\"; }; size=; if [ -L \"$payload\" ] || [ ! -f \"$payload\" ]; then size=; else wc -c < \"$payload\" > \"$d/size\" && read -r size < \"$d/size\" || size=; fi; settle() { printf '\\''%s\\n'\\'' \"velnor: state save skipped ($1)\"; printf '\\''%s\\n'\\'' '\\''admitted=false'\\'' >> \"$GITHUB_OUTPUT\"; exit 0; }; refuse() { printf '\\''%s\\n'\\'' \"::warning::cache_unavailable: state save refused ($1)\"; printf '\\''%s\\n'\\'' '\\''admitted=false'\\'' >> \"$GITHUB_OUTPUT\"; exit 0; }; number \"$size\" && [ \"$size\" -gt 0 ] || refuse payload_unreadable; bound_of \"$size\" || refuse bound_unavailable; key=\"${VELNOR_STATE_SEAL_KEY-}\"; ref=\"${GITHUB_REF-}\"; repo=\"${GITHUB_REPOSITORY-}\"; [ -n \"$key\" ] && [ -n \"$ref\" ] && [ -n \"$repo\" ] || refuse identity_missing; case \"$key\" in *[[:space:]]*) refuse key_whitespace ;; esac; gh cache list -R \"$repo\" --key \"$key\" --ref \"$ref\" --limit 100 --json key,id,sizeInBytes --jq '\\''.[] | [.key, (.id | tostring), (.sizeInBytes | tostring)] | @tsv'\\'' > \"$d/existing\" 2> /dev/null || refuse existing_unlistable; signer=\"$repo/.github/workflows/state-seal.yml\"; while IFS='\\''\t'\\'' read -r k i s; do [ \"$k\" = \"$key\" ] || continue; number \"$i\" && number \"$s\" || refuse key_exists_malformed; printf '\\''%s %s %s\\n'\\'' \"$k\" \"$i\" \"$s\" > \"$d/subject\"; if gh attestation verify \"$d/subject\" -R \"$repo\" --signer-workflow \"$signer\" --source-ref \"$ref\" --predicate-type '\\''https://velnor.dev/attestation/state-seal/v1'\\'' > /dev/null 2>&1; then settle already_attested; fi; gh cache delete -R \"$repo\" \"$i\" > /dev/null 2>&1 || refuse preexisting_unattested_undeletable; refuse preexisting_unattested_deleted; done < \"$d/existing\"; gh api \"repos/$GITHUB_REPOSITORY/actions/cache/usage\" --jq .active_caches_size_in_bytes > \"$d/usage\" 2> /dev/null || refuse usage_unavailable; usage=; read -r usage < \"$d/usage\" || usage=; number \"$usage\" || refuse usage_unreadable; unit=\"${VELNOR_STATE_PENDING_BYTES:-0}\"; number \"$unit\" || refuse pending_unreadable; printf '\\''%s\\n'\\'' \"${VELNOR_STATE_PENDING-}\" | tr '\\'' '\\'' '\\''\\n'\\'' > \"$d/pending\"; shape='\\''^s256-[0-9a-f]{64}-s256-[0-9a-f]{64}-s256-[0-9a-f]{64}$'\\''; reserved=0; while IFS= read -r item || [ -n \"$item\" ]; do [ \"${item%%:*}\" = true ] || continue; later=\"${item#*:}\"; gh cache list -R \"$repo\" --key \"$later\" --ref \"$ref\" --limit 100 --json key,id,sizeInBytes --jq '\\''.[] | [.key, (.id | tostring), (.sizeInBytes | tostring)] | @tsv'\\'' > \"$d/later\" 2> /dev/null || refuse reserve_unlistable; : > \"$d/held\"; while IFS='\\''\t'\\'' read -r k i s; do case \"$k\" in \"$later\"?*) ;; *) continue ;; esac; printf '\\''%s\\n'\\'' \"${k#\"$later\"}\" | grep -Eq \"$shape\" || continue; number \"$s\" || continue; printf '\\''%s\\n'\\'' \"$s\" >> \"$d/held\"; done < \"$d/later\"; awk -v unit=\"$unit\" -v r=\"$reserved\" '\\''{ h += $1 } END { if (h < unit) r += unit - h; printf \"%.0f\\n\", r }'\\'' \"$d/held\" > \"$d/reserved\" || refuse reserve_unreadable; reserved=; read -r reserved < \"$d/reserved\" || reserved=; number \"$reserved\" || refuse reserve_unreadable; done < \"$d/pending\"; awk -v u=\"$usage\" -v b=\"$bound\" -v r=\"$reserved\" '\\''BEGIN { exit !(u + b + r <= 8000000000) }'\\'' || refuse \"over_budget usage=$usage bound=$bound reserved=$reserved budget=8000000000\"; printf '\\''%s\\n'\\'' '\\''admitted=true'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''velnor: state save admitted usage=%s bound=%s reserved=%s budget=%s\\n'\\'' \"$usage\" \"$bound\" \"$reserved\" 8000000000'"
-      - &s63
+      - &s64
         name: Save sealed payload
         id: state-seal-save
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-admit.outputs.admitted == 'true'
@@ -2464,7 +2504,7 @@ jobs:
         with:
           key: ${{steps.state-seal-subject.outputs.key}}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
-      - &s64
+      - &s65
         name: Bind seal subject
         id: state-seal-bind
         if: steps.state-seal-save.outcome == 'success'
@@ -2472,7 +2512,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: "sh -c 'set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; payload=\"$RUNNER_TEMP/velnor-gc1/transport/state/payload.tar.zst\"; d=\"$RUNNER_TEMP/velnor/state-bind\"; rm -rf \"$d\"; mkdir -p \"$d\"; number() { case \"$1\" in '\\'''\\''|*[!0-9]*) return 1 ;; esac; }; bound_of() { awk -v n=\"$1\" '\\''BEGIN { b = int((n + 512 - 1) / 512) * 512; f = b + 6656; t = int((f + 10240 - 1) / 10240) * 10240; m = 0; if (t < 131072) m = int((131072 - t) / 2048); printf \"%.0f\\n\", t + int(t / 256) + m }'\\'' > \"$d/bound\" || return 1; bound=; read -r bound < \"$d/bound\" || return 1; number \"$bound\"; }; size=; if [ -L \"$payload\" ] || [ ! -f \"$payload\" ]; then size=; else wc -c < \"$payload\" > \"$d/size\" && read -r size < \"$d/size\" || size=; fi; subject=\"$RUNNER_TEMP/velnor/state-seal/subject\"; mkdir -p \"${subject%/*}\"; rm -f \"$subject\"; refuse() { printf '\\''%s\\n'\\'' \"::warning::cache_unavailable: state seal bind refused ($1)\"; printf '\\''%s\\n'\\'' '\\''bound=false'\\'' >> \"$GITHUB_OUTPUT\"; exit 0; }; key=\"${VELNOR_STATE_SEAL_KEY-}\"; ref=\"${GITHUB_REF-}\"; repo=\"${GITHUB_REPOSITORY-}\"; [ -n \"$key\" ] && [ -n \"$ref\" ] && [ -n \"$repo\" ] || refuse input_missing; case \"$key\" in *[[:space:]]*) refuse key_whitespace ;; esac; number \"$size\" && [ \"$size\" -gt 0 ] || refuse payload_unreadable; bound_of \"$size\" || refuse bound_unavailable; command -v gh >/dev/null 2>&1 || refuse gh_missing; tries=; while :; do gh cache list -R \"$repo\" --key \"$key\" --ref \"$ref\" --limit 100 --json key,id,sizeInBytes --jq '\\''.[] | [.key, (.id | tostring), (.sizeInBytes | tostring)] | @tsv'\\'' > \"$d/list\" || refuse list_failed; hits=; id=; stored=; while IFS='\\''\t'\\'' read -r k i s; do [ \"$k\" = \"$key\" ] || continue; case \"$i\" in '\\'''\\''|*[!0-9]*) refuse id_malformed ;; esac; case \"$s\" in '\\'''\\''|*[!0-9]*) refuse size_malformed ;; esac; hits=\"${hits}x\"; id=$i; stored=$s; done < \"$d/list\"; [ -z \"$hits\" ] || break; tries=\"${tries}x\"; [ \"${#tries}\" -lt 5 ] || break; sleep 3; done; [ \"$hits\" = x ] || refuse \"entries=${#hits}\"; [ \"$stored\" -le \"$bound\" ] || refuse \"size_out_of_bound stored=$stored bound=$bound\"; printf '\\''%s %s %s\\n'\\'' \"$key\" \"$id\" \"$stored\" > \"$subject\"; printf '\\''%s\\n'\\'' '\\''bound=true'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''velnor: state seal subject %s %s %s\\n'\\'' \"$key\" \"$id\" \"$stored\"'"
-      - &s65
+      - &s66
         name: Attest state seal
         if: steps.state-seal-bind.outputs.bound == 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
@@ -2520,7 +2560,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-cache-${{needs.plan.outputs.state_tools_acceptance_cache_compat}}-${{needs.plan.outputs.state_tools_acceptance_cache_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-cache-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2530,9 +2570,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2573,7 +2613,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-control-${{needs.plan.outputs.state_tools_acceptance_control_compat}}-${{needs.plan.outputs.state_tools_acceptance_control_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-control-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2583,9 +2623,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2626,7 +2666,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-copy-${{needs.plan.outputs.state_tools_acceptance_copy_compat}}-${{needs.plan.outputs.state_tools_acceptance_copy_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-copy-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2636,9 +2676,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2679,7 +2719,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-files-${{needs.plan.outputs.state_tools_acceptance_files_compat}}-${{needs.plan.outputs.state_tools_acceptance_files_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-files-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2689,9 +2729,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2732,7 +2772,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-isolation-${{needs.plan.outputs.state_tools_acceptance_isolation_compat}}-${{needs.plan.outputs.state_tools_acceptance_isolation_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-isolation-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2742,9 +2782,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2785,7 +2825,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-manifest-${{needs.plan.outputs.state_tools_acceptance_manifest_compat}}-${{needs.plan.outputs.state_tools_acceptance_manifest_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-manifest-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2795,9 +2835,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2838,7 +2878,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-plan-${{needs.plan.outputs.state_tools_acceptance_plan_compat}}-${{needs.plan.outputs.state_tools_acceptance_plan_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-plan-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2848,9 +2888,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2891,7 +2931,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-pty-${{needs.plan.outputs.state_tools_acceptance_pty_compat}}-${{needs.plan.outputs.state_tools_acceptance_pty_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-pty-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2901,9 +2941,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2944,7 +2984,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-restart-rootless-${{needs.plan.outputs.state_tools_acceptance_restart_rootless_compat}}-${{needs.plan.outputs.state_tools_acceptance_restart_rootless_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-restart-rootless-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -2954,9 +2994,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -2997,7 +3037,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-runtime-${{needs.plan.outputs.state_tools_acceptance_runtime_compat}}-${{needs.plan.outputs.state_tools_acceptance_runtime_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-runtime-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -3007,9 +3047,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -3050,7 +3090,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-acceptance-xfs-${{needs.plan.outputs.state_tools_acceptance_xfs_compat}}-${{needs.plan.outputs.state_tools_acceptance_xfs_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-acceptance-xfs-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -3060,9 +3100,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -3103,7 +3143,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-control-flow-assertions-${{needs.plan.outputs.state_tools_control_flow_assertions_compat}}-${{needs.plan.outputs.state_tools_control_flow_assertions_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-control-flow-assertions-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -3113,9 +3153,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -3156,7 +3196,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-tools-http-fixture-${{needs.plan.outputs.state_tools_http_fixture_compat}}-${{needs.plan.outputs.state_tools_http_fixture_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-tools-http-fixture-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -3166,9 +3206,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -3209,7 +3249,7 @@ jobs:
           VELNOR_STATE_SEAL_PREFIX: velnor-v4-state-trusted-union-vendor-pklr-${{needs.plan.outputs.state_vendor_pklr_compat}}-${{needs.plan.outputs.state_vendor_pklr_snapshot}}-
           VELNOR_STATE_SEAL_SCOPE: velnor-v4-state-trusted-union-vendor-pklr-
         run: *r34
-      - *s62
+      - *s63
       - name: Admit state save
         id: state-seal-admit
         if: steps.state-seal-subject.outputs.sealed == 'true' && steps.state-seal-tip.outputs.current == 'true'
@@ -3219,9 +3259,9 @@ jobs:
           VELNOR_STATE_PENDING_BYTES: "1616920640"
           VELNOR_STATE_SEAL_KEY: ${{steps.state-seal-subject.outputs.key}}
         run: *r36
-      - *s63
       - *s64
       - *s65
+      - *s66
       - name: Retire superseded state
         if: steps.state-seal-bind.outputs.bound == 'true'
         env:
@@ -3252,7 +3292,7 @@ jobs:
         uses: ./.github/actions/velnor-tools-prelude-u26 # zizmor: ignore[self-repository]
         with:
           d: 36cc6f04cfd6a90146951553babc9b614ebf899d0f0210122f817d1097748c2c
-      - &s66
+      - &s67
         name: Probe Mise tools
         id: tools-restore
         if: steps.v2.outputs.enabled == 'true'
@@ -3261,7 +3301,7 @@ jobs:
           key: mise-tools-v2-${{steps.v2.outputs.identity}}
           lookup-only: "true"
           path: "~/.local/share/mise\n${{ runner.temp }}/velnor/rustup\n${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin"
-      - &s67
+      - &s68
         name: Scrub and verify Mise tools
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/velnor-tools-cache-scrub # zizmor: ignore[self-repository]
@@ -3270,17 +3310,17 @@ jobs:
       - name: Prepare pinned tools
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         run: mise --no-config --no-env --no-hooks install jactionlint@2.4.0 shellcheck@0.11.0
-      - &s68
+      - &s69
         name: Verify jactionlint
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/velnor-verify-jactionlint # zizmor: ignore[self-repository]
-      - &s69
+      - &s70
         name: Admit optional cache save
         id: velnor-optional-tools-save-budget
         if: success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         run: *r21
         env: *m11
-      - &s70
+      - &s71
         name: Save Mise tools
         if: (success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true') && steps.velnor-optional-tools-save-budget.outputs.admitted == 'true'
         id: velnor-optional-tools-save
@@ -3290,7 +3330,7 @@ jobs:
         with:
           key: mise-tools-v2-${{steps.v2.outputs.identity}}
           path: "~/.local/share/mise\n${{ runner.temp }}/velnor/rustup\n${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin"
-      - &s71
+      - &s72
         name: Report optional cache save failure
         if: always() && !cancelled() && steps.velnor-optional-tools-save.outcome == 'failure'
         run: *r22
@@ -3313,24 +3353,24 @@ jobs:
       - *s2
       - *s29
       - *s30
-      - *s66
       - *s67
+      - *s68
       - name: Prepare pinned tools
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         env: *m6
         run: *r23
-      - *s68
+      - *s69
       - name: Prepare Rust components
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         env: *m6
         run: *r24
-      - &s72
+      - &s73
         name: Verify Rust channel manifest
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/velnor-verify-rust-manifest # zizmor: ignore[self-repository]
-      - *s69
       - *s70
       - *s71
+      - *s72
   tools-producer-80da2be8:
     name: Tools producer / 80da2be8
     runs-on: ubuntu-26.04
@@ -3348,14 +3388,14 @@ jobs:
       - *s2
       - *s28
       - *s3
-      - *s66
       - *s67
+      - *s68
       - name: Prepare pinned tools
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         env: *m6
         run: *r1
-      - *s68
-      - *s72
       - *s69
+      - *s73
       - *s70
       - *s71
+      - *s72

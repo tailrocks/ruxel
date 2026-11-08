@@ -1,0 +1,19 @@
+[package]
+name = "ruxel-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+ipnet = "2.11"
+thiserror.workspace = true
+getrandom = "0.4"
+rustix = { workspace = true, features = ["process"] }
+
+[build-dependencies]
+ipnet = "2.11"
+
+[lints]
+workspace = true
