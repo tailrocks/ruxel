@@ -72,7 +72,6 @@ fn identifies_mount_drift() {
 
 #[test]
 fn normalizes_options_and_rewrites_matching_mountpoint() {
-    assert!(super::opts_eq("rw,noatime", "noatime,rw"));
     let current = "# keep\n/dev/old /srv ext4 defaults 0 0\n";
     let (next, changed) = super::rewrite_fstab(current, "/dev/new", "/srv", "xfs", "rw");
     assert!(changed);
@@ -133,7 +132,41 @@ fn fstab_corrects_dump_and_pass_drift_and_converges() {
     }
     let current = "/dev/a /srv xfs noatime,rw 0 0 # keep\n";
     assert_eq!(
-        super::rewrite_fstab(current, "/dev/a", "/srv", "xfs", "rw,noatime"),
+        super::rewrite_fstab(current, "/dev/a", "/srv", "xfs", "noatime,rw"),
         (current.to_string(), false)
     );
+}
+
+#[test]
+fn fstab_preserves_comments_and_rejects_extra_fields() {
+    for current in [
+        "/dev/a /srv xfs rw 1 0  # operator note\n",
+        "/dev/a /srv xfs rw 0 0 extra  # operator note\n",
+    ] {
+        let (next, changed) = super::rewrite_fstab(current, "/dev/a", "/srv", "xfs", "rw");
+        assert!(changed);
+        assert_eq!(next, "/dev/a\t/srv\txfs\trw\t0\t0  # operator note\n");
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/a", "/srv", "xfs", "rw"),
+            (next, false)
+        );
+    }
+}
+
+#[test]
+fn conflicting_mount_options_keep_their_order() {
+    for (a, b) in [
+        ("rw,ro", "ro,rw"),
+        ("exec,noexec", "noexec,exec"),
+        ("size=1,size=2", "size=2,size=1"),
+    ] {
+        let current = format!("/dev/a /srv xfs {a} 0 0 # keep\n");
+        let (next, changed) = super::rewrite_fstab(&current, "/dev/a", "/srv", "xfs", b);
+        assert!(changed);
+        assert!(next.ends_with("0\t0 # keep\n"));
+        assert_eq!(
+            super::rewrite_fstab(&next, "/dev/a", "/srv", "xfs", b),
+            (next, false)
+        );
+    }
 }

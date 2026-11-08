@@ -238,18 +238,29 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
         if t.is_empty() || t.starts_with('#') {
             continue;
         }
-        let f: Vec<&str> = t.split_whitespace().collect();
+        let comment = line.char_indices().find_map(|(i, c)| {
+            (c == '#' && i > 0 && line[..i].ends_with(char::is_whitespace)).then_some(i)
+        });
+        let data = comment.map_or(line.as_str(), |i| &line[..i]);
+        let f: Vec<&str> = data.split_whitespace().collect();
 
         if f.len() >= 2 && unescape_mount(f[1]) == path {
             found = true;
-            let matches = f.len() >= 6
+            let matches = f.len() == 6
                 && unescape_mount(f[0]) == src
                 && unescape_mount(f[2]) == fstype
-                && opts_eq(&unescape_mount(f[3]), opts)
+                && unescape_mount(f[3]) == opts
                 && f[4] == "0"
                 && f[5] == "0";
             if !matches {
+                let suffix = comment.map(|i| {
+                    let start = line[..i].trim_end().len();
+                    line[start..].to_string()
+                });
                 *line = want.join("\t");
+                if let Some(suffix) = suffix {
+                    line.push_str(&suffix);
+                }
                 changed = true;
             }
             break;
@@ -274,14 +285,6 @@ fn escape_fstab(value: &str) -> String {
         .replace(' ', "\\040")
         .replace('\t', "\\011")
         .replace('\n', "\\012")
-}
-
-fn opts_eq(a: &str, b: &str) -> bool {
-    let mut sa: Vec<&str> = a.split(',').collect();
-    let mut sb: Vec<&str> = b.split(',').collect();
-    sa.sort_unstable();
-    sb.sort_unstable();
-    sa == sb
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
