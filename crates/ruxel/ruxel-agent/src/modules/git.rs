@@ -94,7 +94,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     if action == "compare" {
         let branch = version.unwrap_or("HEAD");
-        if is_object_id(branch) {
+        let short_oid = if is_object_id(branch) {
             let (format, found) = git(&["rev-parse", "--show-object-format"], Some(dest))?;
             if !found {
                 return Err("git: cannot determine object format".into());
@@ -104,12 +104,38 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 "sha256" => 64,
                 _ => return Err("git: unsupported object format".into()),
             };
-            if branch.len() < hash_len {
-                return Err("git: abbreviated object IDs are not supported in check mode; use a full object ID or ref".into());
-            }
+            branch.len() < hash_len
+        } else {
+            false
+        };
+        let remote_source = "origin";
+        let (mut ls, ok) = if short_oid {
+            let branch_ref = format!("refs/heads/{branch}");
+            let tag_ref = format!("refs/tags/{branch}");
+            git(
+                &["ls-remote", "--", remote_source, &branch_ref, &tag_ref],
+                Some(dest),
+            )?
+        } else {
+            git(&["ls-remote", "--", remote_source, branch], Some(dest))?
+        };
+        if !ok {
+            return Err("git ls-remote failed".into());
         }
-        let remote_source = if version.is_none() { "origin" } else { repo };
-        let (ls, ok) = git(&["ls-remote", "--", remote_source, branch], Some(dest))?;
+        if short_oid {
+            let branch_ref = format!("refs/heads/{branch}");
+            let tag_ref = format!("refs/tags/{branch}");
+            ls = [branch_ref, tag_ref]
+                .iter()
+                .filter_map(|wanted| {
+                    ls.lines().find(|line| {
+                        line.split_once('\t')
+                            .is_some_and(|(_, name)| name == wanted)
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
         let mut remote = ls.split_whitespace().next().unwrap_or("").to_string();
         if let Some(tag_ref) = ls
             .lines()
@@ -118,7 +144,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             && tag_ref.starts_with("refs/tags/")
         {
             let peeled = format!("{tag_ref}^{{}}");
-            let (tag, tag_ok) = git(&["ls-remote", "--", repo, &peeled], Some(dest))?;
+            let (tag, tag_ok) = git(&["ls-remote", "--", remote_source, &peeled], Some(dest))?;
             if tag_ok && !tag.is_empty() {
                 remote = tag.split_whitespace().next().unwrap_or("").to_string();
             }
@@ -127,13 +153,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let is_oid = is_object_id(branch);
             {
                 let (resolved, found) = git(
-                    &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        "--end-of-options",
+                        &format!("{branch}^{{commit}}"),
+                    ],
                     Some(dest),
                 )?;
                 if found {
                     remote = resolved;
+                } else if short_oid {
+                    return Err("git: abbreviated object IDs not available locally cannot be resolved in check mode; use a full object ID or ref".into());
                 } else if is_oid {
-                    let (refs, listed) = git(&["ls-remote", "--", repo], Some(dest))?;
+                    let (refs, listed) = git(&["ls-remote", "--", remote_source], Some(dest))?;
                     if !listed {
                         return Err("git ls-remote failed".into());
                     }
@@ -173,6 +206,36 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Err("git fetch failed".into());
     }
     match version {
+        Some(v) if is_object_id(v) => {
+            let branch_ref = format!("refs/heads/{v}");
+            let tag_ref = format!("refs/tags/{v}");
+            let (refs, ok) = git(
+                &["ls-remote", "--", "origin", &branch_ref, &tag_ref],
+                Some(dest),
+            )?;
+            if !ok {
+                return Err("git ls-remote failed".into());
+            }
+            let has_ref = |wanted: &str| {
+                refs.lines().any(|line| {
+                    line.split_once('\t')
+                        .is_some_and(|(_, name)| name == wanted)
+                })
+            };
+            let remote_branch = format!("refs/remotes/origin/{v}");
+            let requested = if has_ref(&branch_ref) {
+                &remote_branch
+            } else if has_ref(&tag_ref) {
+                let (_, fetched) = git(&["fetch", "--no-tags", "origin", &tag_ref], Some(dest))?;
+                if !fetched {
+                    return Err(format!("git fetch {tag_ref} failed"));
+                }
+                "FETCH_HEAD"
+            } else {
+                v
+            };
+            checkout::resolved(requested, dest, force, &git)?;
+        }
         Some(v) => checkout::requested(v, dest, force, &git)?,
         None => checkout::resolved("FETCH_HEAD", dest, force, &git)?,
     }

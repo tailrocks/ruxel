@@ -16,6 +16,147 @@ fn git(dir: &Path, args: &[&str]) -> String {
 }
 
 #[test]
+fn hexadecimal_branch_and_annotated_tag_work_in_preview_and_apply() {
+    let root = std::env::temp_dir().join(format!("ruxel-git-hex-ref-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let dest = root.join("dest");
+    std::fs::create_dir(&source).unwrap();
+    git(&source, &["init", "-b", "main"]);
+    git(&source, &["config", "user.name", "Synthetic"]);
+    git(
+        &source,
+        &["config", "user.email", "synthetic@example.invalid"],
+    );
+    git(&source, &["commit", "--allow-empty", "-m", "initial"]);
+    git(
+        &root,
+        &["clone", source.to_str().unwrap(), dest.to_str().unwrap()],
+    );
+    let initial = git(&dest, &["rev-parse", "HEAD"]);
+    git(&dest, &["tag", "cafebabe", &initial]);
+    git(&source, &["commit", "--allow-empty", "-m", "second"]);
+    let expected = git(&source, &["rev-parse", "HEAD"]);
+    git(&source, &["branch", "deadbeef"]);
+    git(&source, &["tag", "-a", "cafebabe", "-m", "fixture"]);
+    let mut ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    for version in ["deadbeef", "cafebabe"] {
+        git(&dest, &["checkout", "--detach", &initial]);
+        let before = git(&dest, &["rev-parse", "HEAD"]);
+        let params = json!({"repo": source, "dest": dest, "version": version});
+        let predicted = run(&params, &ctx).unwrap();
+        assert_eq!(predicted["changed"], true);
+        assert_eq!(predicted["after"], expected);
+        assert_eq!(git(&dest, &["rev-parse", "HEAD"]), before);
+        ctx.check_mode = false;
+        assert_eq!(run(&params, &ctx).unwrap()["after"], expected);
+        if version == "cafebabe" {
+            assert_eq!(git(&dest, &["rev-parse", "refs/tags/cafebabe"]), initial);
+        }
+        ctx.check_mode = true;
+        assert_eq!(run(&params, &ctx).unwrap()["changed"], false);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn hex_preview_uses_origin_and_apply_ignores_stale_tracking_branch() {
+    let root = std::env::temp_dir().join(format!("ruxel-git-hex-origin-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let dest = root.join("dest");
+    std::fs::create_dir(&source).unwrap();
+    git(&source, &["init", "-b", "main"]);
+    git(&source, &["config", "user.name", "Synthetic"]);
+    git(
+        &source,
+        &["config", "user.email", "synthetic@example.invalid"],
+    );
+    git(&source, &["commit", "--allow-empty", "-m", "first"]);
+    let first = git(&source, &["rev-parse", "HEAD"]);
+    git(&source, &["branch", "deadbeef"]);
+    git(
+        &root,
+        &["clone", source.to_str().unwrap(), dest.to_str().unwrap()],
+    );
+    git(&source, &["branch", "-D", "deadbeef"]);
+    git(&source, &["commit", "--allow-empty", "-m", "second"]);
+    let second = git(&source, &["rev-parse", "HEAD"]);
+    git(&source, &["tag", "-a", "deadbeef", "-m", "fixture"]);
+    let params = json!({"repo": root.join("different-repo"), "dest": dest, "version": "deadbeef"});
+    let mut ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let predicted = run(&params, &ctx).unwrap();
+    assert_eq!(predicted["after"], second);
+    assert_eq!(predicted["changed"], true);
+    assert_eq!(git(&dest, &["rev-parse", "HEAD"]), first);
+    ctx.check_mode = false;
+    let applied = run(&params, &ctx).unwrap();
+    assert_eq!(applied["after"], second);
+    assert_eq!(applied["changed"], true);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn local_hex_tag_and_abbreviated_commit_preview_match_apply() {
+    let root = std::env::temp_dir().join(format!("ruxel-git-local-hex-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let dest = root.join("dest");
+    std::fs::create_dir(&source).unwrap();
+    git(&source, &["init", "-b", "main"]);
+    git(&source, &["config", "user.name", "Synthetic"]);
+    git(
+        &source,
+        &["config", "user.email", "synthetic@example.invalid"],
+    );
+    git(&source, &["commit", "--allow-empty", "-m", "first"]);
+    let first = git(&source, &["rev-parse", "HEAD"]);
+    git(&source, &["commit", "--allow-empty", "-m", "second"]);
+    git(
+        &root,
+        &["clone", source.to_str().unwrap(), dest.to_str().unwrap()],
+    );
+    let second = git(&dest, &["rev-parse", "HEAD"]);
+    git(&dest, &["tag", "deadbeef", &first]);
+    let short = git(&dest, &["rev-parse", "--short", &first]);
+    let trace = dest.join(".git/trace");
+    let mut ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![("GIT_TRACE".into(), trace.to_string_lossy().into_owned())],
+        become_user: None,
+    };
+    for version in ["deadbeef", short.as_str()] {
+        git(&dest, &["checkout", "--detach", &second]);
+        std::fs::write(&trace, "").unwrap();
+        let params = json!({"repo": source, "dest": dest, "version": version});
+        let preview = run(&params, &ctx).unwrap();
+        assert_eq!(preview["after"], first);
+        assert_eq!(preview["changed"], true);
+        assert_eq!(git(&dest, &["rev-parse", "HEAD"]), second);
+        let output = std::fs::read_to_string(&trace).unwrap();
+        assert!(!output.contains("git clone") && !output.contains("git fetch"));
+        ctx.check_mode = false;
+        assert_eq!(run(&params, &ctx).unwrap()["after"], first);
+        ctx.check_mode = true;
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn clone_nondefault_branch_and_update_converge() {
     let root = std::env::temp_dir().join(format!("ruxel-git-branch-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
