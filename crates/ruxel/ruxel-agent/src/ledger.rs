@@ -107,11 +107,18 @@ pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
                 && params.get("upgrade").and_then(Value::as_str).is_none()
                 && params.get("state").and_then(Value::as_str) != Some("latest")
         }
-        "systemd" | "service" => {
+        "systemd" => {
             !probe::bool_value(params.get("daemon_reload"), false)
                 && params.get("state").and_then(Value::as_str) != Some("restarted")
         }
-        _ => true,
+        "copy"
+        | "template"
+        | "lineinfile"
+        | "replace"
+        | "blockinfile"
+        | "sysctl"
+        | "ansible.posix.sysctl" => true,
+        _ => false,
     }
 }
 

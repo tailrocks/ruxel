@@ -46,7 +46,7 @@ pub(super) fn probe_for(
             }
             Some(probes)
         }
-        "systemd" | "service" => {
+        "systemd" => {
             let name = s("name")?;
             if s("state") == Some("restarted") {
                 return None;

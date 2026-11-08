@@ -140,7 +140,7 @@ pub(crate) fn execute(
         "file" => file::run(params, ctx),
         "copy" => copy::run(params, source, ctx),
         "slurp" => slurp::run(params),
-        "systemd" | "service" => systemd::run(params, ctx, system_state),
+        "systemd" => systemd::run(params, ctx, system_state),
         _ => Err(format!(
             "module {module:?} is not implemented in this agent build"
         )),
@@ -386,3 +386,7 @@ pub(super) fn default_file_mode(status: &str) -> u32 {
 #[cfg(test)]
 #[path = "tests/security.rs"]
 mod security_tests;
+
+#[cfg(test)]
+#[path = "tests/systemd_wire.rs"]
+mod systemd_wire_tests;

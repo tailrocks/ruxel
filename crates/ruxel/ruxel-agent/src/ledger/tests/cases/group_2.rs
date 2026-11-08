@@ -119,7 +119,7 @@ fn explicit_refreshes_and_actions_bypass_even_existing_records() {
         ("apt", json!({"name":"pkg", "upgrade":"dist"})),
         ("apt", json!({"name":"pkg", "state":"latest"})),
         ("systemd", json!({"name":"unit", "daemon_reload":true})),
-        ("service", json!({"name":"unit", "daemon_reload":"yes"})),
+        ("systemd", json!({"name":"unit", "daemon_reload":"yes"})),
         ("systemd", json!({"name":"unit", "state":"restarted"})),
     ] {
         assert!(!cache_allowed(module, &params), "{module} {params}");
