@@ -12,7 +12,12 @@ fn unsupported_case_fails_without_launching_cli() -> anyhow::Result<()> {
     let stub = temp.path().join("cli");
     fs::write(&stub, format!("#!/bin/sh\ntouch '{}'\n", marker.display()))?;
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o700))?;
-    for name in ["storage-ext4", "system-surface", "become-environment", "postgresql-ownership"] {
+    for name in [
+        "storage-ext4",
+        "system-surface",
+        "become-environment",
+        "postgresql-ownership",
+    ] {
         let result = Command::new(env!("CARGO_BIN_EXE_ruxel-acceptance-manifest"))
             .arg("--root")
             .arg(temp.path())
