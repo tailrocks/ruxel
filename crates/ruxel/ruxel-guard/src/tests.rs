@@ -101,7 +101,7 @@ fn valid_output() {
 fn args_normal() {
     let a = resolve::build_args(&spec(), &PathBuf::from("/tmp/mux"), ArgsMode::Normal);
     assert_eq!(a[0], "-F");
-    assert!(a.contains(&"ControlPath=/tmp/mux".into()));
+    assert!(a.contains(&"ControlPath=\"/tmp/mux\"".into()));
 }
 #[test]
 fn args_fresh() {
@@ -146,3 +146,4 @@ fn ip_type() {
 }
 
 mod mapped;
+mod quoted_paths;

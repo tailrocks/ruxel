@@ -96,6 +96,7 @@ impl Guard {
         })?;
         for spec in hosts {
             let result = self.policy.decide(spec.address).and_then(|()| {
+                resolve::validate_paths(spec)?;
                 let mut bytes = [0u8; 6];
                 getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
                 let suffix: String = bytes
@@ -108,6 +109,7 @@ impl Guard {
                     })
                     .collect();
                 let path = mux_dir.join(&suffix);
+                resolve::validate_path(&path)?;
                 if path.as_os_str().len() > 100 {
                     return Err("mux socket path exceeds 100 bytes".into());
                 }
