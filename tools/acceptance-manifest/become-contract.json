@@ -1,0 +1,51 @@
+{
+  "fixture": "become-environment.pkl",
+  "observations": [
+    {
+      "kind": "account",
+      "name": "ruxelbecome",
+      "home": "__RUN_ROOT__/become-home",
+      "shell": "/bin/sh"
+    },
+    {
+      "kind": "task_result",
+      "host": "fixture",
+      "task": "Capture synthetic become environment",
+      "field": "stdout_lines",
+      "equals": [
+        "__RUN_ROOT__/become-home",
+        "ruxelbecome",
+        "ruxelbecome",
+        "/bin/sh",
+        "synthetic"
+      ]
+    }
+  ],
+  "phases": {
+    "fresh": {
+      "observations_match": true
+    },
+    "converged": {
+      "observations_match": true
+    },
+    "check": {
+      "state_unchanged": true
+    },
+    "diff": {
+      "state_unchanged": true
+    },
+    "drift_repair": {
+      "observations_match": true
+    }
+  },
+  "pending": [
+    "check and diff on a drifted account fail the environment assertion"
+  ],
+  "drift": [
+    {
+      "kind": "account_shell",
+      "name": "ruxelbecome",
+      "shell": "/bin/false"
+    }
+  ]
+}

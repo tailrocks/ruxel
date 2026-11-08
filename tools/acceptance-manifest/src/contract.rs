@@ -18,7 +18,8 @@ pub const SCENARIOS: [&str; 14] = [
     "storage-xfs",
     "system-surface",
 ];
-pub const SUPPORTED: [&str; 6] = [
+pub const SUPPORTED: [&str; 7] = [
+    "become-environment",
     "check-semantics",
     "control-flow",
     "controller-delegation",
@@ -48,6 +49,14 @@ pub fn validate_case(name: &str, manifest: &Value) -> Result<()> {
         SUPPORTED.contains(&name),
         "{name}: no reviewed safe local adapter"
     );
+    if name == "become-environment" {
+        let expected: Value = serde_json::from_str(include_str!("../become-contract.json"))?;
+        ensure!(
+            manifest["scenarios"][name] == expected,
+            "{name}: unreviewed or incomplete contract"
+        );
+        return Ok(());
+    }
     if name == "postgresql-ownership" {
         let expected: Value = serde_json::from_str(include_str!("../postgres-contract.json"))?;
         ensure!(

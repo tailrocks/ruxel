@@ -1,11 +1,11 @@
 # Local manifest acceptance
 
-Standalone safe Rust port for six reviewed manifest scenarios:
-`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, and `postgresql-ownership`. Each contract must
+Standalone safe Rust port for seven reviewed manifest scenarios:
+`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, and `postgresql-ownership`, and `become-environment`. Each contract must
 exactly match the frozen reviewed contract in `contracts.json`; fixture and
 baseline oracle hashes are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
-expected to fail while eight scenarios have no adapter.
+expected to fail while seven scenarios have no adapter.
 
 The control-flow adapter requires the same isolated Linux guest as the restart
 adapter. It runs a private in-memory observer of the real controller and agent
@@ -38,3 +38,11 @@ listening disabled and a private Unix socket. It requires a network-isolated
 Docker guest without host mounts, PostgreSQL server and client packages, a
 `postgres` account, and `RUXEL_POSTGRES_FIXTURE=isolated`. It checks explicit
 catalog ownership and grants and captures catalog state across preview runs.
+
+
+The become-environment adapter creates and modifies an account, so it requires
+an ephemeral Docker guest with no external network or writable host mounts and
+`RUXEL_BECOME_FIXTURE=isolated`. It verifies account metadata, environment
+results, shell drift and repair, and preview filesystem state.
+Its previews run after drift repair. A preview against the drifted shell fails
+the fixture's environment assertion, so drifted preview success is not covered.

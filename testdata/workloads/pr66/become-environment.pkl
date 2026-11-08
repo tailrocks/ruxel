@@ -12,6 +12,7 @@ output {
         }
         new {
           name = "Capture synthetic become environment"
+          checkMode = false
           operation = new Ruxel.Shell { cmd = "printf '%s\\n' \"$HOME\" \"$USER\" \"$LOGNAME\" \"$SHELL\" \"$RUXEL_FIXTURE_VALUE\"" }
           becomeUser = "ruxelbecome"
           environment { ["RUXEL_FIXTURE_VALUE"] = new Ruxel.Literal { value = "synthetic" } }

@@ -46,3 +46,12 @@ fn postgres_contract_rejects_modified_drift() -> anyhow::Result<()> {
     assert!(validate_case("postgresql-ownership", &manifest).is_err());
     Ok(())
 }
+
+#[test]
+fn become_contract_rejects_modified_shell_drift() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"become-environment": serde_json::from_str::<Value>(include_str!("../become-contract.json"))?}});
+    validate_case("become-environment", &manifest)?;
+    manifest["scenarios"]["become-environment"]["drift"][0]["shell"] = json!("/bin/sh");
+    assert!(validate_case("become-environment", &manifest).is_err());
+    Ok(())
+}

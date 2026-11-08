@@ -1,3 +1,4 @@
+mod become_user;
 mod checks;
 mod checks_preview;
 mod control_observer;

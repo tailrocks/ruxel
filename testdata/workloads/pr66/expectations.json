@@ -391,7 +391,7 @@
         }
       },
       "pending": [
-        "account drift injection and repair execution"
+        "check and diff on a drifted account fail the environment assertion"
       ],
       "drift": [
         {
