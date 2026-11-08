@@ -42,18 +42,22 @@ impl<B: Backend> Runner<'_, B> {
                     tokio::time::sleep(std::time::Duration::from_secs(duration)).await;
                 } else {
                     use std::io::IsTerminal;
+                    if !std::io::stdin().is_terminal() {
+                        bail!("interactive pause requires a terminal on stdin");
+                    }
                     let prompt = params
                         .get("prompt")
                         .and_then(Value::as_str)
                         .unwrap_or("Press Enter to continue");
                     self.backend
                         .event(&json!({"host":self.host,"pause":if layer.no_log || sensitive { "[censored]" } else { prompt }}))?;
-                    if std::io::stdin().is_terminal() {
-                        let _ = tokio::task::spawn_blocking(|| {
-                            let mut line = String::new();
-                            std::io::stdin().read_line(&mut line)
-                        })
-                        .await??;
+                    let read = tokio::task::spawn_blocking(|| {
+                        let mut line = String::new();
+                        std::io::stdin().read_line(&mut line)
+                    })
+                    .await??;
+                    if read == 0 {
+                        bail!("interactive pause received end of input");
                     }
                 }
                 Ok(result_value(

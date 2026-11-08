@@ -64,8 +64,8 @@ async fn block_check_mode_controls_local_pause_and_child_opt_out() -> Result<()>
         for block_check in [false, true] {
             let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[
                 {"name":"block","checkMode":block_check,"block":[
-                    {"name":"inherited","operation":{"kind":"pause","prompt":"fixture"}},
-                    {"name":"override","checkMode":!block_check,"operation":{"kind":"pause","prompt":"fixture"}}
+                    {"name":"inherited","operation":{"kind":"pause","seconds":0}},
+                    {"name":"override","checkMode":!block_check,"operation":{"kind":"pause","seconds":0}}
                 ]}
             ]}]});
             let options = Options {
@@ -89,7 +89,7 @@ async fn block_check_mode_controls_local_pause_and_child_opt_out() -> Result<()>
                     .iter()
                     .filter(|event| event.get("pause").is_some())
                     .count(),
-                1
+                0
             );
             let results: Vec<_> = backend
                 .events
@@ -108,6 +108,29 @@ async fn block_check_mode_controls_local_pause_and_child_opt_out() -> Result<()>
         }
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn interactive_pause_without_terminal_stops_following_tasks() {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        return;
+    }
+    let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"approval","operation":{"kind":"pause"}},
+        {"name":"must not run","operation":{"kind":"command","argv":["unused"]}}
+    ]}]});
+    let mut backend = Fake::default();
+    let result = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(backend.calls.is_empty());
 }
 
 #[tokio::test]
