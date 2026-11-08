@@ -5,7 +5,8 @@
 
 use super::{ExecContext, params_object, str_param};
 use rustix::fs::{
-    AtFlags, Mode, OFlags, fchmod, fchown, mkdirat, open, openat, renameat, unlinkat,
+    AtFlags, FlockOperation, Mode, OFlags, fchmod, fchown, flock, fstat, mkdirat, open, openat,
+    renameat, statat, unlinkat,
 };
 use serde_json::{Value, json};
 use std::fs::File;
@@ -31,6 +32,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let home =
         File::from(open(Path::new(&home), dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
     let ssh = open_ssh(&home, uid, gid, !ctx.check_mode)?;
+    if let Some(dir) = &ssh {
+        flock(dir, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
+        ensure_attached(&home, dir)?;
+    }
     let current = match &ssh {
         Some(dir) => read_authorized_keys(dir)?,
         None => String::new(),
@@ -47,6 +52,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         next.push_str(key.trim_end());
         next.push('\n');
+        ensure_attached(&home, ssh.as_ref().ok_or("authorized_key: missing .ssh")?)?;
         publish(
             ssh.as_ref().ok_or("authorized_key: missing .ssh")?,
             next.as_bytes(),
@@ -55,6 +61,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         )?;
     }
 
+    if let Some(dir) = &ssh {
+        ensure_attached(&home, dir)?;
+    }
     Ok(json!({"changed": changed, "failed": false, "user": user}))
 }
 
@@ -106,6 +115,16 @@ fn open_ssh(home: &File, uid: u32, gid: u32, create: bool) -> Result<Option<File
         return Err("authorized_key: .ssh is not owned by target user".into());
     }
     Ok(Some(dir))
+}
+
+fn ensure_attached(home: &File, dir: &File) -> Result<(), String> {
+    let entry = statat(home, ".ssh", AtFlags::SYMLINK_NOFOLLOW)
+        .map_err(|e| format!("authorized_key: .ssh changed: {e}"))?;
+    let opened = fstat(dir).map_err(|e| e.to_string())?;
+    if entry.st_dev != opened.st_dev || entry.st_ino != opened.st_ino {
+        return Err("authorized_key: .ssh changed during operation".into());
+    }
+    Ok(())
 }
 
 fn read_authorized_keys(dir: &File) -> Result<String, String> {
@@ -280,6 +299,7 @@ mod tests {
         std::fs::create_dir(&victim).unwrap();
         std::fs::write(victim.join("authorized_keys"), "untouched").unwrap();
         symlink(&victim, root.join(".ssh")).unwrap();
+        assert!(ensure_attached(&home, &ssh).is_err());
         publish(&ssh, b"new key\n", meta.uid(), meta.gid()).unwrap();
         assert_eq!(
             std::fs::read_to_string(victim.join("authorized_keys")).unwrap(),
@@ -318,6 +338,39 @@ mod tests {
             std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap(),
             "key\n"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_updates_preserve_both_keys() {
+        let root = scratch("concurrent");
+        std::fs::create_dir(root.join(".ssh")).unwrap();
+        let meta = std::fs::metadata(&root).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = ["first\n", "second\n"]
+            .into_iter()
+            .map(|key| {
+                let root = root.clone();
+                let barrier = barrier.clone();
+                let meta = meta.clone();
+                std::thread::spawn(move || {
+                    let home = File::open(root).unwrap();
+                    let ssh = open_ssh(&home, meta.uid(), meta.gid(), false)
+                        .unwrap()
+                        .unwrap();
+                    barrier.wait();
+                    flock(&ssh, FlockOperation::LockExclusive).unwrap();
+                    let mut current = read_authorized_keys(&ssh).unwrap();
+                    current.push_str(key);
+                    publish(&ssh, current.as_bytes(), meta.uid(), meta.gid()).unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let keys = std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap();
+        assert!(keys.contains("first\n") && keys.contains("second\n"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
