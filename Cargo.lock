@@ -1558,6 +1558,7 @@ name = "ruxel-agent"
 version = "0.1.0"
 dependencies = [
  "exacl",
+ "glob",
  "hmac",
  "libc",
  "md-5",

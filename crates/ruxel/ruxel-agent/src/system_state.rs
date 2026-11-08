@@ -57,8 +57,12 @@ impl SystemState {
                     "apt: :any package selectors are not supported: {package:?}"
                 ));
             }
-            if version.is_some_and(|version| version.contains(['?', '[', ']'])) {
-                return Err(format!("apt: unsupported version pattern for {package:?}"));
+            if let Some(version) = version
+                && version.contains(['*', '?', '['])
+            {
+                glob::Pattern::new(version).map_err(|error| {
+                    format!("apt: invalid version pattern for {package:?}: {error}")
+                })?;
             }
         }
         let mut pins = HashMap::new();
@@ -117,17 +121,9 @@ impl SystemState {
                     None => true,
                     Some(installed) if version.is_some() => {
                         let pattern = version.unwrap_or_default();
-                        if pattern.contains('*') {
-                            let regex = format!(
-                                "^{}$",
-                                pattern
-                                    .split('*')
-                                    .map(regex_lite::escape)
-                                    .collect::<Vec<_>>()
-                                    .join(".*")
-                            );
-                            !regex_lite::Regex::new(&regex)
-                                .is_ok_and(|regex| regex.is_match(installed))
+                        if pattern.contains(['*', '?', '[']) {
+                            !glob::Pattern::new(pattern)
+                                .is_ok_and(|pattern| pattern.matches(installed))
                         } else {
                             pattern != installed
                         }
