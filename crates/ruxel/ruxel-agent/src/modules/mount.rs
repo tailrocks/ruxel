@@ -368,7 +368,9 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
             "noexec" => flags[3] = false,
             "async" => flags[4] = true,
             "sync" => flags[4] = false,
-            "defaults" | "auto" | "noauto" | "nofail" | "_netdev" | "user" | "nouser" => {}
+            "user" | "users" => flags[1..4].fill(false),
+            "owner" | "group" => flags[1..3].fill(false),
+            "defaults" | "auto" | "noauto" | "nofail" | "_netdev" | "nouser" => {}
             _ => other_drift |= !actual_opts.contains(&option),
         }
     }

@@ -63,6 +63,24 @@ fn identifies_mount_drift() {
         mount_action(restricted.as_ref(), "/dev/a", "xfs", "noexec,defaults"),
         MountAction::None
     );
+    let user_mount = find_mount("/dev/a /srv xfs rw,nosuid,nodev,noexec 0 0\n", "/srv");
+    for options in ["user", "users", "user,defaults"] {
+        assert_eq!(
+            mount_action(user_mount.as_ref(), "/dev/a", "xfs", options),
+            MountAction::None
+        );
+    }
+    assert_eq!(
+        mount_action(user_mount.as_ref(), "/dev/a", "xfs", "user,exec"),
+        MountAction::Remount
+    );
+    let group_mount = find_mount("/dev/a /srv xfs rw,nosuid,nodev 0 0\n", "/srv");
+    for options in ["group", "owner"] {
+        assert_eq!(
+            mount_action(group_mount.as_ref(), "/dev/a", "xfs", options),
+            MountAction::None
+        );
+    }
     assert_eq!(
         mount_action(current.as_ref(), "/dev/b", "xfs", "rw"),
         MountAction::Replace
