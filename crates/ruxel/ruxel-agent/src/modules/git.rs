@@ -4,8 +4,6 @@ use super::{ExecContext, bool_param, params_object, str_param};
 use serde_json::{Value, json};
 use std::path::Path;
 
-#[path = "git/check.rs"]
-mod check;
 #[path = "git/checkout.rs"]
 mod checkout;
 
@@ -96,6 +94,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     if action == "compare" {
         let branch = version.unwrap_or("HEAD");
+        if is_object_id(branch) {
+            let (format, found) = git(&["rev-parse", "--show-object-format"], Some(dest))?;
+            if !found {
+                return Err("git: cannot determine object format".into());
+            }
+            let hash_len = match format.as_str() {
+                "sha1" => 40,
+                "sha256" => 64,
+                _ => return Err("git: unsupported object format".into()),
+            };
+            if branch.len() < hash_len {
+                return Err("git: abbreviated object IDs are not supported in check mode; use a full object ID or ref".into());
+            }
+        }
         let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
         let mut remote = ls.split_whitespace().next().unwrap_or("").to_string();
         if let Some(tag_ref) = ls
@@ -112,22 +124,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         if ok && remote.is_empty() {
             let is_oid = is_object_id(branch);
-            let hash_len = if is_oid {
-                let (format, found) = git(&["rev-parse", "--show-object-format"], Some(dest))?;
-                if !found {
-                    return Err("git: cannot determine object format".into());
-                }
-                match format.as_str() {
-                    "sha1" => 40,
-                    "sha256" => 64,
-                    _ => return Err("git: unsupported object format".into()),
-                }
-            } else {
-                0
-            };
-            if is_oid && branch.len() < hash_len {
-                remote = check::resolve(repo, dest, branch, &git)?;
-            } else {
+            {
                 let (resolved, found) = git(
                     &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
                     Some(dest),
@@ -141,7 +138,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     }
                     remote = match advertised_object(&refs, branch)? {
                         Some(oid) => oid,
-                        None => check::resolve(repo, dest, branch, &git)?,
+                        None => {
+                            return Err(format!(
+                                "git: cannot resolve version {branch} without fetching; use an advertised ref or a locally available commit"
+                            ));
+                        }
                     };
                 } else {
                     return Err(format!("git: cannot resolve version {branch}"));
@@ -193,7 +194,10 @@ fn advertised_object(refs: &str, version: &str) -> Result<Option<String>, String
         let Some((oid, name)) = line.split_once('\t') else {
             continue;
         };
-        if name != "HEAD" && !name.starts_with("refs/heads/") {
+        if name != "HEAD"
+            && !name.starts_with("refs/heads/")
+            && !(name.starts_with("refs/tags/") && name.ends_with("^{}"))
+        {
             continue;
         }
         if oid.starts_with(&prefix) {

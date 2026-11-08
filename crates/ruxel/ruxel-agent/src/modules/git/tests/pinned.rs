@@ -50,6 +50,13 @@ fn check_resolves_new_remote_commit_without_mutating_checkout() {
     assert_eq!(run(&advertised, &check).unwrap()["after"], target);
     std::fs::write(source.join("file"), "third").unwrap();
     git(&source, &["commit", "-am", "third"]);
+    let unadvertised = json!({"repo": source, "dest": dest, "version": target});
+    assert!(
+        run(&unadvertised, &check)
+            .unwrap_err()
+            .contains("without fetching")
+    );
+    assert_eq!(git(&dest, &["rev-parse", "HEAD"]), before);
     git(
         &source,
         &["tag", "-a", "v-test", &target, "-m", "synthetic tag"],
