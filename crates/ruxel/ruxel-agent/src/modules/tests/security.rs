@@ -6,6 +6,40 @@ use serde_json::json;
 use std::os::unix::fs::symlink;
 
 #[test]
+fn in_process_modules_refuse_become_before_reading_or_writing() {
+    let root = std::env::temp_dir().join(format!("ruxel-become-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("file");
+    std::fs::write(&path, "original").unwrap();
+    for check_mode in [false, true] {
+        let ctx = super::ExecContext {
+            check_mode,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: Some("synthetic-user".into()),
+        };
+        for (module, params) in [
+            ("copy", json!({"dest": path, "content": "changed"})),
+            ("stat", json!({"path": path})),
+            ("slurp", json!({"src": path})),
+        ] {
+            let result = super::execute(module, &params, "", None, &ctx, &mut Default::default());
+            assert_eq!(result.status, "failed");
+            assert!(!result.changed);
+            assert!(
+                result.result["msg"]
+                    .as_str()
+                    .unwrap()
+                    .contains("does not support become_user")
+            );
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn atomic_write_replaces_symlink_not_its_target() {
     let root = std::env::temp_dir().join(format!("ruxel-atomic-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

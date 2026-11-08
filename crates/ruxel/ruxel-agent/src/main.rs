@@ -287,6 +287,7 @@ fn execute_task(
         };
 
         if !no_cache
+            && task.become_user.is_empty()
             && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log

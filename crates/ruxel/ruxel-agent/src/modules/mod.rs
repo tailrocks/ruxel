@@ -111,6 +111,23 @@ pub(crate) fn execute(
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
 ) -> Outcome {
+    if ctx.become_user.is_some()
+        && !matches!(
+            module,
+            "command"
+                | "shell"
+                | "postgres_database"
+                | "postgres_user"
+                | "postgres_schema"
+                | "postgres_privileges"
+        )
+    {
+        return Outcome::from_result(json!({
+            "failed": true,
+            "changed": false,
+            "msg": format!("module {module:?} does not support become_user"),
+        }));
+    }
     let result = match module {
         "filesystem" => filesystem::run(params, ctx),
         "git" => git::run(params, ctx),
