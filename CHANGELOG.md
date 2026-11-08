@@ -22,6 +22,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
 - Apt tasks run requested autoremove after distribution upgrades in apply and check mode.

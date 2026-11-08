@@ -98,23 +98,6 @@ fn valid_output() {
     assert!(resolve::check_ssh_g(config(), &spec()).is_ok());
 }
 #[test]
-fn args_normal() {
-    let a = resolve::build_args(&spec(), &PathBuf::from("/tmp/mux"), ArgsMode::Normal);
-    assert_eq!(a[0], "-F");
-    assert!(a.contains(&"ControlPath=\"/tmp/mux\"".into()));
-}
-#[test]
-fn args_fresh() {
-    let a = resolve::build_args(&spec(), &PathBuf::from("/tmp/mux"), ArgsMode::Fresh);
-    assert!(a.contains(&"ControlPath=none".into()));
-    assert!(a.contains(&"ConnectTimeout=5".into()));
-}
-#[test]
-fn args_trust() {
-    let a = resolve::build_args(&spec(), &PathBuf::from("/tmp/mux"), ArgsMode::Trust);
-    assert!(a.contains(&"StrictHostKeyChecking=accept-new".into()));
-}
-#[test]
 fn scan_host_port() {
     assert!(!deny_hits(&policy(), &["192.0.2.7:6443"]).is_empty());
 }
@@ -147,3 +130,5 @@ mod mapped;
 mod quoted_paths;
 
 mod scan_extra;
+
+mod args;
