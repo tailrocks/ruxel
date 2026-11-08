@@ -5,12 +5,16 @@ const FIRST: &[u8] = &[0, 255, 128, 65, 10, 0, 254, 66];
 const SECOND: &[u8] = &[255, 0, 1, 128, 10, 67, 253];
 pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     let harness = Harness::new(root, cli, agent)?;
-    let source = harness.temp.path().join("source.bin");
+    let source = harness
+        .module
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("fixture module has no parent"))?
+        .join("source.bin");
     let dest = harness.payload.join("copy.bin");
     fs::write(&source, FIRST)?;
     let tasks = format!(
         r#"new {{ name = "copy"; operation = new Ruxel.Copy {{ src = {}; dest = {}; mode = "0640" }} }}"#,
-        common::path(&source)?,
+        common::pkl("source.bin")?,
         common::path(&dest)?
     );
     harness.write(&tasks)?;

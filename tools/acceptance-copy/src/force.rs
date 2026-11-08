@@ -3,10 +3,14 @@ use anyhow::{Result, ensure};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     let harness = Harness::new(root, cli, agent)?;
-    let source = harness.temp.path().join("source");
+    let source = harness
+        .module
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("fixture module has no parent"))?
+        .join("source");
     let dest = harness.payload.join("destination");
     fs::write(&source, b"original\x00\xff")?;
-    harness.write(&format!(r#"new {{ name = "copy"; operation = new Ruxel.Copy {{ src = {}; dest = {}; force = false; mode = "0640" }} }}"#,common::path(&source)?,common::path(&dest)?))?;
+    harness.write(&format!(r#"new {{ name = "copy"; operation = new Ruxel.Copy {{ src = {}; dest = {}; force = false; mode = "0640" }} }}"#,common::pkl("source")?,common::path(&dest)?))?;
     ensure!(
         harness.run("apply")?["changed"] == true
             && fs::read(&dest)? == b"original\x00\xff"
