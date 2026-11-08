@@ -4,14 +4,31 @@
 )]
 
 use super::{ExecContext, bool_param, params_object, str_param, write_atomic};
+use crate::system_state::SystemState;
 use serde_json::{Value, json};
 use std::path::Path;
 
-pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
-    run_in(params, ctx, Path::new("/etc/apt/sources.list.d"))
+pub(super) fn run(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+) -> Result<Value, String> {
+    run_in(
+        params,
+        ctx,
+        system_state,
+        Path::new("/etc/apt/sources.list.d"),
+        &mut update,
+    )
 }
 
-fn run_in(params: &Value, ctx: &ExecContext, directory: &Path) -> Result<Value, String> {
+fn run_in(
+    params: &Value,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    directory: &Path,
+    update: &mut impl FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
     let obj = params_object(params)?;
     let repo = str_param(obj, "repo").ok_or("apt_repository: repo required")?;
     let state = str_param(obj, "state").unwrap_or("present");
@@ -30,8 +47,8 @@ fn run_in(params: &Value, ctx: &ExecContext, directory: &Path) -> Result<Value, 
     let path = directory.join(format!("{filename}.list"));
     let want = format!("{repo}\n");
     let current = match std::fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Ok(content) => Some(content),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => {
             return Err(format!(
                 "apt_repository: cannot read {}: {error}",
@@ -39,21 +56,24 @@ fn run_in(params: &Value, ctx: &ExecContext, directory: &Path) -> Result<Value, 
             ));
         }
     };
-    let changed = current != want;
+    let changed = current.as_deref() != Some(want.as_str());
 
     if changed && !ctx.check_mode {
         write_atomic(&path, want.as_bytes())?;
         if update_cache {
-            let out = std::process::Command::new("apt-get")
-                .arg("update")
-                .env("DEBIAN_FRONTEND", "noninteractive")
-                .output()
-                .map_err(|e| format!("apt-get update: {e}"))?;
-            if !out.status.success() {
-                return Err(format!(
-                    "apt-get update after repo change failed: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
+            let refreshed = update();
+            // A failed update can still replace some package indexes.
+            system_state.invalidate_packages();
+            if let Err(error) = refreshed {
+                let restored = match &current {
+                    Some(content) => write_atomic(&path, content.as_bytes()),
+                    None => std::fs::remove_file(&path).map_err(|e| e.to_string()),
+                };
+                return match restored {
+                    Ok(()) => Err(error),
+                    Err(rollback) => Ok(json!({"failed": true, "changed": true,
+                        "msg": format!("{error}; repository rollback failed: {rollback}")})),
+                };
             }
         }
     }
@@ -65,9 +85,24 @@ fn run_in(params: &Value, ctx: &ExecContext, directory: &Path) -> Result<Value, 
         "state": state,
     });
     if changed && ctx.diff_mode && !ctx.no_log {
-        result["diff"] = json!(super::unified_diff(&current, &want));
+        result["diff"] = json!(super::unified_diff(current.as_deref().unwrap_or(""), &want));
     }
     Ok(result)
+}
+
+fn update() -> Result<(), String> {
+    let out = std::process::Command::new("apt-get")
+        .arg("update")
+        .env("DEBIAN_FRONTEND", "noninteractive")
+        .output()
+        .map_err(|e| format!("apt-get update: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "apt-get update after repo change failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
 }
 
 fn validate_filename(filename: &str) -> Result<(), String> {

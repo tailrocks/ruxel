@@ -16,6 +16,20 @@ pub(crate) struct UnitState {
 }
 
 impl SystemState {
+    #[cfg(test)]
+    pub(crate) fn with_test_packages() -> Self {
+        Self {
+            packages: Some(HashMap::from([("pkg".into(), "1".into())])),
+            candidates: HashMap::from([("pkg".into(), "1".into())]),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_packages_invalidated(&self) -> bool {
+        self.packages.is_none() && self.candidates.is_empty()
+    }
+
     pub(crate) fn package_version(&mut self, name: &str) -> Option<String> {
         self.ensure_packages().ok()?;
         self.packages.as_ref()?.get(name).cloned()

@@ -144,7 +144,7 @@ pub(crate) fn execute(
         "stat" => stat::run(params),
         "timezone" => timezone::run(params, ctx),
         "apt" => apt::run(params, ctx, system_state),
-        "apt_repository" => apt_repository::run(params, ctx),
+        "apt_repository" => apt_repository::run(params, ctx, system_state),
         "blockinfile" => blockinfile::run(params, ctx),
         "sysctl" => sysctl::run(params, ctx),
         "group" => user::group(params, ctx),

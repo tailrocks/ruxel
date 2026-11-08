@@ -48,6 +48,7 @@ fn check_mode_diff_reports_repository_content() {
             "update_cache": false,
         }),
         &context,
+        &mut SystemState::default(),
     )
     .unwrap();
     assert!(
@@ -72,7 +73,16 @@ fn invalid_existing_file_is_preserved_in_check_and_apply() {
             become_user: None,
         };
         let params = json!({"repo": "deb https://example.invalid stable main", "filename": "vendor", "update_cache": false});
-        assert!(run_in(&params, &context, dir.path()).is_err());
+        assert!(
+            run_in(
+                &params,
+                &context,
+                &mut SystemState::default(),
+                dir.path(),
+                &mut || Ok(())
+            )
+            .is_err()
+        );
         assert_eq!(std::fs::read(&path).unwrap(), [0xff, 0xfe]);
     }
 }
@@ -90,13 +100,27 @@ fn missing_repository_preview_apply_and_convergence() {
         become_user: None,
     };
     assert_eq!(
-        run_in(&params, &context, dir.path()).unwrap()["changed"],
+        run_in(
+            &params,
+            &context,
+            &mut SystemState::default(),
+            dir.path(),
+            &mut || Ok(())
+        )
+        .unwrap()["changed"],
         true
     );
     assert!(!path.exists());
     context.check_mode = false;
     assert_eq!(
-        run_in(&params, &context, dir.path()).unwrap()["changed"],
+        run_in(
+            &params,
+            &context,
+            &mut SystemState::default(),
+            dir.path(),
+            &mut || Ok(())
+        )
+        .unwrap()["changed"],
         true
     );
     assert_eq!(
@@ -104,7 +128,80 @@ fn missing_repository_preview_apply_and_convergence() {
         "deb https://example.invalid stable main\n"
     );
     assert_eq!(
-        run_in(&params, &context, dir.path()).unwrap()["changed"],
+        run_in(
+            &params,
+            &context,
+            &mut SystemState::default(),
+            dir.path(),
+            &mut || Ok(())
+        )
+        .unwrap()["changed"],
         false
     );
+}
+
+#[test]
+fn refresh_failure_restores_existing_or_absent_file() {
+    for existing in [true, false] {
+        let dir = TestDir::new(if existing {
+            "rollback-existing"
+        } else {
+            "rollback-missing"
+        });
+        let path = dir.path().join("vendor.list");
+        if existing {
+            std::fs::write(&path, "old\n").unwrap();
+        }
+        let params = json!({"repo": "new", "filename": "vendor"});
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        assert!(
+            run_in(
+                &params,
+                &ctx,
+                &mut SystemState::default(),
+                dir.path(),
+                &mut || Err("refresh failed".into())
+            )
+            .is_err()
+        );
+        if existing {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), "old\n");
+        } else {
+            assert!(!path.exists());
+        }
+    }
+}
+
+#[test]
+fn refresh_invalidates_packages_and_candidates() {
+    for succeeds in [true, false] {
+        let dir = TestDir::new(if succeeds {
+            "refresh-ok"
+        } else {
+            "refresh-error"
+        });
+        let params = json!({"repo": "new", "filename": "vendor"});
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let mut state = SystemState::with_test_packages();
+        let _ = run_in(&params, &ctx, &mut state, dir.path(), &mut || {
+            if succeeds {
+                Ok(())
+            } else {
+                Err("refresh failed".into())
+            }
+        });
+        assert!(state.test_packages_invalidated());
+    }
 }
