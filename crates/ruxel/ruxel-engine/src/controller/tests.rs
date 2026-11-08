@@ -37,6 +37,7 @@ mod skipped_result;
 mod smoke;
 mod standard_expression;
 mod until_sensitivity;
+mod url_timezone;
 
 #[derive(Default)]
 struct Fake {
