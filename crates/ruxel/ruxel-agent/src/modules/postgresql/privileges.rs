@@ -67,6 +67,34 @@ fn validate_targets(
     Ok(())
 }
 
+fn privilege_server_version(
+    ctx: &PgContext<'_>,
+    port: &str,
+    db: &str,
+    typ: &str,
+    privs: &str,
+) -> Result<u32, String> {
+    let has_maintain = privs
+        .split(',')
+        .map(str::trim)
+        .any(|p| p.eq_ignore_ascii_case("MAINTAIN"));
+    let needs_version = matches!(typ, "table" | "default_privs")
+        && (has_maintain
+            || privs.split(',').map(str::trim).any(|p| {
+                p.eq_ignore_ascii_case("ALL") || p.eq_ignore_ascii_case("ALL PRIVILEGES")
+            }));
+    if !needs_version {
+        return Ok(0);
+    }
+    let version = psql(ctx, port, Some(db), "SHOW server_version_num")?
+        .parse::<u32>()
+        .map_err(|_| "postgresql_privs: invalid server_version_num")?;
+    if has_maintain && version < 170_000 {
+        return Err("postgresql_privs: MAINTAIN requires PostgreSQL 17 or newer".into());
+    }
+    Ok(version)
+}
+
 pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let ctx = &PgContext {
@@ -93,18 +121,7 @@ pub(crate) fn privs(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
         return Err("postgresql_privs: target_roles requires type=default_privs".into());
     }
 
-    let needs_version = matches!(typ, "table" | "default_privs")
-        && privs_list
-            .split(',')
-            .map(str::trim)
-            .any(|p| p.eq_ignore_ascii_case("ALL") || p.eq_ignore_ascii_case("ALL PRIVILEGES"));
-    let server_version = if needs_version {
-        psql(ctx, &port, Some(login_db), "SHOW server_version_num")?
-            .parse::<u32>()
-            .map_err(|_| "postgresql_privs: invalid server_version_num")?
-    } else {
-        0
-    };
+    let server_version = privilege_server_version(ctx, &port, login_db, typ, &privs_list)?;
     let probes = acl_privileges(&privs_list, typ, server_version);
 
     let needed = match typ {
