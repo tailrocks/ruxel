@@ -80,12 +80,28 @@ fn probe(binary: &str, args: &[&str]) -> Result<bool, String> {
     let mut command = std::process::Command::new(binary);
     command
         .args(args)
+        .env("LC_ALL", "C")
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    command
-        .status()
-        .map(|status| status.success())
-        .map_err(|error| format!("exec {binary}: {error}"))
+        .stderr(std::process::Stdio::piped());
+    let output = command
+        .output()
+        .map_err(|error| format!("exec {binary}: {error}"))?;
+    if output.status.success() {
+        return Ok(true);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.code() == Some(1)
+        && stderr
+            .trim()
+            .ends_with("Bad rule (does a matching rule exist in that chain?).")
+    {
+        return Ok(false);
+    }
+    Err(format!(
+        "{binary} rule probe failed ({}): {}",
+        output.status,
+        stderr.trim()
+    ))
 }
 
 fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {
@@ -96,31 +112,4 @@ fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    #[test]
-    fn builds_rule_spec_and_parses_policy() {
-        let params = json!({"protocol":"tcp", "destination":"10.0.0.0/8", "jump":"ACCEPT", "comment":"allow"});
-        let spec = super::rule_spec(params.as_object().unwrap());
-        assert_eq!(
-            spec,
-            [
-                "-p",
-                "tcp",
-                "-d",
-                "10.0.0.0/8",
-                "-j",
-                "ACCEPT",
-                "-m",
-                "comment",
-                "--comment",
-                "allow"
-            ]
-        );
-        assert_eq!(
-            super::parse_policy("-P INPUT DROP\n-A INPUT -j ACCEPT\n", "INPUT").as_deref(),
-            Some("DROP")
-        );
-    }
-}
+mod tests;
