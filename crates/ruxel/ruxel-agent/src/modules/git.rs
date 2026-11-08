@@ -108,7 +108,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 return Err("git: abbreviated object IDs are not supported in check mode; use a full object ID or ref".into());
             }
         }
-        let (ls, ok) = git(&["ls-remote", "--", repo, branch], Some(dest))?;
+        let remote_source = if version.is_none() { "origin" } else { repo };
+        let (ls, ok) = git(&["ls-remote", "--", remote_source, branch], Some(dest))?;
         let mut remote = ls.split_whitespace().next().unwrap_or("").to_string();
         if let Some(tag_ref) = ls
             .lines()
@@ -162,7 +163,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             return Err("git reset --hard failed".into());
         }
     }
-    let (_, ok) = git(&["fetch", "origin"], Some(dest))?;
+    let fetch_args: &[&str] = if version.is_none() {
+        &["fetch", "origin", "HEAD"]
+    } else {
+        &["fetch", "origin"]
+    };
+    let (_, ok) = git(fetch_args, Some(dest))?;
     if !ok {
         return Err("git fetch failed".into());
     }
