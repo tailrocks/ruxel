@@ -19,10 +19,8 @@ pub(crate) fn build_args(spec: &HostSpec, control: &Path, mode: ArgsMode) -> Vec
         format!("HostName={}", spec.address),
         format!("User={}", spec.user),
         format!("Port={}", spec.port),
-        format!("IdentityFile={}", spec.identity_file.display()),
         "IdentitiesOnly=yes".into(),
         "IdentityAgent=none".into(),
-        format!("UserKnownHostsFile={}", spec.known_hosts_file.display()),
         format!(
             "StrictHostKeyChecking={}",
             if matches!(mode, ArgsMode::Trust) {
@@ -36,25 +34,61 @@ pub(crate) fn build_args(spec: &HostSpec, control: &Path, mode: ArgsMode) -> Vec
         "ProxyJump=none".into(),
         "ProxyCommand=none".into(),
         "BatchMode=yes".into(),
-        format!(
-            "ControlPath={}",
-            if matches!(mode, ArgsMode::Normal) {
-                control.display().to_string()
-            } else {
-                "none".into()
-            }
-        ),
     ];
     for option in options {
         args.push("-o".into());
         args.push(option.into());
     }
+    args.push("-o".into());
+    args.push(path_option("IdentityFile", &spec.identity_file));
+    args.push("-o".into());
+    args.push(path_option("UserKnownHostsFile", &spec.known_hosts_file));
+    args.push("-o".into());
+    args.push(if matches!(mode, ArgsMode::Normal) {
+        path_option("ControlPath", control)
+    } else {
+        "ControlPath=none".into()
+    });
     if !matches!(mode, ArgsMode::Normal) {
         args.push("-o".into());
         args.push("ConnectTimeout=5".into());
     }
     args.push(spec.address.to_string().into());
     args
+}
+
+fn path_option(key: &str, path: &Path) -> OsString {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let mut value = format!("{key}=\"").into_bytes();
+    for byte in path.as_os_str().as_bytes() {
+        if matches!(byte, b'\\' | b'"') {
+            value.push(b'\\');
+        }
+        value.push(*byte);
+    }
+    value.push(b'"');
+    OsString::from_vec(value)
+}
+
+pub(crate) fn validate_paths(spec: &HostSpec) -> Result<(), String> {
+    for path in [&spec.identity_file, &spec.known_hosts_file] {
+        validate_path(path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_path(path: &Path) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = path.as_os_str().as_bytes();
+    if !path.is_absolute()
+        || bytes
+            .iter()
+            .any(|byte| byte.is_ascii_control() || *byte == b'%')
+        || bytes.windows(2).any(|pair| pair == b"${")
+    {
+        return Err("SSH file paths must be absolute and literal".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn check_ssh_g(output: &str, spec: &HostSpec) -> Result<(), String> {
