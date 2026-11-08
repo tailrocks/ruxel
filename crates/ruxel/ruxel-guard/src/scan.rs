@@ -75,9 +75,6 @@ pub fn deny_hits(policy: &Policy, literals: &[&str]) -> Vec<(String, String)> {
                 });
             if let Some(net) = candidate {
                 let net = mapped_network(net);
-                if net.prefix_len() < if net.addr().is_ipv4() { 8 } else { 16 } {
-                    continue;
-                }
                 for deny in &policy.deny {
                     if intersects(*deny, net) {
                         hits.push(((*literal).to_owned(), format!("deny {deny}")));
