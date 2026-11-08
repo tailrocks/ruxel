@@ -45,6 +45,10 @@ fn run_in(
 
     validate_filename(filename)?;
     let path = directory.join(format!("{filename}.list"));
+    let pending_path = directory.join(format!(".{filename}.ruxel-update-pending"));
+    let pending = pending_path
+        .try_exists()
+        .map_err(|error| format!("apt_repository: cannot inspect refresh marker: {error}"))?;
     let want = format!("{repo}\n");
     let current = match std::fs::read_to_string(&path) {
         Ok(content) => Some(content),
@@ -56,16 +60,27 @@ fn run_in(
             ));
         }
     };
-    let changed = current.as_deref() != Some(want.as_str());
+    let source_changed = current.as_deref() != Some(want.as_str());
+    let changed = source_changed || (update_cache && pending);
 
     if changed && !ctx.check_mode {
-        write_atomic(&path, want.as_bytes())?;
+        if update_cache {
+            write_atomic(&pending_path, b"pending\n")?;
+        }
+        if source_changed && let Err(error) = write_atomic(&path, want.as_bytes()) {
+            return Ok(json!({"failed": true, "changed": update_cache, "msg": error}));
+        }
         if update_cache {
             let refreshed = update();
             // A failed update can still replace some package indexes.
             system_state.invalidate_packages();
             if let Err(error) = refreshed {
                 return Ok(json!({"failed": true, "changed": true, "msg": error}));
+            }
+            if let Err(error) = std::fs::remove_file(&pending_path) {
+                return Ok(
+                    json!({"failed": true, "changed": true, "msg": format!("apt_repository: cannot clear refresh marker: {error}")}),
+                );
             }
         }
     }

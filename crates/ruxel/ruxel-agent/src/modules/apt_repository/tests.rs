@@ -229,3 +229,49 @@ fn failed_refresh_does_not_replace_a_concurrent_file() {
     assert_eq!(result["changed"], true);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "concurrent\n");
 }
+
+#[test]
+fn failed_refresh_is_retried_after_restart_with_matching_source() {
+    let dir = TestDir::new("retry");
+    let params = json!({"repo": "new", "filename": "vendor"});
+    let ctx = ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let first = run_in(
+        &params,
+        &ctx,
+        &mut SystemState::default(),
+        dir.path(),
+        &mut || Err("refresh failed".into()),
+    )
+    .unwrap();
+    assert_eq!(first["failed"], true);
+    let mut calls = 0;
+    let retry = run_in(
+        &params,
+        &ctx,
+        &mut SystemState::default(),
+        dir.path(),
+        &mut || {
+            calls += 1;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(calls, 1);
+    assert_eq!(retry["changed"], true);
+    assert_eq!(retry["failed"], false);
+    let converged = run_in(
+        &params,
+        &ctx,
+        &mut SystemState::default(),
+        dir.path(),
+        &mut || panic!("unexpected refresh"),
+    )
+    .unwrap();
+    assert_eq!(converged["changed"], false);
+}
