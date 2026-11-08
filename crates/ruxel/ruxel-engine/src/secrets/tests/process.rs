@@ -125,5 +125,5 @@ esac"#,
             "secret lookup failed"
         );
     }
-    assert_eq!(fixture.count(), 3);
+    assert_eq!(fixture.count(), 4);
 }

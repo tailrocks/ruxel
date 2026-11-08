@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Lookup {
@@ -142,7 +142,20 @@ impl Backend for ProcessBackend {
     }
 }
 
-type Cell<T> = Arc<OnceLock<Result<T, String>>>;
+type Cell<T> = Arc<Mutex<Option<T>>>;
+
+fn cached<T: Clone>(
+    cell: &Cell<T>,
+    resolve: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut value = cell.lock().map_err(|_| "lookup cache unavailable")?;
+    if let Some(value) = value.as_ref() {
+        return Ok(value.clone());
+    }
+    let resolved = resolve()?;
+    *value = Some(resolved.clone());
+    Ok(resolved)
+}
 type ItemCache = Arc<Mutex<HashMap<(String, String), Cell<serde_json::Value>>>>;
 
 #[derive(Clone)]
@@ -187,7 +200,7 @@ impl Resolver {
             .entry(lookup.clone())
             .or_default()
             .clone();
-        cell.get_or_init(|| self.resolve_uncached(lookup)).clone()
+        cached(&cell, || self.resolve_uncached(lookup))
     }
 
     fn resolve_uncached(&self, lookup: &Lookup) -> Result<String, String> {
@@ -247,15 +260,12 @@ impl Resolver {
             .entry((vault.to_owned(), item.to_owned()))
             .or_default()
             .clone();
-        let document = cell
-            .get_or_init(|| {
-                self.backend
-                    .onepassword_item(vault, item)
-                    .map_err(|_| "secret lookup failed".to_owned())
-            })
-            .as_ref()
-            .map_err(Clone::clone)?;
-        select_field(document, field, section).ok_or_else(|| "secret field not found".to_owned())
+        let document = cached(&cell, || {
+            self.backend
+                .onepassword_item(vault, item)
+                .map_err(|_| "secret lookup failed".to_owned())
+        })?;
+        select_field(&document, field, section).ok_or_else(|| "secret field not found".to_owned())
     }
 
     /// # Errors

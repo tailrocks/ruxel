@@ -35,7 +35,7 @@ fn quoted_op_read_queries_use_complete_reference_instead_of_cached_field() {
 }
 
 #[test]
-fn query_failures_remain_redacted_and_cached() {
+fn query_failures_remain_redacted_and_are_retried() {
     let backend = Arc::new(Fake::default());
     let resolver = Resolver::new(backend.clone());
     let lookup = Lookup::OnePasswordUri {
@@ -47,7 +47,7 @@ fn query_failures_remain_redacted_and_cached() {
             "secret lookup failed"
         );
     }
-    assert_eq!(backend.references.lock().unwrap().len(), 1);
+    assert_eq!(backend.references.lock().unwrap().len(), 2);
 }
 
 #[test]
