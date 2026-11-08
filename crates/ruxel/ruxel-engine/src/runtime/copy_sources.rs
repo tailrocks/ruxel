@@ -2,7 +2,11 @@ use anyhow::{Context, Result, ensure};
 use prost::Message;
 use ruxel_proto::v1;
 use serde_json::{Map, Value};
-use std::{fs::File, io::Read, path::Path};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Component, Path},
+};
 
 const MAX_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
 
@@ -15,16 +19,10 @@ pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<(
         let mut params: Map<String, Value> = serde_json::from_slice(&iteration.params_json)?;
         let source = params.remove("src").filter(|value| !value.is_null());
         if let Some(source) = source.filter(|_| params.get("content").is_none_or(Value::is_null)) {
-            let path = directory.join(source.as_str().context("source path must be text")?);
-            let descriptor = rustix::fs::open(
-                path,
-                rustix::fs::OFlags::RDONLY
-                    | rustix::fs::OFlags::NONBLOCK
-                    | rustix::fs::OFlags::CLOEXEC,
-                rustix::fs::Mode::empty(),
-            )
-            .context("open controller copy source")?;
-            let file = File::from(descriptor);
+            let file = open_source(
+                directory,
+                source.as_str().context("source path must be text")?,
+            )?;
             let metadata = file.metadata().context("inspect controller copy source")?;
             ensure!(
                 metadata.is_file(),
@@ -42,6 +40,41 @@ pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<(
         iteration.params_json = serde_json::to_vec(&params)?;
     }
     Ok(())
+}
+
+fn open_source(directory: &Path, source: &str) -> Result<File> {
+    use rustix::fs::{Mode, OFlags, open, openat};
+    let components = Path::new(source).components().collect::<Vec<_>>();
+    ensure!(
+        !components.is_empty()
+            && components
+                .iter()
+                .all(|part| matches!(part, Component::Normal(_))),
+        "controller copy source must be a relative path without traversal"
+    );
+    let mut parent = open(
+        directory,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .context("open controller copy source directory")?;
+    for (index, part) in components.iter().enumerate() {
+        let Component::Normal(name) = part else {
+            unreachable!()
+        };
+        let last = index + 1 == components.len();
+        let mut flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW;
+        if !last {
+            flags |= OFlags::DIRECTORY;
+        }
+        let next =
+            openat(&parent, *name, flags, Mode::empty()).context("open controller copy source")?;
+        if last {
+            return Ok(File::from(next));
+        }
+        parent = next;
+    }
+    unreachable!()
 }
 
 fn read_bounded(reader: impl Read, limit: u64) -> Result<Vec<u8>> {
