@@ -9,7 +9,7 @@ build = "build.rs"
 [dependencies]
 ipnet = "2.11"
 thiserror.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 rustix = { workspace = true, features = ["process"] }
 
 [build-dependencies]

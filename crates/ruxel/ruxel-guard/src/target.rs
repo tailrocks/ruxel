@@ -157,11 +157,8 @@ mod tests {
 
     #[test]
     fn admission_uses_simulated_ssh_only_for_allowed_hosts() {
-        let suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("g{}-{suffix:x}", std::process::id()));
+        let root = crate::mux::test_directory().unwrap();
+        let dir = root.join("mux");
         let policy = Policy::new(&["192.0.2.0/24".into()], &["198.51.100.0/24".into()]).unwrap();
         let guard = Guard::new(policy, dir.clone());
         let spec = |address: &str| HostSpec {
@@ -184,6 +181,7 @@ mod tests {
         let result = guard.admit_with(&[spec("192.0.2.10")], &[], simulate);
         assert_eq!(result.unwrap().len(), 1);
         std::fs::remove_dir(dir).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 }
 
@@ -195,13 +193,15 @@ mod directory_tests {
 
     #[test]
     fn rejects_existing_directory_with_group_access() {
-        let path = std::env::temp_dir().join(format!("ruxel-guard-mode-{}", std::process::id()));
+        let root = crate::mux::test_directory().unwrap();
+        let path = root.join("mux");
         std::fs::create_dir(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o750)).unwrap();
         let guard = Guard::new(Policy::new(&[], &[]).unwrap(), path.clone());
         let refusal = guard.admit_all(&[], &[]).unwrap_err();
         assert!(refusal.0[0].rule.contains("mode 0700"));
         std::fs::remove_dir(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 }
 
@@ -213,8 +213,7 @@ mod long_path_test {
 
     #[test]
     fn rejects_long_socket_path_before_ssh() {
-        let root = std::env::temp_dir().join(format!("guardlong{}", std::process::id()));
-        std::fs::create_dir(&root).unwrap();
+        let root = crate::mux::test_directory().unwrap();
         let dir = root.join("a".repeat(100));
         let guard = Guard::new(
             Policy::new(&["192.0.2.0/24".into()], &[]).unwrap(),
