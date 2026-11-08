@@ -13,7 +13,7 @@ pub(super) fn pin(name: &str) -> &'static str {
         "check-semantics" => "1e6b201dc0db963ef6b94be616341c99a063a6cc06c40a4cf469167efc476a94",
         "multihost" => "05ec8dd45d82391528d6cdc3e504e2ffe471c1a291484eb8d1971f108c50ed8a",
         "controller-delegation" => {
-            "34a0ac522dd9d9ff34b18f2fe6564c9d9626735fd2df7a0a88e6ecbd56520b2b"
+            "e737869712661708b13416544cab5126759e8448789e52859c045c33cd95e909"
         }
         _ => "",
     }
