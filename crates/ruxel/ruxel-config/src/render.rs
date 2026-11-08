@@ -62,12 +62,8 @@ fn drop_nulls(value: &mut Value) -> Result<(), RenderError> {
             }
         }
         Value::Array(array) => {
+            array.retain(|value| !value.is_null());
             for value in array {
-                if value.is_null() {
-                    return Err(RenderError::Toml(
-                        "null array elements are not supported".into(),
-                    ));
-                }
                 drop_nulls(value)?;
             }
         }

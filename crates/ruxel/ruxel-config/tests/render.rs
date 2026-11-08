@@ -49,27 +49,13 @@ fn toml_rejects_non_object_root() {
 }
 
 #[test]
-fn toml_rejects_null_array_elements_at_any_depth() {
-    for value in [
-        json!({"items": [null, "second"]}),
-        json!({"items": [[1, null]]}),
-        json!({"items": [{"nested": [null]}]}),
-    ] {
-        assert!(matches!(
-            render(Format::Toml, &value),
-            Err(RenderError::Toml(_))
-        ));
-    }
-}
-
-#[test]
-fn toml_omits_null_properties_inside_array_objects() -> Result<(), RenderError> {
+fn toml_render_drops_nulls_recursively_from_arrays_and_objects() -> Result<(), RenderError> {
     assert_eq!(
         render(
             Format::Toml,
-            &json!({"items": [{"name": "one", "optional": null}]})
+            &json!({"items": [null, {"name": "one", "optional": null}, [1, null, 2]]})
         )?,
-        "[[items]]\nname = \"one\"\n"
+        "items = [{ name = \"one\" }, [1, 2]]\n"
     );
     Ok(())
 }
