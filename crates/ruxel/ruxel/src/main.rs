@@ -96,9 +96,12 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
         });
     match result {
         Ok(recaps) => {
+            let unreachable = recaps.values().any(|r| r.unreachable != 0);
             let failed = recaps.values().any(|r| r.failed != 0);
             let changed = recaps.values().any(|r| r.changed != 0 || r.planned != 0);
-            if failed {
+            if unreachable {
+                ExitCode::Unreachable
+            } else if failed {
                 ExitCode::Failed
             } else if changed && args.presentation.detailed_exitcode {
                 ExitCode::Changes

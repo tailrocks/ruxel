@@ -54,6 +54,7 @@ pub(super) async fn run_plays(
                             total.planned += recap.planned;
                             total.changed += recap.changed;
                             total.failed += recap.failed;
+                            total.unreachable += recap.unreachable;
                             total.skipped += recap.skipped;
                             total.rescued += recap.rescued;
                             total.ignored += recap.ignored;
@@ -69,6 +70,7 @@ pub(super) async fn run_plays(
                         total.planned += recap.planned;
                         total.changed += recap.changed;
                         total.failed += recap.failed;
+                        total.unreachable += recap.unreachable;
                         total.skipped += recap.skipped;
                         total.rescued += recap.rescued;
                         total.ignored += recap.ignored;

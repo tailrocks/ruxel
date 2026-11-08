@@ -43,6 +43,7 @@ impl secrets::Backend for Rendezvous {
 fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Result<()> {
     let backend = Arc::new(Rendezvous::default());
     let mut execution = Execution {
+        connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         inventory: Map::new(),

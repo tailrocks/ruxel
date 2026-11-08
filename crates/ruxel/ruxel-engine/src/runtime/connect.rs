@@ -77,6 +77,7 @@ pub(super) async fn preconnect(
                     host,
                     Recap {
                         failed: 1,
+                        unreachable: 1,
                         ..Recap::default()
                     },
                 );

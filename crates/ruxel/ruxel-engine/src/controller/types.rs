@@ -16,6 +16,8 @@ pub struct Recap {
     pub ok: u64,
     pub changed: u64,
     pub failed: u64,
+    /// Connection failures included in `failed`, distinct from task failures.
+    pub unreachable: u64,
     pub skipped: u64,
     pub rescued: u64,
     pub ignored: u64,

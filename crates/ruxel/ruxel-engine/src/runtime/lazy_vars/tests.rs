@@ -14,6 +14,7 @@ use std::{
 
 fn execution() -> Result<Execution> {
     Ok(Execution {
+        connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         inventory: Map::new(),

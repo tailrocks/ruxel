@@ -40,6 +40,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         "output { value = new Dynamic { kind = \"ref\"; path = new Listing { \"vars\"; \"name\" } } }",
     )?;
     let mut execution = Execution {
+        connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         effect_gate: Arc::new(tokio::sync::RwLock::new(())),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),

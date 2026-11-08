@@ -18,6 +18,10 @@ pub trait Backend {
     fn conservative_sensitive(&self) -> bool {
         false
     }
+    /// Monotonic connection-failure count, independent of redacted diagnostics.
+    fn connection_failures(&self) -> u64 {
+        0
+    }
     /// # Errors
     /// Returns an error if evaluation fails.
     fn evaluate(&mut self, value: &Value, scope: &Map<String, Value>) -> Result<Value>;
@@ -257,6 +261,7 @@ pub async fn run<B: Backend>(
                 "facts".into(),
                 facts.get(&host).cloned().unwrap_or_else(|| json!({})),
             );
+            let connection_failures_before = backend.connection_failures();
             let mut runner = Runner {
                 backend,
                 options,
@@ -305,6 +310,11 @@ pub async fn run<B: Backend>(
             recap.ok += runner.recap.ok;
             recap.changed += runner.recap.changed;
             recap.failed += runner.recap.failed;
+            recap.unreachable += runner.recap.unreachable
+                + runner
+                    .backend
+                    .connection_failures()
+                    .saturating_sub(connection_failures_before);
             recap.skipped += runner.recap.skipped;
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;

@@ -32,6 +32,7 @@ mod delegates;
 
 #[derive(Clone)]
 struct Execution {
+    connection_failures: u64,
     conservative_sensitive: Arc<std::sync::atomic::AtomicBool>,
     effect_gate: Arc<tokio::sync::RwLock<()>>,
     inventory: Map<String, Value>,
@@ -50,6 +51,9 @@ mod evaluation;
 mod templates;
 
 impl Backend for Execution {
+    fn connection_failures(&self) -> u64 {
+        self.connection_failures
+    }
     fn conservative_sensitive(&self) -> bool {
         self.conservative_sensitive
             .load(std::sync::atomic::Ordering::Acquire)
@@ -129,6 +133,7 @@ impl Backend for Execution {
     ) -> Result<TrackedValue> {
         if !self.connections.lock().await.contains_key(&request.host) {
             self.connect(&request.host).await.map_err(|error| {
+                self.connection_failures += 1;
                 if sensitive || self.conservative_sensitive() {
                     anyhow::anyhow!("sensitive connection failed")
                 } else {
@@ -190,12 +195,17 @@ impl Backend for Execution {
         let mut connection = connection.lock().await;
         let id = request.task.task_id;
         let plan = copy_sources::plan(request.task)?;
-        connection.send(&plan).await?;
+        connection.send(&plan).await.inspect_err(|_| {
+            self.connection_failures += 1;
+        })?;
         loop {
             let event = connection
                 .next()
-                .await?
-                .context("agent closed before task result")?;
+                .await
+                .and_then(|event| event.context("agent closed before task result"))
+                .inspect_err(|_| {
+                    self.connection_failures += 1;
+                })?;
             match event.msg {
                 Some(v1::event::Msg::TaskResult(result)) if result.task_id == id => {
                     let mut value: Value = serde_json::from_slice(&result.result_json)
@@ -207,7 +217,10 @@ impl Backend for Execution {
                     }
                     return Ok(value);
                 }
-                Some(v1::event::Msg::Crash(_)) => bail!("agent crashed"),
+                Some(v1::event::Msg::Crash(_)) => {
+                    self.connection_failures += 1;
+                    bail!("agent crashed");
+                }
                 Some(v1::event::Msg::PauseRequest(_)) => bail!("unexpected agent pause"),
                 _ => {}
             }
@@ -251,6 +264,7 @@ pub async fn run(
     })?;
     let config = &validated;
     let execution = Execution {
+        connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(
             options.mode == Mode::Plan,
         )),
@@ -332,6 +346,7 @@ pub async fn run(
             for (host, error) in shutdown_errors {
                 connect::report_failure(&execution, &host, "unreachable", &error)?;
                 let total = recap.entry(host).or_default();
+                total.unreachable = total.unreachable.max(1);
                 if total.failed == 0 {
                     total.failed = 1;
                 }
@@ -342,7 +357,10 @@ pub async fn run(
                 } else {
                     host
                 };
-                let event = json!({"host":visible_host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
+                let mut event = json!({"host":visible_host,"recap":{"planned":total.planned,"ok":total.ok,"changed":total.changed,"failed":total.failed,"skipped":total.skipped,"rescued":total.rescued,"ignored":total.ignored}});
+                if total.unreachable != 0 {
+                    event["recap"]["unreachable"] = json!(total.unreachable);
+                }
                 execution.output.event(&execution.lookups.redact(&event)?)?;
             }
             Ok(recap)
