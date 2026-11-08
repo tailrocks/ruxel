@@ -25,12 +25,7 @@ struct Observer {
 }
 impl LookupResolver for Observer {
     fn resolve(&self, expr: &Expr) -> Result<Value> {
-        let Expr::Lookup {
-            provider,
-            argv,
-            ..
-        } = expr
-        else {
+        let Expr::Lookup { provider, argv, .. } = expr else {
             bail!("unexpected lookup")
         };
         ensure!(
