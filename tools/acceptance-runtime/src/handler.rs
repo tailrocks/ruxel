@@ -100,7 +100,7 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
             && !events.iter().any(|e| e["task"] == "failed handler")
             && events
                 .iter()
-                .any(|e| e["task"] == "always" && e["result"]["msg"] == "always ran"),
+                .any(|e| e["task"] == "always" && e["result"]["skipped"] == true),
         "other tag selection failed"
     );
     let after_other = snapshot(&payload)?;
@@ -118,10 +118,28 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     ensure!(
         recaps.len() == 1
             && recaps[0]["recap"]["failed"] == 0
-            && recaps[0]["recap"]["skipped"] == 2,
+            && recaps[0]["recap"]["skipped"] == 3,
         "other selection failed recap"
     );
     let before = snapshot(&payload)?;
+    let events = process::run_extra(
+        cli,
+        agent,
+        &module,
+        &base.join("state"),
+        "apply",
+        Duration::from_secs(20),
+        &[OsStr::new("--tags"), OsStr::new("always")],
+        None,
+        0,
+    )?;
+    ensure!(
+        events
+            .iter()
+            .any(|e| e["task"] == "always" && e["result"]["msg"] == "always ran")
+            && snapshot(&payload)? == before,
+        "explicit always tag selection failed"
+    );
     let invalid = process::run_extra(
         cli,
         agent,

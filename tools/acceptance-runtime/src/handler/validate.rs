@@ -26,11 +26,11 @@ pub(super) fn validate(events: &[Value], payload: &Path, failed: bool) -> Result
     }
     let always: Vec<_> = events
         .iter()
-        .filter(|e| e["task"] == "always" && e["result"]["msg"] == "always ran")
+        .filter(|e| e["task"] == "always" && e["result"]["skipped"] == true)
         .collect();
     ensure!(
         always.len() == 1 && !payload.join("other").exists(),
-        "always or tag selection failed"
+        "unselected tags were not skipped"
     );
     Ok(())
 }
