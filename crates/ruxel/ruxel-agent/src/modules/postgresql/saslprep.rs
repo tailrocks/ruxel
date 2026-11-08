@@ -271,6 +271,12 @@ mod tests {
     }
 
     #[test]
+    fn validates_bidirectional_text_before_returning_normalized_form() {
+        assert_eq!(prepared("\u{fb1d}"), Some("\u{5d9}\u{5b4}".into()));
+        assert_eq!(prepared("\u{5d9}\u{5b4}"), None);
+    }
+
+    #[test]
     fn normalizes_decomposition_order_and_hangul() {
         assert_eq!(normalized("A\u{30a}"), Some("Å".into()));
         assert_eq!(normalized("\u{fb03}"), Some("ffi".into()));
