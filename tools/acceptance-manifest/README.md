@@ -1,11 +1,11 @@
 # Local manifest acceptance
 
-Standalone safe Rust port for five reviewed manifest scenarios:
-`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, and `control-flow`. Each contract must
+Standalone safe Rust port for six reviewed manifest scenarios:
+`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, and `postgresql-ownership`. Each contract must
 exactly match the frozen reviewed contract in `contracts.json`; fixture and
 baseline oracle hashes are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
-expected to fail while nine scenarios have no adapter.
+expected to fail while eight scenarios have no adapter.
 
 The control-flow adapter requires the same isolated Linux guest as the restart
 adapter. It runs a private in-memory observer of the real controller and agent
@@ -32,3 +32,9 @@ is not evidence for privileged workloads or full matrix parity. The candidate
 `acceptance-local` task runs both commands; aggregate execution remains blocked
 as documented in `docs/RUST-ACCEPTANCE-WIRING.md`. Former driver sources remain
 until coordinated removal.
+
+The PostgreSQL adapter starts a new disposable PostgreSQL cluster with TCP
+listening disabled and a private Unix socket. It requires a network-isolated
+Docker guest without host mounts, PostgreSQL server and client packages, a
+`postgres` account, and `RUXEL_POSTGRES_FIXTURE=isolated`. It checks explicit
+catalog ownership and grants and captures catalog state across preview runs.

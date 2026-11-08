@@ -37,3 +37,12 @@ fn control_contract_rejects_unreviewed_observations() -> anyhow::Result<()> {
     assert!(validate_case("control-flow", &manifest).is_err());
     Ok(())
 }
+
+#[test]
+fn postgres_contract_rejects_modified_drift() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"postgresql-ownership": serde_json::from_str::<Value>(include_str!("../postgres-contract.json"))?}});
+    validate_case("postgresql-ownership", &manifest)?;
+    manifest["scenarios"]["postgresql-ownership"]["drift"][0]["owner"] = json!("unexpected");
+    assert!(validate_case("postgresql-ownership", &manifest).is_err());
+    Ok(())
+}

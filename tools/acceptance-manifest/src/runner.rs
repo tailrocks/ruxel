@@ -109,6 +109,9 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
         return crate::control_run::execute(&cli_env);
     }
     let env = Env::new(name, repo, cli, agent)?;
+    if name == "postgresql-ownership" {
+        return crate::postgres_run::execute(&env);
+    }
     if name == "restart-actions" {
         return crate::restart_run::execute(&env);
     }
