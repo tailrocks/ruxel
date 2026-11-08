@@ -39,6 +39,7 @@ fn run_with(
                     json!({"failed": true, "changed": true, "msg": format!("apt update failed: {}", out.2)}),
                 );
             }
+            changed = true;
         }
         result["cache_updated"] = json!(!ctx.check_mode);
         result["cache_update_time"] = json!(
