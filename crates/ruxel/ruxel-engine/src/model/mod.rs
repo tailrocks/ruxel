@@ -182,6 +182,14 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             "loop controls require an operation task"
         );
         ensure!(
+            task.block.is_empty()
+                || (task.until.is_none()
+                    && task.retries.is_none()
+                    && task.changed_when.is_none()
+                    && task.failed_when.is_none()),
+            "retry and result controls require an operation task"
+        );
+        ensure!(
             task.retries != Some(u64::MAX),
             "retries exceed supported range"
         );
