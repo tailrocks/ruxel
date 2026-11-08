@@ -116,6 +116,15 @@ fn expression_map(values: &BTreeMap<String, Value>) -> Result<()> {
     }
     Ok(())
 }
+fn environment(values: &BTreeMap<String, Value>) -> Result<()> {
+    ensure!(
+        values
+            .keys()
+            .all(|key| !key.is_empty() && !key.contains(['=', '\0'])),
+        "invalid environment variable name"
+    );
+    expression_map(values)
+}
 pub(crate) fn validate_block_result_controls(
     block: bool,
     registered: bool,
@@ -208,7 +217,7 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             expression(expr)?;
         }
         expression_map(&task.vars)?;
-        expression_map(&task.environment)?;
+        environment(&task.environment)?;
         if let Some(value) = &task.operation {
             let mut params = value
                 .as_object()
@@ -266,7 +275,7 @@ pub fn validate_config(value: &Value) -> Result<Value> {
     }
     for play in &config.plays {
         expression_map(&play.vars)?;
-        expression_map(&play.environment)?;
+        environment(&play.environment)?;
         validate_tasks(&play.pre_tasks)?;
         validate_tasks(&play.tasks)?;
         validate_tasks(&play.handlers)?;

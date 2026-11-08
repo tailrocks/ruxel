@@ -30,16 +30,8 @@ fn redaction_preserves_json_structure_for_short_and_escaped_secrets() -> Result<
     Ok(())
 }
 
-#[test]
-fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
-    let directory =
-        std::env::temp_dir().join(format!("ruxel-native-template-{}", std::process::id()));
-    std::fs::create_dir_all(&directory)?;
-    std::fs::write(
-        directory.join("source.pkl"),
-        "output { value = new Dynamic { kind = \"ref\"; path = new Listing { \"vars\"; \"name\" } } }",
-    )?;
-    let mut execution = Execution {
+fn template_execution(directory: &std::path::Path) -> Result<Execution> {
+    Ok(Execution {
         connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         effect_gate: Arc::new(tokio::sync::RwLock::new(())),
@@ -48,7 +40,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         mode: Mode::Apply,
         runtime: RuntimeOptions {
             agent: PathBuf::from("unused"),
-            source_dir: directory.clone(),
+            source_dir: directory.to_path_buf(),
             jobs: 1,
             no_cache: false,
             connection: transport::ConnectOptions::default(),
@@ -62,12 +54,15 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
-        template_root: Arc::new(templates::SourceRoot::open(&directory)?),
+        template_root: Arc::new(templates::SourceRoot::open(directory)?),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),
             values: Mutex::new(Vec::new()),
         }),
-    };
+    })
+}
+
+fn check_template_rendering(execution: &mut Execution, directory: &std::path::Path) -> Result<()> {
     let tracked = execution.evaluate_tracked(
         &json!({"public":"visible", "private":{"kind":"call", "function":"base64Encode", "args":[{"kind":"lookup", "provider":"synthetic", "key":"fixture-only"}]}}),
         &TrackedValue::public(json!({})),
@@ -129,6 +124,17 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         .context("params")?
         .clone();
     execution.prepare_operation("template", &mut absolute, &scope)?;
+    Ok(())
+}
+
+fn check_template_confinement(
+    execution: &mut Execution,
+    directory: &std::path::Path,
+) -> Result<()> {
+    let scope = json!({"vars":{"name":"rendered-value"}})
+        .as_object()
+        .context("scope")?
+        .clone();
     #[cfg(unix)]
     {
         let outside = directory.with_extension("outside.pkl");
@@ -141,7 +147,7 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
                 .to_string_lossy()
         );
         std::os::unix::fs::symlink("source.pkl", directory.join("link.pkl"))?;
-        std::os::unix::fs::symlink(&directory, directory.join("linkdir"))?;
+        std::os::unix::fs::symlink(directory, directory.join("linkdir"))?;
         for source in [
             traversal.as_str(),
             outside.to_str().context("outside path")?,
@@ -162,8 +168,8 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         std::fs::remove_file(outside)?;
     }
     let moved = directory.with_extension("moved");
-    std::fs::rename(&directory, &moved)?;
-    std::fs::create_dir(&directory)?;
+    std::fs::rename(directory, &moved)?;
+    std::fs::create_dir(directory)?;
     std::fs::write(
         directory.join("source.pkl"),
         "output { value = \"replacement\" }",
@@ -178,6 +184,21 @@ fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
         "rendered-value"
     );
     std::fs::remove_dir_all(moved)?;
+    Ok(())
+}
+
+#[test]
+fn typed_template_source_resolves_task_scope_and_rejects_jinja() -> Result<()> {
+    let directory =
+        std::env::temp_dir().join(format!("ruxel-native-template-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    std::fs::write(
+        directory.join("source.pkl"),
+        "output { value = new Dynamic { kind = \"ref\"; path = new Listing { \"vars\"; \"name\" } } }",
+    )?;
+    let mut execution = template_execution(&directory)?;
+    check_template_rendering(&mut execution, &directory)?;
+    check_template_confinement(&mut execution, &directory)?;
     std::fs::remove_dir_all(directory)?;
     Ok(())
 }
