@@ -1,3 +1,15 @@
+pub(super) fn requested<F>(version: &str, dest: &str, git: &F) -> Result<(), String>
+where
+    F: Fn(&[&str], Option<&str>) -> Result<(String, bool), String>,
+{
+    let remote_branch = format!("refs/remotes/origin/{version}");
+    let (_, found) = git(
+        &["rev-parse", "--verify", "--end-of-options", &remote_branch],
+        Some(dest),
+    )?;
+    resolved(if found { &remote_branch } else { version }, dest, git)
+}
+
 pub(super) fn resolved<F>(version: &str, dest: &str, git: &F) -> Result<(), String>
 where
     F: Fn(&[&str], Option<&str>) -> Result<(String, bool), String>,
