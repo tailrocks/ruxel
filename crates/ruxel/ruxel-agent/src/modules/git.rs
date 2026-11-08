@@ -70,11 +70,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         if !ok {
             return Err(format!("git clone {repo} failed"));
         }
-        if let Some(v) = clone_branch(version) {
-            checkout::requested(v, dest, force, &git)?;
-        }
-        let after = head()?;
-        return Ok(json!({"changed": true, "failed": false, "before": null, "after": after}));
+        let completed = (|| {
+            if let Some(v) = clone_branch(version) {
+                checkout::requested(v, dest, force, &git)?;
+            }
+            head()
+        })();
+        return Ok(match completed {
+            Ok(after) => json!({"changed": true, "failed": false, "before": null, "after": after}),
+            Err(error) => json!({"changed": true, "failed": true, "msg": error}),
+        });
     }
 
     let before = head()?;

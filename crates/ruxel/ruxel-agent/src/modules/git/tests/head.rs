@@ -86,7 +86,14 @@ fn exercise(fail_at: u8) {
         let fails = fail_at == 1 || (fail_at == 2 && exists && update && !check_mode);
         let calls = std::fs::read_to_string(trace).unwrap();
         if fails {
-            assert_eq!(result.unwrap_err(), "git rev-parse HEAD failed");
+            if exists {
+                assert_eq!(result.unwrap_err(), "git rev-parse HEAD failed");
+            } else {
+                let value = result.unwrap();
+                assert_eq!(value["failed"], true);
+                assert_eq!(value["changed"], true);
+                assert_eq!(value["msg"], "git rev-parse HEAD failed");
+            }
             assert!(calls.ends_with("rev-parse HEAD\n"));
             if fail_at == 1 && exists {
                 assert_eq!(calls, "rev-parse HEAD\n");

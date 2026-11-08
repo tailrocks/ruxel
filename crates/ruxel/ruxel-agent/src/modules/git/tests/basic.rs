@@ -111,6 +111,38 @@ fn clone_and_update_tag_and_commit_versions() {
 }
 
 #[test]
+fn clone_with_missing_version_reports_the_created_repository() {
+    let root = std::env::temp_dir().join(format!("ruxel-git-missing-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let dest = root.join("dest");
+    std::fs::create_dir(&source).unwrap();
+    git(&source, &["init", "-b", "main"]);
+    git(&source, &["config", "user.name", "Test"]);
+    git(&source, &["config", "user.email", "test@example.invalid"]);
+    std::fs::write(source.join("file"), "content").unwrap();
+    git(&source, &["add", "file"]);
+    git(&source, &["commit", "-m", "initial"]);
+    let ctx = super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let result = super::run(
+        &json!({"repo": source, "dest": dest, "version": "missing"}),
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(result["failed"], true);
+    assert_eq!(result["changed"], true);
+    assert!(result["msg"].as_str().unwrap().contains("cannot resolve"));
+    assert!(dest.join(".git").is_dir());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn positional_flags_are_rejected() {
     assert!(super::validate_positionals(&[("repo", Some("https://example.test/x"))]).is_ok());
     for field in ["repo", "dest", "version"] {
