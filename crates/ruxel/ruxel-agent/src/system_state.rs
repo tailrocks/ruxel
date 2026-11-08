@@ -63,6 +63,23 @@ impl SystemState {
             }
         }
         self.ensure_packages()?;
+        if let Some(architecture) = &self.native_architecture {
+            let mut normalized_pins = HashMap::new();
+            for (_, package, version) in &requests {
+                let normalized = package
+                    .rsplit_once(':')
+                    .filter(|(_, requested)| requested == architecture)
+                    .map_or(*package, |(name, _)| name);
+                if let Some(version) = version
+                    && let Some(previous) = normalized_pins.insert(normalized, *version)
+                    && previous != *version
+                {
+                    return Err(format!(
+                        "apt: conflicting versions requested for {normalized:?}"
+                    ));
+                }
+            }
+        }
         if latest {
             let unpinned: Vec<_> = requests
                 .iter()
