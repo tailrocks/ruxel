@@ -79,35 +79,8 @@ pub(super) fn equal(left: &Value, right: &Value) -> Result<bool> {
     }
 }
 pub(super) fn render_string(value: &Value) -> String {
-    render(value, false)
-}
-
-fn render(value: &Value, nested: bool) -> String {
     match value {
-        Value::Null => "None".into(),
-        Value::Bool(true) => "True".into(),
-        Value::Bool(false) => "False".into(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) if !nested => s.clone(),
-        Value::String(s) => quote(s),
-        Value::Array(items) => format!(
-            "[{}]",
-            items
-                .iter()
-                .map(|v| render(v, true))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Object(map) => format!(
-            "{{{}}}",
-            map.iter()
-                .map(|(k, v)| format!("{}: {}", quote(k), render(v, true)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        Value::String(s) => s.clone(),
+        _ => value.to_string(),
     }
-}
-
-fn quote(value: &str) -> String {
-    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
 }

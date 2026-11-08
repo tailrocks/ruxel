@@ -41,7 +41,7 @@ fn transformations_and_invalid_calls() -> Result<()> {
         json!("a")
     );
     assert_eq!(
-        run(call("bool", vec![lit(json!("yes"))]), &scope)?,
+        run(call("bool", vec![lit(json!("true"))]), &scope)?,
         json!(true)
     );
     assert_eq!(
@@ -107,7 +107,7 @@ fn runtime_parity() -> Result<()> {
     );
     assert_eq!(
         run(call("string", vec![lit(json!(true))]), &scope)?,
-        json!("True")
+        json!("true")
     );
     Ok(())
 }
@@ -117,15 +117,57 @@ fn renders_collections_and_compares_numeric_types() -> Result<()> {
     let scope = Scope::default();
     assert_eq!(
         run(call("string", vec![lit(json!({"name":"mapping"}))]), &scope)?,
-        json!("{'name': 'mapping'}")
+        json!("{\"name\":\"mapping\"}")
     );
     assert_eq!(
         run(call("string", vec![lit(json!([true, null, "x"]))]), &scope)?,
-        json!("[True, None, 'x']")
+        json!("[true,null,\"x\"]")
     );
     assert_eq!(
         run(call("eq", vec![lit(json!(1)), lit(json!(1.0))]), &scope)?,
         json!(true)
     );
+    Ok(())
+}
+
+#[test]
+fn canonical_boolean_and_string_conversions() -> Result<()> {
+    let scope = Scope::default();
+    for (input, expected) in [
+        (json!(true), true),
+        (json!(false), false),
+        (json!("true"), true),
+        (json!("false"), false),
+    ] {
+        assert_eq!(
+            run(call("bool", vec![lit(input)]), &scope)?,
+            json!(expected)
+        );
+    }
+    for input in [
+        json!("yes"),
+        json!("no"),
+        json!("on"),
+        json!("off"),
+        json!("1"),
+        json!("0"),
+        json!("True"),
+        json!(1),
+        json!(0),
+        Value::Null,
+    ] {
+        assert!(run(call("bool", vec![lit(input)]), &scope).is_err());
+    }
+    for (input, expected) in [
+        (json!(true), "true"),
+        (json!(false), "false"),
+        (Value::Null, "null"),
+        (json!("hello"), "hello"),
+    ] {
+        assert_eq!(
+            run(call("string", vec![lit(input)]), &scope)?,
+            json!(expected)
+        );
+    }
     Ok(())
 }

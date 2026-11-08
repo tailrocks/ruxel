@@ -270,17 +270,12 @@ fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result
         "string" => Ok(json!(render_string(&values[0]))),
         "bool" => Ok(json!(match &values[0] {
             Value::Bool(value) => *value,
-            Value::Number(value) => match value.as_i64() {
-                Some(0) => false,
-                Some(1) => true,
-                _ => bail!("bool expects a boolean-like value"),
+            Value::String(value) => match value.as_str() {
+                "true" => true,
+                "false" => false,
+                _ => bail!("bool expects a boolean or canonical boolean string"),
             },
-            Value::String(value) => match value.to_ascii_lowercase().as_str() {
-                "true" | "yes" | "on" | "1" => true,
-                "false" | "no" | "off" | "0" => false,
-                _ => bail!("bool expects a boolean-like value"),
-            },
-            _ => bail!("bool expects a boolean-like value"),
+            _ => bail!("bool expects a boolean or canonical boolean string"),
         })),
         "trim" => Ok(json!(
             values[0].as_str().context("trim expects a string")?.trim()

@@ -67,7 +67,7 @@ fn matches_nested_equality_boolean_and_rendering() -> Result<()> {
     assert!(run(call("bool", vec![lit(json!(2))]), &scope).is_err());
     assert_eq!(
         run(call("string", vec![lit(json!(["a'b\nc"]))]), &scope)?,
-        json!("['a\\'b\nc']")
+        json!(r#"["a'b\nc"]"#)
     );
     Ok(())
 }
