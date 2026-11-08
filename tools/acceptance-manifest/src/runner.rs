@@ -16,7 +16,7 @@ pub(super) struct Env {
     pub(super) payload: PathBuf,
 }
 impl Env {
-    fn new(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<Self> {
+    pub(super) fn new(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<Self> {
         let data = fs::read(repo.join(format!("testdata/workloads/pr66/{name}.pkl")))?;
         ensure!(
             !crate::pins::pin(name).is_empty()
@@ -96,11 +96,17 @@ impl Env {
     }
 }
 pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    if name == "restart-actions" {
+    if name == "restart-actions" || name == "control-flow" {
         anyhow::ensure!(
             rustix::process::geteuid().as_raw() == 0,
-            "restart-actions requires an isolated root fixture"
+            "{name} requires an isolated root fixture"
         );
+    }
+    if name == "control-flow" {
+        let observer = Env::new(name, repo, cli, agent)?;
+        crate::control_observer::execute(&observer)?;
+        let cli_env = Env::new(name, repo, cli, agent)?;
+        return crate::control_run::execute(&cli_env);
     }
     let env = Env::new(name, repo, cli, agent)?;
     if name == "restart-actions" {
