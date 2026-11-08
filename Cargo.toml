@@ -9,7 +9,6 @@ members = [
     "crates/ruxel/ruxel-proto",
 ]
 resolver = "3"
-exclude = ["vendor/pklr"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,3 +1,0 @@
-import "circular_b.pkl"
-a_value = "from_a"
-b_ref = circular_b.b_value

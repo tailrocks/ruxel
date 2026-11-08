@@ -1,6 +1,0 @@
-amends "amending_property_default_base.pkl"
-hooks {
-  ["pre"] {
-    steps { ["one"] { a = 3 } }
-  }
-}

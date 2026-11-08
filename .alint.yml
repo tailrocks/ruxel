@@ -9,12 +9,6 @@ ignore:
   # Build output.
   - "target/**"
   - ".cache/**"
-  # Third-party MIT source, preserved for attribution and a reviewable patch.
-  # Provenance and the exact upstream delta are in vendor/pklr/VENDORED.md.
-  - "vendor/pklr/src/**"
-  - "vendor/pklr/tests/**"
-  # This excluded-workspace package is independently tested with --locked.
-  - "vendor/pklr/Cargo.lock"
   # Deleted or rewritten by the Ruxel rewrite (§S8). One path per line:
   # each line is removed in the commit that deletes or rewrites the
   # path. Never add live code here.

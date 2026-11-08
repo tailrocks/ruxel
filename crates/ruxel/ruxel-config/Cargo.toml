@@ -13,7 +13,7 @@ path = "src/bin/check_deny_inputs.rs"
 blake3.workspace = true
 rustix.workspace = true
 
-pklr = { path = "../../../vendor/pklr", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+pklr = { git = "https://github.com/tailrocks/pklr", rev = "404e27bc37786bf2cfada2987fd8d8d06beb9598", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.2.1"
