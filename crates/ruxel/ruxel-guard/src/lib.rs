@@ -5,6 +5,7 @@ mod policy;
 mod resolve;
 mod scan;
 mod target;
+mod trusted_path;
 
 pub use policy::{Policy, PolicyError};
 pub use scan::deny_hits;

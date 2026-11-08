@@ -12,6 +12,9 @@ thiserror.workspace = true
 getrandom = "0.4"
 rustix = { workspace = true, features = ["process"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+exacl = "=0.13.0"
+
 [build-dependencies]
 ipnet = "2.11"
 

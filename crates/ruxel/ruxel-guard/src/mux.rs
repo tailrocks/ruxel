@@ -5,13 +5,10 @@ use std::{
 };
 
 pub(crate) fn prepare(path: &Path) -> Result<PathBuf, String> {
+    crate::resolve::validate_path(path)?;
     let name = path.file_name().ok_or("invalid mux directory")?;
-    let parent = path
-        .parent()
-        .ok_or("missing mux parent")?
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    validate_ancestors(&parent)?;
+    let parent = path.parent().ok_or("missing mux parent")?;
+    crate::trusted_path::ancestors(parent)?;
     let path = parent.join(name);
     match fs::DirBuilder::new().mode(0o700).create(&path) {
         Ok(()) => (),
@@ -25,21 +22,8 @@ pub(crate) fn prepare(path: &Path) -> Result<PathBuf, String> {
     {
         return Err("mux directory must be owned by the effective user and have mode 0700".into());
     }
+    crate::trusted_path::writable_only_by_owner(&path, &metadata)?;
     Ok(path)
-}
-
-fn validate_ancestors(path: &Path) -> Result<(), String> {
-    let uid = rustix::process::geteuid().as_raw();
-    for ancestor in path.ancestors() {
-        let metadata = fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?;
-        if !metadata.is_dir()
-            || (metadata.uid() != 0 && metadata.uid() != uid)
-            || metadata.mode() & 0o022 != 0
-        {
-            return Err("mux ancestor must be trusted and not writable by group or others".into());
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -48,7 +32,7 @@ pub(crate) fn test_directory() -> Result<PathBuf, String> {
     let home = PathBuf::from(home)
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    validate_ancestors(&home)?;
+    crate::trusted_path::ancestors(&home)?;
     if fs::metadata(&home).map_err(|e| e.to_string())?.uid() != rustix::process::geteuid().as_raw()
     {
         return Err("test fixture requires an owned HOME".into());

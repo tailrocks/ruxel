@@ -69,6 +69,14 @@ impl Guard {
     }
     /// Admit every host and reject the entire batch on any refusal.
     ///
+    /// SSH trust files and their ancestors must be root/effective-user-owned,
+    /// without symlinks or group/other write access. Linux supports ext2/3/4,
+    /// XFS, Btrfs, tmpfs and ramfs; macOS requires local APFS/HFS and refuses
+    /// ACL allow entries. Other filesystems fail closed. Root and the effective
+    /// user must remain trusted throughout the returned targets' lifetime.
+    /// Missing `known_hosts` files are created with mode 0600 under checked
+    /// parents so OpenSSH accept-new cannot inherit unsafe write permissions.
+    ///
     /// # Errors
     /// Returns all detected refusals if any host or literal is unsafe.
     pub fn admit_all(
@@ -97,6 +105,7 @@ impl Guard {
         for spec in hosts {
             let result = self.policy.decide(spec.address).and_then(|()| {
                 resolve::validate_paths(spec)?;
+                crate::trusted_path::known_hosts(&spec.known_hosts_file)?;
                 let mut bytes = [0u8; 6];
                 getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
                 let suffix: String = bytes
@@ -169,13 +178,16 @@ mod tests {
             port: 22,
             user: "test".into(),
             identity_file: "/tmp/key".into(),
-            known_hosts_file: "/tmp/known".into(),
+            known_hosts_file: root.join("known"),
         };
         let calls = Cell::new(0);
         let simulate = |args: &[OsString]| {
             calls.set(calls.get() + 1);
             assert_eq!(args.last().unwrap(), "192.0.2.10");
-            Ok("hostname 192.0.2.10\nuser test\nport 22\nforwardagent no\nstricthostkeychecking true\nuserknownhostsfile /tmp/known\n".into())
+            Ok(format!(
+                "hostname 192.0.2.10\nuser test\nport 22\nforwardagent no\nstricthostkeychecking true\nuserknownhostsfile {}\n",
+                root.join("known").display()
+            ))
         };
         let result = guard.admit_with(&[spec("192.0.2.10"), spec("198.51.100.10")], &[], simulate);
         assert!(result.is_err());
@@ -183,7 +195,37 @@ mod tests {
         let result = guard.admit_with(&[spec("192.0.2.10")], &[], simulate);
         assert_eq!(result.unwrap().len(), 1);
         std::fs::remove_dir(dir).unwrap();
+        std::fs::remove_file(root.join("known")).unwrap();
         std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn untrusted_known_hosts_are_refused_before_ssh() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = crate::mux::test_directory().unwrap();
+        let known = root.join("known");
+        std::fs::write(&known, b"untrusted keys").unwrap();
+        std::fs::set_permissions(&known, std::fs::Permissions::from_mode(0o666)).unwrap();
+        let guard = Guard::new(
+            Policy::new(&["192.0.2.0/24".into()], &[]).unwrap(),
+            root.join("mux"),
+        );
+        let spec = HostSpec {
+            name: "test".into(),
+            address: "192.0.2.10".parse().unwrap(),
+            port: 22,
+            user: "test".into(),
+            identity_file: root.join("identity"),
+            known_hosts_file: known,
+        };
+        let calls = Cell::new(0);
+        let result = guard.admit_with(&[spec], &[], |_| {
+            calls.set(calls.get() + 1);
+            Err("unexpected SSH invocation".into())
+        });
+        assert!(result.unwrap_err().0[0].rule.contains("write access"));
+        assert_eq!(calls.get(), 0);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 
@@ -227,16 +269,18 @@ mod long_path_test {
             port: 22,
             user: "test".into(),
             identity_file: "/tmp/key".into(),
-            known_hosts_file: "/tmp/known".into(),
+            known_hosts_file: root.join("known"),
         };
         let calls = Cell::new(0);
         let result = guard.admit_with(&[host], &[], |_| {
             calls.set(calls.get() + 1);
             Err("unexpected".into())
         });
-        assert!(result.is_err());
+        let refusal = result.unwrap_err();
+        assert!(refusal.0[0].rule.contains("mux socket path exceeds"));
         assert_eq!(calls.get(), 0);
         std::fs::remove_dir(dir).unwrap();
+        std::fs::remove_file(root.join("known")).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
 }
