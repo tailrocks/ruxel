@@ -334,7 +334,7 @@ jobs:
       - &s25
         name: Record optional cache budget
         id: velnor-cache-clock
-        run: "set -eu\nunavailable() { printf '%s\\n' '::warning::cache_unavailable: invalid first-step clock or output'; }\noutput=${GITHUB_OUTPUT-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$now\" \"$seconds\"; do\n  case \"$value\" in ''|*[!0-9]*) unavailable; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) unavailable; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { unavailable; exit 0; }\ndone\nif [ -z \"$output\" ] || ! printf 'started=%s\\ndeadline=%s\\n' \"$now\" \"$((now + seconds))\" 2>/dev/null >> \"$output\"; then\n  unavailable\nfi\n"
+        run: &r19 "set -eu\nunavailable() { printf '%s\\n' '::warning::cache_unavailable: invalid first-step clock or output'; }\noutput=${GITHUB_OUTPUT-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$now\" \"$seconds\"; do\n  case \"$value\" in ''|*[!0-9]*) unavailable; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) unavailable; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { unavailable; exit 0; }\ndone\nif [ -z \"$output\" ] || ! printf 'started=%s\\ndeadline=%s\\n' \"$now\" \"$((now + seconds))\" 2>/dev/null >> \"$output\"; then\n  unavailable\nfi\n"
         env:
           VELNOR_CACHE_JOB_SECONDS: "300"
       - &s26
@@ -3337,7 +3337,7 @@ jobs:
   tools-producer-76f7a9c9:
     name: Tools producer / 76f7a9c9
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     continue-on-error: true
     env: &m25
       RUSTUP_AUTO_INSTALL: "0"
@@ -3347,7 +3347,11 @@ jobs:
       - sources-producer
     if: "!cancelled() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true"
     steps:
-      - *s25
+      - name: Record optional cache budget
+        id: velnor-cache-clock
+        run: *r19
+        env:
+          VELNOR_CACHE_JOB_SECONDS: "1200"
       - *s26
       - *s27
       - *s2
@@ -3368,7 +3372,15 @@ jobs:
         name: Verify Rust channel manifest
         if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/velnor-verify-rust-manifest # zizmor: ignore[self-repository]
-      - *s70
+      - name: Admit optional cache save
+        id: velnor-optional-tools-save-budget
+        if: success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
+        run: *r21
+        env:
+          VELNOR_CACHE_JOB_SECONDS: "1200"
+          VELNOR_CACHE_STARTED: ${{ steps.velnor-cache-clock.outputs.started }}
+          VELNOR_CACHE_DEADLINE: ${{ steps.velnor-cache-clock.outputs.deadline }}
+          VELNOR_CACHE_REQUIRED_SECONDS: "90"
       - *s71
       - *s72
   tools-producer-80da2be8:

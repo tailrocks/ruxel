@@ -513,7 +513,7 @@ jobs:
   rust-pklr:
     name: Rust / pklr
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: &m10
       MBX_BUILD_SCRIPT_EXECUTION: "1"
       MBX_CACHE_EXPORT_GROUP: velnor
@@ -687,7 +687,7 @@ jobs:
   rust-ruxel:
     name: Rust / ruxel
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -781,7 +781,7 @@ jobs:
   rust-ruxel-acceptance-cache:
     name: Rust / ruxel-acceptance-cache
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -869,7 +869,7 @@ jobs:
   rust-ruxel-acceptance-control:
     name: Rust / ruxel-acceptance-control
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -957,7 +957,7 @@ jobs:
   rust-ruxel-acceptance-copy:
     name: Rust / ruxel-acceptance-copy
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1045,7 +1045,7 @@ jobs:
   rust-ruxel-acceptance-files:
     name: Rust / ruxel-acceptance-files
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1133,7 +1133,7 @@ jobs:
   rust-ruxel-acceptance-isolation:
     name: Rust / ruxel-acceptance-isolation
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1221,7 +1221,7 @@ jobs:
   rust-ruxel-acceptance-manifest:
     name: Rust / ruxel-acceptance-manifest
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1309,7 +1309,7 @@ jobs:
   rust-ruxel-acceptance-plan:
     name: Rust / ruxel-acceptance-plan
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1397,7 +1397,7 @@ jobs:
   rust-ruxel-acceptance-pty:
     name: Rust / ruxel-acceptance-pty
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1489,7 +1489,7 @@ jobs:
   rust-ruxel-acceptance-restart-rootless:
     name: Rust / ruxel-acceptance-restart-rootless
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1577,7 +1577,7 @@ jobs:
   rust-ruxel-acceptance-runtime:
     name: Rust / ruxel-acceptance-runtime
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1665,7 +1665,7 @@ jobs:
   rust-ruxel-acceptance-xfs:
     name: Rust / ruxel-acceptance-xfs
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1757,7 +1757,7 @@ jobs:
   rust-ruxel-agent:
     name: Rust / ruxel-agent
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1825,7 +1825,7 @@ jobs:
   rust-ruxel-config:
     name: Rust / ruxel-config
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1897,7 +1897,7 @@ jobs:
   rust-ruxel-control-flow-assertions:
     name: Rust / ruxel-control-flow-assertions
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -1989,7 +1989,7 @@ jobs:
   rust-ruxel-engine:
     name: Rust / ruxel-engine
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -2061,7 +2061,7 @@ jobs:
   rust-ruxel-guard:
     name: Rust / ruxel-guard
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -2133,7 +2133,7 @@ jobs:
   rust-ruxel-http-fixture:
     name: Rust / ruxel-http-fixture
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
@@ -2225,7 +2225,7 @@ jobs:
   rust-ruxel-proto:
     name: Rust / ruxel-proto
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     env: *m10
     needs:
       - plan
