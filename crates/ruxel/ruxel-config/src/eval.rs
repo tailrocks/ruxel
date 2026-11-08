@@ -1,6 +1,9 @@
 use crate::ConfigError;
 use std::path::Path;
 
+mod templates;
+pub use templates::TemplateRoot;
+
 fn builder() -> pklr::EvaluatorBuilder {
     pklr::EvaluatorBuilder::new()
         .environment_variables(std::iter::empty::<(String, String)>())
