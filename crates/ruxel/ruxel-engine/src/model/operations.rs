@@ -142,27 +142,27 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "system" => false, FieldType::Flag;
         "uid" => false, FieldType::Number;
     ),
-    operation!("community.general.lvg";
+    operation!("volume_group";
         "pvs" => true, FieldType::TextList;
         "vg" => true, FieldType::Text;
     ),
-    operation!("community.general.lvol";
+    operation!("logical_volume";
         "lv" => true, FieldType::Text;
         "resizefs" => false, FieldType::Flag;
         "size" => true, FieldType::Text;
         "vg" => true, FieldType::Text;
     ),
-    operation!("community.general.timezone";
+    operation!("timezone";
         "name" => true, FieldType::Text;
     ),
-    operation!("ansible.posix.mount";
+    operation!("mount";
         "fstype" => true, FieldType::Text;
         "opts" => false, FieldType::Text;
         "path" => true, FieldType::Text;
         "src" => true, FieldType::Text;
         "state" => false, FieldType::Choice(&["mounted"]);
     ),
-    operation!("community.postgresql.postgresql_db";
+    operation!("postgres_database";
         "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
@@ -170,7 +170,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "owner" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
     ),
-    operation!("community.postgresql.postgresql_user";
+    operation!("postgres_user";
         "login_db" => false, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
@@ -179,7 +179,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "role_attr_flags" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
     ),
-    operation!("community.postgresql.postgresql_schema";
+    operation!("postgres_schema";
         "login_db" => true, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;
@@ -187,7 +187,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "owner" => false, FieldType::Text;
         "state" => false, FieldType::Choice(&["present"]);
     ),
-    operation!("community.postgresql.postgresql_privs";
+    operation!("postgres_privileges";
         "login_db" => true, FieldType::Text;
         "login_port" => false, FieldType::Port;
         "login_user" => false, FieldType::Text;

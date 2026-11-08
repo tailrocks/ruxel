@@ -61,8 +61,19 @@ fn runtime_and_operations_render() -> Result {
     assert_eq!(tasks[10]["operation"]["content"]["function"], "string");
     assert_eq!(tasks[11]["operation"]["content"], "data");
     assert_eq!(tasks[2]["block"][0]["operation"]["mode"], "0644");
-    assert_eq!(tasks[1]["operation"]["kind"], "community.general.lvol");
     assert_eq!(tasks[12]["operation"]["password"]["provider"], "synthetic");
+    for (index, kind) in [
+        (0, "postgres_database"),
+        (1, "logical_volume"),
+        (4, "mount"),
+        (6, "postgres_privileges"),
+        (12, "postgres_user"),
+        (13, "volume_group"),
+        (14, "timezone"),
+        (15, "postgres_schema"),
+    ] {
+        assert_eq!(tasks[index]["operation"]["kind"], kind);
+    }
     Ok(())
 }
 

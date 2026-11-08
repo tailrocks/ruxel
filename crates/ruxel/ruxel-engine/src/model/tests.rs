@@ -1,5 +1,7 @@
 use super::*;
 use serde_json::json;
+
+mod native_kinds;
 fn config(operation: Value) -> Value {
     let mut config = json!({"inventory":{"hosts":{"synthetic":{"address":"unused.invalid"}}},"plays":[{"name":"test","targets":["synthetic"],"tasks":[{"name":"test"}]}]});
     config["plays"][0]["tasks"][0]["operation"] = operation;
@@ -81,10 +83,7 @@ fn unsupported_surface_fields_are_rejected_before_execution() -> anyhow::Result<
     for (kind, value) in [
         ("command", json!({"cmd":"fixture", "removes":"fixture"})),
         ("shell", json!({"cmd":"fixture", "removes":"fixture"})),
-        (
-            "community.general.timezone",
-            json!({"name":"UTC", "state":"present"}),
-        ),
+        ("timezone", json!({"name":"UTC", "state":"present"})),
     ] {
         let params = value
             .as_object()
@@ -98,10 +97,7 @@ mod boundaries;
 
 #[test]
 fn postgres_database_and_role_accept_login_db() -> anyhow::Result<()> {
-    for kind in [
-        "community.postgresql.postgresql_db",
-        "community.postgresql.postgresql_user",
-    ] {
+    for kind in ["postgres_database", "postgres_user"] {
         let params = json!({"name":"fixture", "login_db":"maintenance"});
         assert!(
             validate_operation(

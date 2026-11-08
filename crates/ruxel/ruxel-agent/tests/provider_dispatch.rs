@@ -7,6 +7,28 @@ use std::process::{Command, Stdio};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+const CASES: &[(&str, &str, bool)] = &[
+    ("shell", "printf synthetic-shell", true),
+    ("unknown-operation", "", false),
+    ("ansible.posix.sysctl", "", false),
+    ("volume_group", "", true),
+    ("logical_volume", "", true),
+    ("timezone", "", true),
+    ("mount", "", true),
+    ("postgres_database", "", true),
+    ("postgres_user", "", true),
+    ("postgres_schema", "", true),
+    ("postgres_privileges", "", true),
+    ("community.general.lvg", "", false),
+    ("community.general.lvol", "", false),
+    ("community.general.timezone", "", false),
+    ("ansible.posix.mount", "", false),
+    ("community.postgresql.postgresql_db", "", false),
+    ("community.postgresql.postgresql_user", "", false),
+    ("community.postgresql.postgresql_schema", "", false),
+    ("community.postgresql.postgresql_privs", "", false),
+];
+
 #[test]
 fn migrated_shell_is_reachable_and_unknown_modules_fail_cleanly() -> Result<()> {
     let nonce = std::time::SystemTime::now()
@@ -33,11 +55,8 @@ fn migrated_shell_is_reachable_and_unknown_modules_fail_cleanly() -> Result<()> 
     )?;
     let hello: v1::Event = read_frame(&mut output)?.ok_or("missing acknowledgement")?;
     assert!(matches!(hello.msg, Some(v1::event::Msg::HelloAck(_))));
-    for (id, module, command) in [
-        (1, "shell", "printf synthetic-shell"),
-        (2, "unknown-operation", ""),
-        (3, "ansible.posix.sysctl", ""),
-    ] {
+    for (index, &(module, command, supported)) in CASES.iter().enumerate() {
+        let id = u64::try_from(index)? + 1;
         write_frame(
             &mut input,
             &v1::Envelope {
@@ -67,10 +86,11 @@ fn migrated_shell_is_reachable_and_unknown_modules_fail_cleanly() -> Result<()> 
                     assert_eq!(value["stdout"], "synthetic-shell");
                 } else {
                     assert_eq!(result.status, "failed");
-                    assert!(
-                        value["msg"]
-                            .as_str()
-                            .is_some_and(|s| s.contains("not implemented"))
+                    let message = value["msg"].as_str().ok_or("missing error message")?;
+                    assert_eq!(
+                        !message.contains("not implemented"),
+                        supported,
+                        "{module}: {message}"
                     );
                 }
                 break;

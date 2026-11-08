@@ -247,13 +247,13 @@ class User {
 }
 
 class VolumeGroup {
-  fixed kind = "community.general.lvg"
+  fixed kind = "volume_group"
   pvs: TextList
   vg: Text
 }
 
 class LogicalVolume {
-  fixed kind = "community.general.lvol"
+  fixed kind = "logical_volume"
   lv: Text
   resizefs: Flag? = null
   size: Text
@@ -261,12 +261,12 @@ class LogicalVolume {
 }
 
 class Timezone {
-  fixed kind = "community.general.timezone"
+  fixed kind = "timezone"
   name: Text
 }
 
 class Mount {
-  fixed kind = "ansible.posix.mount"
+  fixed kind = "mount"
   fstype: Text
   opts: Text? = null
   path: Text
@@ -275,7 +275,7 @@ class Mount {
 }
 
 class PostgresDatabase {
-  fixed kind = "community.postgresql.postgresql_db"
+  fixed kind = "postgres_database"
   login_db: Text? = null
   login_port: Port? = null
   login_user: Text? = null
@@ -285,7 +285,7 @@ class PostgresDatabase {
 }
 
 class PostgresRole {
-  fixed kind = "community.postgresql.postgresql_user"
+  fixed kind = "postgres_user"
   login_db: Text? = null
   login_port: Port? = null
   login_user: Text? = null
@@ -296,7 +296,7 @@ class PostgresRole {
 }
 
 class PostgresSchema {
-  fixed kind = "community.postgresql.postgresql_schema"
+  fixed kind = "postgres_schema"
   login_db: Text
   login_port: Port? = null
   login_user: Text? = null
@@ -306,7 +306,7 @@ class PostgresSchema {
 }
 
 class PostgresPrivileges {
-  fixed kind = "community.postgresql.postgresql_privs"
+  fixed kind = "postgres_privileges"
   login_db: Text
   login_port: Port? = null
   login_user: Text? = null

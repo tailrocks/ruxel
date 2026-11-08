@@ -82,7 +82,7 @@ fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
 
 fn privileges(kind: &str, params: &Map<String, Value>, deferred: bool) -> Result<()> {
     let present = |key| params.get(key).is_some_and(|v| !v.is_null());
-    if kind == "community.postgresql.postgresql_privs"
+    if kind == "postgres_privileges"
         && !(deferred && params.get("type").is_some_and(Value::is_object))
     {
         let kind = params.get("type").and_then(Value::as_str);
