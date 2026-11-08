@@ -3,10 +3,16 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
-use super::{ExecContext, params_object, str_param, write_atomic_with};
+use super::{ExecContext, params_object, str_param};
+use rustix::fs::{
+    AtFlags, Mode, OFlags, fchmod, fchown, mkdirat, open, openat, renameat, unlinkat,
+};
 use serde_json::{Value, json};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -20,71 +26,168 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     let home = home_of(user)?;
-    let ssh_dir = PathBuf::from(&home).join(".ssh");
-    let auth_file = ssh_dir.join("authorized_keys");
     let (uid, gid) = ids_of(user)?;
-    validate_paths(&ssh_dir, &auth_file, uid)?;
-    let current = read_authorized_keys(&auth_file)?;
-
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
+    let home =
+        File::from(open(Path::new(&home), dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
+    let ssh = open_ssh(&home, uid, gid, !ctx.check_mode)?;
+    let current = match &ssh {
+        Some(dir) => read_authorized_keys(dir)?,
+        None => String::new(),
+    };
     let present = current
         .lines()
         .filter_map(key_material)
         .any(|m| m == want_material);
-
     let changed = !present;
     if changed && !ctx.check_mode {
-        if !ssh_dir.exists() {
-            std::fs::create_dir(&ssh_dir).map_err(|e| e.to_string())?;
-            std::fs::set_permissions(&ssh_dir, std::fs::Permissions::from_mode(0o700))
-                .map_err(|e| e.to_string())?;
-            std::os::unix::fs::chown(&ssh_dir, Some(uid), Some(gid)).map_err(|e| e.to_string())?;
-        }
-        let mut next = current.clone();
+        let mut next = current;
         if !next.is_empty() && !next.ends_with('\n') {
             next.push('\n');
         }
         next.push_str(key.trim_end());
         next.push('\n');
-        write_atomic_with(&auth_file, next.as_bytes(), Some(0o600), Some((uid, gid)))?;
+        publish(
+            ssh.as_ref().ok_or("authorized_key: missing .ssh")?,
+            next.as_bytes(),
+            uid,
+            gid,
+        )?;
     }
 
     Ok(json!({"changed": changed, "failed": false, "user": user}))
 }
 
-fn read_authorized_keys(path: &Path) -> Result<String, String> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => Ok(content),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(format!(
-            "authorized_key: cannot read {}: {error}",
-            path.display()
-        )),
-    }
+fn dir_flags() -> OFlags {
+    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
 }
 
-fn validate_paths(ssh_dir: &Path, auth_file: &Path, uid: u32) -> Result<(), String> {
-    match std::fs::symlink_metadata(ssh_dir) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            return Err("authorized_key: refusing symlink .ssh directory".into());
+fn open_ssh(home: &File, uid: u32, gid: u32, create: bool) -> Result<Option<File>, String> {
+    let mut created = false;
+    let fd = match openat(home, ".ssh", dir_flags(), Mode::empty()) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::NOENT) if !create => return Ok(None),
+        Err(rustix::io::Errno::NOENT) => {
+            match mkdirat(home, ".ssh", Mode::from_raw_mode(0o700)) {
+                Ok(()) => created = true,
+                Err(rustix::io::Errno::EXIST) => {}
+                Err(e) => return Err(e.to_string()),
+            }
+            openat(home, ".ssh", dir_flags(), Mode::empty()).map_err(|e| e.to_string())?
         }
-        Ok(meta) if !meta.is_dir() => return Err("authorized_key: .ssh is not a directory".into()),
-        Ok(meta) if meta.uid() != uid => {
-            return Err("authorized_key: .ssh is not owned by target user".into());
+        Err(e) => return Err(format!("authorized_key: cannot open .ssh: {e}")),
+    };
+    let dir = File::from(fd);
+    let meta = dir.metadata().map_err(|e| e.to_string())?;
+    if created {
+        // A replacement directory must not be chowned. The newly created directory
+        // is owned by the caller; verify it using a fresh file's owner.
+        let probe = openat(
+            &dir,
+            ".ruxel-owner-probe",
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o600),
+        )
+        .map_err(|e| e.to_string())?;
+        let probe = File::from(probe);
+        let owner = probe.metadata().map_err(|e| e.to_string())?.uid();
+        unlinkat(&dir, ".ruxel-owner-probe", AtFlags::empty()).map_err(|e| e.to_string())?;
+        if meta.uid() != owner {
+            return Err("authorized_key: .ssh replaced during creation".into());
         }
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.to_string()),
+        fchown(
+            &dir,
+            Some(rustix::fs::Uid::from_raw(uid)),
+            Some(rustix::fs::Gid::from_raw(gid)),
+        )
+        .map_err(|e| e.to_string())?;
+        fchmod(&dir, Mode::from_raw_mode(0o700)).map_err(|e| e.to_string())?;
+    } else if meta.uid() != uid {
+        return Err("authorized_key: .ssh is not owned by target user".into());
     }
-    match std::fs::symlink_metadata(auth_file) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Err("authorized_key: refusing symlink authorized_keys".into())
-        }
-        Ok(meta) if !meta.is_file() => Err("authorized_key: authorized_keys is not a file".into()),
-        Ok(_) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e.to_string()),
+    Ok(Some(dir))
+}
+
+fn read_authorized_keys(dir: &File) -> Result<String, String> {
+    let fd = match openat(
+        dir,
+        "authorized_keys",
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::NOENT) => return Ok(String::new()),
+        Err(e) => return Err(format!("authorized_key: cannot open authorized_keys: {e}")),
+    };
+    let mut file = File::from(fd);
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+        return Err("authorized_key: authorized_keys is not a file".into());
     }
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(|e| format!("authorized_key: cannot read authorized_keys: {e}"))?;
+    Ok(content)
+}
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+
+fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String> {
+    // A private directory protects the staging name from substitution by the
+    // owner of .ssh while the descriptor pins the destination directory.
+    for _ in 0..128 {
+        let name = format!(
+            ".ruxel-key-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        match mkdirat(dir, name.as_str(), Mode::from_raw_mode(0o700)) {
+            Err(rustix::io::Errno::EXIST) => continue,
+            Err(e) => return Err(e.to_string()),
+            Ok(()) => {}
+        }
+        let result = (|| {
+            let stage = File::from(
+                openat(dir, name.as_str(), dir_flags(), Mode::empty())
+                    .map_err(|e| e.to_string())?,
+            );
+            let result = (|| {
+                let mut file = File::from(
+                    openat(
+                        &stage,
+                        "key",
+                        OFlags::WRONLY
+                            | OFlags::CREATE
+                            | OFlags::EXCL
+                            | OFlags::NOFOLLOW
+                            | OFlags::CLOEXEC,
+                        Mode::from_raw_mode(0o600),
+                    )
+                    .map_err(|e| e.to_string())?,
+                );
+                let sm = stage.metadata().map_err(|e| e.to_string())?;
+                let fm = file.metadata().map_err(|e| e.to_string())?;
+                if sm.uid() != fm.uid() || sm.mode() & 0o777 != 0o700 {
+                    return Err("authorized_key: unsafe staging directory".into());
+                }
+                fchown(
+                    &file,
+                    Some(rustix::fs::Uid::from_raw(uid)),
+                    Some(rustix::fs::Gid::from_raw(gid)),
+                )
+                .map_err(|e| e.to_string())?;
+                fchmod(&file, Mode::from_raw_mode(0o600)).map_err(|e| e.to_string())?;
+                file.write_all(content).map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+                renameat(&stage, "key", dir, "authorized_keys").map_err(|e| e.to_string())?;
+                Ok(())
+            })();
+            let _ = unlinkat(&stage, "key", AtFlags::empty());
+            result
+        })();
+        let _ = unlinkat(dir, name.as_str(), AtFlags::REMOVEDIR);
+        return result;
+    }
+    Err("authorized_key: cannot reserve staging directory".into())
 }
 
 fn key_material(line: &str) -> Option<(String, String)> {
@@ -126,14 +229,15 @@ fn ids_of(user: &str) -> Result<(u32, u32), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{key_material, validate_paths};
-    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    use super::*;
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     #[test]
     fn material_ignores_comment() {
-        let a = key_material("ssh-ed25519 AAAAC3Nza host-a").unwrap();
-        let b = key_material("ssh-ed25519 AAAAC3Nza completely-different-comment").unwrap();
-        assert_eq!(a, b);
+        assert_eq!(
+            key_material("ssh-ed25519 AAAAC3Nza host-a"),
+            key_material("ssh-ed25519 AAAAC3Nza other")
+        );
         assert_eq!(
             key_material("from=\"10.0.0.1\" ssh-ed25519 AAAAC3Nza comment").unwrap(),
             ("ssh-ed25519".into(), "AAAAC3Nza".into())
@@ -141,45 +245,79 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_content_is_not_treated_as_missing() {
-        let root = scratch("auth-read");
-        let path = root.join("authorized_keys");
-        assert_eq!(super::read_authorized_keys(&path).unwrap(), "");
-        std::fs::write(&path, [0xff, 0xfe]).unwrap();
-        assert!(super::read_authorized_keys(&path).is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), [0xff, 0xfe]);
+    fn refuses_symlinks_and_invalid_content() {
+        let root = scratch("refuse");
+        let meta = std::fs::metadata(&root).unwrap();
+        let home = File::open(&root).unwrap();
+        let victim = root.join("victim");
+        std::fs::write(&victim, "untouched").unwrap();
+        symlink(&victim, root.join(".ssh")).unwrap();
+        assert!(open_ssh(&home, meta.uid(), meta.gid(), true).is_err());
+        std::fs::remove_file(root.join(".ssh")).unwrap();
+        std::fs::create_dir(root.join(".ssh")).unwrap();
+        let ssh = open_ssh(&home, meta.uid(), meta.gid(), false)
+            .unwrap()
+            .unwrap();
+        symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
+        assert!(read_authorized_keys(&ssh).is_err());
+        std::fs::remove_file(root.join(".ssh/authorized_keys")).unwrap();
+        std::fs::write(root.join(".ssh/authorized_keys"), [0xff]).unwrap();
+        assert!(read_authorized_keys(&ssh).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "untouched");
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn refuses_authorized_keys_symlink_without_touching_target() {
-        let root = scratch("auth-symlink");
-        let ssh = root.join(".ssh");
-        std::fs::create_dir(&ssh).unwrap();
-        let uid = std::fs::metadata(&ssh).unwrap().uid();
-        let target = root.join("victim");
-        std::fs::write(&target, "untouched").unwrap();
-        symlink(&target, ssh.join("authorized_keys")).unwrap();
-        assert!(validate_paths(&ssh, &ssh.join("authorized_keys"), uid).is_err());
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+    fn directory_swap_cannot_redirect_write() {
+        let root = scratch("swap");
+        let meta = std::fs::metadata(&root).unwrap();
+        let home = File::open(&root).unwrap();
+        let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
+            .unwrap()
+            .unwrap();
+        std::fs::rename(root.join(".ssh"), root.join("original")).unwrap();
+        let victim = root.join("victim");
+        std::fs::create_dir(&victim).unwrap();
+        std::fs::write(victim.join("authorized_keys"), "untouched").unwrap();
+        symlink(&victim, root.join(".ssh")).unwrap();
+        publish(&ssh, b"new key\n", meta.uid(), meta.gid()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(victim.join("authorized_keys")).unwrap(),
+            "untouched"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("original/authorized_keys")).unwrap(),
+            "new key\n"
+        );
+        assert_eq!(
+            std::fs::metadata(root.join("original/authorized_keys"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn atomic_authorized_key_has_private_mode() {
-        let root = scratch("auth-atomic");
-        let ssh = root.join(".ssh");
-        std::fs::create_dir(&ssh).unwrap();
-        let meta = std::fs::metadata(&ssh).unwrap();
-        super::write_atomic_with(
-            &ssh.join("authorized_keys"),
-            b"key\n",
-            Some(0o600),
-            Some((meta.uid(), meta.gid())),
-        )
-        .unwrap();
-        let written = std::fs::metadata(ssh.join("authorized_keys")).unwrap();
-        assert_eq!(written.permissions().mode() & 0o777, 0o600);
+    fn file_swap_cannot_write_through_symlink() {
+        let root = scratch("file-swap");
+        let meta = std::fs::metadata(&root).unwrap();
+        let home = File::open(&root).unwrap();
+        let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(read_authorized_keys(&ssh).unwrap(), "");
+        let victim = root.join("victim");
+        std::fs::write(&victim, "untouched").unwrap();
+        symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
+        publish(&ssh, b"key\n", meta.uid(), meta.gid()).unwrap();
+        assert_eq!(std::fs::read_to_string(victim).unwrap(), "untouched");
+        assert_eq!(
+            std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap(),
+            "key\n"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
