@@ -2,6 +2,20 @@ use super::evaluate_document;
 use serde_json::json;
 
 #[test]
+fn sysctl_name_requires_valid_literal_or_expression() -> super::Result {
+    for name in ["", "-bad", "net key", "net.key=bad"] {
+        let expression = format!(
+            "new R.Sysctl {{ name = {}; value = 1 }}",
+            serde_json::to_string(name)?
+        );
+        assert!(super::evaluate(&expression).is_err(), "{name:?}");
+    }
+    super::evaluate(r#"new R.Sysctl { name = "net.ipv4.ip_forward"; value = 1 }"#)?;
+    super::evaluate(r#"new R.Sysctl { name = new R.Ref { path { "vars"; "key" } }; value = 1 }"#)?;
+    Ok(())
+}
+
+#[test]
 fn required_members_preserve_lazy_defaults_and_amendments() {
     let mut failures = Vec::new();
     for (source, expected) in [

@@ -12,6 +12,34 @@ fn config(operation: Value) -> Value {
 mod environment;
 
 #[test]
+fn sysctl_key_is_checked_before_and_after_expression_evaluation() {
+    for key in ["", "-bad", "net.key=bad", "net key", "net\nkey"] {
+        let op = json!({"kind":"sysctl", "name":key, "value":"1"});
+        assert!(validate_config(&config(op.clone())).is_err(), "{key:?}");
+        assert!(
+            validate_operation(
+                "sysctl",
+                json!({"name":key, "value":"1"})
+                    .as_object()
+                    .unwrap_or(&Map::new())
+            )
+            .is_err()
+        );
+    }
+    for key in ["net.ipv4.ip_forward", "net/ipv4/conf/eth0.100/forwarding"] {
+        assert!(
+            validate_config(&config(json!({"kind":"sysctl", "name":key, "value":"1"}))).is_ok()
+        );
+    }
+    assert!(
+        validate_config(&config(
+            json!({"kind":"sysctl", "name":{"kind":"ref", "path":["vars", "key"]}, "value":"1"})
+        ))
+        .is_ok()
+    );
+}
+
+#[test]
 fn url_and_timezone_validate_literals_and_evaluated_results() -> Result<()> {
     for (kind, field, valid, invalid) in [
         (

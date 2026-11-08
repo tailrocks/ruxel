@@ -215,7 +215,7 @@ class Stat {
 
 class Sysctl {
   fixed kind = "sysctl"
-  name: Text
+  name: String(matches(Regex("^[A-Za-z0-9_./:][A-Za-z0-9_./:-]*$")))|Expr
   reload: Flag? = null
   state: ("present"|Expr)? = null
   sysctl_file: Text? = null

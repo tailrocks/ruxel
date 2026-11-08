@@ -114,7 +114,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "path" => true, FieldType::Text;
     ),
     operation!("sysctl";
-        "name" => true, FieldType::Text;
+        "name" => true, FieldType::SysctlKey;
         "reload" => false, FieldType::Flag;
         "state" => false, FieldType::Choice(&["present"]);
         "sysctl_file" => false, FieldType::Text;

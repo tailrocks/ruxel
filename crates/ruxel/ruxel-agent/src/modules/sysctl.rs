@@ -4,6 +4,14 @@ use serde_json::{Value, json};
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("sysctl: name required")?;
+    if name.is_empty()
+        || name.starts_with('-')
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_./:-".contains(&b))
+    {
+        return Err("sysctl: invalid name".into());
+    }
     let value = match obj.get("value") {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Number(n)) => n.to_string(),
@@ -117,6 +125,31 @@ fn read_sysctl(name: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    #[test]
+    fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-sysctl-invalid-{}", std::process::id()));
+        std::fs::write(&path, "\nnet.test=1\n")?;
+        let ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        for name in ["", "-bad", "net key", "net.key=bad"] {
+            assert!(
+                super::run(
+                    &json!({"name":name,"value":"2","sysctl_file":path,"reload":false}),
+                    &ctx
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read_to_string(&path)?, "\nnet.test=1\n");
+        }
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
     #[test]
     fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()> {
         let path = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));

@@ -15,6 +15,7 @@ enum FieldType {
     Text,
     HttpUrl,
     Timezone,
+    SysctlKey,
     Flag,
     Number,
     Port,
@@ -70,6 +71,7 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
         FieldType::Timezone => value
             .as_str()
             .is_some_and(|s| !s.is_empty() && !s.starts_with('-')),
+        FieldType::SysctlKey => value.as_str().is_some_and(valid_sysctl_key),
         FieldType::Flag => value.is_boolean(),
         FieldType::Number => value.as_u64().is_some(),
         FieldType::Port => value.as_u64().is_some_and(|n| (1..=65535).contains(&n)),
@@ -176,7 +178,14 @@ pub(crate) fn validate_block_result_controls(
     );
     Ok(())
 }
-fn validate_delegation(task: &Task) -> Result<()> {
+fn valid_sysctl_key(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_./:-".contains(&b))
+}
+fn validate_delegation(task: &Task, hosts: &BTreeMap<String, config::Host>) -> Result<()> {
     if let Some(destination) = &task.delegate_to {
         ensure!(
             task.delegate_allow.as_ref().is_some_and(
@@ -191,6 +200,13 @@ fn validate_delegation(task: &Task) -> Result<()> {
                 destination.is_string(),
                 "delegation target must be text or expression"
             );
+            let host = destination
+                .as_str()
+                .context("delegation target must be text")?;
+            ensure!(
+                host == "localhost" || hosts.contains_key(host),
+                "literal delegation target is not in inventory"
+            );
         }
     } else {
         ensure!(
@@ -200,7 +216,7 @@ fn validate_delegation(task: &Task) -> Result<()> {
     }
     Ok(())
 }
-fn validate_tasks(tasks: &[Task]) -> Result<()> {
+fn validate_tasks(tasks: &[Task], hosts: &BTreeMap<String, config::Host>) -> Result<()> {
     for task in tasks {
         validate_become_user(task.become_user.as_deref())?;
         validate_block_result_controls(
@@ -242,7 +258,7 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             task.retries != Some(u64::MAX),
             "retries exceed supported range"
         );
-        validate_delegation(task)?;
+        validate_delegation(task, hosts)?;
         for expr in [
             &task.when,
             &task.loop_expr,
@@ -269,9 +285,9 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
                 .context("operation requires kind")?;
             operation(&kind, &params, true)?;
         }
-        validate_tasks(&task.block)?;
-        validate_tasks(&task.rescue)?;
-        validate_tasks(&task.always)?;
+        validate_tasks(&task.block, hosts)?;
+        validate_tasks(&task.rescue, hosts)?;
+        validate_tasks(&task.always, hosts)?;
     }
     Ok(())
 }
@@ -317,9 +333,9 @@ pub fn validate_config(value: &Value) -> Result<Value> {
         validate_become_user(play.become_user.as_deref())?;
         expression_map(&play.vars)?;
         environment(&play.environment)?;
-        validate_tasks(&play.pre_tasks)?;
-        validate_tasks(&play.tasks)?;
-        validate_tasks(&play.handlers)?;
+        validate_tasks(&play.pre_tasks, &config.inventory.hosts)?;
+        validate_tasks(&play.tasks, &config.inventory.hosts)?;
+        validate_tasks(&play.handlers, &config.inventory.hosts)?;
     }
     let normalized = serde_json::to_value(config).context("normalize configuration")?;
     notifications::validate(&normalized)?;
