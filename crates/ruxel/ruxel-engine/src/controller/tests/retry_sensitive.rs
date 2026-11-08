@@ -44,7 +44,7 @@ impl Backend for FailingPreparation {
 }
 #[tokio::test]
 async fn sensitive_first_attempt_censors_second_preparation_error() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","cmd":"synthetic"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"retry","retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","argv":["synthetic"]}}]}]});
     let mut backend = FailingPreparation::default();
     let error = run(
         &config,

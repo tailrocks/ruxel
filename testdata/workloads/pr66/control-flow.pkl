@@ -83,14 +83,14 @@ output {
           changedWhen = literal(false)
           failedWhen = literal(false)
         }
-        new { name = "Exercise ignored failure"; operation = new Ruxel.Command { cmd = "/usr/bin/false" }; ignoreErrors = true }
+        new { name = "Exercise ignored failure"; operation = new Ruxel.Command { argv { "/usr/bin/false" } }; ignoreErrors = true }
         new {
           name = "Exercise rescue transition"
-          block { new { name = "Trigger synthetic rescue"; operation = new Ruxel.Command { cmd = "/usr/bin/false" } } }
+          block { new { name = "Trigger synthetic rescue"; operation = new Ruxel.Command { argv { "/usr/bin/false" } } } }
           rescue { new { name = "Record rescued synthetic state"; operation = new Ruxel.SetFact { values = new Mapping { ["fixture_rescued"] = literal(true) } } } }
         }
         new { name = "Exercise literal assertion failure message"; operation = new Ruxel.Assert { that = ref(new Listing { "vars"; "fixture_enabled" }); fail_msg = "synthetic assertion failed" } }
-        new { name = "Exercise check-mode string value"; operation = new Ruxel.Command { cmd = "/usr/bin/true" }; checkMode = false; changedWhen = literal(false) }
+        new { name = "Exercise check-mode string value"; operation = new Ruxel.Command { argv { "/usr/bin/true" } }; checkMode = false; changedWhen = literal(false) }
         new { name = "Exercise interactive pause"; operation = new Ruxel.Pause { prompt = "Synthetic fixture pause; press Enter" }; tags { "synthetic" } }
         new { name = "Exercise always tag scalar"; operation = new Ruxel.Debug { msg = call("concat", new Listing { literal("pairs="); call("string", new Listing { call("length", new Listing { ref(new Listing { "vars"; "fixture_pairs" }) }) }); literal(" pipe="); ref(new Listing { "vars"; "fixture_pipe" }) }) }; tags { "always" } }
       }

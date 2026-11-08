@@ -40,7 +40,7 @@ async fn retired_variables_name_is_a_custom_loop_binding() -> Result<()> {
 
 #[tokio::test]
 async fn task_variables_resolve_for_each_custom_item_with_dependencies() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"derived":{"kind":"literal","value":"inherited"}},"tasks":[{"name":"loop","loopVar":"entry","loop":{"kind":"ref","path":["vars","inputs"]},"vars":{"inputs":{"kind":"literal","value":["one","two"]},"alias":{"kind":"ref","path":["vars","derived"]},"derived":{"kind":"ref","path":["entry"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","alias"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"derived":{"kind":"literal","value":"inherited"}},"tasks":[{"name":"loop","loopVar":"entry","loop":{"kind":"ref","path":["vars","inputs"]},"vars":{"inputs":{"kind":"literal","value":["one","two"]},"alias":{"kind":"ref","path":["vars","derived"]},"derived":{"kind":"ref","path":["entry"]}},"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","alias"]}]}}}]}]});
     let mut backend = Fake::default();
     run(
         &config,
@@ -55,7 +55,7 @@ async fn task_variables_resolve_for_each_custom_item_with_dependencies() -> Resu
         .iter()
         .map(|call| {
             serde_json::from_slice::<Value>(&call.task.iterations[0].params_json)
-                .map(|value| value["cmd"].clone())
+                .map(|value| value["argv"][0].clone())
         })
         .collect::<std::result::Result<_, _>>()?;
     assert_eq!(commands, [json!("one"), json!("two")]);
@@ -64,7 +64,7 @@ async fn task_variables_resolve_for_each_custom_item_with_dependencies() -> Resu
 
 #[tokio::test]
 async fn empty_loop_does_not_resolve_item_variables() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"empty","loop":[],"vars":{"value":{"kind":"ref","path":["item"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","value"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"empty","loop":[],"vars":{"value":{"kind":"ref","path":["item"]}},"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","value"]}]}}}]}]});
     let mut backend = Fake::default();
     let recap = run(
         &config,
@@ -81,7 +81,7 @@ async fn empty_loop_does_not_resolve_item_variables() -> Result<()> {
 
 #[tokio::test]
 async fn loop_variable_override_can_reference_inherited_value() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"loop":["one"],"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","name"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"loop":["one"],"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","name"]}]}}}]}]});
     let mut backend = Fake::default();
     run(
         &config,
@@ -92,6 +92,6 @@ async fn loop_variable_override_can_reference_inherited_value() -> Result<()> {
     )
     .await?;
     let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
-    assert_eq!(params["cmd"], "parent");
+    assert_eq!(params["argv"][0], "parent");
     Ok(())
 }

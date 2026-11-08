@@ -35,9 +35,8 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "path" => true, FieldType::Text;
     ),
     operation!("command";
-        "argv" => false, FieldType::TextList;
+        "argv" => true, FieldType::NonEmptyStringList;
         "chdir" => false, FieldType::Text;
-        "cmd" => false, FieldType::Text;
         "creates" => false, FieldType::Text;
     ),
     operation!("copy";

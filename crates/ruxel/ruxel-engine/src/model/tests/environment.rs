@@ -6,8 +6,8 @@ fn environment_names_are_checked_in_every_scope_before_execution() -> Result<()>
         for location in [
             "play", "task", "pre", "handler", "block", "rescue", "always",
         ] {
-            let mut value = config(json!({"kind":"command", "cmd":"true"}));
-            let leaf = json!({"name":"child", "operation":{"kind":"command", "cmd":"true"}, "environment":{key:{"kind":"literal","value":"value"}}});
+            let mut value = config(json!({"kind":"command", "argv":["true"]}));
+            let leaf = json!({"name":"child", "operation":{"kind":"command", "argv":["true"]}, "environment":{key:{"kind":"literal","value":"value"}}});
             match location {
                 "play" => {
                     value["plays"][0]["environment"] =
@@ -20,7 +20,7 @@ fn environment_names_are_checked_in_every_scope_before_execution() -> Result<()>
                 "pre" => value["plays"][0]["preTasks"] = json!([leaf]),
                 "handler" => value["plays"][0]["handlers"] = json!([leaf]),
                 _ => {
-                    value["plays"][0]["tasks"] = json!([{"name":"block", "block":[{"name":"child", "operation":{"kind":"command", "cmd":"true"}}]}]);
+                    value["plays"][0]["tasks"] = json!([{"name":"block", "block":[{"name":"child", "operation":{"kind":"command", "argv":["true"]}}]}]);
                     if location == "block" {
                         value["plays"][0]["tasks"][0]["block"] = json!([leaf]);
                     } else {
@@ -37,7 +37,7 @@ fn environment_names_are_checked_in_every_scope_before_execution() -> Result<()>
             );
         }
     }
-    let mut value = config(json!({"kind":"command", "cmd":"true"}));
+    let mut value = config(json!({"kind":"command", "argv":["true"]}));
     value["plays"][0]["environment"] = json!({"VALID_1":{"kind":"literal","value":"value"}, "with-dash":{"kind":"literal","value":"value"}, "unicode_é":{"kind":"literal","value":"value"}});
     value["plays"][0]["tasks"][0]["environment"] =
         json!({"TASK":{"kind":"literal","value":"value"}});

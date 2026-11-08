@@ -42,7 +42,7 @@ impl Backend for Custom {
 async fn custom_backend_resolves_retry_condition_from_current_result() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{
         "targets":["h"],"vars":{"status":{"kind":"ref","path":["results","run","rc"]}},
-        "tasks":[{"name":"run","register":"run","until":{"kind":"call","function":"eq","args":[{"kind":"ref","path":["vars","status"]},{"kind":"literal","value":0}]},"operation":{"kind":"command","cmd":"fixture"}}]
+        "tasks":[{"name":"run","register":"run","until":{"kind":"call","function":"eq","args":[{"kind":"ref","path":["vars","status"]},{"kind":"literal","value":0}]},"operation":{"kind":"command","argv":["fixture"]}}]
     }]});
     let mut backend = Custom::default();
     let recap = run(

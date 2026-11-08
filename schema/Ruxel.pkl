@@ -109,9 +109,8 @@ class BlockInFile {
 
 class Command {
   fixed kind = "command"
-  argv: CommandArgs? = null
+  argv: CommandArgs
   chdir: Text? = null
-  cmd: (String(this.length > 0)|Expr)?(this != null && argv == null || this == null && argv != null) = null
   creates: Text? = null
 }
 

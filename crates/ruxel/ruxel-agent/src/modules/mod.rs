@@ -157,7 +157,10 @@ pub(crate) fn execute(
         "volume_group" => lvg::run(params, ctx),
         "template" => copy::run(params, None, ctx),
         "get_url" => get_url::run(params, ctx),
-        "command" => command::run(params, free_form, ctx),
+        "command" if !free_form.is_empty() => {
+            Err("command requires argv, not free-form input".into())
+        }
+        "command" => command::run(params, ctx),
         "file" => file::run(params, ctx),
         "copy" => copy::run(params, source, ctx),
         "slurp" => slurp::run(params),

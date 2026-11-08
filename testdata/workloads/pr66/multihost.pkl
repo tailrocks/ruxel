@@ -22,7 +22,7 @@ output {
         tasks {
           new {
             name = "Run one-second independent host work"
-            operation = new Ruxel.Command { cmd = "/bin/sleep 1" }
+            operation = new Ruxel.Command { argv { "/bin/sleep"; "1" } }
             changedWhen = new Ruxel.Literal { value = false }
           }
         }

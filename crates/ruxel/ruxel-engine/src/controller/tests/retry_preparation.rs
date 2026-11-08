@@ -24,8 +24,12 @@ impl Backend for Changing {
         _: &Map<String, Value>,
     ) -> Result<()> {
         self.preparations += 1;
-        let key = if kind == "debug" { "msg" } else { "cmd" };
-        params.insert(key.into(), json!(format!("prepared-{}", self.preparations)));
+        let value = format!("prepared-{}", self.preparations);
+        if kind == "debug" {
+            params.insert("msg".into(), json!(value));
+        } else {
+            params.insert("argv".into(), json!([value]));
+        }
         Ok(())
     }
     fn execute(&mut self, request: Request) -> impl Future<Output = Result<Value>> {
@@ -40,7 +44,7 @@ impl Backend for Changing {
 async fn retries_prepare_remote_and_local_operations_each_time() -> Result<()> {
     for kind in ["command", "debug"] {
         let operation = if kind == "command" {
-            json!({"kind":kind, "cmd":"original"})
+            json!({"kind":kind, "argv":["original"]})
         } else {
             json!({"kind":kind, "msg":"original"})
         };
@@ -67,8 +71,8 @@ async fn retries_prepare_remote_and_local_operations_each_time() -> Result<()> {
                     serde_json::from_slice::<Value>(&request.task.iterations[0].params_json)
                 })
                 .collect::<std::result::Result<Vec<_>, _>>()?;
-            assert_eq!(values[0]["cmd"], "prepared-1");
-            assert_eq!(values[1]["cmd"], "prepared-2");
+            assert_eq!(values[0]["argv"][0], "prepared-1");
+            assert_eq!(values[1]["argv"][0], "prepared-2");
         } else {
             assert_eq!(result["msg"], "prepared-2");
         }
@@ -77,7 +81,7 @@ async fn retries_prepare_remote_and_local_operations_each_time() -> Result<()> {
 }
 #[tokio::test]
 async fn no_until_prepares_only_once() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"once","retries":2,"operation":{"kind":"command","cmd":"original"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"once","retries":2,"operation":{"kind":"command","argv":["original"]}}]}]});
     let mut backend = Changing::default();
     run(
         &config,

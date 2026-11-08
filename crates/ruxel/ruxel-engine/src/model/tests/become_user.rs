@@ -1,15 +1,15 @@
 use super::*;
 
 fn in_scope(scope: &str, user: Value) -> Value {
-    let mut value = config(json!({"kind":"command","cmd":"true"}));
+    let mut value = config(json!({"kind":"command","argv":["true"]}));
     let leaf =
-        json!({"name":"child","becomeUser":user,"operation":{"kind":"command","cmd":"true"}});
+        json!({"name":"child","becomeUser":user,"operation":{"kind":"command","argv":["true"]}});
     match scope {
         "play" => value["plays"][0]["becomeUser"] = user,
         "task" => value["plays"][0]["tasks"][0]["becomeUser"] = user,
         "preTasks" | "handlers" => value["plays"][0][scope] = json!([leaf]),
         _ => {
-            let child = json!({"name":"child","operation":{"kind":"command","cmd":"true"}});
+            let child = json!({"name":"child","operation":{"kind":"command","argv":["true"]}});
             value["plays"][0]["tasks"] =
                 json!([{"name":"block","when":{"kind":"literal","value":false},"block":[child]}]);
             if scope == "block root" {

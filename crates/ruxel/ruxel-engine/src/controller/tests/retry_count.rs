@@ -19,7 +19,7 @@ async fn retry_count_is_extra_attempts_for_remote_and_local_operations() -> Resu
         for retries in [None, Some(0), Some(1), Some(2)] {
             for done in [false, true] {
                 let operation = if kind == "command" {
-                    json!({"kind":"command","cmd":"fixture"})
+                    json!({"kind":"command","argv":["fixture"]})
                 } else {
                     json!({"kind":"debug","msg":"fixture"})
                 };
@@ -57,7 +57,7 @@ async fn retry_count_is_extra_attempts_for_remote_and_local_operations() -> Resu
 
 #[tokio::test]
 async fn retries_without_until_do_not_repeat_failed_operation() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"failed","retries":2,"operation":{"kind":"command","cmd":"fixture"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"failed","retries":2,"operation":{"kind":"command","argv":["fixture"]}}]}]});
     let mut backend = Fake {
         results: [json!({"failed":true})].into(),
         ..Fake::default()

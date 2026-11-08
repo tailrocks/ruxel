@@ -28,7 +28,7 @@ async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
         {"name":"false condition","tags":["chosen"],"vars":{"unused":{"kind":"ref","path":["results","missing"]},"gate":{"kind":"literal","value":false},"alias":{"kind":"ref","path":["vars","gate"]}},"when":{"kind":"ref","path":["vars","alias"]},"operation":{"kind":"debug"}},
         {"name":"false block","tags":["chosen"],"vars":{"unused":{"kind":"ref","path":["results","missing"]}},"when":false,"block":[{"operation":{"kind":"debug"}}]},
         {"name":"empty loop","tags":["chosen"],"vars":{"unused":{"kind":"ref","path":["results","missing"]},"items":{"kind":"literal","value":[]}},"loop":{"kind":"ref","path":["vars","items"]},"operation":{"kind":"debug"}},
-        {"name":"runs","tags":["chosen"],"operation":{"kind":"command","cmd":"ok"}}
+        {"name":"runs","tags":["chosen"],"operation":{"kind":"command","argv":["ok"]}}
     ]}]});
     let mut backend = Fake::default();
     let recap = run(
@@ -52,7 +52,7 @@ async fn excluded_tasks_do_not_evaluate_unused_vars() -> Result<()> {
 
 #[tokio::test]
 async fn task_override_can_reference_inherited_variable() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","name"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"vars":{"name":{"kind":"literal","value":"parent"}},"tasks":[{"vars":{"name":{"kind":"ref","path":["vars","name"]}},"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","name"]}]}}}]}]});
     let mut backend = Fake::default();
     run(
         &config,
@@ -63,13 +63,13 @@ async fn task_override_can_reference_inherited_variable() -> Result<()> {
     )
     .await?;
     let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
-    assert_eq!(params["cmd"], "parent");
+    assert_eq!(params["argv"][0], "parent");
     Ok(())
 }
 
 #[tokio::test]
 async fn set_fact_takes_precedence_over_task_vars_in_condition() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":false}}}},{"vars":{"gate":{"kind":"literal","value":true}},"when":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"must not run"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":false}}}},{"vars":{"gate":{"kind":"literal","value":true}},"when":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","argv":["must not run"]}}]}]});
     let mut backend = Fake::default();
     let recap = run(
         &config,

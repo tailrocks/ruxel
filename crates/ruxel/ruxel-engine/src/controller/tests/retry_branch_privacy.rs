@@ -34,11 +34,11 @@ impl Backend for BackendWithLookup {
 #[tokio::test]
 async fn current_register_may_change_before_until_and_must_prevent_cache() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
-        {"name":"old","register":"run","operation":{"kind":"command","cmd":"one"}},
+        {"name":"old","register":"run","operation":{"kind":"command","argv":["one"]}},
         {"name":"new","register":"run","retries":0,"until":{"kind":"call","function":"and","args":[
             {"kind":"ref","path":["results","run","changed"]},
             {"kind":"lookup","provider":"synthetic","key":"fixture"}
-        ]},"operation":{"kind":"command","cmd":"two"}}
+        ]},"operation":{"kind":"command","argv":["two"]}}
     ]}]});
     let mut backend = BackendWithLookup::default();
     run(
@@ -62,7 +62,7 @@ async fn map_rebinds_item_before_until_and_must_prevent_cache() -> Result<()> {
          "until":{"kind":"call","function":"contains","args":[
             {"kind":"call","function":"map","args":[{"kind":"list","items":[{"kind":"literal","value":true}]},
                 {"kind":"call","function":"and","args":[{"kind":"ref","path":["item"]},{"kind":"lookup","provider":"synthetic","key":"fixture"}]}]},
-            {"kind":"literal","value":true}]},"operation":{"kind":"command","cmd":"fixture"}}
+            {"kind":"literal","value":true}]},"operation":{"kind":"command","argv":["fixture"]}}
     ]}]});
     let mut backend = BackendWithLookup::default();
     run(

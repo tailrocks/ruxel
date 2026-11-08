@@ -24,7 +24,7 @@ async fn conservative_context_sanitizes_early_condition_error() -> Result<()> {
 
 #[tokio::test]
 async fn task_error_preserves_completed_recap() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"first","operation":{"kind":"command","cmd":"true"}},{"name":"bad","operation":{"kind":"debug","msg":{"kind":"ref","path":["vars","missing"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"first","operation":{"kind":"command","argv":["true"]}},{"name":"bad","operation":{"kind":"debug","msg":{"kind":"ref","path":["vars","missing"]}}}]}]});
     let mut backend = Fake::default();
     let error = run(
         &config,

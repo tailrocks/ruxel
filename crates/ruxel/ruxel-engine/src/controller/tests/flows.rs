@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn retry_delegation_and_unrescued_always() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","delegateAllow":["other"],"retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","cmd":"try"}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","cmd":"never"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{},"other":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"retry","delegateTo":"other","delegateAllow":["other"],"retries":1,"delaySeconds":0,"until":{"kind":"literal","value":false},"operation":{"kind":"command","argv":["try"]}}],"always":[{"name":"cleanup","operation":{"kind":"shell","cmd":"cleanup"}}]},{"name":"unreachable","operation":{"kind":"command","argv":["never"]}}]}]});
     let mut backend = Fake {
         results: [
             json!({"failed":true}),
@@ -31,7 +31,7 @@ async fn retry_delegation_and_unrescued_always() -> Result<()> {
 
 #[tokio::test]
 async fn ignored_failure_continues_and_block_censors_children() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","noLog":true,"block":[{"name":"bad","operation":{"kind":"fail","msg":"private"},"ignoreErrors":true},{"name":"next","operation":{"kind":"command","cmd":"private"}}]}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","noLog":true,"block":[{"name":"bad","operation":{"kind":"fail","msg":"private"},"ignoreErrors":true},{"name":"next","operation":{"kind":"command","argv":["private"]}}]}]}]});
     let mut backend = Fake::default();
     let recap = run(
         &config,

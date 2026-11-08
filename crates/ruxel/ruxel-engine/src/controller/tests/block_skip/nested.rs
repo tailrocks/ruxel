@@ -5,9 +5,9 @@ mod tags;
 fn skipped_nested_block(private: bool) -> Value {
     json!({"name":"outer", "when":{"kind":"literal","value":false}, "block":[
         {"name":"middle", "noLog":private, "when":{"kind":"ref","path":["vars","missing"]}, "block":[
-            {"name":"one", "register":"one", "operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","missing"]}}},
+            {"name":"one", "register":"one", "operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","missing"]}]}}},
             {"name":"inner", "block":[
-                {"name":"two", "register":"two", "loop":{"kind":"ref","path":["vars","missing"]}, "operation":{"kind":"command","cmd":"must not run"}}
+                {"name":"two", "register":"two", "loop":{"kind":"ref","path":["vars","missing"]}, "operation":{"kind":"command","argv":["must not run"]}}
             ], "rescue":[{"name":"unentered nested rescue","operation":{"kind":"fail"}}], "always":[{"name":"unentered nested always","operation":{"kind":"fail"}}]}
         ]}
     ], "rescue":[{"name":"unentered rescue","operation":{"kind":"fail"}}], "always":[{"name":"unentered always","operation":{"kind":"fail"}}]})

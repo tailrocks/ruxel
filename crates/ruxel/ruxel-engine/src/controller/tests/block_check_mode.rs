@@ -6,14 +6,14 @@ async fn block_check_mode_inherits_and_child_overrides_reach_agent_requests() ->
         for block_check in [false, true] {
             let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[
                 {"name":"block","checkMode":block_check,"block":[
-                    {"name":"inherited","operation":{"kind":"command","cmd":"unused"}},
-                    {"name":"nested","block":[{"name":"nested inherited","operation":{"kind":"command","cmd":"unused"}}]},
-                    {"name":"override block","checkMode":!block_check,"block":[{"name":"nested override","operation":{"kind":"command","cmd":"unused"}}]},
-                    {"name":"override task","checkMode":!block_check,"operation":{"kind":"command","cmd":"unused"}},
+                    {"name":"inherited","operation":{"kind":"command","argv":["unused"]}},
+                    {"name":"nested","block":[{"name":"nested inherited","operation":{"kind":"command","argv":["unused"]}}]},
+                    {"name":"override block","checkMode":!block_check,"block":[{"name":"nested override","operation":{"kind":"command","argv":["unused"]}}]},
+                    {"name":"override task","checkMode":!block_check,"operation":{"kind":"command","argv":["unused"]}},
                     {"name":"failure","operation":{"kind":"fail"}}
-                ],"rescue":[{"name":"rescue","operation":{"kind":"command","cmd":"unused"}}],
-                  "always":[{"name":"always","operation":{"kind":"command","cmd":"unused"}}]},
-                {"name":"outside","operation":{"kind":"command","cmd":"unused"}}
+                ],"rescue":[{"name":"rescue","operation":{"kind":"command","argv":["unused"]}}],
+                  "always":[{"name":"always","operation":{"kind":"command","argv":["unused"]}}]},
+                {"name":"outside","operation":{"kind":"command","argv":["unused"]}}
             ]}]});
             let mut backend = Fake::default();
             let options = Options {

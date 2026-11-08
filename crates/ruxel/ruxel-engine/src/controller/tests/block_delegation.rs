@@ -4,17 +4,17 @@ use super::*;
 async fn block_delegation_inherits_overrides_and_does_not_leak_to_handlers() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{},"a":{},"b":{}},"groups":{}},"plays":[{
     "targets":["h"],
-    "handlers":[{"name":"handler","operation":{"kind":"command","cmd":"handler"}}],
+    "handlers":[{"name":"handler","operation":{"kind":"command","argv":["handler"]}}],
     "tasks":[{"name":"block","delegateTo":{"kind":"ref","path":["vars","destination"]},"delegateAllow":["a"],
         "vars":{"destination":"a"},"noLog":true,
         "block":[
-            {"name":"inherited","operation":{"kind":"command","cmd":"one"},"notify":["handler"]},
+            {"name":"inherited","operation":{"kind":"command","argv":["one"]},"notify":["handler"]},
             {"name":"nested","delegateTo":"b","delegateAllow":["b"],"block":[
-                {"name":"override","operation":{"kind":"command","cmd":"two"}},
-                {"name":"failure","operation":{"kind":"command","cmd":"three"}}
-            ],"rescue":[{"name":"rescue","operation":{"kind":"command","cmd":"four"}}],
-              "always":[{"name":"always","operation":{"kind":"command","cmd":"five"}}]},
-            {"name":"restored","operation":{"kind":"command","cmd":"six"}}
+                {"name":"override","operation":{"kind":"command","argv":["two"]}},
+                {"name":"failure","operation":{"kind":"command","argv":["three"]}}
+            ],"rescue":[{"name":"rescue","operation":{"kind":"command","argv":["four"]}}],
+              "always":[{"name":"always","operation":{"kind":"command","argv":["five"]}}]},
+            {"name":"restored","operation":{"kind":"command","argv":["six"]}}
         ]}]}]});
     let mut backend = Fake {
         results: [
@@ -53,8 +53,8 @@ async fn inherited_expression_uses_each_iteration_and_leaf_override() -> Result<
     "targets":["h"],"tasks":[{"name":"block",
         "delegateTo":{"kind":"ref","path":["item"]},"delegateAllow":["a","b"],"noLog":true,
         "block":[
-            {"name":"loop","loop":["a","b"],"operation":{"kind":"command","cmd":"loop"}},
-            {"name":"override","delegateTo":"a","delegateAllow":["a"],"operation":{"kind":"command","cmd":"override"}}
+            {"name":"loop","loop":["a","b"],"operation":{"kind":"command","argv":["loop"]}},
+            {"name":"override","delegateTo":"a","delegateAllow":["a"],"operation":{"kind":"command","argv":["override"]}}
         ]}]}]});
     let mut backend = Fake::default();
     run(
@@ -88,7 +88,7 @@ async fn dynamic_delegation_requires_task_allowlist_and_localhost_opt_in() -> Re
             "plays":[{"targets":["h"],"tasks":[{"name":"delegate",
             "delegateTo":{"kind":"ref","path":["facts","target"]},
             "delegateAllow":allow,"delegateLocalhost":local,
-            "operation":{"kind":"command","cmd":"fixture"}}]}]});
+            "operation":{"kind":"command","argv":["fixture"]}}]}]});
         let facts = BTreeMap::from([("h".to_owned(), json!({"target":destination}))]);
         let mut backend = Fake::default();
         let result = run(
@@ -118,7 +118,7 @@ async fn inherited_delegation_rejects_child_authorization_without_new_target() -
         json!({"delegateAllow":["a"]}),
         json!({"delegateLocalhost":false}),
     ] {
-        let mut child = json!({"name":"child", "operation":{"kind":"command","cmd":"fixture"}});
+        let mut child = json!({"name":"child", "operation":{"kind":"command","argv":["fixture"]}});
         child.as_object_mut().context("child object")?.extend(
             override_fields
                 .as_object()

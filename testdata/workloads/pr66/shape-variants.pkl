@@ -66,7 +66,7 @@ output { value = new Ruxel.Config {
       new {
         name = "Exercise literal command args"
         checkMode = true
-        operation = new Ruxel.Command { cmd = "/usr/bin/true"; chdir = "/tmp"; creates = "__RUN_ROOT__/command" }
+        operation = new Ruxel.Command { argv { "/usr/bin/true" }; chdir = "/tmp"; creates = "__RUN_ROOT__/command" }
       }
       new {
         name = "Exercise literal shell args"

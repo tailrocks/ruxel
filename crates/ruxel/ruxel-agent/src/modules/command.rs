@@ -10,23 +10,22 @@
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
-pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<Value, String> {
+pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
-    let argv: Vec<String> = if !free_form.is_empty() {
-        shlex_split(free_form)?
-    } else if let Some(cmd) = str_param(obj, "cmd") {
-        shlex_split(cmd)?
-    } else if let Some(list) = obj.get("argv").and_then(Value::as_array) {
-        list.iter()
-            .map(|v| {
-                v.as_str()
-                    .map(str::to_string)
-                    .ok_or_else(|| "argv entries must be strings".to_string())
-            })
-            .collect::<Result<_, _>>()?
-    } else {
-        return Err("command needs a free-form body, cmd, or argv".into());
-    };
+    if obj.contains_key("cmd") {
+        return Err("command accepts argv only".into());
+    }
+    let argv: Vec<String> = obj
+        .get("argv")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "command requires argv".to_string())?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "argv entries must be strings".to_string())
+        })
+        .collect::<Result<_, _>>()?;
     if argv.is_empty() {
         return Err("empty command".into());
     }
@@ -133,108 +132,28 @@ pub(super) fn command_result(cmd: Value, output: &std::process::Output) -> Value
     })
 }
 
-fn shlex_split(input: &str) -> Result<Vec<String>, String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    let mut in_word = false;
-    let mut chars = input.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\'' => {
-                in_word = true;
-                let mut closed = false;
-                for q in chars.by_ref() {
-                    if q == '\'' {
-                        closed = true;
-                        break;
-                    }
-                    current.push(q);
-                }
-                if !closed {
-                    return Err("No closing quotation".into());
-                }
-            }
-            '"' => {
-                in_word = true;
-                let mut closed = false;
-                while let Some(q) = chars.next() {
-                    match q {
-                        '"' => {
-                            closed = true;
-                            break;
-                        }
-                        '\\' => {
-                            if let Some(&n) = chars.peek()
-                                && (n == '"' || n == '\\' || n == '$' || n == '`')
-                            {
-                                current.push(n);
-                                chars.next();
-                            } else {
-                                current.push('\\');
-                            }
-                        }
-                        other => current.push(other),
-                    }
-                }
-                if !closed {
-                    return Err("No closing quotation".into());
-                }
-            }
-            '\\' => {
-                in_word = true;
-                if let Some(n) = chars.next() {
-                    current.push(n);
-                }
-            }
-            c if c.is_whitespace() => {
-                if in_word {
-                    out.push(std::mem::take(&mut current));
-                    in_word = false;
-                }
-            }
-            other => {
-                in_word = true;
-                current.push(other);
-            }
-        }
-    }
-    if in_word {
-        out.push(current);
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::process::ExitStatusExt;
 
     #[test]
-    fn shlex_matches_golden_e15() {
-        assert_eq!(
-            shlex_split("echo 'a b' c").unwrap(),
-            vec!["echo", "a b", "c"]
-        );
-    }
-
-    #[test]
-    fn shlex_double_quotes_and_escapes() {
-        assert_eq!(
-            shlex_split(r#"sh -c "echo \"x\" y""#).unwrap(),
-            vec!["sh", "-c", r#"echo "x" y"#]
-        );
-    }
-
-    #[test]
-    fn shlex_rejects_unclosed_quotes() {
-        assert_eq!(
-            shlex_split("echo 'unterminated").unwrap_err(),
-            "No closing quotation"
-        );
-        assert_eq!(
-            shlex_split("echo \"unterminated").unwrap_err(),
-            "No closing quotation"
-        );
+    fn argv_preserves_literal_arguments_and_rejects_legacy_cmd() {
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+        let result = run(
+            &json!({"argv":["/usr/bin/printf", "%s", "a b; $HOME 'quoted'"]}),
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(result["stdout"], "a b; $HOME 'quoted'");
+        assert!(run(&json!({"cmd":"printf legacy"}), &ctx).is_err());
+        assert!(run(&json!({"argv":[], "cmd":"legacy"}), &ctx).is_err());
     }
 
     #[test]

@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn nested_targets_loop_and_registered_result() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"host":{}},"groups":{"outer":{"children":["inner"]},"inner":{"hosts":["host"]}}},"plays":[{"targets":["outer"],"tasks":[{"name":"loop","loop":["a","b"],"operation":{"kind":"command","cmd":{"kind":"ref","path":["item"]}},"register":"first"},{"name":"next","when":{"kind":"ref","path":["results","first","changed"]},"operation":{"kind":"command","cmd":"next"}}]}]});
+    let config = json!({"inventory":{"hosts":{"host":{}},"groups":{"outer":{"children":["inner"]},"inner":{"hosts":["host"]}}},"plays":[{"targets":["outer"],"tasks":[{"name":"loop","loop":["a","b"],"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["item"]}]}},"register":"first"},{"name":"next","when":{"kind":"ref","path":["results","first","changed"]},"operation":{"kind":"command","argv":["next"]}}]}]});
     let mut backend = Fake::default();
     let recaps = run(
         &config,
@@ -15,7 +15,8 @@ async fn nested_targets_loop_and_registered_result() -> Result<()> {
     assert_eq!(backend.calls.len(), 3);
     assert_eq!(recaps["host"].changed, 2);
     assert_eq!(
-        serde_json::from_slice::<Value>(&backend.calls[0].task.iterations[0].params_json)?["cmd"],
+        serde_json::from_slice::<Value>(&backend.calls[0].task.iterations[0].params_json)?["argv"]
+            [0],
         "a"
     );
     Ok(())
@@ -23,7 +24,7 @@ async fn nested_targets_loop_and_registered_result() -> Result<()> {
 
 #[tokio::test]
 async fn rescue_always_and_handler_run_in_order() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"bad","operation":{"kind":"fail"}}],"rescue":[{"name":"recovered","operation":{"kind":"command","cmd":"rescue"},"notify":["handler"]}],"always":[{"name":"cleanup","operation":{"kind":"command","cmd":"always"}}]}],"handlers":[{"name":"handler","operation":{"kind":"command","cmd":"handler"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"outer","block":[{"name":"bad","operation":{"kind":"fail"}}],"rescue":[{"name":"recovered","operation":{"kind":"command","argv":["rescue"]},"notify":["handler"]}],"always":[{"name":"cleanup","operation":{"kind":"command","argv":["always"]}}]}],"handlers":[{"name":"handler","operation":{"kind":"command","argv":["handler"]}}]}]});
     let mut backend = Fake::default();
     let recap = run(
         &config,
@@ -46,7 +47,7 @@ async fn rescue_always_and_handler_run_in_order() -> Result<()> {
 
 #[tokio::test]
 async fn no_log_censors_events_and_diff_checks() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"secret","noLog":true,"operation":{"kind":"command","cmd":"private"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"secret","noLog":true,"operation":{"kind":"command","argv":["private"]}}]}]});
     let mut backend = Fake::default();
     let options = Options {
         mode: Mode::Diff,

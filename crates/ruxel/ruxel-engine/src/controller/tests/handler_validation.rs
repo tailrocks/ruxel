@@ -7,7 +7,7 @@ async fn unknown_notifications_fail_before_any_effect() {
             let mut nested = json!({"block":[{"operation":{"kind":"debug"}}]});
             nested[section] =
                 json!([{"when":false,"notify":["missing"],"operation":{"kind":"debug"}}]);
-            let mut config = json!({"inventory":{"hosts":{"synthetic":{}}},"plays":[{"targets":["synthetic"],"tasks":[{"operation":{"kind":"command","cmd":"must not run"}}]}]});
+            let mut config = json!({"inventory":{"hosts":{"synthetic":{}}},"plays":[{"targets":["synthetic"],"tasks":[{"operation":{"kind":"command","argv":["must not run"]}}]}]});
             config["plays"][0][phase] = json!([nested]);
             let mut backend = Fake::default();
             let error = run(
@@ -27,7 +27,7 @@ async fn unknown_notifications_fail_before_any_effect() {
 
 #[tokio::test]
 async fn dynamic_notifications_are_rejected_without_evaluation() {
-    let config = json!({"inventory":{"hosts":{"synthetic":{}}},"plays":[{"targets":["synthetic"],"tasks":[{"notify":[{"kind":"lookup","provider":"unexpected"}],"operation":{"kind":"command","cmd":"must not run"}}]}]});
+    let config = json!({"inventory":{"hosts":{"synthetic":{}}},"plays":[{"targets":["synthetic"],"tasks":[{"notify":[{"kind":"lookup","provider":"unexpected"}],"operation":{"kind":"command","argv":["must not run"]}}]}]});
     let mut backend = Fake::default();
     let error = run(
         &config,

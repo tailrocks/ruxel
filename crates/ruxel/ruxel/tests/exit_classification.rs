@@ -177,7 +177,7 @@ fn local_connection_and_shutdown_failures_are_distinct_from_task_failures() -> R
 fn delegated_connection_failure_survives_sensitive_error_redaction() -> Result<()> {
     let fixture = Fixture::new()?;
     let output = fixture.run(
-        "new Ruxel.Command { cmd = \"unused\" }",
+        "new Ruxel.Command { argv { \"unused\" } }",
         "delegateTo = \"localhost\"; delegateAllow { \"localhost\" }; delegateLocalhost = true; noLog = true;",
         &Behavior {
             delegated_failure: true,
@@ -206,7 +206,7 @@ fn task_result_failure_is_not_a_transport_disconnect() -> Result<()> {
     for (response, expected) in [("failed", 8), ("disconnect", 7)] {
         let fixture = Fixture::new()?;
         let output = fixture.run(
-            "new Ruxel.Command { cmd = \"unused\" }",
+            "new Ruxel.Command { argv { \"unused\" } }",
             "",
             &Behavior {
                 task_response: Some(response),

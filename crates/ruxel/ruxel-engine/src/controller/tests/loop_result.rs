@@ -3,9 +3,9 @@ use super::*;
 #[tokio::test]
 async fn loop_summary_fields_are_available_in_registered_results() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
-        {"name":"empty","register":"empty","loop":{"kind":"literal","value":[]},"operation":{"kind":"command","cmd":"unused"}},
-        {"name":"complete","register":"complete","loop":{"kind":"literal","value":[1]},"operation":{"kind":"command","cmd":"ok"}},
-        {"name":"skipped","register":"skipped","loop":{"kind":"literal","value":[1]},"when":false,"operation":{"kind":"command","cmd":"unused"}},
+        {"name":"empty","register":"empty","loop":{"kind":"literal","value":[]},"operation":{"kind":"command","argv":["unused"]}},
+        {"name":"complete","register":"complete","loop":{"kind":"literal","value":[1]},"operation":{"kind":"command","argv":["ok"]}},
+        {"name":"skipped","register":"skipped","loop":{"kind":"literal","value":[1]},"when":false,"operation":{"kind":"command","argv":["unused"]}},
         {"name":"failure","register":"failure","loop":{"kind":"literal","value":[1]},"ignoreErrors":true,"operation":{"kind":"fail"}},
         {"name":"observe","operation":{"kind":"set_fact","values":{"empty":{"kind":"ref","path":["results","empty","skip_reason"]},"complete":{"kind":"ref","path":["results","complete","msg"]},"skipped":{"kind":"ref","path":["results","skipped","msg"]},"failure":{"kind":"ref","path":["results","failure","msg"]}}}}
     ]}]});

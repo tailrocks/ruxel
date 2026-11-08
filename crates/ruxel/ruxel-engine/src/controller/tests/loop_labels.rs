@@ -5,7 +5,7 @@ use super::*;
 async fn private_loop_labels_are_redacted_before_agent_dispatch() -> Result<()> {
     for explicit in [false, true] {
         for private in [false, true] {
-            let mut task = json!({"name":"loop","loop":{"kind":"ref","path":["vars","items"]},"operation":{"kind":"command","cmd":"synthetic"}});
+            let mut task = json!({"name":"loop","loop":{"kind":"ref","path":["vars","items"]},"operation":{"kind":"command","argv":["synthetic"]}});
             if explicit {
                 task["loopLabel"] = json!({"kind":"ref","path":["item"]});
             }
@@ -48,7 +48,7 @@ async fn private_loop_labels_are_redacted_before_agent_dispatch() -> Result<()> 
 #[tokio::test]
 async fn sensitive_explicit_label_is_redacted_for_public_item() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
-        {"name":"loop","loop":{"kind":"ref","path":["vars","items"]},"loopLabel":{"kind":"ref","path":["vars","privateLabel"]},"operation":{"kind":"command","cmd":"synthetic"}}
+        {"name":"loop","loop":{"kind":"ref","path":["vars","items"]},"loopLabel":{"kind":"ref","path":["vars","privateLabel"]},"operation":{"kind":"command","argv":["synthetic"]}}
     ]}]});
     let mut facts = BTreeMap::from([(
         "h".into(),

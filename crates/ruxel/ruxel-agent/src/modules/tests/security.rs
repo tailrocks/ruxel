@@ -52,11 +52,15 @@ fn command_and_shell_refuse_path_options_with_become_before_check_or_execution()
         for module in ["command", "shell"] {
             for option in ["creates", "chdir"] {
                 for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
-                    let params = json!({(option): path});
+                    let params = if module == "command" {
+                        json!({(option): path, "argv":["true"]})
+                    } else {
+                        json!({(option): path})
+                    };
                     let result = super::execute(
                         module,
                         &params,
-                        "true",
+                        if module == "command" { "" } else { "true" },
                         None,
                         &ctx,
                         &mut Default::default(),
@@ -141,4 +145,24 @@ fn checked_runner_preserves_program_args_and_stderr() {
     let mut ok = std::process::Command::new("sh");
     ok.args(["-c", "exit 0"]);
     assert!(super::run_ok(ok).unwrap());
+}
+
+#[test]
+fn command_rejects_free_form_even_with_argv() {
+    let ctx = super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let result = super::execute(
+        "command",
+        &json!({"argv":["true"]}),
+        "legacy",
+        None,
+        &ctx,
+        &mut Default::default(),
+    );
+    assert_eq!(result.status, "failed");
 }

@@ -61,8 +61,7 @@ pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) 
 }
 
 fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
-    let present = |key| params.get(key).is_some_and(|v| !v.is_null());
-    if matches!(kind, "command" | "shell") {
+    if kind == "shell" {
         ensure!(
             params
                 .get("cmd")
@@ -70,14 +69,9 @@ fn commands(kind: &str, params: &Map<String, Value>) -> Result<()> {
                 .is_none_or(|cmd| !cmd.is_empty()),
             "command cannot be empty"
         );
-        ensure!(
-            present("cmd") != present("argv"),
-            "command requires exactly one of cmd or argv"
-        );
-        if let Some(v) = params
-            .get("argv")
-            .filter(|v| !v.is_null() && !v.is_object())
-        {
+    }
+    if kind == "command" {
+        if let Some(v) = params.get("argv").filter(|v| !v.is_object()) {
             ensure!(
                 v.as_array().is_some_and(|v| !v.is_empty()),
                 "argv requires nonempty list"

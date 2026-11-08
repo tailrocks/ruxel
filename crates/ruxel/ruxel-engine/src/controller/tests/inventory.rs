@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn child_group_variables_override_parents_regardless_of_names() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{"a-child":{"hosts":["h"],"vars":{"value":{"kind":"literal","value":"child"}}},"z-parent":{"children":["a-child"],"vars":{"value":{"kind":"literal","value":"parent"}}}}},"plays":[{"targets":["all"],"tasks":[{"name":"test","operation":{"kind":"command","cmd":{"kind":"ref","path":["vars","value"]}}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{"a-child":{"hosts":["h"],"vars":{"value":{"kind":"literal","value":"child"}}},"z-parent":{"children":["a-child"],"vars":{"value":{"kind":"literal","value":"parent"}}}}},"plays":[{"targets":["all"],"tasks":[{"name":"test","operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["vars","value"]}]}}}]}]});
     let mut backend = Fake::default();
     run(
         &config,
@@ -13,13 +13,13 @@ async fn child_group_variables_override_parents_regardless_of_names() -> Result<
     )
     .await?;
     let params: Value = serde_json::from_slice(&backend.calls[0].task.iterations[0].params_json)?;
-    assert_eq!(params["cmd"], "child");
+    assert_eq!(params["argv"][0], "child");
     Ok(())
 }
 
 #[tokio::test]
 async fn plan_counts_selected_operations_without_evaluating_them() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["all"],"tasks":[{"name":"chosen","tags":["chosen"],"operation":{"kind":"command","cmd":{"kind":"ref","path":["results","notAvailable"]}}},{"name":"excluded","operation":{"kind":"command","cmd":"x"}},{"name":"block","tags":["chosen"],"block":[{"name":"nested","operation":{"kind":"command","cmd":"y"}}]},{"name":"always","tags":["always"],"operation":{"kind":"command","cmd":"z"}}],"handlers":[{"name":"possible","operation":{"kind":"command","cmd":"handler"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["all"],"tasks":[{"name":"chosen","tags":["chosen"],"operation":{"kind":"command","argv":{"kind":"list","items":[{"kind":"ref","path":["results","notAvailable"]}]}}},{"name":"excluded","operation":{"kind":"command","argv":["x"]}},{"name":"block","tags":["chosen"],"block":[{"name":"nested","operation":{"kind":"command","argv":["y"]}}]},{"name":"always","tags":["always"],"operation":{"kind":"command","argv":["z"]}}],"handlers":[{"name":"possible","operation":{"kind":"command","argv":["handler"]}}]}]});
     let mut backend = Fake::default();
     let options = Options {
         mode: Mode::Plan,
@@ -50,7 +50,7 @@ async fn plan_counts_selected_operations_without_evaluating_them() -> Result<()>
 #[tokio::test]
 async fn task_check_mode_override_is_forwarded_for_check_and_diff() -> Result<()> {
     for mode in [Mode::Check, Mode::Diff] {
-        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["all"],"tasks":[{"name":"default","operation":{"kind":"command","cmd":"true"}},{"name":"forced","checkMode":true,"operation":{"kind":"command","cmd":"true"}},{"name":"override","checkMode":false,"operation":{"kind":"command","cmd":"true"}}]}]});
+        let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["all"],"tasks":[{"name":"default","operation":{"kind":"command","argv":["true"]}},{"name":"forced","checkMode":true,"operation":{"kind":"command","argv":["true"]}},{"name":"override","checkMode":false,"operation":{"kind":"command","argv":["true"]}}]}]});
         let options = Options {
             mode,
             ..Options::default()

@@ -48,7 +48,7 @@ output { value = new Ruxel.Config {
         retries = 3
         delaySeconds = 1
         register = "fixture_payload_ready"
-        operation = new Ruxel.Command { cmd = "/usr/bin/curl --fail --silent http://127.0.0.1:18080/payload-source.txt" }
+        operation = new Ruxel.Command { argv { "/usr/bin/curl"; "--fail"; "--silent"; "http://127.0.0.1:18080/payload-source.txt" } }
       }
       new {
         name = "Download public synthetic payload"

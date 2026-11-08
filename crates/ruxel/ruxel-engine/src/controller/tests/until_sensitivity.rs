@@ -46,7 +46,7 @@ fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
 async fn lazy_sensitive_until_binding_prevents_agent_cache() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
         {"name":"private gate","noLog":true,"operation":{"kind":"set_fact","values":{"privateGate":true}}},
-        {"name":"retry","vars":{"gate":{"kind":"ref","path":["vars","privateGate"]}},"until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"fixture"}}
+        {"name":"retry","vars":{"gate":{"kind":"ref","path":["vars","privateGate"]}},"until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","argv":["fixture"]}}
     ]}]});
     let mut backend = Precise::default();
     run(
@@ -64,7 +64,7 @@ async fn lazy_sensitive_until_binding_prevents_agent_cache() -> Result<()> {
 
 #[tokio::test]
 async fn secret_retry_condition_censors_output_and_prevents_agent_cache() -> Result<()> {
-    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"private fact","noLog":true,"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":true}}}},{"name":"retry","until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","cmd":"public"}}]}]});
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"private fact","noLog":true,"operation":{"kind":"set_fact","values":{"gate":{"kind":"literal","value":true}}}},{"name":"retry","until":{"kind":"ref","path":["vars","gate"]},"operation":{"kind":"command","argv":["public"]}}]}]});
     let mut backend = Fake {
         results: [json!({"changed":false,"stdout":"fixture-private-result"})].into(),
         ..Fake::default()

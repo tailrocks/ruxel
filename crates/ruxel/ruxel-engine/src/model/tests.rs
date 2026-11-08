@@ -124,7 +124,7 @@ fn accepts_typed_deferred_values_and_plain_valid_results() -> Result<()> {
 
 #[test]
 fn rejects_ssh_option_injection_before_transport() {
-    let mut value = config(json!({"kind":"command","cmd":"safe"}));
+    let mut value = config(json!({"kind":"command","argv":["safe"]}));
     value["inventory"]["hosts"]["synthetic"]["address"] = json!("-oProxyCommand=unsafe");
     assert!(validate_config(&value).is_err());
     value["inventory"]["hosts"]["synthetic"]["address"] = json!("unused.invalid");
@@ -198,3 +198,29 @@ mod delegation;
 mod file_paths;
 
 mod notifications;
+
+#[test]
+fn command_accepts_only_nonempty_argv() -> Result<()> {
+    for value in [
+        json!({}),
+        json!({"cmd":"echo hi"}),
+        json!({"argv":"echo hi"}),
+        json!({"argv":[]}),
+        json!({"argv":["echo"],"cmd":"echo"}),
+    ] {
+        assert!(
+            validate_operation("command", value.as_object().context("object")?).is_err(),
+            "{value}"
+        );
+    }
+    assert!(
+        validate_operation(
+            "command",
+            json!({"argv":["echo", "a b", ""]})
+                .as_object()
+                .context("object")?
+        )
+        .is_ok()
+    );
+    Ok(())
+}
