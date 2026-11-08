@@ -1,5 +1,7 @@
 mod checks;
 mod checks_preview;
+mod control_observer;
+mod control_run;
 mod delegation;
 
 mod contract;

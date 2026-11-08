@@ -14,6 +14,11 @@ rustix = { version = "=1.1.6", features = ["event", "fs", "process"] }
 sha2 = "=0.11.1"
 tempfile = "=3.27.0"
 
+ruxel-engine = { path = "../../crates/ruxel/ruxel-engine" }
+ruxel-config = { path = "../../crates/ruxel/ruxel-config" }
+ruxel-proto = { path = "../../crates/ruxel/ruxel-proto" }
+tokio = { version = "1", features = ["rt", "time"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 

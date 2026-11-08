@@ -28,3 +28,12 @@ fn rejects_mutations_pending_and_unsupported() -> anyhow::Result<()> {
     assert!(validate_manifest(&manifest).is_err());
     Ok(())
 }
+
+#[test]
+fn control_contract_rejects_unreviewed_observations() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"control-flow": serde_json::from_str::<Value>(include_str!("../control-contract.json"))?}});
+    validate_case("control-flow", &manifest)?;
+    manifest["scenarios"]["control-flow"]["observations"][3]["values"][0] = json!("unexpected");
+    assert!(validate_case("control-flow", &manifest).is_err());
+    Ok(())
+}
