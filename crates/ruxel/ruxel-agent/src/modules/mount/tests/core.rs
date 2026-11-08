@@ -41,15 +41,18 @@ fn identifies_mount_drift() {
     );
     for option in ["ro", "nosuid", "nodev", "noexec", "sync"] {
         let mounts = format!("/dev/a /srv xfs rw,{option} 0 0\n");
-        assert_eq!(
-            mount_action(
-                find_mount(&mounts, "/srv").as_ref(),
-                "/dev/a",
-                "xfs",
-                "defaults"
-            ),
-            MountAction::Remount
-        );
+        for desired in ["defaults", "rw", "nofail"] {
+            assert_eq!(
+                mount_action(
+                    find_mount(&mounts, "/srv").as_ref(),
+                    "/dev/a",
+                    "xfs",
+                    desired
+                ),
+                MountAction::Remount,
+                "{option} with {desired}"
+            );
+        }
     }
     let restricted = find_mount("/dev/a /srv xfs rw,noexec 0 0\n", "/srv");
     assert_eq!(

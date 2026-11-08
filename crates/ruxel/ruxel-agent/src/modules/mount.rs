@@ -354,32 +354,29 @@ fn mount_action(current: Option<&Mounted>, src: &str, fstype: &str, opts: &str) 
         return MountAction::Replace;
     }
     let actual_opts: Vec<_> = current.options.split(',').collect();
-    let mut flags: [Option<bool>; 5] = if opts.split(',').any(|option| option == "defaults") {
-        [Some(true); 5]
-    } else {
-        [None; 5]
-    };
+    let mut flags = [true; 5];
     let mut other_drift = false;
     for option in opts.split(',') {
         match option {
-            "rw" => flags[0] = Some(true),
-            "ro" => flags[0] = Some(false),
-            "suid" => flags[1] = Some(true),
-            "nosuid" => flags[1] = Some(false),
-            "dev" => flags[2] = Some(true),
-            "nodev" => flags[2] = Some(false),
-            "exec" => flags[3] = Some(true),
-            "noexec" => flags[3] = Some(false),
-            "async" => flags[4] = Some(true),
-            "sync" => flags[4] = Some(false),
+            "rw" => flags[0] = true,
+            "ro" => flags[0] = false,
+            "suid" => flags[1] = true,
+            "nosuid" => flags[1] = false,
+            "dev" => flags[2] = true,
+            "nodev" => flags[2] = false,
+            "exec" => flags[3] = true,
+            "noexec" => flags[3] = false,
+            "async" => flags[4] = true,
+            "sync" => flags[4] = false,
             "defaults" | "auto" | "noauto" | "nofail" | "_netdev" | "user" | "nouser" => {}
             _ => other_drift |= !actual_opts.contains(&option),
         }
     }
     let negatives = ["ro", "nosuid", "nodev", "noexec", "sync"];
-    let flag_drift = flags.iter().zip(negatives).any(|(requested, negative)| {
-        requested.is_some_and(|positive| positive == actual_opts.contains(&negative))
-    });
+    let flag_drift = flags
+        .iter()
+        .zip(negatives)
+        .any(|(positive, negative)| *positive == actual_opts.contains(&negative));
     if other_drift || flag_drift {
         MountAction::Remount
     } else {
