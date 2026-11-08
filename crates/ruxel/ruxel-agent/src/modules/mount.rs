@@ -242,10 +242,12 @@ fn rewrite_fstab(current: &str, src: &str, path: &str, fstype: &str, opts: &str)
 
         if f.len() >= 2 && unescape_mount(f[1]) == path {
             found = true;
-            let matches = f.len() >= 4
+            let matches = f.len() >= 6
                 && unescape_mount(f[0]) == src
                 && unescape_mount(f[2]) == fstype
-                && opts_eq(&unescape_mount(f[3]), opts);
+                && opts_eq(&unescape_mount(f[3]), opts)
+                && f[4] == "0"
+                && f[5] == "0";
             if !matches {
                 *line = want.join("\t");
                 changed = true;
