@@ -40,12 +40,9 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     }
 
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let mut cmd = super::become_command(ctx, argv_refs[0], &argv_refs[1..]);
+    let mut cmd = super::become_command(ctx, argv_refs[0], &argv_refs[1..])?;
     if let Some(chdir) = str_param(obj, "chdir") {
         cmd.current_dir(chdir);
-    }
-    for (k, v) in &ctx.environment {
-        cmd.env(k, v);
     }
     let output = cmd.output().map_err(|e| format!("exec {}: {e}", argv[0]))?;
     Ok(command_result(Value::from(argv), &output))

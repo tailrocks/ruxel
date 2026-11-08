@@ -98,11 +98,7 @@ impl PsqlSession {
             args.push("-d");
             args.push(database);
         }
-        let mut child = become_command(ctx, "psql", &args)
-            .envs(&key.environment)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+        let mut child = become_command(ctx, "psql", &args)?
             .spawn()
             .map_err(|error| format!("exec psql: {error}"))?;
         let stdin = child.stdin.take().ok_or("psql stdin")?;

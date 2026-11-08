@@ -17,12 +17,9 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     }
 
     let executable = str_param(obj, "executable").unwrap_or("/bin/sh");
-    let mut cmd = super::become_command(ctx, executable, &["-c", free_form]);
+    let mut cmd = super::become_command(ctx, executable, &["-c", free_form])?;
     if let Some(chdir) = str_param(obj, "chdir") {
         cmd.current_dir(chdir);
-    }
-    for (k, v) in &ctx.environment {
-        cmd.env(k, v);
     }
     let output = cmd
         .output()

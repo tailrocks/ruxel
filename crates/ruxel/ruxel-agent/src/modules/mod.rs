@@ -34,6 +34,7 @@ mod replace;
 mod shell;
 mod slurp;
 mod stat;
+mod subprocess;
 mod sysctl;
 mod systemd;
 mod timezone;
@@ -44,6 +45,9 @@ use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use subprocess::become_command;
+#[cfg(test)]
+use subprocess::user_environment_from;
 
 pub(crate) struct ExecContext {
     pub check_mode: bool,
@@ -280,44 +284,6 @@ fn command_display(command: &std::process::Command) -> String {
         .map(|part| part.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-pub(super) fn become_command(
-    ctx: &ExecContext,
-    program: &str,
-    args: &[&str],
-) -> std::process::Command {
-    if let Some(user) = &ctx.become_user {
-        let mut cmd = std::process::Command::new("runuser");
-        cmd.arg("-u").arg(user).arg("--");
-        if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
-            && let Some((home, shell)) = user_environment_from(&passwd, user)
-        {
-            cmd.arg("/usr/bin/env")
-                .arg(format!("HOME={home}"))
-                .arg(format!("USER={user}"))
-                .arg(format!("LOGNAME={user}"))
-                .arg(format!("SHELL={shell}"));
-        }
-        cmd.arg(program);
-        for a in args {
-            cmd.arg(a);
-        }
-        cmd
-    } else {
-        let mut cmd = std::process::Command::new(program);
-        for a in args {
-            cmd.arg(a);
-        }
-        cmd
-    }
-}
-
-fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
-    passwd.lines().find_map(|line| {
-        let fields = line.split(':').collect::<Vec<_>>();
-        (fields.len() >= 7 && fields[0] == user).then_some((fields[5], fields[6]))
-    })
 }
 
 fn params_object(params: &Value) -> Result<&Map<String, Value>, String> {

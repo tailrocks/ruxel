@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write as _};
-use std::process::{Child, ChildStdin, ChildStdout, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{Arc, Mutex};
 
 mod encoding;
