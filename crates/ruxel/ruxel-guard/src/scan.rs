@@ -47,6 +47,14 @@ pub fn deny_hits(policy: &Policy, literals: &[&str]) -> Vec<(String, String)> {
                 .or_else(|| token.parse::<IpAddr>().ok().map(IpNet::from))
                 .or_else(|| numeric_ipv4(token).map(IpNet::from))
                 .or_else(|| {
+                    token.split_once('/').and_then(|(host, _)| {
+                        host.parse::<IpAddr>()
+                            .ok()
+                            .or_else(|| numeric_ipv4(host))
+                            .map(IpNet::from)
+                    })
+                })
+                .or_else(|| {
                     if token.matches(':').count() == 1 {
                         token
                             .rsplit_once(':')

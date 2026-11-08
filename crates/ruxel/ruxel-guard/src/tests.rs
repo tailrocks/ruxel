@@ -150,6 +150,9 @@ fn scan_alternate_numeric_addresses() {
         "127.1",
         "http://0x7f000001:80/",
         "http://0x7f000001/path",
+        "https://user:password@0x7f000001/path",
+        "2130706433/a/b",
+        "127.1/path",
     ] {
         assert!(!deny_hits(&deny, &[value]).is_empty(), "{value}");
     }
