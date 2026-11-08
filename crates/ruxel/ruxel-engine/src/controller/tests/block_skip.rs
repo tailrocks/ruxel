@@ -1,4 +1,7 @@
 use super::*;
+
+mod nested;
+
 #[tokio::test]
 async fn skipped_block_registers_child_results() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[

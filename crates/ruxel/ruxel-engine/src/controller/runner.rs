@@ -3,6 +3,8 @@ use super::{
     failed, flag, json, object, result_scope, string, truth,
 };
 
+mod skipped;
+
 impl<B: Backend> Runner<'_, B> {
     fn layer(task: &Value, parent: &ContextLayer) -> ContextLayer {
         let mut layer = parent.clone();
@@ -123,13 +125,7 @@ impl<B: Backend> Runner<'_, B> {
             }
             let mut layer = Self::layer(task, parent);
             layer.control_sensitive |= self.backend.conservative_sensitive();
-            if !self.handling
-                && !self.options.tags.is_empty()
-                && !super::tag_selection::selected(task, &parent.tags, &self.options.tags)
-            {
-                if array(task, "block").is_empty() {
-                    self.skip_tagged_leaf(task, &layer)?;
-                }
+            if self.skip_unselected_task(task, parent, &layer)? {
                 return Ok(true);
             }
             if !array(task, "block").is_empty() {
@@ -139,35 +135,7 @@ impl<B: Backend> Runner<'_, B> {
                         self.evaluate_selection(task, &mut layer, None, condition, &mut resolved)?;
                     layer.control_sensitive |= condition.is_secret();
                     if !truth(&condition.value) {
-                        for child in array(task, "block") {
-                            self.recap.skipped += 1;
-                            if let Some(name) = string(child, "register") {
-                                let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip_reason":"Conditional result was False"});
-                                let skipped = if layer.no_log
-                                    || flag(child, "noLog")
-                                    || layer.control_sensitive
-                                {
-                                    TrackedValue::secret(skipped)
-                                } else {
-                                    TrackedValue::public(skipped)
-                                };
-                                let mut results = self
-                                    .scope
-                                    .get("results")
-                                    .unwrap_or_else(|| TrackedValue::public(json!({})));
-                                results.insert(name.to_owned(), skipped)?;
-                                self.scope.insert("results".into(), results)?;
-                            }
-                            let result = if layer.no_log
-                                || flag(child, "noLog")
-                                || layer.control_sensitive
-                            {
-                                json!({"censored":true,"changed":false,"failed":false})
-                            } else {
-                                json!({"skipped":true,"changed":false})
-                            };
-                            self.backend.event(&json!({"host":self.host,"task":string(child,"name").unwrap_or(""),"result":result}))?;
-                        }
+                        self.skip_conditional_children(array(task, "block"), &layer)?;
                         return Ok(true);
                     }
                 }
