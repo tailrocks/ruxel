@@ -10,6 +10,12 @@ fn rejects_mutations_pending_and_unsupported() -> anyhow::Result<()> {
     let mut manifest = json!({"version":1,"scenarios":scenarios});
     validate_manifest(&manifest)?;
     validate_case("check-semantics", &manifest)?;
+    manifest["scenarios"]["restart-actions"] =
+        serde_json::from_str(include_str!("../restart-contract.json"))?;
+    validate_case("restart-actions", &manifest)?;
+    manifest["scenarios"]["restart-actions"]["phases"]["fresh"]["observations_match"] =
+        json!(false);
+    assert!(validate_case("restart-actions", &manifest).is_err());
     assert!(validate_case("storage-ext4", &manifest).is_err());
     manifest["scenarios"]["check-semantics"]["phases"]["fresh"]["changed"] = json!(false);
     assert!(validate_case("check-semantics", &manifest).is_err());

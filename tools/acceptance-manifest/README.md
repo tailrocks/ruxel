@@ -1,17 +1,18 @@
 # Local manifest acceptance
 
-Standalone safe Rust port for three reviewed unprivileged manifest scenarios:
-`check-semantics`, `multihost`, and `controller-delegation`. Each contract must
+Standalone safe Rust port for four reviewed manifest scenarios:
+`check-semantics`, `multihost`, `controller-delegation`, and `restart-actions`. Each contract must
 exactly match the frozen reviewed contract in `contracts.json`; fixture and
 baseline oracle hashes are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
-expected to fail while 11 scenarios have no adapter.
+expected to fail while 10 scenarios have no adapter.
 
-Restart lifecycle unit tests pin its unchanged workload and observation contract,
-check synthetic metadata/results, and exercise a fake lifecycle's phase ordering
-and preview non-mutation. This is groundwork only: `restart-actions` remains
-unsupported and its CLI guard test verifies rejection before launching a client.
-No service restart or full restart-scenario acceptance is established by these tests.
+The restart adapter requires effective UID 0 and executes the exact pinned
+fixture using a disposable payload. Run it inside an isolated Linux guest with
+no network, no host mounts, and all capabilities dropped. It checks all five
+phases, file ownership, mode and content, all 36 ordered command results, and
+preview non-mutation. The fixture executes a synthetic no-op script; it does not
+test real service restarts.
 
 ```sh
 cargo test --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml

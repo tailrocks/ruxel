@@ -18,7 +18,12 @@ pub const SCENARIOS: [&str; 14] = [
     "storage-xfs",
     "system-surface",
 ];
-pub const SUPPORTED: [&str; 3] = ["check-semantics", "controller-delegation", "multihost"];
+pub const SUPPORTED: [&str; 4] = [
+    "check-semantics",
+    "controller-delegation",
+    "multihost",
+    "restart-actions",
+];
 pub fn validate_manifest(manifest: &Value) -> Result<()> {
     let root = manifest.as_object().context("manifest must be an object")?;
     ensure!(
@@ -41,6 +46,14 @@ pub fn validate_case(name: &str, manifest: &Value) -> Result<()> {
         SUPPORTED.contains(&name),
         "{name}: no reviewed safe local adapter"
     );
+    if name == "restart-actions" {
+        let expected: Value = serde_json::from_str(include_str!("../restart-contract.json"))?;
+        ensure!(
+            manifest["scenarios"][name] == expected,
+            "{name}: unreviewed or incomplete contract"
+        );
+        return Ok(());
+    }
     let pins: Value = serde_json::from_str(include_str!("../contracts.json"))?;
     ensure!(
         manifest["scenarios"].get(name) == pins.get(name),

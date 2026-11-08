@@ -254,6 +254,8 @@ inputs = [
   "tools/acceptance-manifest/src/process_tests.rs",
   "tools/acceptance-manifest/src/restart.rs",
   "tools/acceptance-manifest/src/restart_lifecycle_tests.rs",
+  "tools/acceptance-manifest/src/restart_run.rs",
+  "tools/acceptance-manifest/src/restart_run_tests.rs",
   "tools/acceptance-manifest/src/restart_tests.rs",
   "tools/acceptance-manifest/src/runner.rs",
   "tools/acceptance-manifest/src/state.rs",
