@@ -125,6 +125,17 @@ fn environment(values: &BTreeMap<String, Value>) -> Result<()> {
     );
     expression_map(values)
 }
+fn validate_become_user(user: Option<&str>) -> Result<()> {
+    ensure!(
+        user.is_none_or(|user| !user.is_empty()
+            && !user.starts_with('-')
+            && user
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))),
+        "invalid become user"
+    );
+    Ok(())
+}
 pub(crate) fn validate_block_result_controls(
     block: bool,
     registered: bool,
@@ -163,6 +174,7 @@ fn validate_delegation(task: &Task) -> Result<()> {
 }
 fn validate_tasks(tasks: &[Task]) -> Result<()> {
     for task in tasks {
+        validate_become_user(task.become_user.as_deref())?;
         validate_block_result_controls(
             !task.block.is_empty(),
             task.register.is_some(),
@@ -274,6 +286,7 @@ pub fn validate_config(value: &Value) -> Result<Value> {
         expression_map(&group.vars)?;
     }
     for play in &config.plays {
+        validate_become_user(play.become_user.as_deref())?;
         expression_map(&play.vars)?;
         environment(&play.environment)?;
         validate_tasks(&play.pre_tasks)?;

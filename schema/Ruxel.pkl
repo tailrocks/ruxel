@@ -19,6 +19,7 @@ class Lookup {
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
+typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")))
 typealias Text = String|Expr
 typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
@@ -39,7 +40,7 @@ class Play {
   handlers: Listing<Task>
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
-  becomeUser: String? = null
+  becomeUser: Username? = null
 }
 class Task {
   name: String
@@ -54,7 +55,7 @@ class Task {
   delegateTo: Text? = null
   delegateAllow: Listing<String>?(this == null || delegateTo != null) = null
   delegateLocalhost: Boolean?(this == null || delegateTo != null) = null
-  becomeUser: String? = null
+  becomeUser: Username? = null
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
   retries: Int?(this == null || this >= 0) = null
@@ -131,7 +132,7 @@ class File {
   mode: FileMode? = null
   owner: Text? = null
   path: Text(state is Expr || state != "link" || src != null)
-  recurse: Flag? = null
+  recurse: Flag?(this != true || state is Expr || state == "directory") = null
   src: Text? = null
   state: ("file"|"directory"|"absent"|"link"|Expr)? = null
 }

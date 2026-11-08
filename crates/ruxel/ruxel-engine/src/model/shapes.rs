@@ -12,6 +12,13 @@ pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) 
     if kind == "file" && params.get("state").and_then(Value::as_str) == Some("link") {
         ensure!(present("src"), "link requires src");
     }
+    if kind == "file" && params.get("recurse").and_then(Value::as_bool) == Some(true) {
+        ensure!(
+            params.get("state").and_then(Value::as_str) == Some("directory")
+                || (deferred && params.get("state").is_some_and(Value::is_object)),
+            "recurse requires state=directory"
+        );
+    }
     if kind == "pause" {
         ensure!(
             !(present("seconds") && present("minutes")),

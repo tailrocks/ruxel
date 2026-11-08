@@ -1,6 +1,71 @@
 use super::{Result, evaluate};
 
 #[test]
+fn become_user_requires_nonempty_valid_usernames() -> Result {
+    for class in ["Play", "Task"] {
+        let operation = if class == "Task" {
+            "operation = new R.Debug {};"
+        } else {
+            ""
+        };
+        for user in ["", " ", "bad user", "-root", "root\n", "a/b", "é"] {
+            let user = serde_json::to_string(user)?;
+            assert!(
+                evaluate(&format!(
+                    r#"new R.{class} {{ name = "fixture"; {operation} becomeUser = {user} }}"#
+                ))
+                .is_err(),
+                "{class}: {user}"
+            );
+        }
+        for user in ["null", r#""root""#, r#""_service""#, r#""svc-user.1""#] {
+            evaluate(&format!(
+                r#"new R.{class} {{ name = "fixture"; {operation} becomeUser = {user} }}"#
+            ))?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn file_recurse_requires_directory_or_deferred_state() -> Result {
+    for state in [
+        "",
+        r#"state = "file";"#,
+        r#"state = "absent";"#,
+        r#"state = "link"; src = "/tmp/source";"#,
+    ] {
+        assert!(
+            evaluate(&format!(
+                r#"new R.File {{ path = "/tmp/fixture"; {state} recurse = true }}"#
+            ))
+            .is_err(),
+            "{state}"
+        );
+        for recurse in [
+            "false",
+            "null",
+            r#"new R.Ref { path { "vars"; "recursive" } }"#,
+        ] {
+            evaluate(&format!(
+                r#"new R.File {{ path = "/tmp/fixture"; {state} recurse = {recurse} }}"#
+            ))?;
+        }
+    }
+    for fields in [
+        r#"state = "directory"; recurse = true"#,
+        r#"state = "directory"; recurse = false"#,
+        r#"state = "directory"; recurse = new R.Ref { path { "vars"; "recursive" } }"#,
+        r#"state = new R.Ref { path { "vars"; "state" } }; recurse = true"#,
+    ] {
+        evaluate(&format!(
+            r#"new R.File {{ path = "/tmp/fixture"; {fields} }}"#
+        ))?;
+    }
+    Ok(())
+}
+
+#[test]
 fn file_requires_canonical_path() -> Result {
     for expression in [
         "new R.File {}",

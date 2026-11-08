@@ -1,6 +1,7 @@
 use super::*;
 use serde_json::json;
 
+mod become_user;
 mod native_kinds;
 fn config(operation: Value) -> Value {
     let mut config = json!({"inventory":{"hosts":{"synthetic":{"address":"unused.invalid"}}},"plays":[{"name":"test","targets":["synthetic"],"tasks":[{"name":"test"}]}]});
