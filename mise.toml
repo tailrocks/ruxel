@@ -1,4 +1,4 @@
-min_version = "2026.11.2"
+min_version = { hard = "2026.11.1", soft = "2026.11.4" }
 
 [tools]
 # Operator repository standard. rust-toolchain.toml mirrors this rust
@@ -29,10 +29,6 @@ rumdl = "0.3.2"
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
-
-[wrappers.cargo]
-command = "mbx"
-env = { MBX_CARGO_SHIM_MODE = "1" }
 
 [tasks.install]
 description = "Provision every pinned tool from mise.lock"
