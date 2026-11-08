@@ -75,7 +75,21 @@ interference; normal explicit container removal remains authoritative.
 
 The already provisioned image must contain PostgreSQL server/client tools,
 `runuser`, account-management tools, Bash and GNU coreutils/findutils. Package
-provisioning belongs to the separately reviewed image build. Run the host driver:
+provisioning belongs to the separately reviewed image build.
+
+To check PostgreSQL session reuse separately, use the same local image and Linux
+binaries. This optional test runs check and diff against a disposable Unix-socket
+database and counts authorized server sessions, including a different-user
+negative control. It checks selected role attributes, not full workload state,
+and does not establish performance-snapshots acceptance.
+
+```sh
+cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml \
+  --example postgres_session -- /absolute/Linux/ruxel /absolute/Linux/ruxel-agent \
+  sha256:REPLACE_WITH_LOCAL_IMAGE_ID
+```
+
+Run the host driver:
 
 ```sh
 cargo run --locked --offline --manifest-path tools/acceptance-manifest/Cargo.toml \

@@ -2,8 +2,10 @@ use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use std::{ffi::OsString, path::Path, process::Command, time::Duration};
 
+#[path = "docker_fixture/policy.rs"]
 mod policy;
 #[cfg(test)]
+#[path = "docker_fixture/tests.rs"]
 mod tests;
 
 pub(super) struct Docker {
