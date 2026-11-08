@@ -148,6 +148,52 @@ fn fake_wrapper_sees_clean_environment_and_workload_receives_assignments() {
 }
 
 #[test]
+fn large_environment_and_hostile_ifs_cross_only_the_post_drop_stdin_boundary() {
+    let dir = std::env::temp_dir().join(format!("ruxel-wrapper-large-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let wrapper = dir.join("fake-runuser");
+    std::fs::write(&wrapper, "#!/bin/sh\nshift 3\nexec \"$@\"\n").unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let password = "synthetic;$(not-executed)'\\\n".repeat(2500);
+    let ifs = " ;$()\t\n";
+    let mut ctx = context();
+    ctx.environment.push(("IFS".into(), ifs.into()));
+    ctx.environment
+        .push(("PGPASSWORD".into(), password.clone()));
+    // The encoded bootstrap exceeds typical pipe capacity. Native printenv
+    // observes IFS directly, without a target shell resetting it on startup.
+    let mut prepared = switched_command(
+        &ctx,
+        "synthetic-user",
+        "/usr/bin/printenv",
+        &["PGPASSWORD"],
+        &wrapper,
+        BTreeMap::new(),
+        None,
+    )
+    .unwrap();
+    assert!(prepared.environment_script.as_ref().unwrap().len() > 128 * 1024);
+    let output = prepared.output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout == format!("{password}\n").as_bytes());
+    let output = switched_command(
+        &ctx,
+        "synthetic-user",
+        "/usr/bin/printenv",
+        &["IFS"],
+        &wrapper,
+        BTreeMap::new(),
+        None,
+    )
+    .unwrap()
+    .output()
+    .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout == format!("{ifs}\n").as_bytes());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn direct_commands_keep_task_environment_and_invalid_assignments_fail_closed() {
     let mut ctx = context();
     ctx.become_user = None;
