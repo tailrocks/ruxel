@@ -179,10 +179,6 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
             argv.is_some_and(|v| !v.is_empty()),
             "command lookup requires argv"
         ),
-        Some("pipe") => ensure!(
-            required("key") || argv.is_some_and(|v| v.len() == 1),
-            "pipe lookup requires command"
-        ),
         _ => bail!("unknown lookup provider"),
     }
     Ok(())

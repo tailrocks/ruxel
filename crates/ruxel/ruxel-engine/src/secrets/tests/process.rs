@@ -43,6 +43,25 @@ fn resolver(fnox: &Path, op: &Path) -> Resolver {
 }
 
 #[test]
+fn command_lookup_passes_literal_arguments() {
+    let fixture = Fixture::new();
+    let command = fixture.script(
+        "fake-command",
+        "[ \"$#\" -eq 1 ] || exit 2; printf '%s' \"$1\"",
+    );
+    let instance = resolver(&command, &command);
+    let value = "literal space; not shell syntax";
+    assert_eq!(
+        instance
+            .resolve(&Lookup::Command {
+                argv: vec![command.to_string_lossy().into_owned(), value.into()],
+            })
+            .unwrap(),
+        value
+    );
+}
+
+#[test]
 fn synthetic_executables_exercise_arguments_dedup_and_redaction() {
     let fixture = Fixture::new();
     let op = fixture.script(
@@ -104,18 +123,12 @@ case "$3" in
 esac"#,
     );
     let instance = resolver(&op, &op);
-    for lookup in [
-        Lookup::OnePasswordUri {
-            reference: "op://vault/item/username?attribute=otp".into(),
-        },
-        Lookup::Pipe {
-            command: "op read 'op://vault/item/username?attribute=otp'".into(),
-        },
-    ] {
-        assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
-        assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
-    }
-    assert_eq!(fixture.count(), 2);
+    let lookup = Lookup::OnePasswordUri {
+        reference: "op://vault/item/username?attribute=otp".into(),
+    };
+    assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
+    assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
+    assert_eq!(fixture.count(), 1);
     let invalid = Lookup::OnePasswordUri {
         reference: "op://vault/item/username?attribute=synthetic-invalid".into(),
     };
@@ -125,5 +138,5 @@ esac"#,
             "secret lookup failed"
         );
     }
-    assert_eq!(fixture.count(), 4);
+    assert_eq!(fixture.count(), 3);
 }

@@ -30,9 +30,6 @@ impl Backend for Fake {
     fn command(&self, _: &[String]) -> Result<String, String> {
         Err("fake-sensitive-error".into())
     }
-    fn pipe(&self, _: &str) -> Result<String, String> {
-        Ok("fake-pipe".into())
-    }
 }
 
 #[cfg(unix)]

@@ -28,9 +28,6 @@ impl Backend for Fake {
     fn command(&self, _: &[String]) -> Result<String, String> {
         Err("unexpected".into())
     }
-    fn pipe(&self, _: &str) -> Result<String, String> {
-        Err("unexpected".into())
-    }
 }
 #[test]
 fn item_lookups_default_vault_and_field_without_losing_explicit_values() -> Result<()> {

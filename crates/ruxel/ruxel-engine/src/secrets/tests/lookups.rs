@@ -7,8 +7,8 @@ fn prefetched_fields_share_item_and_select_ids_or_labels() {
     let user = Lookup::OnePasswordUri {
         reference: "op://vault/item/username".into(),
     };
-    let password = Lookup::Pipe {
-        command: "op read 'op://vault/item/Login/Password'".into(),
+    let password = Lookup::OnePasswordUri {
+        reference: "op://vault/item/Login/Password".into(),
     };
     resolver
         .prefetch(&[user.clone(), password.clone(), user.clone()])
@@ -41,43 +41,5 @@ fn other_lookup_types_cache_and_redact_errors() {
             })
             .unwrap(),
         "synthetic"
-    );
-    assert_eq!(
-        resolver
-            .resolve(&Lookup::Pipe {
-                command: "fake".into()
-            })
-            .unwrap(),
-        "fake-pipe"
-    );
-}
-#[test]
-fn only_plain_op_read_is_optimized() {
-    let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
-    for command in [
-        "printf '%s' 'op://vault/item/username'",
-        "op read 'op://vault/item/username' | base64",
-        "op read \"op://vault/item/$name\"",
-        "op\nread 'op://vault/item/username'",
-        "op read\n'op://vault/item/username'",
-    ] {
-        assert_eq!(
-            resolver
-                .resolve(&Lookup::Pipe {
-                    command: command.into()
-                })
-                .unwrap(),
-            "fake-pipe"
-        );
-    }
-    assert_eq!(backend.items.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        resolver
-            .resolve(&Lookup::Pipe {
-                command: "op read 'op://vault/item/username'".into()
-            })
-            .unwrap(),
-        "alice"
     );
 }

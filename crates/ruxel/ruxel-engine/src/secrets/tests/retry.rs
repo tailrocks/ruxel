@@ -29,9 +29,6 @@ fn transient_failures_retry_and_successes_are_shared() {
         fn command(&self, _: &[String]) -> Result<String, String> {
             unreachable!()
         }
-        fn pipe(&self, _: &str) -> Result<String, String> {
-            unreachable!()
-        }
     }
     let backend = Arc::new(Flaky {
         values: AtomicUsize::new(0),

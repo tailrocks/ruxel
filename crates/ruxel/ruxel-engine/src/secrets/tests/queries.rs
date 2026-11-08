@@ -20,21 +20,6 @@ fn query_references_preserve_cli_semantics_and_cache_full_reference() {
 }
 
 #[test]
-fn quoted_op_read_queries_use_complete_reference_instead_of_cached_field() {
-    let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
-    for quote in ['\'', '"'] {
-        let lookup = Lookup::Pipe {
-            command: format!("op read {quote}op://vault/item/username?attribute=otp{quote}"),
-        };
-        assert_eq!(resolver.resolve(&lookup).unwrap(), "synthetic-otp");
-        assert_eq!(resolver.resolve(&lookup).unwrap(), "synthetic-otp");
-    }
-    assert_eq!(backend.references.lock().unwrap().len(), 2);
-    assert_eq!(backend.items.load(Ordering::SeqCst), 0);
-}
-
-#[test]
 fn query_failures_remain_redacted_and_are_retried() {
     let backend = Arc::new(Fake::default());
     let resolver = Resolver::new(backend.clone());
@@ -48,26 +33,4 @@ fn query_failures_remain_redacted_and_are_retried() {
         );
     }
     assert_eq!(backend.references.lock().unwrap().len(), 2);
-}
-
-#[test]
-fn query_pipes_with_shell_operations_keep_their_original_execution() {
-    let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
-    for command in [
-        "op read 'op://vault/item/username?attribute=otp' | base64",
-        "op read \"op://vault/item/$field?attribute=otp\"",
-        "op read op://vault/item/username?attribute=otp",
-    ] {
-        assert_eq!(
-            resolver
-                .resolve(&Lookup::Pipe {
-                    command: command.into()
-                })
-                .unwrap(),
-            "fake-pipe"
-        );
-    }
-    assert!(backend.references.lock().unwrap().is_empty());
-    assert_eq!(backend.items.load(Ordering::SeqCst), 0);
 }

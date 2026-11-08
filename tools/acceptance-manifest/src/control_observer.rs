@@ -27,7 +27,6 @@ impl LookupResolver for Observer {
     fn resolve(&self, expr: &Expr) -> Result<Value> {
         let Expr::Lookup {
             provider,
-            key,
             argv,
             ..
         } = expr
@@ -35,15 +34,13 @@ impl LookupResolver for Observer {
             bail!("unexpected lookup")
         };
         ensure!(
-            provider == "pipe"
-                && key.as_deref() == Some("printf synthetic")
-                && argv == &["printf synthetic"],
+            provider == "command" && argv == &["printf", "synthetic"],
             "unlisted fixture lookup"
         );
         Ok(json!(
             self.resolver
-                .resolve(&Lookup::Pipe {
-                    command: "printf synthetic".into()
+                .resolve(&Lookup::Command {
+                    argv: vec!["printf".into(), "synthetic".into()]
                 })
                 .map_err(anyhow::Error::msg)?
         ))

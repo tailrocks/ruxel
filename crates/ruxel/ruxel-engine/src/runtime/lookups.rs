@@ -71,18 +71,6 @@ impl Lookups {
                 section: section.clone(),
             },
             "command" => Lookup::Command { argv: argv.clone() },
-            "pipe" => Lookup::Pipe {
-                command: key
-                    .clone()
-                    .or_else(|| {
-                        if argv.len() == 1 {
-                            argv.first().cloned()
-                        } else {
-                            None
-                        }
-                    })
-                    .context("pipe lookup requires a single command string")?,
-            },
             "synthetic" => Lookup::Synthetic {
                 value: required(key)?,
             },

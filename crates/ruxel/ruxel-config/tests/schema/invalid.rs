@@ -29,6 +29,7 @@ fn rejects_invalid_types_and_missing_required_fields() {
         r"new R.Service { enabled = true }",
         r#"new R.Firewall { chain = "INPUT"; policy = "DROP"; jump = "ACCEPT" }"#,
         r#"new R.Lookup { provider = "pipe" }"#,
+        r#"new R.Lookup { provider = "pipe"; key = "printf synthetic" }"#,
         r#"new R.Command { argv = "echo hello" }"#,
         r#"new R.Apt { upgrade = "garbage" }"#,
         r#"new R.File { path = "/tmp/link"; state = "link" }"#,

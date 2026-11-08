@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn lookup_accepts_command_argv_and_rejects_legacy_pipe() {
+    let mut value = config(json!({"kind":"debug", "msg":{
+        "kind":"lookup", "provider":"command", "argv":["printf", "synthetic"]
+    }}));
+    assert!(validate_config(&value).is_ok());
+    value["plays"][0]["tasks"][0]["operation"]["msg"] = json!({
+        "kind":"lookup", "provider":"pipe", "key":"printf synthetic"
+    });
+    assert!(validate_config(&value).is_err());
+}
+
+#[test]
 fn fnox_lookup_keys_are_environment_identifiers_before_execution() -> Result<()> {
     let mut value = config(json!({"kind":"debug"}));
     value["plays"][0]["tasks"]

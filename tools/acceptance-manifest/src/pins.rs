@@ -7,7 +7,7 @@ pub(super) fn digest(bytes: &[u8]) -> String {
 }
 pub(super) fn pin(name: &str) -> &'static str {
     match name {
-        "control-flow" => "aee917403b56677e6823b3d6a8194bf8644a08220bc11e6e39dd1772f3db3d6e",
+        "control-flow" => "43e042603472da2932866eed765ba0d996bf6aa6dfe3aa69cf4081e15c756817",
         "become-environment" => "b88c1a74facbc2a7eabfe23e6b4d08906174945f0140277e9b326cbee9eff5ac",
         "files-content" => "457ed3085453f875f141e3e09e75b47c47b8d6de7edc14db49cc9dfb3e3ade20",
         "postgresql-ownership" => {

@@ -18,9 +18,6 @@ impl secrets::Backend for Rendezvous {
     fn command(&self, _: &[String]) -> Result<String, String> {
         Err("unexpected command lookup".into())
     }
-    fn pipe(&self, _: &str) -> Result<String, String> {
-        Err("unexpected pipe lookup".into())
-    }
     fn onepassword_item(&self, _: &str, item: &str) -> Result<Value, String> {
         if !["alpha", "beta"].contains(&item) {
             return Err("unexpected item lookup".into());

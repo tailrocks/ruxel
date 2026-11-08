@@ -24,7 +24,7 @@ output {
           } }
         } }
         ["fixture_pairs"] = call("flatMap", new Listing { ref(new Listing { "vars"; "fixture_matrix" }); literal("parent"); call("map", new Listing { ref(new Listing { "parent"; "children" }); new Ruxel.ListExpr { items { ref(new Listing { "parent" }); ref(new Listing { "item" }) } } }) })
-        ["fixture_pipe"] = new Ruxel.Lookup { provider = "pipe"; key = "printf synthetic"; argv { "printf synthetic" } }
+        ["fixture_pipe"] = new Ruxel.Lookup { provider = "command"; argv { "printf"; "synthetic" } }
         ["fixture_nested"] = new Ruxel.ListExpr { items { new Ruxel.ListExpr { items { literal("nested"); ref(new Listing { "vars"; "fixture_pipe" }) } } } }
       }
       preTasks { new {

@@ -22,9 +22,6 @@ pub enum Lookup {
     Command {
         argv: Vec<String>,
     },
-    Pipe {
-        command: String,
-    },
     Synthetic {
         value: String,
     },
@@ -36,7 +33,6 @@ impl fmt::Debug for Lookup {
             Self::Fnox { .. } => "Fnox([REDACTED])",
             Self::OnePassword { .. } | Self::OnePasswordUri { .. } => "OnePassword([REDACTED])",
             Self::Command { .. } => "Command([REDACTED])",
-            Self::Pipe { .. } => "Pipe([REDACTED])",
             Self::Synthetic { .. } => "Synthetic([REDACTED])",
         })
     }
@@ -55,9 +51,6 @@ pub trait Backend: Send + Sync {
     /// # Errors
     /// Returns an error if the command fails.
     fn command(&self, argv: &[String]) -> Result<String, String>;
-    /// # Errors
-    /// Returns an error if the pipe fails.
-    fn pipe(&self, command: &str) -> Result<String, String>;
 }
 
 #[derive(Debug)]
@@ -133,11 +126,6 @@ impl Backend for ProcessBackend {
         let (program, arguments) = argv.split_first().ok_or("empty command")?;
         let mut cmd = Command::new(program);
         cmd.args(arguments);
-        process_output(cmd)
-    }
-    fn pipe(&self, command: &str) -> Result<String, String> {
-        let mut cmd = Command::new("sh");
-        cmd.args(["-c", command]);
         process_output(cmd)
     }
 }
@@ -228,20 +216,6 @@ impl Resolver {
                 self.op_field(vault, item, field, section)
             }
             Lookup::Command { argv } => self.backend.command(argv).map_err(|_| generic()),
-            Lookup::Pipe { command } => {
-                if let Some(reference) = pipe_op_reference(command) {
-                    if reference.contains('?') {
-                        return self
-                            .backend
-                            .onepassword_reference(reference)
-                            .map_err(|_| generic());
-                    }
-                    if let Some((vault, item, section, field)) = parse_op_reference(reference) {
-                        return self.op_field(vault, item, field, section);
-                    }
-                }
-                self.backend.pipe(command).map_err(|_| generic())
-            }
             Lookup::Synthetic { value } => Ok(value.clone()),
         }
     }
@@ -306,31 +280,6 @@ fn parse_op_reference(reference: &str) -> Option<(&str, &str, Option<&str>, &str
     }
 }
 
-fn pipe_op_reference(command: &str) -> Option<&str> {
-    let rest = command.trim_matches([' ', '\t']).strip_prefix("op")?;
-    let rest = rest
-        .strip_prefix([' ', '\t'])?
-        .trim_start_matches([' ', '\t']);
-    let rest = rest.strip_prefix("read")?;
-    let rest = rest.strip_prefix([' ', '\t'])?.trim_matches([' ', '\t']);
-    let reference = if let Some(quote) = rest.chars().next().filter(|c| *c == '\'' || *c == '"') {
-        let inner = rest.strip_prefix(quote)?.strip_suffix(quote)?;
-        if inner.contains(quote) || (quote == '"' && inner.contains(['$', '`', '\\'])) {
-            return None;
-        }
-        inner
-    } else {
-        if rest
-            .chars()
-            .any(|c| c.is_whitespace() || "|&;<>$`\\(){}*?[]!~#\"'".contains(c))
-        {
-            return None;
-        }
-        rest
-    };
-    reference.starts_with("op://").then_some(reference)
-}
-
 fn synthetic_value(lookup: &Lookup) -> String {
     let (kind, parts): (&str, Vec<&str>) = match lookup {
         Lookup::Fnox { key } => ("fnox", vec![key]),
@@ -345,7 +294,6 @@ fn synthetic_value(lookup: &Lookup) -> String {
         ),
         Lookup::OnePasswordUri { reference } => ("op-uri", vec![reference]),
         Lookup::Command { argv } => ("command", argv.iter().map(String::as_str).collect()),
-        Lookup::Pipe { command } => ("pipe", vec![command]),
         Lookup::Synthetic { value } => return value.clone(),
     };
     let mut key = kind.to_owned();
