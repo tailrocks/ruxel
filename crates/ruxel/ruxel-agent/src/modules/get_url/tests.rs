@@ -80,3 +80,25 @@ fn failure_and_check_leave_no_download_objects() {
 
 #[path = "tests/staging_cases.rs"]
 mod staging_cases;
+
+#[test]
+fn download_clients_receive_task_environment() {
+    use super::fetch_with_programs;
+
+    let root = Root::new();
+    let client = root.0.join("client");
+    fs::write(&client, "#!/bin/sh\nprintf '%s' \"$RUXEL_DOWNLOAD_TEST\"\n").unwrap();
+    fs::set_permissions(&client, fs::Permissions::from_mode(0o700)).unwrap();
+    let missing = root.0.join("missing");
+    let mut ctx = context(false);
+    ctx.environment = vec![("RUXEL_DOWNLOAD_TEST".into(), "task value".into())];
+
+    for (name, curl, wget) in [("curl", &client, &missing), ("wget", &missing, &client)] {
+        let output = root.0.join(name);
+        let file = File::create(&output).unwrap();
+        assert!(
+            fetch_with_programs("https://example.invalid/file", &file, curl, wget, &ctx).unwrap()
+        );
+        assert_eq!(fs::read(output).unwrap(), b"task value");
+    }
+}

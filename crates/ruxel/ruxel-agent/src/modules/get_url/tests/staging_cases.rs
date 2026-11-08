@@ -64,7 +64,8 @@ fn clients_write_to_stdout_descriptor_and_wget_remains_fallback() {
                 "https://example.invalid/file",
                 &stage.file,
                 curl,
-                &script
+                &script,
+                &super::context(false),
             )
             .unwrap()
         );

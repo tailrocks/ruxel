@@ -11,7 +11,7 @@ mod access;
 mod staging;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
-    run_with_fetch(params, ctx, fetch)
+    run_with_fetch(params, ctx, |url, dest| fetch(url, dest, ctx))
 }
 
 fn run_with_fetch(
@@ -81,8 +81,8 @@ fn curl_args(url: &str) -> [&str; 3] {
     ["-fsSL", "--", url]
 }
 
-fn fetch(url: &str, dest: &std::fs::File) -> Result<bool, String> {
-    fetch_with_programs(url, dest, Path::new("curl"), Path::new("wget"))
+fn fetch(url: &str, dest: &std::fs::File, ctx: &ExecContext) -> Result<bool, String> {
+    fetch_with_programs(url, dest, Path::new("curl"), Path::new("wget"), ctx)
 }
 
 fn fetch_with_programs(
@@ -90,9 +90,11 @@ fn fetch_with_programs(
     dest: &std::fs::File,
     curl: &Path,
     wget: &Path,
+    ctx: &ExecContext,
 ) -> Result<bool, String> {
     let curl = std::process::Command::new(curl)
         .args(curl_args(url))
+        .envs(ctx.environment.iter().cloned())
         .stdout(dest.try_clone().map_err(|e| e.to_string())?)
         .output();
     if let Ok(out) = curl {
@@ -105,6 +107,7 @@ fn fetch_with_programs(
         ));
     }
     let wget = std::process::Command::new(wget)
+        .envs(ctx.environment.iter().cloned())
         .arg("-q")
         .arg("-O")
         .arg("-")
