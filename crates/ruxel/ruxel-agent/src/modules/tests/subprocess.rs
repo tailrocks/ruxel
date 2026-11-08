@@ -160,6 +160,9 @@ fn large_environment_and_hostile_ifs_cross_only_the_post_drop_stdin_boundary() {
     ctx.environment.push(("IFS".into(), ifs.into()));
     ctx.environment
         .push(("PGPASSWORD".into(), password.clone()));
+    ctx.environment.push(("SHLVL".into(), "7".into()));
+    ctx.environment
+        .push(("RUXEL_ENV_VALUE".into(), "caller-value".into()));
     // The encoded bootstrap exceeds typical pipe capacity. Native printenv
     // observes IFS directly, without a target shell resetting it on startup.
     let mut prepared = switched_command(
@@ -175,7 +178,8 @@ fn large_environment_and_hostile_ifs_cross_only_the_post_drop_stdin_boundary() {
     assert!(prepared.environment_script.as_ref().unwrap().len() > 128 * 1024);
     let output = prepared.output().unwrap();
     assert!(output.status.success());
-    assert!(output.stdout == format!("{password}\n").as_bytes());
+    let matches = output.stdout == format!("{password}\n").as_bytes();
+    assert!(matches, "large synthetic environment differs");
     let output = switched_command(
         &ctx,
         "synthetic-user",
@@ -189,7 +193,27 @@ fn large_environment_and_hostile_ifs_cross_only_the_post_drop_stdin_boundary() {
     .output()
     .unwrap();
     assert!(output.status.success());
-    assert!(output.stdout == format!("{ifs}\n").as_bytes());
+    assert_eq!(output.stdout, format!("{ifs}\n").as_bytes());
+    for (key, expected) in [("SHLVL", "7\n"), ("RUXEL_ENV_VALUE", "caller-value\n")] {
+        let output = switched_command(
+            &ctx,
+            "synthetic-user",
+            "/usr/bin/printenv",
+            &[key],
+            &wrapper,
+            BTreeMap::new(),
+            None,
+        )
+        .unwrap()
+        .output()
+        .unwrap();
+        assert!(output.status.success());
+        assert!(
+            output.stdout == expected.as_bytes(),
+            "{key}: {:?}",
+            output.stdout
+        );
+    }
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -223,12 +247,26 @@ fn direct_commands_keep_task_environment_and_invalid_assignments_fail_closed() {
 #[test]
 fn unsupported_switched_environment_names_fail_before_spawning() {
     let mut ctx = context();
-    for key in ["not-a-shell-name", "1INVALID", "VALUE;exit"] {
+    for key in [
+        "not-a-shell-name",
+        "1INVALID",
+        "VALUE;exit",
+        "RANDOM",
+        "OPTIND",
+        "BASH_XTRACEFD",
+    ] {
         ctx.environment = vec![(key.into(), "synthetic-secret".into())];
         let result = become_command(&ctx, "never-executed", &[]);
         assert_eq!(
             result.err().unwrap(),
             "become_user requires shell-compatible environment variable names"
+        );
+    }
+    for value in ["not-numeric", "1000", "-1"] {
+        ctx.environment = vec![("SHLVL".into(), value.into())];
+        assert_eq!(
+            become_command(&ctx, "never-executed", &[]).err().unwrap(),
+            "become_user requires a numeric SHLVL below 999"
         );
     }
     assert_eq!(

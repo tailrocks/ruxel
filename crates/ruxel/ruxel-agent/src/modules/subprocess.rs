@@ -11,7 +11,7 @@ const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
 const READY: &[u8] = b"RUXEL_ENV_READY\n";
 // read consumes exactly one line, leaving the rest of stdin for the workload.
 // The evaluated line is generated solely from validated names and octal bytes.
-const BOOTSTRAP: &str = "IFS= read -r RUXEL_ENV_SCRIPT || exit 125; eval \"$RUXEL_ENV_SCRIPT\" || exit 125; printf 'RUXEL_ENV_READY\\n'; exec \"$@\"";
+const BOOTSTRAP: &str = "IFS= read -r RUXEL_ENV_SCRIPT || exit 125; eval \"$RUXEL_ENV_SCRIPT\" || exit 125; if [ -n \"${BASH_VERSION-}\" ]; then SHLVL=$((SHLVL + 1)); export SHLVL; fi; printf 'RUXEL_ENV_READY\\n'; exec \"$@\"";
 
 pub(super) struct TaskCommand {
     command: Command,
@@ -144,31 +144,76 @@ fn switched_command(
     for (key, value) in &ctx.environment {
         environment.insert(key.into(), value.into());
     }
+    let mut scratch = String::from("RUXEL_ENV_VALUE");
+    while environment.contains_key(std::ffi::OsStr::new(&scratch)) {
+        scratch.push('_');
+    }
     let mut script = String::new();
     for (key, value) in environment {
         let key = key
             .to_str()
-            .filter(|key| shell_name(key))
+            .filter(|key| shell_name(key) && !shell_managed_name(key))
             .ok_or("become_user requires shell-compatible environment variable names")?;
+        // Bash decrements SHLVL on exec; the fixed bootstrap compensates for
+        // that, while dash does not. Restrict its numeric shell representation.
+        if key == "SHLVL"
+            && !value.to_str().is_some_and(|value| {
+                value.parse::<u16>().is_ok_and(|level| level < 999)
+                    && value.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        {
+            return Err("become_user requires a numeric SHLVL below 999".into());
+        }
         // A trailing sentinel preserves trailing newlines through command
         // substitution. Values are bytes, never shell syntax, even for quotes,
         // newlines, command substitutions, or non-UTF-8 inherited values.
-        script.push_str(key);
+        script.push_str(&scratch);
         script.push_str("=$(printf '");
         for byte in value.as_bytes() {
             use std::fmt::Write as _;
             write!(script, "\\{byte:03o}").map_err(|_| "environment encoding failed")?;
         }
         script.push_str("x'); ");
+        script.push_str("export ");
         script.push_str(key);
-        script.push_str("=${");
-        script.push_str(key);
-        script.push_str("%x}; export ");
-        script.push_str(key);
+        script.push_str("=\"${");
+        script.push_str(&scratch);
+        script.push_str("%x}\"");
         script.push_str(" || exit 125; ");
     }
     script.push_str(":\n");
     Ok(piped_command(command, Some(script.into_bytes())))
+}
+
+fn shell_managed_name(key: &str) -> bool {
+    // These names have shell arithmetic, array, identity, or descriptor side
+    // effects. Reject them before launching anything instead of interpreting
+    // their values as shell state. SHLVL remains a normal numeric assignment.
+    matches!(
+        key,
+        "RANDOM"
+            | "SRANDOM"
+            | "SECONDS"
+            | "OPTIND"
+            | "LINENO"
+            | "HISTCMD"
+            | "BASHPID"
+            | "UID"
+            | "EUID"
+            | "PPID"
+            | "GROUPS"
+            | "DIRSTACK"
+            | "FUNCNAME"
+            | "PIPESTATUS"
+            | "BASHOPTS"
+            | "SHELLOPTS"
+            | "BASH_XTRACEFD"
+            | "BASH_VERSINFO"
+            | "BASH_ARGV"
+            | "BASH_ARGC"
+            | "BASH_LINENO"
+            | "BASH_SOURCE"
+    )
 }
 
 fn shell_name(key: &str) -> bool {
