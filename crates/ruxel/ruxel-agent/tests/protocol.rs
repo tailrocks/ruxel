@@ -415,6 +415,44 @@ fn ledger_replays_converged_task() {
 }
 
 #[test]
+fn become_request_cannot_replay_a_cached_unprivileged_result() {
+    let dir = temp_dir("become-cache");
+    let dest = dir.join("managed");
+    for use_become in [false, true] {
+        let mut agent = spawn_agent(&dir);
+        let mut stdin = agent.stdin.take().unwrap();
+        let mut stdout = agent.stdout.take().unwrap();
+        write_frame(&mut stdin, &hello("become-cache", PROTO_VERSION)).unwrap();
+        let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+        let mut plan = copy_plan(42, &dest, "stable", "same-copy-key");
+        if use_become {
+            let Some(Msg::Plan(ref mut plan)) = plan.msg else {
+                unreachable!()
+            };
+            plan.tasks[0].become_user = "synthetic-user".into();
+        }
+        write_frame(&mut stdin, &plan).unwrap();
+        let result = read_task_result(&mut stdout);
+        if use_become {
+            assert_eq!(result.status, "failed");
+            assert!(!result.changed);
+            let body: serde_json::Value = serde_json::from_slice(&result.result_json).unwrap();
+            assert!(
+                body["msg"]
+                    .as_str()
+                    .unwrap()
+                    .contains("does not support become_user")
+            );
+        } else {
+            assert_eq!(result.status, "changed");
+        }
+        finish_agent(&mut agent, &mut stdin);
+    }
+    assert_eq!(std::fs::read_to_string(dest).unwrap(), "stable");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn daemon_reload_bypasses_a_matching_ledger_record() {
     use std::os::unix::fs::PermissionsExt;
 

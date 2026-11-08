@@ -40,6 +40,42 @@ fn in_process_modules_refuse_become_before_reading_or_writing() {
 }
 
 #[test]
+fn command_and_shell_refuse_path_options_with_become_before_check_or_execution() {
+    for check_mode in [false, true] {
+        let ctx = super::ExecContext {
+            check_mode,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: Some("synthetic-user".into()),
+        };
+        for module in ["command", "shell"] {
+            for option in ["creates", "chdir"] {
+                for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
+                    let params = json!({(option): path});
+                    let result = super::execute(
+                        module,
+                        &params,
+                        "true",
+                        None,
+                        &ctx,
+                        &mut Default::default(),
+                    );
+                    assert_eq!(result.status, "failed", "{module} {option} {path}");
+                    assert!(!result.changed);
+                    assert!(
+                        result.result["msg"]
+                            .as_str()
+                            .unwrap()
+                            .contains("not supported with become_user")
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn atomic_write_replaces_symlink_not_its_target() {
     let root = std::env::temp_dir().join(format!("ruxel-atomic-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

@@ -31,6 +31,7 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
         return Err("empty command".into());
     }
 
+    validate_become_options(obj, ctx)?;
     if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
         return Ok(result);
     }
@@ -48,6 +49,20 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     }
     let output = cmd.output().map_err(|e| format!("exec {}: {e}", argv[0]))?;
     Ok(command_result(Value::from(argv), &output))
+}
+
+pub(super) fn validate_become_options(
+    params: &serde_json::Map<String, Value>,
+    ctx: &ExecContext,
+) -> Result<(), String> {
+    if ctx.become_user.is_some() {
+        for option in ["creates", "chdir"] {
+            if str_param(params, option).is_some() {
+                return Err(format!("{option} is not supported with become_user"));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn check_mode_guard(
