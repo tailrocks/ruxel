@@ -11,13 +11,45 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         .ok()
         .and_then(|path| timezone_from_link(&path))
         .unwrap_or_default();
-    let changed = current != name;
+    let changed = current != name
+        && !matches_zone_copy(
+            std::path::Path::new("/etc/localtime"),
+            std::path::Path::new("/usr/share/zoneinfo"),
+            name,
+        );
     if changed && !ctx.check_mode {
         let mut command = std::process::Command::new("timedatectl");
         command.args(["set-timezone", name]);
         super::run_checked(command)?;
     }
     Ok(json!({"changed": changed, "failed": false}))
+}
+
+fn matches_zone_copy(localtime: &std::path::Path, zoneinfo: &std::path::Path, name: &str) -> bool {
+    use std::path::Component;
+    let zone = std::path::Path::new(name);
+    if !zone
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return false;
+    }
+    if !std::fs::symlink_metadata(localtime).is_ok_and(|meta| meta.file_type().is_file()) {
+        return false;
+    }
+    let Ok(root) = zoneinfo.canonicalize() else {
+        return false;
+    };
+    let Ok(target) = zoneinfo.join(zone).canonicalize() else {
+        return false;
+    };
+    if !target.starts_with(root) {
+        return false;
+    }
+    match (std::fs::read(localtime), std::fs::read(target)) {
+        (Ok(current), Ok(requested)) => current == requested,
+        _ => false,
+    }
 }
 
 fn timezone_from_link(path: &std::path::Path) -> Option<String> {
@@ -30,6 +62,21 @@ fn timezone_from_link(path: &std::path::Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn detects_copied_zoneinfo_without_accepting_traversal() {
+        let dir = std::env::temp_dir().join(format!("ruxel-timezone-copy-{}", std::process::id()));
+        let zones = dir.join("zones");
+        std::fs::create_dir_all(zones.join("Asia")).unwrap();
+        std::fs::write(zones.join("Asia/Tokyo"), b"zone").unwrap();
+        let local = dir.join("localtime");
+        std::fs::write(&local, b"zone").unwrap();
+        assert!(super::matches_zone_copy(&local, &zones, "Asia/Tokyo"));
+        assert!(!super::matches_zone_copy(&local, &zones, "../localtime"));
+        std::fs::write(&local, b"other").unwrap();
+        assert!(!super::matches_zone_copy(&local, &zones, "Asia/Tokyo"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn parses_timezone_link() {
