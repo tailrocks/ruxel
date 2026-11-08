@@ -18,11 +18,12 @@ pub const SCENARIOS: [&str; 14] = [
     "storage-xfs",
     "system-surface",
 ];
-pub const SUPPORTED: [&str; 5] = [
+pub const SUPPORTED: [&str; 6] = [
     "check-semantics",
     "control-flow",
     "controller-delegation",
     "multihost",
+    "postgresql-ownership",
     "restart-actions",
 ];
 pub fn validate_manifest(manifest: &Value) -> Result<()> {
@@ -47,6 +48,14 @@ pub fn validate_case(name: &str, manifest: &Value) -> Result<()> {
         SUPPORTED.contains(&name),
         "{name}: no reviewed safe local adapter"
     );
+    if name == "postgresql-ownership" {
+        let expected: Value = serde_json::from_str(include_str!("../postgres-contract.json"))?;
+        ensure!(
+            manifest["scenarios"][name] == expected,
+            "{name}: unreviewed or incomplete contract"
+        );
+        return Ok(());
+    }
     if name == "control-flow" {
         let expected: Value = serde_json::from_str(include_str!("../control-contract.json"))?;
         ensure!(
