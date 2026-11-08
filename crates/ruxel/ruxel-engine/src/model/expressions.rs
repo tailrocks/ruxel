@@ -97,6 +97,18 @@ fn validate_call(object: &Map<String, Value>) -> Result<()> {
     }
     Ok(())
 }
+fn validate_fnox_key(key: Option<&str>) -> Result<()> {
+    ensure!(
+        key.is_some_and(|key| {
+            !key.is_empty()
+                && !key.as_bytes()[0].is_ascii_digit()
+                && key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        }),
+        "fnox lookup requires an environment identifier key"
+    );
+    Ok(())
+}
+
 fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
     allowed_fields(
         object,
@@ -132,7 +144,8 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
         "lookup argv must be string list"
     );
     match object.get("provider").and_then(Value::as_str) {
-        Some("fnox" | "synthetic") => ensure!(required("key"), "lookup requires key"),
+        Some("fnox") => validate_fnox_key(object.get("key").and_then(Value::as_str))?,
+        Some("synthetic") => ensure!(required("key"), "lookup requires key"),
         Some("op") => {
             ensure!(
                 object.get("reference").is_none_or(Value::is_null)

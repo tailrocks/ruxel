@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn fnox_lookup_keys_are_environment_identifiers_before_execution() -> Result<()> {
+    let mut value = config(json!({"kind":"debug"}));
+    value["plays"][0]["tasks"]
+        .as_array_mut()
+        .context("tasks")?
+        .push(json!({
+            "name":"later lookup", "operation":{"kind":"debug", "msg":{
+                "kind":"lookup", "provider":"fnox", "key":"KEY"
+            }}
+        }));
+    for key in [
+        "", "1KEY", "KEY-NAME", "KEY.NAME", "KEY NAME", "KEY\n", "éKEY", "KEYé",
+    ] {
+        value["plays"][0]["tasks"][1]["operation"]["msg"]["key"] = json!(key);
+        assert!(validate_config(&value).is_err(), "invalid fnox key {key:?}");
+    }
+    value["plays"][0]["tasks"][1]["operation"]["msg"]["key"] = Value::Null;
+    assert!(validate_config(&value).is_err());
+    value["plays"][0]["tasks"][1]["operation"]["msg"]
+        .as_object_mut()
+        .context("lookup")?
+        .remove("key");
+    assert!(validate_config(&value).is_err());
+    for key in ["KEY", "a", "_", "_KEY_123", "key123"] {
+        value["plays"][0]["tasks"][1]["operation"]["msg"]["key"] = json!(key);
+        validate_config(&value)?;
+    }
+    value["plays"][0]["tasks"][1]["operation"]["msg"] = json!({
+        "kind":"lookup", "provider":"synthetic", "key":"fixture-key"
+    });
+    validate_config(&value)?;
+    Ok(())
+}
+
+#[test]
 fn retries_are_optional_nonnegative_and_cannot_overflow() -> Result<()> {
     let mut value = config(json!({"kind":"debug"}));
     assert_eq!(

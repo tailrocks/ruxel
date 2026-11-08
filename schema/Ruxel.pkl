@@ -10,7 +10,7 @@ class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|Li
 class Lookup {
   fixed kind = "lookup"
   provider: "fnox"|"op"|"command"|"pipe"|"synthetic"
-  key: String?(provider != "pipe" || this != null) = null
+  key: String?((provider != "pipe" || this != null) && (provider != "fnox" || (this != null && this.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*$"))))) = null
   vault: String? = null
   item: String? = null
   section: String? = null

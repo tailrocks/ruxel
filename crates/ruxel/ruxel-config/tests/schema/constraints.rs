@@ -2,6 +2,37 @@ use super::{Result, evaluate};
 use serde_json::json;
 
 #[test]
+fn fnox_lookup_keys_are_environment_identifiers() -> Result {
+    for key in [
+        "", "1KEY", "KEY-NAME", "KEY.NAME", "KEY NAME", "KEY\n", "éKEY", "KEYé",
+    ] {
+        let key = serde_json::to_string(key)?;
+        assert!(
+            evaluate(&format!(
+                r#"new R.Lookup {{ provider = "fnox"; key = {key} }}"#
+            ))
+            .is_err(),
+            "invalid fnox key {key}"
+        );
+    }
+    for selector in ["", "key = null"] {
+        assert!(
+            evaluate(&format!(
+                r#"new R.Lookup {{ provider = "fnox"; {selector} }}"#
+            ))
+            .is_err()
+        );
+    }
+    for key in ["KEY", "a", "_", "_KEY_123", "key123"] {
+        evaluate(&format!(
+            r#"new R.Lookup {{ provider = "fnox"; key = "{key}" }}"#
+        ))?;
+    }
+    evaluate(r#"new R.Lookup { provider = "synthetic"; key = "fixture-key" }"#)?;
+    Ok(())
+}
+
+#[test]
 fn delegation_authorization_requires_a_target_on_the_same_task() -> Result {
     for property in [
         "delegateAllow = new Listing { \"a\" }",
