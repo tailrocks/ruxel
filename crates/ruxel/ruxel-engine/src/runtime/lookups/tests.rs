@@ -7,6 +7,9 @@ use serde_json::json;
 use std::sync::Arc;
 struct Fake;
 impl Backend for Fake {
+    fn onepassword_reference(&self, _: &str) -> Result<String, String> {
+        Err("unexpected".into())
+    }
     fn fnox(&self, _: &str) -> Result<String, String> {
         Err("unexpected".into())
     }

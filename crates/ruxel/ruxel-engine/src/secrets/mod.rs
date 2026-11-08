@@ -50,6 +50,9 @@ pub trait Backend: Send + Sync {
     /// Returns an error if the backend cannot fetch the item.
     fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String>;
     /// # Errors
+    /// Returns an error if the complete secret reference cannot be read.
+    fn onepassword_reference(&self, reference: &str) -> Result<String, String>;
+    /// # Errors
     /// Returns an error if the command fails.
     fn command(&self, argv: &[String]) -> Result<String, String>;
     /// # Errors
@@ -120,6 +123,11 @@ impl Backend for ProcessBackend {
             "item", "get", "--vault", vault, "--format", "json", "--", item,
         ]);
         serde_json::from_str(&process_output(cmd)?).map_err(|_| "invalid item response".into())
+    }
+    fn onepassword_reference(&self, reference: &str) -> Result<String, String> {
+        let mut cmd = Command::new(&self.op);
+        cmd.args(["read", "--", reference]);
+        process_output(cmd)
     }
     fn command(&self, argv: &[String]) -> Result<String, String> {
         let (program, arguments) = argv.split_first().ok_or("empty command")?;
@@ -196,16 +204,28 @@ impl Resolver {
                 section,
             } => self.op_field(vault, item, field, section.as_deref()),
             Lookup::OnePasswordUri { reference } => {
+                if reference.contains('?') {
+                    return self
+                        .backend
+                        .onepassword_reference(reference)
+                        .map_err(|_| generic());
+                }
                 let (vault, item, section, field) =
                     parse_op_reference(reference).ok_or_else(generic)?;
                 self.op_field(vault, item, field, section)
             }
             Lookup::Command { argv } => self.backend.command(argv).map_err(|_| generic()),
             Lookup::Pipe { command } => {
-                if let Some(reference) = pipe_op_reference(command)
-                    && let Some((vault, item, section, field)) = parse_op_reference(reference)
-                {
-                    return self.op_field(vault, item, field, section);
+                if let Some(reference) = pipe_op_reference(command) {
+                    if reference.contains('?') {
+                        return self
+                            .backend
+                            .onepassword_reference(reference)
+                            .map_err(|_| generic());
+                    }
+                    if let Some((vault, item, section, field)) = parse_op_reference(reference) {
+                        return self.op_field(vault, item, field, section);
+                    }
                 }
                 self.backend.pipe(command).map_err(|_| generic())
             }

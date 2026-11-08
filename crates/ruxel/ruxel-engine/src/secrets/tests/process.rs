@@ -90,3 +90,40 @@ printf synthetic-fnox"#,
     assert_eq!(error, "secret lookup failed");
     assert!(!error.contains("synthetic-sensitive-error"));
 }
+
+#[test]
+fn query_references_reach_mock_op_unchanged_and_failures_stay_redacted() {
+    let fixture = Fixture::new();
+    let op = fixture.script(
+        "fake-op-query",
+        r#"[ "$#" -eq 3 ] && [ "$1" = read ] && [ "$2" = -- ] || exit 4
+printf 'call\n' >> "${0%/*}/calls"
+case "$3" in
+'op://vault/item/username?attribute=otp') printf synthetic-otp;;
+*) printf synthetic-sensitive-query-error >&2; exit 7;;
+esac"#,
+    );
+    let instance = resolver(&op, &op);
+    for lookup in [
+        Lookup::OnePasswordUri {
+            reference: "op://vault/item/username?attribute=otp".into(),
+        },
+        Lookup::Pipe {
+            command: "op read 'op://vault/item/username?attribute=otp'".into(),
+        },
+    ] {
+        assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
+        assert_eq!(instance.resolve(&lookup).unwrap(), "synthetic-otp");
+    }
+    assert_eq!(fixture.count(), 2);
+    let invalid = Lookup::OnePasswordUri {
+        reference: "op://vault/item/username?attribute=synthetic-invalid".into(),
+    };
+    for _ in 0..2 {
+        assert_eq!(
+            instance.resolve(&invalid).unwrap_err(),
+            "secret lookup failed"
+        );
+    }
+    assert_eq!(fixture.count(), 3);
+}

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct Fake {
     items: AtomicUsize,
     calls: AtomicUsize,
+    references: Mutex<Vec<String>>,
 }
 impl Backend for Fake {
     fn fnox(&self, _: &str) -> Result<String, String> {
@@ -17,6 +18,14 @@ impl Backend for Fake {
             {"id":"username", "label":"Username", "value":"alice"},
             {"id":"password", "label":"Password", "section":{"id":"login", "label":"Login"}, "value":"fake-password"}
         ]}))
+    }
+    fn onepassword_reference(&self, reference: &str) -> Result<String, String> {
+        self.references.lock().unwrap().push(reference.into());
+        match reference {
+            "op://vault/item/username?attribute=otp" => Ok("synthetic-otp".into()),
+            "op://vault/item/username?attribute=type" => Ok("synthetic-type".into()),
+            _ => Err("synthetic-sensitive-query-error".into()),
+        }
     }
     fn command(&self, _: &[String]) -> Result<String, String> {
         Err("fake-sensitive-error".into())
@@ -108,36 +117,8 @@ fn only_plain_op_read_is_optimized() {
     );
 }
 
-#[test]
-fn synthetic_mode_never_calls_backend_and_is_stable() {
-    let backend = Arc::new(Fake::default());
-    let mut resolver = Resolver::new(backend.clone());
-    resolver.synthetic = true;
-    let lookup = Lookup::Pipe {
-        command: "op read 'op://vault/item/username'".into(),
-    };
-    let value = resolver.resolve(&lookup).unwrap();
-    assert!(value.starts_with("dry-secret-"));
-    assert_eq!(value, Resolver::synthetic().resolve(&lookup).unwrap());
-    for lookup in [
-        Lookup::Fnox { key: "KEY".into() },
-        Lookup::OnePasswordUri {
-            reference: "op://vault/item/username".into(),
-        },
-        Lookup::Command {
-            argv: vec!["program".into()],
-        },
-    ] {
-        assert!(
-            resolver
-                .resolve(&lookup)
-                .unwrap()
-                .starts_with("dry-secret-")
-        );
-    }
-    assert_eq!(backend.items.load(Ordering::SeqCst), 0);
-    assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
-}
-
 #[cfg(unix)]
 mod process;
+
+mod queries;
+mod synthetic;
