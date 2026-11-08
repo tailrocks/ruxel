@@ -133,6 +133,20 @@ fn install(
             return Err(format!("apt install failed: {stderr}"));
         }
         system_state.invalidate_packages();
+        let pinned: Vec<_> = missing
+            .iter()
+            .filter(|name| name.contains('='))
+            .cloned()
+            .collect();
+        if !pinned.is_empty() {
+            let unresolved = system_state.missing_packages(&pinned, false)?;
+            if !unresolved.is_empty() {
+                return Err(format!(
+                    "apt install did not install the requested versions: {}",
+                    unresolved.join(", ")
+                ));
+            }
+        }
         fill_exec_fields(result, &stdout, &stderr, false);
     }
     Ok(true)

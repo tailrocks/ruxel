@@ -100,10 +100,46 @@ impl SystemState {
     }
 
     fn ensure_packages(&mut self) -> Result<(), String> {
+        if self.packages.is_some() {
+            return Ok(());
+        }
+        let output = std::process::Command::new("dpkg")
+            .arg("--print-architecture")
+            .output()
+            .map_err(|error| format!("dpkg --print-architecture: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "dpkg --print-architecture failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        let architecture = String::from_utf8(output.stdout)
+            .map_err(|error| format!("invalid dpkg architecture: {error}"))?;
+        let architecture = architecture.trim();
+        if architecture.is_empty() {
+            return Err("dpkg --print-architecture returned an empty architecture".to_string());
+        }
         self.ensure_packages_with(|| {
             std::fs::read_to_string("/var/lib/dpkg/status")
                 .map_err(|error| format!("read dpkg status: {error}"))
-        })
+        })?;
+        let packages = self.packages.as_mut().ok_or("packages not initialized")?;
+        let names: Vec<_> = packages
+            .keys()
+            .filter_map(|key| key.split_once(':').map(|(name, _)| name.to_string()))
+            .collect();
+        for name in names {
+            let version = packages
+                .get(&format!("{name}:{architecture}"))
+                .or_else(|| packages.get(&format!("{name}:all")))
+                .cloned();
+            if let Some(version) = version {
+                packages.insert(name, version);
+            } else {
+                packages.remove(&name);
+            }
+        }
+        Ok(())
     }
 
     fn ensure_packages_with(
