@@ -141,6 +141,23 @@ impl<B: Backend> Runner<'_, B> {
                     if !truth(&condition.value) {
                         for child in array(task, "block") {
                             self.recap.skipped += 1;
+                            if let Some(name) = string(child, "register") {
+                                let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip_reason":"Conditional result was False"});
+                                let skipped = if layer.no_log
+                                    || flag(child, "noLog")
+                                    || layer.control_sensitive
+                                {
+                                    TrackedValue::secret(skipped)
+                                } else {
+                                    TrackedValue::public(skipped)
+                                };
+                                let mut results = self
+                                    .scope
+                                    .get("results")
+                                    .unwrap_or_else(|| TrackedValue::public(json!({})));
+                                results.insert(name.to_owned(), skipped)?;
+                                self.scope.insert("results".into(), results)?;
+                            }
                             let result = if layer.no_log
                                 || flag(child, "noLog")
                                 || layer.control_sensitive

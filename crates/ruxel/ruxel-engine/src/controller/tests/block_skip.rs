@@ -1,5 +1,47 @@
 use super::*;
 #[tokio::test]
+async fn skipped_block_registers_child_results() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"block","when":false,"block":[{"name":"child","register":"child","operation":{"kind":"debug"}}]},
+        {"name":"observe","operation":{"kind":"set_fact","values":{"failed":{"kind":"ref","path":["results","child","failed"]},"reason":{"kind":"ref","path":["results","child","skip_reason"]}}}}
+    ]}]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events[1]["result"]["facts"]["failed"], false);
+    assert_eq!(
+        backend.events[1]["result"]["facts"]["reason"],
+        "Conditional result was False"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn skipped_block_registered_child_keeps_no_log() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"block","when":false,"block":[{"name":"child","noLog":true,"register":"child","operation":{"kind":"debug"}}]},
+        {"name":"observe","operation":{"kind":"set_fact","values":{"reason":{"kind":"ref","path":["results","child","skip_reason"]}}}}
+    ]}]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events[0]["result"]["censored"], true);
+    assert_eq!(backend.events[1]["result"]["censored"], true);
+    Ok(())
+}
+#[tokio::test]
 async fn skipped_block_reports_each_direct_child_and_continues() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
         {"name":"block","when":{"kind":"literal","value":false},"block":[
