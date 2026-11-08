@@ -1,8 +1,13 @@
-use anyhow::{Context, Result, ensure};
+#[cfg(test)]
+use anyhow::Context;
+use anyhow::{Result, ensure};
+#[cfg(test)]
 use serde_json::Value;
 use std::{fs, os::unix::fs::MetadataExt, path::Path};
+#[cfg(test)]
 const PIN: &str = "8188b88f5da95d7326e6b07efdd00908c09ee11958ff1e52a695e3c5a4d14d5b";
 
+#[cfg(test)]
 fn validate_inputs(fixture: &[u8], case: &Value) -> Result<()> {
     let digest = crate::pins::digest(fixture);
     let expected: Value = serde_json::from_str(include_str!("../restart-contract.json"))?;
@@ -19,7 +24,7 @@ fn metadata(regular: bool, uid: u32, gid: u32, mode: u32, bytes: &[u8]) -> Resul
     );
     Ok(())
 }
-fn file(path: &Path) -> Result<()> {
+pub(super) fn file(path: &Path) -> Result<()> {
     let info = fs::symlink_metadata(path)?;
     ensure!(
         info.file_type().is_file(),
@@ -33,6 +38,7 @@ fn file(path: &Path) -> Result<()> {
         &fs::read(path)?,
     )
 }
+#[cfg(test)]
 fn events(events: &[Value]) -> Result<()> {
     let recaps: Vec<_> = events
         .iter()
@@ -64,6 +70,7 @@ fn events(events: &[Value]) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(test)]
 fn visible(result: &Value) -> Result<()> {
     ensure!(
         result["censored"] != true
@@ -74,6 +81,7 @@ fn visible(result: &Value) -> Result<()> {
     );
     Ok(())
 }
+#[cfg(test)]
 fn preview(
     before: &std::collections::BTreeMap<std::path::PathBuf, crate::state::Entry>,
     after: &std::collections::BTreeMap<std::path::PathBuf, crate::state::Entry>,
@@ -81,6 +89,7 @@ fn preview(
     ensure!(before == after, "preview mutated fixture state");
     Ok(())
 }
+#[cfg(test)]
 trait Lifecycle {
     type Snapshot: PartialEq;
     fn apply(&mut self) -> Result<()>;
@@ -89,6 +98,7 @@ trait Lifecycle {
     fn snapshot(&mut self) -> Result<Self::Snapshot>;
     fn preview(&mut self, mode: &str) -> Result<()>;
 }
+#[cfg(test)]
 fn lifecycle<T: Lifecycle>(run: &mut T) -> Result<()> {
     for _ in 0..2 {
         run.apply()?;

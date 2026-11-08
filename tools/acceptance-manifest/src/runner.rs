@@ -13,7 +13,7 @@ pub(super) struct Env {
     pub(super) cli: PathBuf,
     pub(super) agent: PathBuf,
     pub(super) module: PathBuf,
-    payload: PathBuf,
+    pub(super) payload: PathBuf,
 }
 impl Env {
     fn new(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<Self> {
@@ -96,7 +96,16 @@ impl Env {
     }
 }
 pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> {
+    if name == "restart-actions" {
+        anyhow::ensure!(
+            rustix::process::geteuid().as_raw() == 0,
+            "restart-actions requires an isolated root fixture"
+        );
+    }
     let env = Env::new(name, repo, cli, agent)?;
+    if name == "restart-actions" {
+        return crate::restart_run::execute(&env);
+    }
     if name == "multihost" || name == "controller-delegation" {
         crate::plan::verify(&env, name)?;
     }
