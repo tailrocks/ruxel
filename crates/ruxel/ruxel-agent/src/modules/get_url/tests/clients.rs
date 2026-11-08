@@ -135,3 +135,20 @@ fn inherited_environment_is_cleared_before_proxy_filtering() {
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
 }
+
+#[test]
+fn valid_curl_never_resolves_an_untrusted_unused_wget() {
+    let root = Root::new();
+    let client = client_script(&root);
+    let output = File::create(root.0.join("output")).unwrap();
+    let result = crate::modules::get_url::fetch_with_resolver(
+        "https://example.invalid/file",
+        &output,
+        &context(false),
+        |name| match name {
+            "curl" => Ok(Some(client.clone())),
+            _ => Err("unused wget is untrusted".into()),
+        },
+    );
+    assert!(result.unwrap());
+}

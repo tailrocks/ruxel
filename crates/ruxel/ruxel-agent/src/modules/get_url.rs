@@ -83,8 +83,21 @@ fn curl_args(url: &str) -> [&str; 4] {
 }
 
 fn fetch(url: &str, dest: &std::fs::File, ctx: &ExecContext) -> Result<bool, String> {
-    let curl = client::resolve("curl")?;
-    let wget = client::resolve("wget")?;
+    fetch_with_resolver(url, dest, ctx, client::resolve)
+}
+
+fn fetch_with_resolver(
+    url: &str,
+    dest: &std::fs::File,
+    ctx: &ExecContext,
+    resolve: impl Fn(&str) -> Result<Option<std::path::PathBuf>, String>,
+) -> Result<bool, String> {
+    let curl = resolve("curl")?;
+    let wget = if curl.is_none() {
+        resolve("wget")?
+    } else {
+        None
+    };
     fetch_with_programs(url, dest, curl.as_deref(), wget.as_deref(), ctx)
 }
 

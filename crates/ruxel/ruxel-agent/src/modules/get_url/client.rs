@@ -5,6 +5,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod trust;
+
 pub(super) fn resolve(name: &str) -> Result<Option<PathBuf>, String> {
     for directory in ["/usr/bin", "/bin"] {
         let path = Path::new(directory).join(name);
@@ -29,11 +31,14 @@ fn trusted_executable(path: &Path) -> Result<PathBuf, String> {
     // Check both the supplied path and symlink destination: either chain could
     // otherwise let an unprivileged user replace a privileged download client.
     for candidate in [path, canonical.as_path()] {
-        for component in candidate.ancestors() {
+        // Check from the root down so a checked parent protects the next
+        // component against replacement by another user.
+        for component in candidate.ancestors().collect::<Vec<_>>().into_iter().rev() {
             let metadata = fs::metadata(component).map_err(|error| error.to_string())?;
             if metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
                 return Err("get_url: client and its parents must be root-owned and not writable by group or others".into());
             }
+            trust::filesystem_and_acl(component)?;
         }
     }
     Ok(canonical)

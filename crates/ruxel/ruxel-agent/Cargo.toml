@@ -28,6 +28,7 @@ rsblkid.workspace = true
 rustix-linux-procfs.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
+exacl = "=0.13.0"
 libc.workspace = true
 
 [lints]
