@@ -78,7 +78,10 @@ fn validate(events: &[Value], failed: usize) -> Result<()> {
         .filter(|recap| recap["failed"].as_u64().is_some_and(|n| n > 0))
         .collect();
     ensure!(
-        healthy.len() == 1 && failed.len() == 1 && healthy[0]["ok"] == 4 && failed[0]["ok"] == 0
+        healthy.len() == 1
+            && failed.len() == 1
+            && healthy[0]["ok"] == 4
+            && failed[0]["ok"] == 0
             && failed[0]["unreachable"] == 1,
         "incorrect failed/healthy recap"
     );
