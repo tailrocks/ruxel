@@ -18,7 +18,6 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 blake3.workspace = true
-zeroize.workspace = true
 openssh-sftp-client.workspace = true
 prost.workspace = true
 rustix.workspace = true
