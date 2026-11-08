@@ -33,6 +33,27 @@ impl TemplateRoot {
         })
     }
 
+    /// Use an already opened directory as the pinned root.
+    ///
+    /// The path supplies the logical identity used to resolve module imports;
+    /// callers must provide the descriptor for that same directory.
+    ///
+    /// # Errors
+    /// Returns an IO error if the path cannot be made absolute or the descriptor
+    /// does not refer to a directory.
+    pub fn from_directory(path: &Path, directory: File) -> std::io::Result<Self> {
+        if !directory.metadata()?.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "template root is not a directory",
+            ));
+        }
+        Ok(Self {
+            path: std::path::absolute(path)?,
+            directory,
+        })
+    }
+
     /// Evaluate a template and its local dependencies beneath the pinned root.
     /// Resource IO retains the evaluator's existing native policy.
     ///

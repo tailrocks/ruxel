@@ -44,6 +44,7 @@ struct Execution {
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
     source_gate: Arc<tokio::sync::RwLock<()>>,
     template_root: Arc<templates::SourceRoot>,
+    copy_root: Arc<copy_sources::SourceRoot>,
 }
 #[cfg(test)]
 #[path = "runtime/tests/effects.rs"]
@@ -181,7 +182,7 @@ impl Backend for Execution {
         })
     }
     async fn execute(&mut self, mut request: Request) -> Result<Value> {
-        copy_sources::prepare(&mut request.task, &self.runtime.source_dir)?;
+        copy_sources::prepare(&mut request.task, &self.copy_root)?;
         for index in 0..request.task.iterations.len() {
             let key = controller::ledger_key(&request.task, &request.task.iterations[index])?;
             request.task.iterations[index].ledger_key = key;
@@ -264,6 +265,8 @@ pub async fn run(
         }
     })?;
     let config = &validated;
+    let copy_root = Arc::new(copy_sources::SourceRoot::open(&runtime.source_dir)?);
+    let template_root = Arc::new(copy_root.template_root(&runtime.source_dir)?);
     let execution = Execution {
         connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(
@@ -282,7 +285,8 @@ pub async fn run(
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
-        template_root: Arc::new(templates::SourceRoot::open(&runtime.source_dir)?),
+        template_root,
+        copy_root,
         lookups: Arc::new(Lookups {
             resolver: if runtime.synthetic_secrets {
                 Resolver::synthetic()

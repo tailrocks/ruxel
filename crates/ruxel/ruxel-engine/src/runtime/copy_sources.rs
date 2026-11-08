@@ -10,7 +10,29 @@ use std::{
 
 const MAX_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
 
-pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<()> {
+pub(super) struct SourceRoot(File);
+
+impl SourceRoot {
+    pub(super) fn open(path: &Path) -> Result<Self> {
+        use rustix::fs::{Mode, OFlags, open};
+        let directory = open(
+            path,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .context("open controller copy source directory")?;
+        Ok(Self(directory.into()))
+    }
+
+    pub(super) fn template_root(&self, path: &Path) -> Result<ruxel_config::TemplateRoot> {
+        Ok(ruxel_config::TemplateRoot::from_directory(
+            path,
+            self.0.try_clone()?,
+        )?)
+    }
+}
+
+pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &SourceRoot) -> Result<()> {
     if task.module != "copy" {
         return Ok(());
     }
@@ -42,8 +64,8 @@ pub(super) fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<(
     Ok(())
 }
 
-fn open_source(directory: &Path, source: &str) -> Result<File> {
-    use rustix::fs::{Mode, OFlags, open, openat};
+fn open_source(directory: &SourceRoot, source: &str) -> Result<File> {
+    use rustix::fs::{Mode, OFlags, openat};
     let components = Path::new(source).components().collect::<Vec<_>>();
     ensure!(
         !components.is_empty()
@@ -52,12 +74,10 @@ fn open_source(directory: &Path, source: &str) -> Result<File> {
                 .all(|part| matches!(part, Component::Normal(_))),
         "controller copy source must be a relative path without traversal"
     );
-    let mut parent = open(
-        directory,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-        Mode::empty(),
-    )
-    .context("open controller copy source directory")?;
+    let mut parent = directory
+        .0
+        .try_clone()
+        .context("clone controller copy source directory")?;
     for (index, part) in components.iter().enumerate() {
         let Component::Normal(name) = part else {
             unreachable!()
@@ -72,7 +92,7 @@ fn open_source(directory: &Path, source: &str) -> Result<File> {
         if last {
             return Ok(File::from(next));
         }
-        parent = next;
+        parent = next.into();
     }
     unreachable!()
 }

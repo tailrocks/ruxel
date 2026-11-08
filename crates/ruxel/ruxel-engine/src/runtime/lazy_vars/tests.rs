@@ -38,6 +38,9 @@ fn execution() -> Result<Execution> {
         template_root: Arc::new(crate::runtime::templates::SourceRoot::open(
             std::path::Path::new("."),
         )?),
+        copy_root: Arc::new(crate::runtime::copy_sources::SourceRoot::open(
+            std::path::Path::new("."),
+        )?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),

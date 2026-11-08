@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn source_root_remains_pinned_after_directory_replacement() -> Result<()> {
+    let directory = Directory::new()?;
+    let original = directory.path().join("source");
+    let moved = directory.path().join("moved");
+    std::fs::create_dir(&original)?;
+    std::fs::write(original.join("asset"), b"original")?;
+    std::fs::write(
+        original.join("template.pkl"),
+        "output { value = \"original\" }",
+    )?;
+    let root = SourceRoot::open(&original)?;
+    std::fs::rename(&original, &moved)?;
+    std::fs::create_dir(&original)?;
+    std::fs::write(original.join("asset"), b"replacement")?;
+    std::fs::write(
+        original.join("template.pkl"),
+        "output { value = \"replacement\" }",
+    )?;
+    let template_root = root.template_root(&original)?;
+    assert_eq!(
+        template_root.evaluate(Path::new("template.pkl"))?,
+        "original"
+    );
+    let mut copy = task("asset");
+    super::super::prepare(&mut copy, &root)?;
+    assert_eq!(
+        copy.iterations[0].source_content.as_deref(),
+        Some(&b"original"[..])
+    );
+    Ok(())
+}
+
+#[test]
 fn copy_sources_are_confined_to_root_without_following_symlinks() -> Result<()> {
     use std::os::unix::fs::symlink;
     let directory = Directory::new()?;

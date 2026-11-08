@@ -1,6 +1,10 @@
 use super::*;
 use std::io::Cursor;
 
+fn prepare(task: &mut v1::RenderedTask, directory: &Path) -> Result<()> {
+    super::prepare(task, &SourceRoot::open(directory)?)
+}
+
 #[test]
 fn bounded_reader_rejects_growth_and_preserves_binary_bytes() -> Result<()> {
     assert_eq!(

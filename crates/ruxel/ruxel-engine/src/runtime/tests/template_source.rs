@@ -28,6 +28,7 @@ fn template_execution(directory: &std::path::Path) -> Result<Execution> {
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(templates::SourceRoot::open(directory)?),
+        copy_root: Arc::new(copy_sources::SourceRoot::open(directory)?),
         lookups: Arc::new(Lookups {
             resolver: Resolver::synthetic(),
             values: Mutex::new(Vec::new()),
