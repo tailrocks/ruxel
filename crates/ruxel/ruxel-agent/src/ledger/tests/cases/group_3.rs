@@ -45,6 +45,30 @@ fn sysctl_live_verification_normalizes_and_rejects_missing_values() {
 }
 
 #[test]
+fn sysctl_cache_misses_for_later_duplicate_assignments() {
+    let dir = Scratch::new("sysctl-duplicate");
+    let file = dir.file("sysctl.conf", b"# net.test = 8\nnet.test = 1\n");
+    let params = json!({"name": "net.test", "value": "1", "sysctl_file": file});
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.record("key", "sysctl", &params, "ok", &json!({"changed": true}));
+    assert!(ledger.cached_ok("key").is_some());
+
+    std::fs::write(&file, b"# net.test = 8\nnet.test = 1\nnet.test = 2\n")
+        .expect("operation succeeds");
+    assert!(ledger.cached_ok("key").is_none());
+
+    std::fs::write(&file, b"net.test = 1\nnet.test = 1\n").expect("operation succeeds");
+    ledger.record(
+        "duplicate",
+        "sysctl",
+        &params,
+        "ok",
+        &json!({"changed": true}),
+    );
+    assert!(ledger.cached_ok("duplicate").is_none());
+}
+
+#[test]
 fn old_schema_ledger_loads_empty() {
     let dir = Scratch::new("old-schema");
     let file = dir.file("target", b"stable");

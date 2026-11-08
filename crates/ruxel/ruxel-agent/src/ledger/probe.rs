@@ -138,6 +138,7 @@ pub(super) fn read_sysctl(name: &str) -> Option<String> {
 
 pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     let content = std::fs::read_to_string(file).ok()?;
+    let mut value = None;
     for line in content.lines() {
         let t = line.trim();
         if t.starts_with('#') {
@@ -146,8 +147,11 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
         if let Some((k, v)) = t.split_once('=')
             && k.trim() == name
         {
-            return Some(v.split_whitespace().collect::<Vec<_>>().join(" "));
+            if value.is_some() {
+                return None;
+            }
+            value = Some(v.split_whitespace().collect::<Vec<_>>().join(" "));
         }
     }
-    None
+    value
 }
