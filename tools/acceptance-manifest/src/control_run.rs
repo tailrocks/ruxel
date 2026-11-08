@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-pub(super) fn privacy(text: &str) -> Result<()> {
+pub(super) fn privacy_observer(text: &str) -> Result<()> {
     ensure!(
         [
             "nested-literal",
@@ -22,6 +22,35 @@ pub(super) fn privacy(text: &str) -> Result<()> {
         .iter()
         .all(|value| !text.contains(value)),
         "sensitive fixture value appeared in output"
+    );
+    Ok(())
+}
+pub(super) fn privacy(text: &str) -> Result<()> {
+    privacy_observer(text)?;
+    ensure!(
+        !text.contains("synthetic"),
+        "fixture secret appeared in output"
+    );
+    Ok(())
+}
+fn oracle(phase: &str) -> Result<Vec<Value>> {
+    let text = match phase {
+        "fresh" => include_str!("../control-oracles/cli-fresh.jsonl"),
+        "converged" => include_str!("../control-oracles/cli-converged.jsonl"),
+        "drift_repair" => include_str!("../control-oracles/cli-drift_repair.jsonl"),
+        "check" => include_str!("../control-oracles/cli-check.jsonl"),
+        "diff" => include_str!("../control-oracles/cli-diff.jsonl"),
+        _ => anyhow::bail!("unknown control phase"),
+    };
+    Ok(text
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<std::result::Result<_, _>>()?)
+}
+fn verify_events(phase: &str, events: &[Value]) -> Result<()> {
+    ensure!(
+        events == oracle(phase)?,
+        "control CLI event inventory or shape mismatch"
     );
     Ok(())
 }
@@ -108,6 +137,7 @@ pub(super) fn execute(env: &Env) -> Result<()> {
             .lines()
             .map(serde_json::from_str::<Value>)
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        verify_events(phase, &events)?;
         let recaps: Vec<_> = events.iter().filter(|v| v.get("recap").is_some()).collect();
         ensure!(
             recaps.len() == 1
@@ -141,7 +171,8 @@ pub(super) fn execute(env: &Env) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::privacy;
+    use super::{oracle, privacy, verify_events};
+    use serde_json::json;
 
     #[test]
     fn rejects_sensitive_values_from_output() {
@@ -153,8 +184,22 @@ mod tests {
             "alpha:two",
             "beta:three",
             "pairs=3 pipe=synthetic",
+            "synthetic",
         ] {
             assert!(privacy(text).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_missing_tasks_and_extra_censored_fields() -> anyhow::Result<()> {
+        let events = oracle("fresh")?;
+        verify_events("fresh", &events)?;
+        let mut missing = events.clone();
+        missing.remove(3);
+        assert!(verify_events("fresh", &missing).is_err());
+        let mut leaked = events;
+        leaked[3]["result"]["extra"] = json!("secret");
+        assert!(verify_events("fresh", &leaked).is_err());
+        Ok(())
     }
 }

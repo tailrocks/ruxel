@@ -119,7 +119,7 @@ fn verify(
     preview: bool,
 ) -> Result<()> {
     let text = serde_json::to_string(&observed.events)?;
-    control_run::privacy(&text)?;
+    control_run::privacy_observer(&text)?;
     let mapped = observed
         .events
         .iter()
@@ -170,6 +170,7 @@ fn verify_controls(observed: &Observations, preview: bool) -> Result<()> {
             && count("Exercise check-mode string value") == 1,
         "control calls mismatch"
     );
+    verify_mapped(observed)?;
     ensure!(
         observed
             .calls
@@ -188,6 +189,35 @@ fn verify_controls(observed: &Observations, preview: bool) -> Result<()> {
                 .any(|v| v.value["msg"] == "pairs=3 pipe=synthetic" && v.is_secret()),
         "interpolation mismatch"
     );
+    verify_control_events(observed, preview)
+}
+fn verify_mapped(observed: &Observations) -> Result<()> {
+    let mapped: Vec<_> = observed
+        .calls
+        .iter()
+        .filter(|request| request.task.name == "Execute mapped loop with label and environment")
+        .collect();
+    ensure!(
+        mapped.iter().all(|request| request
+            .task
+            .environment
+            .get("FIXTURE_VALUE")
+            .map(String::as_str)
+            == Some("synthetic")
+            && request.task.iterations.len() == 1),
+        "mapped environment mismatch"
+    );
+    ensure!(
+        mapped
+            .iter()
+            .map(|request| request.task.iterations[0].item_label.as_str())
+            .collect::<Vec<_>>()
+            == ["alpha", "alpha", "beta"],
+        "mapped labels mismatch"
+    );
+    Ok(())
+}
+fn verify_control_events(observed: &Observations, preview: bool) -> Result<()> {
     let event = |name: &str| {
         observed
             .events

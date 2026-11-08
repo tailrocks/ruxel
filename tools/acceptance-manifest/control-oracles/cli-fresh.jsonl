@@ -1,0 +1,15 @@
+{"host":"fixture","task":"Validate [REDACTED] controller lookup","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"fixture","task":"Exercise indexed equality and boolean conjunction","result":{"changed":false,"failed":false,"msg":"first=alpha"}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":true,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":true,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":true,"failed":true}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":true,"failed":true}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","pause":"[censored]"}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","task":"[censored]","result":{"censored":true,"changed":false,"failed":false}}
+{"host":"[censored]","recap":{"planned":0,"ok":12,"changed":4,"failed":0,"skipped":0,"rescued":1,"ignored":1}}
