@@ -65,15 +65,7 @@ fn run_in(
             // A failed update can still replace some package indexes.
             system_state.invalidate_packages();
             if let Err(error) = refreshed {
-                let restored = match &current {
-                    Some(content) => write_atomic(&path, content.as_bytes()),
-                    None => std::fs::remove_file(&path).map_err(|e| e.to_string()),
-                };
-                return match restored {
-                    Ok(()) => Err(error),
-                    Err(rollback) => Ok(json!({"failed": true, "changed": true,
-                        "msg": format!("{error}; repository rollback failed: {rollback}")})),
-                };
+                return Ok(json!({"failed": true, "changed": true, "msg": error}));
             }
         }
     }

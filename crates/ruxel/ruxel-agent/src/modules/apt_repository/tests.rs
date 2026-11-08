@@ -141,7 +141,7 @@ fn missing_repository_preview_apply_and_convergence() {
 }
 
 #[test]
-fn refresh_failure_restores_existing_or_absent_file() {
+fn refresh_failure_reports_changed_repository() {
     for existing in [true, false] {
         let dir = TestDir::new(if existing {
             "rollback-existing"
@@ -160,21 +160,17 @@ fn refresh_failure_restores_existing_or_absent_file() {
             environment: vec![],
             become_user: None,
         };
-        assert!(
-            run_in(
-                &params,
-                &ctx,
-                &mut SystemState::default(),
-                dir.path(),
-                &mut || Err("refresh failed".into())
-            )
-            .is_err()
-        );
-        if existing {
-            assert_eq!(std::fs::read_to_string(path).unwrap(), "old\n");
-        } else {
-            assert!(!path.exists());
-        }
+        let result = run_in(
+            &params,
+            &ctx,
+            &mut SystemState::default(),
+            dir.path(),
+            &mut || Err("refresh failed".into()),
+        )
+        .unwrap();
+        assert_eq!(result["failed"], true);
+        assert_eq!(result["changed"], true);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "new\n");
     }
 }
 
@@ -204,4 +200,32 @@ fn refresh_invalidates_packages_and_candidates() {
         });
         assert!(state.test_packages_invalidated());
     }
+}
+
+#[test]
+fn failed_refresh_does_not_replace_a_concurrent_file() {
+    let dir = TestDir::new("concurrent");
+    let path = dir.path().join("vendor.list");
+    let params = json!({"repo": "new", "filename": "vendor"});
+    let ctx = ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let result = run_in(
+        &params,
+        &ctx,
+        &mut SystemState::default(),
+        dir.path(),
+        &mut || {
+            std::fs::remove_file(&path).unwrap();
+            std::fs::write(&path, "concurrent\n").unwrap();
+            Err("refresh failed".into())
+        },
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "concurrent\n");
 }

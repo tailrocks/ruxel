@@ -28,11 +28,17 @@ fn run_with(
     let mut changed = false;
     if update_cache {
         if !ctx.check_mode {
-            let out = command(&["update"], ctx)?;
-            if out.1 != 0 {
-                return Err(format!("apt update failed: {}", out.2));
-            }
+            let out = command(&["update"], ctx);
             system_state.invalidate_packages();
+            let out = match out {
+                Ok(out) => out,
+                Err(error) => return Ok(json!({"failed": true, "changed": true, "msg": error})),
+            };
+            if out.1 != 0 {
+                return Ok(
+                    json!({"failed": true, "changed": true, "msg": format!("apt update failed: {}", out.2)}),
+                );
+            }
         }
         result["cache_updated"] = json!(!ctx.check_mode);
         result["cache_update_time"] = json!(

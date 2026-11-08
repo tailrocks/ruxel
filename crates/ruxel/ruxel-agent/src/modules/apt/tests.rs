@@ -1,5 +1,27 @@
 use super::*;
 
+#[test]
+fn failed_update_invalidates_cached_packages_and_reports_possible_change() {
+    let mut state = SystemState::with_test_packages();
+    let ctx = ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let result = run_with(
+        &json!({"update_cache": true}),
+        &ctx,
+        &mut state,
+        &mut |_, _| Ok((String::new(), 1, "failure".into())),
+    )
+    .unwrap();
+    assert_eq!(result["failed"], true);
+    assert_eq!(result["changed"], true);
+    assert!(state.test_packages_invalidated());
+}
+
 mod process;
 
 fn context(check_mode: bool) -> ExecContext {
