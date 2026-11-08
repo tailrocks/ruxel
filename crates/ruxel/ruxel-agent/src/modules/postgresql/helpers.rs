@@ -78,10 +78,19 @@ pub(super) fn validate_role_attr_flags(flags: &str) -> Result<(), String> {
         "BYPASSRLS",
         "NOBYPASSRLS",
     ];
-    for flag in role_flag_tokens(flags) {
+    let tokens = role_flag_tokens(flags);
+    for flag in &tokens {
         if !ALLOWED.contains(&flag.as_str()) {
             return Err(format!(
                 "postgresql_user: role attribute {flag:?} outside the closed surface"
+            ));
+        }
+        let opposite = flag
+            .strip_prefix("NO")
+            .map_or_else(|| format!("NO{flag}"), str::to_owned);
+        if tokens.contains(&opposite) {
+            return Err(format!(
+                "postgresql_user: conflicting role attributes {flag} and {opposite}"
             ));
         }
     }

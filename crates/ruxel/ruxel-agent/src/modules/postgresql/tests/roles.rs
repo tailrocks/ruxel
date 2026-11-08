@@ -23,6 +23,8 @@ fn b64_decode_partial_groups() {
 fn role_attribute_allowlist_accepts_boolean_flags() {
     assert!(validate_role_attr_flags("SUPERUSER,CREATEDB").is_ok());
     assert!(validate_role_attr_flags("NOLOGIN").is_ok());
+    assert!(validate_role_attr_flags("NOLOGIN,login").is_err());
+    assert!(validate_role_attr_flags("CREATEDB,NOCREATEDB").is_err());
 }
 
 #[test]
