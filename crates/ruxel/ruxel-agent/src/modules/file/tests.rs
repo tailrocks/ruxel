@@ -1,9 +1,9 @@
-#[path = "tests/root_alias.rs"]
-mod root_alias;
-
+#[path = "tests/empty_path.rs"]
+mod empty_path;
 #[path = "tests/extra.rs"]
 mod extra;
-
+#[path = "tests/root_alias.rs"]
+mod root_alias;
 use super::*;
 use std::os::unix::fs::PermissionsExt;
 

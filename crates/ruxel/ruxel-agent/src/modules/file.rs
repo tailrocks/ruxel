@@ -15,6 +15,9 @@ use std::path::Path;
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("file: path required")?;
+    if path.is_empty() {
+        return Err("file: path must not be empty".into());
+    }
     let state = str_param(obj, "state").unwrap_or("file");
     let p = Path::new(path);
     let mut changed = false;
