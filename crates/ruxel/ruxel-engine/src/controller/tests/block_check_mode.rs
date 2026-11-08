@@ -109,3 +109,30 @@ async fn block_check_mode_controls_local_pause_and_child_opt_out() -> Result<()>
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn zero_duration_pauses_do_not_prompt() -> Result<()> {
+    for operation in [
+        json!({"kind":"pause","seconds":0}),
+        json!({"kind":"pause","minutes":0}),
+    ] {
+        let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[{"name":"pause","operation":operation}]}]});
+        let mut backend = Fake::default();
+        let recaps = run(
+            &config,
+            &BTreeMap::new(),
+            &Options::default(),
+            &mut backend,
+            &mut BTreeMap::new(),
+        )
+        .await?;
+        assert_eq!(recaps["h"].failed, 0);
+        assert!(
+            !backend
+                .events
+                .iter()
+                .any(|event| event.get("pause").is_some())
+        );
+    }
+    Ok(())
+}

@@ -120,3 +120,25 @@ fn flat_map_preserves_nested_secret_provenance() -> Result<()> {
     assert_eq!(result.redacted(), json!(["[REDACTED]", "visible"]));
     Ok(())
 }
+
+#[test]
+fn flat_map_rejects_controller_scope_roots() {
+    for binding in [
+        "item",
+        "vars",
+        "facts",
+        "results",
+        "inventoryHost",
+        "setFacts",
+    ] {
+        let expression = call(
+            "flatMap",
+            &[
+                json!({"kind":"literal", "value":[1]}),
+                json!({"kind":"literal", "value":binding}),
+                json!({"kind":"literal", "value":[]}),
+            ],
+        );
+        assert!(eval(expression, &empty_scope()).is_err(), "{binding}");
+    }
+}

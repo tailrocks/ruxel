@@ -225,7 +225,7 @@ fn call(
                 .as_str()
                 .context("flatMap expects a binding name")
                 .map_err(|e| sensitive_error(e, sensitive))?;
-            if name.is_empty() || ["item", "vars", "facts", "results"].contains(&name) {
+            if !super::valid_flat_map_binding(name) {
                 return Err(sensitive_error(
                     anyhow::anyhow!("invalid flatMap binding"),
                     sensitive,

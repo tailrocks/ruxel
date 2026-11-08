@@ -150,10 +150,7 @@ fn call(
             let items = source.as_array().context("flatMap expects a list")?;
             let binding = evaluate(&args[1], scope, resolver)?;
             let binding = binding.as_str().context("flatMap expects a binding name")?;
-            ensure!(
-                !binding.is_empty() && !["item", "vars", "facts", "results"].contains(&binding),
-                "invalid flatMap binding"
-            );
+            ensure!(valid_flat_map_binding(binding), "invalid flatMap binding");
             let mut child = scope.clone();
             let mut result = Vec::new();
             for item in items {
@@ -206,6 +203,19 @@ fn call(
         .map(|e| evaluate(e, scope, resolver))
         .collect::<Result<Vec<_>>>()?;
     evaluate_call(function, args, &values)
+}
+
+fn valid_flat_map_binding(binding: &str) -> bool {
+    !binding.is_empty()
+        && ![
+            "item",
+            "vars",
+            "facts",
+            "results",
+            "inventoryHost",
+            "setFacts",
+        ]
+        .contains(&binding)
 }
 
 fn evaluate_call(function: &str, args: &[Expr], values: &[Value]) -> Result<Value> {

@@ -38,7 +38,7 @@ impl<B: Backend> Runner<'_, B> {
                 let duration = seconds
                     .checked_add(minutes.checked_mul(60).context("pause duration overflow")?)
                     .context("pause duration overflow")?;
-                if duration > 0 {
+                if params.contains_key("seconds") || params.contains_key("minutes") {
                     tokio::time::sleep(std::time::Duration::from_secs(duration)).await;
                 } else {
                     use std::io::IsTerminal;
