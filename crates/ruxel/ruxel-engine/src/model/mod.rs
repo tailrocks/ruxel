@@ -128,6 +128,30 @@ pub(crate) fn validate_block_result_controls(
     );
     Ok(())
 }
+fn validate_delegation(task: &Task) -> Result<()> {
+    if let Some(destination) = &task.delegate_to {
+        ensure!(
+            task.delegate_allow.as_ref().is_some_and(
+                |allowed| !allowed.is_empty() && allowed.iter().all(|host| !host.is_empty())
+            ),
+            "delegation requires an explicit nonempty host allowlist"
+        );
+        if destination.is_object() {
+            expression(destination)?;
+        } else {
+            ensure!(
+                destination.is_string(),
+                "delegation target must be text or expression"
+            );
+        }
+    } else {
+        ensure!(
+            task.delegate_allow.is_none() && task.delegate_localhost.is_none(),
+            "delegation authorization requires delegateTo on the same task"
+        );
+    }
+    Ok(())
+}
 fn validate_tasks(tasks: &[Task]) -> Result<()> {
     for task in tasks {
         validate_block_result_controls(
@@ -161,28 +185,7 @@ fn validate_tasks(tasks: &[Task]) -> Result<()> {
             task.retries != Some(u64::MAX),
             "retries exceed supported range"
         );
-        if let Some(destination) = &task.delegate_to {
-            ensure!(
-                task.delegate_allow
-                    .as_ref()
-                    .is_some_and(|allowed| !allowed.is_empty()
-                        && allowed.iter().all(|host| !host.is_empty())),
-                "delegation requires an explicit nonempty host allowlist"
-            );
-            if destination.is_object() {
-                expression(destination)?;
-            } else {
-                ensure!(
-                    destination.is_string(),
-                    "delegation target must be text or expression"
-                );
-            }
-        } else {
-            ensure!(
-                task.delegate_allow.is_none() && task.delegate_localhost.is_none(),
-                "delegation authorization requires delegateTo on the same task"
-            );
-        }
+        validate_delegation(task)?;
         for expr in [
             &task.when,
             &task.loop_expr,

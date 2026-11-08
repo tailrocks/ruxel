@@ -119,10 +119,12 @@ async fn inherited_delegation_rejects_child_authorization_without_new_target() -
         json!({"delegateLocalhost":false}),
     ] {
         let mut child = json!({"name":"child", "operation":{"kind":"command","cmd":"fixture"}});
-        child
-            .as_object_mut()
-            .unwrap()
-            .extend(override_fields.as_object().unwrap().clone());
+        child.as_object_mut().context("child object")?.extend(
+            override_fields
+                .as_object()
+                .context("override object")?
+                .clone(),
+        );
         let config = json!({"inventory":{"hosts":{"h":{},"a":{}},"groups":{}},
             "plays":[{"targets":["h"],"tasks":[{"name":"parent",
             "delegateTo":"localhost", "delegateAllow":["localhost","a"],
@@ -136,7 +138,8 @@ async fn inherited_delegation_rejects_child_authorization_without_new_target() -
             &mut BTreeMap::new(),
         )
         .await
-        .unwrap_err();
+        .err()
+        .context("delegation override must be rejected")?;
         assert!(
             error
                 .to_string()

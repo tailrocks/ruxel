@@ -39,7 +39,12 @@ fn copy_sources_are_confined_to_root_without_following_symlinks() -> Result<()> 
         );
         assert!(attempt.iterations[0].source_content.is_none());
     }
-    let mut absolute = task(outside.path().join("outside").to_str().unwrap());
+    let absolute_path = outside.path().join("outside");
+    let mut absolute = task(
+        absolute_path
+            .to_str()
+            .context("absolute path is not UTF-8")?,
+    );
     assert!(prepare(&mut absolute, directory.path()).is_err());
     Ok(())
 }
