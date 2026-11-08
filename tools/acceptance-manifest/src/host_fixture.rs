@@ -25,7 +25,12 @@ fn regular_bytes(path: &Path) -> Result<Vec<u8>> {
 impl Guest {
     pub fn new(scenario: &str, root: &Path, cli: &Path, agent: &Path, image: &str) -> Result<Self> {
         ensure!(
-            ["postgresql-ownership", "become-environment"].contains(&scenario),
+            [
+                "postgresql-ownership",
+                "become-environment",
+                "files-content"
+            ]
+            .contains(&scenario),
             "unsupported host fixture"
         );
         let data = regular_bytes(&root.join(format!("testdata/workloads/pr66/{scenario}.pkl")))?;
@@ -51,7 +56,8 @@ impl Guest {
             &workload,
             std::str::from_utf8(&data)?
                 .replace("../../../schema/Ruxel.pkl", "schema/Ruxel.pkl")
-                .replace("__RUN_ROOT__", "/tmp/work/payload"),
+                .replace("__RUN_ROOT__", "/tmp/work/payload")
+                .replace("__FIXTURE_ROOT__", "/tmp/work"),
         )?;
         let docker = Docker::create(image)?;
         docker.exec(
@@ -67,6 +73,9 @@ impl Guest {
         docker.exec(&["/bin/chmod", "711", "/tmp/work", "/tmp/work/payload"], 0)?;
         docker.copy(&schema, "/tmp/work/schema/Ruxel.pkl")?;
         docker.copy(&workload, "/tmp/work/workload.pkl")?;
+        if scenario == "files-content" {
+            crate::files_content::stage(root, stage.path(), &docker)?;
+        }
         docker.copy(&stage.path().join("ruxel"), "/opt/ruxel-fixture/ruxel")?;
         docker.copy(
             &stage.path().join("ruxel-agent"),
@@ -106,6 +115,10 @@ impl Guest {
             let mut pg = vec!["PGHOST=/tmp/work/pg/socket"];
             pg.extend(args);
             self.docker.exec(&pg, expected)?
+        } else if self.scenario == "files-content" {
+            let mut env = vec!["PATH=/opt/ruxel-fixture:/usr/bin:/bin:/usr/sbin:/sbin"];
+            env.extend(args);
+            self.docker.exec(&env, expected)?
         } else {
             self.docker.exec(&args, expected)?
         };
@@ -146,6 +159,8 @@ pub(super) fn execute(
     let mut guest = Guest::new(scenario, root, cli, agent, image)?;
     let outcome = if scenario == "postgresql-ownership" {
         crate::postgres_run::execute(&guest)
+    } else if scenario == "files-content" {
+        crate::files_content::execute(&guest)
     } else {
         crate::become_user::execute(&guest)
     };

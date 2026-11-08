@@ -18,15 +18,22 @@ pub const SCENARIOS: [&str; 14] = [
     "storage-xfs",
     "system-surface",
 ];
-pub const SUPPORTED: [&str; 7] = [
+pub const SUPPORTED: [&str; 8] = [
     "become-environment",
     "check-semantics",
     "control-flow",
     "controller-delegation",
+    "files-content",
     "multihost",
     "postgresql-ownership",
     "restart-actions",
 ];
+pub fn host_fixture(name: &str) -> bool {
+    matches!(
+        name,
+        "postgresql-ownership" | "become-environment" | "files-content"
+    )
+}
 pub fn validate_manifest(manifest: &Value) -> Result<()> {
     let root = manifest.as_object().context("manifest must be an object")?;
     ensure!(
@@ -59,6 +66,14 @@ pub fn validate_case(name: &str, manifest: &Value) -> Result<()> {
     }
     if name == "postgresql-ownership" {
         let expected: Value = serde_json::from_str(include_str!("../postgres-contract.json"))?;
+        ensure!(
+            manifest["scenarios"][name] == expected,
+            "{name}: unreviewed or incomplete contract"
+        );
+        return Ok(());
+    }
+    if name == "files-content" {
+        let expected: Value = serde_json::from_str(include_str!("../files-contract.json"))?;
         ensure!(
             manifest["scenarios"][name] == expected,
             "{name}: unreviewed or incomplete contract"

@@ -5,6 +5,7 @@ mod control_observer;
 mod control_run;
 mod delegation;
 mod docker_fixture;
+mod files_content;
 mod host_fixture;
 mod postgres_run;
 
@@ -72,7 +73,7 @@ fn run() -> Result<bool> {
     let mut failures = 0;
     for name in &scenarios {
         let result = contract::validate_case(name, &manifest).and_then(|()| {
-            if matches!(name.as_str(), "postgresql-ownership" | "become-environment") {
+            if contract::host_fixture(name) {
                 host_fixture::execute(
                     name,
                     &root,

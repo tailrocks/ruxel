@@ -1,11 +1,19 @@
 # Local manifest acceptance
 
-Standalone Rust manifest acceptance with five local adapters and two host-orchestrated Docker adapters:
-`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, `postgresql-ownership`, and `become-environment`. Each contract must
+Standalone Rust manifest acceptance with five local adapters and three host-orchestrated Docker adapters:
+`check-semantics`, `multihost`, `controller-delegation`, `restart-actions`, `control-flow`, `postgresql-ownership`, `become-environment`, and `files-content`. Each contract must
 exactly match the frozen reviewed contract in `contracts.json`; fixture hashes
 are also pinned before any subprocess starts. Unsupported
 scenarios fail closed. Omitting `--scenario` selects all 14, so the command is
-expected to fail while seven scenarios have no enabled adapter.
+expected to fail while six scenarios have no enabled adapter.
+
+The files-content adapter runs the pinned workload and pinned source and template
+assets in the isolated Docker guest. A guest-local synthetic systemctl records
+the fixture's ssh restart handler without restarting an actual service. Fresh and
+repeated apply, check and diff over injected drift, and drift repair verify file
+observations and preview nonmutation. Repeated apply is not globally unchanged:
+several fixture tasks intentionally rewrite the same file in sequence. The
+fixture's pending frozen-baseline newline comparison remains separate evidence.
 
 For controller delegation, the actual apply runs must pass the fixture's
 assertion on the delegated command's registered stdout. Separate check and diff

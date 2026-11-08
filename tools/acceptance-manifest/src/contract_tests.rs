@@ -57,3 +57,12 @@ fn become_contract_fails_closed() -> anyhow::Result<()> {
     assert!(validate_case("become-environment", &manifest).is_err());
     Ok(())
 }
+
+#[test]
+fn files_contract_fails_closed() -> anyhow::Result<()> {
+    let mut manifest = json!({"scenarios": {"files-content": serde_json::from_str::<Value>(include_str!("../files-contract.json"))?}});
+    validate_case("files-content", &manifest)?;
+    manifest["scenarios"]["files-content"]["observations"][4]["content"] = json!("tampered");
+    assert!(validate_case("files-content", &manifest).is_err());
+    Ok(())
+}

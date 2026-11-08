@@ -9,6 +9,7 @@ pub(super) fn pin(name: &str) -> &'static str {
     match name {
         "control-flow" => "ea0835380b349682d08a6a48f4764c4b5a6dfa999e54108f5132c0c1b232fdab",
         "become-environment" => "b88c1a74facbc2a7eabfe23e6b4d08906174945f0140277e9b326cbee9eff5ac",
+        "files-content" => "457ed3085453f875f141e3e09e75b47c47b8d6de7edc14db49cc9dfb3e3ade20",
         "postgresql-ownership" => {
             "70e1b192f9d4df7b15828a0e482a40c8147ec2d87b340d42636e54a9ac85531d"
         }

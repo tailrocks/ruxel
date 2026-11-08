@@ -26,7 +26,7 @@ impl Env {
         let mut builder = tempfile::Builder::new();
         builder.prefix("ruxel-pr66-manifest-");
         ensure!(
-            !matches!(name, "become-environment" | "postgresql-ownership"),
+            !crate::contract::host_fixture(name),
             "privileged fixtures require host Docker orchestration"
         );
         let root = builder.tempdir()?;

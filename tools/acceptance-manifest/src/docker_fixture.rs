@@ -144,8 +144,11 @@ impl Docker {
             [
                 "/tmp/work/schema/Ruxel.pkl",
                 "/tmp/work/workload.pkl",
+                "/tmp/work/assets/source.txt",
+                "/tmp/work/assets/template.pkl",
                 "/opt/ruxel-fixture/ruxel",
-                "/opt/ruxel-fixture/ruxel-agent"
+                "/opt/ruxel-fixture/ruxel-agent",
+                "/opt/ruxel-fixture/systemctl"
             ]
             .contains(&destination),
             "invalid fixture copy destination"
