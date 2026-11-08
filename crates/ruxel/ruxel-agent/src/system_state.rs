@@ -5,6 +5,7 @@ pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
     candidates: HashMap<String, String>,
+    native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
 }
@@ -130,6 +131,7 @@ impl SystemState {
         if architecture.is_empty() {
             return Err("dpkg --print-architecture returned an empty architecture".to_string());
         }
+        self.native_architecture = Some(architecture.to_string());
         self.ensure_packages_with(|| {
             std::fs::read_to_string("/var/lib/dpkg/status")
                 .map_err(|error| format!("read dpkg status: {error}"))
@@ -140,11 +142,13 @@ impl SystemState {
             .filter_map(|key| key.split_once(':').map(|(name, _)| name.to_string()))
             .collect();
         for name in names {
+            let qualified = format!("{name}:{architecture}");
             let version = packages
-                .get(&format!("{name}:{architecture}"))
+                .get(&qualified)
                 .or_else(|| packages.get(&format!("{name}:all")))
                 .cloned();
             if let Some(version) = version {
+                packages.insert(qualified, version.clone());
                 packages.insert(name, version);
             } else {
                 packages.remove(&name);
@@ -179,7 +183,7 @@ impl SystemState {
         }
         let output = std::process::Command::new("apt-cache")
             .arg("policy")
-            .args(missing)
+            .args(&missing)
             .output()
             .map_err(|error| format!("apt-cache policy: {error}"))?;
         if !output.status.success() {
@@ -190,6 +194,16 @@ impl SystemState {
         }
         self.candidates
             .extend(parse_apt_policy(&String::from_utf8_lossy(&output.stdout)));
+        if let Some(architecture) = &self.native_architecture {
+            for name in missing {
+                if let Some((package, requested_architecture)) = name.rsplit_once(':')
+                    && requested_architecture == architecture
+                    && let Some(candidate) = self.candidates.get(package).cloned()
+                {
+                    self.candidates.entry(name.clone()).or_insert(candidate);
+                }
+            }
+        }
         Ok(())
     }
 
