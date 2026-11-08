@@ -17,14 +17,61 @@ const BOOTSTRAP: &str = "IFS= read -r RUXEL_ENV_SCRIPT || exit 125; eval \"$RUXE
 pub(super) struct TaskCommand {
     command: Command,
     environment_script: Option<Vec<u8>>,
+    identity: Option<DeferredIdentity>,
+}
+
+struct DeferredIdentity {
+    user: String,
+    program: String,
+    args: Vec<String>,
+    environment: BTreeMap<OsString, OsString>,
+    overrides: Vec<(String, String)>,
+    directory: Option<String>,
 }
 
 impl TaskCommand {
     pub(super) fn current_dir(&mut self, path: &str) {
         self.command.current_dir(path);
+        if let Some(identity) = &mut self.identity {
+            identity.directory = Some(path.to_owned());
+        }
     }
 
     pub(super) fn spawn(&mut self) -> Result<Child, std::io::Error> {
+        if let Some(identity) = &self.identity {
+            let output = lookup_user(&identity.user).map_err(std::io::Error::other)?;
+            let passwd = std::str::from_utf8(&output)
+                .map_err(|_| std::io::Error::other("invalid become_user identity record"))?;
+            let account = user_environment_from(passwd, &identity.user)
+                .ok_or_else(|| std::io::Error::other("invalid become_user identity record"))?;
+            let canonical = passwd
+                .split(':')
+                .next()
+                .ok_or_else(|| std::io::Error::other("invalid become_user identity record"))?;
+            let ctx = ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: identity.overrides.clone(),
+                become_user: Some(identity.user.clone()),
+            };
+            let args: Vec<&str> = identity.args.iter().map(String::as_str).collect();
+            let mut prepared = switched_command(
+                &ctx,
+                canonical,
+                &identity.program,
+                &args,
+                Path::new(RUNUSER),
+                identity.environment.clone(),
+                Some(account),
+            )
+            .map_err(std::io::Error::other)?;
+            if let Some(directory) = &identity.directory {
+                prepared.current_dir(directory);
+            }
+            self.command = prepared.command;
+            self.environment_script = prepared.environment_script;
+        }
         let mut child = self.command.spawn()?;
         if let Some(script) = &self.environment_script {
             let result = (|| {
@@ -84,24 +131,25 @@ pub(super) fn become_command(
         {
             return Err("invalid become user".into());
         }
-        let output = lookup_user(user)?;
-        let passwd =
-            std::str::from_utf8(&output).map_err(|_| "invalid become_user identity record")?;
-        let identity =
-            user_environment_from(passwd, user).ok_or("invalid become_user identity record")?;
-        let canonical_user = passwd
-            .split(':')
-            .next()
-            .ok_or("invalid become_user identity record")?;
-        switched_command(
+        let environment: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+        let mut command = switched_command(
             ctx,
-            canonical_user,
+            user,
             program,
             args,
             Path::new(RUNUSER),
-            std::env::vars_os().collect(),
-            Some(identity),
-        )
+            environment.clone(),
+            None,
+        )?;
+        command.identity = Some(DeferredIdentity {
+            user: user.clone(),
+            program: program.into(),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            environment,
+            overrides: ctx.environment.clone(),
+            directory: None,
+        });
+        Ok(command)
     } else {
         let mut command = Command::new(program);
         command.args(args).envs(ctx.environment.iter().cloned());
@@ -111,6 +159,9 @@ pub(super) fn become_command(
 
 fn lookup_user(user: &str) -> Result<Vec<u8>, String> {
     const LIMIT: usize = 64 * 1024;
+    if user.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("numeric become_user names cannot be resolved safely".into());
+    }
     let mut child = Command::new("/usr/bin/getent")
         .env_clear()
         .env("PATH", WRAPPER_PATH)
@@ -171,6 +222,7 @@ fn piped_command(mut command: Command, environment_script: Option<Vec<u8>>) -> T
     TaskCommand {
         command,
         environment_script,
+        identity: None,
     }
 }
 
