@@ -1,3 +1,4 @@
 use super::*;
 
-mod cases;
+mod selectors;
+mod snapshots;
