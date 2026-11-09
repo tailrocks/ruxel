@@ -127,11 +127,10 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn ssh_is_strict_and_defaults_the_user() {
+    fn ssh_is_strict_and_defaults_the_user() -> Result<(), serde_json::Error> {
         let ssh: Ssh = serde_json::from_value(
             json!({"identityFile":"keys/id", "knownHostsFile":"keys/hosts"}),
-        )
-        .unwrap();
+        )?;
         assert_eq!(ssh.user(), "root");
         assert_eq!(ssh.identity_file(), "keys/id");
         assert_eq!(ssh.known_hosts_file(), "keys/hosts");
@@ -143,13 +142,13 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<Ssh>(value).is_err());
         }
+        Ok(())
     }
 
     #[test]
-    fn guard_rejects_invalid_networks_and_unknown_fields() {
+    fn guard_rejects_invalid_networks_and_unknown_fields() -> Result<(), serde_json::Error> {
         let guard: Guard =
-            serde_json::from_value(json!({"allow":["192.0.2.0/24"],"deny":["198.51.100.1"]}))
-                .unwrap();
+            serde_json::from_value(json!({"allow":["192.0.2.0/24"],"deny":["198.51.100.1"]}))?;
         assert_eq!(guard.allow(), ["192.0.2.0/24"]);
         assert_eq!(guard.deny(), ["198.51.100.1"]);
         for value in [
@@ -159,5 +158,6 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<Guard>(value).is_err());
         }
+        Ok(())
     }
 }
