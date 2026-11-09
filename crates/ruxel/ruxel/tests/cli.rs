@@ -78,7 +78,7 @@ fn version_and_usage_codes() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!String::from_utf8(help.stdout)?.contains("compiled deny entries"));
     let missing = Command::new(env!("CARGO_BIN_EXE_ruxel")).output()?;
     assert_eq!(missing.status.code(), Some(2));
-    assert!(missing.stdout.is_empty());
+    assert_eq!(missing.stdout, b"");
     let usage = Command::new(env!("CARGO_BIN_EXE_ruxel"))
         .args(["config", "dump"])
         .output()?;
