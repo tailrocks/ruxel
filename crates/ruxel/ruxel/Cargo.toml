@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+ruxel-guard = { path = "../ruxel-guard", version = "0.1.0" }
 ruxel-engine = { path = "../ruxel-engine", version = "0.1.0" }
 tokio.workspace = true
 clap.workspace = true

@@ -1549,6 +1549,7 @@ dependencies = [
  "clap",
  "ruxel-config",
  "ruxel-engine",
+ "ruxel-guard",
  "serde_json",
  "tokio",
 ]

@@ -34,7 +34,16 @@ fn main() {
             } else {
                 ExitCode::Success
             };
-            if error.print().is_err() {
+            let version = error.kind() == clap::error::ErrorKind::DisplayVersion;
+            if error.print().is_err()
+                || (version
+                    && writeln!(
+                        std::io::stdout().lock(),
+                        "guard: {} compiled deny entries",
+                        ruxel_guard::Policy::compiled_entries()
+                    )
+                    .is_err())
+            {
                 ExitCode::Internal
             } else {
                 code
