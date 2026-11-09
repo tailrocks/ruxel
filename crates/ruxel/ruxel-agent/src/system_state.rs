@@ -81,14 +81,7 @@ impl SystemState {
         let packages = self.packages.as_ref().ok_or("packages not initialized")?;
         let mut missing = Vec::new();
         for (name, package, version) in requests {
-            let installed = if package.contains(':') {
-                self.selector_installed
-                    .get(package)
-                    .ok_or_else(|| format!("apt: no policy state for {package:?}"))?
-                    .as_ref()
-            } else {
-                packages.get(package)
-            };
+            let installed = self.installed_for_selector(packages, package)?;
             let needs_install = match installed {
                 None => true,
                 Some(installed) if version.is_some() => {
@@ -113,6 +106,32 @@ impl SystemState {
             }
         }
         Ok(missing)
+    }
+
+    fn installed_for_selector<'a>(
+        &'a self,
+        packages: &'a HashMap<String, String>,
+        package: &str,
+    ) -> Result<Option<&'a String>, String> {
+        if !package.contains(':') {
+            return Ok(packages.get(package));
+        }
+        let policy = self
+            .selector_installed
+            .get(package)
+            .ok_or_else(|| format!("apt: no policy state for {package:?}"))?
+            .as_ref();
+        let identity = self
+            .selector_identity
+            .get(package)
+            .ok_or_else(|| format!("apt: no policy identity for {package:?}"))?;
+        let installed = packages.get(identity);
+        if let (Some(policy), Some(actual)) = (policy, installed)
+            && policy != actual
+        {
+            return Err(format!("apt: inconsistent installed state for {package:?}"));
+        }
+        Ok(installed.filter(|_| policy.is_some()))
     }
 
     fn validate_package_requests(

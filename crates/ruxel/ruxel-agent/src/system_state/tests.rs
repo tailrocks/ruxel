@@ -31,6 +31,17 @@ fn any_selector_uses_apt_selected_installed_version() {
             .expect("operation succeeds"),
         ["shell:any=1"]
     );
+    state
+        .packages
+        .as_mut()
+        .expect("snapshot exists")
+        .remove("shell:arm64");
+    assert_eq!(
+        state
+            .missing_packages(&["shell:any=2".into()], false)
+            .expect("operation succeeds"),
+        ["shell:any=2"]
+    );
 }
 
 #[test]
