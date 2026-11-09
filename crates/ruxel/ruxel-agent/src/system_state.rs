@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+type PolicyRecord = (String, Option<String>, Option<String>);
+
 #[derive(Default)]
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
@@ -7,6 +9,7 @@ pub(crate) struct SystemState {
     candidates: HashMap<String, String>,
     selector_installed: HashMap<String, Option<String>>,
     selector_identity: HashMap<String, String>,
+    glob_policy: HashMap<String, Vec<PolicyRecord>>,
     native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
@@ -63,9 +66,14 @@ impl SystemState {
             }
         }
         self.ensure_packages()?;
+        for (_, package, _) in &requests {
+            if package.contains(['*', '?', '[']) {
+                self.ensure_glob_policy(package)?;
+            }
+        }
         let qualified: Vec<_> = requests
             .iter()
-            .filter(|(_, package, _)| package.contains(':'))
+            .filter(|(_, package, _)| package.contains(':') && !package.contains(['*', '?', '[']))
             .map(|(_, package, _)| (*package).to_string())
             .collect();
         self.ensure_candidates(&qualified)?;
@@ -74,6 +82,7 @@ impl SystemState {
             let unpinned: Vec<_> = requests
                 .iter()
                 .filter(|(_, _, version)| version.is_none())
+                .filter(|(_, package, _)| !package.contains(['*', '?', '[']))
                 .map(|(name, _, _)| (*name).clone())
                 .collect();
             self.ensure_candidates(&unpinned)?;
@@ -81,6 +90,12 @@ impl SystemState {
         let packages = self.packages.as_ref().ok_or("packages not initialized")?;
         let mut missing = Vec::new();
         for (name, package, version) in requests {
+            if package.contains(['*', '?', '[']) {
+                if self.glob_missing(packages, package, version, latest)? {
+                    missing.push(name.clone());
+                }
+                continue;
+            }
             let installed = self.installed_for_selector(packages, package)?;
             let needs_install = match installed {
                 None => true,
@@ -104,6 +119,44 @@ impl SystemState {
             if needs_install {
                 missing.push(name.clone());
             }
+        }
+        Ok(missing)
+    }
+
+    fn glob_missing(
+        &self,
+        packages: &HashMap<String, String>,
+        package: &str,
+        version: Option<&str>,
+        latest: bool,
+    ) -> Result<bool, String> {
+        let records = self
+            .glob_policy
+            .get(package)
+            .ok_or("apt: missing glob policy")?;
+        let mut missing = records.is_empty();
+        for (identity, policy, candidate) in records {
+            if let (Some(actual), Some(policy)) = (packages.get(identity), policy)
+                && actual != policy
+            {
+                return Err(format!(
+                    "apt: inconsistent installed state for {identity:?}"
+                ));
+            }
+            let installed = packages
+                .get(identity)
+                .filter(|value| policy.as_ref() == Some(*value));
+            missing |= match (installed, version) {
+                (None, _) => true,
+                (Some(installed), Some(version)) if version.contains(['*', '?', '[']) => {
+                    !glob::Pattern::new(version).is_ok_and(|p| p.matches(installed))
+                }
+                (Some(installed), Some(version)) => installed != version,
+                (Some(installed), None) if latest => candidate
+                    .as_ref()
+                    .is_some_and(|v| v != "(none)" && v != installed),
+                (Some(_), None) => false,
+            };
         }
         Ok(missing)
     }
@@ -153,28 +206,45 @@ impl SystemState {
         if let Some(architecture) = &self.native_architecture {
             let mut normalized_pins = HashMap::new();
             for (_, package, version) in requests {
-                let selected = self
-                    .selector_identity
-                    .get(*package)
-                    .map_or(*package, String::as_str);
-                let normalized = selected
-                    .rsplit_once(':')
-                    .filter(|(name, requested)| {
-                        *requested == "native"
-                            || requested == architecture
-                            || (*requested == "all"
-                                && self.packages.as_ref().is_some_and(|packages| {
-                                    packages.contains_key(&format!("{name}:all"))
-                                }))
-                    })
-                    .map_or(selected, |(name, _)| name);
-                if let Some(previous) = normalized_pins.insert(normalized, *version)
-                    && ((previous.is_some() && version.is_some() && previous != *version)
-                        || (latest && previous.is_some() != version.is_some()))
-                {
-                    return Err(format!(
-                        "apt: conflicting versions requested for {normalized:?}"
-                    ));
+                let selected: Vec<&str> = if let Some(records) = self.glob_policy.get(*package) {
+                    records
+                        .iter()
+                        .map(|(identity, _, _)| identity.as_str())
+                        .collect()
+                } else {
+                    vec![
+                        self.selector_identity
+                            .get(*package)
+                            .map_or(*package, String::as_str),
+                    ]
+                };
+                for selected in selected {
+                    let normalized = selected
+                        .rsplit_once(':')
+                        .filter(|(name, requested)| {
+                            *requested == "native"
+                                || requested == architecture
+                                || (*requested == "all"
+                                    && self.packages.as_ref().is_some_and(|packages| {
+                                        packages.contains_key(&format!("{name}:all"))
+                                    }))
+                        })
+                        .map_or(selected, |(name, _)| name);
+                    let entry = normalized_pins.entry(normalized).or_insert((None, false));
+                    if (version.is_some() && entry.0.is_some() && entry.0 != *version)
+                        || (latest
+                            && ((version.is_some() && entry.1)
+                                || (version.is_none() && entry.0.is_some())))
+                    {
+                        return Err(format!(
+                            "apt: conflicting versions requested for {normalized:?}"
+                        ));
+                    }
+                    if version.is_some() {
+                        entry.0 = *version;
+                    } else {
+                        entry.1 = true;
+                    }
                 }
             }
         }
@@ -201,6 +271,7 @@ impl SystemState {
         self.candidates.clear();
         self.selector_installed.clear();
         self.selector_identity.clear();
+        self.glob_policy.clear();
     }
 
     pub(crate) fn invalidate_units(&mut self) {
@@ -265,6 +336,39 @@ impl SystemState {
         {
             self.package_builds += 1;
         }
+        Ok(())
+    }
+
+    fn ensure_glob_policy(&mut self, name: &str) -> Result<(), String> {
+        if self.glob_policy.contains_key(name) {
+            return Ok(());
+        }
+        let output = std::process::Command::new("apt-cache")
+            .args(["policy", name])
+            .env("LC_ALL", "C")
+            .output()
+            .map_err(|error| format!("apt-cache policy: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "apt-cache policy failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut records = Vec::new();
+        let mut stanza = String::new();
+        for line in text.lines() {
+            if !line.starts_with(char::is_whitespace) && line.ends_with(':') && !stanza.is_empty() {
+                records.push(glob_policy_stanza(&stanza)?);
+                stanza.clear();
+            }
+            stanza.push_str(line);
+            stanza.push('\n');
+        }
+        if !stanza.is_empty() {
+            records.push(glob_policy_stanza(&stanza)?);
+        }
+        self.glob_policy.insert(name.to_string(), records);
         Ok(())
     }
 
@@ -361,6 +465,15 @@ fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
         }
     }
     packages
+}
+
+fn glob_policy_stanza(text: &str) -> Result<(String, Option<String>, Option<String>), String> {
+    let name = text
+        .lines()
+        .next()
+        .and_then(|line| line.strip_suffix(':'))
+        .ok_or("apt: invalid glob policy output")?;
+    policy_state(name, text)
 }
 
 fn policy_state(

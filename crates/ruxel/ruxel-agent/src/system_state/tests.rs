@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+fn glob_reconciles_each_apt_selected_package_and_conflicts() {
+    let mut state = SystemState {
+        packages: Some(HashMap::from([
+            ("lib-a".into(), "1".into()),
+            ("lib-b".into(), "2".into()),
+        ])),
+        glob_policy: HashMap::from([
+            (
+                "lib-*".into(),
+                vec![
+                    ("lib-a".into(), Some("1".into()), Some("1".into())),
+                    ("lib-b".into(), Some("2".into()), Some("2".into())),
+                ],
+            ),
+            ("none-*".into(), vec![]),
+        ]),
+        native_architecture: Some("amd64".into()),
+        ..SystemState::default()
+    };
+    assert_eq!(
+        state
+            .missing_packages(&["lib-*".into()], true)
+            .expect("operation succeeds"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        state
+            .missing_packages(&["lib-*=1".into()], false)
+            .expect("operation succeeds"),
+        ["lib-*=1"]
+    );
+    assert_eq!(
+        state
+            .missing_packages(&["none-*".into()], false)
+            .expect("operation succeeds"),
+        ["none-*"]
+    );
+    assert!(
+        state
+            .missing_packages(&["lib-*=1".into(), "lib-a".into(), "lib-a=2".into()], false)
+            .is_err()
+    );
+}
+
+#[test]
 fn any_selector_uses_apt_selected_installed_version() {
     let mut state = SystemState {
         packages: Some(HashMap::from([
