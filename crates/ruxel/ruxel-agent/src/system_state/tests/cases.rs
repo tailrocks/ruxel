@@ -1,0 +1,209 @@
+use super::*;
+
+#[test]
+fn simulation_detects_install_remove_and_pending_configuration() {
+    use super::apt_policy::simulation_changed;
+    let summary = "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n";
+    assert!(!simulation_changed(summary).expect("valid simulation"));
+    for action in ["Inst x (1)", "Remv x", "Conf x (1)"] {
+        assert!(simulation_changed(&format!("{summary}{action}\n")).expect("valid simulation"));
+    }
+    assert!(simulation_changed("unexpected output").is_err());
+}
+
+#[test]
+fn glob_reconciles_each_apt_selected_package_and_conflicts() {
+    let mut state = SystemState {
+        packages: Some(HashMap::from([
+            ("lib-a".into(), "1".into()),
+            ("lib-b".into(), "2".into()),
+        ])),
+        glob_policy: HashMap::from([
+            (
+                "lib-*".into(),
+                vec![
+                    ("lib-a".into(), Some("1".into()), Some("1".into())),
+                    ("lib-b".into(), Some("2".into()), Some("2".into())),
+                ],
+            ),
+            ("none-*".into(), vec![]),
+        ]),
+        native_architecture: Some("amd64".into()),
+        ..SystemState::default()
+    };
+    assert!(
+        state
+            .missing_packages(&["lib-*=1".into(), "lib-a".into(), "lib-a=2".into()], false)
+            .is_err()
+    );
+}
+
+#[test]
+fn any_selector_uses_apt_selected_installed_version() {
+    let mut state = SystemState {
+        packages: Some(HashMap::from([
+            ("shell:amd64".into(), "1".into()),
+            ("shell:arm64".into(), "2".into()),
+        ])),
+        candidates: HashMap::from([("shell:any".into(), "2".into())]),
+        selector_installed: HashMap::from([("shell:any".into(), Some("2".into()))]),
+        selector_identity: HashMap::from([("shell:any".into(), "shell:arm64".into())]),
+        native_architecture: Some("amd64".into()),
+        ..SystemState::default()
+    };
+    assert_eq!(
+        state
+            .missing_packages(&["shell:any".into()], true)
+            .expect("operation succeeds"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        state
+            .missing_packages(&["shell:any=2".into()], false)
+            .expect("operation succeeds"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        state
+            .missing_packages(&["shell:any=1".into()], false)
+            .expect("operation succeeds"),
+        ["shell:any=1"]
+    );
+    state
+        .packages
+        .as_mut()
+        .expect("snapshot exists")
+        .remove("shell:arm64");
+    assert_eq!(
+        state
+            .missing_packages(&["shell:any=2".into()], false)
+            .expect("operation succeeds"),
+        ["shell:any=2"]
+    );
+}
+
+#[test]
+fn policy_headers_are_associated_with_the_requested_selector() {
+    let policy = |header: &str| format!("{header}:\n  Installed: 1\n  Candidate: 2\n");
+    for (selector, header) in [
+        ("cert:all", "cert"),
+        ("shell:amd64", "shell"),
+        ("shell:arm64", "shell:arm64"),
+        ("shell:any", "shell:arm64"),
+    ] {
+        assert_eq!(
+            policy_state(selector, &policy(header)).expect("operation succeeds"),
+            (header.into(), Some("1".into()), Some("2".into()))
+        );
+    }
+    assert!(
+        policy_state(
+            "shell:any",
+            "shell:amd64:\n  Installed: 1\n  Candidate: 2\nshell:arm64:\n"
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn mixed_latest_and_pin_aliases_are_rejected() {
+    let mut state = SystemState {
+        packages: Some(HashMap::from([
+            ("cert".into(), "1".into()),
+            ("cert:all".into(), "1".into()),
+        ])),
+        native_architecture: Some("amd64".into()),
+        candidates: HashMap::from([
+            ("cert:amd64".into(), "1".into()),
+            ("cert:all".into(), "1".into()),
+            ("cert:any".into(), "1".into()),
+        ]),
+        selector_installed: HashMap::from([
+            ("cert:amd64".into(), Some("1".into())),
+            ("cert:all".into(), Some("1".into())),
+            ("cert:any".into(), Some("1".into())),
+        ]),
+        selector_identity: HashMap::from([
+            ("cert:amd64".into(), "cert".into()),
+            ("cert:all".into(), "cert".into()),
+            ("cert:any".into(), "cert".into()),
+        ]),
+        ..SystemState::default()
+    };
+    assert!(
+        state
+            .missing_packages(&["cert:amd64=1".into(), "cert:all".into()], true)
+            .is_err()
+    );
+    assert!(
+        state
+            .missing_packages(&["cert=1".into(), "cert:any".into()], true)
+            .is_err()
+    );
+    assert_eq!(
+        state
+            .missing_packages(&["cert:amd64=1".into()], false)
+            .expect("operation succeeds"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn parses_many_packages_once() {
+    let source = "Package: one\nStatus: install ok installed\nVersion: 1.0\n\nPackage: old\nStatus: deinstall ok config-files\nVersion: 0.1\n\nPackage: two\nStatus: install ok installed\nVersion: 2.0\n";
+    let mut state = SystemState::default();
+    state
+        .ensure_packages_with(|| Ok(source.into()))
+        .expect("operation succeeds");
+    state
+        .ensure_packages_with(|| panic!("snapshot must not rebuild"))
+        .expect("operation succeeds");
+    assert_eq!(state.package_builds, 1);
+    let parsed = state.packages.expect("operation succeeds");
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed["one"], "1.0");
+    assert_eq!(parsed["two"], "2.0");
+}
+
+#[test]
+fn parses_batched_policy_and_systemd_snapshots() {
+    let units = parse_systemd(
+        "a.service loaded active running A\nb.service loaded inactive dead B\n",
+        "a.service enabled enabled\nb.service disabled enabled\n",
+    );
+    assert_eq!(
+        units["a.service"],
+        UnitState {
+            active: true,
+            enabled: true
+        }
+    );
+    assert_eq!(
+        units["b.service"],
+        UnitState {
+            active: false,
+            enabled: false
+        }
+    );
+}
+
+#[test]
+fn single_threaded_snapshot_lookup_scale() {
+    use std::fmt::Write as _;
+    let mut source = String::new();
+    for index in 0..10_000 {
+        write!(
+            source,
+            "Package: package-{index}\nStatus: install ok installed\nVersion: 1.{index}\n\n"
+        )
+        .expect("write to string");
+    }
+    let started = std::time::Instant::now();
+    let packages = parse_dpkg_status(&source);
+    for index in 0..10_000 {
+        assert!(packages.contains_key(&format!("package-{index}")));
+    }
+    let elapsed = started.elapsed();
+    eprintln!("10k package snapshot + 10k lookups: {elapsed:?}");
+    assert!(elapsed < std::time::Duration::from_secs(5));
+}
