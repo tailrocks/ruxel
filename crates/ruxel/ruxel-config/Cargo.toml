@@ -11,6 +11,7 @@ path = "src/bin/check_deny_inputs.rs"
 
 [dependencies]
 blake3.workspace = true
+ruxel-guard = { path = "../ruxel-guard" }
 rustix.workspace = true
 
 pklr = { git = "https://github.com/tailrocks/pklr", rev = "404e27bc37786bf2cfada2987fd8d8d06beb9598", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }

@@ -1581,6 +1581,7 @@ dependencies = [
  "blake3",
  "pklr",
  "rustix 1.1.6",
+ "ruxel-guard",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 pub(super) struct Config {
     pub(super) inventory: Inventory,
     pub(super) plays: Vec<Play>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) ssh: Option<ruxel_config::model::Ssh>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
