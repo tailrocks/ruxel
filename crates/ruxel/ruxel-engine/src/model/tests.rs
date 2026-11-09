@@ -1,6 +1,7 @@
 use super::*;
 use serde_json::json;
 
+mod admission;
 mod become_user;
 mod native_kinds;
 fn config(operation: Value) -> Value {
