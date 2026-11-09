@@ -1,6 +1,17 @@
 use super::*;
 
 #[test]
+fn simulation_detects_install_remove_and_pending_configuration() {
+    use super::apt_policy::simulation_changed;
+    let summary = "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n";
+    assert!(!simulation_changed(summary).expect("valid simulation"));
+    for action in ["Inst x (1)", "Remv x", "Conf x (1)"] {
+        assert!(simulation_changed(&format!("{summary}{action}\n")).expect("valid simulation"));
+    }
+    assert!(simulation_changed("unexpected output").is_err());
+}
+
+#[test]
 fn glob_reconciles_each_apt_selected_package_and_conflicts() {
     let mut state = SystemState {
         packages: Some(HashMap::from([
@@ -20,24 +31,6 @@ fn glob_reconciles_each_apt_selected_package_and_conflicts() {
         native_architecture: Some("amd64".into()),
         ..SystemState::default()
     };
-    assert_eq!(
-        state
-            .missing_packages(&["lib-*".into()], true)
-            .expect("operation succeeds"),
-        Vec::<String>::new()
-    );
-    assert_eq!(
-        state
-            .missing_packages(&["lib-*=1".into()], false)
-            .expect("operation succeeds"),
-        ["lib-*=1"]
-    );
-    assert_eq!(
-        state
-            .missing_packages(&["none-*".into()], false)
-            .expect("operation succeeds"),
-        ["none-*"]
-    );
     assert!(
         state
             .missing_packages(&["lib-*=1".into(), "lib-a".into(), "lib-a=2".into()], false)

@@ -1,5 +1,5 @@
 use super::SystemState;
-use super::apt_policy::{glob_policy_stanza, parse_dpkg_status, policy_state};
+use super::apt_policy::{glob_policy_stanza, parse_dpkg_status, policy_state, simulate_glob};
 use std::collections::HashMap;
 
 impl SystemState {
@@ -58,7 +58,7 @@ impl SystemState {
         let mut missing = Vec::new();
         for (name, package, version) in requests {
             if package.contains(['*', '?', '[']) {
-                if self.glob_missing(packages, package, version, latest)? {
+                if simulate_glob(name, latest, version.is_some())? {
                     missing.push(name.clone());
                 }
                 continue;
@@ -86,44 +86,6 @@ impl SystemState {
             if needs_install {
                 missing.push(name.clone());
             }
-        }
-        Ok(missing)
-    }
-
-    fn glob_missing(
-        &self,
-        packages: &HashMap<String, String>,
-        package: &str,
-        version: Option<&str>,
-        latest: bool,
-    ) -> Result<bool, String> {
-        let records = self
-            .glob_policy
-            .get(package)
-            .ok_or("apt: missing glob policy")?;
-        let mut missing = records.is_empty();
-        for (identity, policy, candidate) in records {
-            if let (Some(actual), Some(policy)) = (packages.get(identity), policy)
-                && actual != policy
-            {
-                return Err(format!(
-                    "apt: inconsistent installed state for {identity:?}"
-                ));
-            }
-            let installed = packages
-                .get(identity)
-                .filter(|value| policy.as_ref() == Some(*value));
-            missing |= match (installed, version) {
-                (None, _) => true,
-                (Some(installed), Some(version)) if version.contains(['*', '?', '[']) => {
-                    !glob::Pattern::new(version).is_ok_and(|p| p.matches(installed))
-                }
-                (Some(installed), Some(version)) => installed != version,
-                (Some(installed), None) if latest => candidate
-                    .as_ref()
-                    .is_some_and(|v| v != "(none)" && v != installed),
-                (Some(_), None) => false,
-            };
         }
         Ok(missing)
     }

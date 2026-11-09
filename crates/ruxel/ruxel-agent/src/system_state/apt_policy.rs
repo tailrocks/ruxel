@@ -1,5 +1,38 @@
 use std::collections::HashMap;
 
+pub(super) fn simulate_glob(name: &str, latest: bool, pinned: bool) -> Result<bool, String> {
+    let mut command = std::process::Command::new("apt-get");
+    command.arg("-s").arg("install").env("LC_ALL", "C");
+    if !latest && !pinned {
+        command.arg("--no-upgrade");
+    }
+    let output = command
+        .arg(name)
+        .output()
+        .map_err(|error| format!("apt-get simulation: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "apt-get simulation failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    simulation_changed(&String::from_utf8_lossy(&output.stdout))
+}
+
+pub(super) fn simulation_changed(text: &str) -> Result<bool, String> {
+    if !text
+        .lines()
+        .any(|line| line.contains(" upgraded,") && line.contains(" newly installed,"))
+    {
+        return Err("apt: unrecognized simulation output".to_string());
+    }
+    Ok(text.lines().any(|line| {
+        ["Inst ", "Remv ", "Conf "]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+    }))
+}
+
 pub(super) fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
     let mut packages = HashMap::new();
     for paragraph in text.split("\n\n") {
