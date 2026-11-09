@@ -1,6 +1,4 @@
 mod facts;
-#[path = "modules/subprocess/identity.rs"]
-mod identity;
 mod ledger;
 mod modules;
 mod sensitivity;
@@ -17,15 +15,6 @@ use std::sync::atomic::Ordering;
     reason = "replaced by the Ruxel rewrite"
 )]
 fn main() {
-    let mut args = std::env::args_os();
-    let _program = args.next();
-    if args.next().as_deref() == Some(std::ffi::OsStr::new("--ruxel-nss-helper")) {
-        let code = match (args.next(), args.next()) {
-            (Some(user), None) => user.to_str().map_or(1, identity::helper),
-            _ => 1,
-        };
-        std::process::exit(code);
-    }
     std::panic::set_hook(Box::new(|info| {
         let message = info
             .payload()
