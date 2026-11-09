@@ -54,7 +54,7 @@ fn denied_host_is_refused_without_ssh() -> Result<(), Box<dyn std::error::Error>
     assert_eq!(refusals.0.len(), 1);
     assert_eq!(refusals.0[0].host, "denied");
     assert!(refusals.0[0].rule.starts_with("deny "));
-    std::fs::remove_dir(dir)?;
+    assert!(!dir.exists());
     std::fs::remove_dir(root)?;
     Ok(())
 }
