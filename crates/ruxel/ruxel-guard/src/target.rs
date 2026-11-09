@@ -118,11 +118,7 @@ impl Guard {
                         ]
                     })
                     .collect();
-                let path = mux_dir.join(&suffix);
-                resolve::validate_path(&path)?;
-                if path.as_os_str().len() > 100 {
-                    return Err("mux socket path exceeds 100 bytes".into());
-                }
+                let path = socket_path(&mux_dir, &std::env::temp_dir(), &suffix)?;
                 let args = resolve::build_args(spec, &path, ArgsMode::Normal);
                 resolve::check_ssh_g(&run(&args)?, spec)?;
                 Ok(path)
@@ -159,6 +155,22 @@ impl Guard {
             Err(Refusals(refusals))
         }
     }
+}
+
+fn socket_path(mux_dir: &Path, temp_dir: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let path = mux_dir.join(suffix);
+    let path = if path.as_os_str().len() > 100 {
+        // A private directory protects the socket from other users. Its parent
+        // must also pass the same checks as the configured mux directory.
+        crate::mux::prepare(&temp_dir.join(format!("ruxel-mux-{suffix}")))?.join("socket")
+    } else {
+        path
+    };
+    resolve::validate_path(&path)?;
+    if path.as_os_str().len() > 100 {
+        return Err("mux socket path exceeds 100 bytes".into());
+    }
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -257,36 +269,26 @@ mod directory_tests {
 mod long_path_test {
     #![allow(clippy::unwrap_used, reason = "fixture setup must succeed")]
     use super::*;
-    use std::cell::Cell;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn rejects_long_socket_path_before_ssh() {
+    fn fallback_requires_a_trusted_temporary_directory() {
         let root = crate::mux::test_directory().unwrap();
         let dir = root.join("a".repeat(100));
-        std::fs::write(root.join("identity"), b"key").unwrap();
-        let guard = Guard::new(
-            Policy::new(&["192.0.2.0/24".into()], &[]).unwrap(),
-            dir.clone(),
+        let suffix = "012345abcdef";
+        let path = socket_path(&dir, &root, suffix).unwrap();
+        assert_eq!(path, root.join("ruxel-mux-012345abcdef/socket"));
+        assert_eq!(
+            std::fs::metadata(path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
         );
-        let host = HostSpec {
-            name: "local-test".into(),
-            address: "192.0.2.10".parse().unwrap(),
-            port: 22,
-            user: "test".into(),
-            identity_file: root.join("identity"),
-            known_hosts_file: root.join("known"),
-        };
-        let calls = Cell::new(0);
-        let result = guard.admit_with(&[host], &[], |_| {
-            calls.set(calls.get() + 1);
-            Err("unexpected".into())
-        });
-        let refusal = result.unwrap_err();
-        assert!(refusal.0[0].rule.contains("mux socket path exceeds"));
-        assert_eq!(calls.get(), 0);
-        std::fs::remove_dir(dir).unwrap();
-        std::fs::remove_file(root.join("known")).unwrap();
-        std::fs::remove_file(root.join("identity")).unwrap();
-        std::fs::remove_dir(root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(socket_path(&dir, &root, "abcdef012345").is_err());
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
