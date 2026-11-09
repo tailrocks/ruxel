@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -11,7 +12,7 @@ pub(super) struct Config {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Inventory {
-    pub(super) hosts: BTreeMap<String, Host>,
+    pub(super) hosts: IndexMap<String, Host>,
     #[serde(default)]
     pub(super) groups: BTreeMap<String, Group>,
 }

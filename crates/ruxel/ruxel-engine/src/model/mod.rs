@@ -2,6 +2,7 @@ pub(crate) mod notifications;
 mod operations;
 mod shapes;
 use anyhow::{Context, Result, ensure};
+use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -185,7 +186,7 @@ fn valid_sysctl_key(name: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_./:-".contains(&b))
 }
-fn validate_delegation(task: &Task, hosts: &BTreeMap<String, config::Host>) -> Result<()> {
+fn validate_delegation(task: &Task, hosts: &IndexMap<String, config::Host>) -> Result<()> {
     if let Some(destination) = &task.delegate_to {
         ensure!(
             task.delegate_allow.as_ref().is_some_and(
@@ -226,7 +227,7 @@ fn validate_delegation(task: &Task, hosts: &BTreeMap<String, config::Host>) -> R
     }
     Ok(())
 }
-fn validate_tasks(tasks: &[Task], hosts: &BTreeMap<String, config::Host>) -> Result<()> {
+fn validate_tasks(tasks: &[Task], hosts: &IndexMap<String, config::Host>) -> Result<()> {
     for task in tasks {
         validate_become_user(task.become_user.as_deref())?;
         validate_block_result_controls(

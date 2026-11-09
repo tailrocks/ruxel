@@ -137,3 +137,23 @@ mod notifications;
 mod validation;
 
 mod review_validation;
+
+#[test]
+fn validation_preserves_inventory_declaration_order() -> Result<()> {
+    let value = json!({
+        "inventory": {"hosts": {
+            "zeta": {"address": "zeta.invalid"},
+            "alpha": {"address": "alpha.invalid"}
+        }},
+        "plays": []
+    });
+    let validated = validate_config(&value)?;
+    let hosts = validated["inventory"]["hosts"]
+        .as_object()
+        .context("hosts")?;
+    assert_eq!(
+        hosts.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["zeta", "alpha"]
+    );
+    Ok(())
+}
