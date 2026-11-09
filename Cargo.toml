@@ -32,6 +32,7 @@ rsblkid = "=0.4.1"
 rustix = { version = "1.1.6", features = ["fs"] }
 rustix-linux-procfs = "0.1.1"
 libc = "0.2"
+nix = { version = "0.31.3", default-features = false, features = ["user"] }
 futures-util = "0.3"
 anyhow = "1.0.104"
 blake3 = "1.8.7"

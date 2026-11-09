@@ -133,6 +133,14 @@ fn parses_modes_booleans_and_identity_files() {
         user_environment_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice"),
         Some(("/home/alice", "/bin/sh"))
     );
+    assert_eq!(
+        user_environment_from("root:x:0:0::/root:/bin/sh\n", "0"),
+        None
+    );
+    assert_eq!(
+        user_environment_from("0:x:1001:1002::/home/zero:/bin/sh\n", "0"),
+        Some(("/home/zero", "/bin/sh"))
+    );
 }
 
 #[test]

@@ -1,14 +1,12 @@
 use super::ExecContext;
+use crate::identity::lookup_user;
+pub(super) use crate::identity::user_environment_from;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::{Read as _, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
-mod identity;
-
-use identity::lookup_user;
-pub(super) use identity::user_environment_from;
 
 const RUNUSER: &str = "/usr/sbin/runuser";
 const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
@@ -47,10 +45,6 @@ impl TaskCommand {
                 .map_err(|_| std::io::Error::other("invalid become_user identity record"))?;
             let account = user_environment_from(passwd, &identity.user)
                 .ok_or_else(|| std::io::Error::other("invalid become_user identity record"))?;
-            let canonical = passwd
-                .split(':')
-                .next()
-                .ok_or_else(|| std::io::Error::other("invalid become_user identity record"))?;
             let ctx = ExecContext {
                 check_mode: false,
                 diff_mode: false,
@@ -61,7 +55,7 @@ impl TaskCommand {
             let args: Vec<&str> = identity.args.iter().map(String::as_str).collect();
             let mut prepared = switched_command(
                 &ctx,
-                canonical,
+                &identity.user,
                 &identity.program,
                 &args,
                 Path::new(RUNUSER),
