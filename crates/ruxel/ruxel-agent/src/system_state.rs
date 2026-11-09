@@ -5,6 +5,8 @@ pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
     candidates: HashMap<String, String>,
+    selector_installed: HashMap<String, Option<String>>,
+    selector_identity: HashMap<String, String>,
     native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
@@ -52,11 +54,6 @@ impl SystemState {
             })
             .collect::<Result<_, _>>()?;
         for (_, package, version) in &requests {
-            if package.ends_with(":any") && version.is_some() {
-                return Err(format!(
-                    "apt: pinned :any package selectors are not supported: {package:?}"
-                ));
-            }
             if let Some(version) = version
                 && version.contains(['*', '?', '['])
             {
@@ -65,8 +62,66 @@ impl SystemState {
                 })?;
             }
         }
+        self.ensure_packages()?;
+        let qualified: Vec<_> = requests
+            .iter()
+            .filter(|(_, package, _)| package.contains(':'))
+            .map(|(_, package, _)| (*package).to_string())
+            .collect();
+        self.ensure_candidates(&qualified)?;
+        self.validate_package_requests(&requests, latest)?;
+        if latest {
+            let unpinned: Vec<_> = requests
+                .iter()
+                .filter(|(_, _, version)| version.is_none())
+                .map(|(name, _, _)| (*name).clone())
+                .collect();
+            self.ensure_candidates(&unpinned)?;
+        }
+        let packages = self.packages.as_ref().ok_or("packages not initialized")?;
+        let mut missing = Vec::new();
+        for (name, package, version) in requests {
+            let installed = if package.contains(':') {
+                self.selector_installed
+                    .get(package)
+                    .ok_or_else(|| format!("apt: no policy state for {package:?}"))?
+                    .as_ref()
+            } else {
+                packages.get(package)
+            };
+            let needs_install = match installed {
+                None => true,
+                Some(installed) if version.is_some() => {
+                    let pattern = version.unwrap_or_default();
+                    if pattern.contains(['*', '?', '[']) {
+                        !glob::Pattern::new(pattern).is_ok_and(|p| p.matches(installed))
+                    } else {
+                        pattern != installed
+                    }
+                }
+                Some(installed) if latest => {
+                    let candidate = self
+                        .candidates
+                        .get(package)
+                        .ok_or_else(|| format!("apt: no policy candidate for {package:?}"))?;
+                    candidate != installed && candidate != "(none)"
+                }
+                Some(_) => false,
+            };
+            if needs_install {
+                missing.push(name.clone());
+            }
+        }
+        Ok(missing)
+    }
+
+    fn validate_package_requests(
+        &self,
+        requests: &[(&String, &str, Option<&str>)],
+        latest: bool,
+    ) -> Result<(), String> {
         let mut pins = HashMap::new();
-        for (_, package, version) in &requests {
+        for (_, package, version) in requests {
             if let Some(version) = version
                 && let Some(previous) = pins.insert(*package, *version)
                 && previous != *version
@@ -76,11 +131,14 @@ impl SystemState {
                 ));
             }
         }
-        self.ensure_packages()?;
         if let Some(architecture) = &self.native_architecture {
             let mut normalized_pins = HashMap::new();
-            for (_, package, version) in &requests {
-                let normalized = package
+            for (_, package, version) in requests {
+                let selected = self
+                    .selector_identity
+                    .get(*package)
+                    .map_or(*package, String::as_str);
+                let normalized = selected
                     .rsplit_once(':')
                     .filter(|(name, requested)| {
                         *requested == "native"
@@ -90,7 +148,7 @@ impl SystemState {
                                     packages.contains_key(&format!("{name}:all"))
                                 }))
                     })
-                    .map_or(*package, |(name, _)| name);
+                    .map_or(selected, |(name, _)| name);
                 if let Some(previous) = normalized_pins.insert(normalized, *version)
                     && ((previous.is_some() && version.is_some() && previous != *version)
                         || (latest && previous.is_some() != version.is_some()))
@@ -101,42 +159,7 @@ impl SystemState {
                 }
             }
         }
-        if latest {
-            let unpinned: Vec<_> = requests
-                .iter()
-                .filter(|(_, _, version)| version.is_none())
-                .map(|(name, _, _)| (*name).clone())
-                .collect();
-            self.ensure_candidates(&unpinned)?;
-        }
-        let packages = self.packages.as_ref().ok_or("packages not initialized")?;
-        Ok(requests
-            .iter()
-            .filter(|(_, package, version)| {
-                match packages.get(*package).or_else(|| {
-                    package
-                        .strip_suffix(":native")
-                        .and_then(|name| packages.get(name))
-                }) {
-                    None => true,
-                    Some(installed) if version.is_some() => {
-                        let pattern = version.unwrap_or_default();
-                        if pattern.contains(['*', '?', '[']) {
-                            !glob::Pattern::new(pattern)
-                                .is_ok_and(|pattern| pattern.matches(installed))
-                        } else {
-                            pattern != installed
-                        }
-                    }
-                    Some(installed) if latest => self
-                        .candidates
-                        .get(*package)
-                        .is_some_and(|candidate| candidate != installed && candidate != "(none)"),
-                    Some(_) => false,
-                }
-            })
-            .map(|(name, _, _)| (*name).clone())
-            .collect())
+        Ok(())
     }
 
     pub(crate) fn unit(&mut self, name: &str) -> Result<UnitState, String> {
@@ -157,6 +180,8 @@ impl SystemState {
     pub(crate) fn invalidate_packages(&mut self) {
         self.packages = None;
         self.candidates.clear();
+        self.selector_installed.clear();
+        self.selector_identity.clear();
     }
 
     pub(crate) fn invalidate_units(&mut self) {
@@ -200,7 +225,6 @@ impl SystemState {
                 .or_else(|| packages.get(&format!("{name}:all")))
                 .cloned();
             if let Some(version) = version {
-                packages.insert(qualified, version.clone());
                 packages.insert(name, version);
             } else {
                 packages.remove(&name);
@@ -226,36 +250,30 @@ impl SystemState {
     }
 
     fn ensure_candidates(&mut self, names: &[String]) -> Result<(), String> {
-        let missing: Vec<_> = names
-            .iter()
-            .filter(|name| !self.candidates.contains_key(*name))
-            .collect();
-        if missing.is_empty() {
-            return Ok(());
-        }
-        let output = std::process::Command::new("apt-cache")
-            .arg("policy")
-            .args(&missing)
-            .output()
-            .map_err(|error| format!("apt-cache policy: {error}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "apt-cache policy failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        self.candidates
-            .extend(parse_apt_policy(&String::from_utf8_lossy(&output.stdout)));
-        if let Some(architecture) = &self.native_architecture {
-            for name in missing {
-                if let Some((package, requested_architecture)) = name.rsplit_once(':')
-                    && (requested_architecture == architecture
-                        || requested_architecture == "native"
-                        || requested_architecture == "all")
-                    && let Some(candidate) = self.candidates.get(package).cloned()
-                {
-                    self.candidates.entry(name.clone()).or_insert(candidate);
-                }
+        for name in names {
+            if self.candidates.contains_key(name) {
+                continue;
+            }
+            let output = std::process::Command::new("apt-cache")
+                .arg("policy")
+                .arg(name)
+                .env("LC_ALL", "C")
+                .output()
+                .map_err(|error| format!("apt-cache policy: {error}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "apt-cache policy failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+            let text = String::from_utf8_lossy(&output.stdout);
+            let (identity, installed, candidate) = policy_state(name, &text)?;
+            if let Some(candidate) = candidate {
+                self.candidates.insert(name.clone(), candidate);
+            }
+            if name.contains(':') {
+                self.selector_identity.insert(name.clone(), identity);
+                self.selector_installed.insert(name.clone(), installed);
             }
         }
         Ok(())
@@ -326,19 +344,50 @@ fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
     packages
 }
 
-fn parse_apt_policy(text: &str) -> HashMap<String, String> {
-    let mut result = HashMap::new();
-    let mut package = None;
+fn policy_state(
+    name: &str,
+    text: &str,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    let mut identity = None;
+    let mut installed = None;
+    let mut candidate = None;
     for line in text.lines() {
         if !line.starts_with(char::is_whitespace) && line.ends_with(':') {
-            package = Some(line.trim_end_matches(':').to_string());
-        } else if let Some(candidate) = line.trim().strip_prefix("Candidate: ")
-            && let Some(package) = &package
+            if identity.replace(line.trim_end_matches(':')).is_some() {
+                return Err(format!("apt: ambiguous policy output for {name:?}"));
+            }
+        } else if let Some(value) = line.trim().strip_prefix("Installed: ") {
+            if installed.replace(value).is_some() {
+                return Err(format!("apt: ambiguous policy output for {name:?}"));
+            }
+        } else if let Some(value) = line.trim().strip_prefix("Candidate: ")
+            && candidate.replace(value).is_some()
         {
-            result.insert(package.clone(), candidate.to_string());
+            return Err(format!("apt: ambiguous policy output for {name:?}"));
         }
     }
-    result
+    let Some(identity) = identity else {
+        if text.trim().is_empty() {
+            return Ok((name.to_string(), None, None));
+        }
+        return Err(format!("apt: invalid policy output for {name:?}"));
+    };
+    let base = name.split_once(':').map_or(name, |(base, _)| base);
+    if identity != name
+        && identity != base
+        && !(name.ends_with(":any") && identity.starts_with(&format!("{base}:")))
+    {
+        return Err(format!("apt: unexpected policy identity for {name:?}"));
+    }
+    let installed =
+        installed.ok_or_else(|| format!("apt: missing installed policy state for {name:?}"))?;
+    let candidate =
+        candidate.ok_or_else(|| format!("apt: missing candidate policy state for {name:?}"))?;
+    Ok((
+        identity.to_string(),
+        (installed != "(none)").then(|| installed.to_string()),
+        Some(candidate.to_string()),
+    ))
 }
 
 fn parse_systemd(units: &str, files: &str) -> HashMap<String, UnitState> {
