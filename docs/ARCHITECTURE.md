@@ -62,8 +62,12 @@ and regression evidence must be checked separately. The repository's local
 acceptance suite exercises synthetic scenarios, but passing a subset does not
 prove all providers or remote platforms are complete.
 
-SSH uses strict host-key checking by default. The invoking environment is
-responsible for target admission and its own guard policy; do not assume the
-CLI alone supplies an allowlist. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
+SSH uses strict host-key checking by default. Before any remote connection or
+agent upload, the controller runs `ssh -G` with the connection's options and
+destination (no network contact), requires the resolved `hostname` to be a
+literal IP address with no proxy hop, and refuses it if it matches a deny entry
+compiled from `RUXEL_GUARD_DENY_FILE`; `ruxel --version` reports how many
+entries were compiled. This is a deny list only: the invoking environment is
+still responsible for target admission and its own allow policy. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
 for development. Never commit real credentials, host identities, or sensitive
 captures to this public repository.

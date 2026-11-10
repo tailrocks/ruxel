@@ -100,3 +100,14 @@ fn known_hosts_filename_is_one_quoted_ssh_config_value() {
     let value = super::known_hosts_option(std::path::Path::new("pins ' \" \\ file"));
     assert_eq!(value, r#"UserKnownHostsFile="pins ' \" \\ file""#);
 }
+
+#[test]
+fn resolved_proxy_hops_are_refused() -> anyhow::Result<()> {
+    let policy = ruxel_guard::Policy::new(&[], &[])?;
+    let admit = |config: &str| super::admit_resolved(config, "synthetic", &policy);
+    admit("hostname 192.0.2.1\nproxyjump none\n")?;
+    assert!(admit("hostname 192.0.2.1\nproxyjump jump\n").is_err());
+    assert!(admit("hostname 192.0.2.1\nproxycommand nc %h %p\n").is_err());
+    assert!(admit("user root\n").is_err());
+    Ok(())
+}

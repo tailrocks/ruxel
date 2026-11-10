@@ -23,6 +23,7 @@ openssh-sftp-client.workspace = true
 prost.workspace = true
 rustix.workspace = true
 ruxel-proto.workspace = true
+ruxel-guard.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 

@@ -3,7 +3,7 @@ mod deploy;
 mod local;
 pub use local::LocalConnection;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::constants::{AGENT_DIR, HANDSHAKE_TIMEOUT_SECS};
@@ -60,6 +60,25 @@ impl RemoteHost {
         command.args(["-s", "--", &self.destination, "sftp"]);
         command
     }
+    /// Resolve the destination with `ssh -G`, which reads configuration and
+    /// makes no network contact, and refuse it unless it names a literal IP
+    /// outside every deny entry with no proxy hop.
+    async fn admit(&self, policy: &ruxel_guard::Policy) -> Result<()> {
+        let mut command = self.options();
+        command
+            .args(["-G", "--", &self.destination])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        let output = command.output().await.context("ssh -G")?;
+        if !output.status.success() {
+            bail!(
+                "refused {}: ssh -G could not resolve the destination",
+                self.destination
+            );
+        }
+        let config = String::from_utf8(output.stdout).context("ssh -G output")?;
+        admit_resolved(&config, &self.destination, policy)
+    }
     async fn exec_status(&self, argv: &[&str]) -> Result<std::process::ExitStatus> {
         let mut cmd = self.client();
         for a in argv {
@@ -79,6 +98,29 @@ impl RemoteHost {
         cmd.stdin(Stdio::null()).stderr(Stdio::piped());
         cmd.output().await.context("ssh exec output")
     }
+}
+
+fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy) -> Result<()> {
+    let value = |key: &str| {
+        config.lines().find_map(|line| {
+            line.split_once(' ')
+                .filter(|(name, _)| *name == key)
+                .map(|(_, value)| value.trim())
+        })
+    };
+    let hostname = value("hostname")
+        .with_context(|| format!("refused {destination}: ssh -G reported no hostname"))?;
+    let address = hostname.parse::<std::net::IpAddr>().map_err(|_| {
+        anyhow!("refused {destination}: hostname {hostname:?} is not a literal IP address")
+    })?;
+    for key in ["proxyjump", "proxycommand"] {
+        if value(key).is_some_and(|value| value != "none") {
+            bail!("refused {destination}: {key} is set");
+        }
+    }
+    policy
+        .check_deny(address)
+        .map_err(|rule| anyhow!("refused {destination} ({address}): {rule}"))
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
@@ -140,7 +182,9 @@ pub struct HostFacts {
 }
 
 /// # Errors
-/// Returns an error when agent upload, verification, or protocol negotiation fails.
+/// Returns an error when the destination does not resolve to a literal IP
+/// outside the compiled deny list, or when agent upload, verification, or
+/// protocol negotiation fails.
 pub async fn connect_with(
     destination: &str,
     agent_binary: &Path,
@@ -154,15 +198,18 @@ pub async fn connect_with(
         #[cfg(test)]
         test_path: None,
     };
-    connect_remote(remote, agent_binary, run_id, check_mode).await
+    let policy = ruxel_guard::Policy::new(&[], &[])?;
+    connect_remote(remote, &policy, agent_binary, run_id, check_mode).await
 }
 
 async fn connect_remote(
     remote: RemoteHost,
+    policy: &ruxel_guard::Policy,
     agent_binary: &Path,
     run_id: &str,
     check_mode: bool,
 ) -> Result<(AgentConnection, HostFacts)> {
+    remote.admit(policy).await?;
     let options = &remote.options;
 
     let agent_bytes = std::fs::read(agent_binary)

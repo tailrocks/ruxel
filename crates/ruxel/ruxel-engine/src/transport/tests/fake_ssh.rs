@@ -202,6 +202,13 @@ fn run() -> Result<u8> {
             .join(",")
     ))?;
     let remote = &args[separator + 2..];
+    if options.iter().any(|arg| arg == "-G") {
+        assert!(remote.is_empty());
+        let hostname = fs::read_to_string(fixture.root.join("hostname"))
+            .unwrap_or_else(|_| "192.0.2.10".into());
+        println!("hostname {}\nproxyjump none\nproxycommand none", hostname.trim());
+        return Ok(0);
+    }
     if options.iter().any(|arg| arg == "-s") {
         assert_eq!(remote, &["sftp"]);
         fake_sftp::serve(&fixture)?;

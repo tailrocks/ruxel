@@ -135,6 +135,7 @@ impl Fixture {
     )> {
         connect_remote(
             self.host()?,
+            &ruxel_guard::Policy::new(&[], &["192.0.2.66/32".into()])?,
             &self.root.join("agent"),
             "deployment-test",
             true,

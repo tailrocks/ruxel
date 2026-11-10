@@ -163,3 +163,49 @@ async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Re
 
 #[path = "deployment_sensitivity.rs"]
 mod sensitivity;
+
+async fn refused_before_contact(hostname: &str, reason: &str) -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("hostname"), hostname)?;
+    let error = fixture.connect().await.unwrap_err().to_string();
+    assert!(error.contains(reason), "{error}");
+    let calls = fixture.calls()?;
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(
+        calls[0][1]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "-G")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn denied_address_is_refused_before_upload() -> anyhow::Result<()> {
+    refused_before_contact("192.0.2.66", "deny 192.0.2.66/32").await?;
+    refused_before_contact("::ffff:192.0.2.66", "deny 192.0.2.66/32").await
+}
+
+#[tokio::test]
+async fn non_literal_hostname_is_refused_before_upload() -> anyhow::Result<()> {
+    refused_before_contact("fixture.invalid", "is not a literal IP address").await
+}
+
+#[tokio::test]
+async fn allowed_address_is_resolved_before_upload() -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("hostname"), "192.0.2.67")?;
+    let (connection, _) = fixture.connect().await?;
+    connection.shutdown().await?;
+    let calls = fixture.calls()?;
+    assert!(
+        calls[0][1]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "-G")
+    );
+    assert!(calls.iter().any(|event| event[0] == "launch"));
+    Ok(())
+}
