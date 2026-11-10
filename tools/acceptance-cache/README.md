@@ -7,7 +7,7 @@ values, local mode, and no credentials. Build the binaries first, then run:
 ```sh
 cargo test --locked --offline --manifest-path tools/acceptance-cache/Cargo.toml
 cargo run --locked --offline --manifest-path tools/acceptance-cache/Cargo.toml -- \
-  --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --schema schema/Ruxel.pkl
+  --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 
 The tests cover ledger hit, bypass, drift, source changes and noLog; redaction

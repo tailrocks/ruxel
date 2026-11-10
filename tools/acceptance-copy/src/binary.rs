@@ -3,8 +3,8 @@ use anyhow::{Result, ensure};
 use std::{fs, path::Path};
 const FIRST: &[u8] = &[0, 255, 128, 65, 10, 0, 254, 66];
 const SECOND: &[u8] = &[255, 0, 1, 128, 10, 67, 253];
-pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let harness = Harness::new(root, cli, agent)?;
+pub fn check(cli: &Path, agent: &Path) -> Result<()> {
+    let harness = Harness::new(cli, agent)?;
     let source = harness
         .module
         .parent()

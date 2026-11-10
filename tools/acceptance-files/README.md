@@ -8,7 +8,7 @@ paths; it does not use a server. Run from the repository root after building bot
 cargo test --locked --offline --manifest-path tools/acceptance-files/Cargo.toml
 cargo run --locked --offline --manifest-path tools/acceptance-files/Cargo.toml -- \
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent \
-  --schema schema/Ruxel.pkl --asset testdata/workloads/pr66/assets/template.pkl
+  --asset testdata/workloads/pr66/assets/template.pkl
 ```
 
 The fixture checks fresh application, idempotence, drift repair, and check/diff

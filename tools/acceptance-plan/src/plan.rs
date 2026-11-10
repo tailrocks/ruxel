@@ -30,8 +30,6 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         fs::create_dir_all(target.parent().context("missing parent")?)?;
         fs::write(target, bytes)?;
     }
-    fs::create_dir(base.join("schema"))?;
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
     let payload = base.join("payload");
     fs::create_dir(&payload)?;
     let fixtures = base.join("testdata/workloads/pr66");
@@ -67,10 +65,10 @@ pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         SCENARIOS.len()
     );
     ensure!(failures == 0, "plan matrix failed");
-    privacy::run(root, cli, agent).context("privacy checks")?;
+    privacy::run(cli, agent).context("privacy checks")?;
     privacy_errors::run(cli, agent).context("privacy error checks")?;
-    privacy_hosts::run(root, cli, agent).context("host privacy checks")?;
-    resource_lifetime::run(root, cli, agent).context("resource lifetime checks")?;
+    privacy_hosts::run(cli, agent).context("host privacy checks")?;
+    resource_lifetime::run(cli, agent).context("resource lifetime checks")?;
     Ok(())
 }
 fn validate(events: &[serde_json::Value], payload: &Path) -> Result<()> {

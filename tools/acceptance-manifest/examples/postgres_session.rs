@@ -14,7 +14,7 @@ mod process_guard;
 
 use docker_fixture::Docker;
 const FIXTURE: &str = r#"
-import "schema/Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.Config {
   inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
   plays { new { name = "Synthetic PostgreSQL session reuse"; targets { "all" }; tasks {
@@ -69,7 +69,6 @@ fn start(docker: &Docker) -> Result<()> {
             "-p",
             "/tmp/work/pg/data",
             "/tmp/work/pg/socket",
-            "/tmp/work/schema",
             "/opt/ruxel-fixture",
         ],
         0,
@@ -130,11 +129,6 @@ fn stage(docker: &Docker, cli: &Path, agent: &Path, temp: &Path) -> Result<()> {
         fs::write(&staged, bytes)?;
         docker.copy(&staged, target)?;
     }
-    fs::write(
-        temp.join("Ruxel.pkl"),
-        include_bytes!("../../../schema/Ruxel.pkl"),
-    )?;
-    docker.copy(&temp.join("Ruxel.pkl"), "/tmp/work/schema/Ruxel.pkl")?;
     docker.exec(
         &[
             "/bin/chmod",

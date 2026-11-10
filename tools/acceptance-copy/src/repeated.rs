@@ -1,8 +1,8 @@
 use crate::common::{self, Harness};
 use anyhow::{Result, ensure};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
-pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let harness = Harness::new(root, cli, agent)?;
+pub fn check(cli: &Path, agent: &Path) -> Result<()> {
+    let harness = Harness::new(cli, agent)?;
     let log = harness.temp.path().join("actions.log");
     let helper = harness.temp.path().join("action");
     fs::write(

@@ -17,13 +17,12 @@ fn snapshot(dir: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     files.sort();
     Ok(files)
 }
-pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
+pub fn run(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    for dir in ["schema", "fixtures", "payload"] {
+    for dir in ["fixtures", "payload"] {
         fs::create_dir(base.join(dir))?;
     }
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
     let payload = base.join("payload");
     let mut source = include_str!("../fixtures/handler.pkl").to_owned();
     for (key, name) in [("FIRST", "first"), ("SECOND", "second"), ("OTHER", "other")] {

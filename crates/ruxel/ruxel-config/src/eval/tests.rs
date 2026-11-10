@@ -36,10 +36,13 @@ fn parsed_module_inventory_covers_import_forms() -> Result<(), Box<dyn std::erro
 #[test]
 fn minimal_evaluates() {
     assert!(
-        eval(Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/testdata/eval/minimal.pkl"
-        )))
+        eval(
+            Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/testdata/eval/minimal.pkl"
+            )),
+            &[],
+        )
         .is_ok()
     );
 }
@@ -53,11 +56,11 @@ fn source_evaluation_preserves_output_and_relative_imports()
     let source = "import \"dependency.pkl\" as dep\noutput { value = dep.value }";
     std::fs::write(dir.join("dependency.pkl"), "value = \"rendered\"")?;
     std::fs::write(&path, source)?;
-    assert_eq!(eval(&path)?, serde_json::json!("rendered"));
-    assert_eq!(eval_source(source, &path)?, eval(&path)?);
+    assert_eq!(eval(&path, &[])?, serde_json::json!("rendered"));
+    assert_eq!(eval_source(source, &path)?, eval(&path, &[])?);
     std::fs::write(&path, "output { value = \"replacement\" }")?;
     assert_eq!(eval_source(source, &path)?, serde_json::json!("rendered"));
-    assert_eq!(eval(&path)?, serde_json::json!("replacement"));
+    assert_eq!(eval(&path, &[])?, serde_json::json!("replacement"));
     std::fs::remove_dir_all(dir)?;
     Ok(())
 }
@@ -65,10 +68,13 @@ fn source_evaluation_preserves_output_and_relative_imports()
 #[test]
 fn environment_reads_are_denied() {
     assert!(
-        eval(Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/testdata/eval/env.pkl"
-        )))
+        eval(
+            Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/testdata/eval/env.pkl"
+            )),
+            &[],
+        )
         .is_err()
     );
 }
@@ -76,10 +82,13 @@ fn environment_reads_are_denied() {
 #[test]
 fn network_imports_are_denied() {
     assert!(
-        eval(Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/testdata/eval/network.pkl"
-        )))
+        eval(
+            Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/testdata/eval/network.pkl"
+            )),
+            &[],
+        )
         .is_err()
     );
 }

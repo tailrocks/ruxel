@@ -11,17 +11,12 @@ use std::{
 };
 use tempfile::TempDir;
 
-const FIXTURE_HASH: &str = "a9782cd9cb9169d83684f3d1f41c1f479592226efba9f7c35775b5f94153c05b";
+const FIXTURE_HASH: &str = "552452548b6e6b29b2ab483100159152e011b318c3c93c5f3e6cd319bb6e153c";
 
-fn prepare(root: &Path) -> Result<TempDir> {
+fn prepare() -> Result<TempDir> {
     let temp = tempfile::Builder::new()
         .prefix("ruxel-control-acceptance-")
         .tempdir()?;
-    fs::create_dir(temp.path().join("schema"))?;
-    fs::copy(
-        root.join("schema/Ruxel.pkl"),
-        temp.path().join("schema/Ruxel.pkl"),
-    )?;
     Ok(temp)
 }
 
@@ -37,7 +32,7 @@ fn fixture(temp: &TempDir, name: &str, tasks: &str) -> Result<PathBuf> {
     fs::create_dir_all(temp.path().join("fixtures"))?;
     let path = temp.path().join("fixtures").join(name);
     let source = format!(
-        r#"import "../schema/Ruxel.pkl"
+        r#"import "modulepath:/ruxel/Ruxel.pkl"
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}
@@ -81,8 +76,8 @@ fn recap_for_host<'a>(events: &'a [Value], host: &str) -> Result<&'a Value> {
     Ok(recap)
 }
 
-pub fn retry(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let temp = prepare(root)?;
+pub fn retry(cli: &Path, agent: &Path) -> Result<()> {
+    let temp = prepare()?;
     let marker = temp.path().join("marker");
     let quoted = format!("'{}'", path_text(&marker)?.replace('\'', "'\\''"));
     let command = format!("test -f {quoted} && exit 0; touch {quoted}; exit 1");
@@ -102,8 +97,8 @@ pub fn retry(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn check_overrides(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let temp = prepare(root)?;
+pub fn check_overrides(cli: &Path, agent: &Path) -> Result<()> {
+    let temp = prepare()?;
     for mode in ["check", "diff"] {
         let payload = temp.path().join(mode);
         fs::create_dir(&payload)?;

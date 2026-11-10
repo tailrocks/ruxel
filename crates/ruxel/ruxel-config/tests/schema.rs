@@ -19,7 +19,7 @@ impl Drop for Source {
 fn evaluate(expression: &str) -> Result<Value> {
     let document = format!(
         "import {} as R\nvalue = {expression}\n",
-        serde_json::to_string(&root().join("schema/Ruxel.pkl"))?
+        serde_json::to_string(ruxel_config::schema::MODULE_URI)?
     );
     Ok(evaluate_document(&document)?["value"].clone())
 }
@@ -39,12 +39,12 @@ fn evaluate_document(document: &str) -> Result<Value> {
 }
 
 fn evaluate_module(module: &Path) -> Result<Value> {
-    Ok(ruxel_config::eval(module)?)
+    Ok(ruxel_config::eval(module, &[])?)
 }
 
 #[test]
 fn runtime_and_operations_render() -> Result {
-    let output = evaluate_module(&root().join("tests/schema/valid.pkl"))?;
+    let output = ruxel_config::eval_config(&root().join("tests/schema/valid.pkl"), &[])?;
     let config = &output["config"];
     let play = &config["plays"][0];
     let tasks = &play["tasks"];

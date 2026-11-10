@@ -10,6 +10,7 @@ pub(crate) struct Cli {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     Config(ConfigCmd),
+    Schema(SchemaCmd),
     Plan(RunArgs),
     Apply(RunArgs),
     Check(RunArgs),
@@ -22,12 +23,38 @@ pub(crate) struct ConfigCmd {
 }
 #[derive(Debug, Subcommand)]
 pub(crate) enum ConfigCommand {
-    Dump { root: PathBuf },
+    Dump {
+        root: PathBuf,
+        #[command(flatten)]
+        module_path: ModulePathArgs,
+    },
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct SchemaCmd {
+    #[command(subcommand)]
+    pub(crate) command: SchemaCommand,
+}
+#[derive(Debug, Subcommand)]
+pub(crate) enum SchemaCommand {
+    /// Write the schema this binary serves to <DIR>/ruxel/Ruxel.pkl, for
+    /// editors and `pkl eval --module-path <DIR>`.
+    Export { dir: PathBuf },
+}
+
+/// Directories that serve `modulepath:` imports, like `pkl eval --module-path`.
+/// `modulepath:/ruxel/Ruxel.pkl` is always this binary's schema.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ModulePathArgs {
+    #[arg(long = "module-path", value_name = "DIRS", value_delimiter = ':')]
+    pub(crate) dirs: Vec<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct RunArgs {
     pub(crate) root: PathBuf,
+    #[command(flatten)]
+    pub(crate) module_path: ModulePathArgs,
     #[command(flatten)]
     pub(crate) connection: ConnectionArgs,
     #[command(flatten)]

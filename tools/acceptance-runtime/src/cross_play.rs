@@ -22,13 +22,12 @@ fn no_secret(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-pub fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
+pub fn run(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    for dir in ["schema", "fixtures", "payload"] {
+    for dir in ["fixtures", "payload"] {
         fs::create_dir(base.join(dir))?;
     }
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
     let payload = base.join("payload");
     let prefix = format!("{}/", payload.display());
     let source = include_str!("../fixtures/cross_play.pkl")

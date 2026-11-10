@@ -18,10 +18,7 @@ fn malformed_events_do_not_pass_assertions() {
 }
 #[test]
 fn snapshot_detects_binary_and_mode_drift() -> Result<()> {
-    let temp = tempfile::tempdir()?;
-    fs::create_dir(temp.path().join("schema"))?;
-    fs::write(temp.path().join("schema/Ruxel.pkl"), "")?;
-    let harness = Harness::new(temp.path(), Path::new("unused"), Path::new("unused"))?;
+    let harness = Harness::new(Path::new("unused"), Path::new("unused"))?;
     let file = harness.payload.join("binary");
     fs::write(&file, [0, 255])?;
     let before = harness.snapshot()?;
