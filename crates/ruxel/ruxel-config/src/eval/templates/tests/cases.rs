@@ -73,3 +73,14 @@ fn file_resources_are_confined_to_the_template_root()
     }
     Ok(())
 }
+
+#[test]
+fn unnormalized_template_root_paths_still_contain_their_modules()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    std::fs::create_dir_all(fixture.root().join("sub"))?;
+    fixture.write("main.pkl", "output { value = \"inside\" }")?;
+    let root = TemplateRoot::open(&fixture.root().join("sub/.."))?;
+    assert_eq!(root.evaluate(Path::new("main.pkl"))?, json!("inside"));
+    Ok(())
+}

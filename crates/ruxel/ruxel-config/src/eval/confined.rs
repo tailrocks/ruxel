@@ -54,7 +54,7 @@ impl Root {
             ));
         }
         Ok(Self {
-            path: std::path::absolute(path)?,
+            path: normalize(&std::path::absolute(path)?),
             directory,
         })
     }
@@ -113,16 +113,7 @@ impl Confined {
     fn locate(&self, path: &Path) -> Result<(&Root, PathBuf)> {
         // Normalize first, so a `..` detour (`/config/x/../lib`) is matched
         // against the most specific root, not just the first broad one.
-        let mut existing = PathBuf::new();
-        for component in path.components() {
-            match component {
-                Component::ParentDir => {
-                    existing.pop();
-                }
-                Component::CurDir => {}
-                other => existing.push(other),
-            }
-        }
+        let mut existing = normalize(path);
         if let Some(found) = self.find(&existing) {
             return Ok(found);
         }
@@ -234,6 +225,22 @@ impl Confined {
             .map_err(|error| Error::Io(path.into(), error))?;
         Ok(Some(bytes))
     }
+}
+
+/// `path` with `.` and `..` resolved lexically, as roots and candidates are
+/// compared.
+fn normalize(path: &Path) -> PathBuf {
+    let mut normal = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normal.pop();
+            }
+            Component::CurDir => {}
+            other => normal.push(other),
+        }
+    }
+    normal
 }
 
 fn not_found(path: &Path) -> Error {
