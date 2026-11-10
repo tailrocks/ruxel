@@ -79,15 +79,25 @@ impl Policy {
     pub fn compiled_entries() -> usize {
         COMPILED_DENY.len()
     }
-    pub(crate) fn decide(&self, ip: IpAddr) -> Result<(), String> {
+    /// Refuse an address covered by a deny entry, ignoring the allow list.
+    /// IPv4-mapped IPv6 addresses match IPv4 entries.
+    ///
+    /// # Errors
+    /// Returns the matching deny rule.
+    pub fn check_deny(&self, ip: IpAddr) -> Result<(), String> {
         let ip = normalize(ip);
-        if let Some(net) = self
+        match self
             .deny
             .iter()
             .find(|net| intersects(**net, IpNet::from(ip)))
         {
-            return Err(format!("deny {net}"));
+            Some(net) => Err(format!("deny {net}")),
+            None => Ok(()),
         }
+    }
+    pub(crate) fn decide(&self, ip: IpAddr) -> Result<(), String> {
+        self.check_deny(ip)?;
+        let ip = normalize(ip);
         if !self.allow.iter().any(|net| net.contains(&ip)) {
             return Err("not in allow list".into());
         }

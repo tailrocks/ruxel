@@ -26,3 +26,17 @@ fn broad_ipv6_deny_covers_mapped_ipv4() -> Result<(), Box<dyn std::error::Error>
     assert_eq!(deny_hits(&policy, &["192.0.2.7"]).len(), 1);
     Ok(())
 }
+
+#[test]
+fn deny_check_ignores_allow_list_and_normalizes_mapped() -> Result<(), Box<dyn std::error::Error>> {
+    let policy = Policy::new(&[], &["192.0.2.7/32".into(), "2001:db8::/64".into()])?;
+    assert_eq!(
+        policy.check_deny("192.0.2.7".parse()?),
+        Err("deny 192.0.2.7/32".into())
+    );
+    assert!(policy.check_deny("::ffff:192.0.2.7".parse()?).is_err());
+    assert!(policy.check_deny("2001:db8::9".parse()?).is_err());
+    assert_eq!(policy.check_deny("192.0.2.8".parse()?), Ok(()));
+    assert!(policy.decide("192.0.2.8".parse()?).is_err());
+    Ok(())
+}

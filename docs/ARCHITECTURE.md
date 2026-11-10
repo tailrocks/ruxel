@@ -68,8 +68,21 @@ and regression evidence must be checked separately. The repository's local
 acceptance suite exercises synthetic scenarios, but passing a subset does not
 prove all providers or remote platforms are complete.
 
-SSH uses strict host-key checking by default. The invoking environment is
-responsible for target admission and its own guard policy; do not assume the
-CLI alone supplies an allowlist. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
+SSH uses strict host-key checking by default. Before any remote connection or
+agent upload, the controller runs `ssh -G` with the connection's options and
+destination (no SSH connection; OpenSSH still runs any `Match exec` commands in
+the operator's configuration, which the deny list does not govern), requires the resolved `hostname` to be a
+literal IP address with no proxy hop, and refuses it if it matches a deny entry
+compiled from `RUXEL_GUARD_DENY_FILE`. Every later SSH and SFTP invocation for
+that connection pins the admitted address with `HostName` (`%` escaped) and
+disables `ProxyJump`, `ProxyCommand` and connection multiplexing, so
+configuration changes, `Match exec` or an existing master cannot redirect it.
+All invocations set `CanonicalizeHostname=no`, `ClearAllForwardings=yes`,
+`PermitLocalCommand=no`, `KnownHostsCommand=none`, `VerifyHostKeyDNS=no` and
+`GSSAPIAuthentication=no`, and disable agent, X11 and tunnel forwarding; the probe runs in its own process group, bounded by a
+timeout that kills the group, and unspecified addresses (`0.0.0.0`, `::`) are
+refused. `ruxel --version` reports how many
+entries were compiled. This is a deny list only: the invoking environment is
+still responsible for target admission and its own allow policy. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
 for development. Never commit real credentials, host identities, or sensitive
 captures to this public repository.

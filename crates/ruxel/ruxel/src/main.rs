@@ -42,18 +42,7 @@ fn main() {
                 },
             },
         },
-        Err(error) => {
-            let code = if error.use_stderr() {
-                ExitCode::Usage
-            } else {
-                ExitCode::Success
-            };
-            if error.print().is_err() {
-                ExitCode::Internal
-            } else {
-                code
-            }
-        }
+        Err(error) => commands::usage::report(&error),
     };
     std::process::exit(i32::from(code.code()));
 }

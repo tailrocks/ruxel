@@ -202,6 +202,43 @@ fn run() -> Result<u8> {
             .join(",")
     ))?;
     let remote = &args[separator + 2..];
+    let hostname = fs::read_to_string(fixture.root.join("hostname"))
+        .unwrap_or_else(|_| "192.0.2.10".into());
+    let hostname = hostname.trim();
+    if options.iter().any(|arg| arg == "-G") {
+        assert!(remote.is_empty());
+        assert!(!options.iter().any(|arg| arg.starts_with("HostName=")));
+        if fixture.root.join("slow").exists() {
+            // A Match exec helper that must not outlive a timed-out probe.
+            let helper = std::process::Command::new("sleep").arg("30").spawn()?;
+            fs::write(fixture.root.join("helper"), helper.id().to_string())?;
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        }
+        let mut output = io::stdout().lock();
+        output.write_all(b"identityfile /synthetic/\xff-key\n")?;
+        writeln!(output, "hostname {hostname}\nproxyjump none\nproxycommand none")?;
+        return Ok(0);
+    }
+    let pins: Vec<_> = options
+        .windows(2)
+        .filter(|pair| pair[0] == "-o")
+        .map(|pair| pair[1].as_str())
+        .filter(|option| {
+            ["HostName=", "Proxy", "Control"]
+                .iter()
+                .any(|prefix| option.starts_with(prefix))
+        })
+        .collect();
+    assert_eq!(
+        pins,
+        [
+            format!("HostName={}", hostname.replace('%', "%%")).as_str(),
+            "ProxyJump=none",
+            "ProxyCommand=none",
+            "ControlMaster=no",
+            "ControlPath=none"
+        ]
+    );
     if options.iter().any(|arg| arg == "-s") {
         assert_eq!(remote, &["sftp"]);
         fake_sftp::serve(&fixture)?;
