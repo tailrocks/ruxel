@@ -37,15 +37,15 @@ pub(crate) struct SchemaCmd {
 }
 #[derive(Debug, Subcommand)]
 pub(crate) enum SchemaCommand {
-    /// Write the schema this binary serves to <DIR>/ruxel/Ruxel.pkl, for
+    /// Write the Ruxel modules this binary serves under <DIR>/ruxel/, for
     /// editors and `pkl eval --module-path <DIR>`.
     Export { dir: PathBuf },
 }
 
-/// Directories that serve `modulepath:` imports, like `pkl eval --module-path`.
-/// `modulepath:/ruxel/Ruxel.pkl` is always this binary's schema.
 #[derive(Debug, clap::Args)]
 pub(crate) struct ModulePathArgs {
+    /// Directories that serve `modulepath:` imports, like `pkl eval --module-path`.
+    /// Modules under `modulepath:/ruxel/` always come from this binary.
     #[arg(long = "module-path", value_name = "DIRS", value_delimiter = ':')]
     pub(crate) dirs: Vec<PathBuf>,
 }

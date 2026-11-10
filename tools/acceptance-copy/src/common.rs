@@ -38,7 +38,7 @@ impl<'a> Harness<'a> {
     }
     pub fn write(&self, tasks: &str) -> Result<()> {
         let text = format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "copy acceptance"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}

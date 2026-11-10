@@ -19,7 +19,7 @@ impl Drop for Source {
 fn evaluate(expression: &str) -> Result<Value> {
     let document = format!(
         "import {} as R\nvalue = {expression}\n",
-        serde_json::to_string(ruxel_config::schema::MODULE_URI)?
+        serde_json::to_string(ruxel_config::schema::ENGINE_URI)?
     );
     Ok(evaluate_document(&document)?["value"].clone())
 }

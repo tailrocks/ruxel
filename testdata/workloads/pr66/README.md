@@ -17,7 +17,7 @@ not establish nonmutation. Task-result observations must be gathered independent
 not necessarily the entire play (pause and handlers have separate semantics).
 
 Pkl evaluation has been checked against the in-development schema that the
-`ruxel` binary serves as `modulepath:/ruxel/Ruxel.pkl`.
+`ruxel` binary serves as `modulepath:/ruxel/engine/Engine.pkl`.
 All fourteen fixtures passed the integrated planner with synthetic secret
 resolution; planning does not execute or validate the operations. The
 check-semantics fixture passed local plan, check, diff, fresh apply,

@@ -1,0 +1,308 @@
+/// The Ruxel workflow language.
+///
+/// A workflow is a list of stages. A stage runs a list of steps on a list of
+/// hosts. A step says how one thing on a host should be: a package is
+/// installed, a file has this content, a service is running.
+///
+/// The ruxel binary serves this module at `modulepath:/ruxel/Ruxel.pkl`.
+/// Workflow files amend `modulepath:/ruxel/Workflow.pkl`; recipe and
+/// inventory files extend this module. Either way, every class below is
+/// available without a prefix.
+///
+/// Naming: `title` is always the step's line in the plan; `name` is always the
+/// name of the managed thing (a package repository, a service, a timezone).
+open module Ruxel
+
+/// Text known before the run. Run-time values (`currentHost`,
+/// `Capture.stdout()`) are allowed only in `File.content`; every other text
+/// field is `Static`.
+typealias Static = String(!contains("__ruxel."))
+/// A list of `Static` texts. The constraint is on the whole list because
+/// pklr does not check the elements of a `Listing`, and properties of this
+/// type need an explicit `= new {}` default, which pklr does not supply for a
+/// constrained `Listing` typealias.
+typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel.")))
+typealias AbsolutePath = Static(startsWith("/"))
+typealias HttpsUrl = Static(startsWith("https://"))
+typealias FileMode = String(matches(Regex("0[0-7]{3}")))
+typealias CommitSha = String(matches(Regex("[0-9a-f]{40}")))
+typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")))
+typealias IpAddress = String(matches(Regex(#"[0-9]{1,3}(\.[0-9]{1,3}){3}|(?=[0-9a-fA-F:]*[0-9a-fA-F])[0-9a-fA-F:]*:[0-9a-fA-F:]*"#)))
+typealias Arguments = StaticList(!isEmpty)
+
+// ── Hosts and stages ────────────────────────────────────────────────────────
+
+/// A machine that stages run on.
+class Host {
+  /// Inventory name, shown in progress output.
+  name: HostName
+  /// The host's IP address. It is also what `currentHost.address` renders.
+  address: IpAddress
+  /// The SSH target, when it is not `address`: an alias from the SSH config.
+  sshHost: Static? = null
+  user: Static = "root"
+  port: Int(isBetween(1, 65535)) = 22
+}
+
+/// A list of steps that runs on a list of hosts.
+///
+/// Every host runs the steps in order. The next stage starts only after this
+/// stage has finished on all of its hosts.
+class Stage {
+  title: Static
+  /// Each host once.
+  hosts: Listing<Host>(!isEmpty)
+  steps: Listing<Step>
+}
+
+/// One thing on a host and how it should be.
+abstract class Step {
+  /// Identifies the step type for tools; every step class sets it.
+  hidden fixed kind: String
+  /// Replaces the generated description in plans and progress output. For
+  /// `Packages`, `PackageIndex`, `Service`, `Command`, `Script` and
+  /// `Capture`, two otherwise equal steps with different plan lines are
+  /// different steps; for steps that manage a thing (`File`, `Directory`, …)
+  /// the title is only a label.
+  title: Static? = null
+  /// Labels for `ruxel apply --tags`.
+  tags: StaticList = new {}
+}
+
+/// A reusable group of steps with typed parameters. A recipe used twice in a
+/// stage adds its steps twice: things it manages merge, commands run twice,
+/// and a capture that does not depend on a parameter is the same capture
+/// both times, which is rejected (see `Capture`).
+///
+///     class ApiProxy extends Recipe {
+///       backends: Listing<Host>
+///       function steps(): Listing<Step> = new { … }
+///     }
+///
+/// Tags on a recipe apply to all of its steps.
+///
+/// A recipe has no line of its own in the plan, so it takes no `title`.
+abstract class Recipe extends Step {
+  hidden fixed kind = "recipe"
+
+  abstract function steps(): Listing<Step>
+}
+
+/// The host that a step is running on, for use in `File.content`. Ruxel
+/// fills in the values on each host. Write `module.currentHost.address`:
+/// Pkl does not show inherited members inside nested objects.
+const currentHost: CurrentHost = new CurrentHost {}
+
+class CurrentHost {
+  fixed name: String = "__ruxel.inventoryHost__"
+  fixed address: String = "__ruxel.vars.ruxel_address__"
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+/// A file with exactly this content. A stage writes it once, where it first
+/// appears; an exact repeat is the same step, and a second, different
+/// content for the same path is rejected: write it in a later stage.
+///
+///     new File { path = "/root/.zshrc"; content = read("files/zshrc").text }
+class File extends Step {
+  hidden fixed kind = "file"
+  path: AbsolutePath
+  /// May contain run-time values: `currentHost`, `Capture.stdout()`.
+  content: String
+  mode: FileMode = "0644"
+  /// `null` leaves the current owner unchanged.
+  owner: Static? = null
+  group: Static? = null
+  /// A command that must accept the new content before it replaces the
+  /// file. `%s` stands for the candidate, `.<name>.ruxel-candidate` beside
+  /// the file, which stays there between runs.
+  ///
+  ///     validate { "haproxy"; "-c"; "-f"; "%s" }
+  validate: StaticList(isEmpty || toList().any((a) -> a.contains("%s"))) = new {}
+}
+
+class Directory extends Step {
+  hidden fixed kind = "directory"
+  path: AbsolutePath
+  mode: FileMode = "0755"
+}
+
+class Symlink extends Step {
+  hidden fixed kind = "symlink"
+  path: AbsolutePath
+  target: AbsolutePath
+}
+
+// ── Packages ────────────────────────────────────────────────────────────────
+
+/// Downloads the current apt package lists. Never reports a change.
+class PackageIndex extends Step {
+  hidden fixed kind = "packageIndex"
+}
+
+/// Debian packages that are installed.
+class Packages extends Step {
+  hidden fixed kind = "packages"
+  names: StaticList(!isEmpty)
+  /// Upgrades them to the newest version on every run, not only once.
+  upgrade: Boolean = false
+}
+
+/// A signed apt repository, written as a deb822 source with its own keyring.
+class AptRepository extends Step {
+  hidden fixed kind = "aptRepository"
+  /// Names the files `/etc/apt/sources.list.d/<name>.sources` and
+  /// `/etc/apt/keyrings/<name>.asc`.
+  name: String(matches(Regex("[a-z0-9][a-z0-9.-]*")))
+  url: HttpsUrl
+  /// A distribution such as `"stable"`, or a path ending in `/` for a flat
+  /// repository.
+  suite: Static
+  /// Required for a distribution, empty for a flat repository.
+  components: StaticList = new {}
+  /// ASCII-armored public key, committed next to the workflow. A changed
+  /// key counts as a change of this step.
+  signingKey: Static(startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----"))
+}
+
+// ── System ──────────────────────────────────────────────────────────────────
+
+class Timezone extends Step {
+  hidden fixed kind = "timezone"
+  name: Static
+}
+
+/// The login shell of an existing user.
+class LoginShell extends Step {
+  hidden fixed kind = "loginShell"
+  user: Static
+  shell: AbsolutePath
+}
+
+/// A Git working tree pinned to one commit.
+class GitCheckout extends Step {
+  hidden fixed kind = "gitCheckout"
+  repository: HttpsUrl
+  path: AbsolutePath
+  commit: CommitSha
+}
+
+/// A systemd service.
+class Service extends Step {
+  hidden fixed kind = "service"
+  name: Static
+  /// Starts at boot.
+  enabled: Boolean = true
+  /// Is running now. `false` stops it.
+  running: Boolean = true
+  /// Restarts the service at the end of the stage when one of these steps
+  /// changed. Each must be an earlier step of the same stage that can
+  /// report a change, and not a recipe. Only for a running service. A step
+  /// that runs again where it is written counts once for every earlier run
+  /// with the same settings; the service is restarted when any changed.
+  ///
+  /// A later step's `onChangeOf { service }` fires when this step enabled,
+  /// started or stopped the service, not when the restart ran. To react to a
+  /// restart, react to the steps the service restarts on.
+  restartOnChangeOf: Listing<Step>
+}
+
+// ── Commands ────────────────────────────────────────────────────────────────
+
+/// What a command or script needs: when to run, and what to report.
+///
+/// Ruxel cannot see what a program does, so say when it has to run:
+///
+/// - `creates`: skip it when this path exists;
+/// - `onChangeOf`: run it only when one of these steps changed;
+/// - both: run it when the path is missing or one of the steps changed;
+/// - neither: run it on every apply.
+abstract class Action extends Step {
+  creates: AbsolutePath? = null
+  /// Each must be an earlier step of the same stage that can report a
+  /// change. Not a recipe: a recipe has no change of its own, so list the
+  /// recipe's steps that matter.
+  ///
+  /// A step that runs again where it is written (`Packages`, `Command`, …)
+  /// counts once for every earlier run with the same settings, including
+  /// runs added by another use of the same recipe. This step runs when any
+  /// of them changed.
+  onChangeOf: Listing<Step>
+  /// What the run reports after the program succeeds:
+  /// - `"always"` (default): a change;
+  /// - `"never"`: no change, because the program only refreshes or inspects;
+  /// - `new UnlessOutput { … }`: a change, unless the output contains the text.
+  changes: "always"|"never"|UnlessOutput = "always"
+}
+
+/// A change is reported unless the output contains this text. Set exactly
+/// one of the two fields.
+class UnlessOutput {
+  stdoutContains: Static? = null
+  stderrContains: Static? = null
+}
+
+/// A program with arguments, run without a shell.
+///
+///     new Command { run { "git"; "lfs"; "install" }; changes = "never" }
+class Command extends Action {
+  hidden fixed kind = "command"
+  run: Arguments
+}
+
+/// A Bash script, run with `set -euo pipefail`.
+class Script extends Action {
+  hidden fixed kind = "script"
+  bash: Static
+}
+
+/// A read-only Bash script whose output later steps use:
+///
+///     local release = new Capture { bash = "cat /etc/debian_version" }
+///     new File { path = "/etc/motd"; content = "Debian \(release.stdout())" }
+///
+/// - A capture runs once per stage, where it is listed, so a `local`
+///   holding it holds one value. Listing it again is rejected.
+/// - Two captures are the same capture when their plan line (title, or the
+///   generated "Capture <first line>"), script, `runOn` and `retry` match.
+/// - To read again after a change, make a second capture with its own
+///   title: `new Capture { title = "Read release after the upgrade"; … }`.
+/// - To share a value between recipes, the stage lists the capture once and
+///   passes it as a parameter; the recipe reads its `stdout()` without
+///   listing it. An optional parameter (`sharedCaHash: Capture? = null`)
+///   lets a recipe read the value itself when nobody shares it.
+/// - A recipe used more than once whose capture script is the same for
+///   every use, and that wants its own read per use, derives the title from
+///   a parameter.
+class Capture extends Step {
+  hidden fixed kind = "capture"
+  /// Run with `set -euo pipefail`. It must not change any host.
+  bash: Static
+  /// Runs on this host, once for each host of the stage, instead of on the
+  /// stage's hosts.
+  runOn: Host? = null
+  retry: Retry = new Retry {}
+
+  /// The script's standard output, for `File.content` of a later step.
+  function stdout(): String = "__ruxel.results.\(id()).stdout__"
+
+  function id(): String =
+    "capture_" + "\(title ?? description())\u{0}\(runOn?.name)\u{0}\(retry.attempts)\u{0}\(retry.delay.toUnit("s").value.toInt())\u{0}\(bash)".sha256.substring(0, 12)
+
+  /// The generated plan line, used when there is no title.
+  function description(): String = "Capture " + bash.trim().split("\n").first
+}
+
+/// Repeats a step until it succeeds.
+class Retry {
+  attempts: Int(isBetween(1, 100)) = 1
+  /// Whole seconds; at least one.
+  delay: Duration = 5.s
+}
+
+// ── Content ─────────────────────────────────────────────────────────────────
+
+/// Renders a Pkl value as a YAML document. Write `module.yaml(…)`, for the
+/// reason given at `currentHost`.
+const function yaml(value: Any): String = new YamlRenderer {}.renderDocument(value)

@@ -54,7 +54,7 @@ fn ordinary_transitive_expression_and_inherited_imports_work()
         "amends \"base.pkl\"",
         "extends \"base.pkl\"",
         "import \"pkl:base\" as base\noutput { value = \"inside\" }",
-        "import \"modulepath:/ruxel/Ruxel.pkl\" as R\noutput { value = new R.Literal { value = \"inside\" }.value }",
+        "import \"modulepath:/ruxel/engine/Engine.pkl\" as R\noutput { value = new R.Literal { value = \"inside\" }.value }",
     ] {
         fixture.write("main.pkl", source)?;
         let expected = crate::eval(&fixture.root().join("main.pkl"), &[])?;

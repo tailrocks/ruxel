@@ -1,13 +1,51 @@
 use super::{
-    FINGERPRINT_PROPERTY, PLACEHOLDER, SERVED_FINGERPRINT, SOURCE, admit, exported_source,
-    fingerprint, source,
+    ENGINE, FINGERPRINT_PROPERTY, PLACEHOLDER, SERVED_FINGERPRINT, TREE, admit, exported_modules,
+    exported_source, fingerprint, modules, source,
 };
 use serde_json::json;
+use std::collections::BTreeSet;
+use std::path::Path;
+
+fn committed(dir: &Path, schema: &Path, found: &mut BTreeSet<String>) {
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            committed(&path, schema, found);
+        } else if path.extension().is_some_and(|extension| extension == "pkl")
+            && let Ok(relative) = path.strip_prefix(schema)
+        {
+            found.insert(format!(
+                "/{}",
+                relative.to_string_lossy().replace('\\', "/")
+            ));
+        }
+    }
+}
 
 #[test]
-fn served_and_exported_schemas_replace_the_single_placeholder() {
-    assert_eq!(SOURCE, include_str!("../../../../../schema/Ruxel.pkl"));
-    assert_eq!(SOURCE.matches(PLACEHOLDER).count(), 1);
+fn every_committed_module_is_served_and_exported() {
+    let schema = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../schema"));
+    let mut on_disk = BTreeSet::new();
+    committed(&schema.join("ruxel"), schema, &mut on_disk);
+    let tree: BTreeSet<String> = TREE.iter().map(|(path, _)| (*path).to_owned()).collect();
+    assert_eq!(on_disk, tree);
+    for list in [modules(), exported_modules()] {
+        let listed: BTreeSet<String> = list.iter().map(|(path, _)| (*path).to_owned()).collect();
+        assert_eq!(listed, tree);
+    }
+}
+
+#[test]
+fn served_and_exported_engine_replace_the_single_placeholder() {
+    let committed = TREE
+        .iter()
+        .find(|(path, _)| *path == ENGINE)
+        .map_or("", |(_, text)| *text);
+    assert_eq!(
+        committed,
+        include_str!("../../../../../schema/ruxel/engine/Engine.pkl")
+    );
+    assert_eq!(committed.matches(PLACEHOLDER).count(), 1);
     assert!(fingerprint().starts_with("blake3:"));
     let served = SERVED_FINGERPRINT.as_str();
     assert!(served.starts_with(&format!("{}@", fingerprint())));
@@ -21,12 +59,19 @@ fn served_and_exported_schemas_replace_the_single_placeholder() {
     for text in [source(), exported_source()] {
         assert_eq!(text.matches(PLACEHOLDER).count(), 0);
     }
+    for (path, text) in modules().iter().chain(exported_modules()) {
+        if *path != ENGINE {
+            assert!(!text.contains(fingerprint()), "{path}");
+        }
+    }
 }
 
 #[test]
-fn canonical_schema_parses_without_evaluation() -> Result<(), Box<dyn std::error::Error>> {
-    let tokens = pklr::lexer::lex(source())?;
-    pklr::parser::parse_named(&tokens, source(), "Ruxel.pkl")?;
+fn every_served_module_parses_without_evaluation() -> Result<(), Box<dyn std::error::Error>> {
+    for (path, text) in modules() {
+        let tokens = pklr::lexer::lex(text)?;
+        pklr::parser::parse_named(&tokens, text, path)?;
+    }
     Ok(())
 }
 
@@ -83,7 +128,11 @@ fn admission_refuses_copies_and_names_the_fix() {
         assert!(error.contains(&shown), "{error}");
         assert!(!error.contains("secret-value"), "{error}");
         assert!(error.contains(fingerprint()), "{error}");
-        assert!(error.contains("modulepath:/ruxel/Ruxel.pkl"), "{error}");
+        assert!(
+            error.contains("modulepath:/ruxel/engine/Engine.pkl"),
+            "{error}"
+        );
+        assert!(error.contains("modulepath:/ruxel/Workflow.pkl"), "{error}");
         assert!(error.contains("ruxel schema export"), "{error}");
     }
 }

@@ -1,0 +1,8 @@
+// expect: which is not an earlier step of this stage with exactly these settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/app.conf"; content = "real" }
+  new Service { name = "app"; restartOnChangeOf { new File { path = "/etc/app.conf"; content = "invented" } } }
+} } }

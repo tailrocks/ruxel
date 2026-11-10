@@ -1,0 +1,38 @@
+// Steps compose: two commands running the same program in one stage, a command
+// that watches a step inside a recipe, and tags that flow back through a
+// Capture -> File -> Command chain.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local unitA = new File { path = "/etc/systemd/system/a.service"; content = "[Service]\n" }
+local unitB = new File { path = "/etc/systemd/system/b.service"; content = "[Service]\n" }
+local reloadA = new Command { run { "systemctl"; "daemon-reload" }; onChangeOf { unitA } }
+local proxy = new recipes.ApiProxy { backends = inventory.controlPlanes }
+local release = new Capture { bash = "cat /etc/debian_version" }
+local motd = new File { path = "/etc/motd"; content = "Debian \(release.stdout())\n" }
+local first = new Packages { title = "Install x for the build"; names { "x" } }
+local again = new Packages { title = "Make sure x is still there"; names { "x" } }
+
+stages {
+  new Stage {
+    title = "Composition"
+    hosts = inventory.workers
+    steps {
+      unitA
+      reloadA
+      unitB
+      new Command { run { "systemctl"; "daemon-reload" }; onChangeOf { unitB } }
+      new Command { title = "Only after reload A"; run { "true" }; onChangeOf { reloadA } }
+      proxy
+      new Command { title = "Report proxy change"; run { "logger"; "proxy changed" }; onChangeOf { proxy.haproxyConfig() } }
+      release
+      motd
+      new Command { title = "Show motd"; run { "cat"; "/etc/motd" }; onChangeOf { motd }; tags { "motd" } }
+      first
+      new File { path = "/etc/x"; content = "y" }
+      again
+      new Command { title = "Configure x after first install"; run { "x-setup" }; onChangeOf { first } }
+    }
+  }
+}

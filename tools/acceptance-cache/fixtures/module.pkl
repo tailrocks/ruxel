@@ -1,4 +1,4 @@
-import "modulepath:/ruxel/Ruxel.pkl"
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 function secret(): Ruxel.Lookup = new { provider = "synthetic"; key = FAKE_VALUE }
 function ref(a: String, b: String): Ruxel.Ref = new { path { a; b } }
 function encode(v: Ruxel.Expr): Ruxel.Call = new { `function` = "base64Encode"; args { v } }

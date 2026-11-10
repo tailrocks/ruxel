@@ -1,0 +1,10 @@
+// The recipes these workflows use, one import for workflows.
+import "recipes/api-proxy.pkl" as apiProxy
+import "recipes/kubeadm-join.pkl" as kubeadmJoin
+import "modulepath:/ruxel/Ruxel.pkl" as ruxel
+
+typealias ApiProxy = apiProxy.ApiProxy
+typealias KubeadmJoinConfig = kubeadmJoin.KubeadmJoinConfig
+
+/// The CA public key hash of a ready control plane, to share between joins.
+function readCaHash(controlPlane: ruxel.Host): ruxel.Capture = kubeadmJoin.readCaHash(controlPlane)

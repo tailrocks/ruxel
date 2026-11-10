@@ -6,7 +6,7 @@ mod schema;
 use anyhow::{Result, ensure};
 use std::{fs, path::Path};
 pub fn run(root: &Path) -> Result<()> {
-    let declared = schema::kinds(&fs::read_to_string(root.join("schema/Ruxel.pkl"))?)?;
+    let declared = schema::kinds(&fs::read_to_string(root.join("schema/ruxel/engine/Engine.pkl"))?)?;
     let agent_source =
         fs::read_to_string(root.join("crates/ruxel/ruxel-agent/src/modules/mod.rs"))?;
     let implemented = agent::dispatch(&agent_source)?;

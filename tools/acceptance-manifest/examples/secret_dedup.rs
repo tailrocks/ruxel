@@ -17,7 +17,7 @@ const ALPHA: &str = "RUXEL_SYNTHETIC_ALPHA_824";
 const BETA: &str = "RUXEL_SYNTHETIC_BETA_627";
 const WRONG: &str = "RUXEL_SYNTHETIC_WRONG_913";
 const CONFIG: &str = r#"
-import "modulepath:/ruxel/Ruxel.pkl"
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
 function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
 function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }

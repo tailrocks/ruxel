@@ -42,7 +42,7 @@ impl<'a> Fixture<'a> {
         fs::write(
             &module,
             format!(
-                r#"import "modulepath:/ruxel/Ruxel.pkl"
+                r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["a"] {{ address = "127.0.0.1" }}; ["b"] {{ address = "127.0.0.1" }} }} }}
  plays {{ {plays} }}

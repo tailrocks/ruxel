@@ -10,7 +10,7 @@ const ASSETS: [(&str, &str); 2] = [
     ),
     (
         "template.pkl",
-        "1ee43af29e54b825137aa34281cd687abbee8bc2afe185226b8c4b85e5018f96",
+        "c231e95be0d13fb69bd1908c94143408011e6ea29219608325711b16ecd163bb",
     ),
 ];
 const SHIM: &str = r#"#!/bin/sh

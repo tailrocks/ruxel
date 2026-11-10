@@ -1,0 +1,11 @@
+// expect: depends on a recipe; list the recipe's steps that matter instead
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local proxy = new recipes.ApiProxy { backends = inventory.controlPlanes }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  proxy
+  new Command { run { "logger"; "proxy changed" }; onChangeOf { proxy } }
+} } }

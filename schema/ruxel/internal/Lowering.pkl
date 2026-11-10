@@ -1,0 +1,600 @@
+/// Lowers a workflow to the input of today's Ruxel engine,
+/// `modulepath:/ruxel/engine/Engine.pkl`. Workflow authors never read this
+/// file.
+///
+/// pklr shapes how this file is written. Each workaround names the pklr
+/// limitation behind it:
+///
+/// - P3: expressions nest at most `max_depth` levels deep, 32 by default, and
+///   every `let`, `else if`, call and lambda counts. ruxel asks for 256.
+/// - P5: `outer.` resolves wrongly inside a constraint, so engine objects are
+///   built by constructor functions whose inputs are parameters.
+/// - P10: a nullable object property set at construction is still null in
+///   the class's own defaults, so derived values live in methods.
+/// - P11: a recursive module function is undefined inside a lambda, so
+///   recursion goes through class methods (`Walker`, `Identity`).
+/// - P12: `==` on some objects, such as hosts from an inventory module, does
+///   not finish, so steps and hosts are compared by strings.
+/// - P13: `.keys` on any object returns its property names.
+/// - G16: a broken type constraint is reported without naming it, so rules
+///   between fields are plain sentences thrown from here.
+module Lowering
+
+import "modulepath:/ruxel/Ruxel.pkl" as rx
+import "modulepath:/ruxel/engine/Engine.pkl" as engine
+
+function config(stages: Listing<rx.Stage>): engine.Config = configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))
+
+/// Expands recipes, identifies every step and what it reacts to, merges
+/// exact repeats, then indexes and checks each stage.
+function checkedIndexes(stages: Listing<rx.Stage>): List<StageIndex> =
+  accepted(stages.toList(), stages.toList().map((s) -> stageIndex(merged(identified(walker.stage(s.steps.toList()))))))
+
+function accepted(_stages: List<rx.Stage>, _indexes: List<StageIndex>): List<StageIndex> =
+  orFail(_indexes, positions(_indexes).flatMap((n) -> stageProblems(_stages[n], _indexes[n])))
+
+function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<StageIndex> =
+  if (_problems.isEmpty) _indexes.map((ix) -> withMetas(ix)) else throw(_problems.first)
+
+// ── Inventory ───────────────────────────────────────────────────────────────
+
+/// Every host a stage runs on or a capture reads from, once.
+function hostsOf(stages: Listing<rx.Stage>): List<rx.Host> =
+  stages.toList()
+    .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())))
+    .fold(List(), (seen, h) -> addHost(seen, h))
+
+function captureHosts(steps: List<rx.Step>): List<rx.Host> =
+  steps.filter((s) -> s is rx.Capture && s.runOn != null).map((s) -> s.runOn)
+
+/// Compares hosts by their settings. Not `==`: comparing objects from the
+/// inventory module takes exponential time in pklr (P12).
+function addHost(seen: List<rx.Host>, h: rx.Host): List<rx.Host> =
+  if (seen.any((x) -> x.name == h.name && signature(x) != signature(h))) throw("Host \(h.name) is declared twice with different settings")
+  else if (seen.any((x) -> x.name == h.name)) seen
+  else seen + List(h)
+
+function signature(h: rx.Host): String = "\(h.address) \(h.sshHost) \(h.user) \(h.port)"
+
+function configOf(_hosts: List<rx.Host>, _stages: List<rx.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
+  inventory { hosts { for (h in _hosts) { [h.name] = hostOf(h) } } }
+  plays { for (n, s in _stages) { playOf(s.title, s.hosts.toList().map((h) -> h.name), _indexes[n]) } }
+}
+
+function hostOf(h: rx.Host): engine.Host = new engine.Host {
+  address = h.sshHost ?? h.address
+  user = h.user
+  port = h.port
+  vars { ["ruxel_address"] = lit(h.address) }
+}
+
+// ── Stages ──────────────────────────────────────────────────────────────────
+
+/// Facts about a stage's steps, computed once. pklr evaluates `let` eagerly,
+/// so computing them here keeps later lookups shallow (P3).
+class StageIndex {
+  placed: List<Placed>
+  steps: List<rx.Step>
+  /// Identity of each step. (Not `keys`: pklr reads `.keys` as an object's
+  /// property names, P13.)
+  ids: List<String>
+  /// The engine result name of each step: its id, or for a repeated command,
+  /// script, service or package step, its id and position.
+  results: List<String>
+  /// Positions of the steps each step reacts to: for each reference, every
+  /// earlier step with that identity. A step that runs again where it is
+  /// written has one result per run, and the reference fires when any run
+  /// changed.
+  deps: List<List<Int>>
+  /// Positions of the captures whose output each step's content uses.
+  uses: List<List<Int>>
+  /// Task fields of each step; filled in by `withMetas` after the checks.
+  metas: List<Meta> = List()
+}
+
+function stageIndex(_placed: List<Placed>): StageIndex = indexOf(_placed, _placed.map((p) -> p.step), _placed.map((p) -> p.id))
+
+function indexOf(_placed: List<Placed>, _steps: List<rx.Step>, _ids: List<String>): StageIndex =
+  new StageIndex {
+    placed = _placed
+    steps = _steps
+    ids = _ids
+    results = positions(_steps).map((i) -> if (earlier(i).any((j) -> _ids[j] == _ids[i])) "\(_ids[i])_\(i)" else _ids[i])
+    deps = positions(_steps).map((i) -> _placed[i].watches.flatMap((w) -> earlier(i).filter((j) -> _ids[j] == w)))
+    uses = positions(_steps).map((i) -> found(_placed[i].reads.map((c) -> nearest(_ids, i, c))))
+  }
+
+/// The position of the last step before `i` with identity `id`.
+function nearest(ids: List<String>, i: Int, id: String): Int? = earlier(i).fold(null, (hit, j) -> if (ids[j] == id) j else hit)
+
+function found(hits: List<Int?>): List<Int> = hits.filter((j) -> j != null)
+
+const function positions(list: List<Any>): List<Int> = if (list.isEmpty) List() else IntSeq(0, list.length - 1).toList()
+
+function earlier(i: Int): List<Int> = if (i == 0) List() else IntSeq(0, i - 1).toList()
+
+/// Only for a checked stage: every dependent comes after what it depends on.
+function withMetas(ix: StageIndex): StageIndex =
+  let (_tags = allTags(ix))
+  let (_metas = positions(ix.steps).map((i) -> metaOf(ix, i, _tags[i])))
+  (ix) { metas = _metas }
+
+function stageProblems(s: rx.Stage, ix: StageIndex): List<String> =
+  (hostsTwice(s) + positions(ix.steps).flatMap((i) -> problemsAt(ix, i)) + repeatedCaptures(ix)).map((p) -> "Stage \"\(s.title)\": \(p)")
+
+/// A capture runs once per stage, so every `stdout()` names exactly one
+/// read, and a `local` holding a capture holds one value.
+function repeatedCaptures(ix: StageIndex): List<String> =
+  positions(ix.steps)
+    .filter((j) -> ix.steps[j] is rx.Capture && earlier(j).any((k) -> ix.ids[k] == ix.ids[j]))
+    .map((j) -> let (k = earlier(j).filter((k) -> ix.ids[k] == ix.ids[j]).first)
+      "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) repeats the capture at \(where(ix.placed[k])); a capture runs once per stage, so "
+      + (if (listOf(ix.placed[j]) == listOf(ix.placed[k]))
+          "list it once, or give a re-read after a change its own title"
+        else "list it once in the stage and pass it to the recipe, which reads its stdout() without listing it, or give each read its own title (in a recipe used more than once, derive it from a parameter)"))
+
+/// The list the author wrote the step in: "" for the stage's own steps, "1"
+/// for the recipe at step 2, "1.0" for a recipe nested in it.
+function listOf(p: Placed): String =
+  positions(p.scope).filter((k) -> k < p.scope.length - 1).map((k) -> "\(p.scope[k])").join(".")
+
+function hostsTwice(s: rx.Stage): List<String> =
+  let (names = s.hosts.toList().map((h) -> h.name))
+  names.filter((n) -> names.filter((m) -> m == n).length > 1).toSet().toList().map((n) -> "host \(n) is listed twice")
+
+function playOf(_title: String, _targets: List<String>, ix: StageIndex): engine.Play = new engine.Play {
+  name = _title
+  targets { for (t in _targets) { t } }
+  tasks { for (i, _ in ix.steps) { for (t in lower(ix, i)) { t } } }
+  handlers { for (n in restartedServices(ix.steps)) { restartHandler(n) } }
+}
+
+/// One restart handler per service name, however many steps ask for it.
+function restartedServices(steps: List<rx.Step>): List<String> =
+  steps.filter((x) -> x is rx.Service && !x.restartOnChangeOf.isEmpty).map((x) -> x.name).toSet().toList()
+
+/// A step, the tags it inherits from the recipes around it, and where the
+/// author wrote it.
+class Placed {
+  step: rx.Step
+  /// Filled in by `identified`, after the walk: computing it during the walk
+  /// would exceed pklr's depth limit (P3).
+  id: String = ""
+  /// Ids of the steps this step reacts to, and of the captures it reads;
+  /// filled in by `identified` like `id`.
+  watches: List<String> = List()
+  reads: List<String> = List()
+  inherited: List<String>
+  /// Position in `Stage.steps`, from 1.
+  written: Int
+  /// Positions through the nested recipe uses that contain the step, from
+  /// the stage down; `scope.first + 1 == written`.
+  scope: List<Int>
+}
+
+const function placedAt(_step: rx.Step, _id: String, _inherited: List<String>, _written: Int, _scope: List<Int>): Placed =
+  new Placed { step = _step; id = _id; inherited = _inherited; written = _written; scope = _scope }
+
+function identified(placed: List<Placed>): List<Placed> =
+  placed.map((p) -> identify(p, key(p.step), watched(p.step).map((w) -> key(w)), capturesUsed(p.step)))
+
+function identify(p: Placed, _id: String, _watches: List<String>, _reads: List<String>): Placed =
+  new Placed { step = p.step; id = _id; watches = _watches; reads = _reads; inherited = p.inherited; written = p.written; scope = p.scope }
+
+function withInherited(q: Placed, extra: List<String>): Placed =
+  new Placed { step = q.step; id = q.id; watches = q.watches; reads = q.reads; inherited = q.inherited + extra; written = q.written; scope = q.scope }
+
+/// Expands recipes in place. A class, because pklr cannot call a recursive
+/// module function inside a lambda (P11).
+class Walker {
+  function stage(steps: List<rx.Step>): List<Placed> =
+    positions(steps).flatMap((i) -> this.one(steps[i], List(), i + 1, List(i)))
+
+  /// The steps of a recipe use whose scope is `_scope`.
+  function walk(steps: List<rx.Step>, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
+    positions(steps).flatMap((k) -> this.one(steps[k], _inherited, _written, _scope + List(k)))
+
+  /// `_scope` ends with the step's own position in its list.
+  function one(s: rx.Step, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
+    if (!(s is rx.Step)) throw("A step's class comes from a copy of Ruxel.pkl. Import \"modulepath:/ruxel/Ruxel.pkl\", which the ruxel binary serves.")
+    else if (s is rx.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
+    else if (s is rx.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
+    else List(placedAt(s, "", _inherited, _written, _scope))
+}
+
+local walker = new Walker {}
+
+function flatten(steps: List<rx.Step>): List<rx.Step> = walker.walk(steps, List(), 0, List()).map((p) -> p.step)
+
+/// A step that manages a thing appears once per stage: an exact repeat lends
+/// its tags to the first occurrence. Package steps, commands, scripts and
+/// services run again where they are written; a capture is listed once
+/// (`repeatedCaptures`).
+function merged(placed: List<Placed>): List<Placed> = placed.fold(List(), (kept, p) -> mergeOne(kept, p))
+
+function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
+  if (!mergeable(p.step) || !kept.any((q) -> q.id == p.id)) kept + List(p)
+  else kept.map((q) -> if (q.id == p.id) withInherited(q, ownTags(p)) else q)
+
+/// A step that manages a thing merges with an exact repeat. Package steps,
+/// commands and scripts run again where they are written: their effect
+/// depends on what ran before. Services are not merged either: each
+/// occurrence carries its own restart triggers. A capture runs once per
+/// stage (`repeatedCaptures`).
+const function mergeable(s: rx.Step): Boolean = subjectOf(s) != null && !(s is rx.Service)
+
+// ── Checks: references must point at earlier steps of the same stage ───────
+
+function problemsAt(ix: StageIndex, i: Int): List<String> =
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i)).flatMap((x) -> x)
+
+/// Rules between fields of one step. Plain sentences rather than type
+/// constraints: pklr reports a broken constraint without naming it (G16).
+function settings(s: rx.Step): List<String> =
+  if (s is rx.Service && !s.running && !s.restartOnChangeOf.isEmpty)
+    List("'\(name(s))' has running = false, so it cannot restart on a change; remove restartOnChangeOf or set running = true")
+  else if (s is rx.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
+    List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
+  else if (s is rx.Action && s.changes is rx.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
+    List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
+  else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("ms").value.toInt() % 1000 != 0))
+    List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
+  else List()
+
+/// A recipe has no change of its own: name the steps that matter.
+function recipeDeps(ix: StageIndex, i: Int): List<String> =
+  listed(ix.steps[i]).filter((w) -> w is rx.Recipe)
+    .map((_) -> "'\(name(ix.steps[i]))' depends on a recipe; list the recipe's steps that matter instead")
+
+function missingDeps(ix: StageIndex, i: Int): List<String> =
+  positions(ix.placed[i].watches).filter((k) -> nearest(ix.ids, i, ix.placed[i].watches[k]) == null)
+    .map((k) -> "'\(name(ix.steps[i]))' depends on '\(name(watched(ix.steps[i])[k]))', which is not an earlier step of this stage with exactly these settings")
+
+function silentDeps(ix: StageIndex, i: Int): List<String> =
+  watched(ix.steps[i]).filter((w) -> !canReportChange(w))
+    .map((w) -> "'\(name(ix.steps[i]))' depends on '\(name(w))', which never reports a change")
+
+function missingCaptures(ix: StageIndex, i: Int): List<String> =
+  ix.placed[i].reads.filter((c) -> nearest(ix.ids, i, c) == null)
+    .map((c) -> let (later = positions(ix.steps).filter((k) -> k > i && ix.ids[k] == c))
+      if (later.isEmpty)
+        "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) uses the output of a Capture that this stage does not list; list the capture earlier in the stage (a recipe that receives a capture as a parameter does not list it)"
+      else
+        "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) uses the output of '\(name(ix.steps[later.first]))', which comes later, at \(where(ix.placed[later.first])); list the capture before the step that reads it")
+
+/// Two steps conflict when they manage the same thing with different
+/// settings. Exact repeats were merged by `merged`; commands manage nothing.
+function conflicts(ix: StageIndex, i: Int): List<String> =
+  let (subject = subjectOf(ix.steps[i]))
+  if (subject == null) List()
+  else earlier(i).filter((j) -> subjectOf(ix.steps[j]) == subject && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subject)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": a \(className(ix.steps[j])) and a \(className(ix.steps[i]))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
+
+function className(s: rx.Step): String = s.kind.capitalize()
+
+/// Where the author wrote a step: `step 2`, `step 4 of the recipe at step 1`,
+/// or `step 2 of the recipe at step 3 of the recipe at step 1`.
+function where(p: Placed): String =
+  positions(p.scope).fold("", (acc, k) ->
+    if (k == 0) "step \(p.scope[0] + 1)" else "step \(p.scope[k] + 1) of the recipe at " + acc)
+
+/// Steps listed in `onChangeOf` or `restartOnChangeOf`, as written.
+const function listed(s: rx.Step): List<rx.Step> =
+  if (s is rx.Action) s.onChangeOf.toList()
+  else if (s is rx.Service) s.restartOnChangeOf.toList()
+  else List()
+
+/// Steps whose change this step reacts to. Recipes are rejected by
+/// `recipeDeps`.
+function watched(s: rx.Step): List<rx.Step> = listed(s).filter((w) -> !(w is rx.Recipe))
+
+function canReportChange(s: rx.Step): Boolean =
+  !(s is rx.Capture || s is rx.PackageIndex || (s is rx.Action && s.changes == "never"))
+
+/// Ids of the captures whose output this step's content uses.
+function capturesUsed(s: rx.Step): List<String> =
+  if (s is rx.File) placeholder.findMatchesIn(s.content).map((m) -> m.groups[1].value)
+    .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
+  else List()
+
+// ── Identity, names and tags ────────────────────────────────────────────────
+
+/// A step's identity: its kind and every setting that shapes its tasks. For
+/// a command or script that includes, recursively, the identity of every
+/// step it reacts to. For a step that does not merge (`mergeable`) it
+/// includes the step's line in the plan; for a step that merges it does not.
+/// Steps are never compared with `==` (P12).
+function key(s: rx.Step): String = identity.key(s)
+
+/// A class, like `Walker`: pklr cannot recurse through a module function
+/// inside a lambda (P11). Fields are separated by NUL and list items by
+/// U+0001, so no two different settings print alike.
+class Identity {
+  function key(s: rx.Step): String =
+    if (s is rx.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 12)
+
+  function fingerprint(s: rx.Step): String =
+    (if (mergeable(s)) "" else "\(label(s))\u{0}") + this.settings(s)
+
+  function settings(s: rx.Step): String =
+    if (!(s is rx.Action)) stateFingerprints[s.kind].apply(s)
+    else List(
+      if (s is rx.Command) s.run.join("\u{1}") else s.bash,
+      "\(s.creates)",
+      changesText(s),
+      listed(s).map((w) -> if (w is rx.Recipe) "recipe" else this.key(w)).join("\u{1}")
+    ).join("\u{0}")
+}
+
+local identity = new Identity {}
+
+const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
+  ["file"] = (s) -> List(s.path, s.content, s.mode, "\(s.owner)", "\(s.group)", s.validate.join("\u{1}")).join("\u{0}")
+  ["directory"] = (s) -> "\(s.path)\u{0}\(s.mode)"
+  ["symlink"] = (s) -> "\(s.path)\u{0}\(s.target)"
+  ["packageIndex"] = (_) -> ""
+  ["packages"] = (s) -> "\(s.names.join("\u{1}"))\u{0}\(s.upgrade)"
+  ["aptRepository"] = (s) -> List(s.name, s.url, s.suite, s.components.join("\u{1}"), s.signingKey).join("\u{0}")
+  ["timezone"] = (s) -> s.name
+  ["loginShell"] = (s) -> "\(s.user)\u{0}\(s.shell)"
+  ["gitCheckout"] = (s) -> List(s.repository, s.path, s.commit).join("\u{0}")
+  // Restart triggers add up across steps, so they are not part of identity.
+  ["service"] = (s) -> List(s.name, "\(s.enabled)", "\(s.running)").join("\u{0}")
+  ["capture"] = (s) -> s.id()
+}
+
+const function changesText(a: rx.Action): String =
+  if (a.changes is rx.UnlessOutput) "out:\(a.changes.stdoutContains)\u{0}err:\(a.changes.stderrContains)" else a.changes
+
+/// What a step manages; `null` for steps that manage nothing.
+const function subjectOf(s: rx.Step): String? = subjects[s.kind].apply(s)
+
+const local subjects: Mapping<String, (rx.Step) -> String?> = new {
+  ["file"] = (s) -> s.path
+  ["directory"] = (s) -> s.path
+  ["symlink"] = (s) -> s.path
+  ["gitCheckout"] = (s) -> s.path
+  ["aptRepository"] = (s) -> "apt repository \(s.name)"
+  ["service"] = (s) -> "service \(s.name)"
+  ["loginShell"] = (s) -> "the login shell of \(s.user)"
+  ["timezone"] = (_) -> "the timezone"
+  ["packages"] = (_) -> null
+  ["packageIndex"] = (_) -> null
+  ["command"] = (_) -> null
+  ["script"] = (_) -> null
+  ["capture"] = (_) -> null
+}
+
+function name(s: rx.Step): String = label(s)
+
+/// The step's line in the plan: its title, or the generated description.
+const function label(s: rx.Step): String = s.title ?? (if (s is rx.Recipe) "a recipe" else describe(s))
+
+function restartName(serviceName: String): String = "Restart \(serviceName)"
+
+/// Common task fields, worked out once per step.
+class Meta {
+  name: String
+  tags: List<String>
+  notify: List<String>
+  register: String?
+  /// Result names of the steps this step reacts to.
+  watching: List<String> = List()
+}
+
+function metaOf(ix: StageIndex, i: Int, _tags: List<String>): Meta =
+  let (_name = name(ix.steps[i]))
+  let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is rx.Service).map((j) -> restartName(ix.steps[j].name)).toSet().toList())
+  let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is rx.Action) || ix.steps[i] is rx.Capture) ix.results[i] else null)
+  new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]) }
+
+/// Positions of the steps that react to step `i` or read its output. They
+/// always come later in the stage.
+function dependents(ix: StageIndex, i: Int): List<Int> =
+  positions(ix.steps).filter((j) -> ix.deps[j].contains(i) || ix.uses[j].contains(i))
+
+/// A step runs under its own tags, its recipes' tags, and the tags of every
+/// step that depends on it, directly or not, so `--tags` never runs a step
+/// without what it reads. One pass from the last step to the first sees each
+/// dependent's final tags.
+function allTags(ix: StageIndex): List<List<String>> =
+  let (n = ix.steps.length)
+  let (backwards = positions(ix.steps).fold(List(), (later, k) -> later + List(tagsOf(ix, n - 1 - k, later))))
+  positions(ix.steps).map((i) -> backwards[n - 1 - i])
+
+/// `later[k]` holds the tags of step `n - 1 - k`.
+function tagsOf(ix: StageIndex, i: Int, later: List<List<String>>): List<String> =
+  (ownTags(ix.placed[i]) + dependents(ix, i).flatMap((j) -> later[ix.steps.length - 1 - j])).toSet().toList()
+
+function ownTags(p: Placed): List<String> = p.step.tags.toList() + p.inherited
+
+function helperMeta(_name: String, m: Meta, _register: String?): Meta =
+  new Meta { name = _name; tags = m.tags; notify = List(); register = _register }
+
+// ── Steps ───────────────────────────────────────────────────────────────────
+
+/// The description shown in plans when a step has no `title`.
+const function describe(s: rx.Step): String = describers[s.kind].apply(s)
+
+const local describers: Mapping<String, (rx.Step) -> String> = new {
+  ["file"] = (s) -> "Write \(s.path)"
+  ["directory"] = (s) -> "Create directory \(s.path)"
+  ["symlink"] = (s) -> "Link \(s.path) to \(s.target)"
+  ["packageIndex"] = (_) -> "Refresh apt package index"
+  ["packages"] = (s) -> (if (s.upgrade) "Install or upgrade " else "Install ") + s.names.join(", ")
+  ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
+  ["timezone"] = (s) -> "Set timezone to \(s.name)"
+  ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
+  ["gitCheckout"] = (s) -> "Check out \(s.repository) into \(s.path)"
+  ["service"] = (s) -> (if (s.running) "Start " else "Stop ") + s.name + (if (s.enabled) ", enabled at boot" else ", disabled at boot")
+  ["command"] = (s) -> "Run " + s.run.join(" ")
+  ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
+  ["capture"] = (s) -> s.description()
+}
+
+/// A table, not an `if … else if` chain: pklr counts each `else if` against
+/// its depth limit of 32 (P3).
+function lower(ix: StageIndex, i: Int): List<engine.Task> = lowerers[ix.steps[i].kind].apply(ix.steps[i], ix.metas[i])
+
+local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
+  ["file"] = (s, m) -> validateTasks(s, m) + List(task(m, copy(s.path, s), null, null))
+  ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
+  ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
+  ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null), null, lit(false)))
+  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
+  ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
+  ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
+  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
+  ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
+  ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
+  ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
+  ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
+  ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null), null, lit(false)), s, m.register))
+}
+
+// File: stage, validate, then publish.
+function validateTasks(f: rx.File, m: Meta): List<engine.Task> =
+  if (f.validate.isEmpty) List()
+  else List(
+    task(helperMeta("Stage \(f.path)", m, null), copy(candidate(f), f), null, null),
+    task(helperMeta("Validate \(f.path)", m, null), command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))), null), null, lit(false))
+  )
+
+/// `.<name>.ruxel-candidate` beside the file: validators that resolve
+/// relative includes still work, and `*`, `*.conf` and `*.d` loaders skip
+/// dotfiles. It stays, so that a second apply reports no change.
+function candidate(f: rx.File): String =
+  let (slash = f.path.lastIndexOf("/"))
+  "\(f.path.substring(0, slash + 1)).\(f.path.substring(slash + 1, f.path.length)).ruxel-candidate"
+
+/// The keyring task notifies and registers too: a new key is a change of
+/// the repository.
+function keyringMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
+  name = "Install \(r.name) apt signing key"
+  tags = m.tags
+  notify = m.notify
+  register = if (m.register == null) null else "\(m.register)_key"
+}
+
+function keyring(r: rx.AptRepository): engine.Copy = copyText("/etc/apt/keyrings/\(r.name).asc", r.signingKey)
+
+function sourcesFile(r: rx.AptRepository): engine.Copy = copyText("/etc/apt/sources.list.d/\(r.name).sources", new Listing {
+  "Types: deb"
+  "URIs: \(r.url)"
+  "Suites: \(r.suite)"
+  when (!r.components.isEmpty) { "Components: \(r.components.join(" "))" }
+  "Architectures: amd64"
+  "Signed-By: /etc/apt/keyrings/\(r.name).asc"
+}.join("\n") + "\n")
+
+// Command and Script: `creates` alone uses the engine's own guard;
+// `onChangeOf` needs the watched steps' results and, with `creates`, a probe.
+function actionTasks(a: rx.Action, argv: List<String>, m: Meta): List<engine.Task> =
+  if (a.onChangeOf.isEmpty) List(task(m, command(argv, a.creates), null, changeRule(a)))
+  else if (a.creates == null) List(task(m, command(argv, null), anyChanged(m.watching), changeRule(a)))
+  else List(
+    task(helperMeta("Check whether \(a.creates) exists", m, probeKey(a.creates)), stat(a.creates), null, null),
+    task(m, command(argv, null), call2("or", anyChanged(m.watching), call1("not", ref(List("results", probeKey(a.creates), "stat", "exists")))), changeRule(a))
+  )
+
+/// `or` of the `changed` results of the watched steps. An apt repository
+/// also changes when only its keyring does.
+function anyChanged(ids: List<String>): engine.Expr =
+  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key") else List(id))
+    .map((id) -> ref(List("results", id, "changed")))
+    .fold(null, (acc, e) -> if (acc == null) e else call2("or", acc, e))
+
+function changeRule(a: rx.Action): engine.Expr? =
+  if (a.changes == "never") lit(false)
+  else if (a.changes is rx.UnlessOutput) unlessOutput(a.changes)
+  else null
+
+function unlessOutput(u: rx.UnlessOutput): engine.Expr =
+  if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
+  else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains)))
+
+function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 12)
+
+function restartHandler(serviceName: String): engine.Task =
+  task(new Meta { name = restartName(serviceName); tags = List(); notify = List(); register = null }, service(serviceName, null, "restarted"), null, null)
+
+function bash(script: String): List<String> = List("/bin/bash", "-c", "set -euo pipefail\n" + script)
+
+// ── Engine constructors ─────────────────────────────────────────────────────
+
+function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _changedWhen: engine.Expr?): engine.Task = new engine.Task {
+  name = m.name
+  operation = _operation
+  tags { for (t in m.tags) { t } }
+  notify { for (n in m.notify) { n } }
+  when (_when != null) { `when` = _when }
+  when (_changedWhen != null) { changedWhen = _changedWhen }
+  when (m.register != null) { register = m.register }
+}
+
+function captureTask(t: engine.Task, c: rx.Capture, _result: String): engine.Task = (t) {
+  when (c.runOn != null) { delegateTo = c.runOn.name; delegateAllow = new Listing { c.runOn.name } }
+  when (c.retry.attempts > 1) {
+    retries = c.retry.attempts - 1
+    delaySeconds = c.retry.delay.toUnit("s").value.toInt()
+    until = call2("eq", ref(List("results", _result, "rc")), lit(0))
+  }
+}
+
+function copy(_dest: String, f: rx.File): engine.Copy = new engine.Copy {
+  dest = _dest
+  content = runtimeText(f.content)
+  mode = f.mode
+  owner = f.owner
+  group = f.group
+}
+
+function copyText(_dest: String, _content: String): engine.Copy =
+  new engine.Copy { dest = _dest; content = _content; mode = "0644"; owner = "root"; group = "root" }
+
+function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = _mode }
+function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
+function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.Apt {
+  name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
+  state = if (_upgrade) "latest" else "present"
+}
+function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
+function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
+function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
+function service(_name: String, _enabled: Boolean?, _state: String): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
+function stat(_path: String): engine.Stat = new engine.Stat { path = _path }
+function command(_argv: List<String>, _creates: String?): engine.Command = new engine.Command {
+  argv = new Listing { for (a in _argv) { a } }
+  creates = _creates
+}
+
+// ── Run-time text ───────────────────────────────────────────────────────────
+
+local placeholder = Regex(#"__ruxel\.([A-Za-z0-9_.]+?)__"#)
+local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capture_[0-9a-f]{12}\.stdout"#)
+
+/// Text without placeholders stays a string. Placeholders (`currentHost`,
+/// `Capture.stdout()`) become engine references inside a `concat`.
+///
+/// The literal pieces come from match positions, not `split`: like Java's,
+/// `split` drops trailing empty pieces, which loses a placeholder at the end.
+function runtimeText(text: String): engine.Text =
+  let (matches = placeholder.findMatchesIn(text))
+  if (matches.isEmpty) text
+  else if (matches.any((m) -> !m.groups[1].value.matches(knownPlaceholder)))
+    throw("File content contains an unknown run-time value: \(matches.filter((m) -> !m.groups[1].value.matches(knownPlaceholder)).first.value)")
+  else new engine.Call {
+    `function` = "concat"
+    args {
+      for (k, m in matches) {
+        lit(text.substring(if (k == 0) 0 else matches[k - 1].end, m.start))
+        ref(m.groups[1].value.split("."))
+      }
+      lit(text.substring(matches.last.end, text.length))
+    }
+  }
+
+function lit(v: engine.Scalar): engine.Literal = new engine.Literal { value = v }
+function ref(p: List<String>): engine.Ref = new engine.Ref { path { for (x in p) { x } } }
+function call1(f: String, x: engine.Expr): engine.Call = new engine.Call { `function` = f; args { x } }
+function call2(f: String, x: engine.Expr, y: engine.Expr): engine.Call = new engine.Call { `function` = f; args { x; y } }

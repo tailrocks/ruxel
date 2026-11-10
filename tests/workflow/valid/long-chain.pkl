@@ -1,0 +1,23 @@
+// A chain of fifteen commands, each reacting to the one before: identity
+// recurses through every link (pklr needs max_depth raised, finding P3).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local source = new File { path = "/etc/chain"; content = "x" }
+local c1 = new Command { title = "Link 1"; run { "true" }; onChangeOf { source } }
+local c2 = new Command { title = "Link 2"; run { "true" }; onChangeOf { c1 } }
+local c3 = new Command { title = "Link 3"; run { "true" }; onChangeOf { c2 } }
+local c4 = new Command { title = "Link 4"; run { "true" }; onChangeOf { c3 } }
+local c5 = new Command { title = "Link 5"; run { "true" }; onChangeOf { c4 } }
+local c6 = new Command { title = "Link 6"; run { "true" }; onChangeOf { c5 } }
+local c7 = new Command { title = "Link 7"; run { "true" }; onChangeOf { c6 } }
+local c8 = new Command { title = "Link 8"; run { "true" }; onChangeOf { c7 } }
+local c9 = new Command { title = "Link 9"; run { "true" }; onChangeOf { c8 } }
+local c10 = new Command { title = "Link 10"; run { "true" }; onChangeOf { c9 } }
+local c11 = new Command { title = "Link 11"; run { "true" }; onChangeOf { c10 } }
+local c12 = new Command { title = "Link 12"; run { "true" }; onChangeOf { c11 } }
+local c13 = new Command { title = "Link 13"; run { "true" }; onChangeOf { c12 } }
+local c14 = new Command { title = "Link 14"; run { "true" }; onChangeOf { c13 } }
+local c15 = new Command { title = "Link 15"; run { "true" }; onChangeOf { c14 } }
+
+stages { new Stage { title = "Long chain"; hosts = inventory.workers; steps { source; c1; c2; c3; c4; c5; c6; c7; c8; c9; c10; c11; c12; c13; c14; c15 } } }

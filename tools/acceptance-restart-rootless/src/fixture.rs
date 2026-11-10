@@ -8,7 +8,7 @@ use std::{
     process::{Command, Stdio},
     time::Duration,
 };
-const PIN: &str = "aa3ee4a0b0b0f7f16e6a1391c6ae11456129bae265f985385aa6de0abc5c8b18";
+const PIN: &str = "35e426515163c412607a2c333f206f73cefac8f65b91f34170b6c232efe6fa2e";
 const OWNERS: &str = "owner = \"root\"; group = \"root\"; ";
 
 fn variant(source: &[u8], contract: &Value, payload: &str) -> Result<String> {

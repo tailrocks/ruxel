@@ -1,0 +1,48 @@
+// Recipes and captures compose three ways.
+// - A shared value: the stage lists the capture once and passes it to each
+//   use of a recipe, which reads it without listing it.
+// - An optional shared value: a recipe that reads the value itself unless
+//   one is passed in (KubeadmJoinConfig.sharedCaHash, read with
+//   recipes.readCaHash).
+// - An own read per use, for a value that changes between uses: the recipe
+//   derives the capture's title from a parameter.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local caHash = recipes.readCaHash(inventory.cp1)
+
+local class Join extends Recipe {
+  ca: Capture
+  site: String
+  function steps(): Listing<Step> = new {
+    new File { path = "/etc/join-\(site)"; content = ca.stdout() }
+  }
+}
+
+local class RecordRelease extends Recipe {
+  /// "before" or "after": names this read, so each use is its own capture.
+  label: String
+  function steps(): Listing<Step> =
+    let (release = new Capture { title = "Read the release \(label) the upgrade"; bash = "cat /etc/debian_version" })
+    new Listing {
+      release
+      new File { path = "/etc/release-\(label)"; content = release.stdout() }
+    }
+}
+
+stages {
+  new Stage {
+    title = "Shared capture"
+    hosts = inventory.workers
+    steps {
+      caHash
+      new Join { ca = caHash; site = "a" }
+      new Join { ca = caHash; site = "b" }
+      new recipes.KubeadmJoinConfig { endpoint = "k8s-api.example.test:7443"; sharedCaHash = caHash }
+      new RecordRelease { label = "before" }
+      new Packages { names { "base-files" }; upgrade = true }
+      new RecordRelease { label = "after" }
+    }
+  }
+}

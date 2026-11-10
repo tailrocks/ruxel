@@ -14,7 +14,7 @@ cargo run --offline --locked --manifest-path tools/acceptance-copy/Cargo.toml --
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
-The fixtures import `modulepath:/ruxel/Ruxel.pkl`, which the `ruxel` binary
+The fixtures import `modulepath:/ruxel/engine/Engine.pkl`, which the `ruxel` binary
 under test serves from its own build.
 
 The binary scenario verifies exact bytes, file mode, convergence, drift repair,

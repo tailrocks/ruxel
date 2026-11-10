@@ -1,0 +1,9 @@
+// expect: has running = false, so it cannot restart on a change
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local config = new File { path = "/etc/app.conf"; content = "x" }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  config
+  new Service { name = "app"; running = false; restartOnChangeOf { config } }
+} } }

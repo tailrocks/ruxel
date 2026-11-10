@@ -14,7 +14,7 @@ mod process_guard;
 
 use docker_fixture::Docker;
 const FIXTURE: &str = r#"
-import "modulepath:/ruxel/Ruxel.pkl"
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
   inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
   plays { new { name = "Synthetic PostgreSQL session reuse"; targets { "all" }; tasks {

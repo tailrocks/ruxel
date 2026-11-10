@@ -10,11 +10,14 @@ complete platform coverage.
 - `crates/ruxel/ruxel` provides the command-line interface and exit codes.
 - `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
   no inherited environment variables or external properties and permits local
-  file resources. Its module path serves the compiled-in schema at
-  `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
-- `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
-  lookup types. It is compiled into the binary, which replaces the
-  `Config.schemaFingerprint` placeholder with `blake3:<hash of the file>@<nonce>`;
+  file resources. Its module path serves the compiled-in modules under
+  `modulepath:/ruxel/`, followed by the `--module-path` directories.
+- `schema/ruxel/` holds every served module: the workflow language
+  (`Workflow.pkl`, `Ruxel.pkl`, `internal/Lowering.pkl`) and the engine schema
+  (`engine/Engine.pkl`), which declares inventory, task, operation,
+  expression, and lookup types. They are compiled into the binary, which
+  replaces the `Config.schemaFingerprint` placeholder in `Engine.pkl` with
+  `blake3:<hash of the module tree>@<nonce>`;
   the nonce is drawn once per process, so no file copy can carry it.
   `ruxel schema export` writes the hash alone. Before execution, `ruxel-config`
   admits only a configuration that carries this process's fingerprint and

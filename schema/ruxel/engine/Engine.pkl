@@ -1,4 +1,4 @@
-module Ruxel
+module Engine
 
 // Runtime expressions are data: evaluation happens against each host's facts and results.
 typealias Expr = Literal|Ref|Call|ListExpr|MapExpr|Lookup

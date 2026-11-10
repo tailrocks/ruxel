@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-const FIXTURE: &str = r#"import "modulepath:/ruxel/Ruxel.pkl"
+const FIXTURE: &str = r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "pause"; targets { "all" }; tasks {

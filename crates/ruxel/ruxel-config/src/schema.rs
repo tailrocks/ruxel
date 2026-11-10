@@ -1,39 +1,91 @@
-//! The canonical Pkl schema, compiled into the binary and served to Pkl
-//! code as `modulepath:/ruxel/Ruxel.pkl`.
+//! The Ruxel Pkl modules, compiled into the binary and served to Pkl code
+//! under `modulepath:/ruxel/`: the workflow language
+//! (`modulepath:/ruxel/Workflow.pkl`, `modulepath:/ruxel/Ruxel.pkl`) and the
+//! engine schema (`modulepath:/ruxel/engine/Engine.pkl`).
 //!
-//! Configuration never copies the schema: the binary that evaluates a
-//! configuration also supplies the schema it was built with. The served
-//! schema sets `Config.schemaFingerprint` to `blake3:<hash>@<nonce>`: the
-//! BLAKE3 hash of `schema/Ruxel.pkl` and a nonce drawn once per process. Only
-//! the module this process serves can produce the nonce, so admission refuses
-//! every copy, even an unmodified one. `ruxel schema export` writes the
-//! schema with the hash alone, for editors and the `pkl` CLI.
+//! Configuration never copies a module: the binary that evaluates a
+//! configuration also supplies the modules it was built with. The served
+//! engine schema sets `Config.schemaFingerprint` to `blake3:<hash>@<nonce>`:
+//! the BLAKE3 hash of every module path and text under `schema/ruxel/`, and a
+//! nonce drawn once per process. Only the modules this process serves can
+//! produce the nonce, so admission refuses every copy, even an unmodified
+//! one. `ruxel schema export` writes the modules with the hash alone, for
+//! editors and the `pkl` CLI.
 
 use crate::ConfigError;
 use std::sync::LazyLock;
 
-/// The Pkl module URI of the schema.
-pub const MODULE_URI: &str = "modulepath:/ruxel/Ruxel.pkl";
-/// The schema's path inside the Pkl module path.
-pub const MODULE_PATH: &str = "/ruxel/Ruxel.pkl";
+/// Where configuration imports Ruxel from: every module is served under this
+/// `modulepath:` namespace.
+pub const MODULE_URI: &str = "modulepath:/ruxel/";
+/// The engine schema, which configurations written against the engine
+/// directly import.
+pub const ENGINE_URI: &str = "modulepath:/ruxel/engine/Engine.pkl";
 /// The `Config` property that carries the fingerprint.
 pub const FINGERPRINT_PROPERTY: &str = "schemaFingerprint";
 
-/// The schema exactly as committed in `schema/Ruxel.pkl`.
-const SOURCE: &str = include_str!("../../../../schema/Ruxel.pkl");
-/// The committed placeholder that the served schema replaces with the
-/// fingerprint.
-const PLACEHOLDER: &str = "\"unserved\"";
+/// The modules exactly as committed under `schema/`, by their path inside
+/// the Pkl module path.
+pub(crate) const TREE: &[(&str, &str)] = &[
+    (
+        "/ruxel/Ruxel.pkl",
+        include_str!("../../../../schema/ruxel/Ruxel.pkl"),
+    ),
+    (
+        "/ruxel/Workflow.pkl",
+        include_str!("../../../../schema/ruxel/Workflow.pkl"),
+    ),
+    (
+        "/ruxel/internal/Lowering.pkl",
+        include_str!("../../../../schema/ruxel/internal/Lowering.pkl"),
+    ),
+    (
+        "/ruxel/engine/Engine.pkl",
+        include_str!("../../../../schema/ruxel/engine/Engine.pkl"),
+    ),
+];
+/// The module that declares `Config.schemaFingerprint`.
+pub(crate) const ENGINE: &str = "/ruxel/engine/Engine.pkl";
+/// The committed placeholder that the served and exported engine schema
+/// replace with the fingerprint.
+pub(crate) const PLACEHOLDER: &str = "\"unserved\"";
 
-static FINGERPRINT: LazyLock<String> =
-    LazyLock::new(|| format!("blake3:{}", blake3::hash(SOURCE.as_bytes()).to_hex()));
+static FINGERPRINT: LazyLock<String> = LazyLock::new(|| {
+    let mut hasher = blake3::Hasher::new();
+    for (path, text) in TREE {
+        hasher
+            .update(path.as_bytes())
+            .update(&[0])
+            .update(text.as_bytes())
+            .update(&[0]);
+    }
+    format!("blake3:{}", hasher.finalize().to_hex())
+});
 static SERVED_FINGERPRINT: LazyLock<String> =
     LazyLock::new(|| format!("{}@{}", fingerprint(), nonce()));
-static SERVED: LazyLock<String> = LazyLock::new(|| with_fingerprint(&SERVED_FINGERPRINT));
-static EXPORTED: LazyLock<String> = LazyLock::new(|| with_fingerprint(fingerprint()));
+static SERVED: LazyLock<Vec<(&'static str, String)>> =
+    LazyLock::new(|| with_fingerprint(&SERVED_FINGERPRINT));
+static EXPORTED: LazyLock<Vec<(&'static str, String)>> =
+    LazyLock::new(|| with_fingerprint(fingerprint()));
 
-fn with_fingerprint(fingerprint: &str) -> String {
-    SOURCE.replacen(PLACEHOLDER, &format!("\"{fingerprint}\""), 1)
+fn with_fingerprint(fingerprint: &str) -> Vec<(&'static str, String)> {
+    TREE.iter()
+        .map(|(path, text)| {
+            let text = if *path == ENGINE {
+                text.replacen(PLACEHOLDER, &format!("\"{fingerprint}\""), 1)
+            } else {
+                (*text).to_owned()
+            };
+            (*path, text)
+        })
+        .collect()
+}
+
+fn engine<'a>(modules: &'a [(&'static str, String)]) -> &'a str {
+    modules
+        .iter()
+        .find(|(path, _)| *path == ENGINE)
+        .map_or("", |(_, text)| text.as_str())
 }
 
 /// 128 unpredictable bits, so no file can anticipate this process's nonce.
@@ -55,22 +107,34 @@ fn nonce() -> String {
     hasher.finalize().to_hex()[..32].to_owned()
 }
 
-/// The fingerprint of the schema this binary serves: `blake3:<hash>`.
+/// The fingerprint of the modules this binary serves: `blake3:<hash>`.
 #[must_use]
 pub fn fingerprint() -> &'static str {
     &FINGERPRINT
 }
 
-/// The schema this process serves at [`MODULE_URI`].
+/// The modules this process serves, by module-path path.
 #[must_use]
-pub fn source() -> &'static str {
+pub fn modules() -> &'static [(&'static str, String)] {
     &SERVED
 }
 
-/// The schema for editors and the `pkl` CLI, without this process's nonce.
+/// The modules for editors and the `pkl` CLI, without this process's nonce.
+#[must_use]
+pub fn exported_modules() -> &'static [(&'static str, String)] {
+    &EXPORTED
+}
+
+/// The engine schema this process serves at [`ENGINE_URI`].
+#[must_use]
+pub fn source() -> &'static str {
+    engine(&SERVED)
+}
+
+/// The engine schema as exported.
 #[must_use]
 pub fn exported_source() -> &'static str {
-    &EXPORTED
+    engine(&EXPORTED)
 }
 
 /// What a configuration's fingerprint says about the schema it used.

@@ -1,0 +1,16 @@
+/// A workflow file amends this module and lists its stages:
+///
+///     amends "modulepath:/ruxel/Workflow.pkl"
+///     stages { new Stage { … } }
+open module Workflow
+
+extends "modulepath:/ruxel/Ruxel.pkl"
+
+import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
+
+/// Stages run one after another.
+stages: Listing<Stage>
+
+output {
+  value = Lowering.config(stages)
+}

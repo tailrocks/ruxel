@@ -65,29 +65,31 @@ impl TemplateRoot {
         } else {
             self.path.join(source)
         };
-        let result = (|| {
-            if path.extension().is_none_or(|extension| extension != "pkl") {
-                return Err(Error::Eval("template source must be a Pkl module".into()));
-            }
-            let mut modules = Modules {
-                root: self
-                    .directory
-                    .try_clone()
-                    .map_err(|error| Error::Io(path.clone(), error))?,
-                path: self.path.clone(),
-                sources: BTreeMap::new(),
-            };
-            let path = modules.identity(&path)?;
-            let source = modules.read(&path)?;
-            let mut evaluator = super::builder(&[]).build();
-            evaluator.set_module_source(modules);
-            evaluator.set_base_path(path.parent().unwrap_or(&self.path));
-            evaluator.eval_source_json_blocking(&source, &path)
-        })();
-        result.map_err(|error| ConfigError::Pkl {
-            module: path,
-            message: error.to_string(),
-            located: None,
+        super::on_eval_stack(&path, || {
+            (|| {
+                if path.extension().is_none_or(|extension| extension != "pkl") {
+                    return Err(Error::Eval("template source must be a Pkl module".into()));
+                }
+                let mut modules = Modules {
+                    root: self
+                        .directory
+                        .try_clone()
+                        .map_err(|error| Error::Io(path.clone(), error))?,
+                    path: self.path.clone(),
+                    sources: BTreeMap::new(),
+                };
+                let path = modules.identity(&path)?;
+                let source = modules.read(&path)?;
+                let mut evaluator = super::builder(&[]).build();
+                evaluator.set_module_source(modules);
+                evaluator.set_base_path(path.parent().unwrap_or(&self.path));
+                evaluator.eval_source_json_blocking(&source, &path)
+            })()
+            .map_err(|error| ConfigError::Pkl {
+                module: path.clone(),
+                message: error.to_string(),
+                located: None,
+            })
         })
     }
 }

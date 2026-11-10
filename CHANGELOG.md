@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A typed workflow language: workflows amend `modulepath:/ruxel/Workflow.pkl` and list stages of steps (`File`, `Packages`, `Service`, `Command`, `Capture`, …); recipes extend `modulepath:/ruxel/Ruxel.pkl`. `modulepath:/ruxel/internal/Lowering.pkl` lowers them to engine input and rejects broken references with plain messages.
 - The binary serves its compiled-in schema as `modulepath:/ruxel/Ruxel.pkl`; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
 - `--module-path DIR[:DIR...]` on `config dump`, `plan`, `check`, `diff` and `apply` serves shared Pkl libraries, like `pkl eval --module-path`.
 - `ruxel schema export DIR` writes the served schema for editors and the `pkl` CLI.
@@ -22,6 +23,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The engine schema moves to `modulepath:/ruxel/engine/Engine.pkl` (module `Engine`); `modulepath:/ruxel/Ruxel.pkl` is now the workflow language. Configuration that imports the engine schema must change its import. The schema fingerprint covers every served module, and `ruxel schema export` writes them all.
+- Evaluation allows an expression depth of 256 instead of pklr's default of 32.
 - Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.

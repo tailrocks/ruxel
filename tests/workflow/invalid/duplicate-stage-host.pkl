@@ -1,0 +1,5 @@
+// expect: host worker-1 is listed twice
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts { inventory.worker1; inventory.worker1 }; steps { new Timezone { name = "UTC" } } } }
