@@ -1,0 +1,5 @@
+// expect: retry delay 1000.5.ms must be whole seconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Capture { bash = "true"; retry { attempts = 2; delay = 1000.5.ms } } } } }

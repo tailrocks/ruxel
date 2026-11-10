@@ -24,11 +24,14 @@ typealias Static = String(!contains("__ruxel_rt_8d41."))
 /// constrained `Listing` typealias.
 typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.")))
 /// An absolute path in normal form: no empty, `.` or `..` segments and no
-/// trailing `/`, so two spellings of one path are the same text.
-typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !split("/").any((segment) -> segment == "." || segment == ".."))
+/// trailing `/`, so two spellings of one path are the same text. No NUL,
+/// which no Unix path can hold.
+typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !contains("\u{0}") && !split("/").any((segment) -> segment == "." || segment == ".."))
 /// An absolute path that can be a file: any but `/`, which is a directory.
 typealias FilePath = AbsolutePath(this != "/")
-typealias HttpsUrl = Static(startsWith("https://"))
+/// `https://`, a host name, IPv4 or bracketed IPv6 address, an optional
+/// port, and an optional path without spaces.
+typealias HttpsUrl = Static(matches(Regex(#"https://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?(/[^\s]*)?"#)))
 typealias FileMode = String(matches(Regex("0[0-7]{3}")))
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
@@ -225,7 +228,7 @@ class AptRepository extends Step {
 
 class Timezone extends Step {
   hidden fixed kind = "timezone"
-  name: Static
+  name: Name
 }
 
 /// The login shell of an existing user.

@@ -248,6 +248,32 @@ fn copies_of_the_language_modules_are_refused() -> Result {
             );
         }
     }
+    // Stages and hosts built from a copy of Ruxel.pkl around served steps.
+    let copied = "import \"export/ruxel/Ruxel.pkl\" as copied\n";
+    for (name, stages) in [
+        (
+            "copied-stage.pkl",
+            "stages { new copied.Stage { title = \"t\"; hosts { new Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { new Timezone { name = \"UTC\" } } } }",
+        ),
+        (
+            "copied-host.pkl",
+            "stages { new Stage { title = \"t\"; hosts { new copied.Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { new Timezone { name = \"UTC\" } } } }",
+        ),
+    ] {
+        let root = scratch.join(name);
+        std::fs::write(
+            &root,
+            format!("amends \"modulepath:/ruxel/Workflow.pkl\"\n{copied}{stages}\n"),
+        )?;
+        let error = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())
+            .err()
+            .ok_or_else(|| format!("{name}: admitted"))?
+            .to_string();
+        assert!(
+            error.contains("comes from a copy of Ruxel.pkl"),
+            "{name}: {error}"
+        );
+    }
     std::fs::remove_dir_all(&scratch)?;
     Ok(())
 }

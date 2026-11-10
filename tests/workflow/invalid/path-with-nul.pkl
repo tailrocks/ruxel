@@ -1,0 +1,6 @@
+// expect-pkl: !contains("\u{0}")
+// expect-pklr: expected FilePath
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new File { path = "/tmp/a\u{0}b"; content = "x" } } } }

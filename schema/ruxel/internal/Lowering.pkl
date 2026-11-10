@@ -33,9 +33,22 @@ hidden servedFingerprint: String = "unserved"
 /// fingerprint ends in `@<nonce>`, a copy's does not. So admission refuses a
 /// copy of either module, even an unmodified one, and names it as a copy.
 function config(stages: Listing<rx.Stage>, workflowFingerprint: String): engine.Config =
-  (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))) {
+  let (copied = copiedClasses(stages.toList()))
+  if (copied != null) throw(copied)
+  else (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))) {
     languageFingerprint = fingerprintOf(workflowFingerprint, servedFingerprint)
   }
+
+/// pklr does not check the classes of list elements, so a stage or host
+/// built from a copy of Ruxel.pkl is refused here, like a copied step in
+/// `Walker`.
+function copiedClasses(stages: List<Any>): String? =
+  if (stages.any((s) -> !(s is rx.Stage))) copyMessage("stage")
+  else if (stages.any((s) -> s.hosts.toList().any((h) -> !(h is rx.Host)))) copyMessage("host")
+  else null
+
+function copyMessage(what: String): String =
+  "A \(what)'s class comes from a copy of Ruxel.pkl. Import \"modulepath:/ruxel/Ruxel.pkl\", which the ruxel binary serves."
 
 function fingerprintOf(workflow: String, lowering: String): String =
   if (workflow == lowering) lowering
@@ -221,7 +234,8 @@ class Walker {
 
   /// `_scope` ends with the step's own position in its list.
   function one(s: rx.Step, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
-    if (!(s is rx.Step)) throw("A step's class comes from a copy of Ruxel.pkl. Import \"modulepath:/ruxel/Ruxel.pkl\", which the ruxel binary serves.")
+    if (!(s is rx.Step)) throw(copyMessage("step"))
+    else if (s is rx.Capture && s.runOn != null && !(s.runOn is rx.Host)) throw(copyMessage("host"))
     else if (s is rx.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
     else if (s is rx.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
     else List(placedAt(s, "", _inherited, _written, _scope))
@@ -268,7 +282,7 @@ function settings(s: rx.Step): List<String> =
     List("'\(name(s))': upgrade installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or upgrade = true")
   else if (s is rx.AptRepository && !spaced(s).isEmpty)
     List("'\(name(s))': \(spaced(s).first) is written into the deb822 source, so it cannot contain spaces or line breaks")
-  else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("ms").value.toInt() % 1000 != 0))
+  else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("s").value.floor != s.retry.delay.toUnit("s").value))
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
   else List()
 

@@ -1,7 +1,7 @@
-// expect: url is written into the deb822 source, so it cannot contain spaces or line breaks
+// expect: suite is written into the deb822 source, so it cannot contain spaces or line breaks
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
-  new AptRepository { name = "example"; url = "https://apt.example.test/\nEnabled: no"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n" }
+  new AptRepository { name = "example"; url = "https://apt.example.test/"; suite = "stable\nEnabled: no"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n" }
 } } }
