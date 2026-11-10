@@ -262,9 +262,36 @@ function settings(s: rx.Step): List<String> =
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
   else if (s is rx.Action && s.changes is rx.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
     List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
+  else if (s is rx.Packages && !packageProblems(s.names.toList()).isEmpty)
+    List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
+  else if (s is rx.AptRepository && !spaced(s).isEmpty)
+    List("'\(name(s))': \(spaced(s).first) is written into the deb822 source, so it cannot contain spaces or line breaks")
   else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("ms").value.toInt() % 1000 != 0))
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
   else List()
+
+/// The agent's closed selector grammar, checked here so a workflow that could
+/// never run fails before the run starts.
+const local selector = Regex(#"([a-z0-9][a-z0-9+.-]+)(:([a-z0-9][a-z0-9-]*))?(=(([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))?"#)
+
+const function packageProblems(names: List<String>): List<String> =
+  let (bad = names.filter((n) -> !n.matches(selector) || pseudoArch(n)))
+  if (!bad.isEmpty) List("unsupported package \"\(bad.first)\"; use name, name=version, name:arch or name:arch=version, with an exact version and a real architecture (not any, native or all)")
+  else
+    let (repeated = names.map((n) -> packageName(n)).filter((p) -> let (same = names.filter((n) -> packageName(n) == p)) same.length > 1 && (same.any((n) -> archOf(n) == null) || same.map((n) -> archOf(n)).toSet().length != same.length)))
+    if (repeated.isEmpty) List() else List("package \"\(repeated.first)\" is listed more than once; list it once, or once per explicit architecture")
+
+const function packageName(n: String): String = n.split("=").first.split(":").first
+const function archOf(n: String): String? = let (s = n.split("=").first) if (s.contains(":")) s.split(":").last else null
+const function pseudoArch(n: String): Boolean = let (a = archOf(n)) a != null && (List("any", "native", "all").contains(a) || a.split("-").contains("any"))
+
+/// The first deb822 field value that contains whitespace.
+const function spaced(r: rx.AptRepository): List<String> =
+  List(List("url", r.url), List("suite", r.suite)).filter((f) -> hasSpace(f.last)).map((f) -> f.first)
+    + (if (r.components.toList().any((c) -> c.isEmpty || hasSpace(c))) List("a component") else List())
+    + (if (r.architectures.toList().any((a) -> a.isEmpty || hasSpace(a))) List("an architecture") else List())
+
+const function hasSpace(text: String): Boolean = List(" ", "\t", "\n", "\r", "\u{b}", "\u{c}").any((c) -> text.contains(c))
 
 /// A recipe has no change of its own: name the steps that matter.
 function recipeDeps(ix: StageIndex, i: Int): List<String> =
@@ -494,7 +521,7 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null), null, lit(false)))
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
-  ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
+  ["aptRepository"] = (s, m) -> List(task(helperMeta("Create /etc/apt/keyrings for \(s.name)", m, null), directory("/etc/apt/keyrings", "0755"), null, null), task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
@@ -508,9 +535,19 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
 function validateTasks(f: rx.File, m: Meta): List<engine.Task> =
   if (f.validate.isEmpty) List()
   else List(
-    task(helperMeta("Stage \(f.path)", m, null), copy(candidate(f), f), null, null),
+    task(helperMeta("Stage \(f.path)", m, null), candidateCopy(f), null, null),
     task(helperMeta("Validate \(f.path)", m, null), command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))), null), null, lit(false))
   )
+
+/// The candidate is root's alone (0600), whatever the file's owner, so no one
+/// else can change it between staging and validation.
+function candidateCopy(f: rx.File): engine.Copy = new engine.Copy {
+  dest = candidate(f)
+  content = runtimeText(f.content)
+  mode = "0600"
+  owner = "root"
+  group = "root"
+}
 
 /// `.<name>.ruxel-candidate` beside the file: validators that resolve
 /// relative includes still work, and `*`, `*.conf` and `*.d` loaders skip

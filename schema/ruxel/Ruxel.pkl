@@ -30,8 +30,9 @@ typealias HttpsUrl = Static(startsWith("https://"))
 typealias FileMode = String(matches(Regex("0[0-7]{3}")))
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
-/// `localhost` is reserved: the engine uses it for the controller itself.
-typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "localhost")
+/// `localhost` and `all` are reserved: the engine uses them for the
+/// controller itself and for every host.
+typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "localhost" && this != "all")
 /// IPv4 (`192.0.2.1`, each part 0 to 255), or IPv6 (`2001:db8::1`, an
 /// embedded IPv4 tail allowed) with an optional zone such as `%eth0` for
 /// link-local addresses.
@@ -180,7 +181,9 @@ class PackageIndex extends Step {
   hidden fixed kind = "packageIndex"
 }
 
-/// Debian packages that are installed.
+/// Debian packages that are installed. Each name is `name`, `name=version`,
+/// `name:arch` or `name:arch=version`, with one exact Debian version; a
+/// package is listed once, or once per explicit architecture.
 class Packages extends Step {
   hidden fixed kind = "packages"
   names: StaticList(!isEmpty)

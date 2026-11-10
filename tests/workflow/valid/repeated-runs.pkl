@@ -5,7 +5,7 @@ import "../inventory.pkl"
 // to a step that runs again means every earlier run: the second reload
 // watches both installs, and "After reload" watches both reloads. A capture
 // runs once per stage; a re-read after a change is its own, titled capture.
-local packages = new Packages { names { "x" } }
+local packages = new Packages { names { "xz-utils" } }
 local kernelBefore = new Capture { title = "Kernel before upgrade"; bash = "uname -r" }
 local kernelAfter = new Capture { title = "Kernel after upgrade"; bash = "uname -r" }
 local release = new Capture { bash = "cat /etc/debian_version" }

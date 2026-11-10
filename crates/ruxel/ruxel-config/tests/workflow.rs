@@ -119,6 +119,17 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
     };
     let native = content("/etc/apt/sources.list.d/native.sources").ok_or("no native sources")?;
     let pinned = content("/etc/apt/sources.list.d/pinned.sources").ok_or("no pinned sources")?;
+    // The keyring directory exists before the key is written into it.
+    let all = tasks(&config);
+    let position = |name: &str| all.iter().position(|task| task["name"] == name);
+    let directory =
+        position("Create /etc/apt/keyrings for native").ok_or("no keyrings directory")?;
+    assert_eq!(all[directory]["operation"]["path"], "/etc/apt/keyrings");
+    assert_eq!(all[directory]["operation"]["state"], "directory");
+    assert_eq!(
+        position("Install native apt signing key"),
+        Some(directory + 1)
+    );
     assert!(!native.contains("Architectures:"), "{native}");
     assert!(pinned.contains("Architectures: arm64\n"), "{pinned}");
     Ok(())
@@ -219,5 +230,20 @@ fn copies_of_the_language_modules_are_refused() -> Result {
         }
     }
     std::fs::remove_dir_all(&scratch)?;
+    Ok(())
+}
+
+/// The validator reads a candidate only root can change, whatever the
+/// file's own owner and mode.
+#[test]
+fn validator_candidates_belong_to_root() -> Result {
+    let config = valid("composition.pkl")?;
+    let staged = tasks(&config)
+        .into_iter()
+        .find(|task| task["name"] == "Stage /etc/haproxy/haproxy.cfg")
+        .ok_or("no staging task")?;
+    for (field, value) in [("mode", "0600"), ("owner", "root"), ("group", "root")] {
+        assert_eq!(staged["operation"][field], value, "{field}");
+    }
     Ok(())
 }
