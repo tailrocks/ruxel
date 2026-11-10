@@ -43,6 +43,42 @@ fn user_groups_and_volume_pvs_accept_listing_bodies() -> Result {
     Ok(())
 }
 
+/// `TextList` and `PrivilegeList` amend their `*Listing` default too. An unset
+/// optional `TextList` stays null, and `privs` stays required and non-empty.
+#[test]
+fn text_and_privilege_lists_accept_listing_bodies() -> Result {
+    let apt = evaluate(r#"new R.Apt { name { "curl"; "git" } }"#)?;
+    assert_eq!(apt["name"], serde_json::json!(["curl", "git"]));
+    let unset = evaluate("new R.Apt {}")?;
+    assert!(
+        unset.get("name").is_none_or(serde_json::Value::is_null),
+        "{unset}"
+    );
+    let base = r#"login_db = "db"; role = "a""#;
+    let privileges = evaluate(&format!(
+        r#"new R.PostgresPrivileges {{ {base}; type = "default_privs"; privs {{ "SELECT" }}; objs {{ "tables" }}; target_roles {{ "owner" }} }}"#
+    ))?;
+    assert_eq!(privileges["privs"], serde_json::json!(["SELECT"]));
+    assert_eq!(privileges["objs"], serde_json::json!(["tables"]));
+    assert_eq!(privileges["target_roles"], serde_json::json!(["owner"]));
+    for privs in ["", "privs {}", r#"privs { " " }"#] {
+        assert!(
+            evaluate(&format!(
+                r#"new R.PostgresPrivileges {{ {base}; type = "table"; {privs} }}"#
+            ))
+            .is_err(),
+            "{privs}"
+        );
+    }
+    assert!(
+        evaluate(&format!(
+            r#"new R.PostgresPrivileges {{ {base}; type = "database"; privs = "ALL" }}"#
+        ))
+        .is_err()
+    );
+    Ok(())
+}
+
 #[test]
 fn become_user_requires_nonempty_valid_usernames() -> Result {
     for class in ["Play", "Task"] {
