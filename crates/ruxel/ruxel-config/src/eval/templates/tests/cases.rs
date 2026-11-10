@@ -60,7 +60,7 @@ fn file_resource_reads_keep_native_behavior() -> std::result::Result<(), Box<dyn
         "output { value = read(\"../resource.txt\").text }",
     )?;
     let path = fixture.root().join("main.pkl");
-    let expected = crate::eval(&path)?;
+    let expected = crate::eval(&path, &[])?;
     assert_eq!(expected, json!("resource-value"));
     assert_eq!(
         TemplateRoot::open(&fixture.root())?.evaluate(Path::new("main.pkl"))?,

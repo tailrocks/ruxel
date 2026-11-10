@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-const FIXTURE: &str = r#"import "../schema/Ruxel.pkl"
+const FIXTURE: &str = r#"import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "pause"; targets { "all" }; tasks {
@@ -93,14 +93,12 @@ fn case(
     Ok(())
 }
 
-pub fn run(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
+pub fn run(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::Builder::new()
         .prefix("ruxel-pr66-pause-")
         .tempdir()?;
     let base = temp.path();
-    fs::create_dir(base.join("schema"))?;
     fs::create_dir(base.join("fixtures"))?;
-    fs::copy(schema, base.join("schema/Ruxel.pkl"))?;
     let marker = base.join("marker");
     let module = base.join("fixtures/pause.pkl");
     let quoted = serde_json::to_string(marker.to_str().context("non-UTF8 fixture path")?)?;

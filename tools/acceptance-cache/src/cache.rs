@@ -56,11 +56,9 @@ fn run(
     let event = task(&rows, if private { "[censored]" } else { "copy" })?.clone();
     Ok((event, format!("{}{}", output.stdout, output.stderr)))
 }
-pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
-    let env = Env::new(cli, agent, schema)?;
+pub fn execute(cli: &Path, agent: &Path) -> Result<()> {
+    let env = Env::new(cli, agent)?;
     fs::create_dir(env.path("fixture"))?;
-    fs::create_dir(env.path("schema"))?;
-    fs::copy(schema, env.path("schema/Ruxel.pkl"))?;
 
     let source = env.path("fixture/source");
     let dest = env.path("destination");

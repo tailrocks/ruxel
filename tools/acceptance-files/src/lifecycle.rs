@@ -5,8 +5,8 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
-pub fn run(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
-    let env = Env::new(cli, agent, schema, "fixtures")?;
+pub fn run(cli: &Path, agent: &Path) -> Result<()> {
+    let env = Env::new(cli, agent, "fixtures")?;
     for (name, contents) in [
         ("line", "setting=old\n"),
         ("replace", "fruit=apple\n"),

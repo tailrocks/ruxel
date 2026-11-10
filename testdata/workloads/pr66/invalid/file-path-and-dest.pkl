@@ -1,4 +1,4 @@
-import "../../../../schema/Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.File {
   path = "__RUN_ROOT__/literal"
   dest = "__RUN_ROOT__/dest"

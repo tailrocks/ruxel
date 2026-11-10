@@ -41,8 +41,8 @@ fn main() -> Result<()> {
         .context("missing repository root")?
         .to_owned();
     let root = root.unwrap_or(default_root).canonicalize()?;
-    checks::retry(&root, &cli, &agent)?;
+    checks::retry(&cli, &agent)?;
     checks::check_semantics(&root, &cli, &agent)?;
-    checks::check_overrides(&root, &cli, &agent)?;
+    checks::check_overrides(&cli, &agent)?;
     Ok(())
 }

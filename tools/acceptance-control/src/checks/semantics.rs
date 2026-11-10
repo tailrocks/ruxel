@@ -10,7 +10,7 @@ pub fn check_semantics(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
         actual == FIXTURE_HASH,
         "fixture changed; review it before running locally"
     );
-    let temp = prepare(root)?;
+    let temp = prepare()?;
     let fixture_dir = temp.path().join("testdata/workloads/pr66");
     fs::create_dir_all(&fixture_dir)?;
     let payload = temp.path().join("payload");

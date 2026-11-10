@@ -19,17 +19,13 @@ pub struct Harness<'a> {
     pub payload: PathBuf,
 }
 impl<'a> Harness<'a> {
-    pub fn new(root: &Path, cli: &'a Path, agent: &'a Path) -> Result<Self> {
+    pub fn new(cli: &'a Path, agent: &'a Path) -> Result<Self> {
         let temp = tempfile::Builder::new()
             .prefix("ruxel-copy-acceptance-")
             .tempdir()?;
-        for dir in ["schema", "fixtures", "payload"] {
+        for dir in ["fixtures", "payload"] {
             fs::create_dir(temp.path().join(dir))?;
         }
-        fs::copy(
-            root.join("schema/Ruxel.pkl"),
-            temp.path().join("schema/Ruxel.pkl"),
-        )?;
         let module = temp.path().join("fixtures/copy.pkl");
         let payload = temp.path().join("payload");
         Ok(Self {
@@ -42,7 +38,7 @@ impl<'a> Harness<'a> {
     }
     pub fn write(&self, tasks: &str) -> Result<()> {
         let text = format!(
-            r#"import "../schema/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/Ruxel.pkl"
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "copy acceptance"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}

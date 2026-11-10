@@ -45,13 +45,13 @@ fn main() -> Result<()> {
         .context("missing root")?
         .to_owned();
     let root = root.unwrap_or(default_root).canonicalize()?;
-    scope(&root, &cli, &agent)?;
-    cross_play::run(&root, &cli, &agent)?;
-    handler::run(&root, &cli, &agent)?;
-    control::run(&root, &cli, &agent)?;
+    scope(&cli, &agent)?;
+    cross_play::run(&cli, &agent)?;
+    handler::run(&cli, &agent)?;
+    control::run(&cli, &agent)?;
     lazy_layers::run(&root, &cli, &agent)?;
-    loops::run(&root, &cli, &agent, false)?;
-    loops::run(&root, &cli, &agent, true)
+    loops::run(&cli, &agent, false)?;
+    loops::run(&cli, &agent, true)
 }
 
 fn result<'a>(events: &'a [Value], task: &str) -> Result<&'a Value> {
@@ -59,13 +59,11 @@ fn result<'a>(events: &'a [Value], task: &str) -> Result<&'a Value> {
     ensure!(rows.len() == 1, "{task}: expected one event");
     Ok(&rows[0]["result"])
 }
-fn scope(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
+fn scope(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    fs::create_dir(base.join("schema"))?;
     fs::create_dir(base.join("fixtures"))?;
     fs::create_dir(base.join("payload"))?;
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
     let target = base.join("payload/scopes");
     let command = "printf '%s|%s|%s|%s' \"$RUXEL_SCOPE_A\" \"$RUXEL_SCOPE_B\" \"$RUXEL_SCOPE_C\" \"$RUXEL_SCOPE_SHARED\"";
     let source = include_str!("../fixtures/scope.pkl")

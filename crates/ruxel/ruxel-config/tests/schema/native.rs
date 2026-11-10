@@ -20,13 +20,13 @@ fn migrated_workloads_and_template_remain_evaluable() -> Result {
         "storage-xfs",
         "system-surface",
     ] {
-        match ruxel_config::eval(&directory.join(format!("{name}.pkl"))) {
+        match ruxel_config::eval_config(&directory.join(format!("{name}.pkl")), &[]) {
             Ok(output) if output["plays"].as_array().is_some_and(|p| !p.is_empty()) => {}
             actual => failures.push(format!("{name}: {actual:?}")),
         }
     }
     assert!(failures.is_empty(), "workloads failed: {failures:#?}");
-    let template = ruxel_config::eval(&directory.join("assets/template.pkl"))?;
+    let template = ruxel_config::eval(&directory.join("assets/template.pkl"), &[])?;
     assert_eq!(template["kind"], "call");
     assert_eq!(template["function"], "concat");
     assert_eq!(template["args"].as_array().map(Vec::len), Some(11));

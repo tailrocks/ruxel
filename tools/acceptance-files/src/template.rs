@@ -3,8 +3,8 @@ use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::{fs, os::unix::fs::MetadataExt, path::Path};
 
-const PIN: &str = "e848f3f641a2b66a80d18c9af88a4906d313545d206b43f1d1d3a9eeb5ee1eab";
-const PKL: &str = r#"import "../../../schema/Ruxel.pkl"
+const PIN: &str = "1ee43af29e54b825137aa34281cd687abbee8bc2afe185226b8c4b85e5018f96";
+const PKL: &str = r#"import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "native template"; targets { "all" }; vars {
@@ -70,10 +70,10 @@ fn predict(env: &Env, dest: &Path) -> Result<()> {
     }
     Ok(())
 }
-pub fn run(cli: &Path, agent: &Path, schema: &Path, asset: &Path) -> Result<()> {
+pub fn run(cli: &Path, agent: &Path, asset: &Path) -> Result<()> {
     let bytes = fs::read(asset)?;
     ensure!(digest(&bytes) == PIN, "template asset pin mismatch");
-    let env = Env::new(cli, agent, schema, "testdata/workloads/pr66")?;
+    let env = Env::new(cli, agent, "testdata/workloads/pr66")?;
     let source = env
         .module
         .parent()
@@ -84,23 +84,14 @@ pub fn run(cli: &Path, agent: &Path, schema: &Path, asset: &Path) -> Result<()> 
             .parent()
             .ok_or_else(|| anyhow::anyhow!("missing parent"))?,
     )?;
-    let source_text = std::str::from_utf8(&bytes)?;
-    let import = "import \"../../../../schema/Ruxel.pkl\"";
     ensure!(
-        source_text.matches(import).count() == 1,
+        std::str::from_utf8(&bytes)?
+            .matches("import \"modulepath:/ruxel/Ruxel.pkl\"")
+            .count()
+            == 1,
         "unexpected template import"
     );
-    let local_schema = env
-        .module
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("missing parent"))?
-        .join("schema");
-    fs::create_dir_all(&local_schema)?;
-    fs::copy(schema, local_schema.join("Ruxel.pkl"))?;
-    fs::write(
-        &source,
-        source_text.replace(import, "import \"../schema/Ruxel.pkl\""),
-    )?;
+    fs::write(&source, &bytes)?;
     let dest = env.payload.join("rendered");
     write_module(&env, &source, &dest, true)?;
     apply(&env, &dest, true, false, true)?;

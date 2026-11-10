@@ -3,14 +3,14 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 #[test]
 fn snapshot_detects_fixture_changes_but_ignores_agent_state() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
-    fs::create_dir(temp.path().join("schema"))?;
+    fs::create_dir(temp.path().join("fixtures"))?;
     fs::create_dir(temp.path().join("state"))?;
-    fs::write(temp.path().join("schema/Ruxel.pkl"), "schema")?;
+    fs::write(temp.path().join("fixtures/workload.pkl"), "fixture")?;
     fs::write(temp.path().join("state/ledger"), "one")?;
     let before = fixture_snapshot(temp.path())?;
     fs::write(temp.path().join("state/ledger"), "two")?;
     assert_eq!(fixture_snapshot(temp.path())?, before);
-    fs::write(temp.path().join("schema/Ruxel.pkl"), "changed")?;
+    fs::write(temp.path().join("fixtures/workload.pkl"), "changed")?;
     assert_ne!(fixture_snapshot(temp.path())?, before);
     Ok(())
 }

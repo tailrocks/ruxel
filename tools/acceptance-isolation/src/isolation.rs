@@ -2,8 +2,8 @@ use crate::common::{Harness, TWO_PLAYS, events};
 use anyhow::{Result, ensure};
 use serde_json::Value;
 use std::{collections::BTreeSet, fs, path::Path};
-pub fn check(root: &Path, cli: &Path, agent: &Path, post: bool) -> Result<()> {
-    let h = Harness::new(root, cli, agent)?;
+pub fn check(cli: &Path, agent: &Path, post: bool) -> Result<()> {
+    let h = Harness::new(cli, agent)?;
     h.write(TWO_PLAYS)?;
     for failed in 0..2 {
         let log = h.path(&format!("launch-{failed}"));

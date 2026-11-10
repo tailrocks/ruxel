@@ -17,7 +17,7 @@ const ALPHA: &str = "RUXEL_SYNTHETIC_ALPHA_824";
 const BETA: &str = "RUXEL_SYNTHETIC_BETA_627";
 const WRONG: &str = "RUXEL_SYNTHETIC_WRONG_913";
 const CONFIG: &str = r#"
-import "Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
 function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
 function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
@@ -43,10 +43,6 @@ output { value = new Ruxel.Config {
 "#;
 
 fn prepare(dir: &Path) -> Result<()> {
-    fs::write(
-        dir.join("Ruxel.pkl"),
-        include_bytes!("../../../schema/Ruxel.pkl"),
-    )?;
     fs::write(dir.join("fixture.pkl"), CONFIG)?;
     let op = dir.join("op");
     fs::write(

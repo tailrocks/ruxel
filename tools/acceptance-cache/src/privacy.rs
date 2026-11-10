@@ -62,8 +62,8 @@ pub fn redacted(stdout: &str, log: &str, names: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-pub fn execute(cli: &Path, agent: &Path, schema: &Path) -> Result<()> {
-    let env = Env::new(cli, agent, schema)?;
+pub fn execute(cli: &Path, agent: &Path) -> Result<()> {
+    let env = Env::new(cli, agent)?;
     let executed = env.path("command-executed");
     let private = env.path("secret-payload");
     let shell = env.path("shell-payload");
