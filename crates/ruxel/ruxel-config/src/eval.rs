@@ -58,7 +58,10 @@ pub fn eval(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, Con
         message,
         located: None,
     };
-    let module = std::fs::canonicalize(root).map_err(|error_| error(error_.to_string()))?;
+    // The root module is read through the root directory's descriptor like
+    // any import: a symlinked root module is refused, never followed to pick
+    // the root.
+    let module = std::path::absolute(root).map_err(|error_| error(error_.to_string()))?;
     let directory = match &options.root_dir {
         Some(directory) => directory.clone(),
         None => module.parent().unwrap_or(Path::new("/")).to_path_buf(),
@@ -67,21 +70,27 @@ pub fn eval(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, Con
         Root::open(directory)
             .map_err(|error_| error(format!("cannot open {}: {error_}", directory.display())))
     };
-    let mut roots = vec![open(&directory)?];
-    if !module.starts_with(roots[0].path()) {
-        return Err(error(format!(
-            "the root module is outside --root-dir {}",
-            roots[0].path().display()
-        )));
-    }
+    let base = open(&directory)?;
+    let base_path = base.path().to_path_buf();
+    let mut roots = vec![base];
     let mut module_path = Vec::new();
     for directory in &options.module_path {
         let root = open(directory)?;
         module_path.push(root.path().to_path_buf());
         roots.push(root);
     }
-    evaluate(&module, Arc::new(Confined::new(roots)), &module_path)
-        .map_err(|error_| error(error_.to_string()))
+    let files = Confined::new(roots);
+    let module = files
+        .identity(&module)
+        .ok()
+        .filter(|module| module.starts_with(&base_path))
+        .ok_or_else(|| {
+            error(format!(
+                "the root module is outside --root-dir {}",
+                base_path.display()
+            ))
+        })?;
+    evaluate(&module, Arc::new(files), &module_path).map_err(|error_| error(error_.to_string()))
 }
 
 /// Evaluate a configuration root and admit it against the served schema

@@ -75,3 +75,32 @@ fn absolute_paths_through_symlinked_ancestors_name_the_root() -> Result {
     assert_eq!(result?, json!({"value": "inside"}));
     Ok(())
 }
+
+#[test]
+fn symlinked_root_module_is_refused_not_followed() -> Result {
+    let fixture = Fixture::new()?;
+    std::fs::write(
+        fixture.0.join("target.pkl"),
+        "value = read(\"outside.txt\").text",
+    )?;
+    let link = fixture.config().join("main.pkl");
+    std::os::unix::fs::symlink(fixture.0.join("target.pkl"), &link)?;
+    assert!(refused(
+        eval(&link, &EvalOptions::default()).map_err(|error| error.to_string())
+    ));
+    Ok(())
+}
+
+#[test]
+fn globs_cannot_leave_or_list_through_symlinks() -> Result {
+    let fixture = Fixture::new()?;
+    std::os::unix::fs::symlink(&fixture.0, fixture.config().join("dir"))?;
+    for source in [
+        "value = read*(\"../*.txt\").keys.toList()",
+        "value = read*(\"sub/../../*.txt\").keys.toList()",
+        "value = read*(\"dir/*.txt\").keys.toList()",
+    ] {
+        assert!(refused(fixture.eval(source)), "{source}");
+    }
+    Ok(())
+}

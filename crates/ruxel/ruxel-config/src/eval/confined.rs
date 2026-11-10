@@ -22,19 +22,27 @@ pub(super) struct Root {
 }
 
 impl Root {
-    /// Open `path` after resolving its symlinks once; the resolved directory is
-    /// the root from then on.
+    /// Open the directory `path` names now (following symlinks in it), then
+    /// name it by its canonical path. The name is checked against the open
+    /// descriptor, so a rename between the two steps is refused rather than
+    /// pairing the descriptor with another directory's name.
     pub(super) fn open(path: &Path) -> std::io::Result<Self> {
-        let path = std::fs::canonicalize(path)?;
-        let directory = rustix::fs::open(
-            &path,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-            Mode::empty(),
-        )?;
-        Ok(Self {
+        let directory: File = rustix::fs::open(
             path,
-            directory: directory.into(),
-        })
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?
+        .into();
+        let path = std::fs::canonicalize(path)?;
+        let named = rustix::fs::stat(&path)?;
+        let opened = rustix::fs::fstat(&directory)?;
+        if (named.st_dev, named.st_ino) != (opened.st_dev, opened.st_ino) {
+            return Err(std::io::Error::other(format!(
+                "{} changed while it was opened",
+                path.display()
+            )));
+        }
+        Ok(Self { path, directory })
     }
 
     /// Use an already opened directory as the root named by `path`.
@@ -89,10 +97,13 @@ impl Confined {
         Self { roots }
     }
 
+    /// The most specific root containing `path`, so a module path directory
+    /// inside the root directory is read through its own descriptor.
     fn find(&self, path: &Path) -> Option<(&Root, PathBuf)> {
         self.roots
             .iter()
-            .find_map(|root| root.relative(path).map(|relative| (root, relative)))
+            .filter_map(|root| root.relative(path).map(|relative| (root, relative)))
+            .max_by_key(|(root, _)| root.path.components().count())
     }
 
     /// The root that contains `path`, and `path` relative to it. A path that
@@ -113,7 +124,13 @@ impl Confined {
                 other => existing.push(other),
             }
         }
+        // Never resolve the last component: a symlink there is refused when
+        // it is opened.
         let mut rest = Vec::new();
+        if let Some(name) = existing.file_name().map(std::ffi::OsStr::to_os_string) {
+            rest.push(name);
+            existing.pop();
+        }
         loop {
             if let Ok(mut resolved) = std::fs::canonicalize(&existing) {
                 resolved.extend(rest.iter().rev());
@@ -127,7 +144,7 @@ impl Confined {
         }
     }
 
-    fn refusal(&self, path: &Path) -> Error {
+    pub(super) fn refusal(&self, path: &Path) -> Error {
         let roots = self
             .roots
             .iter()
@@ -281,13 +298,33 @@ impl EvalCapabilities for Resources {
         Err(refused("A temporary directory"))
     }
 
-    /// Expand beneath a confined base, then keep only matches that open
-    /// beneath the root without a symlink.
+    /// Expand beneath a confined base. The pattern may not leave the base,
+    /// and its literal leading directories are opened without following
+    /// symlinks before anything is listed; `expand_glob` itself skips
+    /// symlinks. Every match is opened again beneath its root, so a symlink
+    /// swapped in while listing is refused.
     fn glob(&mut self, base: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
         let base = self.0.identity(base)?;
+        if pattern.starts_with('/') || pattern.split('/').any(|part| part == "..") {
+            return Err(self.0.refusal(&base.join(pattern)));
+        }
+        let literal: PathBuf = pattern
+            .split('/')
+            .take_while(|part| !part.contains(['*', '?', '[', '{', '\\']))
+            .collect();
+        let prefix = if pattern.contains(['*', '?', '[', '{', '\\']) {
+            base.join(literal)
+        } else {
+            base.join(literal)
+                .parent()
+                .map_or_else(|| base.clone(), Path::to_path_buf)
+        };
+        if self.0.open(&prefix)?.is_none() {
+            return Ok(Vec::new());
+        }
         let mut matches = Vec::new();
         for path in pklr::eval::expand_glob(&base, pattern)? {
-            if matches!(self.0.open(&path), Ok(Some(_))) {
+            if self.0.open(&path)?.is_some() {
                 matches.push(path);
             }
         }

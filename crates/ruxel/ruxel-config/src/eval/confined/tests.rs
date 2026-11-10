@@ -123,3 +123,19 @@ fn missing_root_module_is_an_error() {
 
 #[cfg(unix)]
 mod symlinks;
+
+#[test]
+fn nested_roots_read_through_their_own_descriptor() -> Result {
+    use super::{Confined, Root};
+    let fixture = Fixture::new()?;
+    let lib = fixture.write("lib/value.txt", "pinned")?;
+    let files = Confined::new(vec![
+        Root::open(&fixture.config())?,
+        Root::open(&fixture.config().join("lib"))?,
+    ]);
+    let lib = std::fs::canonicalize(lib)?;
+    std::fs::rename(fixture.config().join("lib"), fixture.config().join("moved"))?;
+    fixture.write("lib/value.txt", "replacement")?;
+    assert_eq!(files.read(&lib)?, Some(b"pinned".to_vec()));
+    Ok(())
+}
