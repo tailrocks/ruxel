@@ -163,8 +163,11 @@ impl PsqlSession {
                     format!("psql failed: {error}")
                 });
             }
-            if line.trim_end() == marker {
-                return Ok(output.trim().to_string());
+            if line.strip_suffix('\n') == Some(marker.as_str()) {
+                if output.ends_with('\n') {
+                    output.pop();
+                }
+                return Ok(output);
             }
             output.push_str(&line);
         }

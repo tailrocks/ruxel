@@ -1,5 +1,6 @@
 mod error;
 mod eval;
+pub mod model;
 pub mod render;
 pub mod schema;
 
