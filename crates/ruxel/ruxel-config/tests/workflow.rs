@@ -157,3 +157,56 @@ fn edge_values_lower_with_their_guards() -> Result {
     );
     Ok(())
 }
+
+/// A workflow evaluated with an exported copy of `Workflow.pkl`, of
+/// `internal/Lowering.pkl`, or of both, still reaches the served engine
+/// schema. Admission must refuse it all the same.
+#[test]
+fn copies_of_the_language_modules_are_refused() -> Result {
+    let scratch =
+        std::env::temp_dir().join(format!("ruxel-language-copies-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&scratch));
+    for (path, text) in ruxel_config::schema::exported_modules() {
+        let file = scratch.join(format!("export{path}"));
+        std::fs::create_dir_all(file.parent().ok_or("no parent")?)?;
+        std::fs::write(file, text)?;
+    }
+    let copied_lowering = "import \"modulepath:/ruxel/internal/Lowering.pkl\" as Lowering";
+    let workflow = std::fs::read_to_string(scratch.join("export/ruxel/Workflow.pkl"))?;
+    assert!(workflow.contains(copied_lowering));
+    // A Workflow.pkl copy that uses the copied Lowering.pkl.
+    std::fs::write(
+        scratch.join("export/ruxel/WorkflowWithCopiedLowering.pkl"),
+        workflow.replace(
+            copied_lowering,
+            "import \"internal/Lowering.pkl\" as Lowering",
+        ),
+    )?;
+    let body = "\nstages { new Stage { title = \"t\"; hosts { new Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { new Timezone { name = \"UTC\" } } } }\n";
+    for (name, amends) in [
+        ("served.pkl", "modulepath:/ruxel/Workflow.pkl"),
+        ("workflow-copy.pkl", "export/ruxel/Workflow.pkl"),
+        (
+            "both-copies.pkl",
+            "export/ruxel/WorkflowWithCopiedLowering.pkl",
+        ),
+    ] {
+        let root = scratch.join(name);
+        std::fs::write(&root, format!("amends \"{amends}\"\n{body}"))?;
+        let result = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default());
+        if name == "served.pkl" {
+            result?;
+        } else {
+            let error = result
+                .err()
+                .ok_or_else(|| format!("{name}: admitted"))?
+                .to_string();
+            assert!(
+                error.contains("a copy of this ruxel's schema"),
+                "{name}: {error}"
+            );
+        }
+    }
+    std::fs::remove_dir_all(&scratch)?;
+    Ok(())
+}

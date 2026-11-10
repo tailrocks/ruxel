@@ -1,6 +1,5 @@
 use super::{
-    ENGINE, FINGERPRINT_PROPERTY, PLACEHOLDER, SERVED_FINGERPRINT, TREE, admit, exported_modules,
-    exported_source, fingerprint, modules, source,
+    FINGERPRINT_PROPERTY, SERVED_FINGERPRINT, TREE, admit, exported_modules, fingerprint, modules,
 };
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -32,37 +31,6 @@ fn every_committed_module_is_served_and_exported() {
     for list in [modules(), exported_modules()] {
         let listed: BTreeSet<String> = list.iter().map(|(path, _)| (*path).to_owned()).collect();
         assert_eq!(listed, tree);
-    }
-}
-
-#[test]
-fn served_and_exported_engine_replace_the_single_placeholder() {
-    let committed = TREE
-        .iter()
-        .find(|(path, _)| *path == ENGINE)
-        .map_or("", |(_, text)| *text);
-    assert_eq!(
-        committed,
-        include_str!("../../../../../schema/ruxel/engine/Engine.pkl")
-    );
-    assert_eq!(committed.matches(PLACEHOLDER).count(), 1);
-    assert!(fingerprint().starts_with("blake3:"));
-    let served = SERVED_FINGERPRINT.as_str();
-    assert!(served.starts_with(&format!("{}@", fingerprint())));
-    assert!(source().contains(&format!(
-        "fixed {FINGERPRINT_PROPERTY}: String = \"{served}\""
-    )));
-    assert!(exported_source().contains(&format!(
-        "fixed {FINGERPRINT_PROPERTY}: String = \"{}\"",
-        fingerprint()
-    )));
-    for text in [source(), exported_source()] {
-        assert_eq!(text.matches(PLACEHOLDER).count(), 0);
-    }
-    for (path, text) in modules().iter().chain(exported_modules()) {
-        if *path != ENGINE {
-            assert!(!text.contains(fingerprint()), "{path}");
-        }
     }
 }
 
@@ -136,3 +104,17 @@ fn admission_refuses_copies_and_names_the_fix() {
         assert!(error.contains("ruxel schema export"), "{error}");
     }
 }
+
+#[test]
+fn the_embedded_engine_is_the_committed_file() {
+    let embedded = TREE
+        .iter()
+        .find(|(path, _)| *path == super::ENGINE)
+        .map_or("", |(_, text)| *text);
+    assert_eq!(
+        embedded,
+        include_str!("../../../../../schema/ruxel/engine/Engine.pkl")
+    );
+}
+
+mod fingerprints;

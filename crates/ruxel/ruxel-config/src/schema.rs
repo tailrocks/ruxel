@@ -7,10 +7,12 @@
 //! configuration also supplies the modules it was built with. The served
 //! engine schema sets `Config.schemaFingerprint` to `blake3:<hash>@<nonce>`:
 //! the BLAKE3 hash of every module path and text under `schema/ruxel/`, and a
-//! nonce drawn once per process. Only the modules this process serves can
-//! produce the nonce, so admission refuses every copy, even an unmodified
-//! one. `ruxel schema export` writes the modules with the hash alone, for
-//! editors and the `pkl` CLI.
+//! nonce drawn once per process. The two language modules that build a
+//! `Config`, `Workflow.pkl` and `internal/Lowering.pkl`, carry the same value
+//! and record it as `Config.languageFingerprint`. Only the modules this
+//! process serves can produce the nonce, so admission refuses every copy of
+//! any of them, even an unmodified one. `ruxel schema export` writes the
+//! modules with the hash alone, for editors and the `pkl` CLI.
 
 use crate::ConfigError;
 use std::sync::LazyLock;
@@ -46,9 +48,20 @@ pub(crate) const TREE: &[(&str, &str)] = &[
 ];
 /// The module that declares `Config.schemaFingerprint`.
 pub(crate) const ENGINE: &str = "/ruxel/engine/Engine.pkl";
-/// The committed placeholder that the served and exported engine schema
-/// replace with the fingerprint.
+/// The modules whose first [`PLACEHOLDER`] the served and exported texts
+/// replace with the fingerprint: the engine, which sets
+/// `Config.schemaFingerprint`, and the two language modules that together set
+/// `Config.languageFingerprint`, so a copy of either is refused too.
+pub(crate) const FINGERPRINTED: &[&str] = &[
+    ENGINE,
+    "/ruxel/Workflow.pkl",
+    "/ruxel/internal/Lowering.pkl",
+];
+/// The committed placeholder that the served and exported modules replace
+/// with the fingerprint.
 pub(crate) const PLACEHOLDER: &str = "\"unserved\"";
+/// The `Config` property the workflow language sets.
+pub const LANGUAGE_FINGERPRINT_PROPERTY: &str = "languageFingerprint";
 
 static FINGERPRINT: LazyLock<String> = LazyLock::new(|| {
     let mut hasher = blake3::Hasher::new();
@@ -71,7 +84,7 @@ static EXPORTED: LazyLock<Vec<(&'static str, String)>> =
 fn with_fingerprint(fingerprint: &str) -> Vec<(&'static str, String)> {
     TREE.iter()
         .map(|(path, text)| {
-            let text = if *path == ENGINE {
+            let text = if FINGERPRINTED.contains(path) {
                 text.replacen(PLACEHOLDER, &format!("\"{fingerprint}\""), 1)
             } else {
                 (*text).to_owned()
@@ -181,10 +194,20 @@ pub fn admit(value: &mut serde_json::Value) -> Result<(), ConfigError> {
         Some(_) => &mut value["config"],
         None => value,
     };
-    let found = config
-        .as_object_mut()
-        .and_then(|config| config.remove(FINGERPRINT_PROPERTY));
-    found_schema(found.as_ref())
+    let object = config.as_object_mut();
+    let (found, language) = match object {
+        Some(config) => (
+            config.remove(FINGERPRINT_PROPERTY),
+            config.remove(LANGUAGE_FINGERPRINT_PROPERTY),
+        ),
+        None => (None, None),
+    };
+    found_schema(found.as_ref())?;
+    // Built by the workflow language: its modules must be this process's too.
+    match language {
+        None | Some(serde_json::Value::Null) => Ok(()),
+        Some(language) => found_schema(Some(&language)),
+    }
 }
 
 #[cfg(test)]

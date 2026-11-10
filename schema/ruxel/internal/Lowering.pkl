@@ -23,7 +23,25 @@ module Lowering
 import "modulepath:/ruxel/Ruxel.pkl" as rx
 import "modulepath:/ruxel/engine/Engine.pkl" as engine
 
-function config(stages: Listing<rx.Stage>): engine.Config = configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))
+/// Replaced by the ruxel binary that serves this module, like the engine's
+/// `Config.schemaFingerprint`.
+hidden servedFingerprint: String = "unserved"
+
+/// `workflowFingerprint` is the calling `Workflow.pkl`'s. The configuration
+/// carries it as `languageFingerprint` when it matches this module's.
+/// Otherwise one of the two is a copy, and it carries the copy's: a served
+/// fingerprint ends in `@<nonce>`, a copy's does not. So admission refuses a
+/// copy of either module, even an unmodified one, and names it as a copy.
+function config(stages: Listing<rx.Stage>, workflowFingerprint: String): engine.Config =
+  (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))) {
+    languageFingerprint = fingerprintOf(workflowFingerprint, servedFingerprint)
+  }
+
+function fingerprintOf(workflow: String, lowering: String): String =
+  if (workflow == lowering) lowering
+  else if (!workflow.contains("@")) workflow
+  else if (!lowering.contains("@")) lowering
+  else "\(workflow) with lowering \(lowering)"
 
 /// Expands recipes, identifies every step and what it reacts to, merges
 /// exact repeats, then indexes and checks each stage.

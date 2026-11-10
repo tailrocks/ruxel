@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- A typed workflow language: workflows amend `modulepath:/ruxel/Workflow.pkl` and list stages of steps (`File`, `Packages`, `Service`, `Command`, `Capture`, …); recipes extend `modulepath:/ruxel/Ruxel.pkl`. `modulepath:/ruxel/internal/Lowering.pkl` lowers them to engine input and rejects broken references with plain messages.
+- A typed workflow language: workflows amend `modulepath:/ruxel/Workflow.pkl` and list stages of steps (`File`, `Packages`, `Service`, `Command`, `Capture`, …); recipes extend `modulepath:/ruxel/Ruxel.pkl`. `modulepath:/ruxel/internal/Lowering.pkl` lowers them to engine input and rejects broken references with plain messages. Admission refuses a configuration built by a copy of `Workflow.pkl` or `Lowering.pkl` (`Config.languageFingerprint`), as it refuses copies of the engine schema.
 - The binary serves its compiled-in schema as `modulepath:/ruxel/Ruxel.pkl`; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
 - `--module-path DIR[:DIR...]` on `config dump`, `plan`, `check`, `diff` and `apply` serves shared Pkl libraries, like `pkl eval --module-path`.
 - `ruxel schema export DIR` writes the served schema for editors and the `pkl` CLI.

@@ -11,6 +11,10 @@ import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
 /// Stages run one after another.
 stages: Listing<Stage>
 
+/// Replaced by the ruxel binary that serves this module, like the engine's
+/// `Config.schemaFingerprint`. Lowering checks it against its own.
+hidden fixed servedFingerprint: String = "unserved"
+
 output {
-  value = Lowering.config(stages)
+  value = Lowering.config(stages, servedFingerprint)
 }
