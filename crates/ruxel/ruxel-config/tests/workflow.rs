@@ -122,28 +122,29 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
     // The keyring directory exists before the key is written into it.
     let all = tasks(&config);
     let position = |name: &str| all.iter().position(|task| task["name"] == name);
-    let directory =
-        position("Create /etc/apt/keyrings for native").ok_or("no keyrings directory")?;
+    let directory = position("Create /etc/apt/keyrings").ok_or("no keyrings directory")?;
     assert_eq!(all[directory]["operation"]["path"], "/etc/apt/keyrings");
     assert_eq!(all[directory]["operation"]["state"], "directory");
+    assert_eq!(all[directory]["register"], "aptKeyrings");
+    // One task for the stage, before the first key.
+    assert_eq!(
+        all.iter()
+            .filter(|task| task["name"] == "Create /etc/apt/keyrings")
+            .count(),
+        1
+    );
     assert_eq!(
         position("Install native apt signing key"),
         Some(directory + 1)
     );
-    // A step reacting to the repository sees its directory, key and source.
-    let register = all[directory]["register"]
-        .as_str()
-        .ok_or("directory not registered")?;
-    let base = register
-        .strip_suffix("_dir")
-        .ok_or("directory register name")?;
+    // A step reacting to a repository sees its source, key and the directory.
     let watcher = &all[position("Run apt-get update").ok_or("no watcher")?];
     let condition = watcher["when"].to_string();
-    for result in [
-        base.to_owned(),
-        format!("{base}_key"),
-        format!("{base}_dir"),
-    ] {
+    let key = all[directory + 1]["register"]
+        .as_str()
+        .ok_or("key not registered")?;
+    let base = key.strip_suffix("_key").ok_or("key register name")?;
+    for result in [base, key, "aptKeyrings"] {
         assert!(
             condition.contains(&format!("\"{result}\"")),
             "{result}: {condition}"
@@ -192,6 +193,12 @@ fn edge_values_lower_with_their_guards() -> Result {
     ]});
     let reload = &all[named("Run /usr/local/bin/app-reload")?];
     assert_eq!(reload["changedWhen"], ran);
+    // The `creates` probe follows links, like the command's own guard.
+    let probe = all
+        .iter()
+        .find(|task| task["name"] == "Check whether /var/lib/app/migrated exists")
+        .ok_or("no creates probe")?;
+    assert_eq!(probe["operation"]["follow"], true);
     // A `creates` skip reports no change even though its output lacks the marker.
     let init = &all[named("Run /usr/local/bin/app-init")?];
     assert_eq!(init["changedWhen"]["function"], "and");

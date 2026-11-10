@@ -28,6 +28,7 @@ stages {
       local sources = new Directory { path = "/srv/app" }
       sources
       new Command { run { "/usr/local/bin/app-reload" }; onChangeOf { sources } }
+      new Command { run { "/usr/local/bin/app-migrate" }; creates = "/var/lib/app/migrated"; onChangeOf { sources } }
       new Command {
         run { "/usr/local/bin/app-init" }
         creates = "/var/lib/app/initialized"

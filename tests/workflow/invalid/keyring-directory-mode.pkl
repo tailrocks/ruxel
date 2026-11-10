@@ -1,4 +1,4 @@
-// expect: both manage /etc/apt/keyrings: an apt repository needs it with mode 0755
+// expect: both manage /etc/apt/keyrings: apt repositories create it (0755), so remove the Directory
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 

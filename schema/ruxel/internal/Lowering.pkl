@@ -354,14 +354,14 @@ function nested(ix: StageIndex, i: Int): List<String> =
 const function leaves(s: rx.Step): List<String> =
   if (List("file", "symlink", "aptRepository").contains(s.kind)) subjectsOf(s) else List()
 
-/// An apt repository creates `/etc/apt/keyrings` with mode 0755, so a
-/// `Directory` there with another mode would change it back and forth.
+/// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
+/// a `Directory` there would declare a second state for it.
 function keyringModes(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> keyringClash(ix.steps[j], ix.steps[i]) || keyringClash(ix.steps[i], ix.steps[j]))
-    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage /etc/apt/keyrings: an apt repository needs it with mode 0755")
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage /etc/apt/keyrings: apt repositories create it (0755), so remove the Directory")
 
 const function keyringClash(a: rx.Step, b: rx.Step): Boolean =
-  a is rx.AptRepository && b is rx.Directory && b.path == "/etc/apt/keyrings" && b.mode != "0755"
+  a is rx.AptRepository && b is rx.Directory && b.path == "/etc/apt/keyrings"
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and an upgrade, would change it back and forth. Exact
@@ -563,7 +563,28 @@ const local describers: Mapping<String, (rx.Step) -> String> = new {
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
 /// its depth limit of 32 (P3).
-function lower(ix: StageIndex, i: Int): List<engine.Task> = lowerers[ix.steps[i].kind].apply(ix.steps[i], ix.metas[i])
+function lower(ix: StageIndex, i: Int): List<engine.Task> =
+  (if (firstRepository(ix) == i) List(keyringsTask(ix)) else List()) + lowerers[ix.steps[i].kind].apply(ix.steps[i], ix.metas[i])
+
+/// The stage's first apt repository, which creates `/etc/apt/keyrings` once
+/// for all of them.
+function firstRepository(ix: StageIndex): Int? =
+  let (repositories = positions(ix.steps).filter((k) -> ix.steps[k] is rx.AptRepository))
+  if (repositories.isEmpty) null else repositories.first
+
+/// One task for the directory every repository of the stage writes its key
+/// into. It runs under all their tags and notifies all their services, and
+/// steps reacting to any of them see its result (`anyChanged`).
+function keyringsTask(ix: StageIndex): engine.Task =
+  let (owners = positions(ix.steps).filter((k) -> ix.steps[k] is rx.AptRepository))
+  task(new Meta {
+    name = "Create /etc/apt/keyrings"
+    tags = owners.flatMap((k) -> ix.metas[k].tags).toSet().toList()
+    notify = owners.flatMap((k) -> ix.metas[k].notify).toSet().toList()
+    register = keyringsResult
+  }, directory("/etc/apt/keyrings", "0755"), null, null)
+
+const keyringsResult: String = "aptKeyrings"
 
 local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
   ["file"] = (s, m) -> validateTasks(s, m) + List(task(m, copy(s.path, s), null, null))
@@ -571,7 +592,7 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null), null, lit(false)))
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
-  ["aptRepository"] = (s, m) -> List(task(keyringDirectoryMeta(s, m), directory("/etc/apt/keyrings", "0755"), null, null), task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
+  ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
@@ -615,15 +636,6 @@ function keyringMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
   register = if (m.register == null) null else "\(m.register)_key"
 }
 
-/// The keyring directory is persistent state too: a corrected mode is a
-/// change of the repository.
-function keyringDirectoryMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
-  name = "Create /etc/apt/keyrings for \(r.name)"
-  tags = m.tags
-  notify = m.notify
-  register = if (m.register == null) null else "\(m.register)_dir"
-}
-
 function keyring(r: rx.AptRepository): engine.Copy = copyText(keyringPath(r), r.signingKey)
 
 function sourcesFile(r: rx.AptRepository): engine.Copy = copyText(sourcesPath(r), new Listing {
@@ -648,7 +660,7 @@ function actionTasks(a: rx.Action, argv: List<String>, m: Meta): List<engine.Tas
 /// `or` of the `changed` results of the watched steps. An apt repository
 /// also changes when only its keyring does.
 function anyChanged(ids: List<String>): engine.Expr =
-  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key", "\(id)_dir") else List(id))
+  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key", keyringsResult) else List(id))
     .map((id) -> ref(List("results", id, "changed")))
     .fold(null, (acc, e) -> if (acc == null) e else call2("or", acc, e))
 
@@ -734,7 +746,9 @@ function timezone(_name: String): engine.Timezone = new engine.Timezone { name =
 function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
 function service(_name: String, _enabled: Boolean?, _state: String): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
-function stat(_path: String): engine.Stat = new engine.Stat { path = _path }
+/// Follows links, as the command's own `creates` guard does: a dangling
+/// link does not count as the path existing.
+function stat(_path: String): engine.Stat = new engine.Stat { path = _path; follow = true }
 function command(_argv: List<String>, _creates: String?): engine.Command = new engine.Command {
   argv = new Listing { for (a in _argv) { a } }
   creates = _creates
