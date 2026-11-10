@@ -1,9 +1,23 @@
 use super::super::{
     ENGINE, FINGERPRINT_PROPERTY, FINGERPRINTED, LANGUAGE_FINGERPRINT_PROPERTY, PLACEHOLDER,
-    SERVED_FINGERPRINT, TREE, admit, exported_modules, exported_source, fingerprint, modules,
-    source,
+    SERVED_FINGERPRINT, TREE, admit, exported_modules, fingerprint, modules,
 };
 use serde_json::json;
+
+/// The engine schema's text in a module list.
+fn engine<'a>(list: &'a [(&'static str, String)]) -> &'a str {
+    list.iter()
+        .find(|(path, _)| *path == ENGINE)
+        .map_or("", |(_, text)| text.as_str())
+}
+
+fn source() -> &'static str {
+    engine(modules())
+}
+
+fn exported_source() -> &'static str {
+    engine(exported_modules())
+}
 
 #[test]
 fn served_and_exported_engine_replace_the_single_placeholder() {

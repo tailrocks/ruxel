@@ -26,6 +26,8 @@ typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_
 /// An absolute path in normal form: no empty, `.` or `..` segments and no
 /// trailing `/`, so two spellings of one path are the same text.
 typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !split("/").any((segment) -> segment == "." || segment == ".."))
+/// An absolute path that can be a file: any but `/`, which is a directory.
+typealias FilePath = AbsolutePath(this != "/")
 typealias HttpsUrl = Static(startsWith("https://"))
 typealias FileMode = String(matches(Regex("0[0-7]{3}")))
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
@@ -142,7 +144,7 @@ class CurrentHost {
 ///     new File { path = "/root/.zshrc"; content = read("files/zshrc").text }
 class File extends Step {
   hidden fixed kind = "file"
-  path: AbsolutePath
+  path: FilePath
   /// May contain run-time values: `currentHost`, `Capture.stdout()`.
   content: String
   mode: FileMode = "0644"
@@ -170,7 +172,7 @@ class Directory extends Step {
 
 class Symlink extends Step {
   hidden fixed kind = "symlink"
-  path: AbsolutePath
+  path: FilePath
   target: AbsolutePath
 }
 
@@ -187,7 +189,8 @@ class PackageIndex extends Step {
 class Packages extends Step {
   hidden fixed kind = "packages"
   names: StaticList(!isEmpty)
-  /// Upgrades them to the newest version on every run, not only once.
+  /// Upgrades them to the newest version on every run, not only once. The
+  /// names cannot then pin a version.
   upgrade: Boolean = false
 }
 
@@ -230,7 +233,8 @@ class LoginShell extends Step {
   shell: AbsolutePath
 }
 
-/// A Git working tree pinned to one commit.
+/// A Git working tree pinned to one commit. Git owns everything below `path`,
+/// so no other step of the stage may manage a path there.
 class GitCheckout extends Step {
   hidden fixed kind = "gitCheckout"
   repository: HttpsUrl

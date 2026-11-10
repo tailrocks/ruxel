@@ -31,6 +31,15 @@ impl Drop for Scratch {
     }
 }
 
+/// The engine schema as `ruxel schema export` writes it.
+fn exported_engine() -> String {
+    ruxel_config::schema::exported_modules()
+        .iter()
+        .find(|(path, _)| path.ends_with("/engine/Engine.pkl"))
+        .map(|(_, text)| text.clone())
+        .unwrap_or_default()
+}
+
 fn config(import: &str) -> String {
     format!(
         "import \"{import}\" as R\nconfig = new R.Config {{\n  inventory {{ hosts {{ [\"node\"] = new R.Host {{ address = \"localhost\" }} }} }}\n}}\n"
@@ -78,13 +87,12 @@ fn copies_of_the_schema_are_refused() -> Result {
     let other = format!("blake3:{}", "0".repeat(64));
     scratch.write(
         "stale/ruxel/engine/Engine.pkl",
-        &ruxel_config::schema::exported_source()
-            .replace(ruxel_config::schema::fingerprint(), &other),
+        &exported_engine().replace(ruxel_config::schema::fingerprint(), &other),
     )?;
     // This binary's own export, edited without touching the fingerprint.
     scratch.write(
         "edited/ruxel/engine/Engine.pkl",
-        &ruxel_config::schema::exported_source().replace(
+        &exported_engine().replace(
             "port: Int(this >= 1 && this <= 65535) = 22",
             "port: Int = 2222",
         ),

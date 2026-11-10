@@ -94,13 +94,6 @@ fn with_fingerprint(fingerprint: &str) -> Vec<(&'static str, String)> {
         .collect()
 }
 
-fn engine<'a>(modules: &'a [(&'static str, String)]) -> &'a str {
-    modules
-        .iter()
-        .find(|(path, _)| *path == ENGINE)
-        .map_or("", |(_, text)| text.as_str())
-}
-
 /// 128 unpredictable bits, so no file can anticipate this process's nonce.
 fn nonce() -> String {
     let mut seed = [0_u8; 16];
@@ -136,18 +129,6 @@ pub fn modules() -> &'static [(&'static str, String)] {
 #[must_use]
 pub fn exported_modules() -> &'static [(&'static str, String)] {
     &EXPORTED
-}
-
-/// The engine schema this process serves at [`ENGINE_URI`].
-#[must_use]
-pub fn source() -> &'static str {
-    engine(&SERVED)
-}
-
-/// The engine schema as exported.
-#[must_use]
-pub fn exported_source() -> &'static str {
-    engine(&EXPORTED)
 }
 
 /// What a configuration's fingerprint says about the schema it used.

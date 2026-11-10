@@ -1,5 +1,5 @@
 // expect-pkl: segment == "."
-// expect-pklr: expected AbsolutePath
+// expect-pklr: expected FilePath
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 

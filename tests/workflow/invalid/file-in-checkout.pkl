@@ -1,0 +1,8 @@
+// expect: conflict: /opt/app is a Git checkout, so /opt/app/config.yaml cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new GitCheckout { repository = "https://git.example.test/app.git"; path = "/opt/app"; commit = "0123456789abcdef0123456789abcdef01234567" }
+  new File { path = "/opt/app/config.yaml"; content = "a" }
+} } }

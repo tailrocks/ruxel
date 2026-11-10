@@ -1,0 +1,8 @@
+// expect: both manage /etc/apt/keyrings: an apt repository needs it with mode 0755
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Directory { path = "/etc/apt/keyrings"; mode = "0700" }
+  new AptRepository { name = "example"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n" }
+} } }

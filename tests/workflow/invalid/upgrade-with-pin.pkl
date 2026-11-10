@@ -1,0 +1,7 @@
+// expect: upgrade installs the newest version, so it cannot pin one (curl=8.5.0-2)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Packages { names { "curl=8.5.0-2" }; upgrade = true }
+} } }
