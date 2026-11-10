@@ -1,4 +1,4 @@
-import "../../schema/Ruxel.pkl" as R
+import "modulepath:/ruxel/Ruxel.pkl" as R
 config = new R.Config {
   inventory {
     hosts { ["node"] = new R.Host { address = "localhost" } }

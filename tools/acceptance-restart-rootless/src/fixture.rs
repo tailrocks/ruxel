@@ -8,7 +8,7 @@ use std::{
     process::{Command, Stdio},
     time::Duration,
 };
-const PIN: &str = "8188b88f5da95d7326e6b07efdd00908c09ee11958ff1e52a695e3c5a4d14d5b";
+const PIN: &str = "aa3ee4a0b0b0f7f16e6a1391c6ae11456129bae265f985385aa6de0abc5c8b18";
 const OWNERS: &str = "owner = \"root\"; group = \"root\"; ";
 
 fn variant(source: &[u8], contract: &Value, payload: &str) -> Result<String> {
@@ -57,11 +57,6 @@ impl Fixture {
             .tempdir()?;
         let payload = root.path().join("payload");
         fs::create_dir(&payload)?;
-        fs::create_dir(root.path().join("schema"))?;
-        fs::copy(
-            repo.join("schema/Ruxel.pkl"),
-            root.path().join("schema/Ruxel.pkl"),
-        )?;
         fs::create_dir_all(root.path().join("testdata/workloads/pr66"))?;
         let source = fs::read(repo.join("testdata/workloads/pr66/restart-actions.pkl"))?;
         let manifest: Value = serde_json::from_slice(&fs::read(

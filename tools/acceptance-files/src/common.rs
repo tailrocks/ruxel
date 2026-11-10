@@ -16,12 +16,10 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn new(cli: &Path, agent: &Path, schema: &Path, subdir: &str) -> Result<Self> {
+    pub fn new(cli: &Path, agent: &Path, subdir: &str) -> Result<Self> {
         let root = tempfile::Builder::new()
             .prefix("ruxel-pr66-files-")
             .tempdir()?;
-        fs::create_dir_all(root.path().join("schema"))?;
-        fs::copy(schema, root.path().join("schema/Ruxel.pkl"))?;
         let dir = root.path().join(subdir);
         fs::create_dir_all(&dir)?;
         let payload = root.path().join("payload");

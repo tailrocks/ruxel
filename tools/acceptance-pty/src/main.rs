@@ -24,22 +24,20 @@ fn run() -> Result<()> {
     }
     let mut cli = None;
     let mut agent = None;
-    let mut schema = None;
     for pair in args.chunks(2) {
         if pair.len() != 2 {
-            bail!("expected --ruxel PATH --agent PATH --schema PATH");
+            bail!("expected --ruxel PATH --agent PATH");
         }
         let value = PathBuf::from(&pair[1]).canonicalize()?;
         match pair[0].to_str() {
             Some("--ruxel") if cli.is_none() => cli = Some(value),
             Some("--agent") if agent.is_none() => agent = Some(value),
-            Some("--schema") if schema.is_none() => schema = Some(value),
             _ => bail!("unknown or duplicate argument"),
         }
     }
-    match (cli, agent, schema) {
-        (Some(cli), Some(agent), Some(schema)) => runner::run(&cli, &agent, &schema),
-        _ => bail!("expected --ruxel PATH --agent PATH --schema PATH"),
+    match (cli, agent) {
+        (Some(cli), Some(agent)) => runner::run(&cli, &agent),
+        _ => bail!("expected --ruxel PATH --agent PATH"),
     }
 }
 

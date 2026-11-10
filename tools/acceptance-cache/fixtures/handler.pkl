@@ -1,4 +1,4 @@
-import "Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "handler"; targets { "fixture" }; tasks {

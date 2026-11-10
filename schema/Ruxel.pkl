@@ -34,7 +34,13 @@ class Group { hosts: Listing<String>; children: Listing<String>; vars: Mapping<S
 class Inventory { hosts: Mapping<String, Host>; groups: Mapping<String, Group> }
 class Ssh { user: Username = "root"; identityFile: String(!this.isEmpty); knownHostsFile: String(!this.isEmpty) }
 class Guard { allow: Listing<String>; deny: Listing<String> }
-class Config { inventory: Inventory; plays: Listing<Play>; ssh: Ssh? = null }
+class Config {
+  /// Set by the ruxel binary that serves this schema; ruxel refuses a configuration evaluated against another copy.
+  fixed schemaFingerprint: String = "unserved"
+  inventory: Inventory
+  plays: Listing<Play>
+  ssh: Ssh? = null
+}
 class Play {
   name: String
   targets: Listing<String>

@@ -49,13 +49,10 @@ impl Guest {
             );
             fs::write(stage.path().join(name), data)?;
         }
-        let schema = stage.path().join("Ruxel.pkl");
-        fs::write(&schema, regular_bytes(&root.join("schema/Ruxel.pkl"))?)?;
         let workload = stage.path().join("workload.pkl");
         fs::write(
             &workload,
             std::str::from_utf8(&data)?
-                .replace("../../../schema/Ruxel.pkl", "schema/Ruxel.pkl")
                 .replace("__RUN_ROOT__", "/tmp/work/payload")
                 .replace("__FIXTURE_ROOT__", "/tmp/work"),
         )?;
@@ -64,14 +61,12 @@ impl Guest {
             &[
                 "/bin/mkdir",
                 "-p",
-                "/tmp/work/schema",
                 "/tmp/work/payload",
                 "/opt/ruxel-fixture",
             ],
             0,
         )?;
         docker.exec(&["/bin/chmod", "711", "/tmp/work", "/tmp/work/payload"], 0)?;
-        docker.copy(&schema, "/tmp/work/schema/Ruxel.pkl")?;
         docker.copy(&workload, "/tmp/work/workload.pkl")?;
         if scenario == "files-content" {
             crate::files_content::stage(root, stage.path(), &docker)?;
@@ -144,7 +139,7 @@ impl Guest {
     }
 }
 
-const SNAPSHOT: &str = r#"find /etc /var/log /tmp/work/payload /tmp/work/schema /tmp/work/workload.pkl -print0 | sort -z | while IFS= read -r -d '' path; do
+const SNAPSHOT: &str = r#"find /etc /var/log /tmp/work/payload /tmp/work/workload.pkl -print0 | sort -z | while IFS= read -r -d '' path; do
 stat --printf='%n\0%f\0%u\0%g\0%i\0%s\0%y\0%z\0' -- "$path"
 if test -L "$path"; then readlink -z -- "$path"; elif test -f "$path"; then sha256sum --zero -- "$path"; elif ! test -d "$path"; then exit 1; fi
 done | sha256sum"#;

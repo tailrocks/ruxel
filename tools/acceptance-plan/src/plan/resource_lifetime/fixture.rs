@@ -20,9 +20,8 @@ pub(super) struct Fixture<'a> {
     sequence: usize,
 }
 impl<'a> Fixture<'a> {
-    pub(super) fn new(root: &Path, cli: &'a Path, agent: &'a Path) -> Result<Self> {
+    pub(super) fn new(cli: &'a Path, agent: &'a Path) -> Result<Self> {
         let temp = tempfile::tempdir()?;
-        fs::copy(root.join("schema/Ruxel.pkl"), temp.path().join("Ruxel.pkl"))?;
         Ok(Self {
             temp,
             cli,
@@ -43,7 +42,7 @@ impl<'a> Fixture<'a> {
         fs::write(
             &module,
             format!(
-                r#"import "Ruxel.pkl"
+                r#"import "modulepath:/ruxel/Ruxel.pkl"
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["a"] {{ address = "127.0.0.1" }}; ["b"] {{ address = "127.0.0.1" }} }} }}
  plays {{ {plays} }}

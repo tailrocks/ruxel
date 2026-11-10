@@ -14,7 +14,7 @@ fn main() -> Result<()> {
         process::sentinel();
     }
     let mut args = args.into_iter();
-    let (mut cli, mut agent, mut root) = (None, None, None);
+    let (mut cli, mut agent) = (None, None);
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--ruxel") => {
@@ -23,23 +23,13 @@ fn main() -> Result<()> {
             Some("--agent") => {
                 agent = Some(PathBuf::from(args.next().context("missing --agent value")?))
             }
-            Some("--root") => {
-                root = Some(PathBuf::from(args.next().context("missing --root value")?))
-            }
-            _ => bail!("usage: ruxel-acceptance-copy --ruxel PATH --agent PATH [--root PATH]"),
+            _ => bail!("usage: ruxel-acceptance-copy --ruxel PATH --agent PATH"),
         }
     }
     let cli = cli.context("missing --ruxel")?.canonicalize()?;
     let agent = agent.context("missing --agent")?.canonicalize()?;
-    let default_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .context("missing tools")?
-        .parent()
-        .context("missing checkout")?
-        .to_owned();
-    let root = root.unwrap_or(default_root).canonicalize()?;
-    binary::check(&root, &cli, &agent)?;
-    force::check(&root, &cli, &agent)?;
-    repeated::check(&root, &cli, &agent)?;
+    binary::check(&cli, &agent)?;
+    force::check(&cli, &agent)?;
+    repeated::check(&cli, &agent)?;
     Ok(())
 }
