@@ -7,17 +7,17 @@ pub(super) fn digest(bytes: &[u8]) -> String {
 }
 pub(super) fn pin(name: &str) -> &'static str {
     match name {
-        "control-flow" => "43e042603472da2932866eed765ba0d996bf6aa6dfe3aa69cf4081e15c756817",
-        "become-environment" => "b88c1a74facbc2a7eabfe23e6b4d08906174945f0140277e9b326cbee9eff5ac",
+        "control-flow" => "e7037ab23f3c6c7ee3326aa76d7b3c949c9dcf09b2ca4749bae3e5da0be23313",
+        "become-environment" => "c69f6a215cfab2578390a54fdc783891738e20d8adceda9273c5709bcf3d6dae",
         "files-content" => "457ed3085453f875f141e3e09e75b47c47b8d6de7edc14db49cc9dfb3e3ade20",
         "postgresql-ownership" => {
-            "70e1b192f9d4df7b15828a0e482a40c8147ec2d87b340d42636e54a9ac85531d"
+            "b968cc8004c2246b617563024bf8f847c9d5d9ba0c5d2e3b2ff44d3b8126b3d5"
         }
-        "restart-actions" => "8188b88f5da95d7326e6b07efdd00908c09ee11958ff1e52a695e3c5a4d14d5b",
-        "check-semantics" => "a9782cd9cb9169d83684f3d1f41c1f479592226efba9f7c35775b5f94153c05b",
-        "multihost" => "a3b777ab764eefabf32d4b6d0f700d481c427bf8d9d4a598b13e24c38361fd25",
+        "restart-actions" => "aa3ee4a0b0b0f7f16e6a1391c6ae11456129bae265f985385aa6de0abc5c8b18",
+        "check-semantics" => "552452548b6e6b29b2ab483100159152e011b318c3c93c5f3e6cd319bb6e153c",
+        "multihost" => "52895209f8448bc54d5df9ddda02fe144a079b2912776a654b6947aa28d91ee1",
         "controller-delegation" => {
-            "e737869712661708b13416544cab5126759e8448789e52859c045c33cd95e909"
+            "ee3471d93f281e688a7b4fcc5f26481b3e62ffe8774b448f6357ae2a648d5366"
         }
         _ => "",
     }

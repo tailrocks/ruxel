@@ -20,27 +20,19 @@ fn main() -> Result<()> {
         return helper::run(args.collect());
     }
     let mut args = first.into_iter().chain(args);
-    let (mut cli, mut agent, mut root) = (None, None, None);
+    let (mut cli, mut agent) = (None, None);
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--ruxel") => cli = Some(PathBuf::from(args.next().context("missing --ruxel")?)),
             Some("--agent") => agent = Some(PathBuf::from(args.next().context("missing --agent")?)),
-            Some("--root") => root = Some(PathBuf::from(args.next().context("missing --root")?)),
-            _ => bail!("usage: ruxel-acceptance-isolation --ruxel PATH --agent PATH [--root PATH]"),
+            _ => bail!("usage: ruxel-acceptance-isolation --ruxel PATH --agent PATH"),
         }
     }
     let cli = cli.context("missing --ruxel")?.canonicalize()?;
     let agent = agent.context("missing --agent")?.canonicalize()?;
-    let default = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .context("tools")?
-        .parent()
-        .context("checkout")?
-        .to_owned();
-    let root = root.unwrap_or(default).canonicalize()?;
-    hosts::check(&root, &cli, &agent)?;
-    isolation::check(&root, &cli, &agent, false)?;
-    isolation::check(&root, &cli, &agent, true)?;
-    partial::check(&root, &cli, &agent)?;
+    hosts::check(&cli, &agent)?;
+    isolation::check(&cli, &agent, false)?;
+    isolation::check(&cli, &agent, true)?;
+    partial::check(&cli, &agent)?;
     Ok(())
 }

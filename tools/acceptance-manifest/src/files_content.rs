@@ -10,7 +10,7 @@ const ASSETS: [(&str, &str); 2] = [
     ),
     (
         "template.pkl",
-        "e848f3f641a2b66a80d18c9af88a4906d313545d206b43f1d1d3a9eeb5ee1eab",
+        "1ee43af29e54b825137aa34281cd687abbee8bc2afe185226b8c4b85e5018f96",
     ),
 ];
 const SHIM: &str = r#"#!/bin/sh
@@ -59,13 +59,6 @@ pub(super) fn stage(root: &Path, stage: &Path, docker: &Docker) -> Result<()> {
             pins::digest(&bytes) == hash,
             "fixture asset pin mismatch: {name}"
         );
-        let bytes = if name == "template.pkl" {
-            std::str::from_utf8(&bytes)?
-                .replace("../../../../schema/Ruxel.pkl", "../schema/Ruxel.pkl")
-                .into_bytes()
-        } else {
-            bytes
-        };
         let file = stage.join(name);
         fs::write(&file, bytes)?;
         docker.copy(&file, &format!("/tmp/work/assets/{name}"))?;

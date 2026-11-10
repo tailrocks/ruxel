@@ -31,11 +31,6 @@ impl Env {
         );
         let root = builder.tempdir()?;
         fs::create_dir_all(root.path().join("testdata/workloads/pr66"))?;
-        fs::create_dir(root.path().join("schema"))?;
-        fs::copy(
-            repo.join("schema/Ruxel.pkl"),
-            root.path().join("schema/Ruxel.pkl"),
-        )?;
         let payload = root.path().join("payload");
         fs::create_dir(&payload)?;
         let value = payload.to_str().context("non-UTF8 temp path")?;
@@ -145,7 +140,7 @@ pub fn execute(name: &str, repo: &Path, cli: &Path, agent: &Path) -> Result<()> 
         );
         ensure!(
             state::fixture_snapshot(env.root.path())? == fixture_before,
-            "{mode} mutated fixture or schema"
+            "{mode} mutated fixture"
         );
 
         checks::assert_preview(name, mode, &events)?;

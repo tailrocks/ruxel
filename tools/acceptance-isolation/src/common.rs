@@ -16,17 +16,11 @@ pub struct Harness<'a> {
     pub agent: &'a Path,
 }
 impl<'a> Harness<'a> {
-    pub fn new(root: &Path, cli: &'a Path, agent: &'a Path) -> Result<Self> {
+    pub fn new(cli: &'a Path, agent: &'a Path) -> Result<Self> {
         let temp = tempfile::Builder::new()
             .prefix("ruxel-isolation-")
             .tempdir()?;
-        for dir in ["schema", "fixtures"] {
-            fs::create_dir(temp.path().join(dir))?;
-        }
-        fs::copy(
-            root.join("schema/Ruxel.pkl"),
-            temp.path().join("schema/Ruxel.pkl"),
-        )?;
+        fs::create_dir(temp.path().join("fixtures"))?;
         let module = temp.path().join("fixtures/scenario.pkl");
         Ok(Self {
             temp,

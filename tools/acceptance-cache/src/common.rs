@@ -18,11 +18,10 @@ pub struct Output {
     pub stderr: String,
 }
 impl Env {
-    pub fn new(cli: &Path, agent: &Path, schema: &Path) -> Result<Self> {
+    pub fn new(cli: &Path, agent: &Path) -> Result<Self> {
         let root = tempfile::Builder::new()
             .prefix("ruxel-pr66-cache-")
             .tempdir()?;
-        fs::copy(schema, root.path().join("Ruxel.pkl"))?;
         Ok(Self {
             root,
             cli: cli.to_path_buf(),

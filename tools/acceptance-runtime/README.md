@@ -13,7 +13,7 @@ cargo run --locked --offline --manifest-path tools/acceptance-runtime/Cargo.toml
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
-Use `--root /path/to/checkout` to select the schema checkout. Linux and macOS
+Use `--root /path/to/checkout` to select the checkout that supplies the lazy-layer workloads. Linux and macOS
 are supported. A dedicated process group is terminated on every outcome;
 descendants that start a separate process group or session are outside that
 cleanup boundary. The runner uses only synthetic local data and no servers.

@@ -2,8 +2,8 @@ use crate::common::{Harness, events, pkl, recaps, task};
 use anyhow::{Result, ensure};
 use std::{fs, path::Path};
 const SENTINEL: &str = "synthetic-sensitive-missing-reference-835792";
-pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let h = Harness::new(root, cli, agent)?;
+pub fn check(cli: &Path, agent: &Path) -> Result<()> {
+    let h = Harness::new(cli, agent)?;
     for private in [false, true] {
         let name = if private { "private" } else { "ordinary" };
         let payload = h.path(name);

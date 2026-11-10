@@ -34,8 +34,7 @@ fn subset(source: &str, root: &Path, port: u16) -> Result<String> {
         .find("    tasks {\n")
         .context("missing fixture tasks")?
         + "    tasks {\n".len();
-    let mut output =
-        source[..prefix_end].replace("../../../schema/Ruxel.pkl", "../schema/Ruxel.pkl");
+    let mut output = source[..prefix_end].to_owned();
     for name in TASKS {
         let marker = format!("      new {{\n        name = \"{name}\"\n");
         ensure!(
@@ -110,13 +109,10 @@ pub fn run(root: &Path, cli: &Path, agent: &Path, http: &Path) -> Result<()> {
             .context("missing pinned system fixture")?,
     )?;
     let temp = tempfile::tempdir()?;
-    let schema = temp.path().join("schema");
     let workload = temp.path().join("fixture/workload.pkl");
     let payload = temp.path().join("payload");
-    fs::create_dir(&schema)?;
     fs::create_dir_all(workload.parent().context("missing fixture directory")?)?;
     fs::create_dir(&payload)?;
-    fs::copy(root.join("schema/Ruxel.pkl"), schema.join("Ruxel.pkl"))?;
     fs::copy(http, payload.join("ruxel-http-fixture"))?;
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;

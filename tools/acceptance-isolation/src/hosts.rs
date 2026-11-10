@@ -2,8 +2,8 @@ use crate::common::{Harness, events, path, pkl, recaps, task};
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use std::{collections::BTreeSet, fs, path::Path};
-pub fn check(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
-    let h = Harness::new(root, cli, agent)?;
+pub fn check(cli: &Path, agent: &Path) -> Result<()> {
+    let h = Harness::new(cli, agent)?;
     let names: Vec<_> = (1..=4).map(|i| format!("fixture-{i}")).collect();
     let mut hosts = Vec::new();
     for name in &names {
