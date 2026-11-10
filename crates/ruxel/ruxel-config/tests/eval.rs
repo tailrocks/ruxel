@@ -39,19 +39,25 @@ fn config(import: &str) -> String {
 
 #[test]
 fn missing_module_fails() {
-    assert!(ruxel_config::eval(Path::new("/nonexistent.pkl"), &[]).is_err());
+    assert!(
+        ruxel_config::eval(
+            Path::new("/nonexistent.pkl"),
+            &ruxel_config::EvalOptions::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn served_schema_is_admitted_and_its_fingerprint_removed() -> Result {
     let scratch = Scratch::new()?;
     let root = scratch.write("main.pkl", &config(ruxel_config::schema::MODULE_URI))?;
-    let raw = ruxel_config::eval(&root, &[])?;
+    let raw = ruxel_config::eval(&root, &ruxel_config::EvalOptions::default())?;
     let served = raw["config"]["schemaFingerprint"]
         .as_str()
         .ok_or("no fingerprint")?;
     assert!(served.starts_with(&format!("{}@", ruxel_config::schema::fingerprint())));
-    let admitted = ruxel_config::eval_config(&root, &[])?;
+    let admitted = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())?;
     assert!(admitted["config"].get("schemaFingerprint").is_none());
     assert_eq!(
         admitted["config"]["inventory"]["hosts"]["node"]["address"],
@@ -89,7 +95,7 @@ fn copies_of_the_schema_are_refused() -> Result {
         ("edited/ruxel/Ruxel.pkl", "a copy of this ruxel's schema"),
     ] {
         let root = scratch.write("main.pkl", &config(import))?;
-        let error = ruxel_config::eval_config(&root, &[])
+        let error = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())
             .err()
             .ok_or("copy admitted")?
             .to_string();
@@ -116,12 +122,18 @@ fn module_path_directories_serve_libraries_but_never_the_schema() -> Result {
         "main.pkl",
         "import \"modulepath:/roles/hello.pkl\" as hello\nmessage = hello.message\nfingerprint = hello.fingerprint\n",
     )?;
-    let value = ruxel_config::eval(&root, &[scratch.0.join("lib")])?;
+    let value = ruxel_config::eval(
+        &root,
+        &ruxel_config::EvalOptions {
+            module_path: vec![scratch.0.join("lib")],
+            root_dir: None,
+        },
+    )?;
     assert_eq!(value["message"], "hello");
     assert!(value["fingerprint"].as_str().is_some_and(|served| {
         served.starts_with(&format!("{}@", ruxel_config::schema::fingerprint()))
     }));
-    assert!(ruxel_config::eval(&root, &[]).is_err());
+    assert!(ruxel_config::eval(&root, &ruxel_config::EvalOptions::default()).is_err());
     Ok(())
 }
 
@@ -137,7 +149,13 @@ fn module_path_libraries_read_their_resources() -> Result {
         "main.pkl",
         "import \"modulepath:/assets/lib.pkl\" as lib\ngreeting = lib.greeting\n",
     )?;
-    let value = ruxel_config::eval(&root, &[scratch.0.join("lib")])?;
+    let value = ruxel_config::eval(
+        &root,
+        &ruxel_config::EvalOptions {
+            module_path: vec![scratch.0.join("lib")],
+            root_dir: None,
+        },
+    )?;
     assert_eq!(value["greeting"], "hello");
     Ok(())
 }

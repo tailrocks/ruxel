@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 - The binary serves its compiled-in schema as `modulepath:/ruxel/Ruxel.pkl`; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
 - `--module-path DIR[:DIR...]` on `config dump`, `plan`, `check`, `diff` and `apply` serves shared Pkl libraries, like `pkl eval --module-path`.
 - `ruxel schema export DIR` writes the served schema for editors and the `pkl` CLI.
+- `--root-dir DIR` on `config dump`, `plan`, `check`, `diff` and `apply` widens the directory a configuration may read, like `pkl eval --root-dir`.
 - Strict guard and SSH configuration types and retained evaluated input for future admission.
 - Embed the canonical Pkl schema for configuration tooling.
 - Engine secret wrappers, value redaction, and secret-aware ledger keys.
@@ -22,6 +23,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module and resource globs (`import*`, `read*`) are refused.
 - Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.

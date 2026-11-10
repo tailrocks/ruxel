@@ -323,3 +323,38 @@ config = new R.Config {
     std::fs::remove_dir_all(directory)?;
     Ok(())
 }
+
+#[test]
+fn configuration_reads_are_confined_to_the_root_dir() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = scratch("root-dir")?;
+    std::fs::create_dir_all(directory.join("config/rehearsal"))?;
+    std::fs::write(directory.join("secret.txt"), "outside")?;
+    std::fs::write(directory.join("config/inventory.pkl"), "hosts = 1\n")?;
+    let outside = directory.join("config/outside.pkl");
+    std::fs::write(&outside, "value = read(\"../secret.txt\").text\n")?;
+    let rehearsal = directory.join("config/rehearsal/main.pkl");
+    std::fs::write(
+        &rehearsal,
+        "import \"../inventory.pkl\" as I\nhosts = I.hosts\n",
+    )?;
+    let dump = |root: &std::path::Path, extra: &[&std::ffi::OsStr]| {
+        Command::new(env!("CARGO_BIN_EXE_ruxel"))
+            .args(["config", "dump"])
+            .arg(root)
+            .args(extra)
+            .output()
+    };
+    let output = dump(&outside, &[])?;
+    assert!(!output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the configuration root"));
+    assert!(!dump(&rehearsal, &[])?.status.success());
+    let root_dir = directory.join("config");
+    let output = dump(&rehearsal, &["--root-dir".as_ref(), root_dir.as_os_str()])?;
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout)?,
+        serde_json::json!({"hosts": 1})
+    );
+    std::fs::remove_dir_all(directory)?;
+    Ok(())
+}
