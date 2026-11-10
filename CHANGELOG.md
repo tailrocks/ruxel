@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The binary serves its compiled-in schema as `modulepath:/ruxel/Ruxel.pkl`; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
+- `--module-path DIR[:DIR...]` on `config dump`, `plan`, `check`, `diff` and `apply` serves shared Pkl libraries, like `pkl eval --module-path`.
+- `ruxel schema export DIR` writes the served schema for editors and the `pkl` CLI.
 - Strict guard and SSH configuration types and retained evaluated input for future admission.
 - Embed the canonical Pkl schema for configuration tooling.
 - Engine secret wrappers, value redaction, and secret-aware ledger keys.
@@ -34,6 +37,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
+- Copies of `schema/Ruxel.pkl` beside fixtures, and the acceptance tools' `--schema` options.
 - Duplicate legacy loop-result reason field; empty loops expose `skip_reason`.
 - YAML and INI configuration input and MiniJinja authoring.
 - Ansible parity tooling, Ansible-era docs, and agent modules no schema reaches; recoverable from tag `ansible-parity-final`.

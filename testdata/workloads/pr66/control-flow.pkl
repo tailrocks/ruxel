@@ -1,4 +1,4 @@
-import "../../../schema/Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 
 function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
 function ref(p: Listing<String>): Ruxel.Ref = new { path = p }

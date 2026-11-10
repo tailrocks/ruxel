@@ -79,7 +79,7 @@ impl TemplateRoot {
             };
             let path = modules.identity(&path)?;
             let source = modules.read(&path)?;
-            let mut evaluator = super::builder().build();
+            let mut evaluator = super::builder(&[]).build();
             evaluator.set_module_source(modules);
             evaluator.set_base_path(path.parent().unwrap_or(&self.path));
             evaluator.eval_source_json_blocking(&source, &path)
@@ -169,7 +169,9 @@ impl Modules {
                     "template module globs and ancestor searches are unavailable".into(),
                 ));
             }
-            if builtin(uri) {
+            // The template evaluator's module path holds only the compiled-in
+            // schema, so a `modulepath:` import cannot reach the file system.
+            if builtin(uri) || uri.starts_with("modulepath:/") {
                 continue;
             }
             if uri.contains(':') {

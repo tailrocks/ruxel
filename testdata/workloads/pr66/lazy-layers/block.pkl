@@ -1,4 +1,4 @@
-import "../../../../schema/Ruxel.pkl"
+import "modulepath:/ruxel/Ruxel.pkl"
 
 output { value = new Ruxel.Config {
   inventory { hosts { ["fixture"] { address = "127.0.0.1" } } }

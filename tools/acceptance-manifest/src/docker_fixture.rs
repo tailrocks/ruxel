@@ -144,7 +144,6 @@ impl Docker {
         );
         ensure!(
             [
-                "/tmp/work/schema/Ruxel.pkl",
                 "/tmp/work/workload.pkl",
                 "/tmp/work/assets/source.txt",
                 "/tmp/work/assets/template.pkl",

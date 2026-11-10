@@ -2,19 +2,17 @@ use crate::process;
 use anyhow::{Context, Result, ensure};
 use std::{ffi::OsStr, fs, path::Path, time::Duration};
 
-pub(super) fn run(root: &Path, cli: &Path, agent: &Path) -> Result<()> {
+pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
     const MARKER: &str = "synthetic-private-host-marker";
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    fs::create_dir(base.join("schema"))?;
     fs::create_dir(base.join("fixtures"))?;
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
     let payload = base.join("payload");
     let state = base.join("state");
     let public = base.join("fixtures/public.pkl");
     fs::write(
         &public,
-        r#"import "../schema/Ruxel.pkl"
+        r#"import "modulepath:/ruxel/Ruxel.pkl"
 output { value = new Ruxel.Config {
  inventory { hosts { ["public-fixture"] { address = "127.0.0.1" } } }
  plays { new { name = "fixture"; targets { "public-fixture" }; tasks {
@@ -43,7 +41,7 @@ output { value = new Ruxel.Config {
     fs::write(
         &write,
         format!(
-            r#"import "../schema/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/Ruxel.pkl"
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["{MARKER}"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "{MARKER}" }}; tasks {{
@@ -67,7 +65,7 @@ output {{ value = new Ruxel.Config {{
     fs::write(
         &read,
         format!(
-            r#"import "../schema/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/Ruxel.pkl"
 local key = read({uri}).text
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}

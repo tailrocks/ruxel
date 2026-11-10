@@ -14,8 +14,8 @@ cargo run --offline --locked --manifest-path tools/acceptance-copy/Cargo.toml --
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
-Use `--root /path/to/checkout` to select the checkout supplying `schema/Ruxel.pkl`.
-The default is the checkout in which this runner was compiled.
+The fixtures import `modulepath:/ruxel/Ruxel.pkl`, which the `ruxel` binary
+under test serves from its own build.
 
 The binary scenario verifies exact bytes, file mode, convergence, drift repair,
 source replacement, empty source, check/diff non-mutation, and noLog censorship.

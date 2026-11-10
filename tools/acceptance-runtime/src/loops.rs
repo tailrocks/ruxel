@@ -26,13 +26,10 @@ fn labels(path: &Path) -> Result<Vec<String>> {
         .map(|line| serde_json::from_str(line).context("invalid label"))
         .collect()
 }
-pub fn run(root: &Path, cli: &Path, agent: &Path, item_vars: bool) -> Result<()> {
+pub fn run(cli: &Path, agent: &Path, item_vars: bool) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    for dir in ["schema", "fixtures"] {
-        fs::create_dir(base.join(dir))?;
-    }
-    fs::copy(root.join("schema/Ruxel.pkl"), base.join("schema/Ruxel.pkl"))?;
+    fs::create_dir(base.join("fixtures"))?;
     let source = if item_vars {
         include_str!("../fixtures/loop_task_vars.pkl")
             .replace("SECRET", &serde_json::to_string(SECRET)?)

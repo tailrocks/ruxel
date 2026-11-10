@@ -28,10 +28,10 @@ processes; inspect the suite before running it on a machine with valuable data.
 
 ## Configuration
 
-Create a module at the repository root, for example `example.pkl`:
+Create a module, for example `example.pkl`:
 
 ```pkl
-import "schema/Ruxel.pkl" as R
+import "modulepath:/ruxel/Ruxel.pkl" as R
 
 config = new R.Config {
   inventory {
@@ -62,6 +62,33 @@ results, handlers, and blocks. See [the schema](schema/Ruxel.pkl) for the
 available fields and [the architecture](docs/ARCHITECTURE.md) for evaluation
 and execution details. `R.Lookup` describes a secret or external lookup; keep
 secret values out of Pkl files and logs.
+
+### The schema comes from the binary
+
+Import the schema as `modulepath:/ruxel/Ruxel.pkl`. Every `ruxel` binary serves
+the schema it was built with at that URI, so configuration never contains a
+copy of `Ruxel.pkl`. `ruxel plan`, `check`, `diff` and `apply` admit only a
+configuration built from the module this process serves; they refuse one
+evaluated against any copy, even an export of the same binary, and name the
+schema fingerprints in the error.
+
+Share roles and other Pkl libraries the same way. Pass directories with
+`--module-path DIR[:DIR...]`, as with `pkl eval --module-path`, and import their
+modules as `modulepath:/<path inside the directory>`. The directories are
+searched in order after the compiled-in schema, so no directory can replace
+`modulepath:/ruxel/Ruxel.pkl`.
+
+For editors and the `pkl` CLI, export the schema into an ignored directory and
+pass that directory as the module path:
+
+```sh
+ruxel schema export .ruxel/module-path
+pkl eval --module-path .ruxel/module-path example.pkl
+```
+
+The export is for editors and the `pkl` CLI only: `ruxel` refuses a
+configuration that imports it by path. Run the export again after you upgrade
+`ruxel`.
 
 Inspect evaluated configuration without executing tasks:
 

@@ -9,8 +9,7 @@ From the repository root, after building the CLI and agent:
 ```sh
 cargo test --offline --locked --manifest-path tools/acceptance-pty/Cargo.toml
 cargo run --offline --locked --manifest-path tools/acceptance-pty/Cargo.toml -- \
-  --ruxel target/debug/ruxel --agent target/debug/ruxel-agent \
-  --schema schema/Ruxel.pkl
+  --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 
 The first command checks that partial JSON times out after the child actually
