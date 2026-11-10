@@ -1,0 +1,13 @@
+// expect: 'CA hash' (step 1 of the recipe at step 2) repeats the capture at step 1; a capture runs once per stage, so list it once in the stage and pass it to the recipe, which reads its stdout() without listing it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// One capture, listed in the stage and again inside a recipe.
+local caHash = new Capture { title = "CA hash"; bash = "cat /ca" }
+
+local class Join extends Recipe {
+  ca: Capture
+  function steps(): Listing<Step> = new { ca; new File { path = "/etc/join"; content = ca.stdout() } }
+}
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { caHash; new Join { ca = caHash } } } }

@@ -1,16 +1,20 @@
-//! `schema/Ruxel.pkl` is the only copy of the schema in this repository.
+//! Every Ruxel Pkl module exists once in this repository: under
+//! `schema/ruxel/`, which the binary embeds and serves at `modulepath:/ruxel/`.
 //!
-//! Configuration imports `modulepath:/ruxel/Ruxel.pkl`, which the binary
-//! serves. A second copy, or code that stages one next to a fixture, drifts
-//! from the binary and is refused at run time; this test catches it first.
+//! A second copy, a link to one, or code that stages one next to a fixture
+//! drifts from the binary and is refused at run time; this test catches it
+//! first. It fails on any other `.pkl` file whose file name or module name
+//! matches an embedded module, on links into `schema/ruxel/`, and on code or
+//! configuration outside the embedding that names `schema/ruxel/`.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-const CANONICAL: &str = "schema/Ruxel.pkl";
-/// Files that may name the canonical path: the embedding, its tests, and
-/// the plan coverage check, which parses the canonical file in place.
+const EMBEDDED: &str = "schema/ruxel/";
+/// Files that may name the embedded directory: the embedding, its tests, and
+/// the plan coverage check, which parses the engine schema in place.
 /// Markdown may always name it, and so may the CI cache-key input lists.
-const MAY_NAME_CANONICAL: &[&str] = &[
+const MAY_NAME_EMBEDDED: &[&str] = &[
     "crates/ruxel/ruxel-config/src/schema.rs",
     "crates/ruxel/ruxel-config/src/schema/tests.rs",
     "crates/ruxel/ruxel-config/tests/eval.rs",
@@ -39,48 +43,78 @@ fn files(directory: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
+fn relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// The name in the first `module` or `open module` line, if any.
+fn module_name(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let rest = line
+            .strip_prefix("open module ")
+            .or_else(|| line.strip_prefix("module "))?;
+        Some(rest.trim().to_owned())
+    })
+}
+
 fn violations(root: &Path) -> std::io::Result<Vec<String>> {
     let mut found = Vec::new();
     files(root, &mut found)?;
+    let embedded: Vec<&PathBuf> = found
+        .iter()
+        .filter(|path| !path.is_symlink() && relative(root, path).starts_with(EMBEDDED))
+        .collect();
+    let file_names: BTreeSet<String> = embedded
+        .iter()
+        .filter_map(|path| path.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .collect();
+    let module_names: BTreeSet<String> = embedded
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .filter_map(|text| module_name(&text))
+        .collect();
+    let embedded_dir = root.join(EMBEDDED).canonicalize()?;
     let mut violations = Vec::new();
-    for path in found {
-        let relative = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        if relative == CANONICAL {
+    for path in &found {
+        let relative = relative(root, path);
+        if relative.starts_with(EMBEDDED) && !path.is_symlink() {
             continue;
         }
+        let same_file = path
+            .file_name()
+            .is_some_and(|name| file_names.contains(&*name.to_string_lossy()));
+        let is_pkl = path.extension().is_some_and(|extension| extension == "pkl");
         if path.is_symlink() {
-            let canonical = root.join(CANONICAL).canonicalize()?;
-            // A link to the schema, or to a directory that contains it.
-            if path.file_name().is_some_and(|name| name == "Ruxel.pkl")
-                || path
-                    .canonicalize()
-                    .is_ok_and(|target| canonical.starts_with(target))
+            // A link to a module, or to a directory that contains them.
+            if (is_pkl && same_file)
+                || path.canonicalize().is_ok_and(|target| {
+                    target.starts_with(&embedded_dir) || embedded_dir.starts_with(&target)
+                })
             {
                 violations.push(format!(
-                    "{relative}: a link to the schema; import \"modulepath:/ruxel/Ruxel.pkl\" instead"
+                    "{relative}: a link to an embedded Ruxel module; import it from \"modulepath:/ruxel/\" instead"
                 ));
             }
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
-        if path.file_name().is_some_and(|name| name == "Ruxel.pkl")
-            || text.starts_with("module Ruxel\n")
-        {
+        let same_module = module_name(&text).is_some_and(|name| module_names.contains(&name));
+        if is_pkl && (same_file || same_module) {
             violations.push(format!(
-                "{relative}: a copy of the schema; import \"modulepath:/ruxel/Ruxel.pkl\" instead"
+                "{relative}: a copy of an embedded Ruxel module; import it from \"modulepath:/ruxel/\" instead"
             ));
-        } else if text.contains(CANONICAL)
+        } else if text.contains(EMBEDDED)
             && path.extension().is_none_or(|extension| extension != "md")
-            && !MAY_NAME_CANONICAL.contains(&relative.as_str())
+            && !MAY_NAME_EMBEDDED.contains(&relative.as_str())
         {
             violations.push(format!(
-                "{relative}: names {CANONICAL}; fixtures import \"modulepath:/ruxel/Ruxel.pkl\", which the ruxel binary serves, so nothing copies or stages the schema"
+                "{relative}: names {EMBEDDED}; fixtures import \"modulepath:/ruxel/...\", which the ruxel binary serves, so nothing copies or stages a Ruxel module"
             ));
         }
     }
@@ -89,12 +123,12 @@ fn violations(root: &Path) -> std::io::Result<Vec<String>> {
 }
 
 #[test]
-fn the_schema_has_exactly_one_copy() -> std::io::Result<()> {
+fn every_ruxel_module_has_exactly_one_copy() -> std::io::Result<()> {
     let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
     let violations = violations(root)?;
     assert!(
         violations.is_empty(),
-        "schema copies or staging found:\n{}",
+        "Ruxel module copies or staging found:\n{}",
         violations.join("\n")
     );
     Ok(())

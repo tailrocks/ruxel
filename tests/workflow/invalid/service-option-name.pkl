@@ -1,0 +1,6 @@
+// expect-pkl: !startsWith("-")
+// expect-pklr: expected ServiceName
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Service { name = "--help"; running = true; enabled = true } } } }

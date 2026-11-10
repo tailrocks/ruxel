@@ -1,0 +1,10 @@
+// expect: 'Write /etc/motd' (step 1) uses the output of 'Capture cat /etc/debian_version', which comes later, at step 2; list the capture before the step that reads it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local release = new Capture { bash = "cat /etc/debian_version" }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/motd"; content = "Debian \(release.stdout())" }
+  release
+} } }

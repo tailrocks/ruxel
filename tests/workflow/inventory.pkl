@@ -1,0 +1,11 @@
+// Synthetic hosts for the example. Documentation addresses only (RFC 5737).
+extends "modulepath:/ruxel/Ruxel.pkl"
+
+cp1: Host = new Host { name = "cp-1"; address = "192.0.2.11" }
+cp2: Host = new Host { name = "cp-2"; address = "192.0.2.12" }
+worker1: Host = new Host { name = "worker-1"; address = "192.0.2.21" }
+worker2: Host = new Host { name = "worker-2"; address = "192.0.2.22" }
+
+controlPlanes: Listing<Host> = new { cp1; cp2 }
+workers: Listing<Host> = new { worker1; worker2 }
+all: Listing<Host> = new { ...controlPlanes; ...workers }

@@ -21,10 +21,37 @@ pub struct EvalOptions {
     pub root_dir: Option<PathBuf>,
 }
 
+/// Stack size of the thread every evaluation runs on. pklr recurses natively:
+/// at a depth of 256 an unoptimized build needs about 16 MiB, an optimized
+/// build under 1 MiB. Callers' threads have less (2 MiB for tokio workers and
+/// test threads), so evaluation never runs on them. Only the pages the
+/// evaluation touches are committed.
+const EVAL_STACK: usize = 64 * 1024 * 1024;
+
 /// Evaluate `path` with imports and `file:` resources confined to `files`,
 /// and no environment variables, external properties, network or writes.
-/// The schema is the first module path entry, so no directory can shadow it.
+/// The served modules are the first module path entries, so no directory can
+/// shadow them. Runs on its own thread with an `EVAL_STACK` stack; a panic
+/// inside resumes on the caller's thread.
 fn evaluate(
+    path: &Path,
+    files: Arc<Confined>,
+    module_path: &[PathBuf],
+) -> pklr::Result<serde_json::Value> {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("ruxel-pkl-eval".to_owned())
+            .stack_size(EVAL_STACK)
+            .spawn_scoped(scope, || evaluate_here(path, files, module_path))
+            .map_err(|error| {
+                pklr::Error::Eval(format!("cannot start the evaluation thread: {error}"))
+            })?
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+fn evaluate_here(
     path: &Path,
     files: Arc<Confined>,
     module_path: &[PathBuf],
@@ -36,7 +63,13 @@ fn evaluate(
     evaluator.set_environment_variables(BTreeMap::new());
     evaluator.set_external_properties(BTreeMap::new());
     evaluator.set_offline(true);
-    evaluator.add_module_path_source(crate::schema::MODULE_PATH, crate::schema::source())?;
+    // pklr counts every nested expression against this limit; its default of
+    // 32 does not fit the workflow language. 256 fits a chain of 16 commands
+    // that each react to the one before (see `EVAL_STACK`).
+    evaluator.set_max_depth(256);
+    for (served, source) in crate::schema::modules() {
+        evaluator.add_module_path_source(served, source.as_str())?;
+    }
     for directory in module_path {
         evaluator.add_module_path_directory(directory);
     }

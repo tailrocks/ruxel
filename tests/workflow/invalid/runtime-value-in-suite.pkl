@@ -1,0 +1,8 @@
+// expect-pkl: !contains("__ruxel_rt_8d41.")
+// expect-pklr: expected
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new AptRepository { name = "x"; url = "https://example.test/deb"; suite = module.currentHost.name; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
+} } }

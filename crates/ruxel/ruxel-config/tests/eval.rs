@@ -31,6 +31,15 @@ impl Drop for Scratch {
     }
 }
 
+/// The engine schema as `ruxel schema export` writes it.
+fn exported_engine() -> String {
+    ruxel_config::schema::exported_modules()
+        .iter()
+        .find(|(path, _)| path.ends_with("/engine/Engine.pkl"))
+        .map(|(_, text)| text.clone())
+        .unwrap_or_default()
+}
+
 fn config(import: &str) -> String {
     format!(
         "import \"{import}\" as R\nconfig = new R.Config {{\n  inventory {{ hosts {{ [\"node\"] = new R.Host {{ address = \"localhost\" }} }} }}\n}}\n"
@@ -51,7 +60,7 @@ fn missing_module_fails() {
 #[test]
 fn served_schema_is_admitted_and_its_fingerprint_removed() -> Result {
     let scratch = Scratch::new()?;
-    let root = scratch.write("main.pkl", &config(ruxel_config::schema::MODULE_URI))?;
+    let root = scratch.write("main.pkl", &config(ruxel_config::schema::ENGINE_URI))?;
     let raw = ruxel_config::eval(&root, &ruxel_config::EvalOptions::default())?;
     let served = raw["config"]["schemaFingerprint"]
         .as_str()
@@ -72,27 +81,29 @@ fn copies_of_the_schema_are_refused() -> Result {
     // The committed source, copied: the fingerprint is the placeholder.
     scratch.write(
         "copied/Ruxel.pkl",
-        include_str!("../../../../schema/Ruxel.pkl"),
+        include_str!("../../../../schema/ruxel/engine/Engine.pkl"),
     )?;
     // An export from another ruxel: a different fingerprint.
     let other = format!("blake3:{}", "0".repeat(64));
     scratch.write(
-        "stale/ruxel/Ruxel.pkl",
-        &ruxel_config::schema::exported_source()
-            .replace(ruxel_config::schema::fingerprint(), &other),
+        "stale/ruxel/engine/Engine.pkl",
+        &exported_engine().replace(ruxel_config::schema::fingerprint(), &other),
     )?;
     // This binary's own export, edited without touching the fingerprint.
     scratch.write(
-        "edited/ruxel/Ruxel.pkl",
-        &ruxel_config::schema::exported_source().replace(
+        "edited/ruxel/engine/Engine.pkl",
+        &exported_engine().replace(
             "port: Int(this >= 1 && this <= 65535) = 22",
             "port: Int = 2222",
         ),
     )?;
     for (import, found) in [
         ("copied/Ruxel.pkl", "unserved"),
-        ("stale/ruxel/Ruxel.pkl", other.as_str()),
-        ("edited/ruxel/Ruxel.pkl", "a copy of this ruxel's schema"),
+        ("stale/ruxel/engine/Engine.pkl", other.as_str()),
+        (
+            "edited/ruxel/engine/Engine.pkl",
+            "a copy of this ruxel's schema",
+        ),
     ] {
         let root = scratch.write("main.pkl", &config(import))?;
         let error = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())
@@ -104,7 +115,10 @@ fn copies_of_the_schema_are_refused() -> Result {
             error.contains(ruxel_config::schema::fingerprint()),
             "{error}"
         );
-        assert!(error.contains("modulepath:/ruxel/Ruxel.pkl"), "{error}");
+        assert!(
+            error.contains("modulepath:/ruxel/engine/Engine.pkl"),
+            "{error}"
+        );
     }
     Ok(())
 }
@@ -114,10 +128,10 @@ fn module_path_directories_serve_libraries_but_never_the_schema() -> Result {
     let scratch = Scratch::new()?;
     scratch.write(
         "lib/roles/hello.pkl",
-        "import \"modulepath:/ruxel/Ruxel.pkl\" as R\nmessage = \"hello\"\nfingerprint = new R.Config { inventory {} }.schemaFingerprint\n",
+        "import \"modulepath:/ruxel/engine/Engine.pkl\" as R\nmessage = \"hello\"\nfingerprint = new R.Config { inventory {} }.schemaFingerprint\n",
     )?;
-    // A directory entry with its own /ruxel/Ruxel.pkl, such as an export.
-    scratch.write("lib/ruxel/Ruxel.pkl", "shadowed = true\n")?;
+    // A directory entry with its own /ruxel/engine/Engine.pkl, such as an export.
+    scratch.write("lib/ruxel/engine/Engine.pkl", "shadowed = true\n")?;
     let root = scratch.write(
         "main.pkl",
         "import \"modulepath:/roles/hello.pkl\" as hello\nmessage = hello.message\nfingerprint = hello.fingerprint\n",

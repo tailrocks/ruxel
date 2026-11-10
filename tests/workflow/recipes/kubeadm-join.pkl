@@ -1,0 +1,70 @@
+// The kubeadm join configuration of a node. It needs the CA public key hash
+// of a ready control plane, so it reads it there first.
+extends "modulepath:/ruxel/Ruxel.pkl"
+
+/// The CA public key hash of a control plane, read there once its API
+/// server is ready. A stage that joins several nodes lists it once and passes
+/// it to each `KubeadmJoinConfig` as `sharedCaHash`.
+const function readCaHash(controlPlane: Host): Capture = new Capture {
+  title = "Read the control plane CA public key hash"
+  runOn = controlPlane
+  retry { attempts = 12 }
+  bash = """
+    kubectl --request-timeout=30s --kubeconfig=/etc/kubernetes/admin.conf get --raw=/readyz >/dev/null
+    digest=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | od -An -v -tx1 | tr -d ' \\n')
+    printf 'sha256:%s' "$digest"
+    """
+}
+
+class KubeadmJoinConfig extends Recipe {
+  /// Load-balanced API endpoint, `host:port`.
+  endpoint: String
+  /// Read the CA hash on this control plane, which must already be up. Set
+  /// this or `sharedCaHash`.
+  readyControlPlane: Host? = null
+  /// A CA hash capture the stage already lists, made by `readCaHash`. Set
+  /// this or `readyControlPlane`.
+  sharedCaHash: Capture? = null
+  /// Join as a control plane instead of a worker.
+  asControlPlane: Boolean = false
+
+  function steps(): Listing<Step> =
+    if ((readyControlPlane == null) == (sharedCaHash == null))
+      throw("KubeadmJoinConfig: set readyControlPlane to read the CA hash here, or sharedCaHash to use one the stage lists; not both, not neither")
+    else
+      let (caHash = sharedCaHash ?? readCaHash(readyControlPlane))
+      new Listing {
+        when (sharedCaHash == null) { caHash }
+        new Directory { path = "/etc/kubernetes/kubeadm"; mode = "0700" }
+        new File {
+          path = "/etc/kubernetes/kubeadm/join.yaml"
+          mode = "0600"
+          content = module.yaml(joinConfiguration(caHash.stdout()))
+        }
+      }
+
+  /// The bootstrap token and certificate key stay placeholders; the join
+  /// command fills them in from secrets.
+  function joinConfiguration(caCertHash: String): Dynamic = new {
+    apiVersion = "kubeadm.k8s.io/v1beta4"
+    kind = "JoinConfiguration"
+    discovery {
+      bootstrapToken {
+        apiServerEndpoint = endpoint
+        token = "@BOOTSTRAP_TOKEN@"
+        caCertHashes { caCertHash }
+      }
+    }
+    nodeRegistration {
+      name = module.currentHost.name
+      criSocket = "unix:///run/containerd/containerd.sock"
+      kubeletExtraArgs { new { name = "node-ip"; value = module.currentHost.address } }
+    }
+    when (asControlPlane) {
+      controlPlane {
+        localAPIEndpoint { advertiseAddress = module.currentHost.address; bindPort = 6443 }
+        certificateKey = "@CERT_KEY@"
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-module Ruxel
+module Engine
 
 // Runtime expressions are data: evaluation happens against each host's facts and results.
 typealias Expr = Literal|Ref|Call|ListExpr|MapExpr|Lookup
@@ -40,6 +40,8 @@ class Guard { allow: Listing<String>; deny: Listing<String> }
 class Config {
   /// Set by the ruxel binary that serves this schema; ruxel refuses a configuration evaluated against another copy.
   fixed schemaFingerprint: String = "unserved"
+  /// Set by the workflow language (`modulepath:/ruxel/internal/Lowering.pkl`) when it builds this configuration; ruxel refuses one built by copies of the language modules.
+  languageFingerprint: String? = null
   inventory: Inventory
   plays: Listing<Play>
   ssh: Ssh? = null

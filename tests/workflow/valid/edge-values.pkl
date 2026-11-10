@@ -1,0 +1,39 @@
+// Values at the edges of the types, and lowerings that guard them: a
+// link-local IPv6 address with a zone, a SHA-256 commit, literal text that
+// resembles a run-time value, a login shell (which checks that the account
+// exists), a command that reacts to another step (which reports a change in
+// check and diff when it would run), and a command with both `creates` and
+// `UnlessOutput`.
+amends "modulepath:/ruxel/Workflow.pkl"
+
+local linkLocal = new Host { name = "link-local"; address = "fe80::1%eth0" }
+local mapped = new Host { name = "mapped"; address = "::ffff:192.0.2.7" }
+local documentation = new Host { name = "documentation"; address = "2001:db8::42" }
+
+stages {
+  new Stage {
+    title = "Edges"
+    hosts { linkLocal; mapped; documentation }
+    steps {
+      new GitCheckout {
+        repository = "https://git.example.test/app.git"
+        path = "/opt/app"
+        commit = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+      new File { path = "/etc/motd"; content = "literal __ruxel.inventoryHost__ text\n" }
+      new LoginShell { user = "root"; shell = "/bin/zsh" }
+      new Packages { names { "curl"; "libc6:amd64=2.36-9+deb12u4"; "libc6:arm64=2.36-9+deb12u4"; "tzdata=1:2024a-0" } }
+      // An exact repeat runs again; it does not conflict.
+      new Packages { title = "Keep the amd64 libc6 pin"; names { "libc6:amd64=2.36-9+deb12u4" } }
+      local sources = new Directory { path = "/srv/app" }
+      sources
+      new Command { run { "/usr/local/bin/app-reload" }; onChangeOf { sources } }
+      new Command { run { "/usr/local/bin/app-migrate" }; creates = "/var/lib/app/migrated"; onChangeOf { sources } }
+      new Command {
+        run { "/usr/local/bin/app-init" }
+        creates = "/var/lib/app/initialized"
+        changes = new UnlessOutput { stdoutContains = "already initialized" }
+      }
+    }
+  }
+}

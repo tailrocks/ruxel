@@ -1,0 +1,8 @@
+// expect: is declared twice with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts { new Host { name = "web"; address = "192.0.2.50" } }; steps { new Timezone { name = "UTC" } } }
+  new Stage { title = "b"; hosts { new Host { name = "web"; address = "192.0.2.51" } }; steps { new Timezone { name = "UTC" } } }
+}

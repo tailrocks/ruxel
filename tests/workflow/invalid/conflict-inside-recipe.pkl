@@ -1,0 +1,9 @@
+// expect: (step 3 of the recipe at step 1) and 'Write /etc/haproxy/haproxy.cfg' (step 2) both manage /etc/haproxy/haproxy.cfg
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new recipes.ApiProxy { backends = inventory.controlPlanes }
+  new File { path = "/etc/haproxy/haproxy.cfg"; content = "other" }
+} } }

@@ -1,0 +1,23 @@
+// Tags reach every task a step generates, recipe tags reach the recipe's
+// steps, and a step runs under the tags of the steps that depend on it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local config = new File {
+  path = "/etc/app.conf"
+  content = "x"
+  validate { "app"; "--check"; "%s" }
+}
+
+stages {
+  new Stage {
+    title = "Tags"
+    hosts = inventory.workers
+    steps {
+      config
+      new Command { run { "app"; "reload" }; onChangeOf { config }; tags { "reload" } }
+      new recipes.ApiProxy { backends = inventory.controlPlanes; tags { "proxy" } }
+    }
+  }
+}

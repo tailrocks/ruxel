@@ -13,7 +13,7 @@ pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
     let public = base.join("fixtures/public.pkl");
     fs::write(
         &public,
-        r#"import "modulepath:/ruxel/Ruxel.pkl"
+        r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
  inventory { hosts { ["public-fixture"] { address = "127.0.0.1" } } }
  plays { new { name = "fixture"; targets { "public-fixture" }; tasks {
@@ -42,7 +42,7 @@ output { value = new Ruxel.Config {
     fs::write(
         &write,
         format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["{MARKER}"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "{MARKER}" }}; tasks {{
@@ -66,7 +66,7 @@ output {{ value = new Ruxel.Config {{
     fs::write(
         &read,
         format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({uri}).text
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}

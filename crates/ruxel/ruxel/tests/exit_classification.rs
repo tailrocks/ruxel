@@ -54,7 +54,7 @@ impl Fixture {
         fs::write(
             &module,
             format!(
-                r#"import "modulepath:/ruxel/Ruxel.pkl"
+                r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "fixture.invalid" }} }} }}
  plays {{ new {{ name = "exit classification"; targets {{ "fixture" }}; tasks {{

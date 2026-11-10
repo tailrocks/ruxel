@@ -1,4 +1,4 @@
-import "modulepath:/ruxel/Ruxel.pkl"
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Copy {
   src = "__FIXTURE_ROOT__/assets/synthetic.txt"
   content = "prefix synthetic suffix"

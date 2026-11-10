@@ -1,0 +1,7 @@
+// expect: must be whole seconds, at least 1.s
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Capture { bash = "true"; retry { attempts = 3; delay = 1500.ms } }
+} } }

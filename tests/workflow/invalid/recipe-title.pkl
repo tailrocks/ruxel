@@ -1,0 +1,8 @@
+// expect: A recipe takes no title
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new recipes.ApiProxy { title = "Proxy"; backends = inventory.controlPlanes }
+} } }

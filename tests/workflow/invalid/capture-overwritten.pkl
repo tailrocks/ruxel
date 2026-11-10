@@ -1,0 +1,15 @@
+// expect: 'Capture uname -r' (step 3) repeats the capture at step 1; a capture runs once per stage, so list it once, or give a re-read after a change its own title
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// Two variables, one capture: without titles they are the same step, and
+// listing it again is rejected.
+local kernelBefore = new Capture { bash = "uname -r" }
+local kernelAfter = new Capture { bash = "uname -r" }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  kernelBefore
+  new Packages { names { "linux-image-amd64" }; upgrade = true }
+  kernelAfter
+  new File { path = "/etc/kernels"; content = "before \(kernelBefore.stdout()) after \(kernelAfter.stdout())\n" }
+} } }

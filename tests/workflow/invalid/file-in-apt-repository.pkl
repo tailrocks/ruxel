@@ -1,0 +1,14 @@
+// expect: both manage /etc/apt/keyrings/example.asc: an AptRepository and a File
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new AptRepository {
+    name = "example"
+    url = "https://apt.example.test/"
+    suite = "stable"
+    components { "main" }
+    signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+  }
+  new File { path = "/etc/apt/keyrings/example.asc"; content = "another key" }
+} } }

@@ -1,0 +1,8 @@
+// expect-pkl: contains("__ruxel_rt_8d41.")
+// expect-pklr: expected Arguments
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Command { run { "hostnamectl"; "set-hostname"; module.currentHost.name } }
+} } }

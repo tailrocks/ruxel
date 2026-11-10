@@ -1,0 +1,8 @@
+// expect-pkl: this != "localhost"
+// expect-pklr: expected HostName
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts { new Host { name = "localhost"; address = "192.0.2.9" } }; steps {
+  new Timezone { name = "UTC" }
+} } }

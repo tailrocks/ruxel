@@ -1,0 +1,55 @@
+// Repeats: the same recipe twice, a file repeated exactly, and two recipes
+// that restart the same service. Things that are managed appear
+// once; commands run where they are written; one restart handler per service.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local cert = new File { path = "/etc/haproxy/certs/api.pem"; content = "-----BEGIN CERTIFICATE-----\n" }
+local release = new Capture { bash = "cat /etc/debian_version" }
+local motd = new File { path = "/etc/motd"; content = "Debian \(release.stdout())\n" }
+local class Site extends Recipe {
+  site: String
+  function steps(): Listing<Step> =
+    let (pkgs = new Packages { names { "nginx" } })
+    let (setup = new Command { title = "Set up nginx defaults"; run { "nginx-setup" }; onChangeOf { pkgs } })
+    new Listing {
+      pkgs
+      setup
+      new File { path = "/etc/nginx/sites-enabled/\(site)"; content = site }
+      new Service { name = "nginx"; restartOnChangeOf { setup } }
+    }
+}
+local class Both extends Recipe {
+  function steps(): Listing<Step> = new { new Site { site = "a" }; new Site { site = "b" } }
+}
+local appA = new File { path = "/etc/app/a.conf"; content = "a" }
+local appB = new File { path = "/etc/app/b.conf"; content = "b" }
+local secondApp = new Service { name = "app"; title = "Second app"; restartOnChangeOf { appB } }
+local reloadAfterCert = new Command { title = "Reload after cert"; run { "systemctl"; "daemon-reload" }; onChangeOf { cert } }
+
+stages {
+  new Stage {
+    title = "Repeats"
+    hosts = inventory.workers
+    steps {
+      new recipes.ApiProxy { backends = inventory.controlPlanes }
+      new recipes.ApiProxy { backends = inventory.controlPlanes; tags { "proxy" } }
+      cert
+      reloadAfterCert
+      new Service { name = "haproxy"; restartOnChangeOf { cert } }
+      release
+      motd
+      cert
+      new Command { title = "After the second cert"; run { "true" }; onChangeOf { reloadAfterCert } }
+      new Site { site = "a" }
+      new Site { site = "b" }
+      new Both {}
+      appA
+      appB
+      new Service { name = "app"; restartOnChangeOf { appA } }
+      secondApp
+      new Command { title = "After app"; run { "true" }; onChangeOf { secondApp } }
+    }
+  }
+}

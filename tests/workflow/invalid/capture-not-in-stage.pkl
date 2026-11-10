@@ -1,0 +1,8 @@
+// expect: uses the output of a Capture that this stage does not list; list the capture earlier in the stage
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local version = new Capture { bash = "cat /etc/debian_version" }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/motd"; content = "Debian \(version.stdout())" }
+} } }

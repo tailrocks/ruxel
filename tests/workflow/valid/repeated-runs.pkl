@@ -1,0 +1,36 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// Package steps and commands run again where they are written. A reference
+// to a step that runs again means every earlier run: the second reload
+// watches both installs, and "After reload" watches both reloads. A capture
+// runs once per stage; a re-read after a change is its own, titled capture.
+local packages = new Packages { names { "xz-utils" } }
+local kernelBefore = new Capture { title = "Kernel before upgrade"; bash = "uname -r" }
+local kernelAfter = new Capture { title = "Kernel after upgrade"; bash = "uname -r" }
+local release = new Capture { bash = "cat /etc/debian_version" }
+local releaseAgain = (release) { title = "Read release again" }
+
+// A recipe used twice: the second use's reload watches both installs.
+local class Common extends Recipe {
+  function steps(): Listing<Step> =
+    let (p = new Packages { names { "common" } })
+    new Listing { p; new Command { title = "Reload units"; run { "systemctl"; "daemon-reload" }; onChangeOf { p } } }
+}
+local reload = new Command { run { "systemctl"; "daemon-reload" }; onChangeOf { packages } }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  packages; reload; packages; reload
+  new Command { title = "After reload"; run { "true" }; onChangeOf { reload } }
+  kernelBefore
+  new Packages { names { "linux-image-amd64" }; upgrade = true }
+  kernelAfter
+  new File { path = "/etc/kernels"; content = "before \(kernelBefore.stdout()) after \(kernelAfter.stdout())\n" }
+  release
+  new File { path = "/etc/release-1"; content = release.stdout() }
+  releaseAgain
+  new File { path = "/etc/release-2"; content = releaseAgain.stdout() }
+  new Common {}
+  new Timezone { name = "UTC" }
+  new Common {}
+} } }

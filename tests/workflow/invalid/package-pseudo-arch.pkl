@@ -1,0 +1,5 @@
+// expect: unsupported package "libc6:any"
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Packages { names { "libc6:any" } } } } }

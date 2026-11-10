@@ -1,0 +1,33 @@
+// Commands that look alike but react to different steps stay different:
+// a recipe used twice, and a chain of four commands.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local class Unit extends Recipe {
+  unit: String
+  function file(): File = new File { path = "/etc/systemd/system/\(unit).service"; content = "[Service]\n" }
+  function reload(): Command = new Command { title = "Reload systemd"; run { "systemctl"; "daemon-reload" }; onChangeOf { file() } }
+  function verify(): Command = new Command { title = "Verify units"; run { "systemd-analyze"; "verify" }; onChangeOf { reload() } }
+  function steps(): Listing<Step> = new { file(); reload(); verify() }
+}
+
+local c1 = new Command { title = "Step 1"; run { "true" }; onChangeOf { a.file() } }
+local c2 = new Command { title = "Step 2"; run { "true" }; onChangeOf { c1 } }
+local c3 = new Command { title = "Step 3"; run { "true" }; onChangeOf { c2 } }
+local c4 = new Command { title = "Step 4"; run { "true" }; onChangeOf { c3 } }
+
+local a = new Unit { unit = "a" }
+local b = new Unit { unit = "b" }
+
+stages {
+  new Stage {
+    title = "Watch chain"
+    hosts = inventory.workers
+    steps {
+      a
+      b
+      new Command { title = "Restart a"; run { "systemctl"; "restart"; "a" }; onChangeOf { a.verify() } }
+      c1; c2; c3; c4
+    }
+  }
+}

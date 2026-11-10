@@ -5,7 +5,7 @@ use anyhow::{Result, ensure};
 use serde_json::Value;
 use std::{fs, os::unix::fs::MetadataExt, path::Path};
 #[cfg(test)]
-const PIN: &str = "aa3ee4a0b0b0f7f16e6a1391c6ae11456129bae265f985385aa6de0abc5c8b18";
+const PIN: &str = "35e426515163c412607a2c333f206f73cefac8f65b91f34170b6c232efe6fa2e";
 
 #[cfg(test)]
 fn validate_inputs(fixture: &[u8], case: &Value) -> Result<()> {

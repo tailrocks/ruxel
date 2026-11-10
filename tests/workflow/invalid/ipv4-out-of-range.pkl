@@ -1,0 +1,6 @@
+// expect-pkl: isIpv4(this)
+// expect-pklr: expected IpAddress
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts { new Host { name = "web"; address = "999.999.999.999" } }; steps { new Timezone { name = "UTC" } } } }

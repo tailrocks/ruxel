@@ -1,0 +1,11 @@
+// expect: KubeadmJoinConfig: set readyControlPlane to read the CA hash here, or sharedCaHash to use one the stage lists; not both, not neither
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+import "../recipes.pkl"
+
+local caHash = recipes.readCaHash(inventory.cp1)
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  caHash
+  new recipes.KubeadmJoinConfig { endpoint = "api:7443"; readyControlPlane = inventory.cp1; sharedCaHash = caHash }
+} } }

@@ -1,0 +1,8 @@
+// expect: both manage service app.service with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Service { name = "app"; running = true; enabled = true }
+  new Service { name = "app.service"; running = false; enabled = true }
+} } }

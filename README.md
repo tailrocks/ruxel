@@ -31,7 +31,7 @@ processes; inspect the suite before running it on a machine with valuable data.
 Create a module, for example `example.pkl`:
 
 ```pkl
-import "modulepath:/ruxel/Ruxel.pkl" as R
+import "modulepath:/ruxel/engine/Engine.pkl" as R
 
 config = new R.Config {
   inventory {
@@ -58,16 +58,18 @@ config = new R.Config {
 
 The `config` property contains an `R.Config`. Hosts and groups are selected by
 name in each play. Tasks can use typed operations, conditions, loops, registered
-results, handlers, and blocks. See [the schema](schema/Ruxel.pkl) for the
+results, handlers, and blocks. See [the engine schema](schema/ruxel/engine/Engine.pkl) for the
 available fields and [the architecture](docs/ARCHITECTURE.md) for evaluation
 and execution details. `R.Lookup` describes a secret or external lookup; keep
 secret values out of Pkl files and logs.
 
-### The schema comes from the binary
+### The modules come from the binary
 
-Import the schema as `modulepath:/ruxel/Ruxel.pkl`. Every `ruxel` binary serves
-the schema it was built with at that URI, so configuration never contains a
-copy of `Ruxel.pkl`. `ruxel plan`, `check`, `diff` and `apply` admit only a
+Every `ruxel` binary serves the Pkl modules it was built with under
+`modulepath:/ruxel/`: workflows amend `modulepath:/ruxel/Workflow.pkl`, recipes
+extend `modulepath:/ruxel/Ruxel.pkl`, and configurations written against the
+engine import `modulepath:/ruxel/engine/Engine.pkl`. Configuration never
+contains a copy of a Ruxel module. `ruxel plan`, `check`, `diff` and `apply` admit only a
 configuration built from the module this process serves; they refuse one
 evaluated against any copy, even an export of the same binary, and name the
 schema fingerprints in the error.
@@ -75,8 +77,8 @@ schema fingerprints in the error.
 Share roles and other Pkl libraries the same way. Pass directories with
 `--module-path DIR[:DIR...]`, as with `pkl eval --module-path`, and import their
 modules as `modulepath:/<path inside the directory>`. The directories are
-searched in order after the compiled-in schema, so no directory can replace
-`modulepath:/ruxel/Ruxel.pkl`.
+searched in order after the compiled-in modules, so no directory can replace
+anything under `modulepath:/ruxel/`.
 
 A configuration can import and `read()` only files beneath its root
 directory and the `--module-path` directories. The root directory is the root

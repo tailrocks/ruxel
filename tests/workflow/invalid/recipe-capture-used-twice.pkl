@@ -1,0 +1,13 @@
+// expect: or give each read its own title (in a recipe used more than once, derive it from a parameter)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// A recipe with its own capture, used twice: the second use repeats it.
+local class Motd extends Recipe {
+  site: String
+  function steps(): Listing<Step> =
+    let (release = new Capture { bash = "cat /etc/debian_version" })
+    new Listing { release; new File { path = "/etc/motd-\(site)"; content = release.stdout() } }
+}
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Motd { site = "a" }; new Motd { site = "b" } } } }

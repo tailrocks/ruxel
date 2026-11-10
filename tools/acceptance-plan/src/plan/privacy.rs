@@ -16,7 +16,7 @@ pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
     let file_uri = serde_json::to_string(&format!("file:{payload_string}"))?;
     let fixture = |task: &str| {
         format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "fixture" }}; tasks {{ {task} }} }} }}
@@ -78,7 +78,7 @@ output {{ value = new Ruxel.Config {{
     fs::write(
         &host_plan,
         format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({file_uri}).text
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}
@@ -118,7 +118,7 @@ output {{ value = new Ruxel.Config {{
     fs::write(
         &bad_target,
         format!(
-            r#"import "modulepath:/ruxel/Ruxel.pkl"
+            r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({file_uri}).text
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }} }}

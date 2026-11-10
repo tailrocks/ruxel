@@ -1,0 +1,10 @@
+// expect: depends on 'Print', which is not an earlier step of this stage with exactly these settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local listed = new Command { title = "Print"; run { "printf"; "a\u{1}b" } }
+local other = new Command { title = "Print"; run { "printf"; "a"; "b" } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  listed
+  new Command { run { "true" }; onChangeOf { other } }
+} } }

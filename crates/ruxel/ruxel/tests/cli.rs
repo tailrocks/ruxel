@@ -130,7 +130,7 @@ fn detailed_plan_counts_only_selected_operations() -> Result<(), Box<dyn std::er
     let root = directory.join("plan.pkl");
     std::fs::write(
         &root,
-        r#"import "modulepath:/ruxel/Ruxel.pkl"
+        r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "plan"; targets { "fixture" }; tasks { new {
@@ -163,6 +163,28 @@ output { value = new Ruxel.Config {
         );
     }
     std::fs::remove_dir_all(directory)?;
+    Ok(())
+}
+
+#[test]
+fn plan_accepts_every_valid_workflow() -> Result<(), Box<dyn std::error::Error>> {
+    let corpus_root = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tests/workflow"
+    ));
+    let corpus = corpus_root.join("valid");
+    let mut planned = 0;
+    for entry in std::fs::read_dir(&corpus)? {
+        let root = entry?.path();
+        if root.extension().is_none_or(|extension| extension != "pkl") {
+            continue;
+        }
+        // The cases import the corpus's shared inventory and recipes.
+        let output = plan(&root, &["--root-dir", &corpus_root.display().to_string()])?;
+        assert!(output.status.success(), "{}: {output:?}", root.display());
+        planned += 1;
+    }
+    assert!(planned > 0, "no workflows in {}", corpus.display());
     Ok(())
 }
 
@@ -199,7 +221,7 @@ fn execution_reports_validation_failures_without_detail() -> Result<(), Box<dyn 
     std::fs::write(
         &root,
         CONFIG
-            .replace("IMPORT", "modulepath:/ruxel/Ruxel.pkl")
+            .replace("IMPORT", "modulepath:/ruxel/engine/Engine.pkl")
             .replace("ADDRESS", "-invalid"),
     )?;
     let output = plan(&root, &[])?;
@@ -213,21 +235,21 @@ fn execution_reports_validation_failures_without_detail() -> Result<(), Box<dyn 
 fn schema_export_serves_editors_and_stale_exports_are_refused()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = scratch("export")?;
-    let export = directory.join("schema");
+    let export = directory.join("exported");
     let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
         .args(["schema", "export"])
         .arg(&export)
         .output()?;
     assert!(output.status.success(), "{output:?}");
-    let exported = std::fs::read_to_string(export.join("ruxel/Ruxel.pkl"))?;
+    let exported = std::fs::read_to_string(export.join("ruxel/engine/Engine.pkl"))?;
     assert!(exported.contains("fixed schemaFingerprint: String = \"blake3:"));
 
     // The export is for editors: execution admits only the served module, so a
     // configuration importing the export by path is refused as a copy.
     let root = directory.join("config.pkl");
     for (import, code) in [
-        ("modulepath:/ruxel/Ruxel.pkl", 0),
-        ("schema/ruxel/Ruxel.pkl", 4),
+        ("modulepath:/ruxel/engine/Engine.pkl", 0),
+        ("exported/ruxel/engine/Engine.pkl", 4),
     ] {
         std::fs::write(
             &root,
@@ -244,7 +266,7 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
     }
 
     // Another binary's export is refused, even when passed as --module-path,
-    // because the compiled-in schema always wins modulepath:/ruxel/Ruxel.pkl.
+    // because the compiled-in schema always wins modulepath:/ruxel/engine/Engine.pkl.
     let fingerprint = exported
         .split("schemaFingerprint: String = \"")
         .nth(1)
@@ -253,13 +275,13 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
         .to_owned();
     let stale = format!("blake3:{}", "5".repeat(64));
     std::fs::write(
-        export.join("ruxel/Ruxel.pkl"),
+        export.join("ruxel/engine/Engine.pkl"),
         exported.replace(&fingerprint, &stale),
     )?;
     std::fs::write(
         &root,
         CONFIG
-            .replace("IMPORT", "schema/ruxel/Ruxel.pkl")
+            .replace("IMPORT", "exported/ruxel/engine/Engine.pkl")
             .replace("ADDRESS", "fixture.invalid"),
     )?;
     let output = plan(&root, &[])?;
@@ -267,11 +289,14 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
     let stderr = String::from_utf8(output.stderr)?;
     assert!(stderr.contains(&stale), "{stderr}");
     assert!(stderr.contains(&fingerprint), "{stderr}");
-    assert!(stderr.contains("modulepath:/ruxel/Ruxel.pkl"), "{stderr}");
+    assert!(
+        stderr.contains("modulepath:/ruxel/engine/Engine.pkl"),
+        "{stderr}"
+    );
     std::fs::write(
         &root,
         CONFIG
-            .replace("IMPORT", "modulepath:/ruxel/Ruxel.pkl")
+            .replace("IMPORT", "modulepath:/ruxel/engine/Engine.pkl")
             .replace("ADDRESS", "fixture.invalid"),
     )?;
     let module_path = export.display().to_string();
@@ -291,12 +316,12 @@ fn module_path_serves_shared_roles() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(first.join("lib/name.pkl"), "name = \"from-first\"\n")?;
     std::fs::write(
         second.join("roles/debug.pkl"),
-        "import \"modulepath:/ruxel/Ruxel.pkl\" as R\nimport \"modulepath:/lib/name.pkl\" as N\ntask = new R.Task { name = N.name; operation = new R.Debug { msg = N.name } }\n",
+        "import \"modulepath:/ruxel/engine/Engine.pkl\" as R\nimport \"modulepath:/lib/name.pkl\" as N\ntask = new R.Task { name = N.name; operation = new R.Debug { msg = N.name } }\n",
     )?;
     let root = directory.join("config.pkl");
     std::fs::write(
         &root,
-        r#"import "modulepath:/ruxel/Ruxel.pkl" as R
+        r#"import "modulepath:/ruxel/engine/Engine.pkl" as R
 import "modulepath:/roles/debug.pkl" as Debug
 config = new R.Config {
   inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }

@@ -16,12 +16,16 @@ complete platform coverage.
   relative to its parent descriptor without following symlinks, so `..`,
   outside absolute paths and symlinks (even ones swapped in during evaluation)
   are refused, as are `import*` and `read*` globs. Templates are confined the
-  same way to their source directory.
-  Its module path serves the compiled-in schema at
-  `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
-- `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
-  lookup types. It is compiled into the binary, which replaces the
-  `Config.schemaFingerprint` placeholder with `blake3:<hash of the file>@<nonce>`;
+  same way to their source directory. Its module path serves the compiled-in
+  modules under `modulepath:/ruxel/`, followed by the `--module-path`
+  directories. Evaluation runs on its own thread with a 64 MiB stack and a
+  pklr depth limit of 256.
+- `schema/ruxel/` holds every served module: the workflow language
+  (`Workflow.pkl`, `Ruxel.pkl`, `internal/Lowering.pkl`) and the engine schema
+  (`engine/Engine.pkl`), which declares inventory, task, operation,
+  expression, and lookup types. They are compiled into the binary, which
+  replaces the `Config.schemaFingerprint` placeholder in `Engine.pkl` with
+  `blake3:<hash of the module tree>@<nonce>`;
   the nonce is drawn once per process, so no file copy can carry it.
   `ruxel schema export` writes the hash alone. Before execution, `ruxel-config`
   admits only a configuration that carries this process's fingerprint and

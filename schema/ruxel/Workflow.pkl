@@ -1,0 +1,20 @@
+/// A workflow file amends this module and lists its stages:
+///
+///     amends "modulepath:/ruxel/Workflow.pkl"
+///     stages { new Stage { … } }
+open module Workflow
+
+extends "modulepath:/ruxel/Ruxel.pkl"
+
+import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
+
+/// Stages run one after another.
+stages: Listing<Stage>
+
+/// Replaced by the ruxel binary that serves this module, like the engine's
+/// `Config.schemaFingerprint`. Lowering checks it against its own.
+hidden fixed servedFingerprint: String = "unserved"
+
+output {
+  value = Lowering.config(stages, servedFingerprint)
+}

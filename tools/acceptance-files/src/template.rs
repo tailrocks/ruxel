@@ -3,8 +3,8 @@ use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::{fs, os::unix::fs::MetadataExt, path::Path};
 
-const PIN: &str = "1ee43af29e54b825137aa34281cd687abbee8bc2afe185226b8c4b85e5018f96";
-const PKL: &str = r#"import "modulepath:/ruxel/Ruxel.pkl"
+const PIN: &str = "c231e95be0d13fb69bd1908c94143408011e6ea29219608325711b16ecd163bb";
+const PKL: &str = r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "native template"; targets { "all" }; vars {
@@ -86,7 +86,7 @@ pub fn run(cli: &Path, agent: &Path, asset: &Path) -> Result<()> {
     )?;
     ensure!(
         std::str::from_utf8(&bytes)?
-            .matches("import \"modulepath:/ruxel/Ruxel.pkl\"")
+            .matches("import \"modulepath:/ruxel/engine/Engine.pkl\"")
             .count()
             == 1,
         "unexpected template import"

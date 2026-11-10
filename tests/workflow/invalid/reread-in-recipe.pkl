@@ -1,0 +1,18 @@
+// expect: 'Capture uname -r' (step 3 of the recipe at step 1) repeats the capture at step 1 of the recipe at step 1; a capture runs once per stage, so list it once, or give a re-read after a change its own title
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// An untitled before/after pair inside one recipe: one capture, listed twice.
+local class Upgrade extends Recipe {
+  function steps(): Listing<Step> =
+    let (before = new Capture { bash = "uname -r" })
+    let (after = new Capture { bash = "uname -r" })
+    new Listing {
+      before
+      new Packages { names { "linux-image-amd64" }; upgrade = true }
+      after
+      new File { path = "/etc/kernels"; content = "\(before.stdout()) \(after.stdout())" }
+    }
+}
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Upgrade {} } } }

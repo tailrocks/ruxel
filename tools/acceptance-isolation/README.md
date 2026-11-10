@@ -12,7 +12,7 @@ cargo run --locked --offline --manifest-path tools/acceptance-isolation/Cargo.to
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 
-The fixtures import `modulepath:/ruxel/Ruxel.pkl`, which the `ruxel` binary
+The fixtures import `modulepath:/ruxel/engine/Engine.pkl`, which the `ruxel` binary
 under test serves from its own build. Linux and macOS are supported. The runner and all authored helpers forbid unsafe Rust. No interpreter
 or runtime compiler is required.
 

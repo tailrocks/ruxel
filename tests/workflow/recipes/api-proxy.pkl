@@ -1,0 +1,52 @@
+// A local HAProxy on every node that balances the Kubernetes API across the
+// control planes. It refreshes the package index as its own step instead of
+// through the install.
+extends "modulepath:/ruxel/Ruxel.pkl"
+
+class ApiProxy extends Recipe {
+  /// Control planes whose API servers receive the traffic. Names must differ.
+  backends: Listing<Host>(!isEmpty, toList().map((h) -> h.name).toSet().length == length)
+  backendPort: Int(isBetween(1, 65535)) = 6443
+  listenPort: Int(isBetween(1, 65535)) = 7443
+
+  function steps(): Listing<Step> =
+    let (config = haproxyConfig())
+    new Listing {
+      new PackageIndex {}
+      new Packages { names { "haproxy" } }
+      config
+      new Service { name = "haproxy"; restartOnChangeOf { config } }
+    }
+
+  function haproxyConfig(): File = new File {
+    path = "/etc/haproxy/haproxy.cfg"
+    validate { "haproxy"; "-c"; "-f"; "%s" }
+    content = """
+      global
+        log /dev/log local0
+
+      defaults
+        log global
+        mode tcp
+        timeout connect 5s
+        timeout client 1h
+        timeout server 1h
+
+      frontend kubernetes_api
+        bind 127.0.0.1:\(listenPort)
+        default_backend kubernetes_api_servers
+
+      backend kubernetes_api_servers
+        balance roundrobin
+        option httpchk GET /readyz
+        http-check expect status 200
+        option redispatch
+        retries 2
+      \(serverLines())
+      """
+  }
+
+  function serverLines(): String = backends.toList()
+    .map((b) -> "  server \(b.name) \(b.address):\(backendPort) check check-ssl verify none inter 2s fall 2 rise 2")
+    .join("\n")
+}

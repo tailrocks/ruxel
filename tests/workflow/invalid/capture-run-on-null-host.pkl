@@ -1,0 +1,10 @@
+// expect: 'Write /etc/peer' (step 2) uses the output of a Capture that this stage does not list
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local onTargets = new Capture { bash = "hostname" }
+local onNull = new Capture { bash = "hostname"; runOn = new Host { name = "null"; address = "192.0.2.60" } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  onTargets
+  new File { path = "/etc/peer"; content = onNull.stdout() }
+} } }
