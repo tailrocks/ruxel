@@ -221,7 +221,7 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 /// depends on what ran before. Services are not merged either: each
 /// occurrence carries its own restart triggers. A capture runs once per
 /// stage (`repeatedCaptures`).
-const function mergeable(s: rx.Step): Boolean = subjectOf(s) != null && !(s is rx.Service)
+const function mergeable(s: rx.Step): Boolean = !subjectsOf(s).isEmpty && !(s is rx.Service)
 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
@@ -265,12 +265,13 @@ function missingCaptures(ix: StageIndex, i: Int): List<String> =
 /// Two steps conflict when they manage the same thing with different
 /// settings. Exact repeats were merged by `merged`; commands manage nothing.
 function conflicts(ix: StageIndex, i: Int): List<String> =
-  let (subject = subjectOf(ix.steps[i]))
-  if (subject == null) List()
-  else earlier(i).filter((j) -> subjectOf(ix.steps[j]) == subject && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
-    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subject)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": a \(className(ix.steps[j])) and a \(className(ix.steps[i]))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
+  let (mine = subjectsOf(ix.steps[i]))
+  earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
 function className(s: rx.Step): String = s.kind.capitalize()
+
+function withArticle(word: String): String = (if ("AEIOU".contains(word.take(1))) "an " else "a ") + word
 
 /// Where the author wrote a step: `step 2`, `step 4 of the recipe at step 1`,
 /// or `step 2 of the recipe at step 3 of the recipe at step 1`.
@@ -334,7 +335,7 @@ const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
   ["symlink"] = (s) -> "\(s.path)\u{0}\(s.target)"
   ["packageIndex"] = (_) -> ""
   ["packages"] = (s) -> "\(s.names.join("\u{1}"))\u{0}\(s.upgrade)"
-  ["aptRepository"] = (s) -> List(s.name, s.url, s.suite, s.components.join("\u{1}"), s.signingKey).join("\u{0}")
+  ["aptRepository"] = (s) -> List(s.name, s.url, s.suite, s.components.join("\u{1}"), s.signingKey, s.architectures.join("\u{1}")).join("\u{0}")
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> "\(s.user)\u{0}\(s.shell)"
   ["gitCheckout"] = (s) -> List(s.repository, s.path, s.commit).join("\u{0}")
@@ -346,24 +347,29 @@ const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
 const function changesText(a: rx.Action): String =
   if (a.changes is rx.UnlessOutput) "out:\(a.changes.stdoutContains)\u{0}err:\(a.changes.stderrContains)" else a.changes
 
-/// What a step manages; `null` for steps that manage nothing.
-const function subjectOf(s: rx.Step): String? = subjects[s.kind].apply(s)
+/// What a step manages; empty for steps that manage nothing. An apt
+/// repository manages the two files it writes, so a `File` at either path
+/// conflicts with it.
+const function subjectsOf(s: rx.Step): List<String> = subjects[s.kind].apply(s)
 
-const local subjects: Mapping<String, (rx.Step) -> String?> = new {
-  ["file"] = (s) -> s.path
-  ["directory"] = (s) -> s.path
-  ["symlink"] = (s) -> s.path
-  ["gitCheckout"] = (s) -> s.path
-  ["aptRepository"] = (s) -> "apt repository \(s.name)"
-  ["service"] = (s) -> "service \(s.name)"
-  ["loginShell"] = (s) -> "the login shell of \(s.user)"
-  ["timezone"] = (_) -> "the timezone"
-  ["packages"] = (_) -> null
-  ["packageIndex"] = (_) -> null
-  ["command"] = (_) -> null
-  ["script"] = (_) -> null
-  ["capture"] = (_) -> null
+const local subjects: Mapping<String, (rx.Step) -> List<String>> = new {
+  ["file"] = (s) -> List(s.path)
+  ["directory"] = (s) -> List(s.path)
+  ["symlink"] = (s) -> List(s.path)
+  ["gitCheckout"] = (s) -> List(s.path)
+  ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
+  ["service"] = (s) -> List("service \(s.name)")
+  ["loginShell"] = (s) -> List("the login shell of \(s.user)")
+  ["timezone"] = (_) -> List("the timezone")
+  ["packages"] = (_) -> List()
+  ["packageIndex"] = (_) -> List()
+  ["command"] = (_) -> List()
+  ["script"] = (_) -> List()
+  ["capture"] = (_) -> List()
 }
+
+const function sourcesPath(r: rx.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
+const function keyringPath(r: rx.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"
 
 function name(s: rx.Step): String = label(s)
 
@@ -476,15 +482,15 @@ function keyringMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
   register = if (m.register == null) null else "\(m.register)_key"
 }
 
-function keyring(r: rx.AptRepository): engine.Copy = copyText("/etc/apt/keyrings/\(r.name).asc", r.signingKey)
+function keyring(r: rx.AptRepository): engine.Copy = copyText(keyringPath(r), r.signingKey)
 
-function sourcesFile(r: rx.AptRepository): engine.Copy = copyText("/etc/apt/sources.list.d/\(r.name).sources", new Listing {
+function sourcesFile(r: rx.AptRepository): engine.Copy = copyText(sourcesPath(r), new Listing {
   "Types: deb"
   "URIs: \(r.url)"
   "Suites: \(r.suite)"
   when (!r.components.isEmpty) { "Components: \(r.components.join(" "))" }
-  "Architectures: amd64"
-  "Signed-By: /etc/apt/keyrings/\(r.name).asc"
+  when (!r.architectures.isEmpty) { "Architectures: \(r.architectures.join(" "))" }
+  "Signed-By: \(keyringPath(r))"
 }.join("\n") + "\n")
 
 // Command and Script: `creates` alone uses the engine's own guard;
@@ -532,7 +538,10 @@ function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _chang
   when (m.register != null) { register = m.register }
 }
 
+/// A capture runs in check and diff too (`checkMode = false`): later steps
+/// need its real output, and it only reads.
 function captureTask(t: engine.Task, c: rx.Capture, _result: String): engine.Task = (t) {
+  checkMode = false
   when (c.runOn != null) { delegateTo = c.runOn.name; delegateAllow = new Listing { c.runOn.name } }
   when (c.retry.attempts > 1) {
     retries = c.retry.attempts - 1

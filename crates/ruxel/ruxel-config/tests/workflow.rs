@@ -55,3 +55,60 @@ fn invalid_workflows_fail_with_their_message() -> Result {
     }
     Ok(())
 }
+
+fn tasks(config: &serde_json::Value) -> Vec<&serde_json::Value> {
+    config["plays"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|play| play["tasks"].as_array().into_iter().flatten())
+        .collect()
+}
+
+fn valid(name: &str) -> Result<serde_json::Value> {
+    let path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tests/workflow/valid"
+    ))
+    .join(name);
+    Ok(ruxel_config::eval_config(&path, &[])?)
+}
+
+#[test]
+fn captures_run_in_check_and_diff() -> Result {
+    let config = valid("shared-capture.pkl")?;
+    let mut overridden: Vec<&str> = tasks(&config)
+        .into_iter()
+        .filter(|task| !task["checkMode"].is_null())
+        .map(|task| {
+            assert_eq!(task["checkMode"], false, "{task:#}");
+            task["name"].as_str().unwrap_or_default()
+        })
+        .collect();
+    overridden.sort_unstable();
+    assert_eq!(
+        overridden,
+        [
+            "Read the control plane CA public key hash",
+            "Read the release after the upgrade",
+            "Read the release before the upgrade",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn apt_sources_name_architectures_only_when_set() -> Result {
+    let config = valid("apt-repositories.pkl")?;
+    let content = |dest: &str| {
+        tasks(&config)
+            .into_iter()
+            .find(|task| task["operation"]["dest"] == dest)
+            .and_then(|task| task["operation"]["content"].as_str().map(str::to_owned))
+    };
+    let native = content("/etc/apt/sources.list.d/native.sources").ok_or("no native sources")?;
+    let pinned = content("/etc/apt/sources.list.d/pinned.sources").ok_or("no pinned sources")?;
+    assert!(!native.contains("Architectures:"), "{native}");
+    assert!(pinned.contains("Architectures: arm64\n"), "{pinned}");
+    Ok(())
+}

@@ -14,7 +14,7 @@ blake3.workspace = true
 ruxel-guard = { path = "../ruxel-guard", version = "0.1.0" }
 rustix.workspace = true
 
-pklr = { git = "https://github.com/donbeave/pklr", rev = "c5b6ff03e9a52269a99635b753b23df11083fc35", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+pklr = { git = "https://github.com/donbeave/pklr", rev = "7668a5d9069151984d018cfab80883f6b0d4e044", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.2.1"
