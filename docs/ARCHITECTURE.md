@@ -14,9 +14,11 @@ complete platform coverage.
   `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
 - `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
   lookup types. It is compiled into the binary, which replaces the
-  `Config.schemaFingerprint` placeholder with a BLAKE3 fingerprint of the file.
-  Before execution, `ruxel-config` admits only a configuration that carries this
-  binary's fingerprint and removes the property. `ruxel-engine` then validates
+  `Config.schemaFingerprint` placeholder with `blake3:<hash of the file>@<nonce>`;
+  the nonce is drawn once per process, so no file copy can carry it.
+  `ruxel schema export` writes the hash alone. Before execution, `ruxel-config`
+  admits only a configuration that carries this process's fingerprint and
+  removes the property; the error echoes a fingerprint only if it is well formed. `ruxel-engine` then validates
   the evaluated value as well.
 - `crates/ruxel/ruxel-engine` contains the model, controller, expression and
   secret resolution, runtime, and SSH transport.

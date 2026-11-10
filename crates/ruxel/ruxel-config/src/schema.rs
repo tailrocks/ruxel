@@ -3,9 +3,11 @@
 //!
 //! Configuration never copies the schema: the binary that evaluates a
 //! configuration also supplies the schema it was built with. The served
-//! schema carries a fingerprint of its own text in `Config.schemaFingerprint`,
-//! so a configuration evaluated against any other copy, such as an old
-//! `ruxel schema export`, is refused before it reaches the engine.
+//! schema sets `Config.schemaFingerprint` to `blake3:<hash>@<nonce>`: the
+//! BLAKE3 hash of `schema/Ruxel.pkl` and a nonce drawn once per process. Only
+//! the module this process serves can produce the nonce, so admission refuses
+//! every copy, even an unmodified one. `ruxel schema export` writes the
+//! schema with the hash alone, for editors and the `pkl` CLI.
 
 use crate::ConfigError;
 use std::sync::LazyLock;
@@ -23,31 +25,93 @@ const SOURCE: &str = include_str!("../../../../schema/Ruxel.pkl");
 /// fingerprint.
 const PLACEHOLDER: &str = "\"unserved\"";
 
-static SERVED: LazyLock<(String, String)> = LazyLock::new(|| {
-    let fingerprint = format!("blake3:{}", blake3::hash(SOURCE.as_bytes()).to_hex());
-    let source = SOURCE.replacen(PLACEHOLDER, &format!("\"{fingerprint}\""), 1);
-    (fingerprint, source)
-});
+static FINGERPRINT: LazyLock<String> =
+    LazyLock::new(|| format!("blake3:{}", blake3::hash(SOURCE.as_bytes()).to_hex()));
+static SERVED_FINGERPRINT: LazyLock<String> =
+    LazyLock::new(|| format!("{}@{}", fingerprint(), nonce()));
+static SERVED: LazyLock<String> = LazyLock::new(|| with_fingerprint(&SERVED_FINGERPRINT));
+static EXPORTED: LazyLock<String> = LazyLock::new(|| with_fingerprint(fingerprint()));
 
-/// The fingerprint of the schema this binary serves.
+fn with_fingerprint(fingerprint: &str) -> String {
+    SOURCE.replacen(PLACEHOLDER, &format!("\"{fingerprint}\""), 1)
+}
+
+/// 128 unpredictable bits, so no file can anticipate this process's nonce.
+fn nonce() -> String {
+    let mut seed = [0_u8; 16];
+    let read = std::fs::File::open("/dev/urandom")
+        .and_then(|mut random| std::io::Read::read_exact(&mut random, &mut seed));
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&seed);
+    if read.is_err() {
+        // Without the kernel source, mix process-unique values instead.
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos());
+        hasher.update(&time.to_le_bytes());
+        hasher.update(&std::process::id().to_le_bytes());
+        hasher.update(&(std::ptr::from_ref(&seed) as usize).to_le_bytes());
+    }
+    hasher.finalize().to_hex()[..32].to_owned()
+}
+
+/// The fingerprint of the schema this binary serves: `blake3:<hash>`.
 #[must_use]
 pub fn fingerprint() -> &'static str {
-    &SERVED.0
+    &FINGERPRINT
 }
 
-/// The schema this binary serves at [`MODULE_URI`].
+/// The schema this process serves at [`MODULE_URI`].
 #[must_use]
 pub fn source() -> &'static str {
-    &SERVED.1
+    &SERVED
 }
 
-/// Check that an evaluated configuration was built against the served
-/// schema, then remove the fingerprint so the engine sees only configuration.
+/// The schema for editors and the `pkl` CLI, without this process's nonce.
+#[must_use]
+pub fn exported_source() -> &'static str {
+    &EXPORTED
+}
+
+/// What a configuration's fingerprint says about the schema it used.
+fn found_schema(found: Option<&serde_json::Value>) -> Result<(), ConfigError> {
+    let Some(found) = found else {
+        return Err(ConfigError::Schema {
+            found: None,
+            copy: false,
+            expected: fingerprint().to_owned(),
+        });
+    };
+    let text = found.as_str().unwrap_or_default();
+    if text == SERVED_FINGERPRINT.as_str() {
+        return Ok(());
+    }
+    let hash = text.split_once('@').map_or(text, |(hash, _)| hash);
+    let recognized = hash == "unserved"
+        || hash
+            .strip_prefix("blake3:")
+            .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()));
+    Err(ConfigError::Schema {
+        // Configuration chose this value; never echo an unrecognized one.
+        found: Some(if recognized {
+            hash.to_owned()
+        } else {
+            "an unrecognized fingerprint".to_owned()
+        }),
+        copy: hash == fingerprint(),
+        expected: fingerprint().to_owned(),
+    })
+}
+
+/// Check that an evaluated configuration was built against the schema this
+/// process serves, then remove the fingerprint so the engine sees only
+/// configuration.
 ///
 /// The configuration is the root object or its `config` property.
 ///
 /// # Errors
-/// Returns [`ConfigError::Schema`] when the fingerprint is missing or differs.
+/// Returns [`ConfigError::Schema`] when the fingerprint is missing or is not
+/// this process's.
 pub fn admit(value: &mut serde_json::Value) -> Result<(), ConfigError> {
     let config = match value.get("config") {
         Some(_) => &mut value["config"],
@@ -56,17 +120,7 @@ pub fn admit(value: &mut serde_json::Value) -> Result<(), ConfigError> {
     let found = config
         .as_object_mut()
         .and_then(|config| config.remove(FINGERPRINT_PROPERTY));
-    match found {
-        Some(serde_json::Value::String(found)) if found == fingerprint() => Ok(()),
-        found => Err(ConfigError::Schema {
-            found: found.map(|found| {
-                found
-                    .as_str()
-                    .map_or_else(|| found.to_string(), str::to_owned)
-            }),
-            expected: fingerprint().to_owned(),
-        }),
-    }
+    found_schema(found.as_ref())
 }
 
 #[cfg(test)]

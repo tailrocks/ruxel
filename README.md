@@ -67,9 +67,10 @@ secret values out of Pkl files and logs.
 
 Import the schema as `modulepath:/ruxel/Ruxel.pkl`. Every `ruxel` binary serves
 the schema it was built with at that URI, so configuration never contains a
-copy of `Ruxel.pkl`. `ruxel plan`, `check`, `diff` and `apply` refuse a
-configuration evaluated against any other copy, and name both schema
-fingerprints in the error.
+copy of `Ruxel.pkl`. `ruxel plan`, `check`, `diff` and `apply` admit only a
+configuration built from the module this process serves; they refuse one
+evaluated against any copy, even an export of the same binary, and name the
+schema fingerprints in the error.
 
 Share roles and other Pkl libraries the same way. Pass directories with
 `--module-path DIR[:DIR...]`, as with `pkl eval --module-path`, and import their
@@ -85,8 +86,9 @@ ruxel schema export .ruxel/module-path
 pkl eval --module-path .ruxel/module-path example.pkl
 ```
 
-Run the export again after you upgrade `ruxel`; a configuration evaluated
-against an old export is refused.
+The export is for editors and the `pkl` CLI only: `ruxel` refuses a
+configuration that imports it by path. Run the export again after you upgrade
+`ruxel`.
 
 Inspect evaluated configuration without executing tasks:
 

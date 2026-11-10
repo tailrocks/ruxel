@@ -197,10 +197,13 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
     let exported = std::fs::read_to_string(export.join("ruxel/Ruxel.pkl"))?;
     assert!(exported.contains("fixed schemaFingerprint: String = \"blake3:"));
 
-    // The export is what this binary serves: a configuration importing it by
-    // path is admitted, and so is one using the module path URI.
+    // The export is for editors: execution admits only the served module, so a
+    // configuration importing the export by path is refused as a copy.
     let root = directory.join("config.pkl");
-    for import in ["schema/ruxel/Ruxel.pkl", "modulepath:/ruxel/Ruxel.pkl"] {
+    for (import, code) in [
+        ("modulepath:/ruxel/Ruxel.pkl", 0),
+        ("schema/ruxel/Ruxel.pkl", 4),
+    ] {
         std::fs::write(
             &root,
             CONFIG
@@ -208,7 +211,11 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
                 .replace("ADDRESS", "fixture.invalid"),
         )?;
         let output = plan(&root, &[])?;
-        assert_eq!(output.status.code(), Some(0), "{import}: {output:?}");
+        assert_eq!(output.status.code(), Some(code), "{import}: {output:?}");
+        if code == 4 {
+            let stderr = String::from_utf8(output.stderr)?;
+            assert!(stderr.contains("a copy of this ruxel's schema"), "{stderr}");
+        }
     }
 
     // Another binary's export is refused, even when passed as --module-path,
@@ -219,9 +226,10 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
         .and_then(|rest| rest.split('"').next())
         .ok_or("no fingerprint")?
         .to_owned();
+    let stale = format!("blake3:{}", "5".repeat(64));
     std::fs::write(
         export.join("ruxel/Ruxel.pkl"),
-        exported.replace(&fingerprint, "blake3:stale"),
+        exported.replace(&fingerprint, &stale),
     )?;
     std::fs::write(
         &root,
@@ -232,7 +240,7 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
     let output = plan(&root, &[])?;
     assert_eq!(output.status.code(), Some(4));
     let stderr = String::from_utf8(output.stderr)?;
-    assert!(stderr.contains("blake3:stale"), "{stderr}");
+    assert!(stderr.contains(&stale), "{stderr}");
     assert!(stderr.contains(&fingerprint), "{stderr}");
     assert!(stderr.contains("modulepath:/ruxel/Ruxel.pkl"), "{stderr}");
     std::fs::write(

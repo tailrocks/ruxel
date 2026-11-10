@@ -11,7 +11,7 @@ fn builder(module_path: &[PathBuf]) -> pklr::EvaluatorBuilder {
         pklr::EvaluatorBuilder::new()
             .environment_variables(std::iter::empty::<(String, String)>())
             .external_properties(std::iter::empty::<(String, String)>())
-            .allowed_resources(["file:".to_owned()])
+            .allowed_resources(["file:".to_owned(), "modulepath:".to_owned()])
             .module_path_source(crate::schema::MODULE_PATH, crate::schema::source()),
         pklr::EvaluatorBuilder::module_path_directory,
     )

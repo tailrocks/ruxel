@@ -20,7 +20,8 @@ const MAY_NAME_CANONICAL: &[&str] = &[
     ".github/workflows/ci.yml",
     ".github/workflows/state-seal.yml",
 ];
-const SKIPPED: &[&str] = &[".git", "target", ".cache"];
+/// `.ruxel` holds the ignored `ruxel schema export` the README documents.
+const SKIPPED: &[&str] = &[".git", "target", ".cache", ".ruxel"];
 
 fn files(directory: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(directory)? {
@@ -31,7 +32,7 @@ fn files(directory: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {
             if !SKIPPED.iter().any(|name| entry.file_name() == *name) {
                 files(&path, found)?;
             }
-        } else if kind.is_file() {
+        } else if kind.is_file() || kind.is_symlink() {
             found.push(path);
         }
     }
@@ -49,6 +50,17 @@ fn violations(root: &Path) -> std::io::Result<Vec<String>> {
             .to_string_lossy()
             .replace('\\', "/");
         if relative == CANONICAL {
+            continue;
+        }
+        if path.is_symlink() {
+            let canonical = root.join(CANONICAL).canonicalize()?;
+            if path.file_name().is_some_and(|name| name == "Ruxel.pkl")
+                || path.canonicalize().is_ok_and(|target| target == canonical)
+            {
+                violations.push(format!(
+                    "{relative}: a link to the schema; import \"modulepath:/ruxel/Ruxel.pkl\" instead"
+                ));
+            }
             continue;
         }
         let Ok(text) = std::fs::read_to_string(&path) else {

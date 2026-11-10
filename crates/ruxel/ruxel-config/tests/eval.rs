@@ -47,10 +47,10 @@ fn served_schema_is_admitted_and_its_fingerprint_removed() -> Result {
     let scratch = Scratch::new()?;
     let root = scratch.write("main.pkl", &config(ruxel_config::schema::MODULE_URI))?;
     let raw = ruxel_config::eval(&root, &[])?;
-    assert_eq!(
-        raw["config"]["schemaFingerprint"],
-        ruxel_config::schema::fingerprint()
-    );
+    let served = raw["config"]["schemaFingerprint"]
+        .as_str()
+        .ok_or("no fingerprint")?;
+    assert!(served.starts_with(&format!("{}@", ruxel_config::schema::fingerprint())));
     let admitted = ruxel_config::eval_config(&root, &[])?;
     assert!(admitted["config"].get("schemaFingerprint").is_none());
     assert_eq!(
@@ -69,13 +69,24 @@ fn copies_of_the_schema_are_refused() -> Result {
         include_str!("../../../../schema/Ruxel.pkl"),
     )?;
     // An export from another ruxel: a different fingerprint.
+    let other = format!("blake3:{}", "0".repeat(64));
     scratch.write(
         "stale/ruxel/Ruxel.pkl",
-        &ruxel_config::schema::source().replace(ruxel_config::schema::fingerprint(), "blake3:0123"),
+        &ruxel_config::schema::exported_source()
+            .replace(ruxel_config::schema::fingerprint(), &other),
+    )?;
+    // This binary's own export, edited without touching the fingerprint.
+    scratch.write(
+        "edited/ruxel/Ruxel.pkl",
+        &ruxel_config::schema::exported_source().replace(
+            "port: Int(this >= 1 && this <= 65535) = 22",
+            "port: Int = 2222",
+        ),
     )?;
     for (import, found) in [
         ("copied/Ruxel.pkl", "unserved"),
-        ("stale/ruxel/Ruxel.pkl", "blake3:0123"),
+        ("stale/ruxel/Ruxel.pkl", other.as_str()),
+        ("edited/ruxel/Ruxel.pkl", "a copy of this ruxel's schema"),
     ] {
         let root = scratch.write("main.pkl", &config(import))?;
         let error = ruxel_config::eval_config(&root, &[])
@@ -107,7 +118,26 @@ fn module_path_directories_serve_libraries_but_never_the_schema() -> Result {
     )?;
     let value = ruxel_config::eval(&root, &[scratch.0.join("lib")])?;
     assert_eq!(value["message"], "hello");
-    assert_eq!(value["fingerprint"], ruxel_config::schema::fingerprint());
+    assert!(value["fingerprint"].as_str().is_some_and(|served| {
+        served.starts_with(&format!("{}@", ruxel_config::schema::fingerprint()))
+    }));
     assert!(ruxel_config::eval(&root, &[]).is_err());
+    Ok(())
+}
+
+#[test]
+fn module_path_libraries_read_their_resources() -> Result {
+    let scratch = Scratch::new()?;
+    scratch.write("lib/assets/greeting.txt", "hello")?;
+    scratch.write(
+        "lib/assets/lib.pkl",
+        "greeting = read(\"greeting.txt\").text\n",
+    )?;
+    let root = scratch.write(
+        "main.pkl",
+        "import \"modulepath:/assets/lib.pkl\" as lib\ngreeting = lib.greeting\n",
+    )?;
+    let value = ruxel_config::eval(&root, &[scratch.0.join("lib")])?;
+    assert_eq!(value["greeting"], "hello");
     Ok(())
 }
