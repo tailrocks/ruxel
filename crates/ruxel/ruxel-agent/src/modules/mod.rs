@@ -192,14 +192,20 @@ pub(crate) fn shutdown() {
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    write_atomic_with(path, bytes, None, None)
+    write_atomic_with(path, bytes, None, (None, None))
 }
 
+/// Writes `bytes` to `path` through a temporary file that is published with
+/// `rename`. The temporary file carries the final mode and ownership from
+/// creation: `mode` is its creation mode and `owner` its `(uid, gid)`, each
+/// side `None` to keep the destination's current id (the creator's, for a
+/// new file), so a replacement never publishes content under another
+/// identity even for an instant.
 pub(super) fn write_atomic_with(
     path: &Path,
     bytes: &[u8],
     mode: Option<u32>,
-    owner: Option<(u32, u32)>,
+    owner: (Option<u32>, Option<u32>),
 ) -> Result<(), String> {
     let parent = path
         .parent()
@@ -213,7 +219,11 @@ pub(super) fn write_atomic_with(
     let final_mode = mode
         .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
         .unwrap_or(0o600);
-    let final_owner = owner.or_else(|| existing.as_ref().map(|m| (m.uid(), m.gid())));
+    let preserved = existing.as_ref().map(|m| (m.uid(), m.gid()));
+    let final_owner = (
+        owner.0.or_else(|| preserved.map(|(uid, _)| uid)),
+        owner.1.or_else(|| preserved.map(|(_, gid)| gid)),
+    );
 
     for _ in 0..100 {
         let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -233,13 +243,17 @@ pub(super) fn write_atomic_with(
             Err(e) => return Err(e.to_string()),
         };
         let result = (|| {
+            // Ownership is set before the secret bytes are written, and the
+            // mode again after: `chown` clears the set-user-id and
+            // set-group-id bits, which the requested mode may carry.
+            if final_owner.0.is_some() || final_owner.1.is_some() {
+                std::os::unix::fs::chown(&temp, final_owner.0, final_owner.1)
+                    .map_err(|e| e.to_string())?;
+            }
             file.write_all(bytes).map_err(|e| e.to_string())?;
             file.sync_all().map_err(|e| e.to_string())?;
             std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(final_mode))
                 .map_err(|e| e.to_string())?;
-            if let Some((uid, gid)) = final_owner {
-                std::os::unix::fs::chown(&temp, Some(uid), Some(gid)).map_err(|e| e.to_string())?;
-            }
             std::fs::rename(&temp, path).map_err(|e| e.to_string())
         })();
         if result.is_err() {

@@ -18,12 +18,19 @@ impl secrets::Backend for Rendezvous {
     fn command(&self, _: &[String]) -> Result<String, String> {
         Err("unexpected command lookup".into())
     }
-    fn onepassword_item(&self, _: &str, item: &str) -> Result<Value, String> {
+    fn onepassword_fields(
+        &self,
+        _vault: &str,
+        item: &str,
+        _section: Option<&str>,
+        field: &str,
+    ) -> Result<Value, String> {
         if !["alpha", "beta"].contains(&item) {
             return Err("unexpected item lookup".into());
         }
+        let key = format!("{item}/{field}");
         let mut calls = self.calls.lock().map_err(|_| "poisoned calls")?;
-        *calls.entry(item.into()).or_default() += 1;
+        *calls.entry(key).or_default() += 1;
         self.entered.notify_all();
         let (calls, _) = self
             .entered
@@ -32,7 +39,7 @@ impl secrets::Backend for Rendezvous {
         if calls.len() != 2 {
             return Err("distinct item fetches did not overlap".into());
         }
-        Ok(json!({"fields":[{"id":"password","value":format!("synthetic-{item}")}]}))
+        Ok(json!([{"id": field, "value": format!("synthetic-{item}")}]))
     }
 }
 
@@ -69,7 +76,7 @@ fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Resu
             values: Mutex::new(Vec::new()),
         }),
     };
-    let alpha = json!({"kind":"lookup","provider":"op","item":"alpha"});
+    let alpha = json!({"kind":"lookup","provider":"op","vault":"Private","item":"alpha","field":"password"});
     let beta = json!({"kind":"lookup","provider":"op","reference":"op://Private/beta/password"});
     let values = json!({
         "alpha":alpha,"duplicate":alpha,"beta":beta,
@@ -102,7 +109,7 @@ fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Resu
             .calls
             .lock()
             .map_err(|_| anyhow::anyhow!("poisoned calls"))?,
-        HashMap::from([("alpha".into(), 1), ("beta".into(), 1)])
+        HashMap::from([("alpha/password".into(), 1), ("beta/password".into(), 1),])
     );
     Ok(())
 }

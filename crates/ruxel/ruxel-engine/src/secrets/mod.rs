@@ -42,9 +42,19 @@ pub trait Backend: Send + Sync {
     /// # Errors
     /// Returns an error if the backend cannot resolve the key.
     fn fnox(&self, key: &str) -> Result<String, String>;
+    /// Fetches only the named field of the item: the field objects whose
+    /// label or id matches `field`, never the whole item. When a section is
+    /// named, the backend uses the 1Password CLI's `section.field` selector.
+    ///
     /// # Errors
-    /// Returns an error if the backend cannot fetch the item.
-    fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String>;
+    /// Returns an error if the backend cannot fetch the field.
+    fn onepassword_fields(
+        &self,
+        vault: &str,
+        item: &str,
+        section: Option<&str>,
+        field: &str,
+    ) -> Result<serde_json::Value, String>;
     /// # Errors
     /// Returns an error if the complete secret reference cannot be read.
     fn onepassword_reference(&self, reference: &str) -> Result<String, String>;
@@ -110,12 +120,28 @@ impl Backend for ProcessBackend {
         ]);
         process_output(cmd)
     }
-    fn onepassword_item(&self, vault: &str, item: &str) -> Result<serde_json::Value, String> {
+    fn onepassword_fields(
+        &self,
+        vault: &str,
+        item: &str,
+        section: Option<&str>,
+        field: &str,
+    ) -> Result<serde_json::Value, String> {
+        let selector =
+            section.map_or_else(|| field.to_owned(), |section| format!("{section}.{field}"));
         let mut cmd = Command::new(&self.op);
-        cmd.args([
-            "item", "get", "--vault", vault, "--format", "json", "--", item,
-        ]);
-        serde_json::from_str(&process_output(cmd)?).map_err(|_| "invalid item response".into())
+        cmd.args(["item", "get", "--vault"])
+            .arg(vault)
+            .args(["--fields"])
+            .arg(selector)
+            .args(["--format", "json", "--"])
+            .arg(item);
+        match serde_json::from_str(&process_output(cmd)?) {
+            Ok(value @ serde_json::Value::Array(_)) => Ok(value),
+            // A unique match may come back as a single field object.
+            Ok(value @ serde_json::Value::Object(_)) => Ok(serde_json::json!([value])),
+            _ => Err("invalid item response".into()),
+        }
     }
     fn onepassword_reference(&self, reference: &str) -> Result<String, String> {
         let mut cmd = Command::new(&self.op);
@@ -144,7 +170,8 @@ fn cached<T: Clone>(
     *value = Some(resolved.clone());
     Ok(resolved)
 }
-type ItemCache = Arc<Mutex<HashMap<(String, String), Cell<serde_json::Value>>>>;
+type ItemCache =
+    Arc<Mutex<HashMap<(String, String, Option<String>, String), Cell<serde_json::Value>>>>;
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -227,19 +254,62 @@ impl Resolver {
         field: &str,
         section: Option<&str>,
     ) -> Result<String, String> {
+        // A section and field reach `op item get --fields` as one selector.
+        // The CLI parses `,` as a list separator, `=` as `label=`/`type=`
+        // selectors and `.` as the section separator, so a legal component
+        // like "API,key" or "API.Password" would fetch a different selector
+        // than the author named. Authoring refuses the same characters
+        // (Core's `onePassword`); this mirrors it, because a configuration
+        // can name a selector directly.
+        if let Some(section) = section
+            && (section.contains(',') || section.contains('='))
+        {
+            return Err(format!(
+                "1Password section \"{section}\" may not contain a comma or an equals sign: \
+                 `op item get --fields` reads them as selectors, so it would fetch unintended fields"
+            ));
+        }
+        if let Some(section) = section
+            && section.contains('.')
+        {
+            return Err(format!(
+                "1Password section \"{section}\" may not contain a dot: \
+                 `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named"
+            ));
+        }
+        if field.contains(',') || field.contains('=') {
+            return Err(format!(
+                "1Password field \"{field}\" may not contain a comma or an equals sign: \
+                 `op item get --fields` reads them as selectors, so it would fetch unintended fields"
+            ));
+        }
+        if field.contains('.') {
+            return Err(format!(
+                "1Password field \"{field}\" may not contain a dot: \
+                 `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named"
+            ));
+        }
+        // The fetch is field- and section-scoped, so the cache is too: the
+        // same label in two sections is two distinct reads and never shares
+        // a fetched document.
         let cell = self
             .items
             .lock()
             .map_err(|_| "lookup cache unavailable")?
-            .entry((vault.to_owned(), item.to_owned()))
+            .entry((
+                vault.to_owned(),
+                item.to_owned(),
+                section.map(str::to_owned),
+                field.to_owned(),
+            ))
             .or_default()
             .clone();
         let document = cached(&cell, || {
             self.backend
-                .onepassword_item(vault, item)
+                .onepassword_fields(vault, item, section, field)
                 .map_err(|_| "secret lookup failed".to_owned())
         })?;
-        select_field(&document, field, section).ok_or_else(|| "secret field not found".to_owned())
+        select_field(&document, item, field, section)
     }
 
     /// # Errors
@@ -311,28 +381,55 @@ fn synthetic_value(lookup: &Lookup) -> String {
     format!("dry-secret-{hex}")
 }
 
+/// Selects the one field a lookup names. Several fields may share a label
+/// across sections: without a section the lookup fails naming the sections,
+/// never taking the first match; with one, the fields of that section alone
+/// are considered. The message names labels, never values.
 fn select_field(
     document: &serde_json::Value,
+    item: &str,
     field: &str,
     section: Option<&str>,
-) -> Option<String> {
-    document
-        .get("fields")?
-        .as_array()?
+) -> Result<String, String> {
+    let matches = |v: &serde_json::Value, wanted| {
+        v.get("label").and_then(|v| v.as_str()) == Some(wanted)
+            || v.get("id").and_then(|v| v.as_str()) == Some(wanted)
+    };
+    let candidates: Vec<&serde_json::Value> = document
+        .as_array()
+        .map(|fields| fields.iter().collect())
+        .unwrap_or_default();
+    let hits: Vec<&serde_json::Value> = candidates
         .iter()
-        .find_map(|candidate| {
-            let matches = |v: &serde_json::Value, wanted| {
-                v.get("label").and_then(|v| v.as_str()) == Some(wanted)
-                    || v.get("id").and_then(|v| v.as_str()) == Some(wanted)
-            };
-            if matches(candidate, field)
+        .filter(|candidate| {
+            matches(candidate, field)
                 && section.is_none_or(|s| candidate.get("section").is_some_and(|v| matches(v, s)))
-            {
-                candidate.get("value")?.as_str().map(str::to_owned)
-            } else {
-                None
-            }
         })
+        .copied()
+        .collect();
+    if hits.len() > 1 {
+        let sections: Vec<String> = hits
+            .iter()
+            .map(|hit| {
+                hit.get("section")
+                    .and_then(|s| {
+                        s.get("label")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| s.get("id").and_then(|v| v.as_str()))
+                    })
+                    .map_or_else(|| "no section".to_owned(), |name| format!("\"{name}\""))
+            })
+            .collect();
+        return Err(format!(
+            "ambiguous 1Password field \"{field}\" in item \"{item}\": it matches sections {}; name the section",
+            sections.join(", ")
+        ));
+    }
+    hits.first()
+        .and_then(|hit| hit.get("value"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| "secret field not found".to_owned())
 }
 
 #[cfg(test)]

@@ -21,18 +21,21 @@
 open module Core
 
 /// Text known before the run. Run-time values (`currentHost`,
-/// `Capture.stdout()`) are allowed only in `File.content`; every other text
-/// field is `Static`. A run-time value is text that starts with the reserved
-/// prefix `__ruxel_rt_8d41.`, which nothing else may contain.
+/// `Capture.stdout()`) are allowed only in `File.content`; secrets
+/// (`module.fnox`, …) only in `File.content` and action `environment`
+/// values. Every other text field is `Static`, and a run-time value or a
+/// secret reference can never be one: a run-time value is text that contains
+/// the reserved prefix `__ruxel_rt_8d41.`, a secret reference the reserved
+/// prefix `__ruxel_secret_8d41.`, and nothing else may contain either.
 ///
 /// No NUL either: no path, argument or name can hold one.
-typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("\u{0}"))
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("__ruxel_secret_8d41.") && !contains("\u{0}"))
 
 /// A list of `Static` texts. The constraint is on the whole list because
 /// pklr does not check the elements of a `Listing`, and properties of this
 /// type need an explicit `= new {}` default, which pklr does not supply for a
 /// constrained `Listing` typealias.
-typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.") || a.contains("\u{0}")))
+typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.") || a.contains("__ruxel_secret_8d41.") || a.contains("\u{0}")))
 
 /// An absolute path in normal form: no empty, `.` or `..` segments and no
 /// trailing `/`, so two spellings of one path are the same text. No NUL,
@@ -62,7 +65,9 @@ const local function isAuthority(a: String): Boolean =
 const local function isPort(p: String): Boolean =
   p == "" || p.matches(Regex(":[0-9]{1,5}")) && p.substring(1, p.length).toInt() >= 1 && p.substring(1, p.length).toInt() <= 65535
 
-typealias FileMode = String(matches(Regex("0[0-7]{3}")))
+/// A Unix file mode: three octal digits, or four with a leading `0` (`0644`
+/// and `644` are the same mode, as they are to `chmod`).
+typealias FileMode = String(matches(Regex("0?[0-7]{3}")))
 
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
@@ -99,9 +104,12 @@ const local function tokens(part: String): List<String> =
 
 const local function isZero(group: String): Boolean = group.matches(Regex("0+"))
 
+/// Four octets. `split` drops the trailing empty piece, so an address that
+/// ends with `.` would read as if it named one octet less and pass; such an
+/// address is refused, like one with an empty octet.
 const local function isIpv4(s: String): Boolean =
   let (parts = s.split("."))
-  parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
+  !s.endsWith(".") && parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
 
 const local function isIpv6(s: String): Boolean =
   let (zoned = s.split("%"))
@@ -213,6 +221,212 @@ class CurrentHost {
   fixed address: String = "__ruxel_rt_8d41.vars.ruxel_address__"
 }
 
+// ── Secrets ─────────────────────────────────────────────────────────────────
+
+/// A key of the controller's fnox store: a letter, then letters, digits and
+/// underscores, 2 to 128 characters in all.
+typealias FnoxKey = String(matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
+
+/// A 1Password vault, item, field or section label: any non-empty text but a
+/// `/`, which separates the parts of a reference, a newline, NUL, the
+/// reserved secret and run-time prefixes, and `\u{1e}`/`\u{1f}`, which the
+/// secret reference encoding reserves (see `SecretText`).
+typealias OpLabel = String(isOpLabel(this))
+
+/// One `op://` reference: `op://<vault>/<item>/<field>`, or with a section,
+/// `op://<vault>/<item>/<section>/<field>`, each part an `OpLabel`. A query
+/// (`?…`) names an attribute of a field, not a value, and is refused.
+///
+/// `split` drops the trailing empty piece, so a reference that ends with `/`
+/// would read as if it named one part less and pass; such a reference is
+/// refused, like one with an empty part.
+typealias OpReference = String(isOpReference(this))
+
+const local function isOpLabel(label: String): Boolean =
+  !label.isEmpty
+    && !label.contains("/")
+    && !label.contains("\n")
+    && !label.contains("\u{0}")
+    && !label.contains("\u{1e}")
+    && !label.contains("\u{1f}")
+    && !label.contains("__ruxel_secret_8d41.")
+    && !label.contains("__ruxel_rt_8d41.")
+
+const local function isOpReference(r: String): Boolean =
+  r.startsWith("op://") && !r.contains("?") && (
+    let (rest = r.substring(5, r.length))
+    let (parts = rest.split("/"))
+    !rest.endsWith("/") && (parts.length == 3 || parts.length == 4)
+      && parts.every((p) -> isOpLabel(p))
+      && !hasFieldSelectorSyntax(parts.last)
+      && (parts.length != 4 || !hasFieldSelectorSyntax(parts[2])))
+
+/// The 1Password CLI parses `,` as a field-list separator, `=` as a
+/// selector and `.` as the section separator. Only a field reaches
+/// `--fields`; a section-qualified field is written as `section.field`, so a
+/// dot inside a field or section reads as a different selector than the
+/// author named.
+const local function hasFieldSelectorSyntax(field: String): Boolean =
+  field.contains(",") || field.contains("=") || field.contains(".")
+
+/// The formats `fnoxGenerated` creates a missing key in: 16 or 32 hex
+/// characters, 32 bytes base64-encoded, or 32 letters and digits.
+typealias GeneratedFormat = "hex16"|"hex32"|"base64-32"|"alnum32"
+
+/// A value that lives in a secret store (fnox, 1Password) and reaches a host
+/// only at apply time. It is not `String` and never becomes one: a secret can
+/// be interpolated into `File.content` and used as a `Command`/`Script`
+/// `environment` value, and nothing else. Assignment to a path, name, script
+/// or SQL field, trimming, comparison and concatenation into static text are
+/// refused — by this module's types (`Static` rejects the reserved prefix
+/// below) or by Lowering, which reads every field.
+///
+/// Interpolating a secret carries a reference, never a value: evaluation
+/// contacts no store, and plans and diffs show a fingerprint, never text.
+class SecretText {
+  /// The value's parts, encoded: what store each part is read from and, for
+  /// `join`, the separators between them. Every string is stored with its
+  /// length, and `_` is written `\u{1f}`, so the encoding cannot contain the
+  /// `__` that ends the reference. Lowering decodes it; nothing else reads it.
+  hidden parts: String
+
+  /// The reference a secret interpolates as. The reserved prefix
+  /// `__ruxel_secret_8d41.` is what `Static` rejects, so a secret cannot hide
+  /// in a path or a name, and every operation on a `SecretText` but the sinks
+  /// above fails, because Pkl has no string operation on a class.
+  function toString(): String = "__ruxel_secret_8d41.\(parts)__"
+
+  /// Two secrets and the static text between them, as one secret: the
+  /// kubeadm pair is `fnox("…ID").join(".", fnox("…SECRET"))`. The result is
+  /// a `SecretText` with the same limits; the separator is the only static
+  /// text a secret can sit beside.
+  function join(separator: Static, other: SecretText): SecretText =
+    (let (mine = parts) new SecretText { parts = mine + "s" + sized(separatorChecked(separator)) + other.parts })
+}
+
+/// Reads one value from the controller's fnox store. Evaluation names the
+/// key; the store is read at apply time only.
+function fnox(key: FnoxKey): SecretText = new SecretText { parts = "f" + sized(fnoxKeyChecked(key)) }
+
+/// Like `fnox`, but `apply` creates the key, in this format, when it is
+/// missing: once per run, before any secret is resolved, under the fnox write
+/// lock. `plan`, `check` and `diff` never generate.
+function fnoxGenerated(key: FnoxKey, format: GeneratedFormat): SecretText =
+  new SecretText { parts = "g" + sized(fnoxKeyChecked(key)) + sized(generatedFormatChecked(format)) }
+
+/// Reads one field of one 1Password item. Vault and field are always named:
+/// no lookup defaults either. A `section` selects a field inside a section;
+/// without one, a label that several sections carry fails at apply, naming
+/// them, rather than taking the first match. Only the named field is
+/// fetched, never the whole item.
+///
+/// Pkl has no optional function parameters, so the optional part of the read
+/// is the last argument, an options object: `new OnePasswordOptions {}`
+/// reads a field outside any section, `new { section = "…" }` one inside.
+/// (A bare `new {}` works under official Pkl but not under pklr, which
+/// cannot type an entirely empty anonymous amend.)
+function onePassword(vault: OpLabel, item: OpLabel, field: OpLabel, options: OnePasswordOptions): SecretText =
+  new SecretText {
+    parts = "o" + sized(opLabelChecked("vault", vault)) + sized(opLabelChecked("item", item))
+      + sized(if (options.section == null) null else opSectionChecked(options.section))
+      + sized(opFieldChecked(field))
+  }
+
+/// The optional half of a 1Password read: the section the field lives in.
+/// A plain `String?`, checked by `onePassword` itself: pklr mishandles a
+/// nullable typealias with a constraint as a property type of a class an
+/// author amends (`new { section = "…" }`).
+class OnePasswordOptions {
+  section: String? = null
+}
+
+/// Reads the 1Password value one `op://` reference names.
+function onePasswordReference(reference: OpReference): SecretText =
+  new SecretText { parts = "r" + sized(referenceChecked(reference)) }
+
+// pklr does not check a function parameter's type constraint, so each store
+// function checks its arguments itself, with a sentence that names the
+// argument; official Pkl rejects the same call at the signature.
+const local function fnoxKeyChecked(key: String): String =
+  if (key.matches(Regex("[A-Z][A-Z0-9_]{1,127}"))) key
+  else throw("fnox key \"\(key)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
+
+const local function generatedFormatChecked(format: String): String =
+  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) format
+  else throw("fnoxGenerated format \"\(format)\" is not one of hex16, hex32, base64-32 or alnum32")
+
+const local function separatorChecked(separator: String): String =
+  if (separator.contains("__ruxel_secret_8d41.") || separator.contains("__ruxel_rt_8d41."))
+    throw("join separator \"\(separator)\" carries a secret or run-time value; the text between two joined secrets is static text only")
+  else if (separator.contains("\u{0}"))
+    throw("join separator contains NUL; use text without a NUL")
+  else if (separator.contains("\u{1f}") || separator.contains("\u{1e}"))
+    throw("join separator contains \\u{1f} or \\u{1e}, which the secret reference encoding reserves; use another character")
+  else separator
+
+const local function opLabelChecked(what: String, label: String): String =
+  if (label.contains("__ruxel_secret_8d41.") || label.contains("__ruxel_rt_8d41."))
+    throw("1Password \(what) \"\(label)\" carries a secret or run-time value; a selector is static text only")
+  else if (label.contains("\u{0}"))
+    throw("1Password \(what) \"\(label)\" contains NUL, which no selector can hold")
+  else if (label.contains("\u{1f}") || label.contains("\u{1e}"))
+    throw("1Password \(what) \"\(label)\" contains \\u{1f} or \\u{1e}, which the secret reference encoding reserves; use another character")
+  else if (!label.isEmpty && !label.contains("/") && !label.contains("\n")) label
+  else throw("1Password \(what) \"\(label)\" is malformed: not empty, and no `/`, no line break")
+
+/// A field reaches `op item get --fields`, which parses `,` as a list
+/// separator, `=` as `label=`/`type=` selectors and `.` as the section
+/// separator, so a legal `OpLabel` like `API,key` or `API.Password` would
+/// fetch a different selector than the author named. The optional section
+/// and the field form that one selector; vault and item are separate
+/// arguments and carry no such rule.
+const local function opFieldChecked(field: String): String =
+  if (field.contains(",") || field.contains("="))
+    throw("1Password field \"\(field)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else if (field.contains("."))
+    throw("1Password field \"\(field)\" may not contain a dot: `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named")
+  else opLabelChecked("field", field)
+
+/// A section and its field together form the CLI's `--fields` selector, so
+/// the same comma, equals-sign and dot rule applies to both components.
+const local function opSectionChecked(section: String): String =
+  if (section.contains(",") || section.contains("="))
+    throw("1Password section \"\(section)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else if (section.contains("."))
+    throw("1Password section \"\(section)\" may not contain a dot: `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named")
+  else opLabelChecked("section", section)
+
+const local function referenceParts(reference: String): List<String> =
+  if (reference.startsWith("op://") && !reference.contains("?")) (
+    let (rest = reference.substring(5, reference.length))
+    if (rest.endsWith("/")) List() else rest.split("/")
+  )
+  else List()
+
+const local function referenceLabelsChecked(reference: String, parts: List<String>): String =
+  let (vault = opLabelChecked("vault", parts[0]))
+  let (item = opLabelChecked("item", parts[1]))
+  let (section = if (parts.length == 4) opSectionChecked(parts[2]) else "")
+  let (field = opFieldChecked(parts.last))
+  reference
+
+const local function referenceChecked(reference: String): String =
+  let (parts = referenceParts(reference))
+  if (parts.length == 3 || parts.length == 4) referenceLabelsChecked(reference, parts)
+  else if (isOpReference(reference)) reference
+  else throw("\"\(reference)\" is not an op:// reference: op://<vault>/<item>/<field>, or with a section op://<vault>/<item>/<section>/<field>, and no `?`")
+
+/// One length-prefixed string of the secret reference encoding: `f` for fnox
+/// keys, `g` generated keys (key, format), `o` 1Password selectors (vault,
+/// item, section, field; an empty section means none), `r` `op://`
+/// references, `s` `join` separators. `_` is written `\u{1f}` so the encoding
+/// cannot contain its own `__` terminator, and a literal `\u{1f}` is written
+/// `\u{1e}` first, so the two cannot be confused: decoding recovers exactly
+/// what was encoded, and what decodes to `\u{1f}` is refused (`join` refuses
+/// the separator, Lowering re-validates every part it decodes).
+const local function sized(text: String?): String =
+  if (text == null) "0:" else "\(text.length):\(text.replaceAll("\u{1f}", "\u{1e}").replaceAll("_", "\u{1f}"))"
+
 // ── Files ───────────────────────────────────────────────────────────────────
 
 /// A file with exactly this content. A stage writes it once, where it first
@@ -223,15 +437,23 @@ class CurrentHost {
 class File extends Step {
   hidden fixed kind = "file"
   path: FilePath
-  /// May contain run-time values: `currentHost`, `Capture.stdout()`.
+  /// May contain run-time values (`currentHost`, `Capture.stdout()`) and
+  /// secrets (`module.fnox(…)`, `module.onePassword(…)`, `SecretText.join`),
+  /// which are resolved on the host, never on the controller.
   content: String
+  /// A file whose content holds a secret must be `0600` or narrower (no
+  /// permission for group or other): a wider mode with secret content is
+  /// rejected.
   mode: FileMode = "0644"
   /// `null` leaves the current owner unchanged.
   owner: Account? = null
   group: Account? = null
   /// A command that must accept the new content before it replaces the
   /// file. `%s` stands for the candidate, `.<name>.ruxel-candidate` beside
-  /// the file, which stays there between runs.
+  /// the file. A file without secrets keeps the candidate between runs, so
+  /// a second apply reports no change; a file whose content holds a secret
+  /// uses a temporary candidate that is removed after validation, success or
+  /// failure, so no resolved plaintext stays on the host.
   ///
   /// `check` and `diff` do not run it: it needs the candidate on the host,
   /// and they write nothing. They report content the validator would reject
@@ -280,6 +502,17 @@ abstract class Action extends Step {
   /// - `"never"`: no change, because the program only refreshes or inspects;
   /// - `new UnlessOutput { … }`: a change, unless the output contains the text.
   changes: "always"|"never"|UnlessOutput = "always"
+  /// Environment values for the program. A value is static text or a secret
+  /// (`module.fnox(…)`, `module.onePassword(…)`, `SecretText.join`); pass the
+  /// secret itself, never a secret or run-time value interpolated into text —
+  /// a program that needs host state reads it from the rendered config or a
+  /// capture. A secret value marks the step sensitive: it is redacted from
+  /// output and never recorded.
+  ///
+  /// No explicit `= new {}` default: pklr cannot amend a `Mapping` whose
+  /// value type is a union with a `String` branch through an explicit
+  /// default; the implicit empty mapping works under both evaluators.
+  environment: Mapping<EnvKey, Static|SecretText>
 }
 
 /// A change is reported unless the output contains this text. Set exactly
@@ -288,6 +521,10 @@ class UnlessOutput {
   stdoutContains: Static? = null
   stderrContains: Static? = null
 }
+
+/// An environment variable name: a letter or underscore, then letters,
+/// digits and underscores.
+typealias EnvKey = String(matches(Regex("[A-Za-z_][A-Za-z0-9_]*")))
 
 /// A program with arguments, run without a shell.
 ///

@@ -165,14 +165,17 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
                 "lookup requires item or reference"
             );
             if !required("reference") {
-                for key in ["vault", "field"] {
-                    ensure!(
-                        object.get(key).is_none_or(
-                            |v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())
-                        ),
-                        "lookup selector must not be empty"
-                    );
+                // No defaults: the structured selector names vault, item and
+                // field, every one of them.
+                for key in ["vault", "item", "field"] {
+                    ensure!(required(key), "op lookup requires {key}");
                 }
+                ensure!(
+                    object.get("section").is_none_or(|v| {
+                        v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())
+                    }),
+                    "lookup selector must not be empty"
+                );
             }
         }
         Some("command") => ensure!(

@@ -1,6 +1,6 @@
 use super::{
-    ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode, str_param,
-    write_atomic_with,
+    ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode,
+    resolve_gid, resolve_uid, str_param, write_atomic_with,
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -72,15 +72,33 @@ pub(super) fn run(
             };
         }
         if !ctx.check_mode {
-            let creation_mode = if exists {
-                None
-            } else if let Some(mode) = obj.get("mode") {
+            let creation_mode = if let Some(mode) = obj.get("mode") {
+                // The replacement is created with the requested mode before
+                // it is published. Applying owner or group later may fail,
+                // but a requested secret mode is never exposed in the
+                // meantime.
                 Some(parse_mode(mode)?)
+            } else if exists {
+                // Without a requested mode, an existing destination keeps
+                // its permissions through the atomic replacement.
+                None
             } else {
                 let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
                 Some(default_file_mode(&status))
             };
-            write_atomic_with(p, content, creation_mode, None)?;
+            // Requested ownership is resolved to ids before any write, like
+            // the requested mode: an unresolvable owner or group fails with
+            // the destination byte- and mode-identical, and the temp file is
+            // created with the resolved ownership, so a replacement never
+            // publishes content under the destination's previous owner.
+            let requested_owner = str_param(obj, "owner").map(resolve_uid).transpose()?;
+            let requested_group = str_param(obj, "group").map(resolve_gid).transpose()?;
+            write_atomic_with(
+                p,
+                content,
+                creation_mode,
+                (requested_owner, requested_group),
+            )?;
         }
     }
     if p.exists() || !ctx.check_mode {
@@ -97,6 +115,7 @@ fn copy_needs_write(exists: bool, same: bool, force: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::copy_needs_write;
+    use serde_json::json;
 
     #[test]
     fn force_and_content_equality_control_write() {
@@ -105,6 +124,49 @@ mod tests {
         assert!(!copy_needs_write(true, true, true));
         assert!(copy_needs_write(true, false, true));
     }
+    #[cfg(unix)]
+    #[test]
+    fn replacing_a_file_fails_before_the_write_when_a_group_is_unresolvable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory =
+            std::env::temp_dir().join(format!("ruxel-copy-requested-owner-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("secret");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let ctx = super::super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let error = super::run(
+            &json!({
+                "dest": path,
+                "content": "new",
+                "mode": "0600",
+                "owner": "root",
+                "group": "ruxel-group-does-not-exist",
+            }),
+            None,
+            &ctx,
+        )
+        .unwrap_err();
+        assert!(error.contains("not found"), "{error}");
+
+        // Requested ownership is resolved before any write, so a failure
+        // leaves the destination byte- and mode-identical: the secret
+        // replacement is never published, not even at 0600.
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "the destination must keep its old mode");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn template_content_preserves_trailing_newlines_and_converges() {
         let dir =

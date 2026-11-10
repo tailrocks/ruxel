@@ -12,12 +12,28 @@ impl Backend for Fake {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok("fake-value".into())
     }
-    fn onepassword_item(&self, _: &str, _: &str) -> Result<serde_json::Value, String> {
+    fn onepassword_fields(
+        &self,
+        _vault: &str,
+        _item: &str,
+        _section: Option<&str>,
+        field: &str,
+    ) -> Result<serde_json::Value, String> {
         self.items.fetch_add(1, Ordering::SeqCst);
-        Ok(serde_json::json!({"fields": [
-            {"id":"username", "label":"Username", "value":"alice"},
-            {"id":"password", "label":"Password", "section":{"id":"login", "label":"Login"}, "value":"fake-password"}
-        ]}))
+        // The item's fields, pre-filtered the way `op item get --fields`
+        // filters: by label or id. "password" matches two sections.
+        let fields = [
+            r#"{"id":"username","label":"Username","value":"alice"}"#,
+            r#"{"id":"password","label":"Password","section":{"id":"login","label":"Login"},"value":"fake-password"}"#,
+            r#"{"id":"password","label":"Password","section":{"id":"api","label":"API"},"value":"fake-password-api"}"#,
+        ];
+        Ok(serde_json::json!(
+            fields
+                .iter()
+                .filter(|json| json.contains(&format!("\"{field}\"")))
+                .map(|json| serde_json::from_str(json).unwrap())
+                .collect::<Vec<serde_json::Value>>()
+        ))
     }
     fn onepassword_reference(&self, reference: &str) -> Result<String, String> {
         self.references.lock().unwrap().push(reference.into());

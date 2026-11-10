@@ -11,10 +11,23 @@ class Lookup {
   fixed kind = "lookup"
   provider: "fnox"|"op"|"command"|"synthetic"
   key: String?(provider != "fnox" || (this != null && this.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*$")))) = null
+  /// The structured 1Password selector. Vault, item and field are always
+  /// stated — there is no default vault or field; the engine's own checks
+  /// (model validation and resolution) refuse a lookup that omits one. The
+  /// constraints here cannot: pklr evaluates a nullable property's constraint
+  /// against its `null` default too, so `this != null` could never be
+  /// demanded from the schema. `section` narrows a label that several
+  /// sections carry; without it, resolution fails on such a label, naming
+  /// the sections.
   vault: String? = null
   item: String? = null
   section: String? = null
   field: String? = null
+  /// The `op://` reference form; never combined with structured selectors.
+  /// Enforced here alone: `section` carries no constraint of its own, since
+  /// one that read `reference` would close the cycle this constraint opens
+  /// (it reads `section`), which official Pkl evaluates eagerly, to a stack
+  /// overflow; pklr tolerates the cycle and never showed it.
   reference: String?(provider != "op" || this == null || (vault == null && item == null && section == null && field == null)) = null
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
