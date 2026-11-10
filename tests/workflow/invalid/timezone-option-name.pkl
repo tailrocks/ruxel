@@ -1,5 +1,5 @@
 // expect-pkl: !startsWith("-")
-// expect-pklr: expected Name
+// expect-pklr: expected TimezoneName
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 
