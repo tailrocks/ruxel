@@ -1064,6 +1064,7 @@ dependencies = [
  "prost",
  "rustix",
  "ruxel-config",
+ "ruxel-guard",
  "ruxel-proto",
  "serde",
  "serde_json",
