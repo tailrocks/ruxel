@@ -1,6 +1,5 @@
 use super::{
-    bool_param, default_file_mode, parse_mode, resolve_gid_from, resolve_uid_from,
-    user_environment_from, write_atomic,
+    bool_param, default_file_mode, parse_mode, resolve_gid_from, resolve_uid_from, write_atomic,
 };
 use serde_json::json;
 use std::os::unix::fs::symlink;
@@ -128,10 +127,6 @@ fn parses_modes_booleans_and_identity_files() {
     assert_eq!(
         resolve_gid_from("staff:x:1002:alice\n", "staff").unwrap(),
         1002
-    );
-    assert_eq!(
-        user_environment_from("alice:x:1001:1002::/home/alice:/bin/sh\n", "alice"),
-        Some(("/home/alice", "/bin/sh"))
     );
 }
 

@@ -1,6 +1,10 @@
 use super::*;
 use std::os::unix::fs::PermissionsExt;
 
+#[path = "subprocess/identity.rs"]
+mod identity;
+use identity::{SYNTHETIC_ACCOUNT, fake_identity};
+
 fn context() -> ExecContext {
     ExecContext {
         check_mode: false,
@@ -119,6 +123,7 @@ fn fake_wrapper_sees_clean_environment_and_workload_receives_assignments() {
     ]
     .into_iter()
     .collect();
+    let identity = fake_identity(&dir, SYNTHETIC_ACCOUNT, "1");
     let mut child = switched_command(
         &ctx,
         "synthetic-user",
@@ -126,7 +131,7 @@ fn fake_wrapper_sees_clean_environment_and_workload_receives_assignments() {
         &["literal ; $(argument)"],
         &wrapper,
         inherited,
-        Some(("/synthetic/user-home", "/bin/sh")),
+        Some(&identity.lookup()),
     )
     .unwrap()
     .spawn()
@@ -298,10 +303,6 @@ fn unsupported_switched_environment_names_fail_before_spawning() {
             "become_user requires a numeric SHLVL below 999"
         );
     }
-    assert_eq!(
-        user_environment_from("# comment\ninvalid\n", "synthetic-user"),
-        None
-    );
 }
 
 #[test]

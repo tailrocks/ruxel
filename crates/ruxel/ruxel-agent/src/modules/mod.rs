@@ -46,8 +46,6 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use subprocess::become_command;
-#[cfg(test)]
-use subprocess::user_environment_from;
 
 pub(crate) struct ExecContext {
     pub check_mode: bool,

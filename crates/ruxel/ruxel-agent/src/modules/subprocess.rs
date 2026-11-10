@@ -7,6 +7,19 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 
 const RUNUSER: &str = "/usr/sbin/runuser";
+/// Host programs that resolve the switched account. They are dynamically
+/// linked, so they use the host's NSS stack (files, SSSD, LDAP), which the
+/// static agent cannot load.
+const HOST_IDENTITY: IdentityLookup<'static> = IdentityLookup {
+    timeout: "/usr/bin/timeout",
+    getent: "/usr/bin/getent",
+    id: "/usr/bin/id",
+};
+/// Seconds the in-context NSS lookup may take before the task fails; a lookup
+/// that ignores SIGTERM is killed two seconds later.
+const IDENTITY_TIMEOUT_SECS: u8 = 10;
+/// Bytes of `getent` output (record and status) the bootstrap accepts.
+const IDENTITY_RECORD_LIMIT: usize = 4096;
 const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
 const READY: &[u8] = b"RUXEL_ENV_READY\n";
 // read consumes exactly one line, leaving the rest of stdin for the workload.
@@ -75,7 +88,6 @@ pub(super) fn become_command(
         }
     }
     if let Some(user) = &ctx.become_user {
-        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
         switched_command(
             ctx,
             user,
@@ -83,7 +95,7 @@ pub(super) fn become_command(
             args,
             Path::new(RUNUSER),
             std::env::vars_os().collect(),
-            user_environment_from(&passwd, user),
+            Some(&HOST_IDENTITY),
         )
     } else {
         let mut command = Command::new(program);
@@ -143,6 +155,60 @@ fn untrusted_loader_environment(key: &str) -> bool {
         )
 }
 
+/// Programs run inside the switched context to read the account's identity.
+pub(super) struct IdentityLookup<'a> {
+    pub timeout: &'a str,
+    pub getent: &'a str,
+    pub id: &'a str,
+}
+
+/// Become users are account names. All-digit names are refused: util-linux
+/// `runuser` (`xgetuserpw`) and `getent passwd` both treat a numeric key as a
+/// UID, so the name could select a different account.
+pub(super) fn valid_become_user(user: &str) -> bool {
+    !user.is_empty()
+        && !user.starts_with('-')
+        && !user.bytes().all(|b| b.is_ascii_digit())
+        && user
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+
+/// Shell code, run as the switched user, that resolves the account by name
+/// through the host NSS stack within bounded time and size, proves it is the account `runuser` switched to
+/// (its UID equals `id -u`), and exports its HOME, SHELL, USER and LOGNAME.
+fn identity_script(user: &str, lookup: &IdentityLookup<'_>) -> Result<String, String> {
+    let quoted = |value: &str| (!value.contains(['\'', '\0'])).then(|| format!("'{value}'"));
+    let timeout = quoted(lookup.timeout).ok_or("invalid identity lookup program")?;
+    let getent = quoted(lookup.getent).ok_or("invalid identity lookup program")?;
+    let id = quoted(lookup.id).ok_or("invalid identity lookup program")?;
+    // The record and getent's status are read through head, so an oversized
+    // NSS answer is never buffered whole; reaching the limit fails closed.
+    let limit = IDENTITY_RECORD_LIMIT + 1;
+    Ok(format!(
+        "RUXEL_ID_NL=$(printf '\\nx'); RUXEL_ID_NL=${{RUXEL_ID_NL%x}}; \
+         RUXEL_ID_OUT=$({{ {timeout} -k 2 {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}'; \
+         printf '\\n%s' \"$?\"; }} | /usr/bin/head -c {limit}) || exit 125; \
+         [ ${{#RUXEL_ID_OUT}} -lt {limit} ] || exit 125; \
+         [ \"${{RUXEL_ID_OUT##*\"$RUXEL_ID_NL\"}}\" = 0 ] || exit 125; \
+         RUXEL_ID_RECORD=${{RUXEL_ID_OUT%\"$RUXEL_ID_NL\"*}}; \
+         RUXEL_ID_RECORD=${{RUXEL_ID_RECORD%\"$RUXEL_ID_NL\"}}; \
+         RUXEL_ID_UID=$({id} -u) || exit 125; \
+         case $RUXEL_ID_RECORD in *\"$RUXEL_ID_NL\"*) exit 125;; esac; \
+         RUXEL_ID_NAME=${{RUXEL_ID_RECORD%%:*}}; RUXEL_ID_REST=${{RUXEL_ID_RECORD#*:}}; \
+         RUXEL_ID_REST=${{RUXEL_ID_REST#*:}}; \
+         [ \"${{RUXEL_ID_REST%%:*}}\" = \"$RUXEL_ID_UID\" ] || exit 125; \
+         RUXEL_ID_REST=${{RUXEL_ID_REST#*:}}; RUXEL_ID_REST=${{RUXEL_ID_REST#*:}}; \
+         RUXEL_ID_REST=${{RUXEL_ID_REST#*:}}; \
+         case $RUXEL_ID_REST in *:*:*) exit 125;; *:*) ;; *) exit 125;; esac; \
+         HOME=${{RUXEL_ID_REST%%:*}}; SHELL=${{RUXEL_ID_REST#*:}}; \
+         [ -n \"$SHELL\" ] || SHELL=/bin/sh; \
+         [ -n \"$RUXEL_ID_NAME\" ] && [ -n \"$HOME\" ] || exit 125; \
+         USER=$RUXEL_ID_NAME; LOGNAME=$RUXEL_ID_NAME; \
+         export HOME SHELL USER LOGNAME || exit 125; "
+    ))
+}
+
 fn switched_command(
     ctx: &ExecContext,
     user: &str,
@@ -150,8 +216,11 @@ fn switched_command(
     args: &[&str],
     wrapper: &Path,
     mut environment: BTreeMap<OsString, OsString>,
-    identity: Option<(&str, &str)>,
+    identity: Option<&IdentityLookup<'_>>,
 ) -> Result<TaskCommand, String> {
+    if !valid_become_user(user) {
+        return Err("invalid become user".into());
+    }
     // Only this fixed environment reaches the privileged loader and runuser.
     // Workload environment is sent over stdin after switching identity, so
     // passwords never become command arguments or privileged loader inputs.
@@ -168,15 +237,14 @@ fn switched_command(
         BOOTSTRAP,
         "ruxel-env",
     ]);
-    if let Some((home, shell)) = identity {
-        for (key, value) in [
-            ("HOME", home),
-            ("USER", user),
-            ("LOGNAME", user),
-            ("SHELL", shell),
-        ] {
-            environment.insert(key.into(), value.into());
+    let mut script = String::new();
+    if let Some(lookup) = identity {
+        // The switched account, not the agent, supplies these four values;
+        // explicit task environment entries still override them below.
+        for key in ["HOME", "USER", "LOGNAME", "SHELL"] {
+            environment.remove(std::ffi::OsStr::new(key));
         }
+        script.push_str(&identity_script(user, lookup)?);
     }
     for (key, value) in &ctx.environment {
         environment.insert(key.into(), value.into());
@@ -195,7 +263,6 @@ fn switched_command(
     while environment.contains_key(std::ffi::OsStr::new(&scratch)) {
         scratch.push('_');
     }
-    let mut script = String::new();
     for (key, value) in environment {
         let key = key
             .to_str()
@@ -274,13 +341,6 @@ fn shell_name(key: &str) -> bool {
     let mut bytes = key.bytes();
     matches!(bytes.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-}
-
-pub(super) fn user_environment_from<'a>(passwd: &'a str, user: &str) -> Option<(&'a str, &'a str)> {
-    passwd.lines().find_map(|line| {
-        let fields = line.split(':').collect::<Vec<_>>();
-        (fields.len() >= 7 && fields[0] == user).then(|| (fields[5], fields[6]))
-    })
 }
 
 #[cfg(test)]
