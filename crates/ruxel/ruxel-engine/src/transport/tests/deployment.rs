@@ -163,3 +163,80 @@ async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Re
 
 #[path = "deployment_sensitivity.rs"]
 mod sensitivity;
+
+async fn refused_before_contact(hostname: &str, reason: &str) -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("hostname"), hostname)?;
+    let error = fixture.connect().await.unwrap_err().to_string();
+    assert!(error.contains(reason), "{error}");
+    let calls = fixture.calls()?;
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(
+        calls[0][1]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "-G")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn denied_address_is_refused_before_upload() -> anyhow::Result<()> {
+    refused_before_contact("192.0.2.66", "deny 192.0.2.66/32").await?;
+    refused_before_contact("::ffff:192.0.2.66", "deny 192.0.2.66/32").await
+}
+
+#[tokio::test]
+async fn non_literal_hostname_is_refused_before_upload() -> anyhow::Result<()> {
+    refused_before_contact("fixture.invalid", "is not a literal IP address").await
+}
+
+#[tokio::test]
+async fn allowed_address_is_resolved_before_upload() -> anyhow::Result<()> {
+    allowed_address_is_pinned("192.0.2.67").await?;
+    // The fixture asserts the scope reaches SSH as a literal (%% escaped).
+    allowed_address_is_pinned("fe80::1%eth0").await
+}
+
+async fn allowed_address_is_pinned(hostname: &str) -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("hostname"), hostname)?;
+    let (connection, _) = fixture.connect().await?;
+    connection.shutdown().await?;
+    let calls = fixture.calls()?;
+    assert!(
+        calls[0][1]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "-G")
+    );
+    assert!(calls.iter().any(|event| event[0] == "launch"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn stalled_admission_is_bounded() -> anyhow::Result<()> {
+    let started = std::time::Instant::now();
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("slow"), b"")?;
+    let error = fixture.connect().await.unwrap_err().to_string();
+    assert!(error.contains("ssh -G timed out"), "{error}");
+    assert!(!fixture.calls()?.iter().any(|event| event[0] != "ssh"));
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    let helper = std::fs::read_to_string(fixture.root.join("helper"))?;
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", helper.trim()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while alive() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(!alive(), "probe helper outlived the timeout");
+    Ok(())
+}

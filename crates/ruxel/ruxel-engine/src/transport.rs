@@ -1,3 +1,4 @@
+mod admission;
 mod cache;
 mod deploy;
 mod local;
@@ -26,6 +27,13 @@ pub struct ConnectOptions {
 struct RemoteHost {
     destination: String,
     options: ConnectOptions,
+    /// The literal address admitted by `admit`. Every later invocation pins
+    /// it, with proxies and connection multiplexing disabled, so a
+    /// configuration change, `Match exec`, or an existing master cannot
+    /// redirect the connection.
+    admitted: Option<String>,
+    /// How long `ssh -G` may spend evaluating configuration.
+    admission_timeout: std::time::Duration,
     #[cfg(test)]
     test_path: Option<std::ffi::OsString>,
 }
@@ -42,8 +50,36 @@ impl RemoteHost {
             "ServerAliveInterval=15",
             "-o",
             "ServerAliveCountMax=4",
+            // No DNS search before admission, and no forwards, local
+            // commands or known-hosts helpers reaching unchecked endpoints.
+            "-o",
+            "CanonicalizeHostname=no",
+            "-o",
+            "ClearAllForwardings=yes",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "KnownHostsCommand=none",
+            // The admitted host must not reach the controller's agent or
+            // display, and host keys come only from known_hosts: no SSHFP or
+            // Kerberos lookups to unchecked resolvers or KDCs.
+            "-o",
+            "ForwardAgent=no",
+            "-o",
+            "ForwardX11=no",
+            "-o",
+            "ForwardX11Trusted=no",
+            "-o",
+            "Tunnel=no",
+            "-o",
+            "VerifyHostKeyDNS=no",
+            "-o",
+            "GSSAPIAuthentication=no",
         ]);
         apply_options(&mut command, &self.options);
+        if let Some(address) = &self.admitted {
+            command.args(admission::pinned_options(address));
+        }
         #[cfg(test)]
         if let Some(path) = &self.test_path {
             command.env("PATH", path);
@@ -140,7 +176,9 @@ pub struct HostFacts {
 }
 
 /// # Errors
-/// Returns an error when agent upload, verification, or protocol negotiation fails.
+/// Returns an error when the destination does not resolve to a literal IP
+/// outside the compiled deny list, or when agent upload, verification, or
+/// protocol negotiation fails.
 pub async fn connect_with(
     destination: &str,
     agent_binary: &Path,
@@ -151,18 +189,23 @@ pub async fn connect_with(
     let remote = RemoteHost {
         destination: destination.to_owned(),
         options: options.clone(),
+        admitted: None,
+        admission_timeout: std::time::Duration::from_secs(15),
         #[cfg(test)]
         test_path: None,
     };
-    connect_remote(remote, agent_binary, run_id, check_mode).await
+    let policy = ruxel_guard::Policy::new(&[], &[])?;
+    connect_remote(remote, &policy, agent_binary, run_id, check_mode).await
 }
 
 async fn connect_remote(
-    remote: RemoteHost,
+    mut remote: RemoteHost,
+    policy: &ruxel_guard::Policy,
     agent_binary: &Path,
     run_id: &str,
     check_mode: bool,
 ) -> Result<(AgentConnection, HostFacts)> {
+    remote.admit(policy).await?;
     let options = &remote.options;
 
     let agent_bytes = std::fs::read(agent_binary)

@@ -1551,6 +1551,7 @@ dependencies = [
  "clap",
  "ruxel-config",
  "ruxel-engine",
+ "ruxel-guard",
  "serde_json",
  "tokio",
 ]
@@ -1604,6 +1605,7 @@ dependencies = [
  "prost",
  "rustix 1.1.6",
  "ruxel-config",
+ "ruxel-guard",
  "ruxel-proto",
  "serde",
  "serde_json",
