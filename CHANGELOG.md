@@ -24,6 +24,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module and resource globs (`import*`, `read*`) are refused.
+- Command and shell tasks that run invalidate the agent's package and unit snapshots, so a later apt or systemd task, or its ledger entry, never trusts state read before the command.
 - Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
