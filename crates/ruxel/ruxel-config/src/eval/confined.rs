@@ -19,8 +19,8 @@ use std::{
 pub(super) struct Root {
     /// The canonical name of the directory.
     path: PathBuf,
-    /// The spelling the caller gave, when it differs from `path` and names
-    /// the same directory without `..` (for example `/var/...` for
+    /// The spelling the caller gave, normalized, when it differs from `path`
+    /// but names the same directory (for example `/var/...` for
     /// `/private/var/...`), so absolute paths written that way still match.
     alias: Option<PathBuf>,
     directory: File,
@@ -57,10 +57,12 @@ impl Root {
                 canonical.display()
             )));
         }
-        let given = std::path::absolute(path)?;
-        let alias = (!given.components().any(|part| part == Component::ParentDir))
-            .then(|| normalize(&given))
-            .filter(|alias| *alias != canonical);
+        // Keep the given spelling, lexically normalized, when it names the
+        // same directory; `link/..` normalizes to a different one and is
+        // dropped.
+        let alias = Some(normalize(&std::path::absolute(path)?))
+            .filter(|alias| *alias != canonical)
+            .filter(|alias| std::fs::canonicalize(alias).is_ok_and(|named| named == canonical));
         Ok(Self {
             path: canonical,
             alias,

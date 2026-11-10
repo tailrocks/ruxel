@@ -66,3 +66,22 @@ fn equal_root_paths_prefer_the_first_root() -> Result {
     );
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn root_spellings_with_parent_segments_keep_their_alias() -> Result {
+    let fixture = Fixture::new()?;
+    fixture.write("sub/keep", "")?;
+    let alias = fixture.0.with_extension("alias");
+    std::os::unix::fs::symlink(&fixture.0, &alias)?;
+    let options = EvalOptions {
+        root_dir: Some(alias.join("config/sub/..")),
+        ..EvalOptions::default()
+    };
+    let root = fixture.write("main.pkl", "value = 1")?;
+    let result = eval(&alias.join("config/main.pkl"), &options);
+    std::fs::remove_file(&alias)?;
+    assert_eq!(result?, json!({"value": 1}));
+    assert!(root.exists());
+    Ok(())
+}
