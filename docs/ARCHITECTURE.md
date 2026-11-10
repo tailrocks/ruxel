@@ -70,9 +70,10 @@ compiled from `RUXEL_GUARD_DENY_FILE`. Every later SSH and SFTP invocation for
 that connection pins the admitted address with `HostName` (`%` escaped) and
 disables `ProxyJump`, `ProxyCommand` and connection multiplexing, so
 configuration changes, `Match exec` or an existing master cannot redirect it.
-All invocations set `CanonicalizeHostname=no` and `ClearAllForwardings=yes`;
-the probe is bounded by a timeout, and unspecified addresses (`0.0.0.0`, `::`)
-are refused. `ruxel --version` reports how many
+All invocations set `CanonicalizeHostname=no`, `ClearAllForwardings=yes` and
+`PermitLocalCommand=no`; the probe runs in its own process group, bounded by a
+timeout that kills the group, and unspecified addresses (`0.0.0.0`, `::`) are
+refused. `ruxel --version` reports how many
 entries were compiled. This is a deny list only: the invoking environment is
 still responsible for target admission and its own allow policy. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
 for development. Never commit real credentials, host identities, or sensitive

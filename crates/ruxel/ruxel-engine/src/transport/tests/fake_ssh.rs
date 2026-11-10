@@ -209,6 +209,9 @@ fn run() -> Result<u8> {
         assert!(remote.is_empty());
         assert!(!options.iter().any(|arg| arg.starts_with("HostName=")));
         if fixture.root.join("slow").exists() {
+            // A Match exec helper that must not outlive a timed-out probe.
+            let helper = std::process::Command::new("sleep").arg("30").spawn()?;
+            fs::write(fixture.root.join("helper"), helper.id().to_string())?;
             std::thread::sleep(std::time::Duration::from_secs(30));
         }
         let mut output = io::stdout().lock();

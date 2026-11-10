@@ -1,9 +1,10 @@
+mod admission;
 mod cache;
 mod deploy;
 mod local;
 pub use local::LocalConnection;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use prost::Message;
 use ruxel_proto::PROTO_VERSION;
 use ruxel_proto::constants::{AGENT_DIR, HANDSHAKE_TIMEOUT_SECS};
@@ -49,30 +50,18 @@ impl RemoteHost {
             "ServerAliveInterval=15",
             "-o",
             "ServerAliveCountMax=4",
-            // No DNS search before admission and no forwards to unchecked
-            // endpoints afterwards.
+            // No DNS search before admission, and no forwards or local
+            // commands reaching unchecked endpoints afterwards.
             "-o",
             "CanonicalizeHostname=no",
             "-o",
             "ClearAllForwardings=yes",
+            "-o",
+            "PermitLocalCommand=no",
         ]);
         apply_options(&mut command, &self.options);
         if let Some(address) = &self.admitted {
-            // HostName expands % tokens; %% keeps a scope suffix literal.
-            // An inherited multiplexing master could reach another endpoint.
-            command
-                .arg("-o")
-                .arg(format!("HostName={}", address.replace('%', "%%")))
-                .args([
-                    "-o",
-                    "ProxyJump=none",
-                    "-o",
-                    "ProxyCommand=none",
-                    "-o",
-                    "ControlMaster=no",
-                    "-o",
-                    "ControlPath=none",
-                ]);
+            command.args(admission::pinned_options(address));
         }
         #[cfg(test)]
         if let Some(path) = &self.test_path {
@@ -89,33 +78,6 @@ impl RemoteHost {
         let mut command = self.options();
         command.args(["-s", "--", &self.destination, "sftp"]);
         command
-    }
-    /// Resolve the destination with `ssh -G`, which reads configuration and
-    /// makes no network contact, and refuse it unless it names a literal IP
-    /// outside every deny entry with no proxy hop.
-    async fn admit(&mut self, policy: &ruxel_guard::Policy) -> Result<()> {
-        let mut command = self.options();
-        command
-            .args(["-G", "--", &self.destination])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        // ConnectTimeout does not cover configuration evaluation (Match exec).
-        let output = tokio::time::timeout(self.admission_timeout, command.output())
-            .await
-            .map_err(|_| anyhow!("refused {}: ssh -G timed out", self.destination))?
-            .context("ssh -G")?;
-        if !output.status.success() {
-            bail!(
-                "refused {}: ssh -G could not resolve the destination",
-                self.destination
-            );
-        }
-        // Unrelated values such as IdentityFile paths may be non-UTF-8; the
-        // fields read below are validated strictly.
-        let config = String::from_utf8_lossy(&output.stdout);
-        self.admitted = Some(admit_resolved(&config, &self.destination, policy)?);
-        Ok(())
     }
     async fn exec_status(&self, argv: &[&str]) -> Result<std::process::ExitStatus> {
         let mut cmd = self.client();
@@ -136,44 +98,6 @@ impl RemoteHost {
         cmd.stdin(Stdio::null()).stderr(Stdio::piped());
         cmd.output().await.context("ssh exec output")
     }
-}
-
-/// Returns the admitted hostname, including any IPv6 scope suffix.
-fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy) -> Result<String> {
-    let value = |key: &str| {
-        config.lines().find_map(|line| {
-            line.split_once(' ')
-                .filter(|(name, _)| *name == key)
-                .map(|(_, value)| value.trim())
-        })
-    };
-    let hostname = value("hostname")
-        .with_context(|| format!("refused {destination}: ssh -G reported no hostname"))?;
-    let address = match hostname.split_once('%') {
-        Some((address, scope)) if !scope.is_empty() => address
-            .parse::<std::net::Ipv6Addr>()
-            .ok()
-            .map(std::net::IpAddr::V6),
-        Some(_) => None,
-        None => hostname.parse::<std::net::IpAddr>().ok(),
-    }
-    .ok_or_else(|| {
-        anyhow!("refused {destination}: hostname {hostname:?} is not a literal IP address")
-    })?;
-    // The kernel connects 0.0.0.0 and :: to a local address that the deny
-    // list would not see.
-    if address.to_canonical().is_unspecified() {
-        bail!("refused {destination}: hostname {hostname:?} is an unspecified address");
-    }
-    for key in ["proxyjump", "proxycommand"] {
-        if value(key).is_some_and(|value| value != "none") {
-            bail!("refused {destination}: {key} is set");
-        }
-    }
-    policy
-        .check_deny(address)
-        .map_err(|rule| anyhow!("refused {destination} ({address}): {rule}"))?;
-    Ok(hostname.to_owned())
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {

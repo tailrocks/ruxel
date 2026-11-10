@@ -219,16 +219,24 @@ async fn allowed_address_is_pinned(hostname: &str) -> anyhow::Result<()> {
 #[tokio::test]
 async fn stalled_admission_is_bounded() -> anyhow::Result<()> {
     let started = std::time::Instant::now();
-    refused_before_contact_marker("slow", "ssh -G timed out").await?;
-    assert!(started.elapsed() < std::time::Duration::from_secs(20));
-    Ok(())
-}
-
-async fn refused_before_contact_marker(marker: &str, reason: &str) -> anyhow::Result<()> {
     let fixture = Fixture::new()?;
-    std::fs::write(fixture.root.join(marker), b"")?;
+    std::fs::write(fixture.root.join("slow"), b"")?;
     let error = fixture.connect().await.unwrap_err().to_string();
-    assert!(error.contains(reason), "{error}");
+    assert!(error.contains("ssh -G timed out"), "{error}");
     assert!(!fixture.calls()?.iter().any(|event| event[0] != "ssh"));
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    let helper = std::fs::read_to_string(fixture.root.join("helper"))?;
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", helper.trim()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while alive() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(!alive(), "probe helper outlived the timeout");
     Ok(())
 }

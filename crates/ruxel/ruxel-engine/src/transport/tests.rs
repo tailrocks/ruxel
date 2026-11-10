@@ -31,6 +31,7 @@ fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
         "StrictHostKeyChecking=yes",
         "CanonicalizeHostname=no",
         "ClearAllForwardings=yes",
+        "PermitLocalCommand=no",
     ] {
         assert!(args.iter().any(|arg| arg == option), "{option}");
     }
@@ -114,7 +115,7 @@ fn known_hosts_filename_is_one_quoted_ssh_config_value() {
 #[test]
 fn resolved_proxy_hops_are_refused() -> anyhow::Result<()> {
     let policy = ruxel_guard::Policy::new(&[], &[])?;
-    let admit = |config: &str| super::admit_resolved(config, "synthetic", &policy);
+    let admit = |config: &str| super::admission::admit_resolved(config, "synthetic", &policy);
     assert_eq!(admit("hostname 192.0.2.1\nproxyjump none\n")?, "192.0.2.1");
     assert_eq!(admit("hostname fe80::1%eth0\n")?, "fe80::1%eth0");
     assert!(admit("hostname fe80::1%\n").is_err());
@@ -124,7 +125,9 @@ fn resolved_proxy_hops_are_refused() -> anyhow::Result<()> {
     }
     assert!(admit("hostname 192.0.2.1%eth0\n").is_err());
     let denied = ruxel_guard::Policy::new(&[], &["fe80::/64".into()])?;
-    assert!(super::admit_resolved("hostname fe80::1%eth0\n", "scoped", &denied).is_err());
+    assert!(
+        super::admission::admit_resolved("hostname fe80::1%eth0\n", "scoped", &denied).is_err()
+    );
     assert!(admit("hostname 192.0.2.1\nproxyjump jump\n").is_err());
     assert!(admit("hostname 192.0.2.1\nproxycommand nc %h %p\n").is_err());
     assert!(admit("user root\n").is_err());
