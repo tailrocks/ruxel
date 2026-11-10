@@ -126,6 +126,10 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
     assert_eq!(all[directory]["operation"]["path"], "/etc/apt/keyrings");
     assert_eq!(all[directory]["operation"]["state"], "directory");
     assert_eq!(all[directory]["register"], "aptKeyrings");
+    // Root's, so nobody else can replace a key.
+    for (field, value) in [("mode", "0755"), ("owner", "root"), ("group", "root")] {
+        assert_eq!(all[directory]["operation"][field], value, "{field}");
+    }
     // One task for the stage, before the first key.
     assert_eq!(
         all.iter()

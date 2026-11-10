@@ -280,6 +280,8 @@ function settings(s: rx.Step): List<String> =
     List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
   else if (s is rx.Packages && s.upgrade && s.names.toList().any((n) -> n.contains("=")))
     List("'\(name(s))': upgrade installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or upgrade = true")
+  else if (s is rx.AptRepository && s.suite.isEmpty)
+    List("'\(name(s))': suite is empty; name a distribution such as \"stable\", or a path ending in / for a flat repository")
   else if (s is rx.AptRepository && !spaced(s).isEmpty)
     List("'\(name(s))': \(spaced(s).first) is written into the deb822 source, so it cannot contain spaces or line breaks")
   else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("s").value.floor != s.retry.delay.toUnit("s").value))
@@ -573,8 +575,9 @@ function firstRepository(ix: StageIndex): Int? =
   if (repositories.isEmpty) null else repositories.first
 
 /// One task for the directory every repository of the stage writes its key
-/// into. It runs under all their tags and notifies all their services, and
-/// steps reacting to any of them see its result (`anyChanged`).
+/// into: root's, 0755, so nobody else can replace a key. It runs under all
+/// the repositories' tags and notifies all their services, and steps
+/// reacting to any of them see its result (`anyChanged`).
 function keyringsTask(ix: StageIndex): engine.Task =
   let (owners = positions(ix.steps).filter((k) -> ix.steps[k] is rx.AptRepository))
   task(new Meta {
@@ -582,7 +585,7 @@ function keyringsTask(ix: StageIndex): engine.Task =
     tags = owners.flatMap((k) -> ix.metas[k].tags).toSet().toList()
     notify = owners.flatMap((k) -> ix.metas[k].notify).toSet().toList()
     register = keyringsResult
-  }, directory("/etc/apt/keyrings", "0755"), null, null)
+  }, (directory("/etc/apt/keyrings", "0755")) { owner = "root"; group = "root" }, null, null)
 
 const keyringsResult: String = "aptKeyrings"
 

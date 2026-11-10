@@ -1,0 +1,7 @@
+// expect: suite is empty; name a distribution
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new AptRepository { name = "example"; url = "https://apt.example.test/"; suite = ""; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n" }
+} } }
