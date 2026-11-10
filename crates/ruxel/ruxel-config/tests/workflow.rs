@@ -112,3 +112,37 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
     assert!(pinned.contains("Architectures: arm64\n"), "{pinned}");
     Ok(())
 }
+
+#[test]
+fn edge_values_lower_with_their_guards() -> Result {
+    let config = valid("edge-values.pkl")?;
+    assert_eq!(
+        config["inventory"]["hosts"]["link-local"]["address"],
+        "fe80::1%eth0"
+    );
+    let all = tasks(&config);
+    let named = |name: &str| {
+        all.iter()
+            .position(|task| task["name"] == name)
+            .ok_or_else(|| format!("no task {name:?}"))
+    };
+    // Literal text that resembles a run-time value stays literal.
+    let motd = &all[named("Write /etc/motd")?];
+    assert_eq!(
+        motd["operation"]["content"],
+        "literal __ruxel.inventoryHost__ text\n"
+    );
+    // The account probe runs first, in check mode too, and changes nothing.
+    let probe = named("Check that account root exists")?;
+    assert_eq!(probe + 1, named("Set root login shell to /bin/zsh")?);
+    assert_eq!(all[probe]["checkMode"], false);
+    assert_eq!(all[probe]["changedWhen"]["value"], false);
+    // A `creates` skip reports no change even though its output lacks the marker.
+    let init = &all[named("Run /usr/local/bin/app-init")?];
+    assert_eq!(init["changedWhen"]["function"], "and");
+    assert_eq!(
+        init["changedWhen"]["args"][0]["path"],
+        serde_json::json!(["result", "changed"])
+    );
+    Ok(())
+}

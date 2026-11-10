@@ -1,4 +1,4 @@
-// expect-pkl: !contains("__ruxel.")
+// expect-pkl: !contains("__ruxel_rt_8d41.")
 // expect-pklr: expected
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"

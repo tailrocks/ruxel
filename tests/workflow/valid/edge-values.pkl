@@ -1,0 +1,28 @@
+// Values at the edges of the types, and lowerings that guard them: a
+// link-local IPv6 address with a zone, a SHA-256 commit, literal text that
+// resembles a run-time value, a login shell (which checks that the account
+// exists), and a command with both `creates` and `UnlessOutput`.
+amends "modulepath:/ruxel/Workflow.pkl"
+
+local linkLocal = new Host { name = "link-local"; address = "fe80::1%eth0" }
+
+stages {
+  new Stage {
+    title = "Edges"
+    hosts { linkLocal }
+    steps {
+      new GitCheckout {
+        repository = "https://git.example.test/app.git"
+        path = "/opt/app"
+        commit = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+      new File { path = "/etc/motd"; content = "literal __ruxel.inventoryHost__ text\n" }
+      new LoginShell { user = "root"; shell = "/bin/zsh" }
+      new Command {
+        run { "/usr/local/bin/app-init" }
+        creates = "/var/lib/app/initialized"
+        changes = new UnlessOutput { stdoutContains = "already initialized" }
+      }
+    }
+  }
+}

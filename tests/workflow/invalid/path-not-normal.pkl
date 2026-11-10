@@ -1,0 +1,8 @@
+// expect-pkl: segment == "."
+// expect-pklr: expected AbsolutePath
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/./app.conf"; content = "a" }
+} } }

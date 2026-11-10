@@ -15,19 +15,26 @@ open module Ruxel
 
 /// Text known before the run. Run-time values (`currentHost`,
 /// `Capture.stdout()`) are allowed only in `File.content`; every other text
-/// field is `Static`.
-typealias Static = String(!contains("__ruxel."))
+/// field is `Static`. A run-time value is text that starts with the reserved
+/// prefix `__ruxel_rt_8d41.`, which nothing else may contain.
+typealias Static = String(!contains("__ruxel_rt_8d41."))
 /// A list of `Static` texts. The constraint is on the whole list because
 /// pklr does not check the elements of a `Listing`, and properties of this
 /// type need an explicit `= new {}` default, which pklr does not supply for a
 /// constrained `Listing` typealias.
-typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel.")))
-typealias AbsolutePath = Static(startsWith("/"))
+typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.")))
+/// An absolute path in normal form: no empty, `.` or `..` segments and no
+/// trailing `/`, so two spellings of one path are the same text.
+typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !split("/").any((segment) -> segment == "." || segment == ".."))
 typealias HttpsUrl = Static(startsWith("https://"))
 typealias FileMode = String(matches(Regex("0[0-7]{3}")))
-typealias CommitSha = String(matches(Regex("[0-9a-f]{40}")))
-typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")))
-typealias IpAddress = String(matches(Regex(#"[0-9]{1,3}(\.[0-9]{1,3}){3}|(?=[0-9a-fA-F:]*[0-9a-fA-F])[0-9a-fA-F:]*:[0-9a-fA-F:]*"#)))
+/// A SHA-1 (40) or SHA-256 (64) Git object ID.
+typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
+/// `localhost` is reserved: the engine uses it for the controller itself.
+typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "localhost")
+/// IPv4, or IPv6 with an optional zone such as `%eth0` for link-local
+/// addresses.
+typealias IpAddress = String(matches(Regex(#"[0-9]{1,3}(\.[0-9]{1,3}){3}|(?=[0-9a-fA-F:]*[0-9a-fA-F])[0-9a-fA-F:]*:[0-9a-fA-F:]*(%[A-Za-z0-9_.-]+)?"#)))
 typealias Arguments = StaticList(!isEmpty)
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
@@ -94,8 +101,8 @@ abstract class Recipe extends Step {
 const currentHost: CurrentHost = new CurrentHost {}
 
 class CurrentHost {
-  fixed name: String = "__ruxel.inventoryHost__"
-  fixed address: String = "__ruxel.vars.ruxel_address__"
+  fixed name: String = "__ruxel_rt_8d41.inventoryHost__"
+  fixed address: String = "__ruxel_rt_8d41.vars.ruxel_address__"
 }
 
 // ── Files ───────────────────────────────────────────────────────────────────
@@ -185,6 +192,8 @@ class Timezone extends Step {
 }
 
 /// The login shell of an existing user.
+/// The login shell of an account that already exists. A missing account
+/// fails the stage; it is never created.
 class LoginShell extends Step {
   hidden fixed kind = "loginShell"
   user: Static
@@ -298,10 +307,10 @@ class Capture extends Step {
   retry: Retry = new Retry {}
 
   /// The script's standard output, for `File.content` of a later step.
-  function stdout(): String = "__ruxel.results.\(id()).stdout__"
+  function stdout(): String = "__ruxel_rt_8d41.results.\(id()).stdout__"
 
   function id(): String =
-    "capture_" + "\(title ?? description())\u{0}\(runOn?.name)\u{0}\(retry.attempts)\u{0}\(retry.delay.toUnit("s").value.toInt())\u{0}\(bash)".sha256.substring(0, 12)
+    "capture_" + "\(title ?? description())\u{0}\(if (runOn == null) "-" else "+" + runOn.name)\u{0}\(retry.attempts)\u{0}\(retry.delay.toUnit("s").value.toInt())\u{0}\(bash)".sha256.substring(0, 12)
 
   /// The generated plan line, used when there is no title.
   function description(): String = "Capture " + bash.trim().split("\n").first

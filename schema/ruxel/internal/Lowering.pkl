@@ -54,7 +54,10 @@ function addHost(seen: List<rx.Host>, h: rx.Host): List<rx.Host> =
   else if (seen.any((x) -> x.name == h.name)) seen
   else seen + List(h)
 
-function signature(h: rx.Host): String = "\(h.address) \(h.sshHost) \(h.user) \(h.port)"
+function signature(h: rx.Host): String = List(h.address, optional(h.sshHost), h.user, "\(h.port)").join("\u{0}")
+
+/// Encodes a nullable text so that `null` and the text "null" differ.
+const function optional(v: String?): String = if (v == null) "-" else "+" + v
 
 function configOf(_hosts: List<rx.Host>, _stages: List<rx.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
   inventory { hosts { for (h in _hosts) { [h.name] = hostOf(h) } } }
@@ -330,7 +333,7 @@ class Identity {
 local identity = new Identity {}
 
 const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
-  ["file"] = (s) -> List(s.path, s.content, s.mode, "\(s.owner)", "\(s.group)", s.validate.join("\u{1}")).join("\u{0}")
+  ["file"] = (s) -> List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), s.validate.join("\u{1}")).join("\u{0}")
   ["directory"] = (s) -> "\(s.path)\u{0}\(s.mode)"
   ["symlink"] = (s) -> "\(s.path)\u{0}\(s.target)"
   ["packageIndex"] = (_) -> ""
@@ -345,7 +348,7 @@ const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
 }
 
 const function changesText(a: rx.Action): String =
-  if (a.changes is rx.UnlessOutput) "out:\(a.changes.stdoutContains)\u{0}err:\(a.changes.stderrContains)" else a.changes
+  if (a.changes is rx.UnlessOutput) "unless\u{0}\(optional(a.changes.stdoutContains))\u{0}\(optional(a.changes.stderrContains))" else a.changes
 
 /// What a step manages; empty for steps that manage nothing. An apt
 /// repository manages the two files it writes, so a `File` at either path
@@ -353,12 +356,12 @@ const function changesText(a: rx.Action): String =
 const function subjectsOf(s: rx.Step): List<String> = subjects[s.kind].apply(s)
 
 const local subjects: Mapping<String, (rx.Step) -> List<String>> = new {
-  ["file"] = (s) -> List(s.path)
+  ["file"] = (s) -> List(s.path) + (if (s.validate.isEmpty) List() else List(candidate(s)))
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
-  ["service"] = (s) -> List("service \(s.name)")
+  ["service"] = (s) -> List("service \(unitName(s.name))")
   ["loginShell"] = (s) -> List("the login shell of \(s.user)")
   ["timezone"] = (_) -> List("the timezone")
   ["packages"] = (_) -> List()
@@ -367,6 +370,9 @@ const local subjects: Mapping<String, (rx.Step) -> List<String>> = new {
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
 }
+
+/// systemd's name for a service: `foo` is `foo.service`.
+const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
 
 const function sourcesPath(r: rx.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
 const function keyringPath(r: rx.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"
@@ -450,7 +456,7 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
-  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
+  ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -469,7 +475,7 @@ function validateTasks(f: rx.File, m: Meta): List<engine.Task> =
 /// `.<name>.ruxel-candidate` beside the file: validators that resolve
 /// relative includes still work, and `*`, `*.conf` and `*.d` loaders skip
 /// dotfiles. It stays, so that a second apply reports no change.
-function candidate(f: rx.File): String =
+const function candidate(f: rx.File): String =
   let (slash = f.path.lastIndexOf("/"))
   "\(f.path.substring(0, slash + 1)).\(f.path.substring(slash + 1, f.path.length)).ruxel-candidate"
 
@@ -515,9 +521,20 @@ function changeRule(a: rx.Action): engine.Expr? =
   else if (a.changes is rx.UnlessOutput) unlessOutput(a.changes)
   else null
 
-function unlessOutput(u: rx.UnlessOutput): engine.Expr =
+/// Changed when the command ran (a `creates` skip reports no change) and its
+/// output lacks the marker.
+function unlessOutput(u: rx.UnlessOutput): engine.Expr = call2("and", ref(List("result", "changed")),
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
-  else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains)))
+  else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
+
+/// The engine's user operation creates a missing account. `LoginShell` only
+/// changes an existing one, so a read-only probe fails first, in check and
+/// diff too.
+function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
+  "getent passwd \(shellQuote(account)) >/dev/null || { echo \"account \(shellQuote(account)) does not exist; LoginShell changes the shell of an existing account\" >&2; exit 1; }"
+), null), null, lit(false))) { checkMode = false }
+
+function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
 function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 12)
 
@@ -579,7 +596,7 @@ function command(_argv: List<String>, _creates: String?): engine.Command = new e
 
 // ── Run-time text ───────────────────────────────────────────────────────────
 
-local placeholder = Regex(#"__ruxel\.([A-Za-z0-9_.]+?)__"#)
+local placeholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__"#)
 local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capture_[0-9a-f]{12}\.stdout"#)
 
 /// Text without placeholders stays a string. Placeholders (`currentHost`,

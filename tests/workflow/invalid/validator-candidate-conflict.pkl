@@ -1,0 +1,8 @@
+// expect: both manage /etc/.app.conf.ruxel-candidate with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/app.conf"; content = "a"; validate { "app"; "--check"; "%s" } }
+  new File { path = "/etc/.app.conf.ruxel-candidate"; content = "b" }
+} } }
