@@ -23,6 +23,17 @@ fn run_with(
     let upgrade = str_param(obj, "upgrade");
     let autoremove = bool_param(obj, "autoremove", false);
     let requests = PackageRequest::parse_all(&package_names(obj)?)?;
+    if ctx.environment.iter().any(|(key, _)| key == "APT_CONFIG") {
+        return Err(
+            "apt: APT_CONFIG in the task environment is not supported; package state is read from the host's dpkg database".into(),
+        );
+    }
+    if upgrade.is_some() && requests.iter().any(|request| request.version().is_some()) {
+        return Err(
+            "apt: upgrade cannot be combined with exact version pins, which the upgrade would move"
+                .into(),
+        );
+    }
     let state = str_param(obj, "state").unwrap_or("present");
     let mut result = json!({"changed": false});
     let mut changed = false;
@@ -60,7 +71,7 @@ fn run_with(
         result["diff"] = json!({});
     }
     if !requests.is_empty() {
-        changed |= install(
+        match install(
             &requests,
             state,
             obj,
@@ -68,7 +79,18 @@ fn run_with(
             system_state,
             &mut result,
             command,
-        )?;
+        )? {
+            Installed::Unchanged => {}
+            Installed::Changed => changed = true,
+            Installed::Unverified(message) => {
+                // apt-get succeeded, so the host may have changed; keep its
+                // output alongside the failure.
+                result["changed"] = json!(true);
+                result["failed"] = json!(true);
+                result["msg"] = json!(message);
+                return Ok(result);
+            }
+        }
     }
     result["changed"] = json!(changed);
     result["failed"] = json!(false);
@@ -117,6 +139,13 @@ fn maintenance(
     Ok(summary_changed(&stdout))
 }
 
+enum Installed {
+    Unchanged,
+    Changed,
+    /// apt-get succeeded but the requests are not all satisfied afterwards.
+    Unverified(String),
+}
+
 fn install(
     requests: &[PackageRequest],
     state: &str,
@@ -125,11 +154,11 @@ fn install(
     system_state: &mut SystemState,
     result: &mut Value,
     command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
-) -> Result<bool, String> {
+) -> Result<Installed, String> {
     let latest = state == "latest";
     let plan = system_state.plan_packages(requests, latest, &ctx.environment)?;
     if plan.missing.is_empty() {
-        return Ok(false);
+        return Ok(Installed::Unchanged);
     }
     if !ctx.check_mode {
         let mut args = vec!["install"];
@@ -142,18 +171,23 @@ fn install(
         if rc != 0 {
             return Err(format!("apt install failed: {stderr}"));
         }
-        let unresolved = system_state
-            .plan_packages(requests, latest, &ctx.environment)?
-            .missing;
-        if !unresolved.is_empty() {
-            return Err(format!(
-                "apt install did not satisfy the requested packages: {}",
-                unresolved.join(", ")
-            ));
-        }
         fill_exec_fields(result, &stdout, &stderr, false);
+        match system_state.plan_packages(requests, latest, &ctx.environment) {
+            Ok(after) if after.missing.is_empty() => {}
+            Ok(after) => {
+                return Ok(Installed::Unverified(format!(
+                    "apt install did not satisfy the requested packages: {}",
+                    after.missing.join(", ")
+                )));
+            }
+            Err(error) => {
+                return Ok(Installed::Unverified(format!(
+                    "apt install succeeded but verification failed: {error}"
+                )));
+            }
+        }
     }
-    Ok(true)
+    Ok(Installed::Changed)
 }
 
 fn apt_get(args: &[&str], ctx: &ExecContext) -> CommandResult {

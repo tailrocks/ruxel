@@ -55,19 +55,45 @@ fn pinned_install_converges_then_reports_no_change() -> Result<(), String> {
 }
 
 #[test]
-fn unsatisfied_pin_after_install_fails() {
+fn unsatisfied_pin_after_install_fails_but_reports_the_change() -> Result<(), String> {
     let (mut state, _) = host(&[("pkg", "1.2-2")]);
-    let error = run_with(
+    let result = run_with(
         &json!({"name": "pkg=1.2-3"}),
         &context(false),
         &mut state,
-        &mut |_, _| Ok((summary(true), 0, String::new())),
-    )
-    .expect_err("pin is still unsatisfied");
+        &mut |_, _| Ok((summary(true), 0, "synthetic warning".into())),
+    )?;
+    assert_eq!(result["failed"], true);
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["stderr"], "synthetic warning");
+    let message = result["msg"].as_str().unwrap_or_default();
     assert!(
-        error.contains("did not satisfy the requested packages: pkg=1.2-3"),
-        "{error}"
+        message.contains("did not satisfy the requested packages: pkg=1.2-3"),
+        "{message}"
     );
+    Ok(())
+}
+
+#[test]
+fn upgrade_with_pins_and_apt_config_are_refused_before_apt_runs() {
+    let (mut state, _) = host(&[("pkg", "1")]);
+    let refuse = |state: &mut SystemState, params: Value, ctx: &ExecContext| {
+        run_with(&params, ctx, state, &mut |args, _| {
+            Err(format!("unexpected apt-get {args:?}"))
+        })
+        .expect_err("refused")
+    };
+    let error = refuse(
+        &mut state,
+        json!({"name": "pkg=1", "upgrade": "dist"}),
+        &context(false),
+    );
+    assert!(error.contains("upgrade cannot be combined"), "{error}");
+    let mut ctx = context(false);
+    ctx.environment
+        .push(("APT_CONFIG".into(), "/synthetic/apt.conf".into()));
+    let error = refuse(&mut state, json!({"name": "pkg"}), &ctx);
+    assert!(error.contains("APT_CONFIG"), "{error}");
 }
 
 #[test]

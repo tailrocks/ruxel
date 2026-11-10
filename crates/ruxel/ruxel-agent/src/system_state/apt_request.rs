@@ -42,8 +42,12 @@ impl PackageRequest {
             if matches!(arch, "any" | "native" | "all") {
                 return refuse("the any, native and all pseudo-architectures are not supported");
             }
-            if !valid_arch(arch) {
-                return refuse("architectures are a-z 0-9 - with no wildcards");
+            // Debian architecture wildcards (linux-any, any-amd64, ...) always
+            // contain an `any` component.
+            if !valid_arch(arch) || arch.split('-').any(|part| part == "any") {
+                return refuse(
+                    "architectures are literal dpkg names (a-z 0-9 -) with no wildcards",
+                );
             }
         }
         if let Some(version) = version
@@ -212,6 +216,9 @@ mod tests {
             "bash:all",
             "bash:*",
             "bash:amd*",
+            "bash:linux-any",
+            "bash:any-amd64",
+            "bash:gnu-any-any",
             "bash:",
             "bash:amd64:x",
             "bash/noble",

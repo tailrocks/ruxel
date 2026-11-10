@@ -33,31 +33,52 @@ pub(super) fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
     packages
 }
 
-/// Candidate versions from one batched `apt-cache policy` call, keyed by the
-/// stanza header (`name` for native and `all` packages, `name:arch`
-/// otherwise).
-pub(super) fn parse_policy(text: &str) -> Result<HashMap<String, String>, String> {
-    let mut candidates = HashMap::new();
-    let mut headers = std::collections::HashSet::new();
+/// One `apt-cache policy` stanza: the default candidate and every version in
+/// the version table.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PolicyEntry {
+    pub candidate: Option<String>,
+    pub versions: Vec<String>,
+}
+
+/// Stanzas from one batched `apt-cache policy` call, keyed by the stanza
+/// header (`name` for native and `all` packages, `name:arch` otherwise).
+pub(super) fn parse_policy(text: &str) -> Result<HashMap<String, PolicyEntry>, String> {
+    let mut entries: HashMap<String, PolicyEntry> = HashMap::new();
     let mut header: Option<&str> = None;
     for line in text.lines() {
         if !line.starts_with(char::is_whitespace) && !line.is_empty() {
             let name = line
                 .strip_suffix(':')
                 .ok_or_else(|| format!("apt: unrecognized policy line {line:?}"))?;
-            if !headers.insert(name) {
+            if entries
+                .insert(name.to_owned(), PolicyEntry::default())
+                .is_some()
+            {
                 return Err(format!("apt: duplicate policy stanza for {name:?}"));
             }
             header = Some(name);
-        } else if let Some(value) = line.trim().strip_prefix("Candidate: ") {
-            let name = header.ok_or("apt: policy candidate outside a stanza")?;
-            if candidates
-                .insert(name.to_owned(), value.to_owned())
-                .is_some()
-            {
+            continue;
+        }
+        let Some(name) = header else {
+            continue;
+        };
+        let entry = entries.get_mut(name).ok_or("apt: policy stanza lost")?;
+        if let Some(value) = line.trim().strip_prefix("Candidate: ") {
+            if entry.candidate.is_some() {
                 return Err(format!("apt: duplicate policy candidate for {name:?}"));
             }
+            entry.candidate = (value != "(none)").then(|| value.to_owned());
+        } else if let Some(row) = line
+            .strip_prefix(" *** ")
+            .or_else(|| line.strip_prefix("     "))
+            && !row.starts_with(' ')
+            && let Some(version) = row.split_whitespace().next()
+        {
+            // Version rows are indented five columns (or marked ***);
+            // their source rows are indented further.
+            entry.versions.push(version.to_owned());
         }
     }
-    Ok(candidates)
+    Ok(entries)
 }

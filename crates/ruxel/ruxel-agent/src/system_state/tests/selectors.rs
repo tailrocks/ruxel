@@ -1,5 +1,6 @@
 use super::*;
 use crate::system_state::apt::AptPlan;
+use crate::system_state::apt_policy::PolicyEntry;
 
 fn state(packages: &[(&str, &str)], candidates: &[(&str, &str)]) -> SystemState {
     SystemState {
@@ -11,7 +12,17 @@ fn state(packages: &[(&str, &str)], candidates: &[(&str, &str)]) -> SystemState 
         ),
         candidates: candidates
             .iter()
-            .map(|(name, version)| ((*name).into(), (*version).into()))
+            .map(|(name, version)| {
+                let entry = if *version == "(none)" {
+                    PolicyEntry::default()
+                } else {
+                    PolicyEntry {
+                        candidate: Some((*version).into()),
+                        versions: vec![(*version).into()],
+                    }
+                };
+                ((*name).into(), entry)
+            })
             .collect(),
         native_architecture: Some("amd64".into()),
         ..SystemState::default()
@@ -101,12 +112,36 @@ fn latest_compares_one_batched_candidate_per_policy_header() {
 
 #[test]
 fn batched_policy_output_is_keyed_by_stanza() {
-    let text = "bash:\n  Installed: 5.2\n  Candidate: 5.3\n  Version table:\n *** 5.2 100\n        100 /var/lib/dpkg/status\nlibc6:i386:\n  Installed: (none)\n  Candidate: 2.39\n";
-    let candidates = parse_policy(text).expect("valid policy output");
-    assert_eq!(candidates["bash"], "5.3");
-    assert_eq!(candidates["libc6:i386"], "2.39");
+    let text = "bash:\n  Installed: 5.2\n  Candidate: 5.3\n  Version table:\n     5.3 500\n        500 http://archive.invalid noble/main amd64 Packages\n *** 5.2 100\n        100 /var/lib/dpkg/status\nlibc6:i386:\n  Installed: (none)\n  Candidate: (none)\n  Version table:\n     2.39 -1\n        -1 http://archive.invalid noble/main i386 Packages\nvirtual:\n  Installed: (none)\n  Candidate: (none)\n  Version table:\n";
+    let entries = parse_policy(text).expect("valid policy output");
+    assert_eq!(entries["bash"].candidate.as_deref(), Some("5.3"));
+    assert_eq!(entries["bash"].versions, ["5.3", "5.2"]);
+    assert_eq!(entries["libc6:i386"].candidate, None);
+    assert_eq!(entries["libc6:i386"].versions, ["2.39"]);
+    assert_eq!(entries["virtual"], PolicyEntry::default());
     assert!(parse_policy("bash:\n  Candidate: 1\nbash:\n  Candidate: 2\n").is_err());
     assert!(parse_policy("unexpected\n").is_err());
+}
+
+#[test]
+fn explicit_versions_need_their_own_version_not_a_default_candidate() {
+    let mut state = state(&[], &[]);
+    state.candidates.insert(
+        "held".into(),
+        PolicyEntry {
+            candidate: None,
+            versions: vec!["2".into()],
+        },
+    );
+    assert_eq!(plan(&mut state, &["held=2"], false).missing, ["held=2"]);
+    let names = vec!["held=3".to_string(), "unpinned".to_string()];
+    for name in names {
+        let requests = PackageRequest::parse_all(std::slice::from_ref(&name)).expect("supported");
+        assert!(
+            state.plan_packages(&requests, false, &[]).is_err(),
+            "{name}"
+        );
+    }
 }
 
 #[test]
@@ -121,7 +156,7 @@ fn unpinned_requests_without_a_candidate_are_refused() {
                 &[],
             )
             .expect_err("virtual package");
-        assert!(error.contains("no installation candidate"), "{error}");
+        assert!(error.contains("is not available"), "{error}");
     }
 }
 
@@ -179,7 +214,7 @@ fn missing_pinned_virtual_packages_are_refused() {
             &[],
         )
         .expect_err("virtual package");
-    assert!(error.contains("no installation candidate"), "{error}");
+    assert!(error.contains("is not available"), "{error}");
 }
 
 #[test]

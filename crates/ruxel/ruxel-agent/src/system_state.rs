@@ -12,7 +12,7 @@ pub(crate) use apt_request::PackageRequest;
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
-    candidates: HashMap<String, String>,
+    candidates: HashMap<String, apt_policy::PolicyEntry>,
     /// Task environment the cached candidates were observed with.
     candidate_environment: Vec<(String, String)>,
     native_architecture: Option<String>,
@@ -37,7 +37,13 @@ impl SystemState {
     pub(crate) fn with_test_packages() -> Self {
         Self {
             packages: Some(HashMap::from([("pkg:amd64".into(), "1".into())])),
-            candidates: HashMap::from([("pkg".into(), "1".into())]),
+            candidates: HashMap::from([(
+                "pkg".into(),
+                apt_policy::PolicyEntry {
+                    candidate: Some("1".into()),
+                    versions: vec!["1".into()],
+                },
+            )]),
             native_architecture: Some("amd64".into()),
             ..Self::default()
         }

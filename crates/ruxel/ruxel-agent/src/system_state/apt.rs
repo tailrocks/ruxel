@@ -1,5 +1,5 @@
 use super::SystemState;
-use super::apt_policy::{parse_dpkg_status, parse_policy};
+use super::apt_policy::{PolicyEntry, parse_dpkg_status, parse_policy};
 use super::apt_request::PackageRequest;
 use super::apt_version;
 
@@ -40,7 +40,7 @@ impl SystemState {
             self.candidates.clear();
             self.candidate_environment = environment.to_vec();
         }
-        // Candidates are needed to compare installed unpinned requests with
+        // Policy is needed to compare installed unpinned requests with
         // `latest`, and to refuse missing requests that apt could satisfy only
         // through another package (virtual) or not at all.
         let unknown: Vec<_> = requests
@@ -56,29 +56,24 @@ impl SystemState {
         let mut plan = AptPlan::default();
         for request in requests {
             let installed = self.installed(request);
+            let policy = self.candidates.get(&self.policy_header(request));
             let satisfied = match (installed, request.version()) {
-                (None, _) => false,
+                (None, _) => {
+                    Self::require_available(request, policy)?;
+                    false
+                }
                 (Some(installed), Some(version)) => apt_version::equal(installed, version),
                 (Some(installed), None) if latest => {
-                    let header = self.policy_header(request);
-                    let candidate = self.candidates.get(&header).ok_or_else(|| {
+                    let policy = policy.ok_or_else(|| {
                         format!("apt: no policy candidate for {:?}", request.selector())
                     })?;
-                    candidate == "(none)" || apt_version::equal(candidate, installed)
+                    policy
+                        .candidate
+                        .as_deref()
+                        .is_none_or(|candidate| apt_version::equal(candidate, installed))
                 }
                 (Some(_), None) => true,
             };
-            if installed.is_none()
-                && self
-                    .candidates
-                    .get(&self.policy_header(request))
-                    .is_none_or(|candidate| candidate == "(none)")
-            {
-                return Err(format!(
-                    "apt: {:?} has no installation candidate; virtual and unavailable packages are not supported, request the providing package",
-                    request.selector()
-                ));
-            }
             if satisfied {
                 let installed = installed.ok_or("apt: satisfied request is not installed")?;
                 plan.transaction.push(request.pinned(installed));
@@ -88,6 +83,29 @@ impl SystemState {
             }
         }
         Ok(plan)
+    }
+
+    /// A missing request must name a package with its own installable
+    /// version: the requested one, or a default candidate when unpinned.
+    /// Virtual packages have neither.
+    fn require_available(
+        request: &PackageRequest,
+        policy: Option<&PolicyEntry>,
+    ) -> Result<(), String> {
+        let available = policy.is_some_and(|policy| match request.version() {
+            Some(version) => policy
+                .versions
+                .iter()
+                .any(|candidate| apt_version::equal(candidate, version)),
+            None => policy.candidate.is_some(),
+        });
+        if available {
+            Ok(())
+        } else {
+            Err(format!(
+                "apt: {request} is not available; virtual and unavailable packages or versions are not supported, request the providing package"
+            ))
+        }
     }
 
     fn native_arch(&self) -> &str {
