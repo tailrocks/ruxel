@@ -1,10 +1,11 @@
 // Apt repositories with and without an architecture restriction. Without one,
 // apt fetches indexes for the host's own architectures.
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
-local native = new AptRepository { name = "native"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = key }
+local native = new debian.AptRepository { name = "native"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = key }
 
 stages {
   new Stage {
@@ -12,7 +13,7 @@ stages {
     hosts = inventory.workers
     steps {
       native
-      new AptRepository { name = "pinned"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; architectures { "arm64" }; signingKey = key }
+      new debian.AptRepository { name = "pinned"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; architectures { "arm64" }; signingKey = key }
       new Command { run { "apt-get"; "update" }; onChangeOf { native } }
     }
   }

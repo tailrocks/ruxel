@@ -1,6 +1,6 @@
 // The kubeadm join configuration of a node. It needs the CA public key hash
 // of a ready control plane, so it reads it there first.
-extends "modulepath:/ruxel/Ruxel.pkl"
+extends "modulepath:/ruxel/Core.pkl"
 
 /// The CA public key hash of a control plane, read there once its API
 /// server is ready. A stage that joins several nodes lists it once and passes

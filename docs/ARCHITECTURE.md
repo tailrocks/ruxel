@@ -21,8 +21,11 @@ complete platform coverage.
   directories. Evaluation runs on its own thread with a 64 MiB stack and a
   pklr depth limit of 256.
 - `schema/ruxel/` holds every served module: the workflow language
-  (`Workflow.pkl`, `Ruxel.pkl`, `internal/Lowering.pkl`) and the engine schema
-  (`engine/Engine.pkl`), which declares inventory, task, operation,
+  (`Core.pkl`, which `Workflow.pkl` extends and recipes and inventories
+  extend directly; the layer modules `Linux.pkl`, `Systemd.pkl` and
+  `Debian.pkl` for system-specific steps; and `internal/Lowering.pkl`) and
+  the engine schema (`engine/Engine.pkl`), which declares inventory, task,
+  operation,
   expression, and lookup types. They are compiled into the binary, which
   replaces the `Config.schemaFingerprint` placeholder in `Engine.pkl` with
   `blake3:<hash of the module tree>@<nonce>`;

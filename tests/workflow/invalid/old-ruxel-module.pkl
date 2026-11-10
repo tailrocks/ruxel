@@ -1,0 +1,7 @@
+// The split removed modulepath:/ruxel/Ruxel.pkl: Core.pkl, Linux.pkl,
+// Systemd.pkl and Debian.pkl hold its classes now.
+// expect-pklr: Import not found: modulepath:/ruxel/Ruxel.pkl
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Ruxel.pkl" as ruxel
+
+stages { new Stage { title = "t"; hosts { new ruxel.Host { name = "web"; address = "192.0.2.1" } }; steps { new Timezone { name = "UTC" } } } }

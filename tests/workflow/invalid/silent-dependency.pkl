@@ -1,8 +1,9 @@
 // expect: which never reports a change
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
-local index = new PackageIndex {}
+local index = new debian.PackageIndex {}
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   index
   new Command { run { "apt-get"; "-y"; "upgrade" }; onChangeOf { index } }

@@ -1,7 +1,10 @@
 // A local HAProxy on every node that balances the Kubernetes API across the
 // control planes. It refreshes the package index as its own step instead of
 // through the install.
-extends "modulepath:/ruxel/Ruxel.pkl"
+extends "modulepath:/ruxel/Core.pkl"
+
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "modulepath:/ruxel/Debian.pkl" as debian
 
 class ApiProxy extends Recipe {
   /// Control planes whose API servers receive the traffic. Names must differ.
@@ -12,10 +15,10 @@ class ApiProxy extends Recipe {
   function steps(): Listing<Step> =
     let (config = haproxyConfig())
     new Listing {
-      new PackageIndex {}
-      new Packages { names { "haproxy" } }
+      new debian.PackageIndex {}
+      new debian.Packages { names { "haproxy" } }
       config
-      new Service { name = "haproxy"; restartOnChangeOf { config } }
+      new systemd.Service { name = "haproxy"; restartOnChangeOf { config } }
     }
 
   function haproxyConfig(): File = new File {

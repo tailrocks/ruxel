@@ -80,7 +80,7 @@ fn copies_of_the_schema_are_refused() -> Result {
     let scratch = Scratch::new()?;
     // The committed source, copied: the fingerprint is the placeholder.
     scratch.write(
-        "copied/Ruxel.pkl",
+        "copied/Engine.pkl",
         include_str!("../../../../schema/ruxel/engine/Engine.pkl"),
     )?;
     // An export from another ruxel: a different fingerprint.
@@ -98,7 +98,7 @@ fn copies_of_the_schema_are_refused() -> Result {
         ),
     )?;
     for (import, found) in [
-        ("copied/Ruxel.pkl", "unserved"),
+        ("copied/Engine.pkl", "unserved"),
         ("stale/ruxel/engine/Engine.pkl", other.as_str()),
         (
             "edited/ruxel/engine/Engine.pkl",

@@ -66,9 +66,11 @@ secret values out of Pkl files and logs.
 ### The modules come from the binary
 
 Every `ruxel` binary serves the Pkl modules it was built with under
-`modulepath:/ruxel/`: workflows amend `modulepath:/ruxel/Workflow.pkl`, recipes
-extend `modulepath:/ruxel/Ruxel.pkl`, and configurations written against the
-engine import `modulepath:/ruxel/engine/Engine.pkl`. Configuration never
+`modulepath:/ruxel/`: workflows amend `modulepath:/ruxel/Workflow.pkl`, which
+extends `Core.pkl`, and import the layer modules (`Linux.pkl`, `Systemd.pkl`,
+`Debian.pkl`) for the system-specific steps they use; recipes and inventories
+extend `modulepath:/ruxel/Core.pkl`; configurations written against the engine
+import `modulepath:/ruxel/engine/Engine.pkl`. Configuration never
 contains a copy of a Ruxel module. `ruxel plan`, `check`, `diff` and `apply` admit only a
 configuration built from the module this process serves; they refuse one
 evaluated against any copy, even an export of the same binary, and name the

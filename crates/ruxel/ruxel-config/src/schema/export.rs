@@ -7,7 +7,7 @@ use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::path::Path;
 
-/// Write every module below `dir` (for example `dir/ruxel/Ruxel.pkl`).
+/// Write every module below `dir` (for example `dir/ruxel/Workflow.pkl`).
 ///
 /// The tree is built in a fresh staging directory inside `dir` through
 /// directory descriptors, with every open refusing symlinks, so nothing
