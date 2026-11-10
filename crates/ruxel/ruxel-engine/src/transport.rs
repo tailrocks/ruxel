@@ -31,6 +31,8 @@ struct RemoteHost {
     /// configuration change, `Match exec`, or an existing master cannot
     /// redirect the connection.
     admitted: Option<String>,
+    /// How long `ssh -G` may spend evaluating configuration.
+    admission_timeout: std::time::Duration,
     #[cfg(test)]
     test_path: Option<std::ffi::OsString>,
 }
@@ -47,6 +49,12 @@ impl RemoteHost {
             "ServerAliveInterval=15",
             "-o",
             "ServerAliveCountMax=4",
+            // No DNS search before admission and no forwards to unchecked
+            // endpoints afterwards.
+            "-o",
+            "CanonicalizeHostname=no",
+            "-o",
+            "ClearAllForwardings=yes",
         ]);
         apply_options(&mut command, &self.options);
         if let Some(address) = &self.admitted {
@@ -90,15 +98,22 @@ impl RemoteHost {
         command
             .args(["-G", "--", &self.destination])
             .stdin(Stdio::null())
-            .stderr(Stdio::null());
-        let output = command.output().await.context("ssh -G")?;
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        // ConnectTimeout does not cover configuration evaluation (Match exec).
+        let output = tokio::time::timeout(self.admission_timeout, command.output())
+            .await
+            .map_err(|_| anyhow!("refused {}: ssh -G timed out", self.destination))?
+            .context("ssh -G")?;
         if !output.status.success() {
             bail!(
                 "refused {}: ssh -G could not resolve the destination",
                 self.destination
             );
         }
-        let config = String::from_utf8(output.stdout).context("ssh -G output")?;
+        // Unrelated values such as IdentityFile paths may be non-UTF-8; the
+        // fields read below are validated strictly.
+        let config = String::from_utf8_lossy(&output.stdout);
         self.admitted = Some(admit_resolved(&config, &self.destination, policy)?);
         Ok(())
     }
@@ -145,6 +160,11 @@ fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy)
     .ok_or_else(|| {
         anyhow!("refused {destination}: hostname {hostname:?} is not a literal IP address")
     })?;
+    // The kernel connects 0.0.0.0 and :: to a local address that the deny
+    // list would not see.
+    if address.to_canonical().is_unspecified() {
+        bail!("refused {destination}: hostname {hostname:?} is an unspecified address");
+    }
     for key in ["proxyjump", "proxycommand"] {
         if value(key).is_some_and(|value| value != "none") {
             bail!("refused {destination}: {key} is set");
@@ -229,6 +249,7 @@ pub async fn connect_with(
         destination: destination.to_owned(),
         options: options.clone(),
         admitted: None,
+        admission_timeout: std::time::Duration::from_secs(15),
         #[cfg(test)]
         test_path: None,
     };

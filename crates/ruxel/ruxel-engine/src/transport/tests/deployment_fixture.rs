@@ -116,6 +116,7 @@ impl Fixture {
         ))?;
         Ok(RemoteHost {
             admitted: None,
+            admission_timeout: std::time::Duration::from_secs(5),
             destination: "fixture.invalid".into(),
             test_path: Some(path),
             options: ConnectOptions {

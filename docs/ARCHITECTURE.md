@@ -67,9 +67,12 @@ agent upload, the controller runs `ssh -G` with the connection's options and
 destination (no network contact), requires the resolved `hostname` to be a
 literal IP address with no proxy hop, and refuses it if it matches a deny entry
 compiled from `RUXEL_GUARD_DENY_FILE`. Every later SSH and SFTP invocation for
-that connection pins the admitted address with `HostName` and disables
-`ProxyJump` and `ProxyCommand`, so configuration changes or `Match exec` cannot
-redirect it. `ruxel --version` reports how many
+that connection pins the admitted address with `HostName` (`%` escaped) and
+disables `ProxyJump`, `ProxyCommand` and connection multiplexing, so
+configuration changes, `Match exec` or an existing master cannot redirect it.
+All invocations set `CanonicalizeHostname=no` and `ClearAllForwardings=yes`;
+the probe is bounded by a timeout, and unspecified addresses (`0.0.0.0`, `::`)
+are refused. `ruxel --version` reports how many
 entries were compiled. This is a deny list only: the invoking environment is
 still responsible for target admission and its own allow policy. Check and diff connect and inspect remote state. Only operate on explicitly authorized targets, and use isolated fixtures
 for development. Never commit real credentials, host identities, or sensitive

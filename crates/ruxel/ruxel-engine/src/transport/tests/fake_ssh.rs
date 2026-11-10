@@ -208,7 +208,12 @@ fn run() -> Result<u8> {
     if options.iter().any(|arg| arg == "-G") {
         assert!(remote.is_empty());
         assert!(!options.iter().any(|arg| arg.starts_with("HostName=")));
-        println!("hostname {hostname}\nproxyjump none\nproxycommand none");
+        if fixture.root.join("slow").exists() {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        }
+        let mut output = io::stdout().lock();
+        output.write_all(b"identityfile /synthetic/\xff-key\n")?;
+        writeln!(output, "hostname {hostname}\nproxyjump none\nproxycommand none")?;
         return Ok(0);
     }
     let pins: Vec<_> = options

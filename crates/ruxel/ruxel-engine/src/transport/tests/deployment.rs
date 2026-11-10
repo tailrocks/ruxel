@@ -215,3 +215,20 @@ async fn allowed_address_is_pinned(hostname: &str) -> anyhow::Result<()> {
     assert!(calls.iter().any(|event| event[0] == "launch"));
     Ok(())
 }
+
+#[tokio::test]
+async fn stalled_admission_is_bounded() -> anyhow::Result<()> {
+    let started = std::time::Instant::now();
+    refused_before_contact_marker("slow", "ssh -G timed out").await?;
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    Ok(())
+}
+
+async fn refused_before_contact_marker(marker: &str, reason: &str) -> anyhow::Result<()> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join(marker), b"")?;
+    let error = fixture.connect().await.unwrap_err().to_string();
+    assert!(error.contains(reason), "{error}");
+    assert!(!fixture.calls()?.iter().any(|event| event[0] != "ssh"));
+    Ok(())
+}

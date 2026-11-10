@@ -35,7 +35,7 @@ import "schema/Ruxel.pkl" as R
 
 config = new R.Config {
   inventory {
-    hosts { ["fixture"] = new R.Host { address = "localhost" } }
+    hosts { ["fixture"] = new R.Host { address = "127.0.0.1" } }
   }
   plays {
     new R.Play {
