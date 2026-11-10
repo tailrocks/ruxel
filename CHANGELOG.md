@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Strict guard and SSH configuration types and retained evaluated input for future admission.
 - Embed the canonical Pkl schema for configuration tooling.
 - Engine secret wrappers, value redaction, and secret-aware ledger keys.
 - JSON, YAML-compatible JSON, and TOML rendering for resolved configuration values.

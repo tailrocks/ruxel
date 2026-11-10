@@ -128,13 +128,15 @@ fn scan_mapped() {
 }
 #[test]
 fn scan_catchalls() {
-    assert!(
-        deny_hits(
-            &policy(),
-            &["0.0.0.0/0", "::/0", "kubectl get node x", "1.2.3"]
-        )
-        .is_empty()
+    assert_eq!(
+        deny_hits(&policy(), &["0.0.0.0/0", "::/0"]),
+        vec![
+            ("0.0.0.0/0".into(), "deny 192.0.2.7/32".into()),
+            ("::/0".into(), "deny 192.0.2.7/32".into()),
+            ("::/0".into(), "deny 2001:db8:dead::/64".into()),
+        ]
     );
+    assert!(deny_hits(&policy(), &["kubectl get node x", "1.2.3"]).is_empty());
 }
 #[test]
 fn ip_type() {

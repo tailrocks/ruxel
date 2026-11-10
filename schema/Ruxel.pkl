@@ -34,7 +34,9 @@ typealias Port = Int(this >= 1 && this <= 65535)|Expr
 class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
 class Group { hosts: Listing<String>; children: Listing<String>; vars: Mapping<String, Expr> }
 class Inventory { hosts: Mapping<String, Host>; groups: Mapping<String, Group> }
-class Config { inventory: Inventory; plays: Listing<Play> }
+class Ssh { user: Username = "root"; identityFile: String(!this.isEmpty); knownHostsFile: String(!this.isEmpty) }
+class Guard { allow: Listing<String>; deny: Listing<String> }
+class Config { inventory: Inventory; plays: Listing<Play>; ssh: Ssh? = null }
 class Play {
   name: String
   targets: Listing<String>
