@@ -215,14 +215,20 @@ fn run() -> Result<u8> {
         .windows(2)
         .filter(|pair| pair[0] == "-o")
         .map(|pair| pair[1].as_str())
-        .filter(|option| option.starts_with("HostName=") || option.starts_with("Proxy"))
+        .filter(|option| {
+            ["HostName=", "Proxy", "Control"]
+                .iter()
+                .any(|prefix| option.starts_with(prefix))
+        })
         .collect();
     assert_eq!(
         pins,
         [
-            format!("HostName={hostname}").as_str(),
+            format!("HostName={}", hostname.replace('%', "%%")).as_str(),
             "ProxyJump=none",
-            "ProxyCommand=none"
+            "ProxyCommand=none",
+            "ControlMaster=no",
+            "ControlPath=none"
         ]
     );
     if options.iter().any(|arg| arg == "-s") {

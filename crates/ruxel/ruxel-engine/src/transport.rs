@@ -27,8 +27,9 @@ struct RemoteHost {
     destination: String,
     options: ConnectOptions,
     /// The literal address admitted by `admit`. Every later invocation pins
-    /// it, with proxies disabled, so a configuration change or `Match exec`
-    /// between invocations cannot redirect the connection.
+    /// it, with proxies and connection multiplexing disabled, so a
+    /// configuration change, `Match exec`, or an existing master cannot
+    /// redirect the connection.
     admitted: Option<String>,
     #[cfg(test)]
     test_path: Option<std::ffi::OsString>,
@@ -49,12 +50,21 @@ impl RemoteHost {
         ]);
         apply_options(&mut command, &self.options);
         if let Some(address) = &self.admitted {
-            command.arg("-o").arg(format!("HostName={address}")).args([
-                "-o",
-                "ProxyJump=none",
-                "-o",
-                "ProxyCommand=none",
-            ]);
+            // HostName expands % tokens; %% keeps a scope suffix literal.
+            // An inherited multiplexing master could reach another endpoint.
+            command
+                .arg("-o")
+                .arg(format!("HostName={}", address.replace('%', "%%")))
+                .args([
+                    "-o",
+                    "ProxyJump=none",
+                    "-o",
+                    "ProxyCommand=none",
+                    "-o",
+                    "ControlMaster=no",
+                    "-o",
+                    "ControlPath=none",
+                ]);
         }
         #[cfg(test)]
         if let Some(path) = &self.test_path {

@@ -194,8 +194,14 @@ async fn non_literal_hostname_is_refused_before_upload() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn allowed_address_is_resolved_before_upload() -> anyhow::Result<()> {
+    allowed_address_is_pinned("192.0.2.67").await?;
+    // The fixture asserts the scope reaches SSH as a literal (%% escaped).
+    allowed_address_is_pinned("fe80::1%eth0").await
+}
+
+async fn allowed_address_is_pinned(hostname: &str) -> anyhow::Result<()> {
     let fixture = Fixture::new()?;
-    std::fs::write(fixture.root.join("hostname"), "192.0.2.67")?;
+    std::fs::write(fixture.root.join("hostname"), hostname)?;
     let (connection, _) = fixture.connect().await?;
     connection.shutdown().await?;
     let calls = fixture.calls()?;
