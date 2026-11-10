@@ -1,12 +1,29 @@
 use std::collections::HashMap;
 
+mod apt;
+mod apt_policy;
+mod apt_request;
+mod apt_version;
+#[cfg(test)]
+use apt_policy::{parse_dpkg_status, parse_policy};
+pub(crate) use apt_request::PackageRequest;
+
 #[derive(Default)]
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
-    candidates: HashMap<String, String>,
+    candidates: HashMap<String, apt_policy::PolicyEntry>,
+    /// Task environment the cached candidates were observed with.
+    candidate_environment: Vec<(String, String)>,
+    native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
+    /// Synthetic amd64 dpkg status database that replaces the host's.
+    /// Replacement `apt-cache` executable.
+    #[cfg(test)]
+    apt_cache: Option<std::path::PathBuf>,
+    #[cfg(test)]
+    dpkg_status: Option<std::sync::Arc<std::sync::Mutex<String>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -19,8 +36,23 @@ impl SystemState {
     #[cfg(test)]
     pub(crate) fn with_test_packages() -> Self {
         Self {
-            packages: Some(HashMap::from([("pkg".into(), "1".into())])),
-            candidates: HashMap::from([("pkg".into(), "1".into())]),
+            packages: Some(HashMap::from([("pkg:amd64".into(), "1".into())])),
+            candidates: HashMap::from([(
+                "pkg".into(),
+                apt_policy::PolicyEntry {
+                    candidate: Some("1".into()),
+                    versions: vec!["1".into()],
+                },
+            )]),
+            native_architecture: Some("amd64".into()),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dpkg_status(status: std::sync::Arc<std::sync::Mutex<String>>) -> Self {
+        Self {
+            dpkg_status: Some(status),
             ..Self::default()
         }
     }
@@ -28,35 +60,6 @@ impl SystemState {
     #[cfg(test)]
     pub(crate) fn test_packages_invalidated(&self) -> bool {
         self.packages.is_none() && self.candidates.is_empty()
-    }
-
-    pub(crate) fn package_version(&mut self, name: &str) -> Option<String> {
-        self.ensure_packages().ok()?;
-        self.packages.as_ref()?.get(name).cloned()
-    }
-
-    pub(crate) fn missing_packages(
-        &mut self,
-        names: &[String],
-        latest: bool,
-    ) -> Result<Vec<String>, String> {
-        self.ensure_packages()?;
-        if latest {
-            self.ensure_candidates(names)?;
-        }
-        let packages = self.packages.as_ref().ok_or("packages not initialized")?;
-        Ok(names
-            .iter()
-            .filter(|name| match packages.get(*name) {
-                None => true,
-                Some(installed) if latest => self
-                    .candidates
-                    .get(*name)
-                    .is_some_and(|candidate| candidate != installed && candidate != "(none)"),
-                Some(_) => false,
-            })
-            .cloned()
-            .collect())
     }
 
     pub(crate) fn unit(&mut self, name: &str) -> Result<UnitState, String> {
@@ -74,60 +77,8 @@ impl SystemState {
             .unwrap_or_default())
     }
 
-    pub(crate) fn invalidate_packages(&mut self) {
-        self.packages = None;
-        self.candidates.clear();
-    }
-
     pub(crate) fn invalidate_units(&mut self) {
         self.units = None;
-    }
-
-    fn ensure_packages(&mut self) -> Result<(), String> {
-        self.ensure_packages_with(|| {
-            std::fs::read_to_string("/var/lib/dpkg/status")
-                .map_err(|error| format!("read dpkg status: {error}"))
-        })
-    }
-
-    fn ensure_packages_with(
-        &mut self,
-        load: impl FnOnce() -> Result<String, String>,
-    ) -> Result<(), String> {
-        if self.packages.is_some() {
-            return Ok(());
-        }
-        let text = load()?;
-        self.packages = Some(parse_dpkg_status(&text));
-        #[cfg(test)]
-        {
-            self.package_builds += 1;
-        }
-        Ok(())
-    }
-
-    fn ensure_candidates(&mut self, names: &[String]) -> Result<(), String> {
-        let missing: Vec<_> = names
-            .iter()
-            .filter(|name| !self.candidates.contains_key(*name))
-            .collect();
-        if missing.is_empty() {
-            return Ok(());
-        }
-        let output = std::process::Command::new("apt-cache")
-            .arg("policy")
-            .args(missing)
-            .output()
-            .map_err(|error| format!("apt-cache policy: {error}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "apt-cache policy failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        self.candidates
-            .extend(parse_apt_policy(&String::from_utf8_lossy(&output.stdout)));
-        Ok(())
     }
 
     fn ensure_units(&mut self) -> Result<(), String> {
@@ -165,41 +116,6 @@ fn systemctl(args: &[&str]) -> Result<String, String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
-    text.split("\n\n")
-        .filter_map(|paragraph| {
-            let mut name = None;
-            let mut version = None;
-            let mut installed = false;
-            for line in paragraph.lines() {
-                if let Some(value) = line.strip_prefix("Package: ") {
-                    name = Some(value.to_string());
-                } else if let Some(value) = line.strip_prefix("Version: ") {
-                    version = Some(value.to_string());
-                } else if line == "Status: install ok installed" {
-                    installed = true;
-                }
-            }
-            installed.then(|| Some((name?, version?))).flatten()
-        })
-        .collect()
-}
-
-fn parse_apt_policy(text: &str) -> HashMap<String, String> {
-    let mut result = HashMap::new();
-    let mut package = None;
-    for line in text.lines() {
-        if !line.starts_with(char::is_whitespace) && line.ends_with(':') {
-            package = Some(line.trim_end_matches(':').to_string());
-        } else if let Some(candidate) = line.trim().strip_prefix("Candidate: ")
-            && let Some(package) = &package
-        {
-            result.insert(package.clone(), candidate.to_string());
-        }
-    }
-    result
 }
 
 fn parse_systemd(units: &str, files: &str) -> HashMap<String, UnitState> {

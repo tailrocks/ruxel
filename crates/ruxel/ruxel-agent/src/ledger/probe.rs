@@ -40,8 +40,12 @@ pub(super) fn probe_for(
                 return None;
             }
             let mut probes = Vec::new();
-            for name in names {
+            for request in crate::system_state::PackageRequest::parse_all(&names).ok()? {
+                let name = request.selector();
                 let version = system_state.package_version(&name)?;
+                if request.version().is_some_and(|pin| pin != version) {
+                    return None;
+                }
                 probes.push(Probe::Pkg { name, version });
             }
             Some(probes)
