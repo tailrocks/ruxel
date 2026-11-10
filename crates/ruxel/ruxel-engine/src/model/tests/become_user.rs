@@ -34,7 +34,9 @@ fn become_user_is_validated_in_every_scope_before_execution() -> Result<()> {
         "rescue",
         "always",
     ] {
-        for user in ["", " ", "bad user", "-root", "root\n", "root\0", "a/b", "é"] {
+        for user in [
+            "", " ", "bad user", "-root", "root\n", "root\0", "a/b", "é", "0", "1001",
+        ] {
             let error =
                 validate_config(&in_scope(scope, json!(user))).expect_err("invalid become user");
             assert!(
@@ -47,6 +49,7 @@ fn become_user_is_validated_in_every_scope_before_execution() -> Result<()> {
             json!("root"),
             json!("_service"),
             json!("svc-user.1"),
+            json!("1001a"),
         ] {
             validate_config(&in_scope(scope, user))?;
         }

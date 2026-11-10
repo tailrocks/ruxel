@@ -19,7 +19,9 @@ class Lookup {
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
-typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")))
+/// An account name. All-digit names are refused: `runuser` and `getent passwd` treat a
+/// numeric key as a UID, so such a name could select a different account.
+typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")), !matches(Regex("^[0-9]+$")))
 typealias Text = String|Expr
 typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr

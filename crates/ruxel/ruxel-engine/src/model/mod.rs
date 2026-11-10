@@ -155,10 +155,13 @@ fn environment(values: &BTreeMap<String, Value>) -> Result<()> {
     );
     expression_map(values)
 }
+/// All-digit names are refused: `runuser` and `getent passwd` treat a numeric
+/// key as a UID, so such a name could select a different account.
 fn validate_become_user(user: Option<&str>) -> Result<()> {
     ensure!(
         user.is_none_or(|user| !user.is_empty()
             && !user.starts_with('-')
+            && !user.bytes().all(|b| b.is_ascii_digit())
             && user
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))),
