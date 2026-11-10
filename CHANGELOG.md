@@ -27,6 +27,7 @@ All notable changes to this project are documented here. The format follows
 - The engine schema moves to `modulepath:/ruxel/engine/Engine.pkl` (module `Engine`); `modulepath:/ruxel/Ruxel.pkl` is now the workflow language. Configuration that imports the engine schema must change its import. The schema fingerprint covers every served module, and `ruxel schema export` writes them all.
 - Evaluation allows an expression depth of 256 instead of pklr's default of 32.
 - Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module and resource globs (`import*`, `read*`) are refused.
+- Command and shell tasks that run invalidate the agent's package and unit snapshots, so a later apt or systemd task, or its ledger entry, never trusts state read before the command.
 - Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.
