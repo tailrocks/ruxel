@@ -1,3 +1,4 @@
 [env]
 PKG_CONFIG = { value = "tools/pkg-config-libblkid", relative = true }
 C_INCLUDE_PATH = { value = ".cache/native/include", relative = true }
+BLKID_STATIC = "1"

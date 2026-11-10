@@ -93,7 +93,26 @@ impl Guard {
         literals: &[&str],
         mut run: impl FnMut(&[OsString]) -> Result<String, String>,
     ) -> Result<Vec<GuardedTarget>, Refusals> {
-        let mut refusals = Vec::new();
+        let mut refusals: Vec<_> = hosts
+            .iter()
+            .filter_map(|spec| {
+                self.policy.decide(spec.address).err().map(|rule| Refusal {
+                    host: spec.name.clone(),
+                    resolved: spec.address.to_string(),
+                    rule,
+                })
+            })
+            .collect();
+        refusals.extend(scan::deny_hits(&self.policy, literals).into_iter().map(
+            |(literal, rule)| Refusal {
+                host: "literal".into(),
+                resolved: literal,
+                rule,
+            },
+        ));
+        if !refusals.is_empty() {
+            return Err(Refusals(refusals));
+        }
         let mut targets = Vec::new();
         let mux_dir = crate::mux::prepare(&self.mux_dir).map_err(|rule| {
             Refusals(vec![Refusal {
@@ -103,7 +122,7 @@ impl Guard {
             }])
         })?;
         for spec in hosts {
-            let result = self.policy.decide(spec.address).and_then(|()| {
+            let result = (|| {
                 resolve::validate_paths(spec)?;
                 crate::trusted_path::identity(&spec.identity_file)?;
                 crate::trusted_path::known_hosts(&spec.known_hosts_file)?;
@@ -126,7 +145,7 @@ impl Guard {
                 let args = resolve::build_args(spec, &path, ArgsMode::Normal);
                 resolve::check_ssh_g(&run(&args)?, spec)?;
                 Ok(path)
-            });
+            })();
             match result {
                 Ok(control_path) => targets.push(GuardedTarget {
                     spec: HostSpec {
@@ -146,13 +165,6 @@ impl Guard {
                 }),
             }
         }
-        refusals.extend(scan::deny_hits(&self.policy, literals).into_iter().map(
-            |(literal, rule)| Refusal {
-                host: "literal".into(),
-                resolved: literal,
-                rule,
-            },
-        ));
         if refusals.is_empty() {
             Ok(targets)
         } else {
@@ -193,12 +205,62 @@ mod tests {
         };
         let result = guard.admit_with(&[spec("192.0.2.10"), spec("198.51.100.10")], &[], simulate);
         assert!(result.is_err());
-        assert_eq!(calls.get(), 1);
+        assert_eq!(calls.get(), 0);
+        assert!(!dir.exists());
+        assert!(!root.join("known").exists());
         let result = guard.admit_with(&[spec("192.0.2.10")], &[], simulate);
         assert_eq!(result.unwrap().len(), 1);
         std::fs::remove_dir(dir).unwrap();
         std::fs::remove_file(root.join("known")).unwrap();
         std::fs::remove_file(root.join("identity")).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn all_policy_refusals_precede_admission_effects() {
+        let root = crate::mux::test_directory().unwrap();
+        let dir = root.join("mux");
+        let guard = Guard::new(
+            Policy::new(&["192.0.2.0/24".into()], &["198.51.100.0/24".into()]).unwrap(),
+            dir.clone(),
+        );
+        let spec = |address: &str| HostSpec {
+            name: address.into(),
+            address: address.parse().unwrap(),
+            port: 22,
+            user: "test".into(),
+            identity_file: root.join("missing-identity"),
+            known_hosts_file: root.join("known"),
+        };
+        let calls = Cell::new(0);
+        let result = guard.admit_with(
+            &[
+                spec("192.0.2.10"),
+                spec("198.51.100.10"),
+                spec("203.0.113.10"),
+            ],
+            &["198.51.100.20"],
+            |_| {
+                calls.set(calls.get() + 1);
+                Err("unexpected".into())
+            },
+        );
+        let refusals = result.unwrap_err().0;
+        assert_eq!(refusals.len(), 3);
+        assert_eq!(refusals[0].resolved, "198.51.100.10");
+        assert_eq!(refusals[1].resolved, "203.0.113.10");
+        assert_eq!(refusals[2].resolved, "198.51.100.20");
+        assert_eq!(calls.get(), 0);
+        assert!(!dir.exists());
+        assert!(!root.join("known").exists());
+        let result = guard.admit_with(&[spec("192.0.2.10")], &["198.51.100.20"], |_| {
+            calls.set(calls.get() + 1);
+            Err("unexpected".into())
+        });
+        assert_eq!(result.unwrap_err().0[0].host, "literal");
+        assert_eq!(calls.get(), 0);
+        assert!(!dir.exists());
+        assert!(!root.join("known").exists());
         std::fs::remove_dir(root).unwrap();
     }
 

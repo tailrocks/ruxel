@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -7,11 +8,13 @@ use std::collections::BTreeMap;
 pub(super) struct Config {
     pub(super) inventory: Inventory,
     pub(super) plays: Vec<Play>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) ssh: Option<ruxel_config::model::Ssh>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Inventory {
-    pub(super) hosts: BTreeMap<String, Host>,
+    pub(super) hosts: IndexMap<String, Host>,
     #[serde(default)]
     pub(super) groups: BTreeMap<String, Group>,
 }
