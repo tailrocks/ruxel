@@ -11,9 +11,12 @@ const RUNUSER: &str = "/usr/sbin/runuser";
 /// linked, so they use the host's NSS stack (files, SSSD, LDAP), which the
 /// static agent cannot load.
 const HOST_IDENTITY: IdentityLookup<'static> = IdentityLookup {
+    timeout: "/usr/bin/timeout",
     getent: "/usr/bin/getent",
     id: "/usr/bin/id",
 };
+/// Seconds the in-context NSS lookup may take before the task fails.
+const IDENTITY_TIMEOUT_SECS: u8 = 10;
 const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
 const READY: &[u8] = b"RUXEL_ENV_READY\n";
 // read consumes exactly one line, leaving the rest of stdin for the workload.
@@ -151,6 +154,7 @@ fn untrusted_loader_environment(key: &str) -> bool {
 
 /// Programs run inside the switched context to read the account's identity.
 pub(super) struct IdentityLookup<'a> {
+    pub timeout: &'a str,
     pub getent: &'a str,
     pub id: &'a str,
 }
@@ -168,14 +172,16 @@ pub(super) fn valid_become_user(user: &str) -> bool {
 }
 
 /// Shell code, run as the switched user, that resolves the account by name
-/// through the host NSS stack, proves it is the account `runuser` switched to
+/// through the host NSS stack within a bounded time, proves it is the account `runuser` switched to
 /// (its UID equals `id -u`), and exports its HOME, SHELL, USER and LOGNAME.
 fn identity_script(user: &str, lookup: &IdentityLookup<'_>) -> Result<String, String> {
     let quoted = |value: &str| (!value.contains(['\'', '\0'])).then(|| format!("'{value}'"));
+    let timeout = quoted(lookup.timeout).ok_or("invalid identity lookup program")?;
     let getent = quoted(lookup.getent).ok_or("invalid identity lookup program")?;
     let id = quoted(lookup.id).ok_or("invalid identity lookup program")?;
     Ok(format!(
-        "RUXEL_ID_RECORD=$({getent} passwd -- '{user}') || exit 125; \
+        "RUXEL_ID_RECORD=$({timeout} {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}') \
+         || exit 125; \
          RUXEL_ID_UID=$({id} -u) || exit 125; \
          RUXEL_ID_NL=$(printf '\\nx'); RUXEL_ID_NL=${{RUXEL_ID_NL%x}}; \
          case $RUXEL_ID_RECORD in *\"$RUXEL_ID_NL\"*) exit 125;; esac; \

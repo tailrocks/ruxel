@@ -19,9 +19,10 @@ class Lookup {
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
 typealias Scalar = String|Boolean|Int|Float
-/// An account name. All-digit names are refused: `runuser` and `getent passwd` treat a
-/// numeric key as a UID, so such a name could select a different account.
-typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")), !matches(Regex("^[0-9]+$")))
+typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")))
+/// A become account name. All-digit names are refused: `runuser` and `getent passwd`
+/// treat a numeric key as a UID, so such a name could select a different account.
+typealias BecomeUser = Username(!matches(Regex("^[0-9]+$")))
 typealias Text = String|Expr
 typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
@@ -45,7 +46,7 @@ class Play {
   handlers: Listing<Task>
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
-  becomeUser: Username? = null
+  becomeUser: BecomeUser? = null
 }
 class Task {
   name: String
@@ -60,7 +61,7 @@ class Task {
   delegateTo: Text? = null
   delegateAllow: Listing<String>?(this == null || delegateTo != null) = null
   delegateLocalhost: Boolean?(this == null || delegateTo != null) = null
-  becomeUser: Username? = null
+  becomeUser: BecomeUser? = null
   vars: Mapping<String, Expr>
   environment: Mapping<String, Expr>
   retries: Int?(this == null || this >= 0) = null
