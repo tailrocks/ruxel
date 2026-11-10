@@ -67,7 +67,7 @@ class Task {
   notify: Listing<String>
   tags: Listing<String>
   delegateTo: Text? = null
-  delegateAllow: Listing<String>?(this == null || delegateTo != null) = null
+  delegateAllow: Listing<String>?(this == null || delegateTo != null)
   delegateLocalhost: Boolean?(this == null || delegateTo != null) = null
   becomeUser: BecomeUser? = null
   vars: Mapping<String, Expr>
@@ -354,7 +354,7 @@ class Template {
 class Assert {
   fixed kind = "assert"
   fail_msg: Text? = null
-  that: Boolean|Listing<Boolean|Expr>|Expr
+  that: Boolean|*Listing<Boolean|Expr>(!this.isEmpty)|Expr
 }
 
 class Debug {

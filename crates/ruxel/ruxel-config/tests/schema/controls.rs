@@ -185,3 +185,35 @@ fn blocks_reject_result_controls() -> Result {
     ))?;
     Ok(())
 }
+
+/// `that { ... }` amends Assert's `*Listing` default; `that` stays required.
+#[test]
+fn assert_that_accepts_a_listing_body() -> Result {
+    let assert = evaluate("new R.Assert { that { true; false } }")?;
+    assert_eq!(assert["that"], serde_json::json!([true, false]));
+    assert!(evaluate("new R.Assert {}").is_err());
+    assert!(evaluate("new R.Assert { that {} }").is_err());
+    Ok(())
+}
+
+/// `delegateAllow { ... }` amends a `Listing`: the property has no explicit
+/// `= null`, which pkl would amend as a `Dynamic`, yet it stays null when unset.
+#[test]
+fn delegate_allow_accepts_a_listing_body() -> Result {
+    let task = evaluate(
+        r#"new R.Task { name = "t"; operation = new R.Debug {}; delegateTo = "h"; delegateAllow { "a" } }"#,
+    )?;
+    assert_eq!(task["delegateAllow"], serde_json::json!(["a"]));
+    let unset = evaluate(r#"new R.Task { name = "t"; operation = new R.Debug {} }"#)?;
+    assert!(
+        unset
+            .get("delegateAllow")
+            .is_none_or(serde_json::Value::is_null),
+        "{unset}"
+    );
+    assert!(
+        evaluate(r#"new R.Task { name = "t"; operation = new R.Debug {}; delegateAllow { "a" } }"#)
+            .is_err()
+    );
+    Ok(())
+}
