@@ -167,6 +167,14 @@ pub(crate) fn execute(
             "module {module:?} is not implemented in this agent build"
         )),
     };
+    // A command or shell task can install packages or start, stop, enable
+    // and disable units without the agent seeing it. Later apt and systemd
+    // tasks, and the ledger probes that let them skip, must read the host
+    // again instead of trusting the snapshot taken before it ran.
+    if matches!(module, "command" | "shell") && !ctx.check_mode {
+        system_state.invalidate_packages();
+        system_state.invalidate_units();
+    }
     match result {
         Ok(value) => Outcome::from_result(value),
         Err(msg) => Outcome::from_result(json!({
@@ -374,3 +382,7 @@ mod security_tests;
 #[cfg(test)]
 #[path = "tests/systemd_wire.rs"]
 mod systemd_wire_tests;
+
+#[cfg(test)]
+#[path = "tests/state_invalidation.rs"]
+mod state_invalidation_tests;

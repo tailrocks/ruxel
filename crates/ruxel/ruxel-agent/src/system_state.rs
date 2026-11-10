@@ -62,6 +62,25 @@ impl SystemState {
         self.packages.is_none() && self.candidates.is_empty()
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_test_units() -> Self {
+        Self {
+            units: Some(HashMap::from([(
+                "synthetic.service".into(),
+                UnitState {
+                    active: true,
+                    enabled: true,
+                },
+            )])),
+            ..Self::with_test_packages()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_units_invalidated(&self) -> bool {
+        self.units.is_none()
+    }
+
     pub(crate) fn unit(&mut self, name: &str) -> Result<UnitState, String> {
         self.ensure_units()?;
         let units = self.units.as_ref().ok_or("units not initialized")?;
