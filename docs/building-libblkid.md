@@ -95,6 +95,14 @@ cache paths and is prepended to the ordinary search path, preserving other
 packages' discovery. Native compiler/linker flags quote the complete path,
 including apostrophes. Supplied cross sysroots are used without a native build.
 
+When a build script calls the wrapper, `OUT_DIR` is set. The wrapper then
+copies `libblkid.a`, `blkid.h` and rewritten metadata into
+`$OUT_DIR/libblkid-native` and returns that location instead. The link search
+path in the build-script output then names only files inside the build
+script's own output directory. Build caches such as mbx store and restore that
+directory with the output. A path into the platform cache would be missing on
+a machine that restored the cached output without building the native cache.
+
 Upstream Autoconf rejects some characters in its working directory. Compilation
 therefore runs in a disposable directory below `/tmp`; the trap removes it after
 success or failure. The extracted source tree is moved into the cache after a

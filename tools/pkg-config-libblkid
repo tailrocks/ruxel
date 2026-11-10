@@ -30,6 +30,32 @@ trap 'rm -f "$include.tmp.$$"' EXIT
 ln -s "$sysroot/usr/include" "$include.tmp.$$"
 mv -f -T "$include.tmp.$$" "$include"
 trap - EXIT
-export PKG_CONFIG_PATH="$sysroot/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+pkgconfig_dir="$sysroot/usr/lib/pkgconfig"
+# Inside a build script, copy the static library into its OUT_DIR so the emitted
+# link search path names only files that build caches store and restore with
+# the build-script output. A path into the shared native cache would be stale
+# on a machine that restored the output without building that cache.
+if test -n "${OUT_DIR:-}"; then
+    local_root="$OUT_DIR/libblkid-native"
+    staging="$local_root.tmp.$$"
+    trap 'rm -rf "$staging"' EXIT
+    rm -rf "$staging"
+    mkdir -p "$staging/sysroot/usr/lib/pkgconfig" "$staging/sysroot/usr/include/blkid"
+    cp "$sysroot/usr/lib/libblkid.a" "$staging/sysroot/usr/lib/"
+    cp "$sysroot/usr/include/blkid/blkid.h" "$staging/sysroot/usr/include/blkid/"
+    OLD="$sysroot" NEW="$local_root/sysroot" awk '{
+        out = ""
+        while ((i = index($0, ENVIRON["OLD"])) > 0) {
+            out = out substr($0, 1, i - 1) ENVIRON["NEW"]
+            $0 = substr($0, i + length(ENVIRON["OLD"]))
+        }
+        print out $0
+    }' "$pkgconfig_dir/blkid.pc" >"$staging/sysroot/usr/lib/pkgconfig/blkid.pc"
+    rm -rf "$local_root"
+    mv "$staging" "$local_root"
+    trap - EXIT
+    pkgconfig_dir="$local_root/sysroot/usr/lib/pkgconfig"
+fi
+export PKG_CONFIG_PATH="$pkgconfig_dir${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 "$real_pkg_config" --exact-version=2.41.6 blkid
 exec "$real_pkg_config" "$@"
