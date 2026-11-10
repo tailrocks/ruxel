@@ -32,6 +32,7 @@ fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
         "CanonicalizeHostname=no",
         "ClearAllForwardings=yes",
         "PermitLocalCommand=no",
+        "KnownHostsCommand=none",
     ] {
         assert!(args.iter().any(|arg| arg == option), "{option}");
     }

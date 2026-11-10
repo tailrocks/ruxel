@@ -50,14 +50,16 @@ impl RemoteHost {
             "ServerAliveInterval=15",
             "-o",
             "ServerAliveCountMax=4",
-            // No DNS search before admission, and no forwards or local
-            // commands reaching unchecked endpoints afterwards.
+            // No DNS search before admission, and no forwards, local
+            // commands or known-hosts helpers reaching unchecked endpoints.
             "-o",
             "CanonicalizeHostname=no",
             "-o",
             "ClearAllForwardings=yes",
             "-o",
             "PermitLocalCommand=no",
+            "-o",
+            "KnownHostsCommand=none",
         ]);
         apply_options(&mut command, &self.options);
         if let Some(address) = &self.admitted {

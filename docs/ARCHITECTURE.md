@@ -64,14 +64,15 @@ prove all providers or remote platforms are complete.
 
 SSH uses strict host-key checking by default. Before any remote connection or
 agent upload, the controller runs `ssh -G` with the connection's options and
-destination (no network contact), requires the resolved `hostname` to be a
+destination (no SSH connection; OpenSSH still runs any `Match exec` commands in
+the operator's configuration, which the deny list does not govern), requires the resolved `hostname` to be a
 literal IP address with no proxy hop, and refuses it if it matches a deny entry
 compiled from `RUXEL_GUARD_DENY_FILE`. Every later SSH and SFTP invocation for
 that connection pins the admitted address with `HostName` (`%` escaped) and
 disables `ProxyJump`, `ProxyCommand` and connection multiplexing, so
 configuration changes, `Match exec` or an existing master cannot redirect it.
-All invocations set `CanonicalizeHostname=no`, `ClearAllForwardings=yes` and
-`PermitLocalCommand=no`; the probe runs in its own process group, bounded by a
+All invocations set `CanonicalizeHostname=no`, `ClearAllForwardings=yes`,
+`PermitLocalCommand=no` and `KnownHostsCommand=none`; the probe runs in its own process group, bounded by a
 timeout that kills the group, and unspecified addresses (`0.0.0.0`, `::`) are
 refused. `ruxel --version` reports how many
 entries were compiled. This is a deny list only: the invoking environment is

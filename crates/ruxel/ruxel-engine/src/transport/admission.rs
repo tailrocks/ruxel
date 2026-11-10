@@ -23,9 +23,11 @@ pub(super) fn pinned_options(address: &str) -> [String; 10] {
 }
 
 impl RemoteHost {
-    /// Resolve the destination with `ssh -G`, which reads configuration and
-    /// makes no network contact, and refuse it unless it names a literal IP
-    /// outside every deny entry with no proxy hop.
+    /// Resolve the destination with `ssh -G`, which evaluates configuration
+    /// without connecting, and refuse it unless it names a literal IP outside
+    /// every deny entry with no proxy hop. OpenSSH still runs `Match exec`
+    /// commands from the operator's configuration while evaluating it; those
+    /// are the operator's code and are not governed by the deny list.
     pub(super) async fn admit(&mut self, policy: &ruxel_guard::Policy) -> Result<()> {
         let mut command = self.options();
         command
