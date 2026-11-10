@@ -2,22 +2,22 @@ use std::collections::HashMap;
 
 mod apt;
 mod apt_policy;
+mod apt_request;
 #[cfg(test)]
-use apt_policy::{parse_dpkg_status, policy_state};
-
-type PolicyRecord = (String, Option<String>, Option<String>);
+use apt_policy::{parse_dpkg_status, parse_policy};
+pub(crate) use apt_request::PackageRequest;
 
 #[derive(Default)]
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
     candidates: HashMap<String, String>,
-    selector_installed: HashMap<String, Option<String>>,
-    selector_identity: HashMap<String, String>,
-    glob_policy: HashMap<String, Vec<PolicyRecord>>,
     native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
+    /// Synthetic amd64 dpkg status database that replaces the host's.
+    #[cfg(test)]
+    dpkg_status: Option<std::sync::Arc<std::sync::Mutex<String>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -30,8 +30,17 @@ impl SystemState {
     #[cfg(test)]
     pub(crate) fn with_test_packages() -> Self {
         Self {
-            packages: Some(HashMap::from([("pkg".into(), "1".into())])),
+            packages: Some(HashMap::from([("pkg:amd64".into(), "1".into())])),
             candidates: HashMap::from([("pkg".into(), "1".into())]),
+            native_architecture: Some("amd64".into()),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dpkg_status(status: std::sync::Arc<std::sync::Mutex<String>>) -> Self {
+        Self {
+            dpkg_status: Some(status),
             ..Self::default()
         }
     }

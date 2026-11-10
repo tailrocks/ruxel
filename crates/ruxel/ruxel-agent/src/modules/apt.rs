@@ -1,5 +1,5 @@
 use super::{ExecContext, bool_param, params_object, str_param};
-use crate::system_state::SystemState;
+use crate::system_state::{PackageRequest, SystemState};
 use serde_json::{Map, Value, json};
 
 type CommandResult = Result<(String, i32, String), String>;
@@ -22,7 +22,7 @@ fn run_with(
     let update_cache = bool_param(obj, "update_cache", false);
     let upgrade = str_param(obj, "upgrade");
     let autoremove = bool_param(obj, "autoremove", false);
-    let names = package_names(obj)?;
+    let requests = PackageRequest::parse_all(&package_names(obj)?)?;
     let state = str_param(obj, "state").unwrap_or("present");
     let mut result = json!({"changed": false});
     let mut changed = false;
@@ -59,8 +59,16 @@ fn run_with(
         changed |= maintenance("autoremove", false, ctx, system_state, &mut result, command)?;
         result["diff"] = json!({});
     }
-    if !names.is_empty() {
-        changed |= install(&names, state, obj, ctx, system_state, &mut result, command)?;
+    if !requests.is_empty() {
+        changed |= install(
+            &requests,
+            state,
+            obj,
+            ctx,
+            system_state,
+            &mut result,
+            command,
+        )?;
     }
     result["changed"] = json!(changed);
     result["failed"] = json!(false);
@@ -110,7 +118,7 @@ fn maintenance(
 }
 
 fn install(
-    names: &[String],
+    requests: &[PackageRequest],
     state: &str,
     obj: &Map<String, Value>,
     ctx: &ExecContext,
@@ -118,8 +126,9 @@ fn install(
     result: &mut Value,
     command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
 ) -> Result<bool, String> {
-    let missing = system_state.missing_packages(names, state == "latest")?;
-    if missing.is_empty() {
+    let latest = state == "latest";
+    let plan = system_state.plan_packages(requests, latest)?;
+    if plan.missing.is_empty() {
         return Ok(false);
     }
     if !ctx.check_mode {
@@ -127,31 +136,18 @@ fn install(
         if bool_param(obj, "force", false) {
             args.push("--allow-downgrades");
         }
-        args.extend(missing.iter().map(String::as_str));
-        args.extend(
-            names
-                .iter()
-                .filter(|name| name.contains('=') && !missing.contains(name))
-                .map(String::as_str),
-        );
+        args.extend(plan.transaction.iter().map(String::as_str));
         let (stdout, rc, stderr) = command(&args, ctx)?;
+        system_state.invalidate_packages();
         if rc != 0 {
             return Err(format!("apt install failed: {stderr}"));
         }
-        system_state.invalidate_packages();
-        let pinned: Vec<_> = names
-            .iter()
-            .filter(|name| name.contains('='))
-            .cloned()
-            .collect();
-        if !pinned.is_empty() {
-            let unresolved = system_state.missing_packages(&pinned, false)?;
-            if !unresolved.is_empty() {
-                return Err(format!(
-                    "apt install did not install the requested versions: {}",
-                    unresolved.join(", ")
-                ));
-            }
+        let unresolved = system_state.plan_packages(requests, latest)?.missing;
+        if !unresolved.is_empty() {
+            return Err(format!(
+                "apt install did not satisfy the requested packages: {}",
+                unresolved.join(", ")
+            ));
         }
         fill_exec_fields(result, &stdout, &stderr, false);
     }

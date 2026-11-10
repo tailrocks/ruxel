@@ -1,106 +1,108 @@
 use super::*;
+use crate::system_state::apt::AptPlan;
 
-#[test]
-fn simulation_detects_install_remove_and_pending_configuration() {
-    use super::apt_policy::simulation_changed;
-    let summary = "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n";
-    assert!(!simulation_changed(summary).expect("valid simulation"));
-    for action in ["Inst x (1)", "Remv x", "Conf x (1)"] {
-        assert!(simulation_changed(&format!("{summary}{action}\n")).expect("valid simulation"));
+fn state(packages: &[(&str, &str)], candidates: &[(&str, &str)]) -> SystemState {
+    SystemState {
+        packages: Some(
+            packages
+                .iter()
+                .map(|(name, version)| ((*name).into(), (*version).into()))
+                .collect(),
+        ),
+        candidates: candidates
+            .iter()
+            .map(|(name, version)| ((*name).into(), (*version).into()))
+            .collect(),
+        native_architecture: Some("amd64".into()),
+        ..SystemState::default()
     }
-    assert!(simulation_changed("unexpected output").is_err());
 }
 
-#[test]
-fn glob_reconciles_each_apt_selected_package_and_conflicts() {
-    let mut state = SystemState {
-        packages: Some(HashMap::from([
-            ("lib-a".into(), "1".into()),
-            ("lib-b".into(), "2".into()),
-        ])),
-        glob_policy: HashMap::from([
-            (
-                "lib-*".into(),
-                vec![
-                    ("lib-a".into(), Some("1".into()), Some("1".into())),
-                    ("lib-b".into(), Some("2".into()), Some("2".into())),
-                ],
-            ),
-            ("none-*".into(), vec![]),
-        ]),
-        native_architecture: Some("amd64".into()),
-        ..SystemState::default()
-    };
-    assert!(
-        state
-            .missing_packages(&["lib-*=1".into(), "lib-a".into(), "lib-a=2".into()], false)
-            .is_err()
-    );
-}
-
-#[test]
-fn any_selector_uses_apt_selected_installed_version() {
-    let mut state = SystemState {
-        packages: Some(HashMap::from([
-            ("shell:amd64".into(), "1".into()),
-            ("shell:arm64".into(), "2".into()),
-        ])),
-        candidates: HashMap::from([("shell:any".into(), "2".into())]),
-        selector_installed: HashMap::from([("shell:any".into(), Some("2".into()))]),
-        selector_identity: HashMap::from([("shell:any".into(), "shell:arm64".into())]),
-        native_architecture: Some("amd64".into()),
-        ..SystemState::default()
-    };
-    assert_eq!(
-        state
-            .missing_packages(&["shell:any".into()], true)
-            .expect("operation succeeds"),
-        Vec::<String>::new()
-    );
-    assert_eq!(
-        state
-            .missing_packages(&["shell:any=2".into()], false)
-            .expect("operation succeeds"),
-        Vec::<String>::new()
-    );
-    assert_eq!(
-        state
-            .missing_packages(&["shell:any=1".into()], false)
-            .expect("operation succeeds"),
-        ["shell:any=1"]
-    );
+fn plan(state: &mut SystemState, names: &[&str], latest: bool) -> AptPlan {
+    let names: Vec<String> = names.iter().map(|name| (*name).into()).collect();
     state
-        .packages
-        .as_mut()
-        .expect("snapshot exists")
-        .remove("shell:arm64");
+        .plan_packages(
+            &PackageRequest::parse_all(&names).expect("supported selectors"),
+            latest,
+        )
+        .expect("plan succeeds")
+}
+
+#[test]
+fn exact_pin_is_satisfied_by_the_native_or_all_entry() {
+    let mut state = state(
+        &[("pkg:amd64", "1.2-3"), ("data:all", "4"), ("pkg:i386", "9")],
+        &[],
+    );
+    for names in [
+        &["pkg=1.2-3"][..],
+        &["pkg:amd64=1.2-3"],
+        &["data=4", "pkg:i386=9"],
+    ] {
+        assert_eq!(plan(&mut state, names, false).missing, Vec::<String>::new());
+    }
     assert_eq!(
-        state
-            .missing_packages(&["shell:any=2".into()], false)
-            .expect("operation succeeds"),
-        ["shell:any=2"]
+        plan(&mut state, &["pkg=1.2-4"], false).missing,
+        ["pkg=1.2-4"]
+    );
+    assert_eq!(
+        plan(&mut state, &["pkg:arm64"], false).missing,
+        ["pkg:arm64"]
     );
 }
 
 #[test]
-fn policy_headers_are_associated_with_the_requested_selector() {
-    let policy = |header: &str| format!("{header}:\n  Installed: 1\n  Candidate: 2\n");
-    for (selector, header) in [
-        ("cert:all", "cert"),
-        ("shell:amd64", "shell"),
-        ("shell:arm64", "shell:arm64"),
-        ("shell:any", "shell:arm64"),
-    ] {
-        assert_eq!(
-            policy_state(selector, &policy(header)).expect("operation succeeds"),
-            (header.into(), Some("1".into()), Some("2".into()))
-        );
-    }
-    assert!(
-        policy_state(
-            "shell:any",
-            "shell:amd64:\n  Installed: 1\n  Candidate: 2\nshell:arm64:\n"
-        )
-        .is_err()
+fn satisfied_requests_stay_in_the_transaction_at_their_installed_version() {
+    let mut state = state(
+        &[("held:amd64", "1.1"), ("lib:i386", "2"), ("pin:amd64", "3")],
+        &[("held", "1.2")],
     );
+    let plan = plan(
+        &mut state,
+        &["held", "lib:i386", "pin=3", "new=5", "other"],
+        false,
+    );
+    assert_eq!(plan.missing, ["new=5", "other"]);
+    assert_eq!(
+        plan.transaction,
+        ["held=1.1", "lib:i386=2", "pin=3", "new=5", "other"]
+    );
+}
+
+#[test]
+fn latest_compares_one_batched_candidate_per_policy_header() {
+    let mut state = state(
+        &[
+            ("old:amd64", "1"),
+            ("cur:amd64", "2"),
+            ("lib:i386", "3"),
+            ("gone:amd64", "4"),
+        ],
+        &[
+            ("old", "2"),
+            ("cur", "2"),
+            ("lib:i386", "3"),
+            ("gone", "(none)"),
+        ],
+    );
+    let plan = plan(
+        &mut state,
+        &["old", "cur:amd64", "lib:i386", "gone", "absent"],
+        true,
+    );
+    assert_eq!(plan.missing, ["old", "absent"]);
+    assert_eq!(
+        plan.transaction,
+        ["old", "cur:amd64=2", "lib:i386=3", "gone=4", "absent"]
+    );
+}
+
+#[test]
+fn batched_policy_output_is_keyed_by_stanza() {
+    let text = "bash:\n  Installed: 5.2\n  Candidate: 5.3\n  Version table:\n *** 5.2 100\n        100 /var/lib/dpkg/status\nlibc6:i386:\n  Installed: (none)\n  Candidate: 2.39\n";
+    let candidates = parse_policy(text).expect("valid policy output");
+    assert_eq!(candidates["bash"], "5.3");
+    assert_eq!(candidates["libc6:i386"], "2.39");
+    assert!(parse_policy("bash:\n  Candidate: 1\nbash:\n  Candidate: 2\n").is_err());
+    assert!(parse_policy("unexpected\n").is_err());
 }
