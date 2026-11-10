@@ -29,9 +29,7 @@ fn labels(path: &Path) -> Result<Vec<String>> {
 pub fn run(cli: &Path, agent: &Path, item_vars: bool) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    for dir in ["fixtures"] {
-        fs::create_dir(base.join(dir))?;
-    }
+    fs::create_dir(base.join("fixtures"))?;
     let source = if item_vars {
         include_str!("../fixtures/loop_task_vars.pkl")
             .replace("SECRET", &serde_json::to_string(SECRET)?)

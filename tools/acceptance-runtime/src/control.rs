@@ -21,9 +21,7 @@ fn no_secret(path: &Path) -> Result<()> {
 pub fn run(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
-    for dir in ["fixtures"] {
-        fs::create_dir(base.join(dir))?;
-    }
+    fs::create_dir(base.join("fixtures"))?;
     let marker = base.join("retry-marker");
     let quoted = format!("'{}'", marker.to_string_lossy().replace('\'', "'\\''"));
     let retry = format!("test -f {quoted} && exit 0; touch {quoted}; exit 1");
