@@ -39,12 +39,18 @@ fn evaluate_document(document: &str) -> Result<Value> {
 }
 
 fn evaluate_module(module: &Path) -> Result<Value> {
-    Ok(ruxel_config::eval(module, &[])?)
+    Ok(ruxel_config::eval(
+        module,
+        &ruxel_config::EvalOptions::default(),
+    )?)
 }
 
 #[test]
 fn runtime_and_operations_render() -> Result {
-    let output = ruxel_config::eval_config(&root().join("tests/schema/valid.pkl"), &[])?;
+    let output = ruxel_config::eval_config(
+        &root().join("tests/schema/valid.pkl"),
+        &ruxel_config::EvalOptions::default(),
+    )?;
     let config = &output["config"];
     let play = &config["plays"][0];
     let tasks = &play["tasks"];

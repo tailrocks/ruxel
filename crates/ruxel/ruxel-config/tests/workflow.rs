@@ -4,12 +4,25 @@ use std::path::{Path, PathBuf};
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn corpus(kind: &str) -> Result<Vec<PathBuf>> {
-    let directory = Path::new(concat!(
+fn root() -> PathBuf {
+    Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../tests/workflow"
     ))
-    .join(kind);
+    .to_path_buf()
+}
+
+/// Cases import the shared inventory and recipes from the corpus root, so
+/// that is the directory they may read.
+fn options() -> ruxel_config::EvalOptions {
+    ruxel_config::EvalOptions {
+        root_dir: Some(root()),
+        ..ruxel_config::EvalOptions::default()
+    }
+}
+
+fn corpus(kind: &str) -> Result<Vec<PathBuf>> {
+    let directory = root().join(kind);
     let mut files = std::fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<std::io::Result<Vec<_>>>()?;
@@ -29,7 +42,7 @@ fn expected(source: &str) -> Option<&str> {
 #[test]
 fn valid_workflows_are_admitted_with_plays() -> Result {
     for path in corpus("valid")? {
-        let config = ruxel_config::eval_config(&path, &[])
+        let config = ruxel_config::eval_config(&path, &options())
             .map_err(|error| format!("{}: {error}", path.display()))?;
         // Workflow.pkl renders the engine configuration as the module output.
         let plays = config["plays"].as_array().ok_or("no plays")?;
@@ -44,7 +57,7 @@ fn invalid_workflows_fail_with_their_message() -> Result {
         let source = std::fs::read_to_string(&path)?;
         let expected =
             expected(&source).ok_or_else(|| format!("{}: no expect line", path.display()))?;
-        let Err(error) = ruxel_config::eval_config(&path, &[]) else {
+        let Err(error) = ruxel_config::eval_config(&path, &options()) else {
             panic!("{}: evaluated, expected {expected:?}", path.display());
         };
         assert!(
@@ -66,12 +79,10 @@ fn tasks(config: &serde_json::Value) -> Vec<&serde_json::Value> {
 }
 
 fn valid(name: &str) -> Result<serde_json::Value> {
-    let path = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../tests/workflow/valid"
-    ))
-    .join(name);
-    Ok(ruxel_config::eval_config(&path, &[])?)
+    Ok(ruxel_config::eval_config(
+        &root().join("valid").join(name),
+        &options(),
+    )?)
 }
 
 #[test]

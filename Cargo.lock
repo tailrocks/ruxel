@@ -1580,6 +1580,7 @@ name = "ruxel-config"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "libc",
  "pklr",
  "rustix 1.1.6",
  "ruxel-guard",

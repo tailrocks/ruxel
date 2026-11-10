@@ -94,19 +94,20 @@ pub fn run(
     let mut stdout = tempfile::tempfile()?;
     let mut stderr = tempfile::tempfile()?;
     let mut group = ProcessGroup::start()?;
-    let mut child = Command::new(cli)
-        .arg(mode)
-        .arg(module)
-        .arg("--local")
-        .arg("--agent")
-        .arg(agent)
-        .arg("--state-dir")
-        .arg(state)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout.try_clone()?))
-        .stderr(Stdio::from(stderr.try_clone()?))
-        .process_group(group.id.as_raw_nonzero().get())
-        .spawn()?;
+    let mut child = spawn_workload(
+        Command::new(cli)
+            .arg(mode)
+            .arg(module)
+            .arg("--local")
+            .arg("--agent")
+            .arg(agent)
+            .arg("--state-dir")
+            .arg(state)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(stdout.try_clone()?))
+            .stderr(Stdio::from(stderr.try_clone()?))
+            .process_group(group.id.as_raw_nonzero().get()),
+    )?;
     let start = Instant::now();
     let observed = loop {
         match child.try_wait() {
@@ -261,5 +262,24 @@ mod tests {
             ensure!(!marker.exists(), "descendant survived completed CLI");
         }
         Ok(())
+    }
+}
+
+/// Spawn the workload, retrying while its executable is busy. A test that
+/// has just written its fixture script races other test threads' forks: a
+/// forked child holds the write descriptor until its exec, and Linux refuses
+/// to execute the script meanwhile (ETXTBSY).
+fn spawn_workload(command: &mut Command) -> std::io::Result<std::process::Child> {
+    let mut attempts = 0;
+    loop {
+        match command.spawn() {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 100 =>
+            {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            result => return result,
+        }
     }
 }

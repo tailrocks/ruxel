@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 
 /// Where configuration imports Ruxel from: every module is served under this
 /// `modulepath:` namespace.
-pub const MODULE_URI: &str = "modulepath:/ruxel/";
+pub const MODULE_PREFIX: &str = "modulepath:/ruxel/";
 /// The engine schema, which configurations written against the engine
 /// directly import.
 pub const ENGINE_URI: &str = "modulepath:/ruxel/engine/Engine.pkl";

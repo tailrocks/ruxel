@@ -19,7 +19,7 @@ pub enum ConfigError {
 }
 
 fn schema_message(found: Option<&str>, copy: bool, expected: &str) -> String {
-    let uri = crate::schema::MODULE_URI;
+    let uri = crate::schema::MODULE_PREFIX;
     let fix = format!(
         "import Ruxel modules from \"{uri}\" (workflows: \"{uri}Workflow.pkl\"; engine configurations: \"{engine}\") instead of copies, and regenerate editor copies with `ruxel schema export <dir>`",
         engine = crate::schema::ENGINE_URI

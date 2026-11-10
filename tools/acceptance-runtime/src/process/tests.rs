@@ -135,9 +135,13 @@ fn oversized_stdout_and_stderr_trigger_bounded_cleanup() -> Result<()> {
             "apply",
             Duration::from_secs(5),
         );
+        let error = result
+            .err()
+            .map(|error| format!("{error:#}"))
+            .unwrap_or_default();
         ensure!(
-            result.is_err_and(|error| format!("{error:#}").contains("captured output exceeded")),
-            "oversized stream was not rejected"
+            error.contains("captured output exceeded"),
+            "oversized stream was not rejected: {error}"
         );
         ensure!(
             started.elapsed() < Duration::from_secs(5),

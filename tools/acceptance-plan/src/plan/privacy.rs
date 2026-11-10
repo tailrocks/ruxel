@@ -8,7 +8,8 @@ pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let base = temp.path();
     fs::create_dir(base.join("fixtures"))?;
-    let payload = base.join("payload");
+    // Inside fixtures/: configurations read only beneath their root directory.
+    let payload = base.join("fixtures/payload");
     let state = base.join("state");
     let payload_string = payload.to_str().context("payload path is not UTF-8")?;
     let path = serde_json::to_string(payload_string)?;

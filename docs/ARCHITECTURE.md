@@ -9,9 +9,17 @@ complete platform coverage.
 
 - `crates/ruxel/ruxel` provides the command-line interface and exit codes.
 - `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
-  no inherited environment variables or external properties and permits local
-  file resources. Its module path serves the compiled-in modules under
-  `modulepath:/ruxel/`, followed by the `--module-path` directories.
+  no inherited environment variables or external properties and no network.
+  Module imports and `file:` resources are confined to the root directory
+  (`--root-dir`, default the root module's directory) and the `--module-path`
+  directories: each is opened once, and every path component is opened
+  relative to its parent descriptor without following symlinks, so `..`,
+  outside absolute paths and symlinks (even ones swapped in during evaluation)
+  are refused, as are `import*` and `read*` globs. Templates are confined the
+  same way to their source directory. Its module path serves the compiled-in
+  modules under `modulepath:/ruxel/`, followed by the `--module-path`
+  directories. Evaluation runs on its own thread with a 64 MiB stack and a
+  pklr depth limit of 256.
 - `schema/ruxel/` holds every served module: the workflow language
   (`Workflow.pkl`, `Ruxel.pkl`, `internal/Lowering.pkl`) and the engine schema
   (`engine/Engine.pkl`), which declares inventory, task, operation,
