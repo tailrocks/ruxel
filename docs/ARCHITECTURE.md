@@ -10,10 +10,14 @@ complete platform coverage.
 - `crates/ruxel/ruxel` provides the command-line interface and exit codes.
 - `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
   no inherited environment variables or external properties and permits local
-  file resources.
+  file resources. Its module path serves the compiled-in schema at
+  `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
 - `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
-  lookup types. `ruxel-engine` validates the evaluated value as well, including
-  configurations that do not use the schema.
+  lookup types. It is compiled into the binary, which replaces the
+  `Config.schemaFingerprint` placeholder with a BLAKE3 fingerprint of the file.
+  Before execution, `ruxel-config` admits only a configuration that carries this
+  binary's fingerprint and removes the property. `ruxel-engine` then validates
+  the evaluated value as well.
 - `crates/ruxel/ruxel-engine` contains the model, controller, expression and
   secret resolution, runtime, and SSH transport.
 - `crates/ruxel/ruxel-proto` defines messages shared by controller and agent.

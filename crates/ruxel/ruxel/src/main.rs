@@ -2,7 +2,7 @@ mod cli;
 mod commands;
 
 use clap::Parser;
-use cli::{Cli, Command, ConfigCommand};
+use cli::{Cli, Command, ConfigCommand, SchemaCommand};
 use ruxel::exit::ExitCode;
 use std::io::Write;
 
@@ -14,16 +14,30 @@ fn main() {
             Command::Check(args) => run(args, ruxel_engine::controller::Mode::Check),
             Command::Diff(args) => run(args, ruxel_engine::controller::Mode::Diff),
             Command::Config(config) => match config.command {
-                ConfigCommand::Dump { root } => match commands::config::dump(&root) {
+                ConfigCommand::Dump { root, module_path } => {
+                    match commands::config::dump(&root, &module_path.dirs) {
+                        Ok(()) => ExitCode::Success,
+                        Err(error) => {
+                            if writeln!(std::io::stderr().lock(), "{error}").is_err()
+                                || !error.is::<ruxel_config::ConfigError>()
+                            {
+                                ExitCode::Internal
+                            } else {
+                                ExitCode::Config
+                            }
+                        }
+                    }
+                }
+            },
+            Command::Schema(schema) => match schema.command {
+                SchemaCommand::Export { dir } => match commands::schema::export(&dir) {
                     Ok(()) => ExitCode::Success,
                     Err(error) => {
-                        if writeln!(std::io::stderr().lock(), "{error}").is_err()
-                            || !error.is::<ruxel_config::ConfigError>()
-                        {
-                            ExitCode::Internal
-                        } else {
-                            ExitCode::Config
-                        }
+                        drop(writeln!(
+                            std::io::stderr().lock(),
+                            "schema export failed: {error}"
+                        ));
+                        ExitCode::Internal
                     }
                 },
             },
@@ -45,11 +59,9 @@ fn main() {
 }
 
 fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
-    let Ok(value) = ruxel_config::eval(&args.root) else {
-        if writeln!(std::io::stderr().lock(), "configuration evaluation failed").is_err() {
-            return ExitCode::Internal;
-        }
-        return ExitCode::Config;
+    let value = match commands::config::admit(&args.root, &args.module_path.dirs) {
+        Ok(value) => value,
+        Err(code) => return code,
     };
     let Ok(value) = ruxel_engine::model::validate_config(&value) else {
         if writeln!(std::io::stderr().lock(), "configuration validation failed").is_err() {

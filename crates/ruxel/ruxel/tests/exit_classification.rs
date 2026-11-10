@@ -32,10 +32,6 @@ impl Fixture {
             root,
         };
         fs::create_dir(&fixture.root)?;
-        fs::copy(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../../../schema/Ruxel.pkl"),
-            fixture.root.join("Ruxel.pkl"),
-        )?;
         let compiled = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
             .args(["--edition=2024", "--crate-name", "local_exit_agent"])
             .arg(concat!(
@@ -54,7 +50,7 @@ impl Fixture {
         fs::write(
             &module,
             format!(
-                r#"import "Ruxel.pkl"
+                r#"import "modulepath:/ruxel/Ruxel.pkl"
 output {{ value = new Ruxel.Config {{
  inventory {{ hosts {{ ["fixture"] {{ address = "fixture.invalid" }} }} }}
  plays {{ new {{ name = "exit classification"; targets {{ "fixture" }}; tasks {{
