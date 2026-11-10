@@ -15,7 +15,8 @@ const HOST_IDENTITY: IdentityLookup<'static> = IdentityLookup {
     getent: "/usr/bin/getent",
     id: "/usr/bin/id",
 };
-/// Seconds the in-context NSS lookup may take before the task fails.
+/// Seconds the in-context NSS lookup may take before the task fails; a lookup
+/// that ignores SIGTERM is killed two seconds later.
 const IDENTITY_TIMEOUT_SECS: u8 = 10;
 /// Bytes of `getent` output (record and status) the bootstrap accepts.
 const IDENTITY_RECORD_LIMIT: usize = 4096;
@@ -186,7 +187,7 @@ fn identity_script(user: &str, lookup: &IdentityLookup<'_>) -> Result<String, St
     let limit = IDENTITY_RECORD_LIMIT + 1;
     Ok(format!(
         "RUXEL_ID_NL=$(printf '\\nx'); RUXEL_ID_NL=${{RUXEL_ID_NL%x}}; \
-         RUXEL_ID_OUT=$({{ {timeout} {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}'; \
+         RUXEL_ID_OUT=$({{ {timeout} -k 2 {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}'; \
          printf '\\n%s' \"$?\"; }} | /usr/bin/head -c {limit}) || exit 125; \
          [ ${{#RUXEL_ID_OUT}} -lt {limit} ] || exit 125; \
          [ \"${{RUXEL_ID_OUT##*\"$RUXEL_ID_NL\"}}\" = 0 ] || exit 125; \

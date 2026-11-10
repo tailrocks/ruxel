@@ -39,7 +39,7 @@ pub(super) fn fake_identity(dir: &Path, record: &str, uid: &str) -> FakeIdentity
     let timeout = dir.join("fake-timeout");
     std::fs::write(
         &timeout,
-        "#!/bin/sh\n[ \"$1\" = 10 ] || exit 7\nshift\n[ -e \"${0%/*}/stall\" ] && exit 124\nexec \"$@\"\n",
+        "#!/bin/sh\n[ \"$1 $2 $3\" = '-k 2 10' ] || exit 7\nshift 3\n[ -e \"${0%/*}/stall\" ] && exit 124\nexec \"$@\"\n",
     )
     .unwrap();
     for program in [&timeout, &getent, &id] {
