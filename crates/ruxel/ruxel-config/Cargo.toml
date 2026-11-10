@@ -22,5 +22,8 @@ toml_edit = { version = "0.25.18", default-features = false, features = ["parse"
 
 thiserror.workspace = true
 
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc.workspace = true
+
 [lints]
 workspace = true

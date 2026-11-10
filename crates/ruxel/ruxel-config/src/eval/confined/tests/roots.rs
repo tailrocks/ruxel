@@ -85,3 +85,24 @@ fn root_spellings_with_parent_segments_keep_their_alias() -> Result {
     assert!(root.exists());
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn execute_only_directories_still_resolve_readable_modules() -> Result {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new()?;
+    fixture.write("roles/role.pkl", "value = \"role\"")?;
+    let root = fixture.write(
+        "main.pkl",
+        "import \"roles/role.pkl\" as r\nvalue = r.value",
+    )?;
+    let execute_only = std::fs::Permissions::from_mode(0o111);
+    std::fs::set_permissions(fixture.config().join("roles"), execute_only.clone())?;
+    std::fs::set_permissions(fixture.config(), execute_only)?;
+    let result = eval(&root, &EvalOptions::default());
+    for directory in [fixture.config(), fixture.config().join("roles")] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o755))?;
+    }
+    assert_eq!(result?, json!({"value": "role"}));
+    Ok(())
+}

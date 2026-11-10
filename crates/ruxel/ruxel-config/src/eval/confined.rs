@@ -26,14 +26,29 @@ pub(super) struct Root {
     directory: File,
 }
 
+/// Flags for a directory descriptor used only to resolve names beneath it.
+/// They need search (execute) permission, not read permission, so an
+/// execute-only directory can still hold readable modules.
+pub(super) fn search_flags() -> OFlags {
+    let flags = OFlags::CLOEXEC | OFlags::DIRECTORY;
+    #[cfg(target_os = "linux")]
+    {
+        flags | OFlags::PATH
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        flags | OFlags::from_bits_retain(libc::O_SEARCH.cast_unsigned())
+    }
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+    {
+        flags | OFlags::RDONLY
+    }
+}
+
 impl Root {
     /// Open the directory `path` names now (following symlinks in it).
     pub(super) fn open(path: &Path) -> std::io::Result<Self> {
-        let directory = rustix::fs::open(
-            path,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-        )?;
+        let directory = rustix::fs::open(path, search_flags(), Mode::empty())?;
         Self::verified(path, directory.into())
     }
 
@@ -74,7 +89,8 @@ impl Root {
     /// The descriptor stays authoritative even if `path` now names another
     /// directory; the name only resolves module identities.
     pub(super) fn pinned(path: &Path, directory: File) -> std::io::Result<Self> {
-        if !directory.metadata()?.is_dir() {
+        let opened = rustix::fs::fstat(&directory)?;
+        if rustix::fs::FileType::from_raw_mode(opened.st_mode) != rustix::fs::FileType::Directory {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "root is not a directory",
@@ -184,10 +200,11 @@ impl Confined {
             let Component::Normal(name) = component else {
                 return Err(self.refusal(path));
             };
-            let mut flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
-            if components.peek().is_some() {
-                flags |= OFlags::DIRECTORY;
-            }
+            let flags = if components.peek().is_some() {
+                search_flags() | OFlags::NOFOLLOW
+            } else {
+                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC
+            };
             current = match rustix::fs::openat(&current, name, flags, Mode::empty()) {
                 Ok(opened) => opened.into(),
                 Err(rustix::io::Errno::NOENT) => return Ok(None),

@@ -22,7 +22,7 @@ impl TemplateRoot {
         let path = std::path::absolute(path)?;
         let directory = rustix::fs::open(
             &path,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            super::confined::search_flags() | OFlags::NOFOLLOW,
             Mode::empty(),
         )?;
         Ok(Self(Root::verified(&path, directory.into())?))
