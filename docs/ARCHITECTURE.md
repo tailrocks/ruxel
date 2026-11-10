@@ -15,7 +15,8 @@ complete platform coverage.
   directories: each is opened once, and every path component is opened
   relative to its parent descriptor without following symlinks, so `..`,
   outside absolute paths and symlinks (even ones swapped in during evaluation)
-  are refused. Templates are confined the same way to their source directory.
+  are refused, as are `import*` and `read*` globs. Templates are confined the
+  same way to their source directory.
   Its module path serves the compiled-in schema at
   `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
 - `schema/Ruxel.pkl` declares inventory, task, operation, expression, and

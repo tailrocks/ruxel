@@ -23,10 +23,6 @@ fn symlinks_inside_the_root_are_refused() -> Result {
     ] {
         assert!(refused(fixture.eval(source)), "{source}");
     }
-    assert_eq!(
-        fixture.eval("value = read*(\"*.txt\").keys.toList()")?,
-        json!({"value": []})
-    );
     Ok(())
 }
 
@@ -88,19 +84,5 @@ fn symlinked_root_module_is_refused_not_followed() -> Result {
     assert!(refused(
         eval(&link, &EvalOptions::default()).map_err(|error| error.to_string())
     ));
-    Ok(())
-}
-
-#[test]
-fn globs_cannot_leave_or_list_through_symlinks() -> Result {
-    let fixture = Fixture::new()?;
-    std::os::unix::fs::symlink(&fixture.0, fixture.config().join("dir"))?;
-    for source in [
-        "value = read*(\"../*.txt\").keys.toList()",
-        "value = read*(\"sub/../../*.txt\").keys.toList()",
-        "value = read*(\"dir/*.txt\").keys.toList()",
-    ] {
-        assert!(refused(fixture.eval(source)), "{source}");
-    }
     Ok(())
 }

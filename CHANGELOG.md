@@ -23,7 +23,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module globs are refused.
+- Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module and resource globs (`import*`, `read*`) are refused.
 - Verify complete SSH argument vectors for guard admission modes.
 - Downloads use trusted system clients with an isolated environment that preserves proxy settings.
 - Package refresh, upgrade, autoremove and service-manager reload tasks bypass the ledger cache.

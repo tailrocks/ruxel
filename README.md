@@ -83,8 +83,9 @@ directory and the `--module-path` directories. The root directory is the root
 module's directory unless `--root-dir DIR` names a wider one, as with
 `pkl eval --root-dir`; use it when a root module imports `../` siblings. Paths
 that leave these directories, absolute `file:` paths outside them, and symlinks
-inside them are refused. Environment variables, external properties and
-network imports are not available.
+inside them are refused. Environment variables, external properties,
+network imports, and module and resource globs (`import*`, `read*`) are not
+available.
 
 For editors and the `pkl` CLI, export the schema into an ignored directory and
 pass that directory as the module path:

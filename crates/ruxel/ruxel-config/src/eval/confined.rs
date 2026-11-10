@@ -111,9 +111,8 @@ impl Confined {
     /// is matched after resolving its deepest existing ancestor once; a
     /// symlink inside a root resolves outside it or is refused when opened.
     fn locate(&self, path: &Path) -> Result<(&Root, PathBuf)> {
-        if let Some(found) = self.find(path) {
-            return Ok(found);
-        }
+        // Normalize first, so a `..` detour (`/config/x/../lib`) is matched
+        // against the most specific root, not just the first broad one.
         let mut existing = PathBuf::new();
         for component in path.components() {
             match component {
@@ -123,6 +122,9 @@ impl Confined {
                 Component::CurDir => {}
                 other => existing.push(other),
             }
+        }
+        if let Some(found) = self.find(&existing) {
+            return Ok(found);
         }
         // Never resolve the last component: a symlink there is refused when
         // it is opened.
@@ -144,7 +146,7 @@ impl Confined {
         }
     }
 
-    pub(super) fn refusal(&self, path: &Path) -> Error {
+    fn refusal(&self, path: &Path) -> Error {
         let roots = self
             .roots
             .iter()
@@ -298,37 +300,13 @@ impl EvalCapabilities for Resources {
         Err(refused("A temporary directory"))
     }
 
-    /// Expand beneath a confined base. The pattern may not leave the base,
-    /// and its literal leading directories are opened without following
-    /// symlinks before anything is listed; `expand_glob` itself skips
-    /// symlinks. Every match is opened again beneath its root, so a symlink
-    /// swapped in while listing is refused.
+    /// Resource globs (`read*`) are unavailable, like module globs: listing
+    /// by pathname could not be tied to the pinned root descriptors.
     fn glob(&mut self, base: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
-        let base = self.0.identity(base)?;
-        if pattern.starts_with('/') || pattern.split('/').any(|part| part == "..") {
-            return Err(self.0.refusal(&base.join(pattern)));
-        }
-        let literal: PathBuf = pattern
-            .split('/')
-            .take_while(|part| !part.contains(['*', '?', '[', '{', '\\']))
-            .collect();
-        let prefix = if pattern.contains(['*', '?', '[', '{', '\\']) {
-            base.join(literal)
-        } else {
-            base.join(literal)
-                .parent()
-                .map_or_else(|| base.clone(), Path::to_path_buf)
-        };
-        if self.0.open(&prefix)?.is_none() {
-            return Ok(Vec::new());
-        }
-        let mut matches = Vec::new();
-        for path in pklr::eval::expand_glob(&base, pattern)? {
-            if self.0.open(&path)?.is_some() {
-                matches.push(path);
-            }
-        }
-        Ok(matches)
+        Err(refused(&format!(
+            "The resource glob `{pattern}` in `{}`",
+            base.display()
+        )))
     }
 }
 

@@ -64,12 +64,23 @@ fn imports_and_resources_inside_the_root_work() -> Result {
     )?;
     fixture.write("lib.pkl", "value = \"lib+\"")?;
     fixture.write("keys/key.asc", "key")?;
-    fixture.write("files/a.txt", "a")?;
-    fixture.write("files/b.txt", "b")?;
     assert_eq!(
-        fixture.eval("import \"roles/role.pkl\" as role\nvalue = role.value\nfiles = read*(\"files/*.txt\").keys.toList()")?,
-        json!({"value": "lib+key", "files": ["files/a.txt", "files/b.txt"]})
+        fixture.eval("import \"roles/role.pkl\" as role\nvalue = role.value")?,
+        json!({"value": "lib+key"})
     );
+    Ok(())
+}
+
+#[test]
+fn resource_and_module_globs_are_unavailable() -> Result {
+    let fixture = Fixture::new()?;
+    fixture.write("files/a.txt", "a")?;
+    for source in [
+        "value = read*(\"files/*.txt\").keys.toList()",
+        "value = import*(\"*.pkl\").keys.toList()",
+    ] {
+        assert!(fixture.eval(source).is_err(), "{source}");
+    }
     Ok(())
 }
 
@@ -92,50 +103,10 @@ fn reads_and_imports_cannot_leave_the_root() -> Result {
 }
 
 #[test]
-fn root_dir_widens_the_root_for_modules_in_subdirectories() -> Result {
-    let fixture = Fixture::new()?;
-    fixture.write("inventory.pkl", "hosts = 1")?;
-    let root = fixture.write(
-        "rehearsal/main.pkl",
-        "import \"../inventory.pkl\" as i\nhosts = i.hosts",
-    )?;
-    assert!(eval(&root, &EvalOptions::default()).is_err());
-    let options = EvalOptions {
-        root_dir: Some(fixture.config()),
-        ..EvalOptions::default()
-    };
-    assert_eq!(eval(&root, &options)?, json!({"hosts": 1}));
-    let elsewhere = EvalOptions {
-        root_dir: Some(fixture.config().join("rehearsal")),
-        ..EvalOptions::default()
-    };
-    assert!(
-        eval(&fixture.write("main.pkl", "hosts = 1")?, &elsewhere)
-            .is_err_and(|error| error.to_string().contains("outside --root-dir"))
-    );
-    Ok(())
-}
-
-#[test]
 fn missing_root_module_is_an_error() {
     assert!(eval(Path::new("/nonexistent/main.pkl"), &EvalOptions::default()).is_err());
 }
 
+mod roots;
 #[cfg(unix)]
 mod symlinks;
-
-#[test]
-fn nested_roots_read_through_their_own_descriptor() -> Result {
-    use super::{Confined, Root};
-    let fixture = Fixture::new()?;
-    let lib = fixture.write("lib/value.txt", "pinned")?;
-    let files = Confined::new(vec![
-        Root::open(&fixture.config())?,
-        Root::open(&fixture.config().join("lib"))?,
-    ]);
-    let lib = std::fs::canonicalize(lib)?;
-    std::fs::rename(fixture.config().join("lib"), fixture.config().join("moved"))?;
-    fixture.write("lib/value.txt", "replacement")?;
-    assert_eq!(files.read(&lib)?, Some(b"pinned".to_vec()));
-    Ok(())
-}
