@@ -85,7 +85,14 @@ Cargo's build environment connects `rsblkid-sys` to the provisioning wrapper:
 [env]
 PKG_CONFIG = { value = "tools/pkg-config-libblkid", relative = true }
 C_INCLUDE_PATH = { value = ".cache/native/include", relative = true }
+BLKID_STATIC = "1"
 ```
+
+Every libblkid build is static (`--disable-shared`). `BLKID_STATIC` tells the
+`pkg-config` crate to link it statically. The crate also tracks that
+variable, so a changed value makes cached build-script outputs stale. Change it
+when the wrapper's output layout changes; build caches don't track the wrapper
+script itself.
 
 The wrapper intercepts only queries containing the `blkid` package. It builds
 the pinned upstream source with native `cc` and make into the platform cache,
