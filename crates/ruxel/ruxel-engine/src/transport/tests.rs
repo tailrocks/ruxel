@@ -33,6 +33,12 @@ fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
         "ClearAllForwardings=yes",
         "PermitLocalCommand=no",
         "KnownHostsCommand=none",
+        "ForwardAgent=no",
+        "ForwardX11=no",
+        "ForwardX11Trusted=no",
+        "Tunnel=no",
+        "VerifyHostKeyDNS=no",
+        "GSSAPIAuthentication=no",
     ] {
         assert!(args.iter().any(|arg| arg == option), "{option}");
     }

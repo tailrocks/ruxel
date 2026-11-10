@@ -60,6 +60,21 @@ impl RemoteHost {
             "PermitLocalCommand=no",
             "-o",
             "KnownHostsCommand=none",
+            // The admitted host must not reach the controller's agent or
+            // display, and host keys come only from known_hosts: no SSHFP or
+            // Kerberos lookups to unchecked resolvers or KDCs.
+            "-o",
+            "ForwardAgent=no",
+            "-o",
+            "ForwardX11=no",
+            "-o",
+            "ForwardX11Trusted=no",
+            "-o",
+            "Tunnel=no",
+            "-o",
+            "VerifyHostKeyDNS=no",
+            "-o",
+            "GSSAPIAuthentication=no",
         ]);
         apply_options(&mut command, &self.options);
         if let Some(address) = &self.admitted {

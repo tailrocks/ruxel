@@ -78,7 +78,8 @@ that connection pins the admitted address with `HostName` (`%` escaped) and
 disables `ProxyJump`, `ProxyCommand` and connection multiplexing, so
 configuration changes, `Match exec` or an existing master cannot redirect it.
 All invocations set `CanonicalizeHostname=no`, `ClearAllForwardings=yes`,
-`PermitLocalCommand=no` and `KnownHostsCommand=none`; the probe runs in its own process group, bounded by a
+`PermitLocalCommand=no`, `KnownHostsCommand=none`, `VerifyHostKeyDNS=no` and
+`GSSAPIAuthentication=no`, and disable agent, X11 and tunnel forwarding; the probe runs in its own process group, bounded by a
 timeout that kills the group, and unspecified addresses (`0.0.0.0`, `::`) are
 refused. `ruxel --version` reports how many
 entries were compiled. This is a deny list only: the invoking environment is

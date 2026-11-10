@@ -42,27 +42,7 @@ fn main() {
                 },
             },
         },
-        Err(error) => {
-            let code = if error.use_stderr() {
-                ExitCode::Usage
-            } else {
-                ExitCode::Success
-            };
-            let version = error.kind() == clap::error::ErrorKind::DisplayVersion;
-            if error.print().is_err()
-                || (version
-                    && writeln!(
-                        std::io::stdout().lock(),
-                        "guard: {} compiled deny entries",
-                        ruxel_guard::Policy::compiled_entries()
-                    )
-                    .is_err())
-            {
-                ExitCode::Internal
-            } else {
-                code
-            }
-        }
+        Err(error) => commands::usage::report(&error),
     };
     std::process::exit(i32::from(code.code()));
 }
