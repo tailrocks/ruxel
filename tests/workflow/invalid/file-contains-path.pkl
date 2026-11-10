@@ -1,0 +1,8 @@
+// expect: conflict: /etc/app is a file, so /etc/app/config cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/app"; content = "a" }
+  new Directory { path = "/etc/app/config" }
+} } }

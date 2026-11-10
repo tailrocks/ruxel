@@ -127,10 +127,13 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
 #[test]
 fn edge_values_lower_with_their_guards() -> Result {
     let config = valid("edge-values.pkl")?;
-    assert_eq!(
-        config["inventory"]["hosts"]["link-local"]["address"],
-        "fe80::1%eth0"
-    );
+    for (host, address) in [
+        ("link-local", "fe80::1%eth0"),
+        ("mapped", "::ffff:192.0.2.7"),
+        ("documentation", "2001:db8::42"),
+    ] {
+        assert_eq!(config["inventory"]["hosts"][host]["address"], address);
+    }
     let all = tasks(&config);
     let named = |name: &str| {
         all.iter()
@@ -148,13 +151,21 @@ fn edge_values_lower_with_their_guards() -> Result {
     assert_eq!(probe + 1, named("Set root login shell to /bin/zsh")?);
     assert_eq!(all[probe]["checkMode"], false);
     assert_eq!(all[probe]["changedWhen"]["value"], false);
+    // A command that ran, or would run in check and diff (`skipped`), is a
+    // change, so the steps that react to it see one there too.
+    let ran = serde_json::json!({"kind": "call", "function": "or", "args": [
+        {"kind": "ref", "path": ["result", "changed"]},
+        {"kind": "call", "function": "default", "args": [
+            {"kind": "ref", "path": ["result", "skipped"]},
+            {"kind": "literal", "value": false},
+        ]},
+    ]});
+    let reload = &all[named("Run /usr/local/bin/app-reload")?];
+    assert_eq!(reload["changedWhen"], ran);
     // A `creates` skip reports no change even though its output lacks the marker.
     let init = &all[named("Run /usr/local/bin/app-init")?];
     assert_eq!(init["changedWhen"]["function"], "and");
-    assert_eq!(
-        init["changedWhen"]["args"][0]["path"],
-        serde_json::json!(["result", "changed"])
-    );
+    assert_eq!(init["changedWhen"]["args"][0], ran);
     Ok(())
 }
 

@@ -32,9 +32,36 @@ typealias FileMode = String(matches(Regex("0[0-7]{3}")))
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
 /// `localhost` is reserved: the engine uses it for the controller itself.
 typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "localhost")
-/// IPv4, or IPv6 with an optional zone such as `%eth0` for link-local
-/// addresses.
-typealias IpAddress = String(matches(Regex(#"[0-9]{1,3}(\.[0-9]{1,3}){3}|(?=[0-9a-fA-F:]*[0-9a-fA-F])[0-9a-fA-F:]*:[0-9a-fA-F:]*(%[A-Za-z0-9_.-]+)?"#)))
+/// IPv4 (`192.0.2.1`, each part 0 to 255), or IPv6 (`2001:db8::1`, an
+/// embedded IPv4 tail allowed) with an optional zone such as `%eth0` for
+/// link-local addresses.
+typealias IpAddress = String(isIpv4(this) || isIpv6(this))
+
+const local function isIpv4(s: String): Boolean =
+  let (parts = s.split("."))
+  parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
+
+const local function isIpv6(s: String): Boolean =
+  let (zoned = s.split("%"))
+  !s.endsWith("%") && zoned.length <= 2 && (zoned.length == 1 || zoned[1].matches(Regex("[A-Za-z0-9_.-]+"))) && isIpv6Address(zoned[0])
+
+/// At most one `::`; hex groups of one to four digits; eight groups in all,
+/// fewer with `::`; an IPv4 tail counts as two. Written without relying on
+/// `split` keeping empty pieces, which pklr, like Java, drops at the end.
+const local function isIpv6Address(a: String): Boolean =
+  let (gap = a.contains("::"))
+  let (groups = a.split(":").filter((g) -> !g.isEmpty))
+  let (tail = !groups.isEmpty && groups.last.contains("."))
+  let (hex = groups.filter((g) -> !g.contains(".")))
+  let (count = hex.length + (if (tail) 2 else 0))
+  a.contains(":")
+    && (!gap || a.indexOf("::") == a.lastIndexOf("::"))
+    && (!a.startsWith(":") || a.startsWith("::"))
+    && (!a.endsWith(":") || a.endsWith("::"))
+    && hex.every((g) -> g.matches(Regex("[0-9a-fA-F]{1,4}")))
+    && hex.length + (if (tail) 1 else 0) == groups.length
+    && (!tail || isIpv4(groups.last) && !a.endsWith("::"))
+    && (if (gap) count <= 7 else count == 8)
 typealias Arguments = StaticList(!isEmpty)
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
@@ -310,7 +337,9 @@ class Capture extends Step {
   function stdout(): String = "__ruxel_rt_8d41.results.\(id()).stdout__"
 
   function id(): String =
-    "capture_" + "\(title ?? description())\u{0}\(if (runOn == null) "-" else "+" + runOn.name)\u{0}\(retry.attempts)\u{0}\(retry.delay.toUnit("s").value.toInt())\u{0}\(bash)".sha256.substring(0, 12)
+    // Each field is prefixed with its length, so no text stands for two.
+    "capture_" + List(title ?? description(), if (runOn == null) "-" else "+" + runOn.name, "\(retry.attempts)", "\(retry.delay.toUnit("s").value.toInt())", bash)
+      .map((v) -> "\(v.length):\(v)").join("").sha256.substring(0, 12)
 
   /// The generated plan line, used when there is no title.
   function description(): String = "Capture " + bash.trim().split("\n").first

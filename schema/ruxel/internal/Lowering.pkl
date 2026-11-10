@@ -72,10 +72,14 @@ function addHost(seen: List<rx.Host>, h: rx.Host): List<rx.Host> =
   else if (seen.any((x) -> x.name == h.name)) seen
   else seen + List(h)
 
-function signature(h: rx.Host): String = List(h.address, optional(h.sshHost), h.user, "\(h.port)").join("\u{0}")
+function signature(h: rx.Host): String = fields(List(h.address, optional(h.sshHost), h.user, "\(h.port)"))
 
 /// Encodes a nullable text so that `null` and the text "null" differ.
 const function optional(v: String?): String = if (v == null) "-" else "+" + v
+
+/// Encodes a list of texts unambiguously: each is prefixed with its length,
+/// so no value, whatever characters it contains, can stand for two lists.
+const function fields(values: List<String>): String = values.map((v) -> "\(v.length):\(v)").join("")
 
 function configOf(_hosts: List<rx.Host>, _stages: List<rx.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
   inventory { hosts { for (h in _hosts) { [h.name] = hostOf(h) } } }
@@ -247,7 +251,7 @@ const function mergeable(s: rx.Step): Boolean = !subjectsOf(s).isEmpty && !(s is
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -290,6 +294,24 @@ function conflicts(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
+/// A regular file or a link leaves no room for anything inside it, so no
+/// other step of the stage may manage a path beneath one.
+function nested(ix: StageIndex, i: Int): List<String> =
+  earlier(i).flatMap((j) ->
+    let (pairs = inside(leaves(ix.steps[j]), paths(ix.steps[i])) + inside(leaves(ix.steps[i]), paths(ix.steps[j])))
+    if (pairs.isEmpty) List()
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pairs.first.first) is a file, so \(pairs.first.last) cannot be inside it"))
+
+/// Paths a step writes as a regular file or a link.
+const function leaves(s: rx.Step): List<String> =
+  if (List("file", "symlink", "aptRepository").contains(s.kind)) subjectsOf(s) else List()
+
+const function paths(s: rx.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
+
+/// Pairs `(file, path)` where `path` lies beneath `file`.
+const function inside(files: List<String>, candidates: List<String>): List<List<String>> =
+  files.flatMap((f) -> candidates.filter((p) -> p.startsWith(f + "/")).map((p) -> List(f, p)))
+
 function className(s: rx.Step): String = s.kind.capitalize()
 
 function withArticle(word: String): String = (if ("AEIOU".contains(word.take(1))) "an " else "a ") + word
@@ -329,44 +351,44 @@ function capturesUsed(s: rx.Step): List<String> =
 function key(s: rx.Step): String = identity.key(s)
 
 /// A class, like `Walker`: pklr cannot recurse through a module function
-/// inside a lambda (P11). Fields are separated by NUL and list items by
-/// U+0001, so no two different settings print alike.
+/// inside a lambda (P11). Settings are encoded with `fields`, so no two
+/// different settings print alike.
 class Identity {
   function key(s: rx.Step): String =
     if (s is rx.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 12)
 
   function fingerprint(s: rx.Step): String =
-    (if (mergeable(s)) "" else "\(label(s))\u{0}") + this.settings(s)
+    (if (mergeable(s)) "" else fields(List(label(s)))) + this.settings(s)
 
   function settings(s: rx.Step): String =
     if (!(s is rx.Action)) stateFingerprints[s.kind].apply(s)
-    else List(
-      if (s is rx.Command) s.run.join("\u{1}") else s.bash,
-      "\(s.creates)",
-      changesText(s),
-      listed(s).map((w) -> if (w is rx.Recipe) "recipe" else this.key(w)).join("\u{1}")
-    ).join("\u{0}")
+    // The recursive part, the keys of the steps this one reacts to, stays
+    // outside `fields`: every level counts against pklr's depth limit along
+    // a chain. Keys are generated (`<kind>_<hex>`), so a plain join after the
+    // three self-delimiting fields is unambiguous.
+    else fields(List(if (s is rx.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s)))
+      + listed(s).map((w) -> if (w is rx.Recipe) "recipe" else this.key(w)).join(",")
 }
 
 local identity = new Identity {}
 
 const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
-  ["file"] = (s) -> List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), s.validate.join("\u{1}")).join("\u{0}")
-  ["directory"] = (s) -> "\(s.path)\u{0}\(s.mode)"
-  ["symlink"] = (s) -> "\(s.path)\u{0}\(s.target)"
+  ["file"] = (s) -> fields(List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), fields(s.validate.toList())))
+  ["directory"] = (s) -> fields(List(s.path, s.mode))
+  ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
-  ["packages"] = (s) -> "\(s.names.join("\u{1}"))\u{0}\(s.upgrade)"
-  ["aptRepository"] = (s) -> List(s.name, s.url, s.suite, s.components.join("\u{1}"), s.signingKey, s.architectures.join("\u{1}")).join("\u{0}")
+  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.upgrade)"))
+  ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
-  ["loginShell"] = (s) -> "\(s.user)\u{0}\(s.shell)"
-  ["gitCheckout"] = (s) -> List(s.repository, s.path, s.commit).join("\u{0}")
+  ["loginShell"] = (s) -> fields(List(s.user, s.shell))
+  ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   // Restart triggers add up across steps, so they are not part of identity.
-  ["service"] = (s) -> List(s.name, "\(s.enabled)", "\(s.running)").join("\u{0}")
+  ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
   ["capture"] = (s) -> s.id()
 }
 
 const function changesText(a: rx.Action): String =
-  if (a.changes is rx.UnlessOutput) "unless\u{0}\(optional(a.changes.stdoutContains))\u{0}\(optional(a.changes.stderrContains))" else a.changes
+  if (a.changes is rx.UnlessOutput) fields(List("unless", optional(a.changes.stdoutContains), optional(a.changes.stderrContains))) else a.changes
 
 /// What a step manages; empty for steps that manage nothing. An apt
 /// repository manages the two files it writes, so a `File` at either path
@@ -534,14 +556,22 @@ function anyChanged(ids: List<String>): engine.Expr =
     .map((id) -> ref(List("results", id, "changed")))
     .fold(null, (acc, e) -> if (acc == null) e else call2("or", acc, e))
 
-function changeRule(a: rx.Action): engine.Expr? =
+/// `always` is a change whenever the command runs, and in check and diff
+/// whenever it would run: the engine skips it there (`skipped`), and the
+/// steps that react to it must still see a pending change. A `creates` skip
+/// and a step not selected by `onChangeOf` stay unchanged.
+function changeRule(a: rx.Action): engine.Expr =
   if (a.changes == "never") lit(false)
   else if (a.changes is rx.UnlessOutput) unlessOutput(a.changes)
-  else null
+  else ran()
 
-/// Changed when the command ran (a `creates` skip reports no change) and its
-/// output lacks the marker.
-function unlessOutput(u: rx.UnlessOutput): engine.Expr = call2("and", ref(List("result", "changed")),
+/// The command ran, or would run in check and diff.
+function ran(): engine.Expr = call2("or", ref(List("result", "changed")), call2("default", ref(List("result", "skipped")), lit(false)))
+
+/// Changed when the command ran or would run (see `changeRule`; a `creates`
+/// skip reports no change) and its output lacks the marker. In check and
+/// diff the output is empty, so a command that would run counts as a change.
+function unlessOutput(u: rx.UnlessOutput): engine.Expr = call2("and", ran(),
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
 
