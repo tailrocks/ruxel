@@ -115,6 +115,7 @@ impl Fixture {
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))?;
         Ok(RemoteHost {
+            admitted: None,
             destination: "fixture.invalid".into(),
             test_path: Some(path),
             options: ConnectOptions {

@@ -26,6 +26,10 @@ pub struct ConnectOptions {
 struct RemoteHost {
     destination: String,
     options: ConnectOptions,
+    /// The literal address admitted by `admit`. Every later invocation pins
+    /// it, with proxies disabled, so a configuration change or `Match exec`
+    /// between invocations cannot redirect the connection.
+    admitted: Option<String>,
     #[cfg(test)]
     test_path: Option<std::ffi::OsString>,
 }
@@ -44,6 +48,14 @@ impl RemoteHost {
             "ServerAliveCountMax=4",
         ]);
         apply_options(&mut command, &self.options);
+        if let Some(address) = &self.admitted {
+            command.arg("-o").arg(format!("HostName={address}")).args([
+                "-o",
+                "ProxyJump=none",
+                "-o",
+                "ProxyCommand=none",
+            ]);
+        }
         #[cfg(test)]
         if let Some(path) = &self.test_path {
             command.env("PATH", path);
@@ -63,7 +75,7 @@ impl RemoteHost {
     /// Resolve the destination with `ssh -G`, which reads configuration and
     /// makes no network contact, and refuse it unless it names a literal IP
     /// outside every deny entry with no proxy hop.
-    async fn admit(&self, policy: &ruxel_guard::Policy) -> Result<()> {
+    async fn admit(&mut self, policy: &ruxel_guard::Policy) -> Result<()> {
         let mut command = self.options();
         command
             .args(["-G", "--", &self.destination])
@@ -77,7 +89,8 @@ impl RemoteHost {
             );
         }
         let config = String::from_utf8(output.stdout).context("ssh -G output")?;
-        admit_resolved(&config, &self.destination, policy)
+        self.admitted = Some(admit_resolved(&config, &self.destination, policy)?);
+        Ok(())
     }
     async fn exec_status(&self, argv: &[&str]) -> Result<std::process::ExitStatus> {
         let mut cmd = self.client();
@@ -100,7 +113,8 @@ impl RemoteHost {
     }
 }
 
-fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy) -> Result<()> {
+/// Returns the admitted hostname, including any IPv6 scope suffix.
+fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy) -> Result<String> {
     let value = |key: &str| {
         config.lines().find_map(|line| {
             line.split_once(' ')
@@ -110,7 +124,15 @@ fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy)
     };
     let hostname = value("hostname")
         .with_context(|| format!("refused {destination}: ssh -G reported no hostname"))?;
-    let address = hostname.parse::<std::net::IpAddr>().map_err(|_| {
+    let address = match hostname.split_once('%') {
+        Some((address, scope)) if !scope.is_empty() => address
+            .parse::<std::net::Ipv6Addr>()
+            .ok()
+            .map(std::net::IpAddr::V6),
+        Some(_) => None,
+        None => hostname.parse::<std::net::IpAddr>().ok(),
+    }
+    .ok_or_else(|| {
         anyhow!("refused {destination}: hostname {hostname:?} is not a literal IP address")
     })?;
     for key in ["proxyjump", "proxycommand"] {
@@ -120,7 +142,8 @@ fn admit_resolved(config: &str, destination: &str, policy: &ruxel_guard::Policy)
     }
     policy
         .check_deny(address)
-        .map_err(|rule| anyhow!("refused {destination} ({address}): {rule}"))
+        .map_err(|rule| anyhow!("refused {destination} ({address}): {rule}"))?;
+    Ok(hostname.to_owned())
 }
 
 fn apply_options(cmd: &mut Command, options: &ConnectOptions) {
@@ -195,6 +218,7 @@ pub async fn connect_with(
     let remote = RemoteHost {
         destination: destination.to_owned(),
         options: options.clone(),
+        admitted: None,
         #[cfg(test)]
         test_path: None,
     };
@@ -203,7 +227,7 @@ pub async fn connect_with(
 }
 
 async fn connect_remote(
-    remote: RemoteHost,
+    mut remote: RemoteHost,
     policy: &ruxel_guard::Policy,
     agent_binary: &Path,
     run_id: &str,

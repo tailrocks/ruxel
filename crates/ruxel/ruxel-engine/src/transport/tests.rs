@@ -9,6 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[test]
 fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
     let host = RemoteHost {
+        admitted: None,
         destination: "synthetic.invalid".into(),
         test_path: None,
         options: ConnectOptions::default(),
@@ -68,6 +69,7 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
     std::fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n")?;
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))?;
     let host = RemoteHost {
+        admitted: None,
         destination: "fixture.invalid".into(),
         test_path: None,
         options: ConnectOptions {
@@ -105,7 +107,12 @@ fn known_hosts_filename_is_one_quoted_ssh_config_value() {
 fn resolved_proxy_hops_are_refused() -> anyhow::Result<()> {
     let policy = ruxel_guard::Policy::new(&[], &[])?;
     let admit = |config: &str| super::admit_resolved(config, "synthetic", &policy);
-    admit("hostname 192.0.2.1\nproxyjump none\n")?;
+    assert_eq!(admit("hostname 192.0.2.1\nproxyjump none\n")?, "192.0.2.1");
+    assert_eq!(admit("hostname fe80::1%eth0\n")?, "fe80::1%eth0");
+    assert!(admit("hostname fe80::1%\n").is_err());
+    assert!(admit("hostname 192.0.2.1%eth0\n").is_err());
+    let denied = ruxel_guard::Policy::new(&[], &["fe80::/64".into()])?;
+    assert!(super::admit_resolved("hostname fe80::1%eth0\n", "scoped", &denied).is_err());
     assert!(admit("hostname 192.0.2.1\nproxyjump jump\n").is_err());
     assert!(admit("hostname 192.0.2.1\nproxycommand nc %h %p\n").is_err());
     assert!(admit("user root\n").is_err());

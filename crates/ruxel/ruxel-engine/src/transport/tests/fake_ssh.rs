@@ -202,13 +202,29 @@ fn run() -> Result<u8> {
             .join(",")
     ))?;
     let remote = &args[separator + 2..];
+    let hostname = fs::read_to_string(fixture.root.join("hostname"))
+        .unwrap_or_else(|_| "192.0.2.10".into());
+    let hostname = hostname.trim();
     if options.iter().any(|arg| arg == "-G") {
         assert!(remote.is_empty());
-        let hostname = fs::read_to_string(fixture.root.join("hostname"))
-            .unwrap_or_else(|_| "192.0.2.10".into());
-        println!("hostname {}\nproxyjump none\nproxycommand none", hostname.trim());
+        assert!(!options.iter().any(|arg| arg.starts_with("HostName=")));
+        println!("hostname {hostname}\nproxyjump none\nproxycommand none");
         return Ok(0);
     }
+    let pins: Vec<_> = options
+        .windows(2)
+        .filter(|pair| pair[0] == "-o")
+        .map(|pair| pair[1].as_str())
+        .filter(|option| option.starts_with("HostName=") || option.starts_with("Proxy"))
+        .collect();
+    assert_eq!(
+        pins,
+        [
+            format!("HostName={hostname}").as_str(),
+            "ProxyJump=none",
+            "ProxyCommand=none"
+        ]
+    );
     if options.iter().any(|arg| arg == "-s") {
         assert_eq!(remote, &["sftp"]);
         fake_sftp::serve(&fixture)?;
