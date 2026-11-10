@@ -22,9 +22,13 @@ struct Behavior {
 }
 impl Fixture {
     fn new() -> Result<Self> {
+        // Parallel tests can read the same clock value, so a counter keeps
+        // each fixture directory distinct.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "ruxel-exit-classification-{}-{unique}",
+            "ruxel-exit-classification-{}-{unique}-{sequence}",
             std::process::id()
         ));
         let fixture = Self {
