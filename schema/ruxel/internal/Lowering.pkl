@@ -50,7 +50,11 @@ function copiedClasses(stages: List<Any>): String? =
   else if (stages.any((s) -> s.hosts.toList().any((h) -> !(h is core.Host)))) copyMessage("host")
   else null
 
-function copyMessage(what: String): String =
+/// `const` because `Walker.one` throws it: official Pkl lets a class body
+/// reference only const module members (a class is not late bound), so
+/// without this a copied step would be refused with a const error instead
+/// of this message.
+const function copyMessage(what: String): String =
   "A \(what)'s class comes from a copy of a ruxel layer module. Import the modules under \"modulepath:/ruxel/\", which the ruxel binary serves."
 
 /// The served class of every step kind, by kind. A step of another class
@@ -83,7 +87,12 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
 /// of it: a recipe of the workflow's own extends the served `Recipe`. A
 /// kind no served class has is left to the lowering, which cannot lower it
 /// either.
-function canonicalStep(s: core.Step): Boolean =
+///
+/// `const` because `Walker.one` calls it: official Pkl, unlike pklr, lets a
+/// class body reference only const module members. The lookup stays legal
+/// in a const context — `canonicalClasses` is const, so its stored checks
+/// are const too.
+const function canonicalStep(s: core.Step): Boolean =
   if (!canonicalClasses.containsKey(s.kind)) true
   else canonicalClasses[s.kind].apply(s)
 
@@ -260,7 +269,9 @@ function withInherited(q: Placed, extra: List<String>): Placed =
   new Placed { step = q.step; id = q.id; watches = q.watches; reads = q.reads; inherited = q.inherited + extra; written = q.written; scope = q.scope }
 
 /// Expands recipes in place. A class, because pklr cannot call a recursive
-/// module function inside a lambda (P11).
+/// module function inside a lambda (P11). Official Pkl, unlike pklr, lets a
+/// class body reference only const module members, so every module member
+/// this class calls is `const`.
 class Walker {
   function stage(steps: List<core.Step>): List<Placed> =
     positions(steps).flatMap((i) -> this.one(steps[i], List(), i + 1, List(i)))
