@@ -24,6 +24,7 @@ fn plan(state: &mut SystemState, names: &[&str], latest: bool) -> AptPlan {
         .plan_packages(
             &PackageRequest::parse_all(&names).expect("supported selectors"),
             latest,
+            &[],
         )
         .expect("plan succeeds")
 }
@@ -55,7 +56,7 @@ fn exact_pin_is_satisfied_by_the_native_or_all_entry() {
 fn satisfied_requests_stay_in_the_transaction_at_their_installed_version() {
     let mut state = state(
         &[("held:amd64", "1.1"), ("lib:i386", "2"), ("pin:amd64", "3")],
-        &[("held", "1.2"), ("other", "1")],
+        &[("held", "1.2"), ("other", "1"), ("new", "5")],
     );
     let plan = plan(
         &mut state,
@@ -117,6 +118,7 @@ fn unpinned_requests_without_a_candidate_are_refused() {
             .plan_packages(
                 &PackageRequest::parse_all(&names).expect("supported"),
                 latest,
+                &[],
             )
             .expect_err("virtual package");
         assert!(error.contains("no installation candidate"), "{error}");
@@ -141,4 +143,69 @@ fn only_healthy_installations_count_as_installed() {
             "{state}"
         );
     }
+}
+
+#[test]
+fn exact_pins_and_candidates_use_debian_version_equality() {
+    let mut state = state(
+        &[("pkg:amd64", "1.01"), ("cur:amd64", "1:2.0-0")],
+        &[("cur", "1:2.0")],
+    );
+    assert_eq!(
+        plan(&mut state, &["pkg=1.1"], false).missing,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        plan(&mut state, &["pkg=1.1-1"], false).missing,
+        ["pkg=1.1-1"]
+    );
+    assert_eq!(
+        plan(&mut state, &["cur"], true).missing,
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn missing_pinned_virtual_packages_are_refused() {
+    let mut state = state(
+        &[("apt:amd64", "2.8.3")],
+        &[("apt-transport-https", "(none)")],
+    );
+    let names = vec!["apt-transport-https=2.8.3".to_string()];
+    let error = state
+        .plan_packages(
+            &PackageRequest::parse_all(&names).expect("supported"),
+            false,
+            &[],
+        )
+        .expect_err("virtual package");
+    assert!(error.contains("no installation candidate"), "{error}");
+}
+
+#[test]
+fn candidate_lookups_use_the_task_environment() {
+    let dir = std::env::temp_dir().join(format!("ruxel-apt-cache-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("fixture directory");
+    let program = dir.join("apt-cache");
+    std::fs::write(
+        &program,
+        "#!/bin/sh\n[ \"$1\" = policy ] || exit 7\nshift\nfor name; do printf '%s:\\n  Candidate: %s\\n' \"$name\" \"${APT_CONFIG:-(none)}\"; done\n",
+    )
+    .expect("fake apt-cache");
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    )
+    .expect("executable");
+    let mut state = state(&[], &[]);
+    state.apt_cache = Some(program);
+    let names = vec!["pkg".to_string()];
+    let requests = PackageRequest::parse_all(&names).expect("supported");
+    assert!(state.plan_packages(&requests, false, &[]).is_err());
+    let scoped = [("APT_CONFIG".to_string(), "1.0".to_string())];
+    let plan = state
+        .plan_packages(&requests, false, &scoped)
+        .expect("scoped candidate");
+    assert_eq!(plan.missing, ["pkg"]);
+    std::fs::remove_dir_all(dir).expect("cleanup");
 }

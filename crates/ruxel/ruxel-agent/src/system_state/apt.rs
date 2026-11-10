@@ -1,6 +1,7 @@
 use super::SystemState;
 use super::apt_policy::{parse_dpkg_status, parse_policy};
 use super::apt_request::PackageRequest;
+use super::apt_version;
 
 /// What `apt-get install` must do to satisfy a request list.
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -25,42 +26,49 @@ impl SystemState {
 
     /// # Errors
     /// Returns snapshot or `apt-cache policy` failures.
+    ///
+    /// `environment` is the task environment that apt-get runs with (for
+    /// example `APT_CONFIG`); candidate lookups use the same one.
     pub(crate) fn plan_packages(
         &mut self,
         requests: &[PackageRequest],
         latest: bool,
+        environment: &[(String, String)],
     ) -> Result<AptPlan, String> {
         self.ensure_packages()?;
+        if self.candidate_environment != environment {
+            self.candidates.clear();
+            self.candidate_environment = environment.to_vec();
+        }
         // Candidates are needed to compare installed unpinned requests with
-        // `latest`, and to refuse unpinned requests that apt could satisfy
-        // only through another package (virtual) or not at all.
+        // `latest`, and to refuse missing requests that apt could satisfy only
+        // through another package (virtual) or not at all.
         let unknown: Vec<_> = requests
             .iter()
             .filter(|request| {
-                request.version().is_none()
-                    && (latest || self.installed(request).is_none())
+                let installed = self.installed(request).is_some();
+                (!installed || (latest && request.version().is_none()))
                     && !self.candidates.contains_key(&self.policy_header(request))
             })
             .map(PackageRequest::selector)
             .collect();
-        self.query_candidates(&unknown)?;
+        self.query_candidates(&unknown, environment)?;
         let mut plan = AptPlan::default();
         for request in requests {
             let installed = self.installed(request);
             let satisfied = match (installed, request.version()) {
                 (None, _) => false,
-                (Some(installed), Some(version)) => installed == version,
+                (Some(installed), Some(version)) => apt_version::equal(installed, version),
                 (Some(installed), None) if latest => {
                     let header = self.policy_header(request);
                     let candidate = self.candidates.get(&header).ok_or_else(|| {
                         format!("apt: no policy candidate for {:?}", request.selector())
                     })?;
-                    candidate == installed || candidate == "(none)"
+                    candidate == "(none)" || apt_version::equal(candidate, installed)
                 }
                 (Some(_), None) => true,
             };
             if installed.is_none()
-                && request.version().is_none()
                 && self
                     .candidates
                     .get(&self.policy_header(request))
@@ -164,13 +172,22 @@ impl SystemState {
     }
 
     /// One batched `apt-cache policy` call for every selector.
-    fn query_candidates(&mut self, selectors: &[String]) -> Result<(), String> {
+    fn query_candidates(
+        &mut self,
+        selectors: &[String],
+        environment: &[(String, String)],
+    ) -> Result<(), String> {
         if selectors.is_empty() {
             return Ok(());
         }
-        let output = std::process::Command::new("apt-cache")
+        #[cfg(test)]
+        let program = self.apt_cache.clone().unwrap_or_else(|| "apt-cache".into());
+        #[cfg(not(test))]
+        let program = "apt-cache";
+        let output = std::process::Command::new(program)
             .arg("policy")
             .args(selectors)
+            .envs(environment.iter().cloned())
             .env("LC_ALL", "C")
             .output()
             .map_err(|error| format!("apt-cache policy: {error}"))?;

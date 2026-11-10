@@ -3,6 +3,7 @@ use std::collections::HashMap;
 mod apt;
 mod apt_policy;
 mod apt_request;
+mod apt_version;
 #[cfg(test)]
 use apt_policy::{parse_dpkg_status, parse_policy};
 pub(crate) use apt_request::PackageRequest;
@@ -12,10 +13,15 @@ pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
     candidates: HashMap<String, String>,
+    /// Task environment the cached candidates were observed with.
+    candidate_environment: Vec<(String, String)>,
     native_architecture: Option<String>,
     #[cfg(test)]
     package_builds: usize,
     /// Synthetic amd64 dpkg status database that replaces the host's.
+    /// Replacement `apt-cache` executable.
+    #[cfg(test)]
+    apt_cache: Option<std::path::PathBuf>,
     #[cfg(test)]
     dpkg_status: Option<std::sync::Arc<std::sync::Mutex<String>>>,
 }

@@ -127,7 +127,7 @@ fn install(
     command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
 ) -> Result<bool, String> {
     let latest = state == "latest";
-    let plan = system_state.plan_packages(requests, latest)?;
+    let plan = system_state.plan_packages(requests, latest, &ctx.environment)?;
     if plan.missing.is_empty() {
         return Ok(false);
     }
@@ -142,7 +142,9 @@ fn install(
         if rc != 0 {
             return Err(format!("apt install failed: {stderr}"));
         }
-        let unresolved = system_state.plan_packages(requests, latest)?.missing;
+        let unresolved = system_state
+            .plan_packages(requests, latest, &ctx.environment)?
+            .missing;
         if !unresolved.is_empty() {
             return Err(format!(
                 "apt install did not satisfy the requested packages: {}",
