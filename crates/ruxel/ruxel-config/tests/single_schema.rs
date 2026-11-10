@@ -54,8 +54,11 @@ fn violations(root: &Path) -> std::io::Result<Vec<String>> {
         }
         if path.is_symlink() {
             let canonical = root.join(CANONICAL).canonicalize()?;
+            // A link to the schema, or to a directory that contains it.
             if path.file_name().is_some_and(|name| name == "Ruxel.pkl")
-                || path.canonicalize().is_ok_and(|target| target == canonical)
+                || path
+                    .canonicalize()
+                    .is_ok_and(|target| canonical.starts_with(target))
             {
                 violations.push(format!(
                     "{relative}: a link to the schema; import \"modulepath:/ruxel/Ruxel.pkl\" instead"
