@@ -29,7 +29,7 @@ typealias NumberValue = Int(this >= 0)|Expr
 typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
 typealias TextList = String|Listing<String>|Expr
 typealias PrivilegeList = String(contains(Regex("[^,\\s]")))|Listing<String>(!this.isEmpty && this.every((value) -> !value.trim().isEmpty))|Expr
-typealias CommandArgs = Listing<String>(!this.isEmpty && !this[0].isEmpty)|Expr
+typealias CommandArgs = *Listing<String>(!this.isEmpty && !this[0].isEmpty)|Expr
 typealias Port = Int(this >= 1 && this <= 65535)|Expr
 
 class Host { address: String; port: Int(this >= 1 && this <= 65535) = 22; user: String? = null; vars: Mapping<String, Expr> }
@@ -257,7 +257,7 @@ class User {
   comment: Text? = null
   create_home: Flag? = null
   group: Text? = null
-  groups: (Listing<String>(this.every((value) -> value is String))|Expr)? = null
+  groups: (*Listing<String>(this.every((value) -> value is String))|Expr)?
   home: Text? = null
   name: Text
   remove: Flag? = null
@@ -269,7 +269,7 @@ class User {
 
 class VolumeGroup {
   fixed kind = "volume_group"
-  pvs: Listing<String>(!this.isEmpty && this.every((value) -> value is String))|Expr
+  pvs: *Listing<String>(!this.isEmpty && this.every((value) -> value is String))|Expr
   vg: Text
 }
 

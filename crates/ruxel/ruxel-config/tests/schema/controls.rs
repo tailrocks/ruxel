@@ -24,6 +24,25 @@ fn user_groups_and_volume_pvs_are_lists_or_expressions() -> Result {
     Ok(())
 }
 
+/// `groups { ... }` and `pvs { ... }` amend each union's `*Listing` default,
+/// as stock `pkl eval` requires: a union without a `*` default, or an explicit
+/// `= null` default, cannot be amended there.
+#[test]
+fn user_groups_and_volume_pvs_accept_listing_bodies() -> Result {
+    let user = evaluate(r#"new R.User { name = "fixture"; groups { "adm"; "sudo" } }"#)?;
+    assert_eq!(user["groups"], serde_json::json!(["adm", "sudo"]));
+    let unset = evaluate(r#"new R.User { name = "fixture" }"#)?;
+    assert!(
+        unset.get("groups").is_none_or(serde_json::Value::is_null),
+        "{unset}"
+    );
+    let volume = evaluate(r#"new R.VolumeGroup { vg = "fixture"; pvs { "/dev/sdb" } }"#)?;
+    assert_eq!(volume["pvs"], serde_json::json!(["/dev/sdb"]));
+    assert!(evaluate(r#"new R.VolumeGroup { vg = "fixture" }"#).is_err());
+    assert!(evaluate(r#"new R.VolumeGroup { vg = "fixture"; pvs {} }"#).is_err());
+    Ok(())
+}
+
 #[test]
 fn become_user_requires_nonempty_valid_usernames() -> Result {
     for class in ["Play", "Task"] {
