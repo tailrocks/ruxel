@@ -17,36 +17,61 @@ use std::{
 /// A directory pinned by descriptor, with the absolute path that names it.
 #[derive(Debug)]
 pub(super) struct Root {
+    /// The canonical name of the directory.
     path: PathBuf,
+    /// The spelling the caller gave, when it differs from `path` and names
+    /// the same directory without `..` (for example `/var/...` for
+    /// `/private/var/...`), so absolute paths written that way still match.
+    alias: Option<PathBuf>,
     directory: File,
 }
 
 impl Root {
-    /// Open the directory `path` names now (following symlinks in it), then
-    /// name it by its canonical path. The name is checked against the open
-    /// descriptor, so a rename between the two steps is refused rather than
-    /// pairing the descriptor with another directory's name.
+    /// Open the directory `path` names now (following symlinks in it).
     pub(super) fn open(path: &Path) -> std::io::Result<Self> {
-        let directory: File = rustix::fs::open(
+        let directory = rustix::fs::open(
             path,
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
             Mode::empty(),
-        )?
-        .into();
-        let path = std::fs::canonicalize(path)?;
-        let named = rustix::fs::stat(&path)?;
+        )?;
+        Self::verified(path, directory.into())
+    }
+
+    /// Name a directory that was just opened through `path`. The canonical
+    /// name is checked against the descriptor (device and inode), so a
+    /// rename, or a symlink followed by `..`, cannot pair the descriptor
+    /// with another directory's name.
+    pub(super) fn verified(path: &Path, directory: File) -> std::io::Result<Self> {
         let opened = rustix::fs::fstat(&directory)?;
+        if rustix::fs::FileType::from_raw_mode(opened.st_mode) != rustix::fs::FileType::Directory {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "root is not a directory",
+            ));
+        }
+        let canonical = std::fs::canonicalize(path)?;
+        let named = rustix::fs::stat(&canonical)?;
         if (named.st_dev, named.st_ino) != (opened.st_dev, opened.st_ino) {
             return Err(std::io::Error::other(format!(
                 "{} changed while it was opened",
-                path.display()
+                canonical.display()
             )));
         }
-        Ok(Self { path, directory })
+        let given = std::path::absolute(path)?;
+        let alias = (!given.components().any(|part| part == Component::ParentDir))
+            .then(|| normalize(&given))
+            .filter(|alias| *alias != canonical);
+        Ok(Self {
+            path: canonical,
+            alias,
+            directory,
+        })
     }
 
-    /// Use an already opened directory as the root named by `path`.
-    pub(super) fn from_directory(path: &Path, directory: File) -> std::io::Result<Self> {
+    /// Use a directory pinned earlier as the root logically named `path`.
+    /// The descriptor stays authoritative even if `path` now names another
+    /// directory; the name only resolves module identities.
+    pub(super) fn pinned(path: &Path, directory: File) -> std::io::Result<Self> {
         if !directory.metadata()?.is_dir() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -55,6 +80,7 @@ impl Root {
         }
         Ok(Self {
             path: normalize(&std::path::absolute(path)?),
+            alias: None,
             directory,
         })
     }
@@ -66,6 +92,7 @@ impl Root {
     pub(super) fn try_clone(&self) -> std::io::Result<Self> {
         Ok(Self {
             path: self.path.clone(),
+            alias: self.alias.clone(),
             directory: self.directory.try_clone()?,
         })
     }
@@ -74,7 +101,11 @@ impl Root {
     /// `None` when it is not beneath the root.
     fn relative(&self, path: &Path) -> Option<PathBuf> {
         let mut relative = PathBuf::new();
-        for component in path.strip_prefix(&self.path).ok()?.components() {
+        let inside = path
+            .strip_prefix(&self.path)
+            .ok()
+            .or_else(|| path.strip_prefix(self.alias.as_ref()?).ok())?;
+        for component in inside.components() {
             match component {
                 Component::Normal(name) => relative.push(name),
                 Component::CurDir => {}
@@ -103,38 +134,20 @@ impl Confined {
         self.roots
             .iter()
             .filter_map(|root| root.relative(path).map(|relative| (root, relative)))
+            // On a tie the earlier root wins: the root directory's descriptor
+            // over a module path entry that names the same directory.
+            .rev()
             .max_by_key(|(root, _)| root.path.components().count())
     }
 
-    /// The root that contains `path`, and `path` relative to it. A path that
-    /// names a root through a symlinked ancestor (`/var` for `/private/var`)
-    /// is matched after resolving its deepest existing ancestor once; a
-    /// symlink inside a root resolves outside it or is refused when opened.
+    /// The root that contains `path`, and `path` relative to it.
     fn locate(&self, path: &Path) -> Result<(&Root, PathBuf)> {
         // Normalize first, so a `..` detour (`/config/x/../lib`) is matched
-        // against the most specific root, not just the first broad one.
-        let mut existing = normalize(path);
-        if let Some(found) = self.find(&existing) {
-            return Ok(found);
-        }
-        // Never resolve the last component: a symlink there is refused when
-        // it is opened.
-        let mut rest = Vec::new();
-        if let Some(name) = existing.file_name().map(std::ffi::OsStr::to_os_string) {
-            rest.push(name);
-            existing.pop();
-        }
-        loop {
-            if let Ok(mut resolved) = std::fs::canonicalize(&existing) {
-                resolved.extend(rest.iter().rev());
-                return self.find(&resolved).ok_or_else(|| self.refusal(path));
-            }
-            let Some(name) = existing.file_name().map(std::ffi::OsStr::to_os_string) else {
-                return Err(self.refusal(path));
-            };
-            rest.push(name);
-            existing.pop();
-        }
+        // against the most specific root. Nothing outside the roots is ever
+        // resolved or touched: a path matches only a root's canonical name
+        // or the spelling it was given.
+        self.find(&normalize(path))
+            .ok_or_else(|| self.refusal(path))
     }
 
     fn refusal(&self, path: &Path) -> Error {

@@ -25,7 +25,7 @@ impl TemplateRoot {
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
             Mode::empty(),
         )?;
-        Ok(Self(Root::from_directory(&path, directory.into())?))
+        Ok(Self(Root::verified(&path, directory.into())?))
     }
 
     /// Use an already opened directory as the pinned root.
@@ -37,7 +37,7 @@ impl TemplateRoot {
     /// Returns an IO error if the path cannot be made absolute or the descriptor
     /// does not refer to a directory.
     pub fn from_directory(path: &Path, directory: File) -> std::io::Result<Self> {
-        Ok(Self(Root::from_directory(path, directory)?))
+        Ok(Self(Root::pinned(path, directory)?))
     }
 
     /// Evaluate a template beneath the pinned root. Its imports and `file:`

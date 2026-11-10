@@ -49,3 +49,20 @@ fn nested_roots_read_through_their_own_descriptor() -> Result {
     assert_eq!(files.read(&detour)?, Some(b"pinned".to_vec()));
     Ok(())
 }
+
+#[test]
+fn equal_root_paths_prefer_the_first_root() -> Result {
+    use super::super::{Confined, Root};
+    let fixture = Fixture::new()?;
+    let file = fixture.write("lib/value.txt", "first")?;
+    let first = Root::open(&fixture.config().join("lib"))?;
+    std::fs::rename(fixture.config().join("lib"), fixture.config().join("moved"))?;
+    fixture.write("lib/value.txt", "second")?;
+    let second = Root::open(&fixture.config().join("lib"))?;
+    let files = Confined::new(vec![first, second]);
+    assert_eq!(
+        files.read(&std::fs::canonicalize(file.parent().ok_or("parent")?)?.join("value.txt"))?,
+        Some(b"first".to_vec())
+    );
+    Ok(())
+}

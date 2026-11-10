@@ -57,18 +57,32 @@ fn racing_resource_symlinks_never_supply_outside_bytes() -> Result {
 }
 
 #[test]
-fn absolute_paths_through_symlinked_ancestors_name_the_root() -> Result {
+fn absolute_paths_match_only_the_given_or_canonical_root_name() -> Result {
     let fixture = Fixture::new()?;
     fixture.write("inside.txt", "inside")?;
+    // The spelling the root was given (on macOS, /var/... for /private/var/...).
+    let given = format!(
+        "value = read(\"file:{}\").text",
+        fixture.config().join("inside.txt").display()
+    );
+    assert_eq!(fixture.eval(&given)?, json!({"value": "inside"}));
+    let canonical = format!(
+        "value = read(\"file:{}\").text",
+        std::fs::canonicalize(fixture.config())?
+            .join("inside.txt")
+            .display()
+    );
+    assert_eq!(fixture.eval(&canonical)?, json!({"value": "inside"}));
+    // Any other alias is refused without being resolved.
     let alias = fixture.0.with_extension("alias");
     std::os::unix::fs::symlink(&fixture.0, &alias)?;
-    let source = format!(
+    let other = format!(
         "value = read(\"file:{}\").text",
         alias.join("config/inside.txt").display()
     );
-    let result = fixture.eval(&source);
+    let result = fixture.eval(&other);
     std::fs::remove_file(&alias)?;
-    assert_eq!(result?, json!({"value": "inside"}));
+    assert!(refused(result));
     Ok(())
 }
 

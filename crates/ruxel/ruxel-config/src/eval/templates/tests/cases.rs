@@ -84,3 +84,27 @@ fn unnormalized_template_root_paths_still_contain_their_modules()
     assert_eq!(root.evaluate(Path::new("main.pkl"))?, json!("inside"));
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn template_root_names_the_directory_its_descriptor_opened()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    std::fs::create_dir_all(fixture.0.join("elsewhere/child"))?;
+    std::fs::write(
+        fixture.0.join("elsewhere/main.pkl"),
+        "output { value = \"elsewhere\" }",
+    )?;
+    fixture.write("main.pkl", "output { value = \"inside\" }")?;
+    std::os::unix::fs::symlink(
+        fixture.0.join("elsewhere/child"),
+        fixture.root().join("link"),
+    )?;
+    // `link/..` is `elsewhere`, not the template directory: the root must be
+    // named for what was opened, so `main.pkl` is elsewhere's module.
+    let root = TemplateRoot::open(&fixture.root().join("link/.."))?;
+    assert_eq!(root.evaluate(Path::new("main.pkl"))?, json!("elsewhere"));
+    let error = root.evaluate(&fixture.root().join("main.pkl"));
+    assert!(error.is_err(), "{error:?}");
+    Ok(())
+}
