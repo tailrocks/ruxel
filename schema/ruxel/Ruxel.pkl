@@ -39,7 +39,7 @@ const local function isHttpsUrl(s: String): Boolean =
   s.startsWith("https://") && (
     let (rest = s.substring(8, s.length))
     let (slash = if (rest.contains("/")) rest.indexOf("/") else rest.length)
-    isAuthority(rest.substring(0, slash)) && !List(" ", "\t", "\n", "\r").any((c) -> rest.contains(c)))
+    isAuthority(rest.substring(0, slash)) && !rest.contains(" ") && !rest.matches(Regex("(?s).*[\\x00-\\x1f\\x7f].*")))
 
 const local function isAuthority(a: String): Boolean =
   if (a.startsWith("["))
@@ -114,6 +114,11 @@ typealias Arguments = StaticList(!isEmpty && !toList().first.isEmpty)
 /// The name of a service or an account: not empty, and not starting with
 /// `-`, which the tools that take it would read as an option.
 typealias Name = Static(!isEmpty && !startsWith("-"))
+/// A user or group name: a `Name` without the passwd and group delimiters.
+typealias Account = Name(!contains(":") && !contains("\n"))
+/// A tz database name such as `UTC` or `Europe/Berlin`: relative, no `.`
+/// or `..` components.
+typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*")))
 /// The SSH user ruxel logs in as: letters, digits, `._-`, not starting with
 /// `-`, as the engine accepts.
 typealias SshUser = Static(matches(Regex("[A-Za-z0-9._-]+")) && !startsWith("-"))
@@ -125,7 +130,7 @@ typealias SshHost = Static(matches(Regex(#"[A-Za-z0-9._:%\[\]-]+"#)) && !startsW
 /// name characters only (letters, digits, `:_.@-`, and `\xNN` escapes), at
 /// most 255 of them. A template needs its instance: `getty@tty1`, not
 /// `getty@`.
-typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
+typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") && length <= 247 || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
 
@@ -211,8 +216,8 @@ class File extends Step {
   content: String
   mode: FileMode = "0644"
   /// `null` leaves the current owner unchanged.
-  owner: Name? = null
-  group: Name? = null
+  owner: Account? = null
+  group: Account? = null
   /// A command that must accept the new content before it replaces the
   /// file. `%s` stands for the candidate, `.<name>.ruxel-candidate` beside
   /// the file, which stays there between runs.
@@ -263,7 +268,7 @@ class AptRepository extends Step {
   hidden fixed kind = "aptRepository"
   /// Names the files `/etc/apt/sources.list.d/<name>.sources` and
   /// `/etc/apt/keyrings/<name>.asc`.
-  name: String(matches(Regex("[a-z0-9][a-z0-9.-]*")))
+  name: String(matches(Regex("[a-z0-9][a-z0-9.-]*")) && length <= 247)
   url: HttpsUrl
   /// A distribution such as `"stable"`, or a path ending in `/` for a flat
   /// repository.
@@ -283,7 +288,7 @@ class AptRepository extends Step {
 
 class Timezone extends Step {
   hidden fixed kind = "timezone"
-  name: Name
+  name: TimezoneName
 }
 
 /// The login shell of an existing user.
@@ -291,7 +296,7 @@ class Timezone extends Step {
 /// fails the stage; it is never created.
 class LoginShell extends Step {
   hidden fixed kind = "loginShell"
-  user: Name
+  user: Account
   shell: FilePath
 }
 

@@ -236,6 +236,7 @@ class Walker {
   function one(s: rx.Step, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
     if (!(s is rx.Step)) throw(copyMessage("step"))
     else if (s is rx.Capture && s.runOn != null && !(s.runOn is rx.Host)) throw(copyMessage("host"))
+    else if (listed(s).any((w) -> !(w is rx.Step))) throw(copyMessage("step"))
     else if (s is rx.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
     else if (s is rx.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
     else List(placedAt(s, "", _inherited, _written, _scope))

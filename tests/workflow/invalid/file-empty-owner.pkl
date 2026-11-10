@@ -1,5 +1,5 @@
 // expect-pkl: !isEmpty
-// expect-pklr: expected Name
+// expect-pklr: expected Account
 amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 
