@@ -303,3 +303,25 @@ fn validator_candidates_belong_to_root() -> Result {
     }
     Ok(())
 }
+
+/// File names have at most 255 bytes, so a long name's candidate is hashed.
+#[test]
+fn validator_candidates_fit_a_file_name() -> Result {
+    let config = valid("long-file-name.pkl")?;
+    let staged = tasks(&config)
+        .into_iter()
+        .find(|task| {
+            task["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("Stage /etc/"))
+        })
+        .ok_or("no staging task")?;
+    let dest = staged["operation"]["dest"].as_str().ok_or("no dest")?;
+    let name = dest.rsplit('/').next().ok_or("no name")?;
+    assert!(name.len() <= 255, "{} bytes: {name}", name.len());
+    assert!(
+        name.starts_with('.') && name.ends_with(".ruxel-candidate"),
+        "{name}"
+    );
+    Ok(())
+}

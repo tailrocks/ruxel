@@ -1,0 +1,14 @@
+// A validated file whose name leaves no room for the usual candidate name
+// (.<name>.ruxel-candidate would pass 255 bytes): the candidate is hashed.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "Long name"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"; content = "a"; validate { "app"; "--check"; "%s" } }
+    }
+  }
+}

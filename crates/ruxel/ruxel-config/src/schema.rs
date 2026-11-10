@@ -17,6 +17,9 @@
 use crate::ConfigError;
 use std::sync::LazyLock;
 
+mod export;
+pub use export::export;
+
 /// Where configuration imports Ruxel from: every module is served under this
 /// `modulepath:` namespace.
 pub const MODULE_PREFIX: &str = "modulepath:/ruxel/";

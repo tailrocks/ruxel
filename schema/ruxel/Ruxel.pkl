@@ -61,8 +61,28 @@ typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "loc
 /// link-local addresses.
 typealias IpAddress = String(isIpv4(this) || isIpv6(this))
 
+/// `0.0.0.0`, or an IPv6 address that is all zeros or maps `0.0.0.0`
+/// (`::ffff:0.0.0.0`): the addresses ruxel's transport refuses.
 const local function isUnspecified(s: String): Boolean =
-  s == "0.0.0.0" || s.contains(":") && s.split("%").first.split(":").filter((g) -> !g.isEmpty).every((g) -> g.matches(Regex("0+")))
+  s == "0.0.0.0" || s.contains(":") && (
+    let (groups = ipv6Groups(s.split("%").first))
+    groups.length == 8 && (groups.every((g) -> isZero(g))
+      || IntSeq(0, 4).toList().every((k) -> isZero(groups[k])) && groups[5].toLowerCase().matches(Regex("0*ffff")) && isZero(groups[6]) && isZero(groups[7])))
+
+/// The eight groups of a valid IPv6 address; an IPv4 tail counts as two,
+/// written `0` and `0` for `0.0.0.0` and `1` and `1` otherwise.
+const local function ipv6Groups(a: String): List<String> =
+  let (gap = a.contains("::"))
+  let (left = tokens(if (gap) a.substring(0, a.indexOf("::")) else a))
+  let (right = if (gap) tokens(a.substring(a.indexOf("::") + 2, a.length)) else List())
+  let (missing = 8 - left.length - right.length)
+  left + (if (missing <= 0) List() else IntSeq(1, missing).toList().map((_) -> "0")) + right
+
+const local function tokens(part: String): List<String> =
+  if (part.isEmpty) List()
+  else part.split(":").flatMap((g) -> if (g.contains(".")) (if (g == "0.0.0.0") List("0", "0") else List("1", "1")) else List(g))
+
+const local function isZero(group: String): Boolean = group.matches(Regex("0+"))
 
 const local function isIpv4(s: String): Boolean =
   let (parts = s.split("."))
@@ -94,11 +114,18 @@ typealias Arguments = StaticList(!isEmpty && !toList().first.isEmpty)
 /// The name of a service or an account: not empty, and not starting with
 /// `-`, which the tools that take it would read as an option.
 typealias Name = Static(!isEmpty && !startsWith("-"))
+/// The SSH user ruxel logs in as: letters, digits, `._-`, not starting with
+/// `-`, as the engine accepts.
+typealias SshUser = Static(matches(Regex("[A-Za-z0-9._-]+")) && !startsWith("-"))
+/// An SSH config alias or host: letters, digits, `._:%[]-`, not starting with
+/// `-`, as the engine accepts.
+typealias SshHost = Static(matches(Regex(#"[A-Za-z0-9._:%\[\]-]+"#)) && !startsWith("-"))
 /// A systemd service: `nginx` or `nginx.service`, not another unit type
 /// such as `sshd.socket`, which the agent does not track. Canonical unit
 /// name characters only (letters, digits, `:_.@-`, and `\xNN` escapes), at
-/// most 255 of them.
-typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") || endsWith(".service") && length > 8))
+/// most 255 of them. A template needs its instance: `getty@tty1`, not
+/// `getty@`.
+typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
 
@@ -111,8 +138,8 @@ class Host {
   /// connects to.
   address: IpAddress(!isUnspecified(this))
   /// The SSH target, when it is not `address`: an alias from the SSH config.
-  sshHost: Static? = null
-  user: Static = "root"
+  sshHost: SshHost? = null
+  user: SshUser = "root"
   port: Int(isBetween(1, 65535)) = 22
 }
 
@@ -184,8 +211,8 @@ class File extends Step {
   content: String
   mode: FileMode = "0644"
   /// `null` leaves the current owner unchanged.
-  owner: Static? = null
-  group: Static? = null
+  owner: Name? = null
+  group: Name? = null
   /// A command that must accept the new content before it replaces the
   /// file. `%s` stands for the candidate, `.<name>.ruxel-candidate` beside
   /// the file, which stays there between runs.

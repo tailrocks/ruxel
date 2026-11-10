@@ -628,7 +628,9 @@ function candidateCopy(f: rx.File): engine.Copy = new engine.Copy {
 /// dotfiles. It stays, so that a second apply reports no change.
 const function candidate(f: rx.File): String =
   let (slash = f.path.lastIndexOf("/"))
-  "\(f.path.substring(0, slash + 1)).\(f.path.substring(slash + 1, f.path.length)).ruxel-candidate"
+  let (base = f.path.substring(slash + 1, f.path.length))
+  // A file name has at most 255 bytes; a long or non-ASCII one is hashed.
+  "\(f.path.substring(0, slash + 1)).\(if (base.length <= 238 && base.matches(Regex("[ -~]*"))) base else base.sha256.substring(0, 32)).ruxel-candidate"
 
 /// The keyring task notifies and registers too: a new key is a change of
 /// the repository.
