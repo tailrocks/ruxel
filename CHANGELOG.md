@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- A typed workflow language: workflows amend `modulepath:/ruxel/Workflow.pkl` and list stages of steps (`File`, `Packages`, `Service`, `Command`, `Capture`, …); recipes extend `modulepath:/ruxel/Ruxel.pkl`. `modulepath:/ruxel/internal/Lowering.pkl` lowers them to engine input and rejects broken references with plain messages. Admission refuses a configuration built by a copy of `Workflow.pkl` or `Lowering.pkl` (`Config.languageFingerprint`), as it refuses copies of the engine schema.
-- The binary serves its compiled-in schema as `modulepath:/ruxel/Ruxel.pkl`; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
+- A typed workflow language: workflows amend `modulepath:/ruxel/Workflow.pkl` and list stages of steps (`File`, `Packages`, `Service`, `Command`, `Capture`, …); recipes extend `modulepath:/ruxel/Core.pkl` and import the layer modules they use (`Linux`, `Systemd`, `Debian` under the same prefix). `modulepath:/ruxel/internal/Lowering.pkl` lowers them to engine input and rejects broken references with plain messages. Admission refuses a configuration built by a copy of `Workflow.pkl` or `Lowering.pkl` (`Config.languageFingerprint`), as it refuses copies of the engine schema.
+- The binary serves its compiled-in schema as layer modules under `modulepath:/ruxel/` (`Core`, `Linux`, `Systemd`, `Debian`, `Workflow`, `internal/Lowering`, `engine/Engine`); there is no single `Ruxel.pkl` module; `plan`, `check`, `diff` and `apply` refuse configuration evaluated against any other copy of the schema.
 - `--module-path DIR[:DIR...]` on `config dump`, `plan`, `check`, `diff` and `apply` serves shared Pkl libraries, like `pkl eval --module-path`.
 - `ruxel schema export DIR` writes the served schema for editors and the `pkl` CLI.
 - `--root-dir DIR` on `config dump`, `plan`, `check`, `diff` and `apply` widens the directory a configuration may read, like `pkl eval --root-dir`.
@@ -24,7 +24,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- The engine schema moves to `modulepath:/ruxel/engine/Engine.pkl` (module `Engine`); `modulepath:/ruxel/Ruxel.pkl` is now the workflow language. Configuration that imports the engine schema must change its import. The schema fingerprint covers every served module, and `ruxel schema export` writes them all.
+- The engine schema moves to `modulepath:/ruxel/engine/Engine.pkl` (module `Engine`); the workflow language is now the layer split under `modulepath:/ruxel/` (`Core` for generic blocks, `Linux`, `Systemd`, `Debian` for the layers; recipes extend `Core`). Configuration that imports the engine schema must change its import. The schema fingerprint covers every served module, and `ruxel schema export` writes them all.
 - Evaluation allows an expression depth of 256 instead of pklr's default of 32.
 - Pkl imports and `file:` resources, in configurations and templates, are confined to the root directory (default: the root module's directory) and the module path directories; symlinks inside them, network imports, and module and resource globs (`import*`, `read*`) are refused.
 - Command and shell tasks that run invalidate the agent's package and unit snapshots, so a later apt or systemd task, or its ledger entry, never trusts state read before the command.

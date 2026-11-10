@@ -1,5 +1,6 @@
 // expect: (step 2 of the recipe at step 2 of the recipe at step 1) and 'Write /etc/a' (step 2 of the recipe at step 3 of the recipe at step 1) both manage /etc/a with different settings
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
 
 local class Inner extends Recipe {
@@ -8,7 +9,7 @@ local class Inner extends Recipe {
 }
 
 local class Outer extends Recipe {
-  function steps(): Listing<Step> = new { new Timezone { name = "UTC" }; new Inner { text = "1" }; new Inner { text = "2" } }
+  function steps(): Listing<Step> = new { new linux.Timezone { name = "UTC" }; new Inner { text = "1" }; new Inner { text = "2" } }
 }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Outer {} } } }

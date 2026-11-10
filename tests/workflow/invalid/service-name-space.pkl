@@ -1,6 +1,7 @@
 // expect-pkl: x[0-9a-f]{2}
 // expect-pklr: expected ServiceName
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
 import "../inventory.pkl"
 
-stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Service { name = "foo bar.service"; running = true; enabled = true } } } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new systemd.Service { name = "foo bar.service"; running = true; enabled = true } } } }

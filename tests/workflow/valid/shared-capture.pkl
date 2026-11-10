@@ -7,6 +7,7 @@
 // - An own read per use, for a value that changes between uses: the recipe
 //   derives the capture's title from a parameter.
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 import "../recipes.pkl"
 
@@ -41,7 +42,7 @@ stages {
       new Join { ca = caHash; site = "b" }
       new recipes.KubeadmJoinConfig { endpoint = "k8s-api.example.test:7443"; sharedCaHash = caHash }
       new RecordRelease { label = "before" }
-      new Packages { names { "base-files" }; upgrade = true }
+      new debian.Packages { names { "base-files" }; upgrade = true }
       new RecordRelease { label = "after" }
     }
   }

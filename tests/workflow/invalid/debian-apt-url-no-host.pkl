@@ -1,0 +1,7 @@
+// expect-pkl: isHttpsUrl(this)
+// expect-pklr: expected HttpsUrl
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptRepository { name = "x"; url = "https://"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" } } } }

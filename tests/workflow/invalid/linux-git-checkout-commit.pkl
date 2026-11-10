@@ -1,0 +1,7 @@
+// expect-pkl: [0-9a-f]{40}|[0-9a-f]{64}
+// expect-pklr: expected CommitSha
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.GitCheckout { repository = "https://git.example.test/app.git"; path = "/opt/app"; commit = "notasha" } } } }

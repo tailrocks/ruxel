@@ -1,6 +1,7 @@
 // expect-pkl: !startsWith("-")
 // expect-pklr: expected TimezoneName
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
 
-stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Timezone { name = "--help" } } } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.Timezone { name = "--help" } } } }

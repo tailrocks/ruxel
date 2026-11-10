@@ -20,7 +20,10 @@
 ///   between fields are plain sentences thrown from here.
 module Lowering
 
-import "modulepath:/ruxel/Ruxel.pkl" as rx
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "modulepath:/ruxel/Systemd.pkl" as systemd
 import "modulepath:/ruxel/engine/Engine.pkl" as engine
 
 /// Replaced by the ruxel binary that serves this module, like the engine's
@@ -32,7 +35,7 @@ hidden servedFingerprint: String = "unserved"
 /// Otherwise one of the two is a copy, and it carries the copy's: a served
 /// fingerprint ends in `@<nonce>`, a copy's does not. So admission refuses a
 /// copy of either module, even an unmodified one, and names it as a copy.
-function config(stages: Listing<rx.Stage>, workflowFingerprint: String): engine.Config =
+function config(stages: Listing<core.Stage>, workflowFingerprint: String): engine.Config =
   let (copied = copiedClasses(stages.toList()))
   if (copied != null) throw(copied)
   else (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))) {
@@ -40,15 +43,49 @@ function config(stages: Listing<rx.Stage>, workflowFingerprint: String): engine.
   }
 
 /// pklr does not check the classes of list elements, so a stage or host
-/// built from a copy of Ruxel.pkl is refused here, like a copied step in
-/// `Walker`.
+/// built from a copy of a layer module is refused here, like a copied
+/// step in `Walker`.
 function copiedClasses(stages: List<Any>): String? =
-  if (stages.any((s) -> !(s is rx.Stage))) copyMessage("stage")
-  else if (stages.any((s) -> s.hosts.toList().any((h) -> !(h is rx.Host)))) copyMessage("host")
+  if (stages.any((s) -> !(s is core.Stage))) copyMessage("stage")
+  else if (stages.any((s) -> s.hosts.toList().any((h) -> !(h is core.Host)))) copyMessage("host")
   else null
 
 function copyMessage(what: String): String =
-  "A \(what)'s class comes from a copy of Ruxel.pkl. Import \"modulepath:/ruxel/Ruxel.pkl\", which the ruxel binary serves."
+  "A \(what)'s class comes from a copy of a ruxel layer module. Import the modules under \"modulepath:/ruxel/\", which the ruxel binary serves."
+
+/// The served class of every step kind, by kind. A step of another class
+/// is refused: a class copied from a layer module extends the served
+/// `core.Step`, so it passes `is core.Step` and would lower as a generic
+/// step of its kind, silently losing the class-specific handling — a
+/// service's restart triggers, a package step's checks — and the class's
+/// own rules.
+///
+/// Every kind the lowering lowers must name its class here, or a copy of
+/// that class would lower as a generic step again.
+const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
+  ["file"] = (s) -> s is core.File
+  ["directory"] = (s) -> s is core.Directory
+  ["symlink"] = (s) -> s is core.Symlink
+  ["command"] = (s) -> s is core.Command
+  ["script"] = (s) -> s is core.Script
+  ["capture"] = (s) -> s is core.Capture
+  ["recipe"] = (s) -> s is core.Recipe
+  ["service"] = (s) -> s is systemd.Service
+  ["packageIndex"] = (s) -> s is debian.PackageIndex
+  ["packages"] = (s) -> s is debian.Packages
+  ["aptRepository"] = (s) -> s is debian.AptRepository
+  ["timezone"] = (s) -> s is linux.Timezone
+  ["loginShell"] = (s) -> s is linux.LoginShell
+  ["gitCheckout"] = (s) -> s is linux.GitCheckout
+}
+
+/// Whether the step's class is the served class of its kind, or a subclass
+/// of it: a recipe of the workflow's own extends the served `Recipe`. A
+/// kind no served class has is left to the lowering, which cannot lower it
+/// either.
+function canonicalStep(s: core.Step): Boolean =
+  if (!canonicalClasses.containsKey(s.kind)) true
+  else canonicalClasses[s.kind].apply(s)
 
 function fingerprintOf(workflow: String, lowering: String): String =
   if (workflow == lowering) lowering
@@ -58,10 +95,10 @@ function fingerprintOf(workflow: String, lowering: String): String =
 
 /// Expands recipes, identifies every step and what it reacts to, merges
 /// exact repeats, then indexes and checks each stage.
-function checkedIndexes(stages: Listing<rx.Stage>): List<StageIndex> =
+function checkedIndexes(stages: Listing<core.Stage>): List<StageIndex> =
   accepted(stages.toList(), stages.toList().map((s) -> stageIndex(merged(identified(walker.stage(s.steps.toList()))))))
 
-function accepted(_stages: List<rx.Stage>, _indexes: List<StageIndex>): List<StageIndex> =
+function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<StageIndex> =
   orFail(_indexes, positions(_indexes).flatMap((n) -> stageProblems(_stages[n], _indexes[n])))
 
 function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<StageIndex> =
@@ -70,22 +107,22 @@ function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<Stage
 // ── Inventory ───────────────────────────────────────────────────────────────
 
 /// Every host a stage runs on or a capture reads from, once.
-function hostsOf(stages: Listing<rx.Stage>): List<rx.Host> =
+function hostsOf(stages: Listing<core.Stage>): List<core.Host> =
   stages.toList()
     .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())))
     .fold(List(), (seen, h) -> addHost(seen, h))
 
-function captureHosts(steps: List<rx.Step>): List<rx.Host> =
-  steps.filter((s) -> s is rx.Capture && s.runOn != null).map((s) -> s.runOn)
+function captureHosts(steps: List<core.Step>): List<core.Host> =
+  steps.filter((s) -> s is core.Capture && s.runOn != null).map((s) -> s.runOn)
 
 /// Compares hosts by their settings. Not `==`: comparing objects from the
 /// inventory module takes exponential time in pklr (P12).
-function addHost(seen: List<rx.Host>, h: rx.Host): List<rx.Host> =
+function addHost(seen: List<core.Host>, h: core.Host): List<core.Host> =
   if (seen.any((x) -> x.name == h.name && signature(x) != signature(h))) throw("Host \(h.name) is declared twice with different settings")
   else if (seen.any((x) -> x.name == h.name)) seen
   else seen + List(h)
 
-function signature(h: rx.Host): String = fields(List(h.address, optional(h.sshHost), h.user, "\(h.port)"))
+function signature(h: core.Host): String = fields(List(h.address, optional(h.sshHost), h.user, "\(h.port)"))
 
 /// Encodes a nullable text so that `null` and the text "null" differ.
 const function optional(v: String?): String = if (v == null) "-" else "+" + v
@@ -94,12 +131,12 @@ const function optional(v: String?): String = if (v == null) "-" else "+" + v
 /// so no value, whatever characters it contains, can stand for two lists.
 const function fields(values: List<String>): String = values.map((v) -> "\(v.length):\(v)").join("")
 
-function configOf(_hosts: List<rx.Host>, _stages: List<rx.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
+function configOf(_hosts: List<core.Host>, _stages: List<core.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
   inventory { hosts { for (h in _hosts) { [h.name] = hostOf(h) } } }
   plays { for (n, s in _stages) { playOf(s.title, s.hosts.toList().map((h) -> h.name), _indexes[n]) } }
 }
 
-function hostOf(h: rx.Host): engine.Host = new engine.Host {
+function hostOf(h: core.Host): engine.Host = new engine.Host {
   address = h.sshHost ?? h.address
   user = h.user
   port = h.port
@@ -112,7 +149,7 @@ function hostOf(h: rx.Host): engine.Host = new engine.Host {
 /// so computing them here keeps later lookups shallow (P3).
 class StageIndex {
   placed: List<Placed>
-  steps: List<rx.Step>
+  steps: List<core.Step>
   /// Identity of each step. (Not `keys`: pklr reads `.keys` as an object's
   /// property names, P13.)
   ids: List<String>
@@ -132,7 +169,7 @@ class StageIndex {
 
 function stageIndex(_placed: List<Placed>): StageIndex = indexOf(_placed, _placed.map((p) -> p.step), _placed.map((p) -> p.id))
 
-function indexOf(_placed: List<Placed>, _steps: List<rx.Step>, _ids: List<String>): StageIndex =
+function indexOf(_placed: List<Placed>, _steps: List<core.Step>, _ids: List<String>): StageIndex =
   new StageIndex {
     placed = _placed
     steps = _steps
@@ -157,14 +194,14 @@ function withMetas(ix: StageIndex): StageIndex =
   let (_metas = positions(ix.steps).map((i) -> metaOf(ix, i, _tags[i])))
   (ix) { metas = _metas }
 
-function stageProblems(s: rx.Stage, ix: StageIndex): List<String> =
+function stageProblems(s: core.Stage, ix: StageIndex): List<String> =
   (hostsTwice(s) + positions(ix.steps).flatMap((i) -> problemsAt(ix, i)) + repeatedCaptures(ix)).map((p) -> "Stage \"\(s.title)\": \(p)")
 
 /// A capture runs once per stage, so every `stdout()` names exactly one
 /// read, and a `local` holding a capture holds one value.
 function repeatedCaptures(ix: StageIndex): List<String> =
   positions(ix.steps)
-    .filter((j) -> ix.steps[j] is rx.Capture && earlier(j).any((k) -> ix.ids[k] == ix.ids[j]))
+    .filter((j) -> ix.steps[j] is core.Capture && earlier(j).any((k) -> ix.ids[k] == ix.ids[j]))
     .map((j) -> let (k = earlier(j).filter((k) -> ix.ids[k] == ix.ids[j]).first)
       "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) repeats the capture at \(where(ix.placed[k])); a capture runs once per stage, so "
       + (if (listOf(ix.placed[j]) == listOf(ix.placed[k]))
@@ -176,7 +213,7 @@ function repeatedCaptures(ix: StageIndex): List<String> =
 function listOf(p: Placed): String =
   positions(p.scope).filter((k) -> k < p.scope.length - 1).map((k) -> "\(p.scope[k])").join(".")
 
-function hostsTwice(s: rx.Stage): List<String> =
+function hostsTwice(s: core.Stage): List<String> =
   let (names = s.hosts.toList().map((h) -> h.name))
   names.filter((n) -> names.filter((m) -> m == n).length > 1).toSet().toList().map((n) -> "host \(n) is listed twice")
 
@@ -188,13 +225,13 @@ function playOf(_title: String, _targets: List<String>, ix: StageIndex): engine.
 }
 
 /// One restart handler per service name, however many steps ask for it.
-function restartedServices(steps: List<rx.Step>): List<String> =
-  steps.filter((x) -> x is rx.Service && !x.restartOnChangeOf.isEmpty).map((x) -> x.name).toSet().toList()
+function restartedServices(steps: List<core.Step>): List<String> =
+  steps.filter((x) -> x is systemd.Service && !x.restartOnChangeOf.isEmpty).map((x) -> x.name).toSet().toList()
 
 /// A step, the tags it inherits from the recipes around it, and where the
 /// author wrote it.
 class Placed {
-  step: rx.Step
+  step: core.Step
   /// Filled in by `identified`, after the walk: computing it during the walk
   /// would exceed pklr's depth limit (P3).
   id: String = ""
@@ -210,7 +247,7 @@ class Placed {
   scope: List<Int>
 }
 
-const function placedAt(_step: rx.Step, _id: String, _inherited: List<String>, _written: Int, _scope: List<Int>): Placed =
+const function placedAt(_step: core.Step, _id: String, _inherited: List<String>, _written: Int, _scope: List<Int>): Placed =
   new Placed { step = _step; id = _id; inherited = _inherited; written = _written; scope = _scope }
 
 function identified(placed: List<Placed>): List<Placed> =
@@ -225,26 +262,27 @@ function withInherited(q: Placed, extra: List<String>): Placed =
 /// Expands recipes in place. A class, because pklr cannot call a recursive
 /// module function inside a lambda (P11).
 class Walker {
-  function stage(steps: List<rx.Step>): List<Placed> =
+  function stage(steps: List<core.Step>): List<Placed> =
     positions(steps).flatMap((i) -> this.one(steps[i], List(), i + 1, List(i)))
 
   /// The steps of a recipe use whose scope is `_scope`.
-  function walk(steps: List<rx.Step>, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
+  function walk(steps: List<core.Step>, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
     positions(steps).flatMap((k) -> this.one(steps[k], _inherited, _written, _scope + List(k)))
 
   /// `_scope` ends with the step's own position in its list.
-  function one(s: rx.Step, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
-    if (!(s is rx.Step)) throw(copyMessage("step"))
-    else if (s is rx.Capture && s.runOn != null && !(s.runOn is rx.Host)) throw(copyMessage("host"))
-    else if (listed(s).any((w) -> !(w is rx.Step))) throw(copyMessage("step"))
-    else if (s is rx.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
-    else if (s is rx.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
+  function one(s: core.Step, _inherited: List<String>, _written: Int, _scope: List<Int>): List<Placed> =
+    if (!(s is core.Step)) throw(copyMessage("step"))
+    else if (!canonicalStep(s)) throw(copyMessage("step"))
+    else if (s is core.Capture && s.runOn != null && !(s.runOn is core.Host)) throw(copyMessage("host"))
+    else if (listed(s).any((w) -> !(w is core.Step) || !canonicalStep(w))) throw(copyMessage("step"))
+    else if (s is core.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
+    else if (s is core.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
     else List(placedAt(s, "", _inherited, _written, _scope))
 }
 
 local walker = new Walker {}
 
-function flatten(steps: List<rx.Step>): List<rx.Step> = walker.walk(steps, List(), 0, List()).map((p) -> p.step)
+function flatten(steps: List<core.Step>): List<core.Step> = walker.walk(steps, List(), 0, List()).map((p) -> p.step)
 
 /// A step that manages a thing appears once per stage: an exact repeat lends
 /// its tags to the first occurrence. Package steps, commands, scripts and
@@ -261,7 +299,7 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 /// depends on what ran before. Services are not merged either: each
 /// occurrence carries its own restart triggers. A capture runs once per
 /// stage (`repeatedCaptures`).
-const function mergeable(s: rx.Step): Boolean = !subjectsOf(s).isEmpty && !(s is rx.Service)
+const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s is systemd.Service)
 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
@@ -270,22 +308,22 @@ function problemsAt(ix: StageIndex, i: Int): List<String> =
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
-function settings(s: rx.Step): List<String> =
-  if (s is rx.Service && !s.running && !s.restartOnChangeOf.isEmpty)
+function settings(s: core.Step): List<String> =
+  if (s is systemd.Service && !s.running && !s.restartOnChangeOf.isEmpty)
     List("'\(name(s))' has running = false, so it cannot restart on a change; remove restartOnChangeOf or set running = true")
-  else if (s is rx.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
+  else if (s is debian.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
-  else if (s is rx.Action && s.changes is rx.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
+  else if (s is core.Action && s.changes is core.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
     List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
-  else if (s is rx.Packages && !packageProblems(s.names.toList()).isEmpty)
+  else if (s is debian.Packages && !packageProblems(s.names.toList()).isEmpty)
     List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
-  else if (s is rx.Packages && s.upgrade && s.names.toList().any((n) -> n.contains("=")))
+  else if (s is debian.Packages && s.upgrade && s.names.toList().any((n) -> n.contains("=")))
     List("'\(name(s))': upgrade installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or upgrade = true")
-  else if (s is rx.AptRepository && s.suite.isEmpty)
+  else if (s is debian.AptRepository && s.suite.isEmpty)
     List("'\(name(s))': suite is empty; name a distribution such as \"stable\", or a path ending in / for a flat repository")
-  else if (s is rx.AptRepository && !spaced(s).isEmpty)
+  else if (s is debian.AptRepository && !spaced(s).isEmpty)
     List("'\(name(s))': \(spaced(s).first) is written into the deb822 source, so it cannot contain spaces or line breaks")
-  else if (s is rx.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("s").value.floor != s.retry.delay.toUnit("s").value))
+  else if (s is core.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("s").value.floor != s.retry.delay.toUnit("s").value))
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
   else List()
 
@@ -305,7 +343,7 @@ const function archOf(n: String): String? = let (s = n.split("=").first) if (s.c
 const function pseudoArch(n: String): Boolean = let (a = archOf(n)) a != null && (List("any", "native", "all").contains(a) || a.split("-").contains("any"))
 
 /// The first deb822 field value that contains whitespace.
-const function spaced(r: rx.AptRepository): List<String> =
+const function spaced(r: debian.AptRepository): List<String> =
   List(List("url", r.url), List("suite", r.suite)).filter((f) -> hasSpace(f.last)).map((f) -> f.first)
     + (if (r.components.toList().any((c) -> c.isEmpty || hasSpace(c))) List("a component") else List())
     + (if (r.architectures.toList().any((a) -> a.isEmpty || hasSpace(a))) List("an architecture") else List())
@@ -314,7 +352,7 @@ const function hasSpace(text: String): Boolean = List(" ", "\t", "\n", "\r", "\u
 
 /// A recipe has no change of its own: name the steps that matter.
 function recipeDeps(ix: StageIndex, i: Int): List<String> =
-  listed(ix.steps[i]).filter((w) -> w is rx.Recipe)
+  listed(ix.steps[i]).filter((w) -> w is core.Recipe)
     .map((_) -> "'\(name(ix.steps[i]))' depends on a recipe; list the recipe's steps that matter instead")
 
 function missingDeps(ix: StageIndex, i: Int): List<String> =
@@ -354,7 +392,7 @@ function nested(ix: StageIndex, i: Int): List<String> =
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
 
 /// Paths a step writes as a regular file or a link.
-const function leaves(s: rx.Step): List<String> =
+const function leaves(s: core.Step): List<String> =
   if (List("file", "symlink", "aptRepository").contains(s.kind)) subjectsOf(s) else List()
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
@@ -363,20 +401,20 @@ function keyringModes(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> keyringClash(ix.steps[j], ix.steps[i]) || keyringClash(ix.steps[i], ix.steps[j]))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage /etc/apt/keyrings: apt repositories create it (0755), so remove the Directory")
 
-const function keyringClash(a: rx.Step, b: rx.Step): Boolean =
-  a is rx.AptRepository && b is rx.Directory && b.path == "/etc/apt/keyrings"
+const function keyringClash(a: core.Step, b: core.Step): Boolean =
+  a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and an upgrade, would change it back and forth. Exact
 /// repeats are fine. A selector without an architecture may be any.
 function packageVersions(ix: StageIndex, i: Int): List<String> =
-  if (!(ix.steps[i] is rx.Packages)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is rx.Packages).flatMap((j) ->
+  if (!(ix.steps[i] is debian.Packages)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.Packages).flatMap((j) ->
     let (clashes = ix.steps[i].names.toList().flatMap((a) -> ix.steps[j].names.toList().filter((b) -> versionClash(ix.steps[j], b, ix.steps[i], a)).map((b) -> List(b, a))))
     if (clashes.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].upgrade || ix.steps[i].upgrade) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
 
-const function versionClash(p: rx.Packages, a: String, q: rx.Packages, b: String): Boolean =
+const function versionClash(p: debian.Packages, a: String, q: debian.Packages, b: String): Boolean =
   packageName(a) == packageName(b)
     && (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b))
     && (versionOf(a) != null && versionOf(b) != null && versionOf(a) != versionOf(b)
@@ -385,13 +423,13 @@ const function versionClash(p: rx.Packages, a: String, q: rx.Packages, b: String
 
 const function versionOf(n: String): String? = if (n.contains("=")) n.split("=").last else null
 
-const function paths(s: rx.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
+const function paths(s: core.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
 
 /// Pairs `(file, path)` where `path` lies beneath `file`.
 const function inside(files: List<String>, candidates: List<String>): List<List<String>> =
   files.flatMap((f) -> candidates.filter((p) -> p.startsWith(f + "/")).map((p) -> List(f, p)))
 
-function className(s: rx.Step): String = s.kind.capitalize()
+function className(s: core.Step): String = s.kind.capitalize()
 
 function withArticle(word: String): String = (if ("AEIOU".contains(word.take(1))) "an " else "a ") + word
 
@@ -402,21 +440,21 @@ function where(p: Placed): String =
     if (k == 0) "step \(p.scope[0] + 1)" else "step \(p.scope[k] + 1) of the recipe at " + acc)
 
 /// Steps listed in `onChangeOf` or `restartOnChangeOf`, as written.
-const function listed(s: rx.Step): List<rx.Step> =
-  if (s is rx.Action) s.onChangeOf.toList()
-  else if (s is rx.Service) s.restartOnChangeOf.toList()
+const function listed(s: core.Step): List<core.Step> =
+  if (s is core.Action) s.onChangeOf.toList()
+  else if (s is systemd.Service) s.restartOnChangeOf.toList()
   else List()
 
 /// Steps whose change this step reacts to. Recipes are rejected by
 /// `recipeDeps`.
-function watched(s: rx.Step): List<rx.Step> = listed(s).filter((w) -> !(w is rx.Recipe))
+function watched(s: core.Step): List<core.Step> = listed(s).filter((w) -> !(w is core.Recipe))
 
-function canReportChange(s: rx.Step): Boolean =
-  !(s is rx.Capture || s is rx.PackageIndex || (s is rx.Action && s.changes == "never"))
+function canReportChange(s: core.Step): Boolean =
+  !(s is core.Capture || s is debian.PackageIndex || (s is core.Action && s.changes == "never"))
 
 /// Ids of the captures whose output this step's content uses.
-function capturesUsed(s: rx.Step): List<String> =
-  if (s is rx.File) placeholder.findMatchesIn(s.content).map((m) -> m.groups[1].value)
+function capturesUsed(s: core.Step): List<String> =
+  if (s is core.File) placeholder.findMatchesIn(s.content).map((m) -> m.groups[1].value)
     .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
   else List()
 
@@ -427,32 +465,32 @@ function capturesUsed(s: rx.Step): List<String> =
 /// step it reacts to. For a step that does not merge (`mergeable`) it
 /// includes the step's line in the plan; for a step that merges it does not.
 /// Steps are never compared with `==` (P12).
-function key(s: rx.Step): String = identity.key(s)
+function key(s: core.Step): String = identity.key(s)
 
 /// A class, like `Walker`: pklr cannot recurse through a module function
 /// inside a lambda (P11). Settings are encoded with `fields`, so no two
 /// different settings print alike.
 class Identity {
-  function key(s: rx.Step): String =
+  function key(s: core.Step): String =
     // 128 bits: no one can make two different steps share an identity.
-    if (s is rx.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 32)
+    if (s is core.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 32)
 
-  function fingerprint(s: rx.Step): String =
+  function fingerprint(s: core.Step): String =
     (if (mergeable(s)) "" else fields(List(label(s)))) + this.settings(s)
 
-  function settings(s: rx.Step): String =
-    if (!(s is rx.Action)) stateFingerprints[s.kind].apply(s)
+  function settings(s: core.Step): String =
+    if (!(s is core.Action)) stateFingerprints[s.kind].apply(s)
     // The recursive part, the keys of the steps this one reacts to, stays
     // outside `fields`: every level counts against pklr's depth limit along
     // a chain. Keys are generated (`<kind>_<hex>`), so a plain join after the
     // three self-delimiting fields is unambiguous.
-    else fields(List(if (s is rx.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s)))
-      + listed(s).map((w) -> if (w is rx.Recipe) "recipe" else this.key(w)).join(",")
+    else fields(List(if (s is core.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s)))
+      + listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w)).join(",")
 }
 
 local identity = new Identity {}
 
-const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
+const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["file"] = (s) -> fields(List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), fields(s.validate.toList())))
   ["directory"] = (s) -> fields(List(s.path, s.mode))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
@@ -467,15 +505,15 @@ const local stateFingerprints: Mapping<String, (rx.Step) -> String> = new {
   ["capture"] = (s) -> s.id()
 }
 
-const function changesText(a: rx.Action): String =
-  if (a.changes is rx.UnlessOutput) fields(List("unless", optional(a.changes.stdoutContains), optional(a.changes.stderrContains))) else a.changes
+const function changesText(a: core.Action): String =
+  if (a.changes is core.UnlessOutput) fields(List("unless", optional(a.changes.stdoutContains), optional(a.changes.stderrContains))) else a.changes
 
 /// What a step manages; empty for steps that manage nothing. An apt
 /// repository manages the two files it writes, so a `File` at either path
 /// conflicts with it.
-const function subjectsOf(s: rx.Step): List<String> = subjects[s.kind].apply(s)
+const function subjectsOf(s: core.Step): List<String> = subjects[s.kind].apply(s)
 
-const local subjects: Mapping<String, (rx.Step) -> List<String>> = new {
+const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["file"] = (s) -> List(s.path) + (if (s.validate.isEmpty) List() else List(candidate(s)))
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
@@ -494,13 +532,13 @@ const local subjects: Mapping<String, (rx.Step) -> List<String>> = new {
 /// systemd's name for a service: `foo` is `foo.service`.
 const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
 
-const function sourcesPath(r: rx.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
-const function keyringPath(r: rx.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"
+const function sourcesPath(r: debian.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
+const function keyringPath(r: debian.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"
 
-function name(s: rx.Step): String = label(s)
+function name(s: core.Step): String = label(s)
 
 /// The step's line in the plan: its title, or the generated description.
-const function label(s: rx.Step): String = s.title ?? (if (s is rx.Recipe) "a recipe" else describe(s))
+const function label(s: core.Step): String = s.title ?? (if (s is core.Recipe) "a recipe" else describe(s))
 
 function restartName(serviceName: String): String = "Restart \(serviceName)"
 
@@ -516,8 +554,8 @@ class Meta {
 
 function metaOf(ix: StageIndex, i: Int, _tags: List<String>): Meta =
   let (_name = name(ix.steps[i]))
-  let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is rx.Service).map((j) -> restartName(ix.steps[j].name)).toSet().toList())
-  let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is rx.Action) || ix.steps[i] is rx.Capture) ix.results[i] else null)
+  let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is systemd.Service).map((j) -> restartName(ix.steps[j].name)).toSet().toList())
+  let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is core.Action) || ix.steps[i] is core.Capture) ix.results[i] else null)
   new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]) }
 
 /// Positions of the steps that react to step `i` or read its output. They
@@ -546,9 +584,9 @@ function helperMeta(_name: String, m: Meta, _register: String?): Meta =
 // ── Steps ───────────────────────────────────────────────────────────────────
 
 /// The description shown in plans when a step has no `title`.
-const function describe(s: rx.Step): String = describers[s.kind].apply(s)
+const function describe(s: core.Step): String = describers[s.kind].apply(s)
 
-const local describers: Mapping<String, (rx.Step) -> String> = new {
+const local describers: Mapping<String, (core.Step) -> String> = new {
   ["file"] = (s) -> "Write \(s.path)"
   ["directory"] = (s) -> "Create directory \(s.path)"
   ["symlink"] = (s) -> "Link \(s.path) to \(s.target)"
@@ -572,7 +610,7 @@ function lower(ix: StageIndex, i: Int): List<engine.Task> =
 /// The stage's first apt repository, which creates `/etc/apt/keyrings` once
 /// for all of them.
 function firstRepository(ix: StageIndex): Int? =
-  let (repositories = positions(ix.steps).filter((k) -> ix.steps[k] is rx.AptRepository))
+  let (repositories = positions(ix.steps).filter((k) -> ix.steps[k] is debian.AptRepository))
   if (repositories.isEmpty) null else repositories.first
 
 /// One task for the directory every repository of the stage writes its key
@@ -580,7 +618,7 @@ function firstRepository(ix: StageIndex): Int? =
 /// the repositories' tags and notifies all their services, and steps
 /// reacting to any of them see its result (`anyChanged`).
 function keyringsTask(ix: StageIndex): engine.Task =
-  let (owners = positions(ix.steps).filter((k) -> ix.steps[k] is rx.AptRepository))
+  let (owners = positions(ix.steps).filter((k) -> ix.steps[k] is debian.AptRepository))
   task(new Meta {
     name = "Create /etc/apt/keyrings"
     tags = owners.flatMap((k) -> ix.metas[k].tags).toSet().toList()
@@ -590,7 +628,7 @@ function keyringsTask(ix: StageIndex): engine.Task =
 
 const keyringsResult: String = "aptKeyrings"
 
-local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
+local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["file"] = (s, m) -> validateTasks(s, m) + List(task(m, copy(s.path, s), null, null))
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
@@ -607,7 +645,7 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
 }
 
 // File: stage, validate, then publish.
-function validateTasks(f: rx.File, m: Meta): List<engine.Task> =
+function validateTasks(f: core.File, m: Meta): List<engine.Task> =
   if (f.validate.isEmpty) List()
   else List(
     task(helperMeta("Stage \(f.path)", m, null), candidateCopy(f), null, null),
@@ -616,7 +654,7 @@ function validateTasks(f: rx.File, m: Meta): List<engine.Task> =
 
 /// The candidate is root's alone (0600), whatever the file's owner, so no one
 /// else can change it between staging and validation.
-function candidateCopy(f: rx.File): engine.Copy = new engine.Copy {
+function candidateCopy(f: core.File): engine.Copy = new engine.Copy {
   dest = candidate(f)
   content = runtimeText(f.content)
   mode = "0600"
@@ -627,7 +665,7 @@ function candidateCopy(f: rx.File): engine.Copy = new engine.Copy {
 /// `.<name>.ruxel-candidate` beside the file: validators that resolve
 /// relative includes still work, and `*`, `*.conf` and `*.d` loaders skip
 /// dotfiles. It stays, so that a second apply reports no change.
-const function candidate(f: rx.File): String =
+const function candidate(f: core.File): String =
   let (slash = f.path.lastIndexOf("/"))
   let (base = f.path.substring(slash + 1, f.path.length))
   // A file name has at most 255 bytes; a long or non-ASCII one is hashed.
@@ -635,16 +673,16 @@ const function candidate(f: rx.File): String =
 
 /// The keyring task notifies and registers too: a new key is a change of
 /// the repository.
-function keyringMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
+function keyringMeta(r: debian.AptRepository, m: Meta): Meta = new Meta {
   name = "Install \(r.name) apt signing key"
   tags = m.tags
   notify = m.notify
   register = if (m.register == null) null else "\(m.register)_key"
 }
 
-function keyring(r: rx.AptRepository): engine.Copy = copyText(keyringPath(r), r.signingKey)
+function keyring(r: debian.AptRepository): engine.Copy = copyText(keyringPath(r), r.signingKey)
 
-function sourcesFile(r: rx.AptRepository): engine.Copy = copyText(sourcesPath(r), new Listing {
+function sourcesFile(r: debian.AptRepository): engine.Copy = copyText(sourcesPath(r), new Listing {
   "Types: deb"
   "URIs: \(r.url)"
   "Suites: \(r.suite)"
@@ -655,7 +693,7 @@ function sourcesFile(r: rx.AptRepository): engine.Copy = copyText(sourcesPath(r)
 
 // Command and Script: `creates` alone uses the engine's own guard;
 // `onChangeOf` needs the watched steps' results and, with `creates`, a probe.
-function actionTasks(a: rx.Action, argv: List<String>, m: Meta): List<engine.Task> =
+function actionTasks(a: core.Action, argv: List<String>, m: Meta): List<engine.Task> =
   if (a.onChangeOf.isEmpty) List(task(m, command(argv, a.creates), null, changeRule(a)))
   else if (a.creates == null) List(task(m, command(argv, null), anyChanged(m.watching), changeRule(a)))
   else List(
@@ -674,9 +712,9 @@ function anyChanged(ids: List<String>): engine.Expr =
 /// whenever it would run: the engine skips it there (`skipped`), and the
 /// steps that react to it must still see a pending change. A `creates` skip
 /// and a step not selected by `onChangeOf` stay unchanged.
-function changeRule(a: rx.Action): engine.Expr =
+function changeRule(a: core.Action): engine.Expr =
   if (a.changes == "never") lit(false)
-  else if (a.changes is rx.UnlessOutput) unlessOutput(a.changes)
+  else if (a.changes is core.UnlessOutput) unlessOutput(a.changes)
   else ran()
 
 /// The command ran, or would run in check and diff.
@@ -685,7 +723,7 @@ function ran(): engine.Expr = call2("or", ref(List("result", "changed")), call2(
 /// Changed when the command ran or would run (see `changeRule`; a `creates`
 /// skip reports no change) and its output lacks the marker. In check and
 /// diff the output is empty, so a command that would run counts as a change.
-function unlessOutput(u: rx.UnlessOutput): engine.Expr = call2("and", ran(),
+function unlessOutput(u: core.UnlessOutput): engine.Expr = call2("and", ran(),
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
 
@@ -721,7 +759,7 @@ function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _chang
 
 /// A capture runs in check and diff too (`checkMode = false`): later steps
 /// need its real output, and it only reads.
-function captureTask(t: engine.Task, c: rx.Capture, _result: String): engine.Task = (t) {
+function captureTask(t: engine.Task, c: core.Capture, _result: String): engine.Task = (t) {
   checkMode = false
   when (c.runOn != null) { delegateTo = c.runOn.name; delegateAllow = new Listing { c.runOn.name } }
   when (c.retry.attempts > 1) {
@@ -731,7 +769,7 @@ function captureTask(t: engine.Task, c: rx.Capture, _result: String): engine.Tas
   }
 }
 
-function copy(_dest: String, f: rx.File): engine.Copy = new engine.Copy {
+function copy(_dest: String, f: core.File): engine.Copy = new engine.Copy {
   dest = _dest
   content = runtimeText(f.content)
   mode = f.mode

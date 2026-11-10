@@ -1,10 +1,18 @@
 /// A workflow file amends this module and lists its stages:
 ///
 ///     amends "modulepath:/ruxel/Workflow.pkl"
-///     stages { new Stage { … } }
+///     import "modulepath:/ruxel/Debian.pkl" as debian
+///     stages { new Stage { steps { new debian.Packages { names { "nginx" } } } } }
+///
+/// The step classes that are not tied to one system come from `Core.pkl`,
+/// which this module extends, so they need no prefix. The rest live in the
+/// layer modules beside it: import the ones the workflow uses and qualify
+/// their classes (`linux.Timezone`, `systemd.Service`, `debian.Packages`).
+/// pklr does not check the classes of list elements, so `internal/Lowering`
+/// checks each one instead, which also refuses a class from a copied module.
 open module Workflow
 
-extends "modulepath:/ruxel/Ruxel.pkl"
+extends "modulepath:/ruxel/Core.pkl"
 
 import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
 

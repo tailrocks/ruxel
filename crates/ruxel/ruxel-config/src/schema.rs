@@ -1,7 +1,9 @@
 //! The Ruxel Pkl modules, compiled into the binary and served to Pkl code
 //! under `modulepath:/ruxel/`: the workflow language
-//! (`modulepath:/ruxel/Workflow.pkl`, `modulepath:/ruxel/Ruxel.pkl`) and the
-//! engine schema (`modulepath:/ruxel/engine/Engine.pkl`).
+//! (`modulepath:/ruxel/Workflow.pkl`, which extends `Core.pkl`; the layer
+//! modules `Linux.pkl`, `Systemd.pkl`, `Debian.pkl`; and
+//! `modulepath:/ruxel/internal/Lowering.pkl`) and the engine schema
+//! (`modulepath:/ruxel/engine/Engine.pkl`).
 //!
 //! Configuration never copies a module: the binary that evaluates a
 //! configuration also supplies the modules it was built with. The served
@@ -33,8 +35,20 @@ pub const FINGERPRINT_PROPERTY: &str = "schemaFingerprint";
 /// the Pkl module path.
 pub(crate) const TREE: &[(&str, &str)] = &[
     (
-        "/ruxel/Ruxel.pkl",
-        include_str!("../../../../schema/ruxel/Ruxel.pkl"),
+        "/ruxel/Core.pkl",
+        include_str!("../../../../schema/ruxel/Core.pkl"),
+    ),
+    (
+        "/ruxel/Debian.pkl",
+        include_str!("../../../../schema/ruxel/Debian.pkl"),
+    ),
+    (
+        "/ruxel/Linux.pkl",
+        include_str!("../../../../schema/ruxel/Linux.pkl"),
+    ),
+    (
+        "/ruxel/Systemd.pkl",
+        include_str!("../../../../schema/ruxel/Systemd.pkl"),
     ),
     (
         "/ruxel/Workflow.pkl",

@@ -1,0 +1,111 @@
+/// Linux system steps: the timezone, the login shell of an account that
+/// already exists, and a Git working tree pinned to one commit.
+///
+/// The ruxel binary serves this module at `modulepath:/ruxel/Linux.pkl`.
+/// Workflow files import it beside `Core.pkl`, qualifying every class:
+///
+///     import "modulepath:/ruxel/Linux.pkl" as linux
+///     new linux.Timezone { name = "UTC" }
+module Linux
+
+import "modulepath:/ruxel/Core.pkl" as core
+
+// The typealiases and functions below are copied from Core.pkl; keep them in
+// sync — pklr cannot share typealiases across modules, and would silently
+// drop the constraints of a dotted alias such as `core.Static`.
+
+/// Text known before the run. Run-time values (`currentHost`,
+/// `Capture.stdout()`) are allowed only in `File.content`; every other text
+/// field is `Static`. A run-time value is text that starts with the reserved
+/// prefix `__ruxel_rt_8d41.`, which nothing else may contain.
+///
+/// No NUL either: no path, argument or name can hold one.
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("\u{0}"))
+
+/// The name of a service or an account: not empty, and not starting with
+/// `-`, which the tools that take it would read as an option.
+typealias Name = Static(!isEmpty && !startsWith("-"))
+
+/// An absolute path in normal form: no empty, `.` or `..` segments and no
+/// trailing `/`, so two spellings of one path are the same text. No NUL,
+/// which no Unix path can hold.
+typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !contains("\u{0}") && !split("/").any((segment) -> segment == "." || segment == ".."))
+
+/// An absolute path that can be a file: any but `/`, which is a directory.
+typealias FilePath = AbsolutePath(this != "/")
+
+/// A user or group name: a `Name` without the passwd and group delimiters.
+typealias Account = Name(!contains(":") && !contains("\n"))
+
+/// A SHA-1 (40) or SHA-256 (64) Git object ID.
+typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
+
+/// `https://`, a host name, IPv4 address or bracketed IPv6 address, an
+/// optional port from 1 to 65535, and an optional path without spaces.
+typealias HttpsUrl = Static(isHttpsUrl(this))
+
+const local function isHttpsUrl(s: String): Boolean =
+  s.startsWith("https://") && (
+    let (rest = s.substring(8, s.length))
+    let (slash = if (rest.contains("/")) rest.indexOf("/") else rest.length)
+    isAuthority(rest.substring(0, slash)) && !rest.contains(" ") && !rest.matches(Regex("(?s).*[\\x00-\\x1f\\x7f].*")))
+
+const local function isAuthority(a: String): Boolean =
+  if (a.startsWith("["))
+    a.contains("]") && (let (close = a.indexOf("]")) isIpv6Address(a.substring(1, close)) && isPort(a.substring(close + 1, a.length)))
+  else
+    let (colon = if (a.contains(":")) a.indexOf(":") else a.length)
+    a.substring(0, colon).matches(Regex(#"[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*"#)) && isPort(a.substring(colon, a.length))
+
+const local function isPort(p: String): Boolean =
+  p == "" || p.matches(Regex(":[0-9]{1,5}")) && p.substring(1, p.length).toInt() >= 1 && p.substring(1, p.length).toInt() <= 65535
+
+/// At most one `::`; hex groups of one to four digits; eight groups in all,
+/// fewer with `::`; an IPv4 tail counts as two. Written without relying on
+/// `split` keeping empty pieces, which pklr, like Java, drops at the end.
+const local function isIpv6Address(a: String): Boolean =
+  let (gap = a.contains("::"))
+  let (groups = a.split(":").filter((g) -> !g.isEmpty))
+  let (tail = !groups.isEmpty && groups.last.contains("."))
+  let (hex = groups.filter((g) -> !g.contains(".")))
+  let (count = hex.length + (if (tail) 2 else 0))
+  a.contains(":")
+    && (!gap || a.indexOf("::") == a.lastIndexOf("::"))
+    && (!a.startsWith(":") || a.startsWith("::"))
+    && (!a.endsWith(":") || a.endsWith("::"))
+    && hex.every((g) -> g.matches(Regex("[0-9a-fA-F]{1,4}")))
+    && hex.length + (if (tail) 1 else 0) == groups.length
+    && (!tail || isIpv4(groups.last) && !a.endsWith("::"))
+    && (if (gap) count <= 7 else count == 8)
+
+const local function isIpv4(s: String): Boolean =
+  let (parts = s.split("."))
+  parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
+
+/// A tz database name such as `UTC` or `Europe/Berlin`: relative, no `.`
+/// or `..` components.
+typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*")))
+
+class Timezone extends core.Step {
+  hidden fixed kind = "timezone"
+  name: TimezoneName
+}
+
+/// The login shell of an existing user.
+/// The login shell of an account that already exists. A missing account
+/// fails the stage; it is never created.
+class LoginShell extends core.Step {
+  hidden fixed kind = "loginShell"
+  user: Account
+  shell: FilePath
+}
+
+/// A Git working tree pinned to one commit. Another step may manage a path
+/// inside it only where the repository ignores that path (Oh My Zsh's
+/// `custom/`): a change to a tracked file makes the next checkout fail.
+class GitCheckout extends core.Step {
+  hidden fixed kind = "gitCheckout"
+  repository: HttpsUrl
+  path: AbsolutePath
+  commit: CommitSha
+}

@@ -1,0 +1,53 @@
+/// systemd services.
+///
+/// The ruxel binary serves this module at `modulepath:/ruxel/Systemd.pkl`.
+/// Workflow files import it beside `Core.pkl`, qualifying every class:
+///
+///     import "modulepath:/ruxel/Systemd.pkl" as systemd
+///     new systemd.Service { name = "nginx" }
+module Systemd
+
+import "modulepath:/ruxel/Core.pkl" as core
+
+// The typealiases and functions below are copied from Core.pkl; keep them in
+// sync — pklr cannot share typealiases across modules, and would silently
+// drop the constraints of a dotted alias such as `core.Static`.
+
+/// Text known before the run. Run-time values (`currentHost`,
+/// `Capture.stdout()`) are allowed only in `File.content`; every other text
+/// field is `Static`. A run-time value is text that starts with the reserved
+/// prefix `__ruxel_rt_8d41.`, which nothing else may contain.
+///
+/// No NUL either: no path, argument or name can hold one.
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("\u{0}"))
+
+/// The name of a service or an account: not empty, and not starting with
+/// `-`, which the tools that take it would read as an option.
+typealias Name = Static(!isEmpty && !startsWith("-"))
+
+/// A systemd service: `nginx` or `nginx.service`, not another unit type
+/// such as `sshd.socket`, which the agent does not track. Canonical unit
+/// name characters only (letters, digits, `:_.@-`, and `\xNN` escapes), at
+/// most 255 of them. A template needs its instance: `getty@tty1`, not
+/// `getty@`.
+typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") && length <= 247 || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
+
+/// A systemd service.
+class Service extends core.Step {
+  hidden fixed kind = "service"
+  name: ServiceName
+  /// Starts at boot.
+  enabled: Boolean = true
+  /// Is running now. `false` stops it.
+  running: Boolean = true
+  /// Restarts the service at the end of the stage when one of these steps
+  /// changed. Each must be an earlier step of the same stage that can
+  /// report a change, and not a recipe. Only for a running service. A step
+  /// that runs again where it is written counts once for every earlier run
+  /// with the same settings; the service is restarted when any changed.
+  ///
+  /// A later step's `onChangeOf { service }` fires when this step enabled,
+  /// started or stopped the service, not when the restart ran. To react to a
+  /// restart, react to the steps the service restarts on.
+  restartOnChangeOf: Listing<core.Step>
+}

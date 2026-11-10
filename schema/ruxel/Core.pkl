@@ -1,17 +1,24 @@
-/// The Ruxel workflow language.
+/// The Ruxel workflow language: the core of a workflow.
 ///
 /// A workflow is a list of stages. A stage runs a list of steps on a list of
 /// hosts. A step says how one thing on a host should be: a package is
-/// installed, a file has this content, a service is running.
+/// installed, a file has this content, a service is running. This module
+/// holds the workflow shape itself (`Stage`, `Host`, `Recipe`, `Step`) and
+/// the steps that are not tied to one system: files, links, commands,
+/// scripts and captures. The steps that belong to one system live in the
+/// modules beside it: `Linux.pkl`, `Systemd.pkl`, `Debian.pkl`.
 ///
-/// The ruxel binary serves this module at `modulepath:/ruxel/Ruxel.pkl`.
-/// Workflow files amend `modulepath:/ruxel/Workflow.pkl`; recipe and
-/// inventory files extend this module. Either way, every class below is
-/// available without a prefix.
+/// The ruxel binary serves this module at `modulepath:/ruxel/Core.pkl`.
+/// `Workflow.pkl` extends it, so workflow files amend
+/// `modulepath:/ruxel/Workflow.pkl` and use its classes without a prefix;
+/// recipe and inventory files extend this module directly:
+///
+///     extends "modulepath:/ruxel/Core.pkl"
+///     class ApiProxy extends Recipe { … }
 ///
 /// Naming: `title` is always the step's line in the plan; `name` is always the
 /// name of the managed thing (a package repository, a service, a timezone).
-open module Ruxel
+open module Core
 
 /// Text known before the run. Run-time values (`currentHost`,
 /// `Capture.stdout()`) are allowed only in `File.content`; every other text
@@ -20,17 +27,21 @@ open module Ruxel
 ///
 /// No NUL either: no path, argument or name can hold one.
 typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("\u{0}"))
+
 /// A list of `Static` texts. The constraint is on the whole list because
 /// pklr does not check the elements of a `Listing`, and properties of this
 /// type need an explicit `= new {}` default, which pklr does not supply for a
 /// constrained `Listing` typealias.
 typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.") || a.contains("\u{0}")))
+
 /// An absolute path in normal form: no empty, `.` or `..` segments and no
 /// trailing `/`, so two spellings of one path are the same text. No NUL,
 /// which no Unix path can hold.
 typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !contains("\u{0}") && !split("/").any((segment) -> segment == "." || segment == ".."))
+
 /// An absolute path that can be a file: any but `/`, which is a directory.
 typealias FilePath = AbsolutePath(this != "/")
+
 /// `https://`, a host name, IPv4 address or bracketed IPv6 address, an
 /// optional port from 1 to 65535, and an optional path without spaces.
 typealias HttpsUrl = Static(isHttpsUrl(this))
@@ -50,12 +61,16 @@ const local function isAuthority(a: String): Boolean =
 
 const local function isPort(p: String): Boolean =
   p == "" || p.matches(Regex(":[0-9]{1,5}")) && p.substring(1, p.length).toInt() >= 1 && p.substring(1, p.length).toInt() <= 65535
+
 typealias FileMode = String(matches(Regex("0[0-7]{3}")))
+
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
+
 /// `localhost` and `all` are reserved: the engine uses them for the
 /// controller itself and for every host.
 typealias HostName = String(matches(Regex("[a-z0-9][a-z0-9-]*")) && this != "localhost" && this != "all")
+
 /// IPv4 (`192.0.2.1`, each part 0 to 255), or IPv6 (`2001:db8::1`, an
 /// embedded IPv4 tail allowed) with an optional zone such as `%eth0` for
 /// link-local addresses.
@@ -109,28 +124,24 @@ const local function isIpv6Address(a: String): Boolean =
     && hex.length + (if (tail) 1 else 0) == groups.length
     && (!tail || isIpv4(groups.last) && !a.endsWith("::"))
     && (if (gap) count <= 7 else count == 8)
+
 /// A command line: a program, which cannot be empty, and its arguments.
 typealias Arguments = StaticList(!isEmpty && !toList().first.isEmpty)
+
 /// The name of a service or an account: not empty, and not starting with
 /// `-`, which the tools that take it would read as an option.
 typealias Name = Static(!isEmpty && !startsWith("-"))
+
 /// A user or group name: a `Name` without the passwd and group delimiters.
 typealias Account = Name(!contains(":") && !contains("\n"))
-/// A tz database name such as `UTC` or `Europe/Berlin`: relative, no `.`
-/// or `..` components.
-typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*")))
+
 /// The SSH user ruxel logs in as: letters, digits, `._-`, not starting with
 /// `-`, as the engine accepts.
 typealias SshUser = Static(matches(Regex("[A-Za-z0-9._-]+")) && !startsWith("-"))
+
 /// An SSH config alias or host: letters, digits, `._:%[]-`, not starting with
 /// `-`, as the engine accepts.
 typealias SshHost = Static(matches(Regex(#"[A-Za-z0-9._:%\[\]-]+"#)) && !startsWith("-"))
-/// A systemd service: `nginx` or `nginx.service`, not another unit type
-/// such as `sshd.socket`, which the agent does not track. Canonical unit
-/// name characters only (letters, digits, `:_.@-`, and `\xNN` escapes), at
-/// most 255 of them. A template needs its instance: `getty@tty1`, not
-/// `getty@`.
-typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") && length <= 247 || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
 
@@ -241,93 +252,6 @@ class Symlink extends Step {
   hidden fixed kind = "symlink"
   path: FilePath
   target: AbsolutePath
-}
-
-// ── Packages ────────────────────────────────────────────────────────────────
-
-/// Downloads the current apt package lists. Never reports a change.
-class PackageIndex extends Step {
-  hidden fixed kind = "packageIndex"
-}
-
-/// Debian packages that are installed. Each name is `name`, `name=version`,
-/// `name:arch` or `name:arch=version`, with one exact Debian version; a
-/// package is listed once, or once per explicit architecture.
-class Packages extends Step {
-  hidden fixed kind = "packages"
-  names: StaticList(!isEmpty)
-  /// Upgrades them to the newest version on every run, not only once. The
-  /// names cannot then pin a version.
-  upgrade: Boolean = false
-}
-
-/// A signed apt repository, written as a deb822 source with its own keyring.
-/// It manages both files, so a stage cannot also write either of them with a
-/// `File`.
-class AptRepository extends Step {
-  hidden fixed kind = "aptRepository"
-  /// Names the files `/etc/apt/sources.list.d/<name>.sources` and
-  /// `/etc/apt/keyrings/<name>.asc`.
-  name: String(matches(Regex("[a-z0-9][a-z0-9.-]*")) && length <= 247)
-  url: HttpsUrl
-  /// A distribution such as `"stable"`, or a path ending in `/` for a flat
-  /// repository.
-  suite: Static
-  /// Required for a distribution, empty for a flat repository.
-  components: StaticList = new {}
-  /// ASCII-armored public key, committed next to the workflow. A changed
-  /// key counts as a change of this step.
-  signingKey: Static(startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----"))
-  /// Debian architectures to fetch indexes for, such as `"amd64"`. Empty
-  /// leaves it to apt: the host's own architecture and any foreign ones
-  /// dpkg is configured for.
-  architectures: StaticList = new {}
-}
-
-// ── System ──────────────────────────────────────────────────────────────────
-
-class Timezone extends Step {
-  hidden fixed kind = "timezone"
-  name: TimezoneName
-}
-
-/// The login shell of an existing user.
-/// The login shell of an account that already exists. A missing account
-/// fails the stage; it is never created.
-class LoginShell extends Step {
-  hidden fixed kind = "loginShell"
-  user: Account
-  shell: FilePath
-}
-
-/// A Git working tree pinned to one commit. Another step may manage a path
-/// inside it only where the repository ignores that path (Oh My Zsh's
-/// `custom/`): a change to a tracked file makes the next checkout fail.
-class GitCheckout extends Step {
-  hidden fixed kind = "gitCheckout"
-  repository: HttpsUrl
-  path: AbsolutePath
-  commit: CommitSha
-}
-
-/// A systemd service.
-class Service extends Step {
-  hidden fixed kind = "service"
-  name: ServiceName
-  /// Starts at boot.
-  enabled: Boolean = true
-  /// Is running now. `false` stops it.
-  running: Boolean = true
-  /// Restarts the service at the end of the stage when one of these steps
-  /// changed. Each must be an earlier step of the same stage that can
-  /// report a change, and not a recipe. Only for a running service. A step
-  /// that runs again where it is written counts once for every earlier run
-  /// with the same settings; the service is restarted when any changed.
-  ///
-  /// A later step's `onChangeOf { service }` fires when this step enabled,
-  /// started or stopped the service, not when the restart ran. To react to a
-  /// restart, react to the steps the service restarts on.
-  restartOnChangeOf: Listing<Step>
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────

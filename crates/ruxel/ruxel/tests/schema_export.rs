@@ -46,8 +46,11 @@ fn files(dir: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-const MODULES: [&str; 4] = [
-    "ruxel/Ruxel.pkl",
+const MODULES: [&str; 7] = [
+    "ruxel/Core.pkl",
+    "ruxel/Debian.pkl",
+    "ruxel/Linux.pkl",
+    "ruxel/Systemd.pkl",
     "ruxel/Workflow.pkl",
     "ruxel/engine/Engine.pkl",
     "ruxel/internal/Lowering.pkl",
@@ -64,7 +67,7 @@ fn a_failed_export_leaves_the_previous_one_unchanged() -> Result {
     let directory = scratch("failed")?;
     let exported = directory.join("exported");
     assert!(export(&exported)?.status.success());
-    let first = exported.join("ruxel/Ruxel.pkl");
+    let first = exported.join("ruxel/Core.pkl");
     std::fs::write(&first, "older export\n")?;
     // The staging directory cannot be created.
     std::fs::set_permissions(&exported, std::fs::Permissions::from_mode(0o555))?;

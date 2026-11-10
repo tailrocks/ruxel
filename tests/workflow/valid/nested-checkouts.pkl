@@ -1,6 +1,7 @@
 // A checkout inside another checkout, at a path the outer repository
 // ignores: Oh My Zsh keeps third-party plugins in its ignored custom/ tree.
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
 
 stages {
@@ -8,8 +9,8 @@ stages {
     title = "Shell"
     hosts = inventory.workers
     steps {
-      new GitCheckout { repository = "https://git.example.test/oh-my-zsh.git"; path = "/root/.oh-my-zsh"; commit = "0123456789abcdef0123456789abcdef01234567" }
-      new GitCheckout { repository = "https://git.example.test/zsh-autosuggestions.git"; path = "/root/.oh-my-zsh/custom/plugins/zsh-autosuggestions"; commit = "89abcdef0123456789abcdef0123456789abcdef" }
+      new linux.GitCheckout { repository = "https://git.example.test/oh-my-zsh.git"; path = "/root/.oh-my-zsh"; commit = "0123456789abcdef0123456789abcdef01234567" }
+      new linux.GitCheckout { repository = "https://git.example.test/zsh-autosuggestions.git"; path = "/root/.oh-my-zsh/custom/plugins/zsh-autosuggestions"; commit = "89abcdef0123456789abcdef0123456789abcdef" }
     }
   }
 }

@@ -1,5 +1,6 @@
 // expect: unsupported package "nginx*"
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
-stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Packages { names { "curl"; "nginx*" } } } } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.Packages { names { "curl"; "nginx*" } } } } }

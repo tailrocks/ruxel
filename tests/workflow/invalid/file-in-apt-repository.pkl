@@ -1,9 +1,10 @@
 // expect: both manage /etc/apt/keyrings/example.asc: an AptRepository and a File
 amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
-  new AptRepository {
+  new debian.AptRepository {
     name = "example"
     url = "https://apt.example.test/"
     suite = "stable"
