@@ -17,6 +17,8 @@ const HOST_IDENTITY: IdentityLookup<'static> = IdentityLookup {
 };
 /// Seconds the in-context NSS lookup may take before the task fails.
 const IDENTITY_TIMEOUT_SECS: u8 = 10;
+/// Bytes of `getent` output (record and status) the bootstrap accepts.
+const IDENTITY_RECORD_LIMIT: usize = 4096;
 const WRAPPER_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
 const READY: &[u8] = b"RUXEL_ENV_READY\n";
 // read consumes exactly one line, leaving the rest of stdin for the workload.
@@ -172,18 +174,25 @@ pub(super) fn valid_become_user(user: &str) -> bool {
 }
 
 /// Shell code, run as the switched user, that resolves the account by name
-/// through the host NSS stack within a bounded time, proves it is the account `runuser` switched to
+/// through the host NSS stack within bounded time and size, proves it is the account `runuser` switched to
 /// (its UID equals `id -u`), and exports its HOME, SHELL, USER and LOGNAME.
 fn identity_script(user: &str, lookup: &IdentityLookup<'_>) -> Result<String, String> {
     let quoted = |value: &str| (!value.contains(['\'', '\0'])).then(|| format!("'{value}'"));
     let timeout = quoted(lookup.timeout).ok_or("invalid identity lookup program")?;
     let getent = quoted(lookup.getent).ok_or("invalid identity lookup program")?;
     let id = quoted(lookup.id).ok_or("invalid identity lookup program")?;
+    // The record and getent's status are read through head, so an oversized
+    // NSS answer is never buffered whole; reaching the limit fails closed.
+    let limit = IDENTITY_RECORD_LIMIT + 1;
     Ok(format!(
-        "RUXEL_ID_RECORD=$({timeout} {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}') \
-         || exit 125; \
+        "RUXEL_ID_NL=$(printf '\\nx'); RUXEL_ID_NL=${{RUXEL_ID_NL%x}}; \
+         RUXEL_ID_OUT=$({{ {timeout} {IDENTITY_TIMEOUT_SECS} {getent} passwd -- '{user}'; \
+         printf '\\n%s' \"$?\"; }} | /usr/bin/head -c {limit}) || exit 125; \
+         [ ${{#RUXEL_ID_OUT}} -lt {limit} ] || exit 125; \
+         [ \"${{RUXEL_ID_OUT##*\"$RUXEL_ID_NL\"}}\" = 0 ] || exit 125; \
+         RUXEL_ID_RECORD=${{RUXEL_ID_OUT%\"$RUXEL_ID_NL\"*}}; \
+         RUXEL_ID_RECORD=${{RUXEL_ID_RECORD%\"$RUXEL_ID_NL\"}}; \
          RUXEL_ID_UID=$({id} -u) || exit 125; \
-         RUXEL_ID_NL=$(printf '\\nx'); RUXEL_ID_NL=${{RUXEL_ID_NL%x}}; \
          case $RUXEL_ID_RECORD in *\"$RUXEL_ID_NL\"*) exit 125;; esac; \
          RUXEL_ID_NAME=${{RUXEL_ID_RECORD%%:*}}; RUXEL_ID_REST=${{RUXEL_ID_RECORD#*:}}; \
          RUXEL_ID_REST=${{RUXEL_ID_REST#*:}}; \

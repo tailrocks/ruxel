@@ -25,7 +25,7 @@ pub(super) fn fake_identity(dir: &Path, record: &str, uid: &str) -> FakeIdentity
     std::fs::write(
         &getent,
         format!(
-            "#!/bin/sh\n[ \"$1 $2\" = 'passwd --' ] || exit 7\n[ \"$3\" = synthetic-user ] || exit 2\nprintf '%s\\n' '{record}'\n"
+            "#!/bin/sh\n[ \"$1 $2\" = 'passwd --' ] || exit 7\n[ \"$3\" = synthetic-user ] || exit 2\nprintf '%s\\n' '{record}'\n[ -e \"${{0%/*}}/fail\" ] && exit 2\nexit 0\n"
         ),
     )
     .unwrap();
@@ -152,13 +152,22 @@ fn identity_comes_from_the_switched_account_and_fails_closed() {
 }
 
 #[test]
-fn stalled_identity_lookup_is_bounded_and_fails_closed() {
-    let dir = identity_dir("identity-stall");
+fn stalled_failed_or_oversized_identity_lookup_fails_closed() {
+    let failed = |dir: &Path, record: &str| {
+        run_identity(dir, record, "1", vec![]).unwrap_err()
+            == "privilege environment bootstrap failed"
+    };
+    let dir = identity_dir("identity-bounds");
+    let home = "/h".repeat(2100);
+    let oversized = format!("synthetic-user:x:1:2::{home}:/bin/sh");
+    assert!(failed(&dir, &oversized), "oversized record");
+    let fitting = format!("synthetic-user:x:1:2::{}:/bin/sh", &home[..4000]);
+    assert!(run_identity(&dir, &fitting, "1", vec![]).is_ok());
+    std::fs::write(dir.join("fail"), b"").unwrap();
+    assert!(failed(&dir, SYNTHETIC_ACCOUNT), "getent failure");
+    std::fs::remove_file(dir.join("fail")).unwrap();
     std::fs::write(dir.join("stall"), b"").unwrap();
-    assert_eq!(
-        run_identity(&dir, SYNTHETIC_ACCOUNT, "1", vec![]).unwrap_err(),
-        "privilege environment bootstrap failed"
-    );
+    assert!(failed(&dir, SYNTHETIC_ACCOUNT), "timeout");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
