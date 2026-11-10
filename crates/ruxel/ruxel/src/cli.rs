@@ -26,7 +26,7 @@ pub(crate) enum ConfigCommand {
     Dump {
         root: PathBuf,
         #[command(flatten)]
-        module_path: ModulePathArgs,
+        sources: SourceArgs,
     },
 }
 
@@ -42,19 +42,34 @@ pub(crate) enum SchemaCommand {
     Export { dir: PathBuf },
 }
 
-/// Directories that serve `modulepath:` imports, like `pkl eval --module-path`.
-/// `modulepath:/ruxel/Ruxel.pkl` is always this binary's schema.
+/// Where the configuration may read from.
 #[derive(Debug, clap::Args)]
-pub(crate) struct ModulePathArgs {
+pub(crate) struct SourceArgs {
+    /// Directories that serve `modulepath:` imports, like `pkl eval
+    /// --module-path`. `modulepath:/ruxel/Ruxel.pkl` is always this binary's
+    /// schema.
     #[arg(long = "module-path", value_name = "DIRS", value_delimiter = ':')]
-    pub(crate) dirs: Vec<PathBuf>,
+    pub(crate) module_path: Vec<PathBuf>,
+    /// The directory whose files the configuration may import and read, like
+    /// `pkl eval --root-dir`. Defaults to the root module's directory.
+    #[arg(long = "root-dir", value_name = "DIR")]
+    pub(crate) root_dir: Option<PathBuf>,
+}
+
+impl SourceArgs {
+    pub(crate) fn options(&self) -> ruxel_config::EvalOptions {
+        ruxel_config::EvalOptions {
+            module_path: self.module_path.clone(),
+            root_dir: self.root_dir.clone(),
+        }
+    }
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct RunArgs {
     pub(crate) root: PathBuf,
     #[command(flatten)]
-    pub(crate) module_path: ModulePathArgs,
+    pub(crate) sources: SourceArgs,
     #[command(flatten)]
     pub(crate) connection: ConnectionArgs,
     #[command(flatten)]

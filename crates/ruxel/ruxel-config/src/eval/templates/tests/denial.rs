@@ -14,7 +14,7 @@ fn provider_denial_survives_evaluator_fallbacks() {
             Err(Error::Eval("synthetic denial".into()))
         }
     }
-    let mut evaluator = crate::eval::builder(&[]).build();
+    let mut evaluator = pklr::Evaluator::new();
     evaluator.set_module_source(Denied);
     let error = evaluator.eval_source_json_blocking(
         "output { value = \"otherwise valid\" }",
@@ -85,7 +85,7 @@ output {
     converters { [String] = (s) -> test.catchOrNull(() -> import("dependency.pkl").value) ?? s }
   }
 }"#;
-    let mut evaluator = crate::eval::builder(&[]).build();
+    let mut evaluator = pklr::Evaluator::new();
     evaluator.set_module_source(DenyReads);
     assert!(evaluator.eval_source(source, Path::new("main.pkl")).is_ok());
     let error = evaluator.eval_source_json_blocking(source, Path::new("main.pkl"));

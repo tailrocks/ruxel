@@ -1,9 +1,10 @@
 use ruxel::exit::ExitCode;
+use ruxel_config::EvalOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-pub(crate) fn dump(root: &Path, module_path: &[PathBuf]) -> Result<(), Box<dyn std::error::Error>> {
-    let value = ruxel_config::eval(root, module_path)?;
+pub(crate) fn dump(root: &Path, options: &EvalOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let value = ruxel_config::eval(root, options)?;
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{value:#}")?;
     stdout.flush()?;
@@ -12,8 +13,8 @@ pub(crate) fn dump(root: &Path, module_path: &[PathBuf]) -> Result<(), Box<dyn s
 
 /// Evaluate a configuration root for execution and admit it against the
 /// schema this binary serves.
-pub(crate) fn admit(root: &Path, module_path: &[PathBuf]) -> Result<serde_json::Value, ExitCode> {
-    let error = match ruxel_config::eval_config(root, module_path) {
+pub(crate) fn admit(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, ExitCode> {
+    let error = match ruxel_config::eval_config(root, options) {
         Ok(value) => return Ok(value),
         Err(error) => error,
     };

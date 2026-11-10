@@ -26,16 +26,12 @@ fn snapshots_are_consistent_within_evaluation_and_fresh_between_evaluations()
     let fixture = Fixture::new()?;
     fixture.write("dependency.pkl", "value = \"first\"")?;
     let root = TemplateRoot::open(&fixture.root())?;
-    let mut modules = Modules {
-        root: root.directory.try_clone()?,
-        path: root.path.clone(),
-        sources: BTreeMap::new(),
-    };
-    let dependency = root.path.join("dependency.pkl");
+    let mut modules = Modules::new(Arc::new(Confined::new(vec![root.0.try_clone()?])));
+    let dependency = root.0.path().join("dependency.pkl");
     assert_eq!(modules.read(&dependency)?, "value = \"first\"");
     fixture.write("dependency.pkl", "value = \"second\"")?;
     assert_eq!(
-        modules.read(&root.path.join("sub/../dependency.pkl"))?,
+        modules.read(&root.0.path().join("sub/../dependency.pkl"))?,
         "value = \"first\""
     );
     std::fs::remove_file(&dependency)?;
@@ -51,20 +47,29 @@ fn snapshots_are_consistent_within_evaluation_and_fresh_between_evaluations()
 }
 
 #[test]
-fn file_resource_reads_keep_native_behavior() -> std::result::Result<(), Box<dyn std::error::Error>>
-{
+fn file_resources_are_confined_to_the_template_root()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new()?;
-    std::fs::write(fixture.0.join("resource.txt"), "resource-value")?;
-    fixture.write(
-        "main.pkl",
-        "output { value = read(\"../resource.txt\").text }",
-    )?;
-    let path = fixture.root().join("main.pkl");
-    let expected = crate::eval(&path, &[])?;
-    assert_eq!(expected, json!("resource-value"));
-    assert_eq!(
-        TemplateRoot::open(&fixture.root())?.evaluate(Path::new("main.pkl"))?,
-        expected
-    );
+    std::fs::write(fixture.0.join("outside.txt"), "outside-value")?;
+    fixture.write("inside.txt", "inside-value")?;
+    let root = TemplateRoot::open(&fixture.root())?;
+    fixture.write("main.pkl", "output { value = read(\"inside.txt\").text }")?;
+    assert_eq!(root.evaluate(Path::new("main.pkl"))?, json!("inside-value"));
+    for source in [
+        "output { value = read(\"../outside.txt\").text }",
+        &format!(
+            "output {{ value = read(\"file:{}\").text }}",
+            fixture.0.join("outside.txt").display()
+        ),
+    ] {
+        fixture.write("main.pkl", source)?;
+        let result = root.evaluate(Path::new("main.pkl"));
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|error| error.to_string().contains("outside the configuration root")),
+            "{result:?}"
+        );
+    }
     Ok(())
 }

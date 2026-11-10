@@ -261,7 +261,7 @@ pub(super) fn execute(env: &Env) -> Result<()> {
         .build()?;
     runtime.block_on(async {
         let config =
-            ruxel_engine::model::validate_config(&ruxel_config::eval_config(&env.module, &[])?)?;
+            ruxel_engine::model::validate_config(&ruxel_config::eval_config(&env.module, &ruxel_config::EvalOptions::default())?)?;
         for phase in ["fresh", "converged", "drift_repair", "check", "diff"] {
             if matches!(phase, "drift_repair" | "check") {
                 control_run::drift(&env.payload)?;

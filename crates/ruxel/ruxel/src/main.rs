@@ -14,8 +14,8 @@ fn main() {
             Command::Check(args) => run(args, ruxel_engine::controller::Mode::Check),
             Command::Diff(args) => run(args, ruxel_engine::controller::Mode::Diff),
             Command::Config(config) => match config.command {
-                ConfigCommand::Dump { root, module_path } => {
-                    match commands::config::dump(&root, &module_path.dirs) {
+                ConfigCommand::Dump { root, sources } => {
+                    match commands::config::dump(&root, &sources.options()) {
                         Ok(()) => ExitCode::Success,
                         Err(error) => {
                             if writeln!(std::io::stderr().lock(), "{error}").is_err()
@@ -48,7 +48,7 @@ fn main() {
 }
 
 fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
-    let value = match commands::config::admit(&args.root, &args.module_path.dirs) {
+    let value = match commands::config::admit(&args.root, &args.sources.options()) {
         Ok(value) => value,
         Err(code) => return code,
     };

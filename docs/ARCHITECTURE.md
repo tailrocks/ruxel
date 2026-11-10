@@ -9,8 +9,14 @@ complete platform coverage.
 
 - `crates/ruxel/ruxel` provides the command-line interface and exit codes.
 - `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
-  no inherited environment variables or external properties and permits local
-  file resources. Its module path serves the compiled-in schema at
+  no inherited environment variables or external properties and no network.
+  Module imports and `file:` resources are confined to the root directory
+  (`--root-dir`, default the root module's directory) and the `--module-path`
+  directories: each is opened once, and every path component is opened
+  relative to its parent descriptor without following symlinks, so `..`,
+  outside absolute paths and symlinks (even ones swapped in during evaluation)
+  are refused. Templates are confined the same way to their source directory.
+  Its module path serves the compiled-in schema at
   `modulepath:/ruxel/Ruxel.pkl`, followed by the `--module-path` directories.
 - `schema/Ruxel.pkl` declares inventory, task, operation, expression, and
   lookup types. It is compiled into the binary, which replaces the

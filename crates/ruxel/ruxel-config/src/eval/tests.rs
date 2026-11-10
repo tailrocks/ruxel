@@ -1,4 +1,4 @@
-use super::{eval, eval_source};
+use super::{EvalOptions, eval};
 use std::path::Path;
 
 #[test]
@@ -41,26 +41,31 @@ fn minimal_evaluates() {
                 env!("CARGO_MANIFEST_DIR"),
                 "/testdata/eval/minimal.pkl"
             )),
-            &[],
+            &EvalOptions::default(),
         )
         .is_ok()
     );
 }
 
 #[test]
-fn source_evaluation_preserves_output_and_relative_imports()
--> Result<(), Box<dyn std::error::Error>> {
+fn relative_imports_are_read_at_evaluation() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::temp_dir().join(format!("ruxel-source-eval-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("main.pkl");
-    let source = "import \"dependency.pkl\" as dep\noutput { value = dep.value }";
     std::fs::write(dir.join("dependency.pkl"), "value = \"rendered\"")?;
-    std::fs::write(&path, source)?;
-    assert_eq!(eval(&path, &[])?, serde_json::json!("rendered"));
-    assert_eq!(eval_source(source, &path)?, eval(&path, &[])?);
+    std::fs::write(
+        &path,
+        "import \"dependency.pkl\" as dep\noutput { value = dep.value }",
+    )?;
+    assert_eq!(
+        eval(&path, &EvalOptions::default())?,
+        serde_json::json!("rendered")
+    );
     std::fs::write(&path, "output { value = \"replacement\" }")?;
-    assert_eq!(eval_source(source, &path)?, serde_json::json!("rendered"));
-    assert_eq!(eval(&path, &[])?, serde_json::json!("replacement"));
+    assert_eq!(
+        eval(&path, &EvalOptions::default())?,
+        serde_json::json!("replacement")
+    );
     std::fs::remove_dir_all(dir)?;
     Ok(())
 }
@@ -73,7 +78,7 @@ fn environment_reads_are_denied() {
                 env!("CARGO_MANIFEST_DIR"),
                 "/testdata/eval/env.pkl"
             )),
-            &[],
+            &EvalOptions::default(),
         )
         .is_err()
     );
@@ -87,7 +92,7 @@ fn network_imports_are_denied() {
                 env!("CARGO_MANIFEST_DIR"),
                 "/testdata/eval/network.pkl"
             )),
-            &[],
+            &EvalOptions::default(),
         )
         .is_err()
     );
