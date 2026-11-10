@@ -16,7 +16,12 @@ pub(super) fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
             } else if let Some(value) = line.strip_prefix("Architecture: ") {
                 architecture = Some(value);
             } else if let Some(value) = line.strip_prefix("Status: ") {
-                installed = value.split_whitespace().nth(2) == Some("installed");
+                // Only healthy installations: wanted (install or hold), no
+                // error flag such as reinstreq, and fully installed.
+                installed = matches!(
+                    value.split_whitespace().collect::<Vec<_>>().as_slice(),
+                    ["install" | "hold", "ok", "installed"]
+                );
             }
         }
         if let (true, Some(name), Some(version), Some(architecture)) =

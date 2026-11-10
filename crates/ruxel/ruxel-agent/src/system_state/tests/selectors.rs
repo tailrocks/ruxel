@@ -32,7 +32,7 @@ fn plan(state: &mut SystemState, names: &[&str], latest: bool) -> AptPlan {
 fn exact_pin_is_satisfied_by_the_native_or_all_entry() {
     let mut state = state(
         &[("pkg:amd64", "1.2-3"), ("data:all", "4"), ("pkg:i386", "9")],
-        &[],
+        &[("pkg:arm64", "2")],
     );
     for names in [
         &["pkg=1.2-3"][..],
@@ -55,7 +55,7 @@ fn exact_pin_is_satisfied_by_the_native_or_all_entry() {
 fn satisfied_requests_stay_in_the_transaction_at_their_installed_version() {
     let mut state = state(
         &[("held:amd64", "1.1"), ("lib:i386", "2"), ("pin:amd64", "3")],
-        &[("held", "1.2")],
+        &[("held", "1.2"), ("other", "1")],
     );
     let plan = plan(
         &mut state,
@@ -83,6 +83,7 @@ fn latest_compares_one_batched_candidate_per_policy_header() {
             ("cur", "2"),
             ("lib:i386", "3"),
             ("gone", "(none)"),
+            ("absent", "1"),
         ],
     );
     let plan = plan(
@@ -105,4 +106,39 @@ fn batched_policy_output_is_keyed_by_stanza() {
     assert_eq!(candidates["libc6:i386"], "2.39");
     assert!(parse_policy("bash:\n  Candidate: 1\nbash:\n  Candidate: 2\n").is_err());
     assert!(parse_policy("unexpected\n").is_err());
+}
+
+#[test]
+fn unpinned_requests_without_a_candidate_are_refused() {
+    let mut state = state(&[("debconf:all", "1")], &[("debconf-2.0", "(none)")]);
+    for (names, latest) in [(&["debconf-2.0"][..], false), (&["debconf-2.0"], true)] {
+        let names: Vec<String> = names.iter().map(|name| (*name).into()).collect();
+        let error = state
+            .plan_packages(
+                &PackageRequest::parse_all(&names).expect("supported"),
+                latest,
+            )
+            .expect_err("virtual package");
+        assert!(error.contains("no installation candidate"), "{error}");
+    }
+}
+
+#[test]
+fn only_healthy_installations_count_as_installed() {
+    let status =
+        |state: &str| format!("Package: pkg\nStatus: {state}\nArchitecture: amd64\nVersion: 1\n\n");
+    for (state, installed) in [
+        ("install ok installed", true),
+        ("hold ok installed", true),
+        ("install reinstreq installed", false),
+        ("deinstall ok installed", false),
+        ("install ok half-configured", false),
+        ("purge ok not-installed", false),
+    ] {
+        assert_eq!(
+            parse_dpkg_status(&status(state)).contains_key("pkg:amd64"),
+            installed,
+            "{state}"
+        );
+    }
 }

@@ -31,18 +31,19 @@ impl SystemState {
         latest: bool,
     ) -> Result<AptPlan, String> {
         self.ensure_packages()?;
-        if latest {
-            let unknown: Vec<_> = requests
-                .iter()
-                .filter(|request| {
-                    request.version().is_none()
-                        && self.installed(request).is_some()
-                        && !self.candidates.contains_key(&self.policy_header(request))
-                })
-                .map(PackageRequest::selector)
-                .collect();
-            self.query_candidates(&unknown)?;
-        }
+        // Candidates are needed to compare installed unpinned requests with
+        // `latest`, and to refuse unpinned requests that apt could satisfy
+        // only through another package (virtual) or not at all.
+        let unknown: Vec<_> = requests
+            .iter()
+            .filter(|request| {
+                request.version().is_none()
+                    && (latest || self.installed(request).is_none())
+                    && !self.candidates.contains_key(&self.policy_header(request))
+            })
+            .map(PackageRequest::selector)
+            .collect();
+        self.query_candidates(&unknown)?;
         let mut plan = AptPlan::default();
         for request in requests {
             let installed = self.installed(request);
@@ -58,6 +59,18 @@ impl SystemState {
                 }
                 (Some(_), None) => true,
             };
+            if installed.is_none()
+                && request.version().is_none()
+                && self
+                    .candidates
+                    .get(&self.policy_header(request))
+                    .is_none_or(|candidate| candidate == "(none)")
+            {
+                return Err(format!(
+                    "apt: {:?} has no installation candidate; virtual and unavailable packages are not supported, request the providing package",
+                    request.selector()
+                ));
+            }
             if satisfied {
                 let installed = installed.ok_or("apt: satisfied request is not installed")?;
                 plan.transaction.push(request.pinned(installed));

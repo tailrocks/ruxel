@@ -87,7 +87,8 @@ class Apt {
   force: Flag? = null
   /// Each entry is `name`, `name=version`, `name:arch` or `name:arch=version`, with one
   /// exact Debian version. Globs, version patterns, APT escapes, the `any`, `native` and
-  /// `all` architectures, and a package listed twice are refused before apt runs.
+  /// `all` architectures, and a package listed twice are refused before apt runs. A missing
+  /// unpinned package must have its own installation candidate: virtual packages are refused.
   name: TextList? = null
   state: ("present"|"latest"|Expr)? = null
   update_cache: Flag? = null
