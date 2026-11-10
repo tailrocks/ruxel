@@ -417,7 +417,8 @@ function key(s: rx.Step): String = identity.key(s)
 /// different settings print alike.
 class Identity {
   function key(s: rx.Step): String =
-    if (s is rx.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 12)
+    // 128 bits: no one can make two different steps share an identity.
+    if (s is rx.Capture) s.id() else "\(s.kind)_" + this.fingerprint(s).sha256.substring(0, 32)
 
   function fingerprint(s: rx.Step): String =
     (if (mergeable(s)) "" else fields(List(label(s)))) + this.settings(s)
@@ -556,7 +557,7 @@ local lowerers: Mapping<String, (rx.Step, Meta) -> List<engine.Task>> = new {
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null), null, lit(false)))
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
-  ["aptRepository"] = (s, m) -> List(task(helperMeta("Create /etc/apt/keyrings for \(s.name)", m, null), directory("/etc/apt/keyrings", "0755"), null, null), task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
+  ["aptRepository"] = (s, m) -> List(task(keyringDirectoryMeta(s, m), directory("/etc/apt/keyrings", "0755"), null, null), task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
@@ -600,6 +601,15 @@ function keyringMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
   register = if (m.register == null) null else "\(m.register)_key"
 }
 
+/// The keyring directory is persistent state too: a corrected mode is a
+/// change of the repository.
+function keyringDirectoryMeta(r: rx.AptRepository, m: Meta): Meta = new Meta {
+  name = "Create /etc/apt/keyrings for \(r.name)"
+  tags = m.tags
+  notify = m.notify
+  register = if (m.register == null) null else "\(m.register)_dir"
+}
+
 function keyring(r: rx.AptRepository): engine.Copy = copyText(keyringPath(r), r.signingKey)
 
 function sourcesFile(r: rx.AptRepository): engine.Copy = copyText(sourcesPath(r), new Listing {
@@ -624,7 +634,7 @@ function actionTasks(a: rx.Action, argv: List<String>, m: Meta): List<engine.Tas
 /// `or` of the `changed` results of the watched steps. An apt repository
 /// also changes when only its keyring does.
 function anyChanged(ids: List<String>): engine.Expr =
-  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key") else List(id))
+  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key", "\(id)_dir") else List(id))
     .map((id) -> ref(List("results", id, "changed")))
     .fold(null, (acc, e) -> if (acc == null) e else call2("or", acc, e))
 
@@ -649,14 +659,16 @@ function unlessOutput(u: rx.UnlessOutput): engine.Expr = call2("and", ran(),
 
 /// The engine's user operation creates a missing account. `LoginShell` only
 /// changes an existing one, so a read-only probe fails first, in check and
-/// diff too.
+/// diff too. It looks the name up exactly as the user operation does: a
+/// literal name in /etc/passwd, not NSS and not a numeric ID. The name is
+/// only ever passed as a quoted argument.
 function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
-  "getent passwd \(shellQuote(account)) >/dev/null || { echo \"account \(shellQuote(account)) does not exist; LoginShell changes the shell of an existing account\" >&2; exit 1; }"
+  "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; LoginShell changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
 ), null), null, lit(false))) { checkMode = false }
 
 function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
-function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 12)
+function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 32)
 
 function restartHandler(serviceName: String): engine.Task =
   task(new Meta { name = restartName(serviceName); tags = List(); notify = List(); register = null }, service(serviceName, null, "restarted"), null, null)
@@ -717,7 +729,7 @@ function command(_argv: List<String>, _creates: String?): engine.Command = new e
 // ── Run-time text ───────────────────────────────────────────────────────────
 
 local placeholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__"#)
-local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capture_[0-9a-f]{12}\.stdout"#)
+local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capture_[0-9a-f]{32}\.stdout"#)
 
 /// Text without placeholders stays a string. Placeholders (`currentHost`,
 /// `Capture.stdout()`) become engine references inside a `concat`.

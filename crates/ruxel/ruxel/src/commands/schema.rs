@@ -41,12 +41,61 @@ fn stage(dir: &Path, staged: &mut Vec<(PathBuf, PathBuf)>) -> std::io::Result<()
     Ok(())
 }
 
-/// Replace every target with its staging file.
+/// Replace every target with its staging file, or none of them.
+///
+/// Every existing target must be a regular file, checked before anything is
+/// replaced. Each is moved aside first, so a rename that still fails part
+/// way restores the targets already replaced.
 fn publish(staged: &[(PathBuf, PathBuf)]) -> std::io::Result<()> {
-    for (staging, target) in staged {
-        std::fs::rename(staging, target)?;
+    for (_, target) in staged {
+        match std::fs::symlink_metadata(target) {
+            Ok(metadata) if !metadata.file_type().is_file() => {
+                return Err(std::io::Error::other(format!(
+                    "{} exists and is not a regular file",
+                    target.display()
+                )));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
     }
-    Ok(())
+    let mut done: Vec<(&Path, Option<PathBuf>)> = Vec::new();
+    let result = staged.iter().try_for_each(|(staging, target)| {
+        let backup = target.with_file_name(format!(
+            ".{}.{}.previous",
+            target
+                .file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+            std::process::id()
+        ));
+        let saved = match std::fs::rename(target, &backup) {
+            Ok(()) => Some(backup),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        done.push((target.as_path(), saved.clone()));
+        std::fs::rename(staging, target)
+    });
+    match result {
+        Ok(()) => {
+            for (_, saved) in done {
+                if let Some(saved) = saved {
+                    drop(std::fs::remove_file(saved));
+                }
+            }
+            Ok(())
+        }
+        Err(error) => {
+            for (target, saved) in done.into_iter().rev() {
+                match saved {
+                    Some(saved) => drop(std::fs::rename(saved, target)),
+                    None => drop(std::fs::remove_file(target)),
+                }
+            }
+            Err(error)
+        }
+    }
 }
 
 /// Create `relative`'s directories below `dir`, refusing any that is a

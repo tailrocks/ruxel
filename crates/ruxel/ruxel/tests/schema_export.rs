@@ -69,3 +69,29 @@ fn an_export_never_writes_through_a_symlinked_directory() -> Result {
     std::fs::remove_dir_all(&directory)?;
     Ok(())
 }
+
+#[test]
+fn a_target_that_is_not_a_file_stops_the_export_before_anything_changes() -> Result {
+    let directory = scratch("not-a-file")?;
+    let exported = directory.join("exported");
+    assert!(export(&exported)?.status.success());
+    let first = exported.join("ruxel/Ruxel.pkl");
+    std::fs::write(&first, "older export\n")?;
+    // Staging succeeds, but Workflow.pkl, published after Ruxel.pkl, is a
+    // directory now.
+    let workflow = exported.join("ruxel/Workflow.pkl");
+    std::fs::remove_file(&workflow)?;
+    std::fs::create_dir(&workflow)?;
+    let output = export(&exported)?;
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(stderr.contains("is not a regular file"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&first)?, "older export\n");
+    let leftovers: Vec<_> = std::fs::read_dir(exported.join("ruxel"))?
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    std::fs::remove_dir_all(&directory)?;
+    Ok(())
+}

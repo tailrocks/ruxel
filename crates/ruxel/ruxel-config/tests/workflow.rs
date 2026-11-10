@@ -130,6 +130,25 @@ fn apt_sources_name_architectures_only_when_set() -> Result {
         position("Install native apt signing key"),
         Some(directory + 1)
     );
+    // A step reacting to the repository sees its directory, key and source.
+    let register = all[directory]["register"]
+        .as_str()
+        .ok_or("directory not registered")?;
+    let base = register
+        .strip_suffix("_dir")
+        .ok_or("directory register name")?;
+    let watcher = &all[position("Run apt-get update").ok_or("no watcher")?];
+    let condition = watcher["when"].to_string();
+    for result in [
+        base.to_owned(),
+        format!("{base}_key"),
+        format!("{base}_dir"),
+    ] {
+        assert!(
+            condition.contains(&format!("\"{result}\"")),
+            "{result}: {condition}"
+        );
+    }
     assert!(!native.contains("Architectures:"), "{native}");
     assert!(pinned.contains("Architectures: arm64\n"), "{pinned}");
     Ok(())

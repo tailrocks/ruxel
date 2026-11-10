@@ -65,7 +65,11 @@ const local function isIpv6Address(a: String): Boolean =
     && hex.length + (if (tail) 1 else 0) == groups.length
     && (!tail || isIpv4(groups.last) && !a.endsWith("::"))
     && (if (gap) count <= 7 else count == 8)
-typealias Arguments = StaticList(!isEmpty)
+/// A command line: a program, which cannot be empty, and its arguments.
+typealias Arguments = StaticList(!isEmpty && !toList().first.isEmpty)
+/// The name of a service or an account: not empty, and not starting with
+/// `-`, which the tools that take it would read as an option.
+typealias Name = Static(!isEmpty && !startsWith("-"))
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
 
@@ -161,7 +165,7 @@ class File extends Step {
   /// file as it was.
   ///
   ///     validate { "haproxy"; "-c"; "-f"; "%s" }
-  validate: StaticList(isEmpty || toList().any((a) -> a.contains("%s"))) = new {}
+  validate: StaticList(isEmpty || !toList().first.isEmpty && toList().any((a) -> a.contains("%s"))) = new {}
 }
 
 class Directory extends Step {
@@ -229,7 +233,7 @@ class Timezone extends Step {
 /// fails the stage; it is never created.
 class LoginShell extends Step {
   hidden fixed kind = "loginShell"
-  user: Static
+  user: Name
   shell: AbsolutePath
 }
 
@@ -246,7 +250,7 @@ class GitCheckout extends Step {
 /// A systemd service.
 class Service extends Step {
   hidden fixed kind = "service"
-  name: Static
+  name: Name
   /// Starts at boot.
   enabled: Boolean = true
   /// Is running now. `false` stops it.
@@ -347,7 +351,7 @@ class Capture extends Step {
   function id(): String =
     // Each field is prefixed with its length, so no text stands for two.
     "capture_" + List(title ?? description(), if (runOn == null) "-" else "+" + runOn.name, "\(retry.attempts)", "\(retry.delay.toUnit("s").value.toInt())", bash)
-      .map((v) -> "\(v.length):\(v)").join("").sha256.substring(0, 12)
+      .map((v) -> "\(v.length):\(v)").join("").sha256.substring(0, 32)
 
   /// The generated plan line, used when there is no title.
   function description(): String = "Capture " + bash.trim().split("\n").first

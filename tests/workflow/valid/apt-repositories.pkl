@@ -4,14 +4,16 @@ amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 
 local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+local native = new AptRepository { name = "native"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = key }
 
 stages {
   new Stage {
     title = "Repositories"
     hosts = inventory.workers
     steps {
-      new AptRepository { name = "native"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = key }
+      native
       new AptRepository { name = "pinned"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; architectures { "arm64" }; signingKey = key }
+      new Command { run { "apt-get"; "update" }; onChangeOf { native } }
     }
   }
 }
