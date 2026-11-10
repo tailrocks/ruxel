@@ -323,21 +323,22 @@ function conflicts(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
-/// A regular file or a link leaves no room for anything inside it, and Git
-/// owns everything inside a checkout, so no other step of the stage may
-/// manage a path beneath one.
+/// A regular file or a link leaves no room for anything inside it, so no
+/// other step of the stage may manage a path beneath one. A Git checkout is
+/// not such a leaf: steps may manage paths inside it that the repository
+/// ignores (Oh My Zsh's `custom/plugins`), which no evaluation can tell
+/// from tracked ones.
 function nested(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
     let (byEarlier = inside(leaves(ix.steps[j]), paths(ix.steps[i])))
     let (byLater = inside(leaves(ix.steps[i]), paths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
-    let (owner = if (byEarlier.isEmpty) ix.steps[i] else ix.steps[j])
     if (pair.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is \(if (owner is rx.GitCheckout) "a Git checkout" else "a file"), so \(pair.first.last) cannot be inside it"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
 
-/// Paths a step owns whole: regular files and links, and Git checkouts.
+/// Paths a step writes as a regular file or a link.
 const function leaves(s: rx.Step): List<String> =
-  if (List("file", "symlink", "aptRepository", "gitCheckout").contains(s.kind)) subjectsOf(s) else List()
+  if (List("file", "symlink", "aptRepository").contains(s.kind)) subjectsOf(s) else List()
 
 /// An apt repository creates `/etc/apt/keyrings` with mode 0755, so a
 /// `Directory` there with another mode would change it back and forth.

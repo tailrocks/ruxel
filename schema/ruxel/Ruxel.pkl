@@ -233,8 +233,9 @@ class LoginShell extends Step {
   shell: AbsolutePath
 }
 
-/// A Git working tree pinned to one commit. Git owns everything below `path`,
-/// so no other step of the stage may manage a path there.
+/// A Git working tree pinned to one commit. Another step may manage a path
+/// inside it only where the repository ignores that path (Oh My Zsh's
+/// `custom/`): a change to a tracked file makes the next checkout fail.
 class GitCheckout extends Step {
   hidden fixed kind = "gitCheckout"
   repository: HttpsUrl
