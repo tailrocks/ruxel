@@ -2,6 +2,23 @@
 set -euo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 real_pkg_config=$(command -v pkg-config)
+shell_quote() {
+    quote_remaining=$1
+    printf "'"
+    while :; do
+        case "$quote_remaining" in
+            *\'*)
+                printf '%s' "${quote_remaining%%\'*}" "'\\''"
+                quote_remaining=${quote_remaining#*\'}
+                ;;
+            *)
+                printf '%s' "$quote_remaining"
+                break
+                ;;
+        esac
+    done
+    printf "'"
+}
 needs_blkid=no
 for argument in "$@"; do
     case "$argument" in blkid|'blkid '*) needs_blkid=yes ;; esac
@@ -30,6 +47,35 @@ trap 'rm -f "$include.tmp.$$"' EXIT
 ln -s "$sysroot/usr/include" "$include.tmp.$$"
 mv -f -T "$include.tmp.$$" "$include"
 trap - EXIT
-export PKG_CONFIG_PATH="$sysroot/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+pkgconfig_dir="$sysroot/usr/lib/pkgconfig"
+# Inside a build script, copy the static library into its OUT_DIR so the emitted
+# link search path names only files that build caches store and restore with
+# the build-script output. A path into the shared native cache would be stale
+# on a machine that restored the output without building that cache.
+if test -n "${OUT_DIR:-}"; then
+    local_root="$OUT_DIR/libblkid-native"
+    staging="$local_root.tmp.$$"
+    trap 'rm -rf "$staging"' EXIT
+    rm -rf "$staging"
+    mkdir -p "$staging/sysroot/usr/lib/pkgconfig" "$staging/sysroot/usr/include/blkid"
+    cp "$sysroot/usr/lib/libblkid.a" "$staging/sysroot/usr/lib/"
+    cp "$sysroot/usr/include/blkid/blkid.h" "$staging/sysroot/usr/include/blkid/"
+    new_root="$local_root/sysroot"
+    while IFS= read -r line; do
+        case "$line" in
+            prefix=*|exec_prefix=*) printf '%s=%s/usr\n' "${line%%=*}" "$new_root" ;;
+            libdir=*) printf 'libdir=%s/usr/lib\n' "$new_root" ;;
+            includedir=*) printf 'includedir=%s/usr/include\n' "$new_root" ;;
+            Cflags:*) printf 'Cflags: '; shell_quote "-I$new_root/usr/include/blkid"; printf '\n' ;;
+            Libs:*) printf 'Libs: '; shell_quote "-L$new_root/usr/lib"; printf ' -lblkid\n' ;;
+            *) printf '%s\n' "$line" ;;
+        esac
+    done <"$pkgconfig_dir/blkid.pc" >"$staging/sysroot/usr/lib/pkgconfig/blkid.pc"
+    rm -rf "$local_root"
+    mv "$staging" "$local_root"
+    trap - EXIT
+    pkgconfig_dir="$local_root/sysroot/usr/lib/pkgconfig"
+fi
+export PKG_CONFIG_PATH="$pkgconfig_dir${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 "$real_pkg_config" --exact-version=2.41.6 blkid
 exec "$real_pkg_config" "$@"
