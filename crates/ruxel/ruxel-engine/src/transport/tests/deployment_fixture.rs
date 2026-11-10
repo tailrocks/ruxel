@@ -115,6 +115,8 @@ impl Fixture {
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))?;
         Ok(RemoteHost {
+            admitted: None,
+            admission_timeout: std::time::Duration::from_secs(5),
             destination: "fixture.invalid".into(),
             test_path: Some(path),
             options: ConnectOptions {
@@ -135,6 +137,7 @@ impl Fixture {
     )> {
         connect_remote(
             self.host()?,
+            &ruxel_guard::Policy::new(&[], &["192.0.2.66/32".into()])?,
             &self.root.join("agent"),
             "deployment-test",
             true,

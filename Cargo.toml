@@ -21,6 +21,7 @@ homepage = "https://github.com/tailrocks/ruxel"
 [workspace.dependencies]
 ruxel-config = { path = "crates/ruxel/ruxel-config", version = "0.1.0" }
 ruxel-proto = { path = "crates/ruxel/ruxel-proto", version = "0.1.0" }
+ruxel-guard = { path = "crates/ruxel/ruxel-guard", version = "0.1.0" }
 
 base64 = "0.22"
 aho-corasick = "1.1"

@@ -9,6 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[test]
 fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
     let host = RemoteHost {
+        admitted: None,
+        admission_timeout: std::time::Duration::from_secs(15),
         destination: "synthetic.invalid".into(),
         test_path: None,
         options: ConnectOptions::default(),
@@ -25,7 +27,21 @@ fn ssh_uses_guard_compatible_commands_with_strict_host_keys() {
             .iter()
             .any(|arg| ["-M", "-S", "-O", "-A", "-J"].contains(&arg.as_str()))
     );
-    assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
+    for option in [
+        "StrictHostKeyChecking=yes",
+        "CanonicalizeHostname=no",
+        "ClearAllForwardings=yes",
+        "PermitLocalCommand=no",
+        "KnownHostsCommand=none",
+        "ForwardAgent=no",
+        "ForwardX11=no",
+        "ForwardX11Trusted=no",
+        "Tunnel=no",
+        "VerifyHostKeyDNS=no",
+        "GSSAPIAuthentication=no",
+    ] {
+        assert!(args.iter().any(|arg| arg == option), "{option}");
+    }
     assert_eq!(args.last().map(String::as_str), Some("synthetic.invalid"));
     assert_eq!(args[args.len() - 2], "--");
     let subsystem = host.subsystem();
@@ -68,6 +84,8 @@ async fn ssh_options_reach_only_an_injected_fake_executable() -> anyhow::Result<
     std::fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n")?;
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))?;
     let host = RemoteHost {
+        admitted: None,
+        admission_timeout: std::time::Duration::from_secs(15),
         destination: "fixture.invalid".into(),
         test_path: None,
         options: ConnectOptions {
@@ -99,4 +117,26 @@ mod deployment;
 fn known_hosts_filename_is_one_quoted_ssh_config_value() {
     let value = super::known_hosts_option(std::path::Path::new("pins ' \" \\ file"));
     assert_eq!(value, r#"UserKnownHostsFile="pins ' \" \\ file""#);
+}
+
+#[test]
+fn resolved_proxy_hops_are_refused() -> anyhow::Result<()> {
+    let policy = ruxel_guard::Policy::new(&[], &[])?;
+    let admit = |config: &str| super::admission::admit_resolved(config, "synthetic", &policy);
+    assert_eq!(admit("hostname 192.0.2.1\nproxyjump none\n")?, "192.0.2.1");
+    assert_eq!(admit("hostname fe80::1%eth0\n")?, "fe80::1%eth0");
+    assert!(admit("hostname fe80::1%\n").is_err());
+    for unspecified in ["0.0.0.0", "::", "::ffff:0.0.0.0"] {
+        let error = admit(&format!("hostname {unspecified}\n")).unwrap_err();
+        assert!(error.to_string().contains("unspecified"), "{error}");
+    }
+    assert!(admit("hostname 192.0.2.1%eth0\n").is_err());
+    let denied = ruxel_guard::Policy::new(&[], &["fe80::/64".into()])?;
+    assert!(
+        super::admission::admit_resolved("hostname fe80::1%eth0\n", "scoped", &denied).is_err()
+    );
+    assert!(admit("hostname 192.0.2.1\nproxyjump jump\n").is_err());
+    assert!(admit("hostname 192.0.2.1\nproxycommand nc %h %p\n").is_err());
+    assert!(admit("user root\n").is_err());
+    Ok(())
 }
