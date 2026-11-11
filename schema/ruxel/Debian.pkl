@@ -5,7 +5,7 @@
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
 ///
 ///     import "modulepath:/ruxel/Debian.pkl" as debian
-///     new debian.Packages { names { "nginx" } }
+///     new debian.AptPackages { names { "nginx" } }
 module Debian
 
 import "modulepath:/ruxel/Core.pkl" as core
@@ -77,19 +77,19 @@ const local function isIpv4(s: String): Boolean =
   !s.endsWith(".") && parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
 
 /// Downloads the current apt package lists. Never reports a change.
-class PackageIndex extends core.Step {
+class AptPackageIndex extends core.Step {
   hidden fixed kind = "packageIndex"
 }
 
 /// Debian packages that are installed. Each name is `name`, `name=version`,
 /// `name:arch` or `name:arch=version`, with one exact Debian version; a
 /// package is listed once, or once per explicit architecture.
-class Packages extends core.Step {
+class AptPackages extends core.Step {
   hidden fixed kind = "packages"
   names: StaticList(!isEmpty)
   /// Upgrades them to the newest version on every run, not only once. The
   /// names cannot then pin a version.
-  upgrade: Boolean = false
+  latest: Boolean = false
 }
 
 /// A signed apt repository, written as a deb822 source with its own keyring.

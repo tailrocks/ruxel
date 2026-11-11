@@ -1,0 +1,16 @@
+// A missing account is created by the engine's user operation: the step
+// lowers to that operation alone, with no pre-check that reads
+// /etc/passwd, so an absent account is not a failure.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "Users"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "ruxel-app"; shell = "/bin/zsh" }
+    }
+  }
+}

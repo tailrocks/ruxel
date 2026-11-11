@@ -1,0 +1,7 @@
+// expect-pkl: Cannot find type `Packages` in module `Debian`.
+// expect-pklr: Cannot instantiate unresolved type `debian.Packages`.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.Packages { names { "nginx" } } } } }

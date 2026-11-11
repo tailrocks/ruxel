@@ -76,11 +76,11 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["fetchSecret"] = (s) -> s is core.FetchSecret
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
-  ["packageIndex"] = (s) -> s is debian.PackageIndex
-  ["packages"] = (s) -> s is debian.Packages
+  ["packageIndex"] = (s) -> s is debian.AptPackageIndex
+  ["packages"] = (s) -> s is debian.AptPackages
   ["aptRepository"] = (s) -> s is debian.AptRepository
   ["timezone"] = (s) -> s is linux.Timezone
-  ["loginShell"] = (s) -> s is linux.LoginShell
+  ["loginShell"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
 }
 
@@ -332,10 +332,10 @@ function settings(s: core.Step): List<String> =
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
   else if (s is core.Action && s.changes is core.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
     List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
-  else if (s is debian.Packages && !packageProblems(s.names.toList()).isEmpty)
+  else if (s is debian.AptPackages && !packageProblems(s.names.toList()).isEmpty)
     List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
-  else if (s is debian.Packages && s.upgrade && s.names.toList().any((n) -> n.contains("=")))
-    List("'\(name(s))': upgrade installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or upgrade = true")
+  else if (s is debian.AptPackages && s.latest && s.names.toList().any((n) -> n.contains("=")))
+    List("'\(name(s))': latest installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or set latest = false")
   else if (s is debian.AptRepository && s.suite.isEmpty)
     List("'\(name(s))': suite is empty; name a distribution such as \"stable\", or a path ending in / for a flat repository")
   else if (s is debian.AptRepository && !spaced(s).isEmpty)
@@ -447,21 +447,21 @@ const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
 
 /// Two package steps of a stage must agree on a package's version: pins that
-/// differ, or a pin and an upgrade, would change it back and forth. Exact
-/// repeats are fine. A selector without an architecture may be any.
+/// differ, or a pin and a `latest` step, would change it back and forth.
+/// Exact repeats are fine. A selector without an architecture may be any.
 function packageVersions(ix: StageIndex, i: Int): List<String> =
-  if (!(ix.steps[i] is debian.Packages)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is debian.Packages).flatMap((j) ->
+  if (!(ix.steps[i] is debian.AptPackages)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPackages).flatMap((j) ->
     let (clashes = ix.steps[i].names.toList().flatMap((a) -> ix.steps[j].names.toList().filter((b) -> versionClash(ix.steps[j], b, ix.steps[i], a)).map((b) -> List(b, a))))
     if (clashes.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].upgrade || ix.steps[i].upgrade) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].latest || ix.steps[i].latest) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
 
-const function versionClash(p: debian.Packages, a: String, q: debian.Packages, b: String): Boolean =
+const function versionClash(p: debian.AptPackages, a: String, q: debian.AptPackages, b: String): Boolean =
   packageName(a) == packageName(b)
     && (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b))
     && (versionOf(a) != null && versionOf(b) != null && versionOf(a) != versionOf(b)
-      || versionOf(a) != null && q.upgrade
-      || versionOf(b) != null && p.upgrade)
+      || versionOf(a) != null && q.latest
+      || versionOf(b) != null && p.latest)
 
 const function versionOf(n: String): String? = if (n.contains("=")) n.split("=").last else null
 
@@ -492,7 +492,7 @@ const function listed(s: core.Step): List<core.Step> =
 function watched(s: core.Step): List<core.Step> = listed(s).filter((w) -> !(w is core.Recipe))
 
 function canReportChange(s: core.Step): Boolean =
-  !(s is core.Capture || s is debian.PackageIndex || (s is core.Action && s.changes == "never"))
+  !(s is core.Capture || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
 
 /// Ids of the captures whose output this step's content uses.
 function capturesUsed(s: core.Step): List<String> =
@@ -571,7 +571,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
-  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.upgrade)"))
+  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.latest)"))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> fields(List(s.user, s.shell))
@@ -673,7 +673,7 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> "Create directory \(s.path)"
   ["symlink"] = (s) -> "Link \(s.path) to \(s.target)"
   ["packageIndex"] = (_) -> "Refresh apt package index"
-  ["packages"] = (s) -> (if (s.upgrade) "Install or upgrade " else "Install ") + s.names.join(", ")
+  ["packages"] = (s) -> (if (s.latest) "Install or upgrade " else "Install ") + s.names.join(", ")
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
   ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
@@ -716,10 +716,13 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null, null), null, lit(false)))
-  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
+  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.latest), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
-  ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
+  // `linux.User` lowers to the engine's user operation alone: the operation
+  // creates a missing account and sets the shell of an existing one, so no
+  // pre-check reads /etc/passwd before it.
+  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -905,17 +908,6 @@ const createsRecheckSkip = "creates_exists"
 function unlessOutput(u: core.UnlessOutput, wouldRun: engine.Expr): engine.Expr = call2("and", wouldRun,
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
-
-/// The engine's user operation creates a missing account. `LoginShell` only
-/// changes an existing one, so a read-only probe fails first, in check and
-/// diff too. It looks the name up exactly as the user operation does: a
-/// literal name in /etc/passwd, not NSS and not a numeric ID. The name is
-/// only ever passed as a quoted argument.
-function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
-  "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; LoginShell changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
-), null, null), null, lit(false))) { checkMode = false }
-
-function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
 function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 32)
 

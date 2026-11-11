@@ -1,9 +1,9 @@
 // Values at the edges of the types, and lowerings that guard them: a
 // link-local IPv6 address with a zone, a SHA-256 commit, literal text that
-// resembles a run-time value, a login shell (which checks that the account
-// exists), a command that reacts to another step (which reports a change in
-// check and diff when it would run), and a command with both `creates` and
-// `UnlessOutput`.
+// resembles a run-time value, a login shell (which lowers to the engine's
+// user operation alone), a command that reacts to another step (which
+// reports a change in check and diff when it would run), and a command with
+// both `creates` and `UnlessOutput`.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "modulepath:/ruxel/Debian.pkl" as debian
@@ -23,10 +23,10 @@ stages {
         commit = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       }
       new File { path = "/etc/motd"; content = "literal __ruxel.inventoryHost__ text\n" }
-      new linux.LoginShell { user = "root"; shell = "/bin/zsh" }
-      new debian.Packages { names { "curl"; "libc6:amd64=2.36-9+deb12u4"; "libc6:arm64=2.36-9+deb12u4"; "tzdata=1:2024a-0" } }
+      new linux.User { user = "root"; shell = "/bin/zsh" }
+      new debian.AptPackages { names { "curl"; "libc6:amd64=2.36-9+deb12u4"; "libc6:arm64=2.36-9+deb12u4"; "tzdata=1:2024a-0" } }
       // An exact repeat runs again; it does not conflict.
-      new debian.Packages { title = "Keep the amd64 libc6 pin"; names { "libc6:amd64=2.36-9+deb12u4" } }
+      new debian.AptPackages { title = "Keep the amd64 libc6 pin"; names { "libc6:amd64=2.36-9+deb12u4" } }
       local sources = new Directory { path = "/srv/app" }
       sources
       new Command { run { "/usr/local/bin/app-reload" }; onChangeOf { sources } }

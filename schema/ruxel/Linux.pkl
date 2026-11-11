@@ -1,5 +1,5 @@
-/// Linux system steps: the timezone, the login shell of an account that
-/// already exists, and a Git working tree pinned to one commit.
+/// Linux system steps: the timezone, an account and its login shell, and a
+/// Git working tree pinned to one commit.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Linux.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
@@ -97,10 +97,13 @@ class Timezone extends core.Step {
   name: TimezoneName
 }
 
-/// The login shell of an existing user.
-/// The login shell of an account that already exists. A missing account
-/// fails the stage; it is never created.
-class LoginShell extends core.Step {
+/// An account and its login shell.
+///
+/// CAT.03 renamed `LoginShell` to `User`: the new name says that the step
+/// manages the account, and `User` is to create a missing account. The
+/// step lowers to the engine's user operation alone, which creates the
+/// account when it is missing and sets the login shell of an existing one.
+class User extends core.Step {
   hidden fixed kind = "loginShell"
   user: Account
   shell: FilePath

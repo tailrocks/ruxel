@@ -1,8 +1,8 @@
-// expect: upgrade installs the newest version, so it cannot pin one (curl=8.5.0-2)
+// expect: latest installs the newest version, so it cannot pin one (curl=8.5.0-2); remove the pin or set latest = false
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
-  new debian.Packages { names { "curl=8.5.0-2" }; upgrade = true }
+  new debian.AptPackages { names { "curl=8.5.0-2" }; latest = true }
 } } }

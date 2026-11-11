@@ -1,0 +1,7 @@
+// expect-pkl: Cannot find property `upgrade` in object of type `Debian#AptPackages`.
+// expect-pklr: cannot add property 'upgrade' to non-open class
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptPackages { names { "nginx" }; upgrade = true } } } }
