@@ -1,0 +1,12 @@
+// expect-pkl: Type constraint `matches(Regex(#"[a-z0-9][a-z0-9+.-]+(\*|:([a-z0-9][a-z0-9-]*))?"#))` violated.
+// expect-pklr: property 'package' expected PackageSelector, got String
+// A `PackageSelector` names the packages a preference applies to: a name,
+// a name with an architecture or a trailing glob. It carries no version, so
+// the `=version` form of a package step is refused here.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { package = "curl=8.5.0-2"; pin = "version 8.5.0-*"; priority = 500 }
+} } }

@@ -7,7 +7,7 @@ import "../inventory.pkl"
 // to a step that runs again means every earlier run: the second reload
 // watches both installs, and "After reload" watches both reloads. A capture
 // runs once per stage; a re-read after a change is its own, titled capture.
-local packages = new debian.Packages { names { "xz-utils" } }
+local packages = new debian.AptPackages { names { "xz-utils" } }
 local kernelBefore = new Capture { title = "Kernel before upgrade"; bash = "uname -r" }
 local kernelAfter = new Capture { title = "Kernel after upgrade"; bash = "uname -r" }
 local release = new Capture { bash = "cat /etc/debian_version" }
@@ -16,7 +16,7 @@ local releaseAgain = (release) { title = "Read release again" }
 // A recipe used twice: the second use's reload watches both installs.
 local class Common extends Recipe {
   function steps(): Listing<Step> =
-    let (p = new debian.Packages { names { "common" } })
+    let (p = new debian.AptPackages { names { "common" } })
     new Listing { p; new Command { title = "Reload units"; run { "systemctl"; "daemon-reload" }; onChangeOf { p } } }
 }
 local reload = new Command { run { "systemctl"; "daemon-reload" }; onChangeOf { packages } }
@@ -25,7 +25,7 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   packages; reload; packages; reload
   new Command { title = "After reload"; run { "true" }; onChangeOf { reload } }
   kernelBefore
-  new debian.Packages { names { "linux-image-amd64" }; upgrade = true }
+  new debian.AptPackages { names { "linux-image-amd64" }; latest = true }
   kernelAfter
   new File { path = "/etc/kernels"; content = "before \(kernelBefore.stdout()) after \(kernelAfter.stdout())\n" }
   release

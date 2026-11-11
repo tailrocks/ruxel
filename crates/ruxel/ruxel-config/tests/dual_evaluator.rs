@@ -22,6 +22,12 @@ fn root() -> PathBuf {
 
 /// The examples of the secret language: each must evaluate the same way
 /// under both evaluators, and each invalid one must be refused by both.
+///
+/// The apt completions are here too: a hold, a system upgrade, a
+/// preference and a debconf selection lower the same way under both
+/// evaluators, and the bad selector, the secret carried as static text
+/// and the hold that conflicts with a pin are refused by both, each with
+/// its own wording.
 const EXAMPLES: &[&str] = &[
     "valid/secret-op-reference-dotted.pkl",
     "valid/secret-literal-prefix.pkl",
@@ -30,6 +36,16 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-orphaned-secret.pkl",
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
+    "valid/apt-hold.pkl",
+    "valid/apt-system-upgrade.pkl",
+    "valid/apt-preference.pkl",
+    "valid/debconf-entry.pkl",
+    "invalid/apt-hold-conflicting-pin.pkl",
+    "invalid/apt-preference-package-selector-pin.pkl",
+    "invalid/apt-preference-pseudo-arch.pkl",
+    "invalid/debconf-entry-pseudo-arch.pkl",
+    "invalid/debconf-entry-bad-type.pkl",
+    "invalid/debconf-entry-secret-as-static.pkl",
 ];
 
 /// The official `pkl` binary, if it is installed.

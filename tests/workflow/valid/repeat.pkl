@@ -13,7 +13,7 @@ local motd = new File { path = "/etc/motd"; content = "Debian \(release.stdout()
 local class Site extends Recipe {
   site: String
   function steps(): Listing<Step> =
-    let (pkgs = new debian.Packages { names { "nginx" } })
+    let (pkgs = new debian.AptPackages { names { "nginx" } })
     let (setup = new Command { title = "Set up nginx defaults"; run { "nginx-setup" }; onChangeOf { pkgs } })
     new Listing {
       pkgs

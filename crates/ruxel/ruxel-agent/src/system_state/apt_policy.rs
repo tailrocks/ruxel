@@ -33,6 +33,18 @@ pub(super) fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
     packages
 }
 
+/// The packages `apt-mark showhold` lists: one name per line.
+pub(crate) fn parse_showhold(text: &str) -> Vec<String> {
+    let mut holds = Vec::new();
+    for line in text.lines() {
+        let name = line.trim();
+        if !name.is_empty() && !holds.iter().any(|held| held == name) {
+            holds.push(name.to_owned());
+        }
+    }
+    holds
+}
+
 /// One `apt-cache policy` stanza: the default candidate and every version in
 /// the version table.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

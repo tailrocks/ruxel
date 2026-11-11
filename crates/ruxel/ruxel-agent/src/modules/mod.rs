@@ -21,6 +21,7 @@ mod authorized_key;
 mod blockinfile;
 mod command;
 mod copy;
+mod debconf;
 mod file;
 mod filesystem;
 mod get_url;
@@ -158,6 +159,7 @@ pub(crate) fn execute(
         "command" => command::run(params, ctx),
         "file" => file::run(params, ctx),
         "copy" => copy::run(params, source, ctx),
+        "debconf" => debconf::run(params, ctx),
         "slurp" => slurp::run(params),
         // A FetchSecret task is the controller's no-log slurp: the agent
         // reads the file, the controller stores it in fnox. The controller

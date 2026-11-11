@@ -76,11 +76,14 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["fetchSecret"] = (s) -> s is core.FetchSecret
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
-  ["packageIndex"] = (s) -> s is debian.PackageIndex
-  ["packages"] = (s) -> s is debian.Packages
+  ["packageIndex"] = (s) -> s is debian.AptPackageIndex
+  ["packages"] = (s) -> s is debian.AptPackages
+  ["aptSystemUpgrade"] = (s) -> s is debian.AptSystemUpgrade
+  ["aptPreference"] = (s) -> s is debian.AptPreference
+  ["debconfEntry"] = (s) -> s is debian.DebconfEntry
   ["aptRepository"] = (s) -> s is debian.AptRepository
   ["timezone"] = (s) -> s is linux.Timezone
-  ["loginShell"] = (s) -> s is linux.LoginShell
+  ["loginShell"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
 }
 
@@ -321,7 +324,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -332,10 +335,16 @@ function settings(s: core.Step): List<String> =
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
   else if (s is core.Action && s.changes is core.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
     List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
-  else if (s is debian.Packages && !packageProblems(s.names.toList()).isEmpty)
+  else if (s is debian.AptPackages && !packageProblems(s.names.toList()).isEmpty)
     List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
-  else if (s is debian.Packages && s.upgrade && s.names.toList().any((n) -> n.contains("=")))
-    List("'\(name(s))': upgrade installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or upgrade = true")
+  else if (s is debian.AptPreference && !selectorProblems(s.package).isEmpty)
+    List("'\(name(s))': \(selectorProblems(s.package).first)")
+  else if (s is debian.DebconfEntry && !selectorProblems(s.package).isEmpty)
+    List("'\(name(s))': \(selectorProblems(s.package).first)")
+  else if (s is debian.AptPackages && s.hold && s.latest)
+    List("'\(name(s))': a held package is never upgraded, so hold and latest cannot both be true; remove one of them")
+  else if (s is debian.AptPackages && s.latest && s.names.toList().any((n) -> n.contains("=")))
+    List("'\(name(s))': latest installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or set latest = false")
   else if (s is debian.AptRepository && s.suite.isEmpty)
     List("'\(name(s))': suite is empty; name a distribution such as \"stable\", or a path ending in / for a flat repository")
   else if (s is debian.AptRepository && !spaced(s).isEmpty)
@@ -358,6 +367,14 @@ const function packageProblems(names: List<String>): List<String> =
   else
     let (repeated = names.map((n) -> packageName(n)).filter((p) -> let (same = names.filter((n) -> packageName(n) == p)) same.length > 1 && (same.any((n) -> archOf(n) == null) || same.map((n) -> archOf(n)).toSet().length != same.length)))
     if (repeated.isEmpty) List() else List("package \"\(repeated.first)\" is listed more than once; list it once, or once per explicit architecture")
+
+/// A `PackageSelector` names the packages a preference or a debconf answer
+/// applies to: a name, a name with a real architecture or a trailing glob. A
+/// pseudo-architecture names no real architecture, so it is refused, as it
+/// is in a package step.
+const function selectorProblems(selector: String): List<String> =
+  if (!pseudoArch(selector)) List()
+  else List("unsupported package \"\(selector)\"; use a name, a name with a real architecture (not any, native or all), or a trailing glob")
 
 const function packageName(n: String): String = n.split("=").first.split(":").first
 const function archOf(n: String): String? = let (s = n.split("=").first) if (s.contains(":")) s.split(":").last else null
@@ -447,21 +464,32 @@ const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
 
 /// Two package steps of a stage must agree on a package's version: pins that
-/// differ, or a pin and an upgrade, would change it back and forth. Exact
-/// repeats are fine. A selector without an architecture may be any.
+/// differ, or a pin and a `latest` step, would change it back and forth.
+/// Exact repeats are fine. A selector without an architecture may be any.
 function packageVersions(ix: StageIndex, i: Int): List<String> =
-  if (!(ix.steps[i] is debian.Packages)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is debian.Packages).flatMap((j) ->
+  if (!(ix.steps[i] is debian.AptPackages)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPackages).flatMap((j) ->
     let (clashes = ix.steps[i].names.toList().flatMap((a) -> ix.steps[j].names.toList().filter((b) -> versionClash(ix.steps[j], b, ix.steps[i], a)).map((b) -> List(b, a))))
     if (clashes.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].upgrade || ix.steps[i].upgrade) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].latest || ix.steps[i].latest) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
 
-const function versionClash(p: debian.Packages, a: String, q: debian.Packages, b: String): Boolean =
+/// A held package is never moved: a step that holds a package and a later
+/// step of the same stage that pins or upgrades it would ask apt to move a
+/// frozen package, which apt refuses.
+function holdConflicts(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPackages)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPackages && ix.steps[j].hold).flatMap((j) ->
+    let (held = ix.steps[j].names.toList().map((n) -> packageName(n)))
+    let (moved = ix.steps[i].names.toList().filter((n) -> held.contains(packageName(n))))
+    if (moved.isEmpty) List()
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) holds \(moved.first), and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) would move it; a held package is never upgraded, so put the second in a later stage"))
+
+const function versionClash(p: debian.AptPackages, a: String, q: debian.AptPackages, b: String): Boolean =
   packageName(a) == packageName(b)
     && (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b))
     && (versionOf(a) != null && versionOf(b) != null && versionOf(a) != versionOf(b)
-      || versionOf(a) != null && q.upgrade
-      || versionOf(b) != null && p.upgrade)
+      || versionOf(a) != null && q.latest
+      || versionOf(b) != null && p.latest)
 
 const function versionOf(n: String): String? = if (n.contains("=")) n.split("=").last else null
 
@@ -492,7 +520,7 @@ const function listed(s: core.Step): List<core.Step> =
 function watched(s: core.Step): List<core.Step> = listed(s).filter((w) -> !(w is core.Recipe))
 
 function canReportChange(s: core.Step): Boolean =
-  !(s is core.Capture || s is debian.PackageIndex || (s is core.Action && s.changes == "never"))
+  !(s is core.Capture || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
 
 /// Ids of the captures whose output this step's content uses.
 function capturesUsed(s: core.Step): List<String> =
@@ -571,7 +599,12 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
-  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.upgrade)"))
+  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.latest)", "\(s.hold)"))
+  ["aptSystemUpgrade"] = (s) -> "\(s.autoremove)"
+  // Identity is the package plus the pin (BB §3.7): the priority is not part
+  // of it, so a repeat of the same stanza is the same step.
+  ["aptPreference"] = (s) -> fields(List(s.package, s.pin))
+  ["debconfEntry"] = (s) -> fields(List(s.package, s.question, s.type, valueIdentity(s.value)))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> fields(List(s.user, s.shell))
@@ -601,6 +634,13 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
   ["packageIndex"] = (_) -> List()
+  ["aptSystemUpgrade"] = (_) -> List()
+  // One answer per question: a second answer for one question declares a
+  // second state for it, so the two conflict.
+  ["debconfEntry"] = (s) -> List("the debconf answer of \(s.package) \(s.question)")
+  // One apt preference stanza per package: a second stanza for one package
+  // declares a second state for it, so the two conflict.
+  ["aptPreference"] = (s) -> List("the apt preference of \(s.package)")
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
@@ -673,7 +713,10 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> "Create directory \(s.path)"
   ["symlink"] = (s) -> "Link \(s.path) to \(s.target)"
   ["packageIndex"] = (_) -> "Refresh apt package index"
-  ["packages"] = (s) -> (if (s.upgrade) "Install or upgrade " else "Install ") + s.names.join(", ")
+  ["packages"] = (s) -> (if (s.hold) "Install and hold " else (if (s.latest) "Install or upgrade " else "Install ")) + s.names.join(", ")
+  ["aptSystemUpgrade"] = (s) -> "Upgrade every installed package to the newest candidate" + (if (s.autoremove) " and remove the orphaned ones" else "")
+  ["aptPreference"] = (s) -> "Pin \(s.package) with \(s.pin) at priority \(s.priority)"
+  ["debconfEntry"] = (s) -> "Set \(s.question) for \(s.package)"
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
   ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
@@ -716,7 +759,10 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null, null), null, lit(false)))
-  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
+  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.latest, s.hold), null, null))
+  ["aptSystemUpgrade"] = (s, m) -> List(task(m, aptUpgrade(s.autoremove), null, null))
+  ["aptPreference"] = (s, m) -> List(task(m, copyText(preferencePath(s.package), preferenceContent(s)), null, null))
+  ["debconfEntry"] = (s, m) -> List(task(m, debconf(s), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
@@ -906,13 +952,19 @@ function unlessOutput(u: core.UnlessOutput, wouldRun: engine.Expr): engine.Expr 
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
 
-/// The engine's user operation creates a missing account. `LoginShell` only
+/// The engine's user operation creates a missing account. This step only
 /// changes an existing one, so a read-only probe fails first, in check and
 /// diff too. It looks the name up exactly as the user operation does: a
 /// literal name in /etc/passwd, not NSS and not a numeric ID. The name is
 /// only ever passed as a quoted argument.
+///
+/// CAT.03 renamed the class `LoginShell` to `User`, which is to create a
+/// missing account (building-blocks §3.2). The probe then contradicts the
+/// class: dropping it is Lowering surgery beyond the rename and waits for
+/// the serial Lowering queue, so it stays and the step still changes the
+/// shell of an existing account only.
 function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
-  "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; LoginShell changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
+  "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; User changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
 ), null, null), null, lit(false))) { checkMode = false }
 
 function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
@@ -963,10 +1015,56 @@ function copyText(_dest: String, _content: String): engine.Copy =
 
 function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
-function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.Apt {
+function apt(_names: List<String>, _upgrade: Boolean, _hold: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
   state = if (_upgrade) "latest" else "present"
+  hold = if (_hold) true else null
 }
+
+/// The whole system: apt's `dist-upgrade`, and with it the removal of the
+/// packages nothing needs any more.
+function aptUpgrade(_autoremove: Boolean): engine.Apt = new engine.Apt {
+  upgrade = "dist"
+  autoremove = if (_autoremove) true else null
+}
+
+/// One apt preferences stanza, in the file apt reads it from. The name is
+/// the package selector with the characters a file name cannot carry
+/// replaced by a dash, and a hash of the selector, so two selectors never
+/// write one file.
+function preferencePath(package: String): String =
+  "/etc/apt/preferences.d/\(preferenceName(package)).preferences"
+
+const function preferenceName(package: String): String =
+  "\(package.replaceAll(":", "-").replaceAll("*", "-"))-\(package.sha256.substring(0, 8))"
+
+/// The stanza itself: one field per line, the way apt_preferences(5) reads
+/// it.
+function preferenceContent(p: debian.AptPreference): String =
+  "Package: \(p.package)\nPin: \(p.pin)\nPin-Priority: \(p.priority)\n"
+
+/// One debconf selection. A secret answer lowers to a lookup, which the
+/// engine resolves in its store; the task is never logged, and the answer
+/// reaches the host on the standard input, never in an argument.
+function debconf(e: debian.DebconfEntry): engine.Debconf = new engine.Debconf {
+  package = e.package
+  question = e.question
+  type = e.type
+  value = debconfValue(e.value)
+}
+
+/// The answer of a debconf selection: static text, or a secret the engine
+/// resolves at apply time.
+function debconfValue(v: Any): engine.Expr =
+  if (v is debian.SecretAnswer) secretValue(v.parts)
+  else if (v is core.SecretText) secretValue(v.parts)
+  else lit(v)
+
+/// What enters the identity of a debconf answer: the text of a static
+/// answer, or the encoded reference of a secret one — the reference, never
+/// the secret itself.
+const function valueIdentity(v: Any): String =
+  if (v is debian.SecretAnswer) v.parts else v.toString()
 function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
 function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
@@ -1311,6 +1409,7 @@ const function secretStep(s: core.Step): Boolean =
   s is core.FetchSecret
     || (s is core.File && hasSecrets(s.content))
     || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
+    || (s is debian.DebconfEntry && (s.value is debian.SecretAnswer || s.value is core.SecretText))
 
 function envKey(s: core.Step, key: String): String =
   if (key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) key

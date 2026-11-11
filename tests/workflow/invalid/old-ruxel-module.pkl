@@ -1,5 +1,6 @@
 // The split removed modulepath:/ruxel/Ruxel.pkl: Core.pkl, Linux.pkl,
 // Systemd.pkl and Debian.pkl hold its classes now.
+// expect-pkl: Cannot find module `modulepath:/ruxel/Ruxel.pkl`.
 // expect-pklr: Import not found: modulepath:/ruxel/Ruxel.pkl
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Ruxel.pkl" as ruxel

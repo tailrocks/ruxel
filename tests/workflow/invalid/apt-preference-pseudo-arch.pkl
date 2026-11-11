@@ -1,0 +1,11 @@
+// expect: unsupported package "curl:any"; use a name, a name with a real architecture (not any, native or all), or a trailing glob
+// A `PackageSelector` names the packages a preference applies to. A
+// pseudo-architecture names no real architecture, so it is refused, as it
+// is in a package step.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin curl"; package = "curl:any"; pin = "version 8.5.0-2"; priority = 500 }
+} } }

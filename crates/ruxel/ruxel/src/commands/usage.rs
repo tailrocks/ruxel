@@ -10,15 +10,30 @@ pub(crate) fn report(error: &clap::Error) -> ExitCode {
         ExitCode::Success
     };
     let version = error.kind() == clap::error::ErrorKind::DisplayVersion;
-    if error.print().is_err()
-        || (version
-            && writeln!(
-                std::io::stdout().lock(),
-                "guard: {} compiled deny entries",
-                ruxel_guard::Policy::compiled_entries()
-            )
-            .is_err())
-    {
+    // A reader that stops reading — a `grep -q` that found its match, a
+    // `head` that took what it wanted — closes the pipe. The message is
+    // then incomplete, but the tool did what it was asked, so a broken
+    // pipe is not an internal error: the exit code stays the one the
+    // message asks for.
+    let printed = error.print();
+    let guard = if version {
+        Some(writeln!(
+            std::io::stdout().lock(),
+            "guard: {} compiled deny entries",
+            ruxel_guard::Policy::compiled_entries()
+        ))
+    } else {
+        None
+    };
+    let broken = printed
+        .as_ref()
+        .err()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::BrokenPipe)
+        || guard.as_ref().is_some_and(|line| {
+            line.as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::BrokenPipe)
+        });
+    if (printed.is_err() || guard.as_ref().is_some_and(std::result::Result::is_err)) && !broken {
         ExitCode::Internal
     } else {
         code
