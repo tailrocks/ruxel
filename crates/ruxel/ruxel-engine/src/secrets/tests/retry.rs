@@ -14,13 +14,21 @@ fn transient_failures_retry_and_successes_are_shared() {
                 Ok("recovered".into())
             }
         }
-        fn onepassword_item(&self, _: &str, _: &str) -> Result<serde_json::Value, String> {
+        fn onepassword_fields(
+            &self,
+            _vault: &str,
+            _item: &str,
+            _section: Option<&str>,
+            field: &str,
+        ) -> Result<serde_json::Value, String> {
+            let value = match field {
+                "a" => "recovered",
+                _ => "second",
+            };
             if self.items.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err("sensitive failure".into())
             } else {
-                Ok(
-                    serde_json::json!({"fields": [{"id": "a", "value": "recovered"}, {"id": "b", "value": "second"}]}),
-                )
+                Ok(serde_json::json!([{ "id": field, "value": value }]))
             }
         }
         fn onepassword_reference(&self, _: &str) -> Result<String, String> {
@@ -55,5 +63,9 @@ fn transient_failures_retry_and_successes_are_shared() {
     );
     assert_eq!(resolver.resolve(&field("a")).unwrap(), "recovered");
     assert_eq!(resolver.resolve(&field("b")).unwrap(), "second");
-    assert_eq!(backend.items.load(Ordering::SeqCst), 2);
+    // Fetches are field-scoped: `a` twice (the failure, then the recovery),
+    // `b` once, and a re-read of `a` shares the cached value.
+    assert_eq!(backend.items.load(Ordering::SeqCst), 3);
+    assert_eq!(resolver.resolve(&field("a")).unwrap(), "recovered");
+    assert_eq!(backend.items.load(Ordering::SeqCst), 3);
 }

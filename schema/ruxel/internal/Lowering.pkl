@@ -336,6 +336,8 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': \(spaced(s).first) is written into the deb822 source, so it cannot contain spaces or line breaks")
   else if (s is core.Capture && (s.retry.delay < 1.s || s.retry.delay.toUnit("s").value.floor != s.retry.delay.toUnit("s").value))
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
+  else if (s is core.File && hasSecrets(s.content) && !secretMode(s.mode))
+    List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -360,6 +362,27 @@ const function spaced(r: debian.AptRepository): List<String> =
     + (if (r.architectures.toList().any((a) -> a.isEmpty || hasSpace(a))) List("an architecture") else List())
 
 const function hasSpace(text: String): Boolean = List(" ", "\t", "\n", "\r", "\u{b}", "\u{c}").any((c) -> text.contains(c))
+
+/// Whether a text carries a secret reference (`module.fnox(…)`, …).
+const function hasSecrets(text: String): Boolean = text.contains("__ruxel_secret_8d41.")
+
+/// One octal digit of a file mode.
+const function octal(digit: String): Int = "01234567".indexOf(digit)
+
+/// A mode no wider than `0600`: nothing for group or other, no execute for
+/// the owner — the modes a file with secret content may have. The rule reads
+/// the last three digits, so the three- and four-digit spellings of one mode
+/// (`600`, `0600`) are judged the same.
+const function secretMode(mode: String): Boolean =
+  List("0", "2", "4", "6").contains(mode.substring(mode.length - 3, mode.length - 2))
+    && octal(mode.substring(mode.length - 2, mode.length - 1)) == 0
+    && octal(mode.substring(mode.length - 1, mode.length)) == 0
+
+/// The canonical four-digit spelling of a mode: Core accepts `600` and
+/// `0600` as the same mode, so identity and emission read one mode, not one
+/// spelling.
+const function canonicalMode(mode: String): String =
+  if (mode.length == 3) "0\(mode)" else mode
 
 /// A recipe has no change of its own: name the steps that matter.
 function recipeDeps(ix: StageIndex, i: Int): List<String> =
@@ -494,16 +517,49 @@ class Identity {
     // The recursive part, the keys of the steps this one reacts to, stays
     // outside `fields`: every level counts against pklr's depth limit along
     // a chain. Keys are generated (`<kind>_<hex>`), so a plain join after the
-    // three self-delimiting fields is unambiguous.
-    else fields(List(if (s is core.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s)))
+    // self-delimiting fields is unambiguous.
+    else fields(List(if (s is core.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s))) + envFingerprint(s)
       + listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w)).join(",")
 }
 
+/// A command's environment in its identity: two commands that differ only in
+/// their environment are different steps. Entries in canonical key order —
+/// the same pairs in another declaration order are one action — and a value
+/// as its text (`SecretText.toString()` is the reference placeholder, which
+/// no static text can contain, so the two cannot collide).
+const function envFingerprint(s: core.Step): String =
+  if (!(s is core.Action)) ""
+  else keyOrder.canonical(s.environment.keys.toList()).map((k) -> fields(List(k, s.environment[k].toString()))).join("")
+
 local identity = new Identity {}
 
+/// Canonical key order for a fingerprint: declaration order is an accident
+/// of authoring, so the same mapping written in another order must
+/// fingerprint alike. pklr has no `sort`, so this is an insertion sort; the
+/// keys are validated (`EnvKey` is `[A-Za-z_][A-Za-z0-9_]*`), so plain
+/// string comparison is the one order both evaluators agree on. A class,
+/// like `Walker`: pklr cannot recurse through a module function inside a
+/// lambda (P11); every module member it calls is `const`, which official Pkl
+/// requires of a class body.
+class KeyOrder {
+  function canonical(keys: List<String>): List<String> =
+    keys.fold(List(), (sorted, key) -> this.insert(key, sorted))
+
+  function insert(key: String, sorted: List<String>): List<String> =
+    if (sorted.isEmpty || key <= sorted.first)
+      List(key) + sorted
+    else List(sorted.first) + this.insert(key, this.tail(sorted))
+
+  /// pklr has no `drop`; the tail is rebuilt by position.
+  function tail(sorted: List<String>): List<String> =
+    positions(sorted).filter((i) -> i > 0).map((i) -> sorted[i])
+}
+
+const local keyOrder = new KeyOrder {}
+
 const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
-  ["file"] = (s) -> fields(List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), fields(s.validate.toList())))
-  ["directory"] = (s) -> fields(List(s.path, s.mode))
+  ["file"] = (s) -> fields(List(s.path, s.content.sha256, canonicalMode(s.mode), optional(s.owner), optional(s.group), fields(s.validate.toList())))
+  ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
   ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.upgrade)"))
@@ -561,13 +617,18 @@ class Meta {
   register: String?
   /// Result names of the steps this step reacts to.
   watching: List<String> = List()
+  /// Environment values, as engine expressions: literals for static text,
+  /// lookups for secrets. Only actions have any.
+  environment: Mapping<String, engine.Expr> = new {}
+  /// Whether a secret appears in the step: such a task is never logged.
+  noLog: Boolean = false
 }
 
 function metaOf(ix: StageIndex, i: Int, _tags: List<String>): Meta =
   let (_name = name(ix.steps[i]))
   let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is systemd.Service).map((j) -> restartName(ix.steps[j].name)).toSet().toList())
   let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is core.Action) || ix.steps[i] is core.Capture) ix.results[i] else null)
-  new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]) }
+  new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]); environment = envOf(ix.steps[i]); noLog = secretStep(ix.steps[i]) }
 
 /// Positions of the steps that react to step `i` or read its output. They
 /// always come later in the stage.
@@ -590,7 +651,7 @@ function tagsOf(ix: StageIndex, i: Int, later: List<List<String>>): List<String>
 function ownTags(p: Placed): List<String> = p.step.tags.toList() + p.inherited
 
 function helperMeta(_name: String, m: Meta, _register: String?): Meta =
-  new Meta { name = _name; tags = m.tags; notify = List(); register = _register }
+  new Meta { name = _name; tags = m.tags; notify = List(); register = _register; noLog = m.noLog }
 
 // ── Steps ───────────────────────────────────────────────────────────────────
 
@@ -643,7 +704,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["file"] = (s, m) -> validateTasks(s, m) + List(task(m, copy(s.path, s), null, null))
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
-  ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null), null, lit(false)))
+  ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null, null), null, lit(false)))
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
@@ -652,16 +713,53 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
-  ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null), null, lit(false)), s, m.register))
+  ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
 }
 
-// File: stage, validate, then publish.
+// File: stage, validate, then publish. A secret's candidate is temporary:
+// validation removes it in the block's `always`, success or failure, so no
+// resolved plaintext survives the run. A file without secrets keeps the
+// persistent candidate, so a second apply reports no change.
 function validateTasks(f: core.File, m: Meta): List<engine.Task> =
   if (f.validate.isEmpty) List()
+  else if (hasSecrets(f.content)) List(temporaryValidation(f, m))
   else List(
     task(helperMeta("Stage \(f.path)", m, null), candidateCopy(f), null, null),
-    task(helperMeta("Validate \(f.path)", m, null), command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))), null), null, lit(false))
+    task(helperMeta("Validate \(f.path)", m, null), validateCommand(f), null, lit(false))
   )
+
+/// The validation of a secret-bearing file, one block task: the candidate is
+/// staged and the validator run in the block, and the candidate removed in
+/// `always`, which the engine runs whether the validator succeeds, fails or
+/// errors — a plain sequence would stop at the failure and leave the
+/// resolved secret on the host.
+function temporaryValidation(f: core.File, m: Meta): engine.Task =
+  blockTask(
+    helperMeta("Validate \(f.path)", m, null),
+    List(
+      task(helperMeta("Stage \(f.path)", m, null), candidateCopy(f), null, lit(false)),
+      task(helperMeta("Validate \(f.path)", m, null), validateCommand(f), null, lit(false))
+    ),
+    List(task(helperMeta("Remove \(candidate(f))", m, null), candidateRemoval(f), null, lit(false)))
+  )
+
+function validateCommand(f: core.File): engine.Command =
+  command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))), null, null)
+
+/// Absence is idempotent, so the cleanup removes the candidate once and never
+/// reports a change again.
+function candidateRemoval(f: core.File): engine.File = new engine.File { path = candidate(f); state = "absent" }
+
+/// A task with no operation of its own that runs its block and then its
+/// `always`. No register: the engine refuses one on a block task.
+function blockTask(m: Meta, _block: List<engine.Task>, _always: List<engine.Task>): engine.Task = new engine.Task {
+  name = m.name
+  tags { for (t in m.tags) { t } }
+  environment { for (k, v in m.environment) { [k] = v } }
+  noLog = m.noLog
+  block { for (t in _block) { t } }
+  always { for (t in _always) { t } }
+}
 
 /// The candidate is root's alone (0600), whatever the file's owner, so no one
 /// else can change it between staging and validation.
@@ -675,7 +773,9 @@ function candidateCopy(f: core.File): engine.Copy = new engine.Copy {
 
 /// `.<name>.ruxel-candidate` beside the file: validators that resolve
 /// relative includes still work, and `*`, `*.conf` and `*.d` loaders skip
-/// dotfiles. It stays, so that a second apply reports no change.
+/// dotfiles. For a file without secrets it stays, so that a second apply
+/// reports no change; a secret-bearing file's candidate is temporary
+/// (`temporaryValidation`).
 const function candidate(f: core.File): String =
   let (slash = f.path.lastIndexOf("/"))
   let (base = f.path.substring(slash + 1, f.path.length))
@@ -702,15 +802,33 @@ function sourcesFile(r: debian.AptRepository): engine.Copy = copyText(sourcesPat
   "Signed-By: \(keyringPath(r))"
 }.join("\n") + "\n")
 
-// Command and Script: `creates` alone uses the engine's own guard;
-// `onChangeOf` needs the watched steps' results and, with `creates`, a probe.
+// Command and Script: a `creates` guard is a probe and a `when` condition, so
+// the controller checks the path before it resolves the task's environment: a
+// skipped action reads no secret store. That probe is stale by the time the
+// command executes, so the command carries the path too and the agent re-stats
+// it itself before it runs (`Command.creates`). `onChangeOf` needs the watched
+// steps' results beside the probe; the agent gets them handed down as
+// `Command.run_if_changed`, the same disjunct its `when` carries, because it
+// cannot read the controller's results.
 function actionTasks(a: core.Action, argv: List<String>, m: Meta): List<engine.Task> =
-  if (a.onChangeOf.isEmpty) List(task(m, command(argv, a.creates), null, changeRule(a)))
-  else if (a.creates == null) List(task(m, command(argv, null), anyChanged(m.watching), changeRule(a)))
+  let (watched = if (a.onChangeOf.isEmpty) null else anyChanged(m.watching))
+  if (a.creates == null)
+    List(task(m, command(argv, null, watched), watched, changeRule(a)))
   else List(
     task(helperMeta("Check whether \(a.creates) exists", m, probeKey(a.creates)), stat(a.creates), null, null),
-    task(m, command(argv, null), call2("or", anyChanged(m.watching), call1("not", ref(List("results", probeKey(a.creates), "stat", "exists")))), changeRule(a))
+    task(m, command(argv, a.creates, watched), createsGuard(a, m), changeRule(a))
   )
+
+/// The command runs when the created path is absent, or when any watched step
+/// changed: a watcher must re-run the action that created nothing yet.
+function createsGuard(a: core.Action, m: Meta): engine.Expr =
+  if (a.onChangeOf.isEmpty) existsGuard(a)
+  else call2("or", anyChanged(m.watching), existsGuard(a))
+
+/// The probe's registered `stat.exists`, negated: the guarded command runs
+/// only when the path is missing.
+function existsGuard(a: core.Action): engine.Expr =
+  call1("not", ref(List("results", probeKey(a.creates), "stat", "exists")))
 
 /// `or` of the `changed` results of the watched steps. An apt repository
 /// also changes when only its keyring does.
@@ -722,19 +840,39 @@ function anyChanged(ids: List<String>): engine.Expr =
 /// `always` is a change whenever the command runs, and in check and diff
 /// whenever it would run: the engine skips it there (`skipped`), and the
 /// steps that react to it must still see a pending change. A `creates` skip
-/// and a step not selected by `onChangeOf` stay unchanged.
+/// is two different things: the probe's `when` skips the task on the
+/// controller, before `changedWhen` is ever evaluated, and a step not
+/// selected by `onChangeOf` stays unchanged; the agent's own recheck skips
+/// with `skip.cause` and reports no change (`ran`).
 function changeRule(a: core.Action): engine.Expr =
   if (a.changes == "never") lit(false)
-  else if (a.changes is core.UnlessOutput) unlessOutput(a.changes)
-  else ran()
+  else if (a.changes is core.UnlessOutput) unlessOutput(a.changes, ran(a))
+  else ran(a)
 
-/// The command ran, or would run in check and diff.
-function ran(): engine.Expr = call2("or", ref(List("result", "changed")), call2("default", ref(List("result", "skipped")), lit(false)))
+/// The command ran, or would run in check and diff — except when the agent's
+/// recheck of `creates` skipped it: the path exists now, so there was nothing
+/// to run and there is nothing to report. Every other skip is a check-mode
+/// skip of a command that would have run.
+function ran(a: core.Action): engine.Expr =
+  call2("or", ref(List("result", "changed")),
+    if (a.creates == null) pendingSkipped()
+    else call2("and", pendingSkipped(), call2("ne", skipCause(), lit(createsRecheckSkip))))
+
+/// Whether the agent did not run the command because the mode says so: the
+/// engine reports `skipped` in check and diff, without a reason of its own.
+function pendingSkipped(): engine.Expr = call2("default", ref(List("result", "skipped")), lit(false))
+
+/// The reason the agent skipped with, empty for every skip without one.
+function skipCause(): engine.Expr = call2("default", ref(List("result", "skip", "cause")), lit(""))
+
+/// `skip.cause` of the agent's `creates` recheck; the agent spells it the
+/// same way, and only that skip reports no change.
+const createsRecheckSkip = "creates_exists"
 
 /// Changed when the command ran or would run (see `changeRule`; a `creates`
-/// skip reports no change) and its output lacks the marker. In check and
-/// diff the output is empty, so a command that would run counts as a change.
-function unlessOutput(u: core.UnlessOutput): engine.Expr = call2("and", ran(),
+/// recheck skip reports no change) and its output lacks the marker. In check
+/// and diff the output is empty, so a command that would run counts as a change.
+function unlessOutput(u: core.UnlessOutput, wouldRun: engine.Expr): engine.Expr = call2("and", wouldRun,
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
 
@@ -745,7 +883,7 @@ function unlessOutput(u: core.UnlessOutput): engine.Expr = call2("and", ran(),
 /// only ever passed as a quoted argument.
 function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
   "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; LoginShell changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
-), null), null, lit(false))) { checkMode = false }
+), null, null), null, lit(false))) { checkMode = false }
 
 function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
@@ -763,6 +901,8 @@ function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _chang
   operation = _operation
   tags { for (t in m.tags) { t } }
   notify { for (n in m.notify) { n } }
+  environment { for (k, v in m.environment) { [k] = v } }
+  noLog = m.noLog
   when (_when != null) { `when` = _when }
   when (_changedWhen != null) { changedWhen = _changedWhen }
   when (m.register != null) { register = m.register }
@@ -783,7 +923,7 @@ function captureTask(t: engine.Task, c: core.Capture, _result: String): engine.T
 function copy(_dest: String, f: core.File): engine.Copy = new engine.Copy {
   dest = _dest
   content = runtimeText(f.content)
-  mode = f.mode
+  mode = canonicalMode(f.mode)
   owner = f.owner
   group = f.group
 }
@@ -791,7 +931,7 @@ function copy(_dest: String, f: core.File): engine.Copy = new engine.Copy {
 function copyText(_dest: String, _content: String): engine.Copy =
   new engine.Copy { dest = _dest; content = _content; mode = "0644"; owner = "root"; group = "root" }
 
-function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = _mode }
+function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
 function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
@@ -801,41 +941,324 @@ function timezone(_name: String): engine.Timezone = new engine.Timezone { name =
 function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
 function service(_name: String, _enabled: Boolean?, _state: String): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
-/// Follows links, as the command's own `creates` guard does: a dangling
+/// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
 function stat(_path: String): engine.Stat = new engine.Stat { path = _path; follow = true }
-function command(_argv: List<String>, _creates: String?): engine.Command = new engine.Command {
+/// The command itself, with its guard: `_creates` is the path the agent
+/// re-stats before it executes, `_runIfChanged` the watched-step result that
+/// makes the path stale (`onChangeOf`). Neither is a change rule; that is the
+/// task's `changedWhen`.
+function command(_argv: List<String>, _creates: String?, _runIfChanged: engine.Expr?): engine.Command = new engine.Command {
   argv = new Listing { for (a in _argv) { a } }
-  creates = _creates
+  when (_creates != null) { creates = _creates }
+  when (_runIfChanged != null) { run_if_changed = _runIfChanged }
 }
 
-// ── Run-time text ───────────────────────────────────────────────────────────
+// ── Run-time and secret text ────────────────────────────────────────────────
 
 local placeholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__"#)
 local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capture_[0-9a-f]{32}\.stdout"#)
+/// One regex for both, because pklr has no `sortBy` to order two match lists:
+/// a match carries group 1 when it is a run-time value, group 2 when it is a
+/// secret. The payloads are disjoint (`[A-Za-z0-9_.]` cannot spell a secret
+/// encoding), so one scan cannot take a placeholder of one kind for the
+/// other. The secret payload is captured permissively — across lines too, as
+/// a `join` separator may carry a newline — but tempered against the `__`
+/// terminator, and the terminator may not open another reserved prefix: a
+/// placeholder can never swallow a later one, an unterminated placeholder
+/// fails the prefix count in `segmentsOf` and is refused. Malformed text is
+/// parsed and refused, never left behind as literal content.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_(?:rt|secret)_8d41\.)"#)
+const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
-/// Text without placeholders stays a string. Placeholders (`currentHost`,
-/// `Capture.stdout()`) become engine references inside a `concat`.
+/// Text without placeholders stays a string. Run-time placeholders
+/// (`currentHost`, `Capture.stdout()`) become engine references, secret
+/// placeholders (`module.fnox(…)`, …) engine lookups, inside a `concat`.
 ///
 /// The literal pieces come from match positions, not `split`: like Java's,
 /// `split` drops trailing empty pieces, which loses a placeholder at the end.
 function runtimeText(text: String): engine.Text =
-  let (matches = placeholder.findMatchesIn(text))
-  if (matches.isEmpty) text
-  else if (matches.any((m) -> !m.groups[1].value.matches(knownPlaceholder)))
-    throw("File content contains an unknown run-time value: \(matches.filter((m) -> !m.groups[1].value.matches(knownPlaceholder)).first.value)")
+  let (segs = segmentsOf(text))
+  if (segs.isEmpty) text
   else new engine.Call {
     `function` = "concat"
     args {
-      for (k, m in matches) {
-        lit(text.substring(if (k == 0) 0 else matches[k - 1].end, m.start))
-        ref(m.groups[1].value.split("."))
+      for (k, seg in segs) {
+        lit(text.substring(if (k == 0) 0 else segs[k - 1].end, seg.start))
+        ...(seg.exprs())
       }
-      lit(text.substring(matches.last.end, text.length))
+      lit(text.substring(segs.last.end, text.length))
     }
   }
 
-function lit(v: engine.Scalar): engine.Literal = new engine.Literal { value = v }
-function ref(p: List<String>): engine.Ref = new engine.Ref { path { for (x in p) { x } } }
+/// One placeholder in a text: a run-time value (`runtime`) or a secret
+/// reference (`secret`), and where it sits. A secret lowers to one engine
+/// expression per part, so a joined pair stays visible as two lookups.
+class Segment {
+  start: Int
+  end: Int
+  runtime: String?
+  secret: String?
+
+  function exprs(): List<engine.Expr> =
+    if (secret != null) parser.exprs(secret) else List(ref((runtime ?? "").split(".")))
+}
+
+const function segmentAt(_start: Int, _end: Int, _runtime: String?, _secret: String?): Segment =
+  new Segment { start = _start; end = _end; runtime = _runtime; secret = _secret }
+
+/// Every placeholder of a text, in order. A run-time placeholder the language
+/// does not know is refused here, like a secret reference that does not
+/// decode (in `SecretParser`).
+function segmentsOf(text: String): List<Segment> =
+  let (all = anyPlaceholder.findMatchesIn(text).map((m) ->
+    if (m.groups[1] != null)
+      segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), m.groups[1].value, null)
+    else
+      segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), null, m.groups[2].value)))
+  let (prefixes = secretPrefix.findMatchesIn(text).length)
+  let (secrets = all.filter((s) -> s.secret != null).length)
+  let (badSecret = all.filter((s) -> s.secret != null && ((s.secret ?? "").isEmpty || (s.secret ?? "").contains("_"))))
+  let (strange = all.filter((s) -> s.runtime != null && !(s.runtime ?? "").matches(knownPlaceholder)))
+  if (prefixes > secrets || !badSecret.isEmpty) throw(malformed)
+  else if (!strange.isEmpty) throw("File content contains an unknown run-time value: __ruxel_rt_8d41.\(strange.first.runtime ?? "")__")
+  else all
+
+/// Regex match offsets count UTF-16 code units, while Pkl string indexes
+/// count code points. Convert an offset to the code-point index `substring`
+/// expects. Every non-BMP code point contributes two UTF-16 units; the
+/// cumulative boundaries therefore map each valid UTF-16 offset back to its
+/// code-point index.
+const function intBoundaries(): List<Int> = new Listing<Int> { 0 }.toList()
+
+const function codePointOffset(text: String, utf16Offset: Int): Int =
+  let (widths = text.codePoints.toList().map((point) -> if (point > 0xffff) 2 else 1))
+  let (boundaries = widths.fold(intBoundaries(), (units, width) -> units + List(units.last + width)))
+  let (matches = positions(boundaries).filter((i) -> boundaries[i] == utf16Offset))
+  if (matches.isEmpty) throw("File content contains a placeholder at an invalid Unicode boundary")
+  else matches.first
+
+/// Decodes the reference encoding of a secret (`core.SecretText.parts`): one
+/// engine lookup per store part, a literal per `join` separator, in the
+/// authoring grammar `lookup (separator lookup)*` — `join` writes a
+/// separator only between two lookups, so a leading, doubled or trailing
+/// separator is a forged encoding, refused as malformed rather than lowered
+/// to a lookup plus arbitrary static text. A class, like `Walker`: pklr
+/// cannot recurse through a module function inside a lambda (P11); every
+/// module member it calls is `const`, which official Pkl requires of a class
+/// body.
+class SecretParser {
+  /// A complete encoding is never empty and never contains a literal `_`:
+  /// the length-prefixed encoding writes every underscore as `\u{1f}`.
+  /// Those are structural failures of the encoding, so they use the one
+  /// malformed-reference sentence rather than a later atom's error.
+  function exprs(code: String): List<engine.Expr> =
+    if (code.isEmpty || code.contains("_")) throw(malformed)
+    else this.afterLookup(code)
+
+  /// A lookup may end the encoding; a separator may not sit at the start.
+  function afterLookup(code: String): List<engine.Expr> =
+    if (code.isEmpty) throw(malformed)
+    else (let (head = this.lookup(code))
+      if (head.rest.isEmpty) head.exprs
+      else head.exprs + this.afterSeparator(head.rest))
+
+  /// A separator must sit between two lookups: what follows is a lookup,
+  /// never the end of the encoding.
+  function afterSeparator(code: String): List<engine.Expr> =
+    (let (head = this.separator(code)) head.exprs + this.afterLookup(head.rest))
+
+  function separator(code: String): Atom =
+    let (tag = code.take(1))
+    let (body = code.substring(1, code.length))
+    if (tag == "s")
+      let (v = this.take(body)) atom(List(lit(separatorValidated(unescape(v[0])))), v[1])
+    else throw(malformed)
+
+  function lookup(code: String): Atom =
+    let (tag = code.take(1))
+    let (body = code.substring(1, code.length))
+    if (tag == "f")
+      let (v = this.take(body)) atom(List(fnoxLookup(fnoxKeyValidated(unescape(v[0])))), v[1])
+    else if (tag == "g")
+      let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(fnoxLookup(fnoxKeyValidated(unescape(key[0])))), formatValidated(unescape(format[0]), format[1])))
+    else if (tag == "r")
+      let (v = this.take(body)) atom(List(opReference(opReferenceValidated(unescape(v[0])))), v[1])
+    else if (tag == "o")
+      let (vault = this.take(body))
+      let (item = this.take(vault[1]))
+      let (section = this.take(item[1]))
+      let (field = this.take(section[1]))
+      atom(List(opFields(opLabelValidated("vault", unescape(vault[0])), opLabelValidated("item", unescape(item[0])), if (section[0].isEmpty) null else opSectionValidated(unescape(section[0])), opFieldValidated(unescape(field[0])))), field[1])
+    else throw(malformed)
+
+  /// Reads one length-prefixed string of the encoding: the text, and the
+  /// rest. A digit run longer than six cannot fit the text that remains.
+  function take(body: String): List<String> =
+    let (heads = sizedHead.findMatchesIn(body))
+    if (heads.isEmpty || heads.first.groups[1].value.length > 6 || heads.first.end + heads.first.groups[1].value.toInt() > body.length) throw(malformed)
+    else
+      let (size = heads.first.groups[1].value.toInt())
+      List(body.substring(heads.first.end, heads.first.end + size), body.substring(heads.first.end + size, body.length))
+}
+
+/// One parsed atom of a secret reference: what it lowers to, and the rest of
+/// the encoding.
+class Atom {
+  exprs: List<engine.Expr>
+  rest: String
+}
+
+const function atom(_exprs: List<engine.Expr>, _rest: String): Atom =
+  new Atom { exprs = _exprs; rest = _rest }
+
+const local parser = new SecretParser {}
+const local sizedHead = Regex(#"^([0-9]+):"#)
+const malformed: String = "File content contains a malformed secret reference"
+
+/// Lowering re-validates everything it decodes with the same sentences the
+/// store functions use in Core: a forged `SecretText.parts` that fits the
+/// length-prefixed shape still cannot smuggle an illegal key, format,
+/// reference, label or separator past the decode. The types are the first
+/// layer, the store functions the second; this is the third, because pklr
+/// skips the first two on function parameters.
+const function fnoxKeyValidated(key: String): String =
+  if (key.matches(Regex("[A-Z][A-Z0-9_]{1,127}"))) key
+  else throw("fnox key \"\(key)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
+
+/// Validates a generated key's format and hands the rest of the encoding on:
+/// the format itself lowers to nothing, because generation is apply-time
+/// work.
+const function formatValidated(format: String, rest: String): String =
+  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) rest
+  else throw("fnoxGenerated format \"\(format)\" is not one of hex16, hex32, base64-32 or alnum32")
+
+const function opReferenceValidated(reference: String): String =
+  let (parts = referenceParts(reference))
+  if (parts.length == 3 || parts.length == 4) opReferenceLabelsValidated(reference, parts)
+  else if (isOpReference(reference)) reference
+  else throw("\"\(reference)\" is not an op:// reference: op://<vault>/<item>/<field>, or with a section op://<vault>/<item>/<section>/<field>, and no `?`")
+
+const function referenceParts(reference: String): List<String> =
+  if (reference.startsWith("op://") && !reference.contains("?")) (
+    let (rest = reference.substring(5, reference.length))
+    if (rest.endsWith("/")) List() else rest.split("/")
+  )
+  else List()
+
+const function opReferenceLabelsValidated(reference: String, parts: List<String>): String =
+  let (vault = opLabelValidated("vault", parts[0]))
+  let (item = opLabelValidated("item", parts[1]))
+  let (section = if (parts.length == 4) opSectionValidated(parts[2]) else "")
+  let (field = opFieldValidated(parts.last))
+  reference
+
+const function opLabelValidated(what: String, label: String): String =
+  if (label.contains("__ruxel_secret_8d41.") || label.contains("__ruxel_rt_8d41."))
+    throw("1Password \(what) \"\(label)\" carries a secret or run-time value; a selector is static text only")
+  else if (label.contains("\u{0}"))
+    throw("1Password \(what) \"\(label)\" contains NUL, which no selector can hold")
+  else if (label.contains("\u{1f}") || label.contains("\u{1e}"))
+    throw("1Password \(what) \"\(label)\" contains \\u{1f} or \\u{1e}, which the secret reference encoding reserves; use another character")
+  else if (!label.isEmpty && !label.contains("/") && !label.contains("\n")) label
+  else throw("1Password \(what) \"\(label)\" is malformed: not empty, and no `/`, no line break")
+
+/// A field reaches `op item get --fields`, which parses `,`, `=` and `.` as
+/// its own selector syntax — a dot is the section separator — so the decode
+/// refuses them where Core's `onePassword` does.
+const function opFieldValidated(field: String): String =
+  if (field.contains(",") || field.contains("="))
+    throw("1Password field \"\(field)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else if (field.contains("."))
+    throw("1Password field \"\(field)\" may not contain a dot: `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named")
+  else opLabelValidated("field", field)
+
+/// A section and its field together form the CLI's `--fields` selector, so
+/// the same comma, equals-sign and dot rule applies to both components.
+const function opSectionValidated(section: String): String =
+  if (section.contains(",") || section.contains("="))
+    throw("1Password section \"\(section)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else if (section.contains("."))
+    throw("1Password section \"\(section)\" may not contain a dot: `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named")
+  else opLabelValidated("section", section)
+
+/// A separator that decodes to \u{1f} was not written by `join`: the encoding
+/// reserves the character, and `join` refuses a separator holding it (see
+/// `Core.sized`, which makes the two spellings distinguishable).
+const function separatorValidated(separator: String): String =
+  if (separator.contains("__ruxel_secret_8d41.") || separator.contains("__ruxel_rt_8d41."))
+    throw("join separator \"\(separator)\" carries a secret or run-time value; the text between two joined secrets is static text only")
+  else if (separator.contains("\u{0}"))
+    throw("join separator contains NUL; use text without a NUL")
+  else if (separator.contains("\u{1f}"))
+    throw("join separator contains \\u{1f} or \\u{1e}, which the secret reference encoding reserves; use another character")
+  else separator
+
+const local function isOpLabel(label: String): Boolean =
+  !label.isEmpty
+    && !label.contains("/")
+    && !label.contains("\n")
+    && !label.contains("\u{0}")
+    && !label.contains("\u{1e}")
+    && !label.contains("\u{1f}")
+    && !label.contains("__ruxel_secret_8d41.")
+    && !label.contains("__ruxel_rt_8d41.")
+
+const local function hasFieldSelectorSyntax(field: String): Boolean =
+  field.contains(",") || field.contains("=") || field.contains(".")
+
+const local function isOpReference(r: String): Boolean =
+  r.startsWith("op://") && !r.contains("?") && (
+    let (rest = r.substring(5, r.length))
+    let (parts = rest.split("/"))
+    !rest.endsWith("/") && (parts.length == 3 || parts.length == 4)
+      && parts.every((p) -> isOpLabel(p))
+      && !hasFieldSelectorSyntax(parts.last)
+      && (parts.length != 4 || !hasFieldSelectorSyntax(parts[2])))
+
+/// Reverses `Core.sized`: `_` is written `\u{1f}`, a literal `\u{1f}` as
+/// `\u{1e}`, so decoding recovers exactly what was encoded.
+const local function unescape(text: String): String = text.replaceAll("\u{1f}", "_").replaceAll("\u{1e}", "\u{1f}")
+
+const function fnoxLookup(_key: String): engine.Lookup = new engine.Lookup { provider = "fnox"; key = _key }
+const function opReference(_reference: String): engine.Lookup = new engine.Lookup { provider = "op"; reference = _reference }
+const function opFields(_vault: String, _item: String, _section: String?, _field: String): engine.Lookup =
+  new engine.Lookup { provider = "op"; vault = _vault; item = _item; section = _section; field = _field }
+
+/// A whole secret as one engine value: a single lookup, or `concat` for a
+/// joined pair. Environment values take this form; file content flattens the
+/// parts into its own `concat`.
+const function secretValue(parts: String): engine.Expr =
+  let (exprs = parser.exprs(parts))
+  if (exprs.length == 1) exprs.first else (new engine.Call { `function` = "concat"; args { for (e in exprs) { e } } })
+
+// ── Environment values ──────────────────────────────────────────────────────
+
+/// The engine environment of a step: a literal per static value, a lookup per
+/// secret. Only actions have any.
+function envOf(s: core.Step): Mapping<String, engine.Expr> =
+  if (!(s is core.Action)) new Mapping {}
+  else new Mapping { for (k, v in s.environment) { [envKey(s, k)] = envValue(s, k, v) } }
+
+/// Whether a secret appears anywhere in a step: its file content, or an
+/// environment value. Such a task is never logged.
+const function secretStep(s: core.Step): Boolean =
+  (s is core.File && hasSecrets(s.content))
+    || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
+
+function envKey(s: core.Step, key: String): String =
+  if (key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) key
+  else throw("'\(name(s))': environment key \(key) is not a variable name; use letters, digits and underscores, not starting with a digit")
+
+function envValue(s: core.Step, key: String, v: Any): engine.Expr =
+  if (v is core.SecretText) secretValue(v.parts)
+  else if (!placeholder.findMatchesIn(v).isEmpty)
+    throw("'\(name(s))': environment value \(key) is a run-time value; a program that needs host state reads it from the rendered config or a capture")
+  else if (hasSecrets(v))
+    throw("'\(name(s))': environment value \(key) interpolates a secret into text; pass the secret itself, as in environment { [\"\(key)\"] = module.fnox(…) }")
+  else lit(v)
+
+const function lit(v: engine.Scalar): engine.Literal = new engine.Literal { value = v }
+const function ref(p: List<String>): engine.Ref = new engine.Ref { path { for (x in p) { x } } }
 function call1(f: String, x: engine.Expr): engine.Call = new engine.Call { `function` = f; args { x } }
 function call2(f: String, x: engine.Expr, y: engine.Expr): engine.Call = new engine.Call { `function` = f; args { x; y } }

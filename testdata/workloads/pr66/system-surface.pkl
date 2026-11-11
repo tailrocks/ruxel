@@ -123,8 +123,14 @@ output { value = new Ruxel.Config {
         operation = new Ruxel.Mount { path = "/mnt/ruxel-fixture"; src = literal("tmpfs"); fstype = "tmpfs"; opts = "size=16m"; state = "mounted" }
       }
       new {
+        name = "Check whether the synthetic source repository exists"
+        operation = new Ruxel.Stat { path = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/origin/.git/HEAD") }); follow = true }
+        register = "fixture_origin_creates"
+      }
+      new {
         name = "Initialize synthetic source repository"
-        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\nmkdir -p "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin init\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.email synthetic@example.invalid\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.name Synthetic\nprintf fixture > "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin/data.txt\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin add data.txt\nGIT_AUTHOR_DATE=2020-01-01T00:00:00Z \\\nGIT_COMMITTER_DATE=2020-01-01T00:00:00Z \\\n  git -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin commit -m fixture || true\n") }); creates = call("concat", new Listing { ref(new Listing { "vars"; "fixture_root" }); literal("/origin/.git/HEAD") }) }
+        `when` = call("not", new Listing { ref(new Listing { "results"; "fixture_origin_creates"; "stat"; "exists" }) })
+        operation = new Ruxel.Shell { cmd = call("concat", new Listing { literal("set -eu\nmkdir -p "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin init\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.email synthetic@example.invalid\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin config user.name Synthetic\nprintf fixture > "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin/data.txt\ngit -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin add data.txt\nGIT_AUTHOR_DATE=2020-01-01T00:00:00Z \\\nGIT_COMMITTER_DATE=2020-01-01T00:00:00Z \\\n  git -C "); ref(new Listing { "vars"; "fixture_root" }); literal("/origin commit -m fixture || true\n") }) }
       }
       new {
         name = "Clone synthetic repository"

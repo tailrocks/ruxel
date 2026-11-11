@@ -1,6 +1,6 @@
 use super::{
-    ExecContext, apply_attrs, bool_param, default_file_mode, params_object, parse_mode, str_param,
-    write_atomic_with,
+    ExecContext, apply_attrs_with, bool_param, default_file_mode, params_object, parse_mode,
+    resolve_ownership, str_param, write_atomic_with,
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -52,7 +52,11 @@ pub(super) fn run(
 
     let mut result = json!({"dest": dest, "changed": false, "failed": false});
 
-    if copy_needs_write(exists, same, force) {
+    let needs_write = copy_needs_write(exists, same, force);
+    let writes = needs_write && !ctx.check_mode;
+    let applies_attrs = p.exists() || !ctx.check_mode;
+
+    if needs_write {
         changed = true;
 
         if ctx.diff_mode && !ctx.no_log {
@@ -71,20 +75,35 @@ pub(super) fn run(
                 ))
             };
         }
-        if !ctx.check_mode {
-            let creation_mode = if exists {
-                None
-            } else if let Some(mode) = obj.get("mode") {
+    }
+
+    if writes || applies_attrs {
+        // The requested ownership is resolved to ids once, before any
+        // write: the replacement is created with those ids, and the
+        // attributes apply the same ids afterwards. A change to the passwd
+        // or group file between the two resolutions cannot fail or
+        // mis-apply a publication that already succeeded.
+        let ownership = resolve_ownership(obj)?;
+        if writes {
+            let creation_mode = if let Some(mode) = obj.get("mode") {
+                // The replacement is created with the requested mode before
+                // it is published. Applying owner or group later may fail,
+                // but a requested secret mode is never exposed in the
+                // meantime.
                 Some(parse_mode(mode)?)
+            } else if exists {
+                // Without a requested mode, an existing destination keeps
+                // its permissions through the atomic replacement.
+                None
             } else {
                 let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
                 Some(default_file_mode(&status))
             };
-            write_atomic_with(p, content, creation_mode, None)?;
+            write_atomic_with(p, content, creation_mode, (ownership.uid, ownership.gid))?;
         }
-    }
-    if p.exists() || !ctx.check_mode {
-        apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
+        if applies_attrs {
+            apply_attrs_with(p, obj, &ownership, &mut changed, ctx.check_mode)?;
+        }
     }
     result["changed"] = json!(changed);
     Ok(result)
@@ -97,6 +116,7 @@ fn copy_needs_write(exists: bool, same: bool, force: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::copy_needs_write;
+    use serde_json::json;
 
     #[test]
     fn force_and_content_equality_control_write() {
@@ -105,6 +125,49 @@ mod tests {
         assert!(!copy_needs_write(true, true, true));
         assert!(copy_needs_write(true, false, true));
     }
+    #[cfg(unix)]
+    #[test]
+    fn replacing_a_file_fails_before_the_write_when_a_group_is_unresolvable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory =
+            std::env::temp_dir().join(format!("ruxel-copy-requested-owner-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("secret");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let ctx = super::super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let error = super::run(
+            &json!({
+                "dest": path,
+                "content": "new",
+                "mode": "0600",
+                "owner": "root",
+                "group": "ruxel-group-does-not-exist",
+            }),
+            None,
+            &ctx,
+        )
+        .unwrap_err();
+        assert!(error.contains("not found"), "{error}");
+
+        // Requested ownership is resolved before any write, so a failure
+        // leaves the destination byte- and mode-identical: the secret
+        // replacement is never published, not even at 0600.
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "the destination must keep its old mode");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn template_content_preserves_trailing_newlines_and_converges() {
         let dir =
@@ -135,5 +198,56 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The requested ownership is resolved once for the whole write: the
+    /// replacement is created with the resolved ids, and the attributes
+    /// apply the same ids. A change to the passwd or group file between
+    /// the two resolutions cannot fail or mis-apply a publication that
+    /// already succeeded.
+    #[test]
+    fn the_requested_ownership_is_resolved_once_for_the_write_and_the_attributes() {
+        use std::os::unix::fs::MetadataExt;
+
+        let directory =
+            std::env::temp_dir().join(format!("ruxel-copy-ownership-once-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("secret");
+        std::fs::write(&path, "old").unwrap();
+        let meta = std::fs::metadata(&path).unwrap();
+
+        let ctx = super::super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let before = super::super::OWNERSHIP_RESOLUTIONS.with(std::cell::Cell::get);
+        super::run(
+            &json!({
+                "dest": path,
+                "content": "new",
+                "owner": meta.uid().to_string(),
+                "group": meta.gid().to_string(),
+            }),
+            None,
+            &ctx,
+        )
+        .unwrap();
+        let after = super::super::OWNERSHIP_RESOLUTIONS.with(std::cell::Cell::get);
+
+        // The owner and the group are resolved once each.
+        assert_eq!(
+            after - before,
+            2,
+            "the requested ownership was resolved more than once"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        let applied = std::fs::metadata(&path).unwrap();
+        assert_eq!(applied.uid(), meta.uid());
+        assert_eq!(applied.gid(), meta.gid());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

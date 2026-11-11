@@ -48,13 +48,18 @@ fn prepare(dir: &Path) -> Result<()> {
     fs::write(
         &op,
         r##"#!/bin/sh
-[ "$#" -eq 8 ] && [ "$1" = item ] && [ "$2" = get ] && [ "$3" = --vault ] && [ "$4" = fixture-vault ] && [ "$5" = --format ] && [ "$6" = json ] && [ "$7" = -- ] && [ "$8" = fixture-item ] || exit 7
+[ "$#" -eq 10 ] && [ "$1" = item ] && [ "$2" = get ] && [ "$3" = --vault ] && [ "$4" = fixture-vault ] && [ "$5" = --fields ] && [ "$7" = --format ] && [ "$8" = json ] && [ "$9" = -- ] && [ "${10}" = fixture-item ] || exit 7
 printf 'call\n' >> "${0%/*}/calls"
-if [ -f "${0%/*}/wrong" ]; then
-    printf '%s' '{"fields":[{"id":"alpha","value":"RUXEL_SYNTHETIC_ALPHA_824"},{"id":"beta","value":"RUXEL_SYNTHETIC_WRONG_913"}]}'
-    exit 0
-fi
-printf '%s' '{"fields":[{"id":"alpha","value":"RUXEL_SYNTHETIC_ALPHA_824"},{"id":"beta","value":"RUXEL_SYNTHETIC_BETA_627"}]}'
+case "$6" in
+alpha) printf '%s' '[{"id":"alpha","value":"RUXEL_SYNTHETIC_ALPHA_824"}]';;
+beta)
+    if [ -f "${0%/*}/wrong" ]; then
+        printf '%s' '[{"id":"beta","value":"RUXEL_SYNTHETIC_WRONG_913"}]'
+    else
+        printf '%s' '[{"id":"beta","value":"RUXEL_SYNTHETIC_BETA_627"}]'
+    fi;;
+*) exit 8;;
+esac
 "##,
     )?;
     fs::set_permissions(op, fs::Permissions::from_mode(0o700))?;
@@ -113,8 +118,12 @@ fn phase(root: &Path, cli: &Path, agent: &Path, mode: &str, success: bool) -> Re
         "{mode}: unexpected recap"
     );
     ensure!(
-        fs::read_to_string(calls).context("fake op was not invoked")? == "call\n",
-        "{mode}: expected one item request"
+        fs::read_to_string(calls)
+            .context("fake op was not invoked")?
+            .lines()
+            .count()
+            == 2,
+        "{mode}: expected one field-scoped request per named field"
     );
     Ok(())
 }
@@ -135,7 +144,7 @@ fn main() -> Result<()> {
     fs::write(temp.path().join("wrong"), b"")?;
     phase(temp.path(), &cli, &agent, "check", false)?;
     println!(
-        "check and diff: one synthetic item request each; both fields resolved and output redacted"
+        "check and diff: one field-scoped request per named field each; both fields resolved and output redacted"
     );
     Ok(())
 }

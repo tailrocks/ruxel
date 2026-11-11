@@ -99,12 +99,9 @@ fn validate_call(object: &Map<String, Value>) -> Result<()> {
 }
 fn validate_fnox_key(key: Option<&str>) -> Result<()> {
     ensure!(
-        key.is_some_and(|key| {
-            !key.is_empty()
-                && !key.as_bytes()[0].is_ascii_digit()
-                && key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
-        }),
-        "fnox lookup requires an environment identifier key"
+        key.is_some_and(crate::secrets::is_fnox_key),
+        "fnox lookup key is malformed: {}",
+        crate::secrets::FNOX_KEY_GRAMMAR
     );
     Ok(())
 }
@@ -165,14 +162,17 @@ fn validate_lookup(object: &Map<String, Value>) -> Result<()> {
                 "lookup requires item or reference"
             );
             if !required("reference") {
-                for key in ["vault", "field"] {
-                    ensure!(
-                        object.get(key).is_none_or(
-                            |v| v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())
-                        ),
-                        "lookup selector must not be empty"
-                    );
+                // No defaults: the structured selector names vault, item and
+                // field, every one of them.
+                for key in ["vault", "item", "field"] {
+                    ensure!(required(key), "op lookup requires {key}");
                 }
+                ensure!(
+                    object.get("section").is_none_or(|v| {
+                        v.is_null() || v.as_str().is_some_and(|s| !s.is_empty())
+                    }),
+                    "lookup selector must not be empty"
+                );
             }
         }
         Some("command") => ensure!(

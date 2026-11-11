@@ -1,4 +1,4 @@
-use super::{parse_mode, resolve_gid, resolve_uid, str_param};
+use super::{Ownership, parse_mode};
 use rustix::fs::{AtFlags, FileType, Mode, OFlags};
 use serde_json::{Map, Value};
 use std::os::unix::ffi::OsStrExt;
@@ -126,7 +126,25 @@ pub(super) fn apply_attrs(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    apply_attrs_fd(open_attrs(path)?, obj, changed, check_mode)
+    let ownership = super::resolve_ownership(obj)?;
+    apply_attrs_with(path, obj, &ownership, changed, check_mode)
+}
+
+/// Applies the attributes of `obj` to `path`, with the ownership that was
+/// resolved before the write.
+///
+/// The ids are the ones the publication was created with: the names in
+/// `obj` are not resolved again, so a change to the passwd or group file
+/// between the resolution and the publication cannot fail or mis-apply a
+/// publication that already succeeded.
+pub(super) fn apply_attrs_with(
+    path: &Path,
+    obj: &Map<String, Value>,
+    ownership: &Ownership,
+    changed: &mut bool,
+    check_mode: bool,
+) -> Result<(), String> {
+    apply_attrs_fd_with(open_attrs(path)?, obj, ownership, changed, check_mode)
 }
 
 pub(super) fn apply_attrs_fd(
@@ -135,10 +153,23 @@ pub(super) fn apply_attrs_fd(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
+    let ownership = super::resolve_ownership(obj)?;
+    apply_attrs_fd_with(fd, obj, &ownership, changed, check_mode)
+}
+
+/// Applies the attributes of `obj` to `fd`, with the ownership that was
+/// resolved before the write.
+pub(super) fn apply_attrs_fd_with(
+    fd: impl AsFd,
+    obj: &Map<String, Value>,
+    ownership: &Ownership,
+    changed: &mut bool,
+    check_mode: bool,
+) -> Result<(), String> {
     let meta = rustix::fs::fstat(&fd).map_err(|e| e.to_string())?;
     regular_or_directory(meta.st_mode)?;
-    let uid = str_param(obj, "owner").map(resolve_uid).transpose()?;
-    let gid = str_param(obj, "group").map(resolve_gid).transpose()?;
+    let uid = ownership.uid;
+    let gid = ownership.gid;
     if uid.is_some_and(|uid| uid != meta.st_uid) || gid.is_some_and(|gid| gid != meta.st_gid) {
         *changed = true;
         if !check_mode {

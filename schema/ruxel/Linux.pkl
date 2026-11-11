@@ -15,12 +15,15 @@ import "modulepath:/ruxel/Core.pkl" as core
 // drop the constraints of a dotted alias such as `core.Static`.
 
 /// Text known before the run. Run-time values (`currentHost`,
-/// `Capture.stdout()`) are allowed only in `File.content`; every other text
-/// field is `Static`. A run-time value is text that starts with the reserved
-/// prefix `__ruxel_rt_8d41.`, which nothing else may contain.
+/// `Capture.stdout()`) are allowed only in `File.content`; secrets
+/// (`module.fnox`, …) only in `File.content` and action `environment`
+/// values. Every other text field is `Static`, and neither a run-time value
+/// nor a secret reference can be one: they carry the reserved prefixes
+/// `__ruxel_rt_8d41.` and `__ruxel_secret_8d41.`, which nothing else may
+/// contain.
 ///
 /// No NUL either: no path, argument or name can hold one.
-typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("\u{0}"))
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("__ruxel_secret_8d41.") && !contains("\u{0}"))
 
 /// The name of a service or an account: not empty, and not starting with
 /// `-`, which the tools that take it would read as an option.
@@ -78,9 +81,12 @@ const local function isIpv6Address(a: String): Boolean =
     && (!tail || isIpv4(groups.last) && !a.endsWith("::"))
     && (if (gap) count <= 7 else count == 8)
 
+/// Four octets. `split` drops the trailing empty piece, so an address that
+/// ends with `.` would read as if it named one octet less and pass; such an
+/// address is refused, like one with an empty octet.
 const local function isIpv4(s: String): Boolean =
   let (parts = s.split("."))
-  parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
+  !s.endsWith(".") && parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
 
 /// A tz database name such as `UTC` or `Europe/Berlin`: relative, no `.`
 /// or `..` components.

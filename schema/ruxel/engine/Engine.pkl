@@ -10,11 +10,28 @@ class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|Li
 class Lookup {
   fixed kind = "lookup"
   provider: "fnox"|"op"|"command"|"synthetic"
-  key: String?(provider != "fnox" || (this != null && this.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*$")))) = null
+  /// A fnox key is an `FnoxKey` (`Core.pkl`): `[A-Z][A-Z0-9_]{1,127}` —
+  /// the grammar model validation and the backend enforce with the same
+  /// sentence. The constraint cannot carry a message; the Rust layers name
+  /// it when they refuse a key.
+  key: String?(provider != "fnox" || (this != null && this.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))) = null
+  /// The structured 1Password selector. Vault, item and field are always
+  /// stated — there is no default vault or field; the engine's own checks
+  /// (model validation and resolution) refuse a lookup that omits one. The
+  /// constraints here cannot: pklr evaluates a nullable property's constraint
+  /// against its `null` default too, so `this != null` could never be
+  /// demanded from the schema. `section` narrows a label that several
+  /// sections carry; without it, resolution fails on such a label, naming
+  /// the sections.
   vault: String? = null
   item: String? = null
   section: String? = null
   field: String? = null
+  /// The `op://` reference form; never combined with structured selectors.
+  /// Enforced here alone: `section` carries no constraint of its own, since
+  /// one that read `reference` would close the cycle this constraint opens
+  /// (it reads `section`), which official Pkl evaluates eagerly, to a stack
+  /// overflow; pklr tolerates the cycle and never showed it.
   reference: String?(provider != "op" || this == null || (vault == null && item == null && section == null && field == null)) = null
   argv: Listing<String>(provider != "command" || !this.isEmpty)
 }
@@ -132,7 +149,18 @@ class Command {
   fixed kind = "command"
   argv: CommandArgs
   chdir: Text? = null
+  /// Guard-only: the path whose existence skips the command. The controller
+  /// probes it before it resolves the task's environment, so a task the probe
+  /// skips reads no secret store; the agent re-stats it immediately before it
+  /// runs the command, where the probe's answer can already be stale. It gates
+  /// execution only: it never decides the reported change.
   creates: Text? = null
+  /// The evaluated `onChangeOf` guard: a watched step had changed when the
+  /// controller dispatched the command. A watcher re-runs the command even
+  /// where the created path exists, so this overrides the agent's `creates`
+  /// recheck — the first disjunct of the same `when`, handed down because the
+  /// agent cannot read the controller's results.
+  run_if_changed: Flag? = null
 }
 
 class Copy {
@@ -218,8 +246,11 @@ class Shell {
   fixed kind = "shell"
   chdir: Text? = null
   cmd: String(this.length > 0)|Expr
+  /// Guard-only: see `Command.creates`.
   creates: Text? = null
   executable: Text? = null
+  /// See `Command.run_if_changed`.
+  run_if_changed: Flag? = null
 }
 
 class Slurp {

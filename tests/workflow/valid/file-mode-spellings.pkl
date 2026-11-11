@@ -1,0 +1,19 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// One file identity across mode spellings. The step declares its mode
+// `600`; the two `onChangeOf` reconstructions spell the same mode `0600`
+// and `600`. Lowering canonicalizes a file mode to its four-digit form,
+// so each reconstruction is the same identity as the step — the reloads
+// depend on the file — rather than twins that no earlier step has. The
+// directory spells its mode `755` and lowers canonically as `0755`.
+local config = new File { path = "/etc/app.conf"; mode = "600"; content = "x\n" }
+local firstView = (config) { mode = "0600" }
+local secondView = (config) { mode = "600" }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  config
+  new Command { title = "Reload first"; run { "app"; "reload" }; onChangeOf { firstView } }
+  new Command { title = "Reload second"; run { "app"; "reload" }; onChangeOf { secondView } }
+  new Directory { path = "/etc/app"; mode = "755" }
+} } }

@@ -1,4 +1,7 @@
 //! Evaluates the workflow language corpus in `tests/workflow`.
+//!
+//! The secret-bearing workflows of the corpus are evaluated in
+//! `workflow_secrets.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -197,17 +200,70 @@ fn edge_values_lower_with_their_guards() -> Result {
     ]});
     let reload = &all[named("Run /usr/local/bin/app-reload")?];
     assert_eq!(reload["changedWhen"], ran);
-    // The `creates` probe follows links, like the command's own guard.
-    let probe = all
-        .iter()
-        .find(|task| task["name"] == "Check whether /var/lib/app/migrated exists")
-        .ok_or("no creates probe")?;
-    assert_eq!(probe["operation"]["follow"], true);
-    // A `creates` skip reports no change even though its output lacks the marker.
+    // The `creates` probes follow links: a dangling link does not count as
+    // the path existing. The guard is a `when` condition on the controller,
+    // so a skipped action resolves no secret environment, and the command
+    // carries the path for its own recheck at execution time, beside the
+    // `onChangeOf` result that overrides the guard.
+    let position = |name: &str| all.iter().position(|task| task["name"] == name);
+    for (probe_name, action_name, path, function) in [
+        (
+            "Check whether /var/lib/app/migrated exists",
+            "Run /usr/local/bin/app-migrate",
+            "/var/lib/app/migrated",
+            "or",
+        ),
+        (
+            "Check whether /var/lib/app/initialized exists",
+            "Run /usr/local/bin/app-init",
+            "/var/lib/app/initialized",
+            "not",
+        ),
+    ] {
+        let probe = position(probe_name).ok_or("no creates probe")?;
+        let action = position(action_name).ok_or("no guarded action")?;
+        assert_eq!(probe + 1, action);
+        assert_eq!(all[probe]["operation"]["follow"], true);
+        assert_eq!(all[action]["operation"]["creates"], path);
+        assert_eq!(all[action]["when"]["function"], function);
+        assert_eq!(all[action]["when"]["args"][0]["path"][0], "results");
+        // The agent's recheck runs the same guard as the `when`: the watched
+        // step's change, which is the gate's first disjunct when there is one.
+        let watched = &all[action]["operation"]["run_if_changed"];
+        if function == "or" {
+            assert_eq!(*watched, all[action]["when"]["args"][0], "{action_name}");
+        } else {
+            assert!(watched.is_null(), "{action_name}");
+        }
+    }
+    // A `creates` recheck skip reports no change even though its output lacks
+    // the marker; every other skip (check and diff) still reports a pending one.
     let init = &all[named("Run /usr/local/bin/app-init")?];
     assert_eq!(init["changedWhen"]["function"], "and");
-    assert_eq!(init["changedWhen"]["args"][0], ran);
+    assert_eq!(init["changedWhen"]["args"][0], ran_except_recheck());
     Ok(())
+}
+
+/// The `changedWhen` of a `creates` action: the command ran, or would run in
+/// check and diff (`skipped`), except when the agent's own recheck skipped it
+/// because the path exists now — that skip reports no change.
+fn ran_except_recheck() -> serde_json::Value {
+    serde_json::json!({"kind": "call", "function": "or", "args": [
+        {"kind": "ref", "path": ["result", "changed"]},
+        {"kind": "call", "function": "and", "args": [
+            {"kind": "call", "function": "default", "args": [
+                {"kind": "ref", "path": ["result", "skipped"]},
+                {"kind": "literal", "value": false},
+            ]},
+            {"kind": "call", "function": "ne", "args": [
+                {"kind": "call", "function": "default", "args": [
+                    {"kind": "ref", "path": ["result", "skip", "cause"]},
+                    {"kind": "literal", "value": ""},
+                ]},
+                {"kind": "literal", "value": "creates_exists"},
+            ]},
+        ]},
+    ]})
 }
 
 /// The validator reads a candidate only root can change, whatever the
@@ -244,5 +300,79 @@ fn validator_candidates_fit_a_file_name() -> Result {
         name.starts_with('.') && name.ends_with(".ruxel-candidate"),
         "{name}"
     );
+    Ok(())
+}
+
+/// The `results.…` names an `onChangeOf` reaction reads.
+fn watched_results(expr: &serde_json::Value) -> Vec<String> {
+    let nested = |key: &str| {
+        expr[key]
+            .as_array()
+            .map(|items| items.iter().flat_map(watched_results).collect())
+            .unwrap_or_default()
+    };
+    match expr["kind"].as_str() {
+        Some("ref") => expr["path"]
+            .as_array()
+            .filter(|path| {
+                path.first().and_then(|v| v.as_str()) == Some("results") && path.len() >= 2
+            })
+            .map(|path| vec![path[1].as_str().unwrap_or_default().to_owned()])
+            .unwrap_or_default(),
+        Some("call") => nested("args"),
+        Some("list") => nested("items"),
+        _ => Vec::new(),
+    }
+}
+
+/// A file declared with `600` and reconstructed with `0600` is one
+/// identity: both reloads react to the file step's result, and every mode
+/// lowers in its canonical four-digit form.
+#[test]
+fn file_mode_spellings_are_one_identity_and_lower_canonically() -> Result {
+    let config = valid("file-mode-spellings.pkl")?;
+    let all = tasks(&config);
+    let file = all
+        .iter()
+        .find(|task| task["operation"]["dest"] == "/etc/app.conf")
+        .ok_or("no file task")?;
+    assert_eq!(file["operation"]["mode"], "0600");
+    let directory = all
+        .iter()
+        .find(|task| task["operation"]["path"] == "/etc/app")
+        .ok_or("no directory task")?;
+    assert_eq!(directory["operation"]["mode"], "0755");
+    let watchers: Vec<Vec<String>> = all
+        .iter()
+        .filter(|task| {
+            task["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("Reload "))
+        })
+        .map(|task| watched_results(&task["when"]))
+        .collect();
+    assert_eq!(watchers.len(), 2, "both reloads reacted: {watchers:?}");
+    assert!(watchers.iter().all(|ids| ids.len() == 1), "{watchers:?}");
+    assert_eq!(watchers[0], watchers[1], "one identity: {watchers:?}");
+    Ok(())
+}
+
+/// An action reconstructed with its environment pairs in another order is
+/// one identity: both restarts react to the reload step's result.
+#[test]
+fn action_environment_order_is_one_identity() -> Result {
+    let config = valid("action-environment-order.pkl")?;
+    let watchers: Vec<Vec<String>> = tasks(&config)
+        .into_iter()
+        .filter(|task| {
+            task["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("Restart "))
+        })
+        .map(|task| watched_results(&task["when"]))
+        .collect();
+    assert_eq!(watchers.len(), 2, "both restarts reacted: {watchers:?}");
+    assert!(watchers.iter().all(|ids| ids.len() == 1), "{watchers:?}");
+    assert_eq!(watchers[0], watchers[1], "one identity: {watchers:?}");
     Ok(())
 }

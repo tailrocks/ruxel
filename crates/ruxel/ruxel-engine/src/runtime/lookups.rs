@@ -64,10 +64,12 @@ impl Lookups {
                 }
                 Lookup::OnePasswordUri { reference }
             }
+            // No default vault or field: the structured selector states all
+            // three, or the lookup fails rather than guessing a value.
             "op" => Lookup::OnePassword {
-                vault: vault.clone().unwrap_or_else(|| "Private".to_owned()),
+                vault: required(vault)?,
                 item: required(item)?,
-                field: field.clone().unwrap_or_else(|| "password".to_owned()),
+                field: required(field)?,
                 section: section.clone(),
             },
             "command" => Lookup::Command { argv: argv.clone() },

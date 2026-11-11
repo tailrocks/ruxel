@@ -12,10 +12,11 @@ mod attrs;
 use attrs::apply_attrs_at;
 #[cfg(test)]
 use attrs::open_attrs;
-use attrs::{apply_attrs, apply_attrs_fd};
+use attrs::{apply_attrs, apply_attrs_fd, apply_attrs_with};
 
 mod apt;
 mod apt_repository;
+mod atomic;
 mod authorized_key;
 mod blockinfile;
 mod command;
@@ -41,10 +42,6 @@ mod timezone;
 mod user;
 
 use serde_json::{Map, Value, json};
-use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use subprocess::become_command;
 
 pub(crate) struct ExecContext {
@@ -189,69 +186,7 @@ pub(crate) fn shutdown() {
     postgresql::shutdown();
 }
 
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    write_atomic_with(path, bytes, None, None)
-}
-
-pub(super) fn write_atomic_with(
-    path: &Path,
-    bytes: &[u8],
-    mode: Option<u32>,
-    owner: Option<(u32, u32)>,
-) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent", path.display()))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| format!("{} has no file name", path.display()))?;
-    let existing = std::fs::symlink_metadata(path)
-        .ok()
-        .filter(std::fs::Metadata::is_file);
-    let final_mode = mode
-        .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
-        .unwrap_or(0o600);
-    let final_owner = owner.or_else(|| existing.as_ref().map(|m| (m.uid(), m.gid())));
-
-    for _ in 0..100 {
-        let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let temp = parent.join(format!(
-            ".{}.ruxel-{}-{seq}.tmp",
-            name.to_string_lossy(),
-            std::process::id()
-        ));
-        let opened = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(final_mode)
-            .open(&temp);
-        let mut file = match opened {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e.to_string()),
-        };
-        let result = (|| {
-            file.write_all(bytes).map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
-            std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(final_mode))
-                .map_err(|e| e.to_string())?;
-            if let Some((uid, gid)) = final_owner {
-                std::os::unix::fs::chown(&temp, Some(uid), Some(gid)).map_err(|e| e.to_string())?;
-            }
-            std::fs::rename(&temp, path).map_err(|e| e.to_string())
-        })();
-        if result.is_err() {
-            let _ = std::fs::remove_file(&temp);
-        }
-        return result;
-    }
-    Err(format!(
-        "could not create atomic temporary file for {}",
-        path.display()
-    ))
-}
+pub(super) use atomic::{write_atomic, write_atomic_with};
 
 pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(), String> {
     for (name, value) in fields {
@@ -317,11 +252,46 @@ fn bool_param(obj: &Map<String, Value>, key: &str, default: bool) -> bool {
 }
 
 fn resolve_uid(owner: &str) -> Result<u32, String> {
+    #[cfg(test)]
+    count_ownership_resolution();
     if let Ok(uid) = owner.parse::<u32>() {
         return Ok(uid);
     }
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     resolve_uid_from(&passwd, owner)
+}
+
+/// The requested ownership of a file, resolved to ids.
+pub(super) struct Ownership {
+    pub(super) uid: Option<u32>,
+    pub(super) gid: Option<u32>,
+}
+
+/// Resolves the requested owner and group of `obj` to ids.
+///
+/// The ids are resolved once and reused by the caller: a change to the
+/// passwd or group file between the resolution and the use of the ids
+/// cannot fail or mis-apply a publication that already succeeded.
+pub(super) fn resolve_ownership(obj: &Map<String, Value>) -> Result<Ownership, String> {
+    Ok(Ownership {
+        uid: str_param(obj, "owner").map(resolve_uid).transpose()?,
+        gid: str_param(obj, "group").map(resolve_gid).transpose()?,
+    })
+}
+
+// The number of ownership resolutions of the current thread.
+//
+// The counter is a test aid: a module that resolves the requested
+// ownership once must not resolve it again.
+#[cfg(test)]
+thread_local! {
+    pub(super) static OWNERSHIP_RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts one ownership resolution of the current thread.
+#[cfg(test)]
+fn count_ownership_resolution() {
+    OWNERSHIP_RESOLUTIONS.with(|count| count.set(count.get() + 1));
 }
 
 fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
@@ -336,6 +306,8 @@ fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
 }
 
 fn resolve_gid(group: &str) -> Result<u32, String> {
+    #[cfg(test)]
+    count_ownership_resolution();
     if let Ok(gid) = group.parse::<u32>() {
         return Ok(gid);
     }
