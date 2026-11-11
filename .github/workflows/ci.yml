@@ -148,6 +148,38 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
+  check-dual-evaluator:
+    name: Check / dual-evaluator
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env: *m3
+    permissions:
+      contents: read
+    needs:
+      - plan
+    if: "!contains(needs.plan.outputs.not_affected_jobs, ',check-dual-evaluator,')"
+    steps:
+      - *s2
+      - *s3
+      - *s4
+      - *s5
+      - name: Execute named check
+        env:
+          VELNOR_CHECK_ID: dual-evaluator
+          VELNOR_CHECK_JOB_ID: check-dual-evaluator
+          VELNOR_CHECK_LANE_VARIANT: single
+          VELNOR_INTERNAL_OP: execute-check-v1
+          VELNOR_TASK_ID: stack/mise/dual-evaluator/check/default
+        run: *r2
+      - name: Upload crate reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          if-no-files-found: error
+          name: velnor-crate-r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}-check-dual-evaluator
+          overwrite: "true"
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
+          retention-days: "30"
   jactionlint:
     name: Jactionlint
     runs-on: ubuntu-26.04
@@ -420,6 +452,7 @@ jobs:
       - plan
       - check-acceptance-local
       - check-cargo-deny
+      - check-dual-evaluator
       - rust-ruxel
       - rust-ruxel-acceptance-cache
       - rust-ruxel-acceptance-control
@@ -470,7 +503,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-acceptance-local\",\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel\",\"rust-ruxel-acceptance-cache\",\"rust-ruxel-acceptance-control\",\"rust-ruxel-acceptance-copy\",\"rust-ruxel-acceptance-files\",\"rust-ruxel-acceptance-isolation\",\"rust-ruxel-acceptance-manifest\",\"rust-ruxel-acceptance-plan\",\"rust-ruxel-acceptance-pty\",\"rust-ruxel-acceptance-restart-rootless\",\"rust-ruxel-acceptance-runtime\",\"rust-ruxel-acceptance-xfs\",\"rust-ruxel-agent\",\"rust-ruxel-config\",\"rust-ruxel-control-flow-assertions\",\"rust-ruxel-engine\",\"rust-ruxel-guard\",\"rust-ruxel-http-fixture\",\"rust-ruxel-proto\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-acceptance-local\",\"check-cargo-deny\",\"check-dual-evaluator\",\"jactionlint\",\"plan\",\"rust-ruxel\",\"rust-ruxel-acceptance-cache\",\"rust-ruxel-acceptance-control\",\"rust-ruxel-acceptance-copy\",\"rust-ruxel-acceptance-files\",\"rust-ruxel-acceptance-isolation\",\"rust-ruxel-acceptance-manifest\",\"rust-ruxel-acceptance-plan\",\"rust-ruxel-acceptance-pty\",\"rust-ruxel-acceptance-restart-rootless\",\"rust-ruxel-acceptance-runtime\",\"rust-ruxel-acceptance-xfs\",\"rust-ruxel-agent\",\"rust-ruxel-config\",\"rust-ruxel-control-flow-assertions\",\"rust-ruxel-engine\",\"rust-ruxel-guard\",\"rust-ruxel-http-fixture\",\"rust-ruxel-proto\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r17
       - name: Merge reports
@@ -478,7 +511,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-acceptance-local\",\"check-cargo-deny\",\"jactionlint\",\"plan\",\"rust-ruxel\",\"rust-ruxel-acceptance-cache\",\"rust-ruxel-acceptance-control\",\"rust-ruxel-acceptance-copy\",\"rust-ruxel-acceptance-files\",\"rust-ruxel-acceptance-isolation\",\"rust-ruxel-acceptance-manifest\",\"rust-ruxel-acceptance-plan\",\"rust-ruxel-acceptance-pty\",\"rust-ruxel-acceptance-restart-rootless\",\"rust-ruxel-acceptance-runtime\",\"rust-ruxel-acceptance-xfs\",\"rust-ruxel-agent\",\"rust-ruxel-config\",\"rust-ruxel-control-flow-assertions\",\"rust-ruxel-engine\",\"rust-ruxel-guard\",\"rust-ruxel-http-fixture\",\"rust-ruxel-proto\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"alint\",\"check-acceptance-local\",\"check-cargo-deny\",\"check-dual-evaluator\",\"jactionlint\",\"plan\",\"rust-ruxel\",\"rust-ruxel-acceptance-cache\",\"rust-ruxel-acceptance-control\",\"rust-ruxel-acceptance-copy\",\"rust-ruxel-acceptance-files\",\"rust-ruxel-acceptance-isolation\",\"rust-ruxel-acceptance-manifest\",\"rust-ruxel-acceptance-plan\",\"rust-ruxel-acceptance-pty\",\"rust-ruxel-acceptance-restart-rootless\",\"rust-ruxel-acceptance-runtime\",\"rust-ruxel-acceptance-xfs\",\"rust-ruxel-agent\",\"rust-ruxel-config\",\"rust-ruxel-control-flow-assertions\",\"rust-ruxel-engine\",\"rust-ruxel-guard\",\"rust-ruxel-http-fixture\",\"rust-ruxel-proto\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r17
       - name: Publish final report
@@ -542,7 +575,7 @@ jobs:
       - &s26
         name: Prepare pinned tools
         env: *m9
-        run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\" pkl@0.33.0"
+        run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
       - *s7
       - &s27
         name: Prepare Rust components

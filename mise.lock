@@ -269,10 +269,12 @@ url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
 
 [tools.pkl."platforms.linux-x64-musl"]
-checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"
+# The musl slot must pin the alpine asset: pkl-linux-amd64 is a glibc
+# binary and cannot run on a musl host.
+checksum = "sha256:38e983b0953018888761c8b410ccdc6f27ce77407ad306e73e6369c07bc23d1f"
 checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
+url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-alpine-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756974"
 
 [tools.pkl."platforms.macos-arm64"]
 checksum = "sha256:e39c157df0f00a35d34b46270a768784edcaf509aafbf743849b27b4c83ef83b"

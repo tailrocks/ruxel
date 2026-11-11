@@ -55,6 +55,13 @@ run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warn
 description = "Unit and integration tests"
 run = "cargo nextest run --workspace --all-features --locked --no-tests=pass"
 
+[tasks."dual-evaluator"]
+description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin"
+run = [
+  "mise install --locked pkl",
+  "cargo test --locked -p ruxel-config --test dual_evaluator",
+]
+
 [tasks.doctest]
 description = "Doctests (nextest does not run them)"
 run = "cargo test --workspace --doc --all-features --locked"
