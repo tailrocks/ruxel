@@ -32,9 +32,9 @@ fn process_output(mut command: Command) -> Result<String, String> {
         return Err("process failed".into());
     }
     // The CLIs behind these lookups append exactly one record terminator:
-    // printenv under fnox, and `op read`. A value that legitimately ends in
-    // a newline — PEM keys do — must keep it, so at most one trailing `\n`
-    // goes, plus the `\r` only when it is part of that terminator.
+    // `fnox get`, and `op read`. A value that legitimately ends in a newline
+    // — PEM keys do — must keep it, so at most one trailing `\n` goes, plus
+    // the `\r` only when it is part of that terminator.
     let mut stdout = String::from_utf8_lossy(&result.stdout).into_owned();
     if stdout.ends_with('\n') {
         stdout.pop();
@@ -55,19 +55,14 @@ impl Backend for ProcessBackend {
                 super::FNOX_KEY_GRAMMAR
             ));
         }
+        // A key configured `env = false` is never injected into `fnox
+        // exec`'s environment, so an exec+printenv read always fails for it;
+        // `fnox get` prints the resolved value whatever the key's env
+        // setting. `--if-missing error` keeps a missing key a failure: with
+        // the config's `warn` or `ignore`, `get` prints nothing and exits 0,
+        // which would silently resolve to an empty value.
         let mut cmd = Command::new(&self.fnox);
-        cmd.args([
-            "exec",
-            "--no-redact",
-            "--only",
-            key,
-            "--",
-            "sh",
-            "-c",
-            "printenv -- \"$1\"",
-            "sh",
-            key,
-        ]);
+        cmd.args(["get", "--if-missing", "error", key]);
         process_output(cmd)
     }
     fn onepassword_fields(

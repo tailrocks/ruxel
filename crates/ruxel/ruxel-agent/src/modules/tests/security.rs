@@ -57,28 +57,30 @@ fn command_and_shell_refuse_path_options_with_become_before_check_or_execution()
             become_user: Some("synthetic-user".into()),
         };
         for module in ["command", "shell"] {
-            for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
-                let params = if module == "command" {
-                    json!({"chdir": path, "argv":["true"]})
-                } else {
-                    json!({"chdir": path})
-                };
-                let result = super::execute(
-                    module,
-                    &params,
-                    if module == "command" { "" } else { "true" },
-                    None,
-                    &ctx,
-                    &mut crate::system_state::SystemState::default(),
-                );
-                assert_eq!(result.status, "failed", "{module} chdir {path}");
-                assert!(!result.changed);
-                assert!(
-                    result.result["msg"]
-                        .as_str()
-                        .unwrap()
-                        .contains("not supported with become_user")
-                );
+            for option in ["creates", "chdir"] {
+                for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
+                    let params = if module == "command" {
+                        json!({(option): path, "argv":["true"]})
+                    } else {
+                        json!({(option): path})
+                    };
+                    let result = super::execute(
+                        module,
+                        &params,
+                        if module == "command" { "" } else { "true" },
+                        None,
+                        &ctx,
+                        &mut crate::system_state::SystemState::default(),
+                    );
+                    assert_eq!(result.status, "failed", "{module} {option} {path}");
+                    assert!(!result.changed);
+                    assert!(
+                        result.result["msg"]
+                            .as_str()
+                            .unwrap()
+                            .contains("not supported with become_user")
+                    );
+                }
             }
         }
     }
@@ -192,6 +194,89 @@ fn swapping_the_temporary_path_for_a_symlink_cannot_redirect_ownership() {
     let mode = std::fs::metadata(&victim).unwrap().permissions().mode() & 0o7777;
     assert_eq!(mode, 0o640, "the victim's mode was redirected");
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "victim");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A second thread keeps swapping the temporary pathname for a symlink to
+/// an attacker file while a replacement is written: the publication must
+/// carry the bytes of the file that was opened. The attacker file must
+/// never reach the destination, and the destination must never be the
+/// attacker's symlink.
+///
+/// The publication is bound to the opened descriptor on Linux, where the
+/// agent ships. The other platforms publish the temporary pathname, so the
+/// race there is the platform's own.
+#[cfg(target_os = "linux")]
+#[test]
+fn swapping_the_temporary_path_cannot_publish_the_attacker_file() {
+    let root = std::env::temp_dir().join(format!("ruxel-atomic-publish-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir(&root).unwrap();
+    let attacker = root.join("attacker");
+    std::fs::write(&attacker, "attacker").unwrap();
+    let dest = root.join("dest");
+
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let racer_root = root.clone();
+    let racer_attacker = attacker.clone();
+    let racer_stop = stop.clone();
+    let racer = std::thread::spawn(move || {
+        while !racer_stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let Ok(entries) = std::fs::read_dir(&racer_root) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if !name.starts_with('.') || !name.ends_with(".tmp") {
+                    continue;
+                }
+                let path = entry.path();
+                if std::fs::symlink_metadata(&path).is_ok() {
+                    let _ = std::fs::remove_file(&path);
+                }
+                let _ = symlink(&racer_attacker, &path);
+            }
+        }
+    });
+
+    // A large body keeps the write running, so the swap lands while the
+    // replacement is open. A swap that races the publication itself may
+    // fail the write; that failure is the racer's, not the function's, so
+    // the write is retried.
+    let buffer = vec![7u8; 64 * 1024 * 1024];
+    let mut published = 0;
+    for _ in 0..200 {
+        if write_atomic_with(&dest, &buffer, Some(0o600), (None, None)).is_ok() {
+            published += 1;
+            // The destination holds the bytes that were written, not the
+            // attacker's file and not the attacker's symlink.
+            assert!(
+                !std::fs::symlink_metadata(&dest)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink(),
+                "the attacker symlink was published"
+            );
+            let content = std::fs::read(&dest).unwrap();
+            assert_eq!(content.len(), buffer.len(), "the published file is shorter");
+            assert!(
+                content.iter().all(|byte| *byte == 7),
+                "the published file is not the written one"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&attacker).unwrap(),
+                "attacker",
+                "the attacker file was published"
+            );
+            if published == 3 {
+                break;
+            }
+        }
+    }
+    assert_eq!(published, 3, "the racer starved the writes");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    racer.join().unwrap();
     let _ = std::fs::remove_dir_all(&root);
 }
 

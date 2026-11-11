@@ -704,7 +704,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["file"] = (s, m) -> validateTasks(s, m) + List(task(m, copy(s.path, s), null, null))
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
-  ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update")), null, lit(false)))
+  ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null, null), null, lit(false)))
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.upgrade), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
@@ -713,7 +713,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
-  ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash)), null, lit(false)), s, m.register))
+  ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
 }
 
 // File: stage, validate, then publish. A secret's candidate is temporary:
@@ -744,7 +744,7 @@ function temporaryValidation(f: core.File, m: Meta): engine.Task =
   )
 
 function validateCommand(f: core.File): engine.Command =
-  command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))))
+  command(f.validate.toList().map((a) -> a.replaceAll("%s", candidate(f))), null, null)
 
 /// Absence is idempotent, so the cleanup removes the candidate once and never
 /// reports a change again.
@@ -804,14 +804,19 @@ function sourcesFile(r: debian.AptRepository): engine.Copy = copyText(sourcesPat
 
 // Command and Script: a `creates` guard is a probe and a `when` condition, so
 // the controller checks the path before it resolves the task's environment: a
-// skipped action reads no secret store. `onChangeOf` needs the watched steps'
-// results beside the probe.
+// skipped action reads no secret store. That probe is stale by the time the
+// command executes, so the command carries the path too and the agent re-stats
+// it itself before it runs (`Command.creates`). `onChangeOf` needs the watched
+// steps' results beside the probe; the agent gets them handed down as
+// `Command.run_if_changed`, the same disjunct its `when` carries, because it
+// cannot read the controller's results.
 function actionTasks(a: core.Action, argv: List<String>, m: Meta): List<engine.Task> =
+  let (watched = if (a.onChangeOf.isEmpty) null else anyChanged(m.watching))
   if (a.creates == null)
-    List(task(m, command(argv), if (a.onChangeOf.isEmpty) null else anyChanged(m.watching), changeRule(a)))
+    List(task(m, command(argv, null, watched), watched, changeRule(a)))
   else List(
     task(helperMeta("Check whether \(a.creates) exists", m, probeKey(a.creates)), stat(a.creates), null, null),
-    task(m, command(argv), createsGuard(a, m), changeRule(a))
+    task(m, command(argv, a.creates, watched), createsGuard(a, m), changeRule(a))
   )
 
 /// The command runs when the created path is absent, or when any watched step
@@ -835,19 +840,39 @@ function anyChanged(ids: List<String>): engine.Expr =
 /// `always` is a change whenever the command runs, and in check and diff
 /// whenever it would run: the engine skips it there (`skipped`), and the
 /// steps that react to it must still see a pending change. A `creates` skip
-/// and a step not selected by `onChangeOf` stay unchanged.
+/// is two different things: the probe's `when` skips the task on the
+/// controller, before `changedWhen` is ever evaluated, and a step not
+/// selected by `onChangeOf` stays unchanged; the agent's own recheck skips
+/// with `skip.cause` and reports no change (`ran`).
 function changeRule(a: core.Action): engine.Expr =
   if (a.changes == "never") lit(false)
-  else if (a.changes is core.UnlessOutput) unlessOutput(a.changes)
-  else ran()
+  else if (a.changes is core.UnlessOutput) unlessOutput(a.changes, ran(a))
+  else ran(a)
 
-/// The command ran, or would run in check and diff.
-function ran(): engine.Expr = call2("or", ref(List("result", "changed")), call2("default", ref(List("result", "skipped")), lit(false)))
+/// The command ran, or would run in check and diff — except when the agent's
+/// recheck of `creates` skipped it: the path exists now, so there was nothing
+/// to run and there is nothing to report. Every other skip is a check-mode
+/// skip of a command that would have run.
+function ran(a: core.Action): engine.Expr =
+  call2("or", ref(List("result", "changed")),
+    if (a.creates == null) pendingSkipped()
+    else call2("and", pendingSkipped(), call2("ne", skipCause(), lit(createsRecheckSkip))))
+
+/// Whether the agent did not run the command because the mode says so: the
+/// engine reports `skipped` in check and diff, without a reason of its own.
+function pendingSkipped(): engine.Expr = call2("default", ref(List("result", "skipped")), lit(false))
+
+/// The reason the agent skipped with, empty for every skip without one.
+function skipCause(): engine.Expr = call2("default", ref(List("result", "skip", "cause")), lit(""))
+
+/// `skip.cause` of the agent's `creates` recheck; the agent spells it the
+/// same way, and only that skip reports no change.
+const createsRecheckSkip = "creates_exists"
 
 /// Changed when the command ran or would run (see `changeRule`; a `creates`
-/// skip reports no change) and its output lacks the marker. In check and
-/// diff the output is empty, so a command that would run counts as a change.
-function unlessOutput(u: core.UnlessOutput): engine.Expr = call2("and", ran(),
+/// recheck skip reports no change) and its output lacks the marker. In check
+/// and diff the output is empty, so a command that would run counts as a change.
+function unlessOutput(u: core.UnlessOutput, wouldRun: engine.Expr): engine.Expr = call2("and", wouldRun,
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
 
@@ -858,7 +883,7 @@ function unlessOutput(u: core.UnlessOutput): engine.Expr = call2("and", ran(),
 /// only ever passed as a quoted argument.
 function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
   "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; LoginShell changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
-)), null, lit(false))) { checkMode = false }
+), null, null), null, lit(false))) { checkMode = false }
 
 function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
@@ -919,8 +944,14 @@ function service(_name: String, _enabled: Boolean?, _state: String): engine.Serv
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
 function stat(_path: String): engine.Stat = new engine.Stat { path = _path; follow = true }
-function command(_argv: List<String>): engine.Command = new engine.Command {
+/// The command itself, with its guard: `_creates` is the path the agent
+/// re-stats before it executes, `_runIfChanged` the watched-step result that
+/// makes the path stale (`onChangeOf`). Neither is a change rule; that is the
+/// task's `changedWhen`.
+function command(_argv: List<String>, _creates: String?, _runIfChanged: engine.Expr?): engine.Command = new engine.Command {
   argv = new Listing { for (a in _argv) { a } }
+  when (_creates != null) { creates = _creates }
+  when (_runIfChanged != null) { run_if_changed = _runIfChanged }
 }
 
 // ── Run-time and secret text ────────────────────────────────────────────────

@@ -61,8 +61,9 @@ pub trait Backend: Send + Sync {
     /// Returns an error if the backend cannot resolve the key.
     fn fnox(&self, key: &str) -> Result<String, String>;
     /// Fetches only the named field of the item: the field objects whose
-    /// label or id matches `field`, never the whole item. When a section is
-    /// named, the backend uses the 1Password CLI's `section.field` selector.
+    /// label or id matches `field` — case-insensitively, as 1Password matches
+    /// labels — never the whole item. When a section is named, the backend
+    /// uses the 1Password CLI's `section.field` selector.
     ///
     /// # Errors
     /// Returns an error if the backend cannot fetch the field.
@@ -309,16 +310,22 @@ fn synthetic_value(lookup: &Lookup) -> String {
 /// Selects the one field a lookup names. Several fields may share a label
 /// across sections: without a section the lookup fails naming the sections,
 /// never taking the first match; with one, the fields of that section alone
-/// are considered. The message names labels, never values.
+/// are considered. 1Password matches labels case-insensitively — a reference
+/// `op://Vault/Item/PASSWORD` names the field labeled `password` — so labels
+/// and ids fold case here too, and two labels that differ only by case are
+/// two matches, not one. The message names labels, never values.
 fn select_field(
     document: &serde_json::Value,
     item: &str,
     field: &str,
     section: Option<&str>,
 ) -> Result<String, String> {
-    let matches = |v: &serde_json::Value, wanted| {
-        v.get("label").and_then(|v| v.as_str()) == Some(wanted)
-            || v.get("id").and_then(|v| v.as_str()) == Some(wanted)
+    let matches = |v: &serde_json::Value, wanted: &str| {
+        ["label", "id"].iter().any(|key| {
+            v.get(*key)
+                .and_then(|v| v.as_str())
+                .is_some_and(|have| have.to_lowercase() == wanted.to_lowercase())
+        })
     };
     let candidates: Vec<&serde_json::Value> = document
         .as_array()
@@ -333,6 +340,23 @@ fn select_field(
         .copied()
         .collect();
     if hits.len() > 1 {
+        // With no section on any match there is no section to name that
+        // could disambiguate, so the labels themselves are named.
+        if hits.iter().all(|hit| hit.get("section").is_none()) {
+            let labels: Vec<String> = hits
+                .iter()
+                .map(|hit| {
+                    hit.get("label")
+                        .or_else(|| hit.get("id"))
+                        .and_then(|v| v.as_str())
+                        .map_or_else(|| "no label".to_owned(), |name| format!("\"{name}\""))
+                })
+                .collect();
+            return Err(format!(
+                "ambiguous 1Password field \"{field}\" in item \"{item}\": it matches labels {}",
+                labels.join(", ")
+            ));
+        }
         let sections: Vec<String> = hits
             .iter()
             .map(|hit| {

@@ -202,18 +202,21 @@ fn edge_values_lower_with_their_guards() -> Result {
     assert_eq!(reload["changedWhen"], ran);
     // The `creates` probes follow links: a dangling link does not count as
     // the path existing. The guard is a `when` condition on the controller,
-    // so the command itself carries no `creates` and a skipped action
-    // resolves no secret environment.
+    // so a skipped action resolves no secret environment, and the command
+    // carries the path for its own recheck at execution time, beside the
+    // `onChangeOf` result that overrides the guard.
     let position = |name: &str| all.iter().position(|task| task["name"] == name);
-    for (probe_name, action_name, function) in [
+    for (probe_name, action_name, path, function) in [
         (
             "Check whether /var/lib/app/migrated exists",
             "Run /usr/local/bin/app-migrate",
+            "/var/lib/app/migrated",
             "or",
         ),
         (
             "Check whether /var/lib/app/initialized exists",
             "Run /usr/local/bin/app-init",
+            "/var/lib/app/initialized",
             "not",
         ),
     ] {
@@ -221,15 +224,46 @@ fn edge_values_lower_with_their_guards() -> Result {
         let action = position(action_name).ok_or("no guarded action")?;
         assert_eq!(probe + 1, action);
         assert_eq!(all[probe]["operation"]["follow"], true);
-        assert!(all[action]["operation"]["creates"].is_null());
+        assert_eq!(all[action]["operation"]["creates"], path);
         assert_eq!(all[action]["when"]["function"], function);
         assert_eq!(all[action]["when"]["args"][0]["path"][0], "results");
+        // The agent's recheck runs the same guard as the `when`: the watched
+        // step's change, which is the gate's first disjunct when there is one.
+        let watched = &all[action]["operation"]["run_if_changed"];
+        if function == "or" {
+            assert_eq!(*watched, all[action]["when"]["args"][0], "{action_name}");
+        } else {
+            assert!(watched.is_null(), "{action_name}");
+        }
     }
-    // A `creates` skip reports no change even though its output lacks the marker.
+    // A `creates` recheck skip reports no change even though its output lacks
+    // the marker; every other skip (check and diff) still reports a pending one.
     let init = &all[named("Run /usr/local/bin/app-init")?];
     assert_eq!(init["changedWhen"]["function"], "and");
-    assert_eq!(init["changedWhen"]["args"][0], ran);
+    assert_eq!(init["changedWhen"]["args"][0], ran_except_recheck());
     Ok(())
+}
+
+/// The `changedWhen` of a `creates` action: the command ran, or would run in
+/// check and diff (`skipped`), except when the agent's own recheck skipped it
+/// because the path exists now — that skip reports no change.
+fn ran_except_recheck() -> serde_json::Value {
+    serde_json::json!({"kind": "call", "function": "or", "args": [
+        {"kind": "ref", "path": ["result", "changed"]},
+        {"kind": "call", "function": "and", "args": [
+            {"kind": "call", "function": "default", "args": [
+                {"kind": "ref", "path": ["result", "skipped"]},
+                {"kind": "literal", "value": false},
+            ]},
+            {"kind": "call", "function": "ne", "args": [
+                {"kind": "call", "function": "default", "args": [
+                    {"kind": "ref", "path": ["result", "skip", "cause"]},
+                    {"kind": "literal", "value": ""},
+                ]},
+                {"kind": "literal", "value": "creates_exists"},
+            ]},
+        ]},
+    ]})
 }
 
 /// The validator reads a candidate only root can change, whatever the

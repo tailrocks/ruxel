@@ -12,7 +12,7 @@ mod attrs;
 use attrs::apply_attrs_at;
 #[cfg(test)]
 use attrs::open_attrs;
-use attrs::{apply_attrs, apply_attrs_fd};
+use attrs::{apply_attrs, apply_attrs_fd, apply_attrs_with};
 
 mod apt;
 mod apt_repository;
@@ -252,11 +252,46 @@ fn bool_param(obj: &Map<String, Value>, key: &str, default: bool) -> bool {
 }
 
 fn resolve_uid(owner: &str) -> Result<u32, String> {
+    #[cfg(test)]
+    count_ownership_resolution();
     if let Ok(uid) = owner.parse::<u32>() {
         return Ok(uid);
     }
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     resolve_uid_from(&passwd, owner)
+}
+
+/// The requested ownership of a file, resolved to ids.
+pub(super) struct Ownership {
+    pub(super) uid: Option<u32>,
+    pub(super) gid: Option<u32>,
+}
+
+/// Resolves the requested owner and group of `obj` to ids.
+///
+/// The ids are resolved once and reused by the caller: a change to the
+/// passwd or group file between the resolution and the use of the ids
+/// cannot fail or mis-apply a publication that already succeeded.
+pub(super) fn resolve_ownership(obj: &Map<String, Value>) -> Result<Ownership, String> {
+    Ok(Ownership {
+        uid: str_param(obj, "owner").map(resolve_uid).transpose()?,
+        gid: str_param(obj, "group").map(resolve_gid).transpose()?,
+    })
+}
+
+// The number of ownership resolutions of the current thread.
+//
+// The counter is a test aid: a module that resolves the requested
+// ownership once must not resolve it again.
+#[cfg(test)]
+thread_local! {
+    pub(super) static OWNERSHIP_RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts one ownership resolution of the current thread.
+#[cfg(test)]
+fn count_ownership_resolution() {
+    OWNERSHIP_RESOLUTIONS.with(|count| count.set(count.get() + 1));
 }
 
 fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
@@ -271,6 +306,8 @@ fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
 }
 
 fn resolve_gid(group: &str) -> Result<u32, String> {
+    #[cfg(test)]
+    count_ownership_resolution();
     if let Ok(gid) = group.parse::<u32>() {
         return Ok(gid);
     }

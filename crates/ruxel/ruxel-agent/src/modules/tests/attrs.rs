@@ -1,6 +1,6 @@
-use super::{apply_attrs, apply_attrs_fd, open_attrs};
+use super::{apply_attrs, apply_attrs_fd, apply_attrs_with, open_attrs};
 use serde_json::json;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 
 #[test]
 fn descriptor_attributes_survive_alias_retarget() {
@@ -95,6 +95,41 @@ fn directory_access_modes_use_pinned_attributes() {
             0o700
         );
     }
+}
+
+/// The ownership that was resolved before the write is the ownership that is
+/// applied: the names in the parameters are not resolved again, so a
+/// change to the passwd or group file between the resolution and the
+/// publication cannot fail or mis-apply it.
+#[test]
+fn the_resolved_ownership_is_applied_without_resolving_the_names_again() {
+    let root = Root::new();
+    let path = root.path().join("file");
+    std::fs::write(&path, "payload").unwrap();
+    let meta = std::fs::metadata(&path).unwrap();
+    let ownership = crate::modules::Ownership {
+        uid: Some(meta.uid()),
+        gid: Some(meta.gid()),
+    };
+    // The names do not resolve at all: they are the names the write
+    // resolved before it published.
+    let attrs = json!({
+        "owner": "ruxel-user-does-not-exist",
+        "group": "ruxel-group-does-not-exist",
+    });
+    let mut changed = false;
+    apply_attrs_with(
+        &path,
+        attrs.as_object().unwrap(),
+        &ownership,
+        &mut changed,
+        false,
+    )
+    .unwrap();
+    let applied = std::fs::metadata(&path).unwrap();
+    assert_eq!(applied.uid(), ownership.uid.unwrap());
+    assert_eq!(applied.gid(), ownership.gid.unwrap());
+    assert!(!changed, "the ownership already matched");
 }
 
 struct Root(std::path::PathBuf);

@@ -149,6 +149,18 @@ class Command {
   fixed kind = "command"
   argv: CommandArgs
   chdir: Text? = null
+  /// Guard-only: the path whose existence skips the command. The controller
+  /// probes it before it resolves the task's environment, so a task the probe
+  /// skips reads no secret store; the agent re-stats it immediately before it
+  /// runs the command, where the probe's answer can already be stale. It gates
+  /// execution only: it never decides the reported change.
+  creates: Text? = null
+  /// The evaluated `onChangeOf` guard: a watched step had changed when the
+  /// controller dispatched the command. A watcher re-runs the command even
+  /// where the created path exists, so this overrides the agent's `creates`
+  /// recheck — the first disjunct of the same `when`, handed down because the
+  /// agent cannot read the controller's results.
+  run_if_changed: Flag? = null
 }
 
 class Copy {
@@ -234,7 +246,11 @@ class Shell {
   fixed kind = "shell"
   chdir: Text? = null
   cmd: String(this.length > 0)|Expr
+  /// Guard-only: see `Command.creates`.
+  creates: Text? = null
   executable: Text? = null
+  /// See `Command.run_if_changed`.
+  run_if_changed: Flag? = null
 }
 
 class Slurp {

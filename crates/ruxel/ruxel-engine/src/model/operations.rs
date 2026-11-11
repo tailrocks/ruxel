@@ -37,6 +37,8 @@ pub(super) const OPERATIONS: &[Operation] = &[
     operation!("command";
         "argv" => true, FieldType::NonEmptyStringList;
         "chdir" => false, FieldType::Text;
+        "creates" => false, FieldType::Text;
+        "run_if_changed" => false, FieldType::Flag;
     ),
     operation!("copy";
         "content" => false, FieldType::Text;
@@ -102,7 +104,9 @@ pub(super) const OPERATIONS: &[Operation] = &[
     operation!("shell";
         "chdir" => false, FieldType::Text;
         "cmd" => true, FieldType::Text;
+        "creates" => false, FieldType::Text;
         "executable" => false, FieldType::Text;
+        "run_if_changed" => false, FieldType::Flag;
     ),
     operation!("slurp";
         "src" => true, FieldType::Text;

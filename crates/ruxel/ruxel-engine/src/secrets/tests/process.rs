@@ -73,12 +73,13 @@ printf 'call\n' >> "${0%/*}/calls"
 case "$6" in
 username) printf '%s' '[{"id":"username","label":"Username","value":"alice"}]';;
 login.Password) printf '%s' '[{"label":"Password","section":{"id":"login","label":"Login"},"value":"synthetic-value"}]';;
+note) printf '%s' '[{"id":"note","label":"NOTE","value":"process-note"}]';;
 *) exit 5;;
 esac"#,
     );
     let fnox = fixture.script(
         "fake-fnox",
-        r#"[ "$#" -eq 10 ] && [ "$1" = exec ] && [ "$2" = --no-redact ] && [ "$3" = --only ] && [ "$4" = KEY ] && [ "$5" = -- ] && [ "$6" = sh ] && [ "$7" = -c ] && [ "$8" = 'printenv -- "$1"' ] && [ "$9" = sh ] && [ "${10}" = KEY ] || exit 5
+        r#"[ "$#" -eq 4 ] && [ "$1" = get ] && [ "$2" = --if-missing ] && [ "$3" = error ] && [ "$4" = KEY ] || exit 5
 printf synthetic-fnox"#,
     );
     let instance = resolver(&fnox, &op);
@@ -91,13 +92,24 @@ printf synthetic-fnox"#,
         field: "Password".into(),
         section: Some("login".into()),
     };
+    // The reference's case reaches `--fields` as authored; selection folds
+    // it against the field labeled "NOTE".
+    let note = Lookup::OnePasswordUri {
+        reference: "op://vault/--help/note".into(),
+    };
     instance
-        .prefetch(&[username.clone(), password.clone(), username.clone()])
+        .prefetch(&[
+            username.clone(),
+            password.clone(),
+            note.clone(),
+            username.clone(),
+        ])
         .unwrap();
     assert_eq!(instance.resolve(&username).unwrap(), "alice");
     assert_eq!(instance.resolve(&password).unwrap(), "synthetic-value");
+    assert_eq!(instance.resolve(&note).unwrap(), "process-note");
     // One op call per named field, shared by the repeated lookups.
-    assert_eq!(fixture.count(), 2);
+    assert_eq!(fixture.count(), 3);
     assert_eq!(
         instance
             .resolve(&Lookup::Fnox { key: "KEY".into() })
@@ -221,10 +233,10 @@ fn op_fields_with_cli_selector_syntax_are_refused_before_op_runs() {
     assert_eq!(fixture.count(), 0);
 }
 
-/// These CLIs append exactly one record terminator to the value: printenv
-/// under fnox, and `op read`. A value that legitimately ends in a newline —
-/// PEM keys do — must keep it, so the terminator alone is removed, never a
-/// newline the value itself carries.
+/// These CLIs append exactly one record terminator to the value: `fnox get`,
+/// and `op read`. A value that legitimately ends in a newline — PEM keys
+/// do — must keep it, so the terminator alone is removed, never a newline
+/// the value itself carries.
 #[test]
 fn only_the_record_terminator_is_removed_not_value_newlines() {
     let fixture = Fixture::new();
@@ -303,6 +315,51 @@ esac"#,
         );
     }
     assert_eq!(fixture.count(), 3);
+}
+
+/// A key configured `env = false` is never injected into `fnox exec`'s
+/// environment, so an exec+printenv read always fails for it; the read goes
+/// through `fnox get`, which prints the resolved value plus one newline
+/// whatever the key's env setting. `--if-missing error` keeps a missing key
+/// a failure: with the config's `warn` or `ignore`, `get` prints nothing and
+/// exits 0, which would silently resolve to an empty value.
+#[test]
+fn env_false_keys_are_read_through_fnox_get_and_missing_keys_fail() {
+    let fixture = Fixture::new();
+    let fnox = fixture.script(
+        "fake-fnox",
+        r#"case "$1" in
+get)
+  [ "$#" -eq 4 ] && [ "$2" = --if-missing ] && [ "$3" = error ] || exit 6
+  printf 'call\n' >> "${0%/*}/calls"
+  case "$4" in
+  ENV_FALSE_KEY) printf 'env=false-value\n';;
+  *) printf 'fnox-sensitive-missing-error' >&2; exit 7;;
+  esac;;
+exec)
+  # An env=false key is never injected, so printenv finds nothing.
+  exit 1;;
+*) exit 9;;
+esac"#,
+    );
+    let instance = resolver(&fnox, &fnox);
+    assert_eq!(
+        instance
+            .resolve(&Lookup::Fnox {
+                key: "ENV_FALSE_KEY".into(),
+            })
+            .unwrap(),
+        "env=false-value"
+    );
+    assert_eq!(fixture.count(), 1);
+    // A missing key stays a redacted failure, never an empty value.
+    let error = instance
+        .resolve(&Lookup::Fnox {
+            key: "MISSING".into(),
+        })
+        .unwrap_err();
+    assert_eq!(error, "secret lookup failed");
+    assert!(!error.contains("fnox-sensitive-missing-error"));
 }
 
 #[test]

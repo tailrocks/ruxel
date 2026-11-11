@@ -31,6 +31,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     validate_become_options(obj, ctx)?;
+    if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
+        return Ok(result);
+    }
     if let Some(result) = check_mode_guard(Value::from(argv.clone()), ctx.check_mode) {
         return Ok(result);
     }
@@ -48,10 +51,45 @@ pub(super) fn validate_become_options(
     params: &serde_json::Map<String, Value>,
     ctx: &ExecContext,
 ) -> Result<(), String> {
-    if ctx.become_user.is_some() && str_param(params, "chdir").is_some() {
-        return Err("chdir is not supported with become_user".into());
+    if ctx.become_user.is_some() {
+        for option in ["creates", "chdir"] {
+            if str_param(params, option).is_some() {
+                return Err(format!("{option} is not supported with become_user"));
+            }
+        }
     }
     Ok(())
+}
+
+/// Re-stat `creates` immediately before the command runs. The controller's
+/// own probe gates the task before it resolves the environment — a task it
+/// skips reads no secret store — but its answer ages: a marker created after
+/// it would let the command run anyway, a removed one would keep a stale
+/// skip. The agent checks the path itself now, at execution: it exists by
+/// then, the command does not run and nothing reports a change; it vanished,
+/// the dispatched command runs.
+///
+/// `run_if_changed` is the `onChangeOf` guard the controller evaluated when
+/// it dispatched: a watched step changed, so the created path is stale and
+/// the command runs even where it exists, exactly as the task's `when` says.
+/// The same `creates_exists` cause tells the engine's `changedWhen` that this
+/// skip reports no change, where a check-mode skip reports a pending one.
+pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value) -> Option<Value> {
+    let creates = str_param(params, "creates")?;
+    if super::bool_param(params, "run_if_changed", false) {
+        return None;
+    }
+    // Follows links, as the controller's probe does: a dangling link is not
+    // the path existing.
+    std::path::Path::new(creates).exists().then(|| {
+        json!({
+            "cmd": cmd, "rc": 0, "changed": false, "failed": false,
+            "skipped": true,
+            "skip": {"cause": "creates_exists"},
+            "msg": format!("Did not run command since '{creates}' exists"),
+            "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+        })
+    })
 }
 
 pub(super) fn check_mode_guard(cmd: Value, check_mode: bool) -> Option<Value> {
@@ -115,6 +153,60 @@ mod tests {
         assert_eq!(result["stdout"], "a b; $HOME 'quoted'");
         assert!(run(&json!({"cmd":"printf legacy"}), &ctx).is_err());
         assert!(run(&json!({"argv":[], "cmd":"legacy"}), &ctx).is_err());
+    }
+
+    /// The controller probed the created path before it resolved the task's
+    /// environment and dispatched the command; the marker appears only now,
+    /// between that dispatch and the exec. The agent re-stats the path itself:
+    /// the command does not run, and nothing reports a change. The converse
+    /// holds too — a marker that vanished since the probe lets the dispatched
+    /// command run.
+    #[test]
+    fn creates_recheck_skips_a_marker_that_appeared_after_dispatch() {
+        let root =
+            std::env::temp_dir().join(format!("ruxel-command-creates-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir(&root).unwrap();
+        let marker = root.join("marker");
+        let executed = root.join("executed");
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+
+        // The probe saw no marker, so the controller dispatched the command.
+        assert!(!marker.exists());
+        std::fs::write(&marker, b"created after the probe").unwrap();
+        let params = json!({"argv": ["/usr/bin/touch", executed], "creates": marker});
+        let result = run(&params, &ctx).unwrap();
+        assert_eq!(result["skipped"], true, "{result}");
+        assert_eq!(result["changed"], false, "{result}");
+        assert_eq!(result["failed"], false, "{result}");
+        assert_eq!(result["skip"]["cause"], "creates_exists", "{result}");
+        assert!(!executed.exists(), "the command must not run");
+
+        // In check and diff the same recheck reports nothing to do either.
+        let check = ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+        let result = run(&params, &check).unwrap();
+        assert_eq!(result["skipped"], true, "{result}");
+        assert_eq!(result["changed"], false, "{result}");
+        assert!(!executed.exists(), "the command must not run");
+
+        // The marker vanished after the probe: the dispatched command runs.
+        std::fs::remove_file(&marker).unwrap();
+        let result = run(&params, &ctx).unwrap();
+        assert_eq!(result["changed"], true, "{result}");
+        assert!(executed.exists(), "the command must run");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
