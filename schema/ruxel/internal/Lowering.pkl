@@ -73,6 +73,7 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["command"] = (s) -> s is core.Command
   ["script"] = (s) -> s is core.Script
   ["capture"] = (s) -> s is core.Capture
+  ["fetchSecret"] = (s) -> s is core.FetchSecret
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
   ["packageIndex"] = (s) -> s is debian.AptPackageIndex
@@ -118,11 +119,15 @@ function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<Stage
 /// Every host a stage runs on or a capture reads from, once.
 function hostsOf(stages: Listing<core.Stage>): List<core.Host> =
   stages.toList()
-    .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())))
+    .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())) + fetchHosts(flatten(s.steps.toList())))
     .fold(List(), (seen, h) -> addHost(seen, h))
 
 function captureHosts(steps: List<core.Step>): List<core.Host> =
   steps.filter((s) -> s is core.Capture && s.runOn != null).map((s) -> s.runOn)
+
+/// The one host each FetchSecret reads from, which the inventory must name.
+function fetchHosts(steps: List<core.Step>): List<core.Host> =
+  steps.filter((s) -> s is core.FetchSecret).map((s) -> s.runOn)
 
 /// Compares hosts by their settings. Not `==`: comparing objects from the
 /// inventory module takes exponential time in pklr (P12).
@@ -285,6 +290,7 @@ class Walker {
     if (!(s is core.Step)) throw(copyMessage("step"))
     else if (!canonicalStep(s)) throw(copyMessage("step"))
     else if (s is core.Capture && s.runOn != null && !(s.runOn is core.Host)) throw(copyMessage("host"))
+    else if (s is core.FetchSecret && !(s.runOn is core.Host)) throw(copyMessage("host"))
     else if (listed(s).any((w) -> !(w is core.Step) || !canonicalStep(w))) throw(copyMessage("step"))
     else if (s is core.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
     else if (s is core.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
@@ -338,6 +344,8 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
   else if (s is core.File && hasSecrets(s.content) && !secretMode(s.mode))
     List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
+  else if (s is core.FetchSecret && !s.fnoxKey.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
+    List("fnox key \"\(s.fnoxKey)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -559,6 +567,7 @@ const local keyOrder = new KeyOrder {}
 
 const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["file"] = (s) -> fields(List(s.path, s.content.sha256, canonicalMode(s.mode), optional(s.owner), optional(s.group), fields(s.validate.toList())))
+  ["fetchSecret"] = (s) -> fields(List(s.fromPath, s.runOn.name, s.fnoxKey))
   ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
@@ -589,6 +598,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["loginShell"] = (s) -> List("the login shell of \(s.user)")
   ["timezone"] = (_) -> List("the timezone")
+  ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
   ["packageIndex"] = (_) -> List()
   ["command"] = (_) -> List()
@@ -672,6 +682,7 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["command"] = (s) -> "Run " + s.run.join(" ")
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
+  ["fetchSecret"] = (s) -> "Fetch \(s.fromPath) into fnox"
 }
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
@@ -714,7 +725,26 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
+  ["fetchSecret"] = (s, m) -> List(fetchSecretTask(s, m))
 }
+
+/// The FetchSecret task: a read-only slurp the controller turns into a fnox
+/// store. The task is no-log (a secret-bearing step), and the controller
+/// runs it in apply only — in check and diff it answers known-after-apply
+/// without contacting the host or fnox.
+function fetchSecret(s: core.FetchSecret): engine.FetchSecret =
+  new engine.FetchSecret { path = s.fromPath; key = s.fnoxKey }
+
+/// The fetch is delegated to the one host the file is read on, like a
+/// capture with a `runOn`: a stage that runs on several hosts reads the
+/// file on the named host alone, never on a host that does not have it,
+/// and the host is named in the task, so the plan shows where the read
+/// happens.
+function fetchSecretTask(s: core.FetchSecret, m: Meta): engine.Task =
+  (task(m, fetchSecret(s), null, null)) {
+    delegateTo = s.runOn.name
+    delegateAllow = new Listing { s.runOn.name }
+  }
 
 // File: stage, validate, then publish. A secret's candidate is temporary:
 // validation removes it in the block's `always`, success or failure, so no
@@ -974,7 +1004,15 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// placeholder can never swallow a later one, an unterminated placeholder
 /// fails the prefix count in `segmentsOf` and is refused. Malformed text is
 /// parsed and refused, never left behind as literal content.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_(?:rt|secret)_8d41\.)"#)
+///
+/// The terminator of a secret may not be the opening of another reserved
+/// prefix: `ruxel_rt_8d41.` or `ruxel_secret_8d41.` followed by a
+/// placeholder body — the run-time name, or the secret's actual encoded
+/// body: its length-prefixed parts (`f`, `g`, `o`, `r`, `s` atoms of
+/// `size:text`, `Core.sized`), whose text is escaped and so holds no `_`.
+/// Literal text that only looks like a prefix — the reserved words without
+/// a body — is ordinary content and passes.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:f[0-9]{1,18}:[^_]*|g(?:[0-9]{1,18}:[^_]*){2}|o(?:[0-9]{1,18}:[^_]*){4}|r[0-9]{1,18}:[^_]*|s[0-9]{1,18}:[^_]*)+__)"#)
 const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
 /// Text without placeholders stays a string. Run-time placeholders
@@ -1017,16 +1055,23 @@ const function segmentAt(_start: Int, _end: Int, _runtime: String?, _secret: Str
 /// does not know is refused here, like a secret reference that does not
 /// decode (in `SecretParser`).
 function segmentsOf(text: String): List<Segment> =
-  let (all = anyPlaceholder.findMatchesIn(text).map((m) ->
+  let (matches = anyPlaceholder.findMatchesIn(text))
+  let (all = matches.map((m) ->
     if (m.groups[1] != null)
       segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), m.groups[1].value, null)
     else
       segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), null, m.groups[2].value)))
-  let (prefixes = secretPrefix.findMatchesIn(text).length)
-  let (secrets = all.filter((s) -> s.secret != null).length)
+  // The prefix count is overlap-aware: a placeholder's own reserved
+  // prefixes are accounted for — its opening, and the terminator that
+  // following literal text completes into another full prefix, which is
+  // the word's own text and never a second secret. Only a prefix that
+  // starts outside every placeholder is a secret reference of its own
+  // that never matched, and refuses the text as malformed.
+  let (stray = secretPrefix.findMatchesIn(text).filter((p) ->
+    matches.filter((m) -> m.start <= p.start && p.start < m.end).isEmpty).length)
   let (badSecret = all.filter((s) -> s.secret != null && ((s.secret ?? "").isEmpty || (s.secret ?? "").contains("_"))))
   let (strange = all.filter((s) -> s.runtime != null && !(s.runtime ?? "").matches(knownPlaceholder)))
-  if (prefixes > secrets || !badSecret.isEmpty) throw(malformed)
+  if (stray > 0 || !badSecret.isEmpty) throw(malformed)
   else if (!strange.isEmpty) throw("File content contains an unknown run-time value: __ruxel_rt_8d41.\(strange.first.runtime ?? "")__")
   else all
 
@@ -1087,7 +1132,7 @@ class SecretParser {
     if (tag == "f")
       let (v = this.take(body)) atom(List(fnoxLookup(fnoxKeyValidated(unescape(v[0])))), v[1])
     else if (tag == "g")
-      let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(fnoxLookup(fnoxKeyValidated(unescape(key[0])))), formatValidated(unescape(format[0]), format[1])))
+      let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(generatedLookup(fnoxKeyValidated(unescape(key[0])), generatedFormatValidated(unescape(format[0])))), format[1]))
     else if (tag == "r")
       let (v = this.take(body)) atom(List(opReference(opReferenceValidated(unescape(v[0])))), v[1])
     else if (tag == "o")
@@ -1099,13 +1144,22 @@ class SecretParser {
     else throw(malformed)
 
   /// Reads one length-prefixed string of the encoding: the text, and the
-  /// rest. A digit run longer than six cannot fit the text that remains.
+  /// rest. The prefix is the text's own length, as `Core.sized` writes it,
+  /// so it is as long as the text needs: a prefix of more than eighteen
+  /// digits names more text than any body can hold and is refused. The
+  /// body that remains is the real bound.
+  ///
+  /// The prefix is read without a regular expression: the body may be a
+  /// million characters long, and a scan of it is a cost the encoding does
+  /// not need.
   function take(body: String): List<String> =
-    let (heads = sizedHead.findMatchesIn(body))
-    if (heads.isEmpty || heads.first.groups[1].value.length > 6 || heads.first.end + heads.first.groups[1].value.toInt() > body.length) throw(malformed)
+    let (colon = body.indexOf(":"))
+    let (digits = if (colon <= 0) "" else body.substring(0, colon))
+    let (named = colon > 0 && digits.matches(Regex("[0-9]+")) && digits.length <= 18)
+    let (size = if (named) digits.toInt() else 0)
+    if (!named || colon + 1 + size > body.length) throw(malformed)
     else
-      let (size = heads.first.groups[1].value.toInt())
-      List(body.substring(heads.first.end, heads.first.end + size), body.substring(heads.first.end + size, body.length))
+      List(body.substring(colon + 1, colon + 1 + size), body.substring(colon + 1 + size, body.length))
 }
 
 /// One parsed atom of a secret reference: what it lowers to, and the rest of
@@ -1119,7 +1173,6 @@ const function atom(_exprs: List<engine.Expr>, _rest: String): Atom =
   new Atom { exprs = _exprs; rest = _rest }
 
 const local parser = new SecretParser {}
-const local sizedHead = Regex(#"^([0-9]+):"#)
 const malformed: String = "File content contains a malformed secret reference"
 
 /// Lowering re-validates everything it decodes with the same sentences the
@@ -1132,11 +1185,11 @@ const function fnoxKeyValidated(key: String): String =
   if (key.matches(Regex("[A-Z][A-Z0-9_]{1,127}"))) key
   else throw("fnox key \"\(key)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
 
-/// Validates a generated key's format and hands the rest of the encoding on:
-/// the format itself lowers to nothing, because generation is apply-time
-/// work.
-const function formatValidated(format: String, rest: String): String =
-  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) rest
+/// Validates a generated key's format and hands the whole encoding on: the
+/// format reaches the engine, because generation is apply-time work the
+/// engine performs.
+const function generatedFormatValidated(format: String): String =
+  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) format
   else throw("fnoxGenerated format \"\(format)\" is not one of hex16, hex32, base64-32 or alnum32")
 
 const function opReferenceValidated(reference: String): String =
@@ -1155,9 +1208,18 @@ const function referenceParts(reference: String): List<String> =
 const function opReferenceLabelsValidated(reference: String, parts: List<String>): String =
   let (vault = opLabelValidated("vault", parts[0]))
   let (item = opLabelValidated("item", parts[1]))
-  let (section = if (parts.length == 4) opSectionValidated(parts[2]) else "")
-  let (field = opFieldValidated(parts.last))
+  let (section = if (parts.length == 4) opReferenceLabelValidated("section", parts[2]) else "")
+  let (field = opReferenceLabelValidated("field", parts.last))
   reference
+
+/// A label of a full `op://` reference. A dot is an ordinary character
+/// there: the parts of a reference are separated by `/`, and the reference
+/// is read as it is written. The CLI's own selector syntax — a comma and an
+/// equals sign — is refused, as it is in the structured selector.
+const function opReferenceLabelValidated(what: String, label: String): String =
+  if (label.contains(",") || label.contains("="))
+    throw("1Password \(what) \"\(label)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else opLabelValidated(what, label)
 
 const function opLabelValidated(what: String, label: String): String =
   if (label.contains("__ruxel_secret_8d41.") || label.contains("__ruxel_rt_8d41."))
@@ -1227,6 +1289,8 @@ const local function isOpReference(r: String): Boolean =
 const local function unescape(text: String): String = text.replaceAll("\u{1f}", "_").replaceAll("\u{1e}", "\u{1f}")
 
 const function fnoxLookup(_key: String): engine.Lookup = new engine.Lookup { provider = "fnox"; key = _key }
+const function generatedLookup(_key: String, _format: String): engine.Lookup =
+  new engine.Lookup { provider = "fnox-generated"; key = _key; format = _format }
 const function opReference(_reference: String): engine.Lookup = new engine.Lookup { provider = "op"; reference = _reference }
 const function opFields(_vault: String, _item: String, _section: String?, _field: String): engine.Lookup =
   new engine.Lookup { provider = "op"; vault = _vault; item = _item; section = _section; field = _field }
@@ -1246,10 +1310,12 @@ function envOf(s: core.Step): Mapping<String, engine.Expr> =
   if (!(s is core.Action)) new Mapping {}
   else new Mapping { for (k, v in s.environment) { [envKey(s, k)] = envValue(s, k, v) } }
 
-/// Whether a secret appears anywhere in a step: its file content, or an
-/// environment value. Such a task is never logged.
+/// Whether a secret appears anywhere in a step: its file content, an
+/// environment value, or the step itself carrying one (FetchSecret). Such a
+/// task is never logged.
 const function secretStep(s: core.Step): Boolean =
-  (s is core.File && hasSecrets(s.content))
+  s is core.FetchSecret
+    || (s is core.File && hasSecrets(s.content))
     || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
 
 function envKey(s: core.Step, key: String): String =

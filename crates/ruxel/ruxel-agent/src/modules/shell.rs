@@ -17,7 +17,7 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     if let Some(result) = creates_guard(obj, Value::from(free_form)) {
         return Ok(result);
     }
-    if let Some(result) = check_mode_guard(Value::from(free_form), ctx.check_mode) {
+    if let Some(result) = check_mode_guard(obj, Value::from(free_form), ctx.check_mode) {
         return Ok(result);
     }
 

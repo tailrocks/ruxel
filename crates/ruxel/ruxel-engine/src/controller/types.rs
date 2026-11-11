@@ -10,6 +10,9 @@ pub enum Mode {
 pub struct Request {
     pub host: String,
     pub task: super::v1::RenderedTask,
+    /// The keyed fingerprint of the task's secret-bearing content, built
+    /// from the selectors alone before the content was evaluated.
+    pub content_fingerprint: Option<String>,
 }
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Recap {

@@ -1,17 +1,16 @@
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "linux"))]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(target_os = "linux")]
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, RenameFlags};
-#[cfg(target_os = "linux")]
-use std::ffi::CString;
+use rustix::fs::{AtFlags, FileType, Mode, OFlags};
 use std::ffi::OsStr;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-#[cfg(target_os = "linux")]
-use std::os::unix::ffi::OsStrExt;
+use std::os::fd::OwnedFd;
+#[cfg(not(target_os = "linux"))]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
 /// The platform's raw mode for a permission set, as `Mode`.
 #[cfg(target_os = "linux")]
@@ -42,6 +41,92 @@ fn parent_of(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
+/// The destination as it is now: the mode and the owner a replacement
+/// keeps.
+struct Existing {
+    mode: u32,
+    uid: u32,
+    gid: u32,
+}
+
+/// The destination's parent directory, opened once.
+///
+/// On Linux the parent is opened once, before any file of the write
+/// exists, and every step of the write is bound to that descriptor: the
+/// temporary file, the staging directory, the publication and the
+/// cleanup. An attacker who renames the parent directory and puts a
+/// symlink in its place cannot redirect the write, because the descriptor
+/// names the directory the write started in — and the destination's own
+/// mode and owner are read through it too, so a file planted in the
+/// symlink's place cannot lend its owner to a privileged write.
+///
+/// The other platforms keep the path behaviour: they publish the
+/// temporary pathname, and an attacker in the parent directory can
+/// replace it.
+struct Parent {
+    #[cfg(target_os = "linux")]
+    fd: OwnedFd,
+    #[cfg(not(target_os = "linux"))]
+    path: PathBuf,
+}
+
+impl Parent {
+    /// Opens the parent directory of the destination.
+    #[cfg(target_os = "linux")]
+    fn open(path: &Path) -> Result<Self, String> {
+        Ok(Self {
+            fd: rustix::fs::open(
+                path,
+                OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|e| e.to_string())?,
+        })
+    }
+
+    /// The parent directory of the destination, by path.
+    #[cfg(not(target_os = "linux"))]
+    fn of(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+        }
+    }
+
+    /// The destination as it is now: a regular file's mode and owner.
+    ///
+    /// A symlink is not a file: the destination it names is never replaced
+    /// through it, so nothing of it is kept.
+    fn existing(&self, name: &OsStr) -> Option<Existing> {
+        #[cfg(target_os = "linux")]
+        let existing = {
+            let meta = rustix::fs::statat(&self.fd, name, AtFlags::SYMLINK_NOFOLLOW).ok()?;
+            if matches!(FileType::from_raw_mode(meta.st_mode), FileType::RegularFile) {
+                Some(Existing {
+                    mode: meta.st_mode & 0o7777,
+                    uid: meta.st_uid,
+                    gid: meta.st_gid,
+                })
+            } else {
+                None
+            }
+        };
+        #[cfg(not(target_os = "linux"))]
+        let existing = {
+            let meta = std::fs::symlink_metadata(self.path.join(name)).ok()?;
+            if meta.is_file() {
+                Some(Existing {
+                    mode: meta.permissions().mode() & 0o7777,
+                    uid: meta.uid(),
+                    gid: meta.gid(),
+                })
+            } else {
+                None
+            }
+        };
+        existing
+    }
+}
+
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     write_atomic_with(path, bytes, None, (None, None))
 }
@@ -56,23 +141,31 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// The publication is bound to the opened descriptor: the destination takes
 /// the inode the bytes were written to, so an attacker who replaces the
 /// temporary pathname in a writable parent cannot publish another file.
-/// The agent ships on Linux, which publishes through the descriptor; the
-/// other platforms publish the temporary pathname.
+/// The parent itself is opened once and every step of the write is bound
+/// to that descriptor, so an attacker who renames the parent directory
+/// cannot redirect the write either. The agent ships on Linux, which
+/// publishes through the descriptor; the other platforms publish the
+/// temporary pathname.
 pub(crate) fn write_atomic_with(
     path: &Path,
     bytes: &[u8],
     mode: Option<u32>,
     owner: (Option<u32>, Option<u32>),
 ) -> Result<(), String> {
-    let parent = parent_of(path);
     let name = path
         .file_name()
         .ok_or_else(|| format!("{} has no file name", path.display()))?;
-    let existing = std::fs::symlink_metadata(path)
-        .ok()
-        .filter(std::fs::Metadata::is_file);
+    // The parent is opened before anything exists, so every step of the
+    // write below is bound to the directory the write started in.
+    #[cfg(target_os = "linux")]
+    let parent = Parent::open(parent_of(path))?;
+    #[cfg(not(target_os = "linux"))]
+    let parent = Parent::of(parent_of(path));
+    #[cfg(test)]
+    pause::wait(&pause::PARENT);
+    let existing = parent.existing(name);
     let final_mode = mode
-        .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
+        .or_else(|| existing.as_ref().map(|existing| existing.mode))
         .unwrap_or(0o600);
     // Converted once, before any file exists: only the platforms whose raw
     // mode is narrower than `u32` can reject a mode, and doing it here keeps
@@ -81,14 +174,16 @@ pub(crate) fn write_atomic_with(
     let permissions = mode_of(final_mode);
     #[cfg(not(target_os = "linux"))]
     let permissions = mode_of(final_mode)?;
-    let preserved = existing.as_ref().map(|m| (m.uid(), m.gid()));
+    let preserved = existing
+        .as_ref()
+        .map(|existing| (existing.uid, existing.gid));
     let final_owner = (
         owner.0.or_else(|| preserved.map(|(uid, _)| uid)),
         owner.1.or_else(|| preserved.map(|(_, gid)| gid)),
     );
 
     for _ in 0..100 {
-        let mut temp = match Temp::create(parent, name, final_mode) {
+        let mut temp = match Temp::create(&parent, name, final_mode) {
             Ok(temp) => temp,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
@@ -97,7 +192,10 @@ pub(crate) fn write_atomic_with(
         // The temporary name never survives the write: the publication
         // leaves it as a second link to the published inode, and a failed
         // write leaves the file behind.
-        let _ = std::fs::remove_file(&temp.path);
+        #[cfg(target_os = "linux")]
+        temp.remove(&parent);
+        #[cfg(not(target_os = "linux"))]
+        temp.remove();
         #[cfg(target_os = "linux")]
         temp.stage.remove();
         return result;
@@ -111,6 +209,11 @@ pub(crate) fn write_atomic_with(
 /// The temporary file of a write.
 struct Temp {
     file: std::fs::File,
+    /// The temporary file's name in the parent.
+    #[cfg(target_os = "linux")]
+    name: String,
+    /// The temporary file's path, for the platforms that publish it.
+    #[cfg(not(target_os = "linux"))]
     path: PathBuf,
     #[cfg(target_os = "linux")]
     stage: Stage,
@@ -122,14 +225,28 @@ impl Temp {
     /// On Linux the file also carries a private name inside a private
     /// directory: it keeps the inode alive when an attacker takes the
     /// visible temporary name, and it is the name the destination is
-    /// published from.
-    fn create(parent: &Path, name: &OsStr, mode: u32) -> Result<Self, std::io::Error> {
+    /// published from. Both are created through the parent's descriptor.
+    fn create(parent: &Parent, name: &OsStr, mode: u32) -> Result<Self, std::io::Error> {
         let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = parent.join(format!(
+        let temp_name = format!(
             ".{}.ruxel-{}-{seq}.tmp",
             name.to_string_lossy(),
             std::process::id()
-        ));
+        );
+        #[cfg(not(target_os = "linux"))]
+        let path = parent.path.join(&temp_name);
+        #[cfg(target_os = "linux")]
+        let file = {
+            let fd = rustix::fs::openat(
+                &parent.fd,
+                &temp_name,
+                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC,
+                Mode::from_raw_mode(mode),
+            )
+            .map_err(|error| std::io::Error::from_raw_os_error(error.raw_os_error()))?;
+            std::fs::File::from(fd)
+        };
+        #[cfg(not(target_os = "linux"))]
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -139,16 +256,34 @@ impl Temp {
         let stage = match Stage::create(parent, &file) {
             Ok(stage) => stage,
             Err(error) => {
-                let _ = std::fs::remove_file(&path);
+                let _ = rustix::fs::unlinkat(&parent.fd, &temp_name, AtFlags::empty());
                 return Err(std::io::Error::other(error));
             }
         };
         Ok(Temp {
             file,
+            #[cfg(target_os = "linux")]
+            name: temp_name,
+            #[cfg(not(target_os = "linux"))]
             path,
             #[cfg(target_os = "linux")]
             stage,
         })
+    }
+
+    /// Removes the temporary name from the parent.
+    ///
+    /// The name is removed through the parent's descriptor, so a parent
+    /// that was renamed in the meantime is not the one the name goes from.
+    #[cfg(target_os = "linux")]
+    fn remove(&self, parent: &Parent) {
+        let _ = rustix::fs::unlinkat(&parent.fd, &self.name, AtFlags::empty());
+    }
+
+    /// Removes the temporary name.
+    #[cfg(not(target_os = "linux"))]
+    fn remove(&self) {
+        let _ = std::fs::remove_file(&self.path);
     }
 
     /// Writes the bytes into the temporary file and publishes it at `path`.
@@ -200,192 +335,37 @@ impl Temp {
     }
 }
 
-/// A private directory inside the destination's parent, and the name in it
-/// that holds the written inode.
+/// The staging directory of an atomic write: the private directory that
+/// holds the written inode until it is published. The write's own platform
+/// code, compiled on the platform the agent ships on.
+#[cfg(target_os = "linux")]
+#[path = "atomic/stage.rs"]
+mod stage;
+
+#[cfg(target_os = "linux")]
+use stage::Stage;
+
+/// Test hooks: a write pauses at a named point while its delay is set.
 ///
-/// The name must survive an attacker that takes the visible temporary name
-/// and cannot be swapped between the link and the publication, so it lives
-/// in a directory that only the writing user can enter.
-#[cfg(target_os = "linux")]
-struct Stage {
-    parent: OwnedFd,
-    fd: OwnedFd,
-    name: CString,
-}
+/// The pause lets a test move the parent directory, or the destination,
+/// under a write that has already begun: the window between the parent's
+/// resolution and the publication is a few microseconds wide, too narrow
+/// for a racer to land in.
+#[cfg(test)]
+pub(crate) mod pause {
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-#[cfg(target_os = "linux")]
-impl Stage {
-    /// Creates a private directory inside `parent` and links the inode of
-    /// `file` into it.
-    ///
-    /// The directory belongs to the user that runs the write: a directory
-    /// that an attacker put under that name is refused, because its owner
-    /// is not the writing user.
-    fn create(parent: &Path, file: &std::fs::File) -> Result<Self, String> {
-        let creator = rustix::fs::fstat(file).map_err(|e| e.to_string())?.st_uid;
-        let parent = rustix::fs::open(
-            parent,
-            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(|e| e.to_string())?;
-        for _ in 0..100 {
-            let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let name = CString::new(format!(".ruxel-stage-{}-{seq}", std::process::id()))
-                .map_err(|_| "the staging directory name is not usable".to_owned())?;
-            match rustix::fs::mkdirat(&parent, &name, Mode::from_raw_mode(0o700)) {
-                Ok(()) => {}
-                Err(rustix::io::Errno::EXIST) => continue,
-                Err(error) => return Err(error.to_string()),
-            }
-            let fd = rustix::fs::openat(
-                &parent,
-                &name,
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-                Mode::empty(),
-            )
-            .map_err(|e| e.to_string())?;
-            // The mode is set explicitly: the umask of the process can
-            // clear the write permission the publication needs.
-            rustix::fs::fchmod(&fd, Mode::from_raw_mode(0o700)).map_err(|e| e.to_string())?;
-            let meta = rustix::fs::fstat(&fd).map_err(|e| e.to_string())?;
-            if !matches!(FileType::from_raw_mode(meta.st_mode), FileType::Directory)
-                || meta.st_uid != creator
-            {
-                let _ = rustix::fs::unlinkat(&parent, &name, AtFlags::REMOVEDIR);
-                continue;
-            }
-            let stage = Stage { parent, fd, name };
-            // The private name is taken before the bytes are written: it
-            // keeps the inode alive when an attacker takes the visible
-            // temporary name, and it is the name the destination is
-            // published from.
-            return match link_inode(stage.fd(), file, &c_name("payload")?) {
-                Ok(()) => Ok(stage),
-                Err(error) => {
-                    stage.remove();
-                    Err(if error == rustix::io::Errno::NOENT {
-                        "the written file was removed before it was published".to_owned()
-                    } else {
-                        error.to_string()
-                    })
-                }
-            };
-        }
-        Err("could not create a staging directory for the publication".into())
-    }
+    /// The pause after the parent directory is opened.
+    pub(crate) static PARENT: AtomicU64 = AtomicU64::new(0);
+    /// The pause after the destination is checked, before the exchange.
+    #[cfg(target_os = "linux")]
+    pub(crate) static EXCHANGE: AtomicU64 = AtomicU64::new(0);
 
-    /// The private directory.
-    fn fd(&self) -> BorrowedFd<'_> {
-        self.fd.as_fd()
-    }
-
-    /// Publishes the private name at `path`.
-    fn publish(&self, path: &Path) -> Result<(), String> {
-        let name = path
-            .file_name()
-            .ok_or_else(|| format!("{} has no file name", path.display()))?;
-        let name = CString::new(name.as_bytes())
-            .map_err(|_| format!("{} has no usable file name", path.display()))?;
-        let payload = c_name("payload")?;
-        // A directory in the way fails the write, as a rename over one does.
-        match rustix::fs::statat(&self.parent, &name, AtFlags::SYMLINK_NOFOLLOW) {
-            Ok(meta) => {
-                if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
-                    return Err("the destination is a directory".into());
-                }
-            }
-            Err(rustix::io::Errno::NOENT) => {
-                // The destination does not exist: the private name takes
-                // its place.
-                return self.rename(&payload, &name);
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-        // The destination exists: it is replaced by an exchange with the
-        // private name, which keeps the replacement atomic.
-        match rustix::fs::renameat_with(
-            self.fd(),
-            &payload,
-            &self.parent,
-            &name,
-            RenameFlags::EXCHANGE,
-        ) {
-            Ok(()) => {
-                // The old destination is the staged name now: it goes with
-                // the private directory. A directory that an attacker put
-                // there is not removed: the unlink refuses it.
-                let _ = rustix::fs::unlinkat(self.fd(), &payload, AtFlags::empty());
-                Ok(())
-            }
-            Err(rustix::io::Errno::NOENT) => {
-                // The destination is gone: the private name takes its place.
-                self.rename(&payload, &name)
-            }
-            Err(
-                rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP,
-            ) => {
-                // The filesystem does not support the exchange: the
-                // destination is removed and the private name takes its
-                // place. The destination is briefly absent, but the
-                // published content is still the inode that was written.
-                rustix::fs::unlinkat(&self.parent, &name, AtFlags::empty())
-                    .map_err(|e| e.to_string())?;
-                self.rename(&payload, &name)
-            }
-            Err(error) => Err(error.to_string()),
+    /// Pauses the write for as many milliseconds as the delay holds.
+    pub(crate) fn wait(delay: &AtomicU64) {
+        let millis = delay.load(Ordering::Relaxed);
+        if millis > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(millis));
         }
     }
-
-    /// Moves the private name to `name`.
-    fn rename(&self, payload: &CString, name: &CString) -> Result<(), String> {
-        rustix::fs::renameat(self.fd(), payload, &self.parent, name).map_err(|e| e.to_string())
-    }
-
-    /// Removes the private directory.
-    ///
-    /// The name is removed, not the directory: a name that an attacker
-    /// replaced is left alone, and the descriptor keeps the directory alive
-    /// until it is closed.
-    fn remove(&self) {
-        let _ = rustix::fs::unlinkat(&self.parent, &self.name, AtFlags::REMOVEDIR);
-    }
-}
-
-/// Links the inode behind `file` to `name` inside `parent`.
-///
-/// The link is taken through the descriptor, so the kernel resolves the
-/// inode that was written and not the name of the temporary file.
-#[cfg(target_os = "linux")]
-fn link_inode(
-    parent: BorrowedFd<'_>,
-    file: &std::fs::File,
-    name: &CString,
-) -> rustix::io::Result<()> {
-    let empty = CString::new("").map_err(|_| rustix::io::Errno::INVAL)?;
-    match rustix::fs::linkat(file, &empty, parent, name, AtFlags::EMPTY_PATH) {
-        Ok(()) => Ok(()),
-        Err(rustix::io::Errno::PERM | rustix::io::Errno::NOENT) => {
-            // The kernel only allows the empty path with the capability to
-            // read a file that is not owned by the caller. Without it, the
-            // procfs entry of the descriptor names the inode, which
-            // resolves it even when the temporary name is gone.
-            let proc = rustix_linux_procfs::proc_self_fd()?;
-            let number = rustix::path::DecInt::from_fd(file);
-            rustix::fs::linkat(
-                proc,
-                number.as_c_str(),
-                parent,
-                name,
-                AtFlags::SYMLINK_FOLLOW,
-            )
-        }
-        Err(error) => Err(error),
-    }
-}
-
-/// A name as a C string, for the calls that take one.
-#[cfg(target_os = "linux")]
-fn c_name(text: &str) -> Result<CString, String> {
-    CString::new(text).map_err(|_| format!("{text:?} is not usable as a name"))
 }

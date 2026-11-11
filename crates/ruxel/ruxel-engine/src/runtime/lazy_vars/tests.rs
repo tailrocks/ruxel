@@ -7,10 +7,7 @@ use crate::{
 };
 use anyhow::Context;
 use serde_json::json;
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 fn execution() -> Result<Execution> {
     Ok(Execution {
@@ -42,10 +39,9 @@ fn execution() -> Result<Execution> {
             std::path::Path::new("."),
         )?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups {
-            resolver: Resolver::synthetic(),
-            values: Mutex::new(Vec::new()),
-        }),
+        lookups: Arc::new(Lookups::new(
+            Resolver::synthetic().expect("synthetic resolver"),
+        )),
     })
 }
 

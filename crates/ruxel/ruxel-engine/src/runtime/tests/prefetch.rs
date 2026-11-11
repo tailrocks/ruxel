@@ -1,6 +1,10 @@
 use super::*;
 use crate::secrets;
-use std::{collections::HashMap, sync::Condvar, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Condvar, Mutex},
+    time::Duration,
+};
 
 #[derive(Default)]
 struct Rendezvous {
@@ -9,8 +13,11 @@ struct Rendezvous {
 }
 
 impl secrets::Backend for Rendezvous {
-    fn fnox(&self, _: &str) -> Result<String, String> {
+    fn fnox_get(&self, _: &str) -> Result<Option<String>, String> {
         Err("unexpected fnox lookup".into())
+    }
+    fn fnox_set(&self, _: &str, _: &str) -> Result<(), String> {
+        Err("unexpected fnox store".into())
     }
     fn onepassword_reference(&self, _: &str) -> Result<String, String> {
         Err("unexpected reference lookup".into())
@@ -71,10 +78,9 @@ fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Resu
         template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(std::path::Path::new("."))?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups {
-            resolver: Resolver::new(backend.clone()),
-            values: Mutex::new(Vec::new()),
-        }),
+        lookups: Arc::new(Lookups::new(
+            Resolver::new(backend.clone()).expect("resolver"),
+        )),
     };
     let alpha = json!({"kind":"lookup","provider":"op","vault":"Private","item":"alpha","field":"password"});
     let beta = json!({"kind":"lookup","provider":"op","reference":"op://Private/beta/password"});

@@ -1,22 +1,20 @@
 use crate::{
-    controller::{self, Backend, Mode, Options, Recap, Request},
+    controller::{Backend, Mode, Options, Recap, Request},
     expression::{Scope, provenance::TrackedValue},
-    secrets::{ProcessBackend, Resolver},
+    secrets::{self, ProcessBackend, Resolver},
     transport,
 };
-use anyhow::{Context, Result, bail};
-use ruxel_proto::v1;
+use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 mod options;
 pub use options::RuntimeOptions;
 
 mod connection;
 use connection::Connection;
+
+mod execution;
 
 mod output;
 use output::Output;
@@ -52,192 +50,6 @@ mod effect_tests;
 mod evaluation;
 mod templates;
 
-impl Backend for Execution {
-    fn connection_failures(&self) -> u64 {
-        self.connection_failures
-    }
-    fn conservative_sensitive(&self) -> bool {
-        self.conservative_sensitive
-            .load(std::sync::atomic::Ordering::Acquire)
-    }
-    fn prepare_operation(
-        &mut self,
-        kind: &str,
-        params: &mut Map<String, Value>,
-        scope: &Map<String, Value>,
-    ) -> Result<()> {
-        templates::prepare(self, kind, params, scope)
-    }
-    fn evaluate(&mut self, value: &Value, map: &Map<String, Value>) -> Result<Value> {
-        self.prefetch_lookups(value)?;
-        let scope = Scope {
-            facts: map.get("facts").cloned().unwrap_or(Value::Null),
-            results: map.get("results").cloned().unwrap_or(Value::Null),
-            variables: map.get("vars").cloned().unwrap_or(Value::Null),
-            item: map.get("item").cloned().unwrap_or(Value::Null),
-            extra: map.clone(),
-        };
-        self.evaluate_value(value, &scope)
-    }
-    fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
-        self.prefetch_lookups(value)?;
-        self.evaluate_value_tracked(value, scope)
-    }
-    fn evaluate_layered_expression(
-        &mut self,
-        value: &Value,
-        scope: &TrackedValue,
-        layers: &[Map<String, Value>],
-    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
-        self.prefetch_lookups(value)?;
-        lazy_vars::evaluate_layers(self, value, scope, layers)
-    }
-    async fn prepare_operation_tracked(
-        &mut self,
-        kind: &str,
-        params: &mut Map<String, Value>,
-        scope: &Map<String, Value>,
-        mut sensitive: bool,
-    ) -> Result<bool> {
-        sensitive |= self.conservative_sensitive();
-        if kind != "template" || params.get("content").is_some_and(|v| !v.is_null()) {
-            self.prepare_operation(kind, params, scope)
-                .map_err(|error| {
-                    if sensitive {
-                        anyhow::anyhow!("sensitive operation preparation failed")
-                    } else {
-                        error
-                    }
-                })?;
-            return Ok(sensitive);
-        }
-        let gate = self.source_gate.clone();
-        let _guard = gate.write().await;
-        sensitive |= self.conservative_sensitive();
-        let trackers: Vec<_> = self.resources.lock().await.values().cloned().collect();
-        for tracker in trackers {
-            sensitive |= tracker.lock().await.has_sensitive_effects();
-        }
-        self.prepare_operation(kind, params, scope)
-            .map_err(|error| {
-                if sensitive {
-                    anyhow::anyhow!("sensitive operation preparation failed")
-                } else {
-                    error
-                }
-            })?;
-        Ok(sensitive)
-    }
-    async fn execute_tracked(
-        &mut self,
-        mut request: Request,
-        sensitive: bool,
-    ) -> Result<TrackedValue> {
-        if !self.connections.lock().await.contains_key(&request.host) {
-            self.connect(&request.host).await.map_err(|error| {
-                self.connection_failures += 1;
-                if sensitive || self.conservative_sensitive() {
-                    anyhow::anyhow!("sensitive connection failed")
-                } else {
-                    error
-                }
-            })?;
-        }
-        let gate = self.source_gate.clone();
-        let _guard = gate.read().await;
-        let effects = self.effect_gate.clone();
-        let _effect_read;
-        let _effect_write;
-        if sensitive && !self.conservative_sensitive() {
-            _effect_read = None;
-            _effect_write = Some(effects.write().await);
-        } else {
-            _effect_read = Some(effects.read().await);
-            _effect_write = None;
-        }
-        let sensitive = sensitive || self.conservative_sensitive();
-        let host = request.host.clone();
-        let tracker = {
-            let mut resources = self.resources.lock().await;
-            resources.entry(host).or_default().clone()
-        };
-        let mut resources = tracker.lock().await;
-        let sensitive = resources.observe(&request, sensitive)?;
-        if sensitive {
-            self.conservative_sensitive
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
-        request.task.no_log |= sensitive;
-        let result = self.execute(request).await.map_err(|error| {
-            if sensitive {
-                anyhow::anyhow!("sensitive operation failed")
-            } else {
-                error
-            }
-        })?;
-        Ok(if sensitive {
-            TrackedValue::secret(result)
-        } else {
-            TrackedValue::public(result)
-        })
-    }
-    async fn execute(&mut self, mut request: Request) -> Result<Value> {
-        copy_sources::prepare(&mut request.task, &self.copy_root)?;
-        for index in 0..request.task.iterations.len() {
-            let key = controller::ledger_key(&request.task, &request.task.iterations[index])?;
-            request.task.iterations[index].ledger_key = key;
-        }
-        let connection = self
-            .connections
-            .lock()
-            .await
-            .get(&request.host)
-            .cloned()
-            .context("execution host is not connected")?;
-        let mut connection = connection.lock().await;
-        let id = request.task.task_id;
-        let plan = copy_sources::plan(request.task)?;
-        connection.send(&plan).await.inspect_err(|_| {
-            self.connection_failures += 1;
-        })?;
-        loop {
-            let event = connection
-                .next()
-                .await
-                .and_then(|event| event.context("agent closed before task result"))
-                .inspect_err(|_| {
-                    self.connection_failures += 1;
-                })?;
-            match event.msg {
-                Some(v1::event::Msg::TaskResult(result)) if result.task_id == id => {
-                    let mut value: Value = serde_json::from_slice(&result.result_json)
-                        .context("invalid agent result")?;
-                    value["changed"] = Value::Bool(result.changed);
-                    value["failed"] = Value::Bool(result.status == "failed");
-                    if !result.diff.is_empty() {
-                        value["diff"] = Value::String(result.diff);
-                    }
-                    return Ok(value);
-                }
-                Some(v1::event::Msg::Crash(_)) => {
-                    self.connection_failures += 1;
-                    bail!("agent crashed");
-                }
-                Some(v1::event::Msg::PauseRequest(_)) => bail!("unexpected agent pause"),
-                _ => {}
-            }
-        }
-    }
-    fn event(&mut self, event: &Value) -> Result<()> {
-        let event = if self.conservative_sensitive() {
-            output::sensitive_event(event)
-        } else {
-            self.lookups.redact(event)?
-        };
-        self.output.event(&event)
-    }
-}
-
 mod connect;
 mod scheduler;
 use scheduler::run_plays;
@@ -267,6 +79,18 @@ pub async fn run(
     let config = &validated;
     let copy_root = Arc::new(copy_sources::SourceRoot::open(&runtime.source_dir)?);
     let template_root = Arc::new(copy_root.template_root(&runtime.source_dir)?);
+    // Synthetic mode is wired to plan, check and diff — it is the
+    // mode's property, not an opt-in flag. Every secret answers a
+    // selector-derived placeholder, no store is contacted, and nothing
+    // is generated: synthetic mode is rotation-blind by design (a
+    // placeholder derives from the selector, never the value). Only
+    // apply resolves real values, and only apply generates.
+    let resolver = if options.mode != Mode::Apply || runtime.synthetic_secrets {
+        Resolver::synthetic()
+    } else {
+        Resolver::new(Arc::new(ProcessBackend::default()))
+    }
+    .map_err(anyhow::Error::msg)?;
     let execution = Execution {
         connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(
@@ -287,16 +111,35 @@ pub async fn run(
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root,
         copy_root,
-        lookups: Arc::new(Lookups {
-            resolver: if runtime.synthetic_secrets {
-                Resolver::synthetic()
-            } else {
-                Resolver::new(Arc::new(ProcessBackend::default()))
-            },
-            values: Mutex::new(Vec::new()),
-        }),
+        lookups: Arc::new(Lookups::new(resolver)),
     };
     let result = async {
+        // Generation happens once per run, on the controller, before any
+        // secret is resolved and before the first connection. Only apply
+        // generates; plan, check and diff run synthetic and never reach
+        // here. A missing generated key becomes a selector-derived
+        // placeholder elsewhere.
+        // The generated keys of the configuration are collected in every
+        // mode: a key referenced with two formats is a configuration error
+        // wherever the run happens, not only where the key is created.
+        let requests = secrets::generated_requests(config).map_err(anyhow::Error::msg)?;
+        if options.mode == Mode::Apply && !runtime.synthetic_secrets {
+            let output = execution.output.clone();
+            let lookups = execution.lookups.clone();
+            // `Lookups::ensure_generated` registers every generated value
+            // with the redaction registry as it is created; the event names
+            // the key and the format, never the value.
+            execution
+                .lookups
+                .ensure_generated(&requests, &mut |key, format| {
+                    let event = json!({"event":"secret_generated","name":key,"format":format,"message":format!("generated secret {key} (stored in fnox)")});
+                    if let Err(error) = output.event(&lookups.redact(&event)) {
+                        // Names the key and the format, never a value.
+                        eprintln!("generated secret event could not be written: {error}");
+                    }
+                })
+                .map_err(anyhow::Error::msg)?;
+        }
         let (facts, failed) = connect::preconnect(config, options, &execution)
             .await
             .inspect_err(|_| {
@@ -334,7 +177,7 @@ pub async fn run(
             return anyhow::anyhow!("sensitive execution failed");
         }
         match execution.lookups.redact(&Value::String(error.to_string())) {
-            Ok(Value::String(message)) => anyhow::anyhow!(message),
+            Value::String(message) => anyhow::anyhow!(message),
             _ => anyhow::anyhow!("execution failed"),
         }
     };
@@ -367,7 +210,7 @@ pub async fn run(
                 if total.unreachable != 0 {
                     event["recap"]["unreachable"] = json!(total.unreachable);
                 }
-                execution.output.event(&execution.lookups.redact(&event)?)?;
+                execution.output.event(&execution.lookups.redact(&event))?;
             }
             Ok(recap)
         }

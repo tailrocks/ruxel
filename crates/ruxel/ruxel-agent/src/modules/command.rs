@@ -34,7 +34,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
         return Ok(result);
     }
-    if let Some(result) = check_mode_guard(Value::from(argv.clone()), ctx.check_mode) {
+    if let Some(result) = check_mode_guard(obj, Value::from(argv.clone()), ctx.check_mode) {
         return Ok(result);
     }
 
@@ -92,14 +92,37 @@ pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value)
     })
 }
 
-pub(super) fn check_mode_guard(cmd: Value, check_mode: bool) -> Option<Value> {
+/// What a command reports when the mode says it must not run.
+///
+/// A command with `creates` would run and would change something: the
+/// marker is absent (a marker that is present is skipped by
+/// `creates_guard`, which reports no change), so the check-mode skip is a
+/// pending change and the task says so. Every other command reports no
+/// change: what it would do is unknown, and a task that only inspects
+/// changes nothing.
+///
+/// The report is the task's own: a task that carries an explicit
+/// `changedWhen` is judged by that expression, not by this one.
+pub(super) fn check_mode_guard(
+    params: &serde_json::Map<String, Value>,
+    cmd: Value,
+    check_mode: bool,
+) -> Option<Value> {
     check_mode.then(|| {
-        json!({
-            "cmd": cmd, "rc": 0, "changed": false, "failed": false,
-            "skipped": true,
-            "msg": "Command would have run if not in check mode",
-            "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
-        })
+        if str_param(params, "creates").is_some() {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": true, "failed": false,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        } else {
+            json!({
+                "cmd": cmd, "rc": 0, "changed": false, "failed": false,
+                "skipped": true,
+                "msg": "Command would have run if not in check mode",
+                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
+            })
+        }
     })
 }
 
@@ -206,6 +229,44 @@ mod tests {
         let result = run(&params, &ctx).unwrap();
         assert_eq!(result["changed"], true, "{result}");
         assert!(executed.exists(), "the command must run");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A command with `creates` reports the pending change in check mode:
+    /// the marker is absent, so the command would run and would change
+    /// something. The marker is present, the command is skipped by the
+    /// `creates` guard, and nothing reports a change.
+    #[test]
+    fn a_creates_command_in_check_mode_reports_the_pending_change() {
+        let root = std::env::temp_dir().join(format!("ruxel-command-check-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir(&root).unwrap();
+        let marker = root.join("marker");
+        let executed = root.join("executed");
+        let params = json!({"argv": ["/usr/bin/touch", executed], "creates": marker});
+        let check = ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+
+        // The marker is absent: the command would run, so the check-mode
+        // report is a pending change.
+        let result = run(&params, &check).unwrap();
+        assert_eq!(result["changed"], true, "{result}");
+        assert_eq!(result["failed"], false, "{result}");
+        assert!(!executed.exists(), "the command must not run");
+
+        // The marker is present: the `creates` guard skips the command and
+        // reports no change.
+        std::fs::write(&marker, b"present").unwrap();
+        let result = run(&params, &check).unwrap();
+        assert_eq!(result["skipped"], true, "{result}");
+        assert_eq!(result["changed"], false, "{result}");
+        assert_eq!(result["skip"]["cause"], "creates_exists", "{result}");
+        assert!(!executed.exists(), "the command must not run");
         let _ = std::fs::remove_dir_all(root);
     }
 

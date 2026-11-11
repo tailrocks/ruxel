@@ -22,7 +22,7 @@ open module Core
 
 /// Text known before the run. Run-time values (`currentHost`,
 /// `Capture.stdout()`) are allowed only in `File.content`; secrets
-/// (`module.fnox`, …) only in `File.content` and action `environment`
+/// (`core.fnox`, …) only in `File.content` and action `environment`
 /// values. Every other text field is `Static`, and a run-time value or a
 /// secret reference can never be one: a run-time value is text that contains
 /// the reserved prefix `__ruxel_rt_8d41.`, a secret reference the reserved
@@ -237,6 +237,12 @@ typealias OpLabel = String(isOpLabel(this))
 /// `op://<vault>/<item>/<section>/<field>`, each part an `OpLabel`. A query
 /// (`?…`) names an attribute of a field, not a value, and is refused.
 ///
+/// The parts of a reference are separated by `/`, so a dot is an ordinary
+/// character of a label there: `op://Vault/Item/API.Password` names the
+/// field labeled `API.Password`. The CLI's `--fields` selector, which the
+/// structured `onePassword` uses, reads a dot as its section separator; a
+/// reference is not that selector.
+///
 /// `split` drops the trailing empty piece, so a reference that ends with `/`
 /// would read as if it named one part less and pass; such a reference is
 /// refused, like one with an empty part.
@@ -258,8 +264,16 @@ const local function isOpReference(r: String): Boolean =
     let (parts = rest.split("/"))
     !rest.endsWith("/") && (parts.length == 3 || parts.length == 4)
       && parts.every((p) -> isOpLabel(p))
-      && !hasFieldSelectorSyntax(parts.last)
-      && (parts.length != 4 || !hasFieldSelectorSyntax(parts[2])))
+      && !hasReferenceSelectorSyntax(parts.last)
+      && (parts.length != 4 || !hasReferenceSelectorSyntax(parts[2])))
+
+/// The 1Password CLI parses `,` as a field-list separator and `=` as a
+/// selector, in a `--fields` selector and in a reference alike. A dot is
+/// not among them: it is the section separator of the `--fields` selector,
+/// and the parts of a reference are separated by `/`, so a dot is an
+/// ordinary character of a label there.
+const local function hasReferenceSelectorSyntax(label: String): Boolean =
+  label.contains(",") || label.contains("=")
 
 /// The 1Password CLI parses `,` as a field-list separator, `=` as a
 /// selector and `.` as the section separator. Only a field reaches
@@ -406,9 +420,18 @@ const local function referenceParts(reference: String): List<String> =
 const local function referenceLabelsChecked(reference: String, parts: List<String>): String =
   let (vault = opLabelChecked("vault", parts[0]))
   let (item = opLabelChecked("item", parts[1]))
-  let (section = if (parts.length == 4) opSectionChecked(parts[2]) else "")
-  let (field = opFieldChecked(parts.last))
+  let (section = if (parts.length == 4) opReferenceLabelChecked("section", parts[2]) else "")
+  let (field = opReferenceLabelChecked("field", parts.last))
   reference
+
+/// A label of a full `op://` reference. A dot is an ordinary character
+/// there: the parts of a reference are separated by `/`, and the reference
+/// is read as it is written. The CLI's own selector syntax — a comma and an
+/// equals sign — is refused, as it is in the structured selector.
+const local function opReferenceLabelChecked(what: String, label: String): String =
+  if (label.contains(",") || label.contains("="))
+    throw("1Password \(what) \"\(label)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else opLabelChecked(what, label)
 
 const local function referenceChecked(reference: String): String =
   let (parts = referenceParts(reference))
@@ -427,6 +450,40 @@ const local function referenceChecked(reference: String): String =
 const local function sized(text: String?): String =
   if (text == null) "0:" else "\(text.length):\(text.replaceAll("\u{1f}", "\u{1e}").replaceAll("_", "\u{1f}"))"
 
+/// Reads one file on exactly one host and stores it in the controller's fnox
+/// store under `fnoxKey`:
+///
+///     new FetchSecret {
+///       title = "Store the cluster admin kubeconfig"
+///       fromPath = "/etc/kubernetes/admin.conf"
+///       runOn = inventory.firstControlPlane
+///       fnoxKey = "K8S_ADMIN_KUBECONFIG"
+///     }
+///
+/// - The content travels as a no-log slurp and is written with `fnox set` on
+///   stdin; it never appears in output, results or the ledger, and it is
+///   never copied anywhere else — no workflow step handles the plaintext.
+/// - It reports a change only when the fetched content differs from the
+///   stored value, compared on the controller by the keyed secret
+///   fingerprint. Identity is the `fnoxKey`: two `FetchSecret` steps with
+///   one key and a different `fromPath` or `runOn` conflict like two states
+///   of one thing, and an exact repeat is the same step.
+/// - In `plan`, `check` and `diff` it contacts neither fnox nor the host, so
+///   it reports known-after-apply rather than a fingerprint comparison; the
+///   comparison and the store happen only in `apply`.
+class FetchSecret extends Step {
+  hidden fixed kind = "fetchSecret"
+  /// The file to read, on the one named host. Read at apply only.
+  fromPath: FilePath
+  /// The one host the file is read on, stated and never inferred: a stage
+  /// with several hosts must not race to write one key (last writer wins,
+  /// possibly a host without the file).
+  runOn: Host
+  /// The fnox key the content is stored under. It must match the fnox key
+  /// shape.
+  fnoxKey: FnoxKey
+}
+
 // ── Files ───────────────────────────────────────────────────────────────────
 
 /// A file with exactly this content. A stage writes it once, where it first
@@ -438,8 +495,13 @@ class File extends Step {
   hidden fixed kind = "file"
   path: FilePath
   /// May contain run-time values (`currentHost`, `Capture.stdout()`) and
-  /// secrets (`module.fnox(…)`, `module.onePassword(…)`, `SecretText.join`),
+  /// secrets (`core.fnox(…)`, `core.onePassword(…)`, `SecretText.join`),
   /// which are resolved on the host, never on the controller.
+  ///
+  /// The secret functions are reached through an import of Core, not
+  /// through the workflow's own module: under pklr, a call through
+  /// `module.fnox(…)` from inside a step duplicates every play in the
+  /// lowered configuration. Import Core as `core` and call `core.fnox(…)`.
   content: String
   /// A file whose content holds a secret must be `0600` or narrower (no
   /// permission for group or other): a wider mode with secret content is
@@ -505,11 +567,16 @@ abstract class Action extends Step {
   /// - `new UnlessOutput { … }`: a change, unless the output contains the text.
   changes: "always"|"never"|UnlessOutput = "always"
   /// Environment values for the program. A value is static text or a secret
-  /// (`module.fnox(…)`, `module.onePassword(…)`, `SecretText.join`); pass the
+  /// (`core.fnox(…)`, `core.onePassword(…)`, `SecretText.join`); pass the
   /// secret itself, never a secret or run-time value interpolated into text —
   /// a program that needs host state reads it from the rendered config or a
   /// capture. A secret value marks the step sensitive: it is redacted from
   /// output and never recorded.
+  ///
+  /// The secret functions are reached through an import of Core, not
+  /// through the workflow's own module: under pklr, a call through
+  /// `module.fnox(…)` from inside a step duplicates every play in the
+  /// lowered configuration. Import Core as `core` and call `core.fnox(…)`.
   ///
   /// No explicit `= new {}` default: pklr cannot amend a `Mapping` whose
   /// value type is a union with a `String` branch through an explicit

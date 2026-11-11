@@ -87,7 +87,10 @@ pub(crate) struct RunArgs {
     /// Run the real agent locally; use only disposable local workloads.
     #[arg(long, requires = "state_dir")]
     pub(crate) local: bool,
-    /// Resolve every external lookup deterministically without running secret tools.
+    /// Apply-time fixture switch for local acceptance runs: resolve every
+    /// external lookup deterministically without running secret tools.
+    /// `plan`, `check` and `diff` are always synthetic, whatever this says;
+    /// only `apply` reads real stores, and only `apply` generates.
     #[arg(long)]
     pub(crate) synthetic_secrets: bool,
     #[arg(long, requires = "controller_state_dir")]
