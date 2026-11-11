@@ -305,6 +305,11 @@ impl Backend for ProcessBackend {
     }
 
     fn fnox_set(&self, key: &str, value: &str) -> Result<(), String> {
+        // `--from-file` is the byte-preserving store transport, and the
+        // flag exists only from fnox v1.34.0: refuse an older CLI before
+        // the transport is ever switched, naming both versions, instead
+        // of letting `set` fail on an unknown flag.
+        super::version::require_from_file(&self.fnox)?;
         Self::fnox_set_with(key, value, |staged| {
             Command::new(&self.fnox)
                 .args(["set", key, "--from-file"])

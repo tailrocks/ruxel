@@ -6,6 +6,7 @@ mod lookup;
 mod resolver;
 mod staging;
 mod store;
+mod version;
 
 pub use backend::ProcessBackend;
 pub(crate) use fingerprint::{is_fingerprint, is_sentence_over};

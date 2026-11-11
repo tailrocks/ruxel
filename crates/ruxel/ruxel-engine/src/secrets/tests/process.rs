@@ -343,3 +343,57 @@ fn fnox_keys_follow_the_store_grammar() {
         "process could not start"
     );
 }
+
+/// `fnox set --from-file` exists only from fnox v1.34.0: against an
+/// older CLI every store would fail on an unknown flag that names
+/// nothing actionable. The store is refused before the transport is
+/// ever switched, with both versions named.
+#[test]
+fn a_store_refuses_an_installed_fnox_older_than_the_from_file_release() {
+    let fixture = Fixture::new();
+    let fnox = fixture.script(
+        "old-fnox",
+        r#"case "$1" in
+--version) printf 'fnox 1.33.1\n';;
+set) printf 'set\n' >> "${0%/*}/calls"; exit 0;;
+*) exit 9;;
+esac"#,
+    );
+    let backend = ProcessBackend::with_programs(fnox, "/nonexistent/ruxel-op");
+    let error = backend
+        .fnox_set("KEY", "synthetic-version-gate")
+        .expect_err("the old fnox cannot store with --from-file");
+    assert!(
+        error.contains("1.34.0"),
+        "names the required version: {error}"
+    );
+    assert!(
+        error.contains("1.33.1"),
+        "names the installed version: {error}"
+    );
+    assert_eq!(
+        fixture.count(),
+        0,
+        "the store never ran against the old CLI"
+    );
+}
+
+/// A fnox whose CLI has `--from-file` — v1.34.0 or newer — stores
+/// normally: the version gate refuses only what it must.
+#[test]
+fn a_store_runs_when_the_installed_fnox_has_the_from_file_flag() {
+    let fixture = Fixture::new();
+    let fnox = fixture.script(
+        "new-fnox",
+        r#"case "$1" in
+--version) printf 'fnox 1.34.0\n';;
+set) printf 'set\n' >> "${0%/*}/calls"; exit 0;;
+*) exit 9;;
+esac"#,
+    );
+    let backend = ProcessBackend::with_programs(fnox, "/nonexistent/ruxel-op");
+    backend
+        .fnox_set("KEY", "synthetic-version-gate")
+        .expect("the store runs against a fnox with --from-file");
+    assert_eq!(fixture.count(), 1, "the store ran exactly once");
+}
