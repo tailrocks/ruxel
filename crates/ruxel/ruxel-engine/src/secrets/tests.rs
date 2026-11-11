@@ -68,9 +68,11 @@ impl Backend for Fake {
 #[cfg(unix)]
 mod process;
 
+mod conflict;
 mod fingerprint;
 mod formats;
 mod generation;
+mod newlines;
 mod queries;
 mod synthetic;
 

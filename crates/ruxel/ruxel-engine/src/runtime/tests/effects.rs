@@ -7,12 +7,24 @@ pub(super) struct TestConnection {
     started: mpsc::UnboundedSender<Started>,
     pending: Option<(u64, oneshot::Receiver<()>)>,
     result_json: Vec<u8>,
+    status: String,
+    changed: bool,
 }
 impl TestConnection {
-    /// A scripted agent connection answering every task with the one
-    /// named result, so tests can drive the full receive path.
-    pub(super) fn scripted(
+    /// A scripted agent connection answering every task with the one named
+    /// result and status, so a test can drive a failed task.
+    pub(super) fn scripted_with_status(
         result_json: Vec<u8>,
+        status: &str,
+    ) -> (Self, mpsc::UnboundedReceiver<(bool, oneshot::Sender<()>)>) {
+        Self::scripted_result(result_json, status, false)
+    }
+    /// A scripted agent connection answering every task with the one named
+    /// result, status and change.
+    pub(super) fn scripted_result(
+        result_json: Vec<u8>,
+        status: &str,
+        changed: bool,
     ) -> (Self, mpsc::UnboundedReceiver<(bool, oneshot::Sender<()>)>) {
         let (started, observed) = mpsc::unbounded_channel();
         (
@@ -20,6 +32,8 @@ impl TestConnection {
                 started,
                 pending: None,
                 result_json,
+                status: status.to_owned(),
+                changed,
             },
             observed,
         )
@@ -42,7 +56,8 @@ impl TestConnection {
         Ok(Some(v1::Event {
             msg: Some(v1::event::Msg::TaskResult(v1::TaskResult {
                 task_id: id,
-                status: "ok".into(),
+                status: self.status.clone(),
+                changed: self.changed,
                 result_json: self.result_json.clone(),
                 ..Default::default()
             })),
@@ -88,12 +103,15 @@ async fn add(execution: &Execution, host: &str, started: mpsc::UnboundedSender<S
             started,
             pending: None,
             result_json: b"{}".to_vec(),
+            status: "ok".to_owned(),
+            changed: false,
         }))),
     );
 }
 fn request(host: &str) -> Request {
     Request {
         host: host.into(),
+        content_fingerprint: None,
         task: v1::RenderedTask {
             task_id: 1,
             module: "stat".into(),

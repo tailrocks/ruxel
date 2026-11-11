@@ -7,7 +7,7 @@ use super::{
     is_generated_format, parse_op_reference, select_field, synthetic_value,
 };
 use crate::secrets::fingerprint::Fingerprints;
-use crate::secrets::generation::{GeneratedRequest, generate_value};
+use crate::secrets::generation::{GeneratedRequest, generate_value, one_format};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -151,19 +151,15 @@ impl Resolver {
             .ok_or_else(|| "secret lookup failed".to_owned())
     }
 
-    /// The CLIs append exactly one record terminator when they print a
-    /// value, so a byte-comparison of a read-back against what was written
-    /// must ignore that one terminator (a value that legitimately ends in a
-    /// newline — a kubeconfig does — keeps the rest).
-    fn strip_record_terminator(value: &str) -> &str {
-        match value.strip_suffix('\n') {
-            Some(stripped) => stripped.strip_suffix('\r').unwrap_or(stripped),
-            None => value,
-        }
-    }
-
+    /// Whether the value the store holds is the value that was written.
+    /// The comparison is exact: the backend removes the one record
+    /// terminator the CLI adds when it prints a value, so a read-back is
+    /// the stored value byte for byte. A value that ends in a newline is
+    /// another value than one that does not: stripping a newline from
+    /// both sides would report "value\n" and "value" as equal, and a
+    /// fetch whose file lost its final newline would go unnoticed.
     fn read_back_matches(written: &str, read_back: &str) -> bool {
-        Self::strip_record_terminator(read_back) == Self::strip_record_terminator(written)
+        read_back == written
     }
 
     fn op_field(
@@ -264,8 +260,15 @@ impl Resolver {
     /// Creates every missing generated key, once per run, on the controller,
     /// before any secret is resolved: under the fnox write lock, check
     /// presence, generate in the named format, store with the value on
-    /// stdin, read back and byte-compare. A key that appears between the
-    /// check and the store fails the run rather than being overwritten.
+    /// stdin, read back and byte-compare.
+    ///
+    /// The creation is atomic against the writers that share the fnox write
+    /// lock: they wait for it, and the key is created once. A writer that
+    /// does not take the lock — another tool, another controller — can
+    /// write the key between the presence check and the store, and its
+    /// value is overwritten. The presence re-check before the store is the
+    /// defence in depth: it catches the writer that arrived before it and
+    /// fails the run, and a writer that arrives after it is not caught.
     /// Every key must already be present by the time the run resolves it, so
     /// a rerun after a partial failure presents the value the first run
     /// registered. `plan`, `check` and `diff` never reach this: they run in
@@ -273,6 +276,10 @@ impl Resolver {
     /// key this run created, with the key, the format and the generated
     /// value — the caller registers the value with the redaction registry
     /// and never reports it.
+    ///
+    /// The requests are checked before any key is created: a malformed key,
+    /// an unknown format, or one key named with two formats fails the run
+    /// without creating anything, whichever order the requests are in.
     ///
     /// # Errors
     /// Returns a redacted error, naming the store and key, never a value.
@@ -284,6 +291,7 @@ impl Resolver {
         if self.synthetic {
             return Err("generation never runs in synthetic mode".to_owned());
         }
+        let mut formats: Vec<(String, String)> = Vec::new();
         for request in requests {
             if !is_fnox_key(&request.key) {
                 return Err(format!(
@@ -298,11 +306,16 @@ impl Resolver {
                     GENERATED_FORMATS.join(", ")
                 ));
             }
+            one_format(&request.key, &request.format, &mut formats)?;
+        }
+        for request in requests {
             let _lock = self.backend.fnox_write_lock(&request.key)?;
             if self.backend.fnox_get(&request.key)?.is_none() {
                 let value = generate_value(&request.format)?;
                 // The key appeared since the presence check: another writer
-                // created it without the lock. Fail, never overwrite.
+                // created it without the lock. The re-check is the defence
+                // in depth against a writer that does not take the lock; a
+                // writer that arrives after it is not caught.
                 if self.backend.fnox_get(&request.key)?.is_some() {
                     return Err(format!(
                         "generated secret {} appeared in fnox while it was being created; the run fails rather than overwrite it",
@@ -344,6 +357,10 @@ impl Resolver {
                 "fnox key \"{key}\" is malformed: {FNOX_KEY_GRAMMAR}"
             ));
         }
+        // The comparison is exact: the store holds the bytes that were
+        // written, so a value that ends in a newline is another value than
+        // one that does not. A fetch whose file lost its final newline is
+        // a change, not an equality.
         let fingerprint = self.fingerprints.of(key, content);
         if self.synthetic {
             return Ok((false, fingerprint));

@@ -88,6 +88,13 @@ impl<B: Backend> Runner<'_, B> {
                 source_sensitive || layer.no_log || layer.control_sensitive,
             )
             .await?;
+        // The fingerprint of a secret-bearing content is built from the
+        // selectors alone, so it is read from the parameters before the
+        // evaluation: the evaluated ones carry the placeholders the
+        // selectors resolve to, and the selectors are gone.
+        let content_fingerprint = self
+            .backend
+            .content_fingerprint(&Value::Object(params.clone()));
         let tracked_params = if kind == "assert" {
             self.assertion_params(
                 &params,
@@ -201,6 +208,7 @@ impl<B: Backend> Runner<'_, B> {
         };
         let mut request = Request {
             host: destination,
+            content_fingerprint,
             task: v1::RenderedTask {
                 task_id: id,
                 name: string(task, "name").unwrap_or(kind).to_owned(),

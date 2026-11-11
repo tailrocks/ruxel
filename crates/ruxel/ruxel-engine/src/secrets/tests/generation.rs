@@ -13,12 +13,12 @@ static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 /// path), `set` reads the value from stdin (never argv) and counts its
 /// calls, and a missing key exits 1 with `not found`. No real secret value
 /// is ever read: the fixture writes its own.
-struct Fixture {
-    directory: PathBuf,
+pub(super) struct Fixture {
+    pub(super) directory: PathBuf,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let directory = std::env::temp_dir().join(format!(
             "ruxel-secret-generation-{}-{}",
             std::process::id(),
@@ -36,6 +36,9 @@ if [ "$1" = "get" ]; then
   key="$4"
   if [ -f "$store/$key" ]; then
     cat "$store/$key"
+    # The CLI prints the value with one record terminator; the backend
+    # removes that terminator, never one the value carries.
+    printf '\n'
     exit 0
   fi
   echo "secret $key not found" >&2
@@ -62,15 +65,15 @@ exit 8
             .with_lock_dir(&self.directory)
     }
 
-    fn resolver(&self) -> Resolver {
+    pub(super) fn resolver(&self) -> Resolver {
         Resolver::new(Arc::new(self.backend())).unwrap()
     }
 
-    fn set_calls(&self) -> usize {
+    pub(super) fn set_calls(&self) -> usize {
         fs::read_to_string(self.directory.join("calls")).map_or(0, |calls| calls.lines().count())
     }
 
-    fn value(&self, key: &str) -> Option<String> {
+    pub(super) fn value(&self, key: &str) -> Option<String> {
         fs::read_to_string(self.directory.join("store").join(key)).ok()
     }
 
@@ -87,7 +90,7 @@ impl Drop for Fixture {
     }
 }
 
-fn request(key: &str, format: &str) -> GeneratedRequest {
+pub(super) fn request(key: &str, format: &str) -> GeneratedRequest {
     GeneratedRequest {
         key: key.to_owned(),
         format: format.to_owned(),
@@ -123,8 +126,11 @@ fn applying_the_same_workflow_twice_generates_exactly_once() {
     );
 }
 
-/// A key that appears between the check and the store fails the run rather
-/// than being overwritten: the store it appeared in keeps its value.
+/// A key that appears between the presence check and the store fails the
+/// run rather than being overwritten: the store it appeared in keeps its
+/// value. This is the defence in depth against a writer that does not take
+/// the fnox write lock; a writer that arrives after the re-check is not
+/// caught.
 #[test]
 fn a_key_that_appears_between_check_and_store_fails_without_overwriting() {
     struct Appearing {
@@ -335,7 +341,7 @@ fn generated_requests_are_collected_from_the_configuration() {
             ]}}}
         ]}]
     });
-    let requests = generated_requests(&config);
+    let requests = generated_requests(&config).expect("collect");
     assert_eq!(
         requests,
         [

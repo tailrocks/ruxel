@@ -36,6 +36,12 @@ impl Backend for Execution {
         };
         self.evaluate_value(value, &scope)
     }
+    /// The fingerprint of a secret-bearing content: the controller asks
+    /// for it before the content is evaluated, so the selectors are still
+    /// there.
+    fn content_fingerprint(&self, params: &Value) -> Option<String> {
+        self.lookups.content_fingerprint(params)
+    }
     fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
         self.prefetch_lookups(value)?;
         self.evaluate_value_tracked(value, scope)
@@ -154,6 +160,7 @@ impl Backend for Execution {
         let mut connection = connection.lock().await;
         let id = request.task.task_id;
         let module = request.task.module.clone();
+        let fingerprint = request.content_fingerprint.clone();
         let params = request
             .task
             .iterations
@@ -182,10 +189,17 @@ impl Backend for Execution {
                     // the store happen here, on the controller, in apply
                     // only; in check and diff the task never reaches the
                     // host (the controller answers known-after-apply).
-                    if module == "fetchSecret" {
+                    //
+                    // A failed task is a failed task, whatever its module:
+                    // its result carries no content, and the run reports
+                    // the failure the way every other failed task is
+                    // reported — the recap counts it, `ignoreErrors`
+                    // ignores it, a retry retries it and a rescue rescues
+                    // it. Only a result that succeeded carries content.
+                    if module == "fetchSecret" && result.status != "failed" {
                         return self.receive_fetch_secret(&mut value, params.as_ref(), &result);
                     }
-                    self.receive_task_result(&module, params.as_ref(), &mut value, &result);
+                    Self::receive_task_result(&module, fingerprint.as_deref(), &mut value, &result);
                     return Ok(value);
                 }
                 Some(v1::event::Msg::Crash(_)) => {
@@ -263,10 +277,11 @@ impl Execution {
     /// fingerprint of the placeholder its lookups resolve to, never text and
     /// never an unsalted hash of a value. The agent ships no diff for a
     /// no-log task; the sentence is built here, from the selectors alone.
+    /// The fingerprint reaches this far from the controller, which read it
+    /// from the operation's parameters before they were evaluated.
     fn receive_task_result(
-        &self,
         module: &str,
-        params: Option<&Value>,
+        fingerprint: Option<&str>,
         value: &mut Value,
         result: &v1::TaskResult,
     ) {
@@ -275,9 +290,7 @@ impl Execution {
         if module == "copy"
             && result.changed
             && value.get("diff").is_none_or(Value::is_null)
-            && let Some(fingerprint) = self
-                .lookups
-                .content_fingerprint(params.unwrap_or(&Value::Null))
+            && let Some(fingerprint) = fingerprint
         {
             value["diff"] = json!(format!("content changed (fingerprint {fingerprint})"));
             value["fingerprint"] = json!(fingerprint);

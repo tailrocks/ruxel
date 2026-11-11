@@ -93,7 +93,16 @@ pub(super) fn plan_tasks<B: Backend>(
     for task in tasks {
         if let Some((selected, task_count)) = project(task, filter, inherited) {
             let selected = if backend.conservative_sensitive() {
-                json!({"censored":true})
+                // The conservative projection censors the task, but the
+                // marker the controller builds itself — the known-after-apply
+                // marker of an apply-only step — is safe metadata and
+                // stays: the plan says that the step happens at apply, and
+                // nothing else about it.
+                let mut censored = json!({"censored":true});
+                if selected.get("knownAfterApply") == Some(&json!(true)) {
+                    censored["knownAfterApply"] = json!(true);
+                }
+                censored
             } else {
                 selected
             };

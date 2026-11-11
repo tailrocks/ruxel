@@ -725,7 +725,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
-  ["fetchSecret"] = (s, m) -> List(task(m, fetchSecret(s), null, null))
+  ["fetchSecret"] = (s, m) -> List(fetchSecretTask(s, m))
 }
 
 /// The FetchSecret task: a read-only slurp the controller turns into a fnox
@@ -734,6 +734,17 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
 /// without contacting the host or fnox.
 function fetchSecret(s: core.FetchSecret): engine.FetchSecret =
   new engine.FetchSecret { path = s.fromPath; key = s.fnoxKey }
+
+/// The fetch is delegated to the one host the file is read on, like a
+/// capture with a `runOn`: a stage that runs on several hosts reads the
+/// file on the named host alone, never on a host that does not have it,
+/// and the host is named in the task, so the plan shows where the read
+/// happens.
+function fetchSecretTask(s: core.FetchSecret, m: Meta): engine.Task =
+  (task(m, fetchSecret(s), null, null)) {
+    delegateTo = s.runOn.name
+    delegateAllow = new Listing { s.runOn.name }
+  }
 
 // File: stage, validate, then publish. A secret's candidate is temporary:
 // validation removes it in the block's `always`, success or failure, so no

@@ -261,6 +261,12 @@ fn a_generated_key_lowers_with_its_format() -> Result {
 /// `FetchSecret` lowers to the apply-only slurp the controller turns into a
 /// fnox store: the path travels, never the content, and the task is never
 /// logged. The one host it reads from joins the inventory.
+///
+/// The task is delegated to that one host, like a capture with a `runOn`:
+/// the file is read where the step names it, never on every host of the
+/// stage. The fixture's stage runs on the workers and the fetch reads on the
+/// control plane, so the delegation names a host outside the stage's own
+/// targets — and only that host.
 #[test]
 fn a_fetched_secret_lowers_to_an_apply_only_slurp() -> Result {
     let config = valid("secret-fetch.pkl")?;
@@ -271,10 +277,23 @@ fn a_fetched_secret_lowers_to_an_apply_only_slurp() -> Result {
     assert_eq!(task["noLog"], serde_json::json!(true));
     assert_eq!(task["operation"]["path"], "/etc/kubernetes/admin.conf");
     assert_eq!(task["operation"]["key"], "K8S_ADMIN_KUBECONFIG");
+    assert_eq!(task["delegateTo"], serde_json::json!("cp-1"));
+    assert_eq!(task["delegateAllow"], serde_json::json!(["cp-1"]));
     let hosts = config["inventory"]["hosts"]
         .as_object()
         .ok_or("no inventory")?;
     assert!(hosts.contains_key("cp-1"), "the runOn host is inventoried");
+    // The stage runs on the workers: the fetch reads on the one host the
+    // step names, which is not a target of the stage.
+    let targets = config["plays"][0]["targets"]
+        .as_array()
+        .ok_or("no play targets")?;
+    let targets: Vec<&str> = targets
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert_eq!(targets, ["worker-1", "worker-2"]);
+    assert!(!targets.contains(&"cp-1"), "the read host is not a target");
     Ok(())
 }
 

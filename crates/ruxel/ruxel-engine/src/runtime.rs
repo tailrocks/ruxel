@@ -119,8 +119,11 @@ pub async fn run(
         // generates; plan, check and diff run synthetic and never reach
         // here. A missing generated key becomes a selector-derived
         // placeholder elsewhere.
+        // The generated keys of the configuration are collected in every
+        // mode: a key referenced with two formats is a configuration error
+        // wherever the run happens, not only where the key is created.
+        let requests = secrets::generated_requests(config).map_err(anyhow::Error::msg)?;
         if options.mode == Mode::Apply && !runtime.synthetic_secrets {
-            let requests = secrets::generated_requests(config);
             let output = execution.output.clone();
             let lookups = execution.lookups.clone();
             // `Lookups::ensure_generated` registers every generated value

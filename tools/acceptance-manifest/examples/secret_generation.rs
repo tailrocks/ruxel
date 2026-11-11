@@ -64,6 +64,9 @@ if [ "$1" = "get" ]; then
   key="$4"
   if [ -f "$store/$key" ]; then
     cat "$store/$key"
+    # The CLI prints the value with one record terminator; the backend
+    # removes that terminator, never one the value carries.
+    printf '\n'
     exit 0
   fi
   echo "secret $key not found" >&2
@@ -135,7 +138,9 @@ fn assert_no_plaintext(stdout: &[u8], stderr: &[u8], secrets: &[String], mode: &
     for secret in secrets {
         for (name, output) in [("stdout", stdout), ("stderr", stderr)] {
             ensure!(
-                !output.windows(secret.len()).any(|window| window == secret.as_bytes()),
+                !output
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes()),
                 "{mode}: plaintext reached {name}"
             );
         }

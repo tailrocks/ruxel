@@ -81,6 +81,7 @@ fn execution(lookups: Lookups, log: Option<&std::path::Path>) -> Result<Executio
 fn request() -> Request {
     Request {
         host: "fixture".into(),
+        content_fingerprint: None,
         task: v1::RenderedTask {
             task_id: 9,
             name: "Store the cluster admin kubeconfig".into(),
@@ -101,7 +102,17 @@ fn request() -> Request {
 /// Drives one `FetchSecret` task through the receive path, with the agent
 /// answering the one named slurp result.
 async fn run_fetch(execution: &Execution, result_json: Vec<u8>) -> Result<Value> {
-    let (connection, mut started) = TestConnection::scripted(result_json);
+    run_fetch_with_status(execution, result_json, "ok").await
+}
+
+/// Drives one `FetchSecret` task through the receive path, with the agent
+/// answering the one named result and status.
+async fn run_fetch_with_status(
+    execution: &Execution,
+    result_json: Vec<u8>,
+    status: &str,
+) -> Result<Value> {
+    let (connection, mut started) = TestConnection::scripted_with_status(result_json, status);
     execution.connections.lock().await.insert(
         "fixture".to_owned(),
         Arc::new(tokio::sync::Mutex::new(Connection::Test(connection))),
@@ -204,6 +215,35 @@ async fn fetched_plaintext_reaches_no_result_output_or_log_in_any_derived_form()
     // The grep ran over real captured output, not an empty file.
     assert!(captured.contains("[REDACTED]"));
     assert!(captured.contains("changed"));
+    Ok(())
+}
+
+/// A failed fetch is a failed task, not a controller error: the agent's
+/// result carries no content, and the run reports the failure the way
+/// every other failed task is reported, so the recap counts it and
+/// `ignoreErrors`, a retry and a rescue see it. The store is never
+/// contacted: a failed fetch has no content to store.
+#[tokio::test]
+async fn a_failed_fetch_reports_a_failed_task() -> Result<()> {
+    let store = Arc::new(Store::default());
+    let execution = execution(
+        Lookups::new(Resolver::new(store.clone()).expect("resolver")),
+        None,
+    )?;
+    let value = run_fetch_with_status(
+        &execution,
+        serde_json::to_vec(&json!({"error": "no such file"}))?,
+        "failed",
+    )
+    .await?;
+    assert_eq!(value["failed"], json!(true), "the task failed");
+    assert_eq!(value["changed"], json!(false), "nothing was stored");
+    assert!(
+        value.get("content").is_none(),
+        "a failed result carries no content: {value}"
+    );
+    assert_eq!(store.sets.load(Ordering::SeqCst), 0, "no store write");
+    assert_eq!(store.gets.load(Ordering::SeqCst), 0, "no store read");
     Ok(())
 }
 

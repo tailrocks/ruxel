@@ -37,6 +37,38 @@ async fn conservative_plan_censors_tasks_and_handlers() -> Result<()> {
     Ok(())
 }
 
+/// The conservative projection censors the task, but the marker the
+/// controller builds itself — the known-after-apply marker of an apply-only
+/// step — is safe metadata: the plan says that the step happens at apply,
+/// and nothing else about it.
+#[tokio::test]
+async fn the_conservative_plan_keeps_the_known_after_apply_marker() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"Store the cluster admin kubeconfig","noLog":true,"operation":{"kind":"fetchSecret","path":"/etc/kubernetes/admin.conf","key":"K8S_ADMIN_KUBECONFIG"}}]}]});
+    let mut backend = Fake {
+        conservative_sensitive: true,
+        ..Default::default()
+    };
+    let options = Options {
+        mode: Mode::Plan,
+        ..Options::default()
+    };
+    run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events.len(), 1);
+    assert_eq!(backend.events[0]["host"], "[censored]");
+    assert_eq!(
+        backend.events[0]["task"],
+        json!({"censored":true,"knownAfterApply":true})
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn plan_censors_lookup_nodes_in_tasks_blocks_and_handlers() -> Result<()> {
     let lookup = json!({"kind":"lookup","provider":"synthetic","key":"fixture-sensitive-value","argv":["fixture-sensitive-argument"]});

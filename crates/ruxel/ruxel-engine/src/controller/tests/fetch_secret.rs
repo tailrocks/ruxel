@@ -40,6 +40,46 @@ async fn fetch_secret_is_known_after_apply_in_check_and_diff() -> Result<()> {
     Ok(())
 }
 
+/// A failed fetch is a failed task, not a controller error: the run
+/// reports it the way every other failed task is reported, so the recap
+/// counts it and `ignoreErrors` ignores it.
+#[tokio::test]
+async fn a_failed_fetch_is_counted_as_a_failed_task() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"Store the cluster admin kubeconfig","noLog":true,"operation":{"kind":"fetchSecret","path":"/etc/kubernetes/admin.conf","key":"K8S_ADMIN_KUBECONFIG"}}]}]});
+    let mut backend = Fake::default();
+    backend
+        .results
+        .push_back(json!({"failed": true, "changed": false}));
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].failed, 1, "the failed fetch is counted");
+    assert_eq!(recap["h"].ok, 0);
+    // The same failure with `ignoreErrors` is ignored, not failed.
+    let mut backend = Fake::default();
+    backend
+        .results
+        .push_back(json!({"failed": true, "changed": false}));
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"Store the cluster admin kubeconfig","noLog":true,"ignoreErrors":true,"operation":{"kind":"fetchSecret","path":"/etc/kubernetes/admin.conf","key":"K8S_ADMIN_KUBECONFIG"}}]}]});
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ignored, 1, "the failure is ignored");
+    assert_eq!(recap["h"].failed, 0);
+    assert_eq!(recap["h"].ok, 1);
+    Ok(())
+}
+
 #[tokio::test]
 async fn fetch_secret_runs_only_in_apply_and_marks_the_plan() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"Store the cluster admin kubeconfig","noLog":true,"operation":{"kind":"fetchSecret","path":"/etc/kubernetes/admin.conf","key":"K8S_ADMIN_KUBECONFIG"}}]}]});

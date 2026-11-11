@@ -2,6 +2,7 @@ use super::*;
 use crate::expression::percent_encode;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+mod copy_fingerprint;
 mod fetch_secret;
 mod prefetch;
 
