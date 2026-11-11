@@ -47,6 +47,17 @@ All notable changes to this project are documented here. The format follows
 - Toolchain: Rust 1.99.1, operator mise layout with mbx as the cargo wrapper, lockfile v4; uv removed.
 - CI regenerated with velnor-actions 0.1.75; tool versions now come from `mise.toml`.
 
+### Fixed
+
+- An atomic replacement binds every step to the destination's parent directory, opened once before any file of the write exists: the temporary file, the staging directory, the publication and the cleanup all go through that descriptor, and the destination's own mode and owner are read through it too. Renaming the parent directory and putting a symlink in its place can no longer redirect a privileged write, nor lend a planted file's owner to it.
+- An atomic replacement revalidates what an exchange left behind: a destination that became a directory between the check and the exchange is put back where it was and the write fails loudly, instead of returning success with a directory stranded under the staging name. The unlink of the exchanged payload is a checked outcome now.
+- A command with `creates` reports the pending change in check mode again: the marker is absent, so the command would run and would change something. A marker that is present still skips the command through the `creates` guard, and reports no change.
+- An `op://` reference accepts a dot in a label: the parts of a reference are separated by `/`, so `op://Vault/Item/API.Password` names the field labeled `API.Password`. The structured `onePassword` selector keeps its stricter grammar, because it reaches `op item get --fields`, whose dot is the section separator; a reference with a dotted label is read through the reference path, where the label is read as it is written.
+- The decoder of the secret reference encoding reads a length prefix as long as the encoder writes it: a `join` separator of a million characters is a seven-digit prefix, and it decodes. The prefix is read without a regular expression, because the body may be a million characters long.
+- Literal text that looks like a reserved prefix is ordinary content: a secret placeholder followed by `ruxel_rt_8d41.` or `ruxel_secret_8d41.` lowers to the lookup and the text. A placeholder that ends on another placeholder's opening is still refused as a malformed secret reference.
+- A secret configured `as_file = true` in the fnox store resolves to the content of the file the store names, not to the path it printed: the store's own query (`fnox env --json --describe`) says which keys are file-backed, and a store that cannot answer fails the read instead of returning a path as a secret.
+- The secret functions are documented the way they are called under pklr: through an import of Core (`core.fnox(…)`, `core.onePassword(…)`), because a call through `module.fnox(…)` from inside a step duplicates every play in the lowered configuration.
+
 ### Removed
 
 - Copies of `schema/Ruxel.pkl` beside fixtures, and the acceptance tools' `--schema` options.

@@ -34,6 +34,60 @@ impl ProcessBackend {
         self.lock_dir = Some(lock_dir.into());
         self
     }
+
+    /// Whether the store keeps this key's value in a file.
+    ///
+    /// `fnox get` prints the value of a secret; a secret configured
+    /// `as_file = true` prints the path of a temporary file that holds the
+    /// value instead. The store says which of the two a key is: `fnox env
+    /// --json --describe` — the unfiltered query — lists every key of the
+    /// active profile with its `env` and `as_file` flags, and resolves
+    /// nothing. The answer is the store's own contract, never a guess
+    /// about what the printed text looks like.
+    ///
+    /// Anything that is not a complete report of the key's flag fails
+    /// closed: an error document, or one too short to name the flag, means
+    /// the store cannot report whether the key is file-backed, and the
+    /// read fails naming `as_file` as unsupported. The alternative is
+    /// taking the pathname `fnox get` printed for the secret.
+    ///
+    /// A key the store does not know is not file-backed: the read that
+    /// follows fails with the store's own missing-key error.
+    fn fnox_file_backed(&self, key: &str) -> Result<bool, String> {
+        let mut cmd = Command::new(&self.fnox);
+        cmd.args(["env", "--json", "--describe"]);
+        let output = cmd
+            .output()
+            .map_err(|_| "process could not start".to_owned())?;
+        let cannot_report = || {
+            format!(
+                "fnox cannot report whether \"{key}\" is a file-backed secret: \
+                     a secret configured with `as_file = true` is not supported"
+            )
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let document: serde_json::Value =
+            serde_json::from_str(stdout.trim()).map_err(|_| cannot_report())?;
+        let Some(keys) = document.get("keys").and_then(serde_json::Value::as_array) else {
+            // The store answered with an error document instead of the
+            // key list: it cannot report the flag, so the read fails
+            // closed rather than taking a pathname for a secret.
+            return Err(cannot_report());
+        };
+        let Some(entry) = keys
+            .iter()
+            .find(|entry| entry.get("key").and_then(serde_json::Value::as_str) == Some(key))
+        else {
+            // The key is not among the profile's keys: not file-backed,
+            // and the read that follows fails with the store's own error.
+            return Ok(false);
+        };
+        // An entry too short to name the flag cannot report it either.
+        match entry.get("as_file").and_then(serde_json::Value::as_bool) {
+            Some(as_file) => Ok(as_file),
+            None => Err(cannot_report()),
+        }
+    }
 }
 
 fn process_output(mut command: Command) -> Result<String, String> {
@@ -159,7 +213,18 @@ impl Backend for ProcessBackend {
             ));
         }
         match self.fnox_read(key)? {
-            Ok(value) => Ok(Some(value)),
+            Ok(value) => {
+                if !self.fnox_file_backed(key)? {
+                    return Ok(Some(value));
+                }
+                // A file-backed secret: `fnox get` printed the path of a
+                // temporary file that holds the value, and the value is that
+                // file's content. The path never leaves this function as a
+                // secret.
+                std::fs::read_to_string(&value).map(Some).map_err(|error| {
+                    format!("the file-backed secret \"{key}\" could not be read: {error}")
+                })
+            }
             Err(ReadFailure::Missing) => Ok(None),
             Err(ReadFailure::Failed) => Err("process failed".to_owned()),
         }

@@ -998,7 +998,12 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// placeholder can never swallow a later one, an unterminated placeholder
 /// fails the prefix count in `segmentsOf` and is refused. Malformed text is
 /// parsed and refused, never left behind as literal content.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_(?:rt|secret)_8d41\.)"#)
+///
+/// The terminator of a secret may not be the opening of another reserved
+/// prefix: `ruxel_rt_8d41.` or `ruxel_secret_8d41.` followed by a
+/// placeholder body. Literal text that only looks like a prefix — the
+/// reserved words without a body — is ordinary content and passes.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_(?:rt|secret)_8d41\.[A-Za-z0-9_.]+__)"#)
 const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
 /// Text without placeholders stays a string. Run-time placeholders
@@ -1041,16 +1046,23 @@ const function segmentAt(_start: Int, _end: Int, _runtime: String?, _secret: Str
 /// does not know is refused here, like a secret reference that does not
 /// decode (in `SecretParser`).
 function segmentsOf(text: String): List<Segment> =
-  let (all = anyPlaceholder.findMatchesIn(text).map((m) ->
+  let (matches = anyPlaceholder.findMatchesIn(text))
+  let (all = matches.map((m) ->
     if (m.groups[1] != null)
       segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), m.groups[1].value, null)
     else
       segmentAt(codePointOffset(text, m.start), codePointOffset(text, m.end), null, m.groups[2].value)))
-  let (prefixes = secretPrefix.findMatchesIn(text).length)
-  let (secrets = all.filter((s) -> s.secret != null).length)
+  // The prefix count is overlap-aware: a placeholder's own reserved
+  // prefixes are accounted for — its opening, and the terminator that
+  // following literal text completes into another full prefix, which is
+  // the word's own text and never a second secret. Only a prefix that
+  // starts outside every placeholder is a secret reference of its own
+  // that never matched, and refuses the text as malformed.
+  let (stray = secretPrefix.findMatchesIn(text).filter((p) ->
+    matches.filter((m) -> m.start <= p.start && p.start < m.end).isEmpty).length)
   let (badSecret = all.filter((s) -> s.secret != null && ((s.secret ?? "").isEmpty || (s.secret ?? "").contains("_"))))
   let (strange = all.filter((s) -> s.runtime != null && !(s.runtime ?? "").matches(knownPlaceholder)))
-  if (prefixes > secrets || !badSecret.isEmpty) throw(malformed)
+  if (stray > 0 || !badSecret.isEmpty) throw(malformed)
   else if (!strange.isEmpty) throw("File content contains an unknown run-time value: __ruxel_rt_8d41.\(strange.first.runtime ?? "")__")
   else all
 
@@ -1123,13 +1135,22 @@ class SecretParser {
     else throw(malformed)
 
   /// Reads one length-prefixed string of the encoding: the text, and the
-  /// rest. A digit run longer than six cannot fit the text that remains.
+  /// rest. The prefix is the text's own length, as `Core.sized` writes it,
+  /// so it is as long as the text needs: a prefix of more than eighteen
+  /// digits names more text than any body can hold and is refused. The
+  /// body that remains is the real bound.
+  ///
+  /// The prefix is read without a regular expression: the body may be a
+  /// million characters long, and a scan of it is a cost the encoding does
+  /// not need.
   function take(body: String): List<String> =
-    let (heads = sizedHead.findMatchesIn(body))
-    if (heads.isEmpty || heads.first.groups[1].value.length > 6 || heads.first.end + heads.first.groups[1].value.toInt() > body.length) throw(malformed)
+    let (colon = body.indexOf(":"))
+    let (digits = if (colon <= 0) "" else body.substring(0, colon))
+    let (named = colon > 0 && digits.matches(Regex("[0-9]+")) && digits.length <= 18)
+    let (size = if (named) digits.toInt() else 0)
+    if (!named || colon + 1 + size > body.length) throw(malformed)
     else
-      let (size = heads.first.groups[1].value.toInt())
-      List(body.substring(heads.first.end, heads.first.end + size), body.substring(heads.first.end + size, body.length))
+      List(body.substring(colon + 1, colon + 1 + size), body.substring(colon + 1 + size, body.length))
 }
 
 /// One parsed atom of a secret reference: what it lowers to, and the rest of
@@ -1143,7 +1164,6 @@ const function atom(_exprs: List<engine.Expr>, _rest: String): Atom =
   new Atom { exprs = _exprs; rest = _rest }
 
 const local parser = new SecretParser {}
-const local sizedHead = Regex(#"^([0-9]+):"#)
 const malformed: String = "File content contains a malformed secret reference"
 
 /// Lowering re-validates everything it decodes with the same sentences the
@@ -1179,9 +1199,18 @@ const function referenceParts(reference: String): List<String> =
 const function opReferenceLabelsValidated(reference: String, parts: List<String>): String =
   let (vault = opLabelValidated("vault", parts[0]))
   let (item = opLabelValidated("item", parts[1]))
-  let (section = if (parts.length == 4) opSectionValidated(parts[2]) else "")
-  let (field = opFieldValidated(parts.last))
+  let (section = if (parts.length == 4) opReferenceLabelValidated("section", parts[2]) else "")
+  let (field = opReferenceLabelValidated("field", parts.last))
   reference
+
+/// A label of a full `op://` reference. A dot is an ordinary character
+/// there: the parts of a reference are separated by `/`, and the reference
+/// is read as it is written. The CLI's own selector syntax — a comma and an
+/// equals sign — is refused, as it is in the structured selector.
+const function opReferenceLabelValidated(what: String, label: String): String =
+  if (label.contains(",") || label.contains("="))
+    throw("1Password \(what) \"\(label)\" may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields")
+  else opLabelValidated(what, label)
 
 const function opLabelValidated(what: String, label: String): String =
   if (label.contains("__ruxel_secret_8d41.") || label.contains("__ruxel_rt_8d41."))

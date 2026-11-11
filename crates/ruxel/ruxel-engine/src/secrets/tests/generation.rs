@@ -11,8 +11,11 @@ static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 /// A fake fnox for the store fixture: values live in files beside the
 /// script, reads go through `fnox get --if-missing error` (the store's read
 /// path), `set` reads the value from stdin (never argv) and counts its
-/// calls, and a missing key exits 1 with `not found`. No real secret value
-/// is ever read: the fixture writes its own.
+/// calls, and a missing key exits 1 with `not found`. The store's own
+/// question about the key — `env --json --describe`, the unfiltered query —
+/// lists every key of the active profile with its `env` and `as_file`
+/// flags; the fixture's keys hold plain values, never file-backed ones. No
+/// real secret value is ever read: the fixture writes its own.
 pub(super) struct Fixture {
     pub(super) directory: PathBuf,
 }
@@ -50,6 +53,23 @@ if [ "$1" = "set" ]; then
   key="$2"
   mkdir -p "$store"
   cat > "$store/$key"
+  exit 0
+fi
+if [ "$1" = "env" ]; then
+  [ "$#" -eq 3 ] && [ "$2" = "--json" ] && [ "$3" = "--describe" ] || { echo "env takes --json --describe" >&2; exit 7; }
+  # The unfiltered query lists every key of the active profile with its
+  # `env` and `as_file` flags: the store's own answer to whether a key is
+  # a file-backed secret. The fixture's keys hold plain values.
+  printf '{"schema":1,"keys":['
+  separator=''
+  if [ -d "$store" ]; then
+    for file in "$store"/*; do
+      [ -f "$file" ] || continue
+      printf '%s{"key":"%s","kind":"secret","env":true,"as_file":false}' "$separator" "${file##*/}"
+      separator=','
+    done
+  fi
+  printf ']}'
   exit 0
 fi
 exit 8
