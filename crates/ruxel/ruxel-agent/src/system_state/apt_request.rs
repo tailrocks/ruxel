@@ -116,6 +116,25 @@ impl PackageRequest {
     pub(crate) fn pinned(&self, version: &str) -> String {
         format!("{}={version}", self.selector())
     }
+
+    /// Whether a hold entry covers this request.
+    ///
+    /// An entry names a package with an optional architecture. An entry
+    /// without one covers an unqualified request only, an entry with one
+    /// covers exactly that architecture, so `pkg:arm64` and `pkg` are never
+    /// the same package. An unqualified request names the native package,
+    /// so an entry for the native architecture covers it.
+    pub(crate) fn covered_by(&self, entry: &Self, native: Option<&str>) -> bool {
+        if self.name != entry.name {
+            return false;
+        }
+        match (self.arch.as_deref(), entry.arch.as_deref()) {
+            (None, None) => true,
+            (Some(wanted), Some(held)) => wanted == held,
+            (None, Some(held)) => native == Some(held),
+            (Some(_), None) => false,
+        }
+    }
 }
 
 impl fmt::Display for PackageRequest {

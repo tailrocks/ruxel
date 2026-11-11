@@ -1,5 +1,6 @@
+use self::holds::{Holds, hold_packages, read_showhold};
 use super::{ExecContext, bool_param, params_object, str_param};
-use crate::system_state::{PackageRequest, SystemState, parse_showhold};
+use crate::system_state::{PackageRequest, SystemState};
 use serde_json::{Map, Value, json};
 
 type CommandResult = Result<(String, i32, String), String>;
@@ -23,25 +24,8 @@ fn run_with(
     let upgrade = str_param(obj, "upgrade");
     let autoremove = bool_param(obj, "autoremove", false);
     let hold = bool_param(obj, "hold", false);
-    let requests = PackageRequest::parse_all(&package_names(obj)?)?;
-    if ctx.environment.iter().any(|(key, _)| key == "APT_CONFIG") {
-        return Err(
-            "apt: APT_CONFIG in the task environment is not supported; package state is read from the host's dpkg database".into(),
-        );
-    }
-    if upgrade.is_some() && requests.iter().any(|request| request.version().is_some()) {
-        return Err(
-            "apt: upgrade cannot be combined with exact version pins, which the upgrade would move"
-                .into(),
-        );
-    }
+    let requests = check_requests(obj, ctx)?;
     let state = str_param(obj, "state").unwrap_or("present");
-    if hold && state == "latest" {
-        return Err(
-            "apt: hold cannot be combined with state=latest; a held package is never upgraded"
-                .into(),
-        );
-    }
     let mut result = json!({"changed": false});
     let mut changed = false;
     if update_cache {
@@ -92,13 +76,55 @@ fn run_with(
         }
     }
     if let Some(holds) = holds {
-        let (marked, holds_after) = apply_holds(holds, &requests, ctx, command)?;
-        changed |= marked;
-        result["holds"] = json!(holds_after);
+        let native = system_state.native_architecture().map(str::to_owned);
+        match hold_packages(
+            holds,
+            &requests,
+            native.as_deref(),
+            ctx,
+            &mut result,
+            command,
+        )? {
+            Holds::Applied(marked) => changed |= marked,
+            // The report carries the failure; the step ends there.
+            Holds::Unverified => return Ok(result),
+        }
     }
     result["changed"] = json!(changed);
     result["failed"] = json!(false);
     Ok(result)
+}
+
+/// The packages an apt step asks for, and the checks that must hold before
+/// any command runs.
+///
+/// # Errors
+/// Returns an error naming the refused request or the refused combination.
+fn check_requests(
+    obj: &Map<String, Value>,
+    ctx: &ExecContext,
+) -> Result<Vec<PackageRequest>, String> {
+    let requests = PackageRequest::parse_all(&package_names(obj)?)?;
+    if ctx.environment.iter().any(|(key, _)| key == "APT_CONFIG") {
+        return Err(
+            "apt: APT_CONFIG in the task environment is not supported; package state is read from the host's dpkg database".into(),
+        );
+    }
+    if str_param(obj, "upgrade").is_some()
+        && requests.iter().any(|request| request.version().is_some())
+    {
+        return Err(
+            "apt: upgrade cannot be combined with exact version pins, which the upgrade would move"
+                .into(),
+        );
+    }
+    if bool_param(obj, "hold", false) && str_param(obj, "state").unwrap_or("present") == "latest" {
+        return Err(
+            "apt: hold cannot be combined with state=latest; a held package is never upgraded"
+                .into(),
+        );
+    }
+    Ok(requests)
 }
 
 /// Refreshes the package lists of the host. The time of the refresh is
@@ -140,55 +166,6 @@ fn refresh_cache(
             .map_or(0, |d| d.as_secs())
     );
     Some(!ctx.check_mode)
-}
-
-/// Holds every listed package the host does not hold yet, with `apt-mark
-/// hold`, and reports the holds of the host afterwards. The holds are read
-/// before anything runs, so a package that is already held is not held
-/// again.
-fn apply_holds(
-    mut held: Vec<String>,
-    requests: &[PackageRequest],
-    ctx: &ExecContext,
-    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
-) -> Result<(bool, Vec<String>), String> {
-    let to_hold: Vec<&str> = requests
-        .iter()
-        .map(PackageRequest::name)
-        .filter(|name| !held.iter().any(|hold| hold == name))
-        .collect();
-    if to_hold.is_empty() {
-        return Ok((false, held));
-    }
-    if ctx.check_mode {
-        // A hold would be applied; in check mode nothing runs, and the
-        // pending change is reported.
-        return Ok((true, held));
-    }
-    let mut args = vec!["hold"];
-    args.extend(to_hold.iter().copied());
-    let (_, rc, stderr) = command(&args, ctx)?;
-    if rc != 0 {
-        return Err(format!("apt-mark hold failed: {stderr}"));
-    }
-    for name in &to_hold {
-        if !held.iter().any(|hold| hold == name) {
-            held.push((*name).to_owned());
-        }
-    }
-    Ok((true, held))
-}
-
-/// The packages the host holds, read with `apt-mark showhold`.
-fn read_showhold(
-    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
-    ctx: &ExecContext,
-) -> Result<Vec<String>, String> {
-    let (stdout, rc, stderr) = command(&["showhold"], ctx)?;
-    if rc != 0 {
-        return Err(format!("apt-mark showhold failed: {stderr}"));
-    }
-    Ok(parse_showhold(&stdout))
 }
 
 fn package_names(obj: &Map<String, Value>) -> Result<Vec<String>, String> {
@@ -365,6 +342,8 @@ fn fill_exec_fields(result: &mut Value, stdout: &str, stderr: &str, with_msg: bo
     result["stdout_lines"] = json!(lines(stdout));
     result["stderr_lines"] = json!(lines(stderr));
 }
+
+mod holds;
 
 #[cfg(test)]
 mod tests;

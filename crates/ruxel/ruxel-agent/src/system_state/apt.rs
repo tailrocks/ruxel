@@ -136,6 +136,12 @@ impl SystemState {
         self.candidates.clear();
     }
 
+    /// The host's native architecture, known once the package snapshot is
+    /// loaded.
+    pub(crate) fn native_architecture(&self) -> Option<&str> {
+        self.native_architecture.as_deref()
+    }
+
     fn ensure_packages(&mut self) -> Result<(), String> {
         if self.packages.is_some() {
             return Ok(());
