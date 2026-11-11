@@ -15,25 +15,6 @@ use std::sync::{Arc, Mutex};
 #[path = "onepassword.rs"]
 mod onepassword;
 
-/// The CLI's selector punctuation in one component of a selector or a
-/// reference: `op item get --fields` parses `,` as a list separator and
-/// `=` as `label=`/`type=` selectors, so a legal component like "API,key"
-/// would fetch a different selector than the author named. Authoring
-/// refuses the same characters (Core's `onePassword`, and `op://`
-/// references alike); this mirrors it, because a configuration can name a
-/// selector directly.
-/// # Errors
-/// Returns the refusal naming the component, never a value.
-pub(super) fn selector_punctuation(what: &str, label: &str) -> Result<(), String> {
-    if label.contains(',') || label.contains('=') {
-        return Err(format!(
-            "1Password {what} \"{label}\" may not contain a comma or an equals sign: \
-             `op item get --fields` reads them as selectors, so it would fetch unintended fields"
-        ));
-    }
-    Ok(())
-}
-
 type ItemCache =
     Arc<Mutex<HashMap<(String, String, Option<String>, String), Cell<serde_json::Value>>>>;
 
@@ -128,6 +109,20 @@ impl Resolver {
     /// # Errors
     /// Returns a redacted error if the lookup fails.
     pub fn resolve(&self, lookup: &Lookup) -> Result<String, String> {
+        // A cached read and a store attempt on the same key serialize on
+        // the fnox write lock: `fetch_secret` and `ensure_generated` hold
+        // it across their store attempts and the cache invalidation that
+        // follows, so a read that races a store cannot answer the value
+        // cached before the attempt and cannot run before the store's
+        // invalidation — it waits, then answers what the store now holds.
+        // A lookup that reads no fnox key, and a synthetic resolver that
+        // never contacts the store, take no lock.
+        let _lock = match lookup {
+            Lookup::Fnox { key } | Lookup::FnoxGenerated { key, .. } if !self.synthetic => {
+                Some(self.backend.fnox_write_lock(key)?)
+            }
+            _ => None,
+        };
         let cell = self
             .values
             .lock()
@@ -166,9 +161,9 @@ impl Resolver {
                 // reach, and a comma or an equals sign would ride along as
                 // the CLI's selector punctuation.
                 if let Some(section) = section {
-                    selector_punctuation("section", section)?;
+                    onepassword::selector_punctuation("section", section)?;
                 }
-                selector_punctuation("field", field)?;
+                onepassword::selector_punctuation("field", field)?;
                 // A label with a dot in it cannot be spelled as a
                 // `--fields` selector: the CLI reads the dot as the
                 // section separator and would fetch another field. The

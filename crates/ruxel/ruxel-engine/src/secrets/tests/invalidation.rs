@@ -103,3 +103,114 @@ fn a_fetch_that_fails_its_read_back_still_invalidates_the_cache() {
         "the generated lookup answered the value cached before the store"
     );
 }
+
+/// A store whose write hangs until the test releases it: the store
+/// attempt is in flight while other lookups run, which is exactly the
+/// window in which a cached read must not answer the old value.
+struct RacingStore {
+    value: Mutex<String>,
+    store_started: Mutex<std::sync::mpsc::Sender<()>>,
+    store_release: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+impl Backend for RacingStore {
+    fn fnox_get(&self, _: &str) -> Result<Option<String>, String> {
+        Ok(Some(self.value.lock().expect("value").clone()))
+    }
+    fn fnox_set(&self, _: &str, value: &str) -> Result<(), String> {
+        self.store_started
+            .lock()
+            .expect("started")
+            .send(())
+            .expect("signal the start of the store");
+        self.store_release
+            .lock()
+            .expect("release")
+            .recv()
+            .expect("wait for the store to be released");
+        *self.value.lock().expect("value") = value.to_owned();
+        Ok(())
+    }
+    fn onepassword_fields(
+        &self,
+        _: &str,
+        _: &str,
+        _: Option<&str>,
+        _: &str,
+    ) -> Result<serde_json::Value, String> {
+        unreachable!("no 1Password fetch stores fnox")
+    }
+    fn onepassword_reference(&self, _: &str) -> Result<String, String> {
+        unreachable!("no 1Password reference stores fnox")
+    }
+    fn command(&self, _: &[String]) -> Result<String, String> {
+        unreachable!("no command lookup stores fnox")
+    }
+}
+
+/// A read that races a store attempt on the same key must not answer
+/// with the value cached before the attempt, and must not run before the
+/// store's invalidation: the cached read and the store attempt serialize,
+/// so the read waits for the invalidation and only then answers — the
+/// value the store now holds.
+#[test]
+fn a_read_that_races_a_store_attempt_never_answers_the_old_value() {
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let resolver = Resolver::new(Arc::new(RacingStore {
+        value: Mutex::new("racing-old-value".to_owned()),
+        store_started: Mutex::new(started_tx),
+        store_release: Mutex::new(release_rx),
+    }))
+    .expect("resolver");
+    let lookup = Lookup::Fnox {
+        key: "RACE_KEY".into(),
+    };
+    assert_eq!(
+        resolver.resolve(&lookup).expect("resolve"),
+        "racing-old-value",
+        "the pre-fetch read caches the old value"
+    );
+    let fetcher = {
+        let resolver = resolver.clone();
+        std::thread::spawn(move || resolver.fetch_secret("RACE_KEY", "racing-new-value"))
+    };
+    started_rx.recv().expect("the store attempt is in flight");
+    let (answer_tx, answer_rx) = std::sync::mpsc::channel();
+    let reader = {
+        let resolver = resolver.clone();
+        let lookup = lookup.clone();
+        std::thread::spawn(move || {
+            answer_tx
+                .send(resolver.resolve(&lookup))
+                .expect("the racing read answers");
+        })
+    };
+    let early = answer_rx.recv_timeout(std::time::Duration::from_millis(300));
+    if let Ok(answer) = &early {
+        assert_eq!(
+            *answer,
+            Ok("racing-new-value".to_owned()),
+            "a read racing the store attempt answered with {answer:?}"
+        );
+    }
+    release_tx.send(()).expect("release the store attempt");
+    fetcher
+        .join()
+        .expect("the fetch thread finishes")
+        .expect("the fetch stores");
+    // The read is held until the store attempt and its invalidation are
+    // done — the serialization the fix must provide — and then answers
+    // with the value the store now holds.
+    let answer = match early {
+        Ok(answer) => answer,
+        Err(_) => answer_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the racing read finishes once the store does"),
+    };
+    assert_eq!(
+        answer,
+        Ok("racing-new-value".to_owned()),
+        "the racing read must see the stored value, never the old one: {answer:?}"
+    );
+    reader.join().expect("the reader thread finishes");
+}

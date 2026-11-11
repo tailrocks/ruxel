@@ -58,8 +58,10 @@ pub trait Backend: Send + Sync {
     /// Returns an error if the value cannot be stored.
     fn fnox_set(&self, key: &str, value: &str) -> Result<(), String>;
     /// Holds the store's write lock while generation checks presence,
-    /// generates, stores and reads back, and while a `FetchSecret` store
-    /// compares and writes. Runs that honor the lock serialize; the guard
+    /// generates, stores and reads back, while a `FetchSecret` store
+    /// compares, writes and invalidates the cache, and while a lookup
+    /// resolves a cached read of the key — reads and writes of one key
+    /// serialize on it. Runs that honor the lock serialize; the guard
     /// releases on drop.
     ///
     /// # Errors
