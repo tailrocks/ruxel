@@ -5,6 +5,7 @@ mod lock;
 mod lookup;
 mod resolver;
 mod staging;
+mod store;
 
 pub use backend::ProcessBackend;
 pub(crate) use fingerprint::{is_fingerprint, is_sentence_over};

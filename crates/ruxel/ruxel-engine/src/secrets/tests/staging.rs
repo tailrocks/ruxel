@@ -44,7 +44,7 @@ fn staging_files_containing(marker: &str) -> Vec<std::path::PathBuf> {
 fn a_partial_write_failure_removes_the_partially_written_file() {
     const PLAINTEXT: &str = "synthetic-partial-stage-4f2c-9d21";
     let half = &PLAINTEXT.as_bytes()[..PLAINTEXT.len() / 2];
-    let error = StagedValue::stage(PLAINTEXT, |file, bytes| {
+    let error = StagedValue::stage(PLAINTEXT, |file, _path, bytes| {
         use std::io::Write;
         file.write_all(&bytes[..bytes.len() / 2])?;
         Err(std::io::Error::other("synthetic disk full"))
@@ -57,6 +57,85 @@ fn a_partial_write_failure_removes_the_partially_written_file() {
         leaked.is_empty(),
         "a failed write left its partially written bytes behind: {leaked:?}"
     );
+}
+
+/// A write that fails partway has already put the secret's bytes on the
+/// disk, and the removal that follows is part of that failure, not a
+/// cleanup detail to drop on the floor: when the removal itself fails,
+/// the error says so — naming the removal, never the path, which is
+/// where the plaintext is — instead of the generic staging error alone.
+#[test]
+fn a_partial_write_failure_reports_a_removal_that_failed() {
+    const PLAINTEXT: &str = "synthetic-partial-stage-cleanup-3f81-a4d6";
+    let mut sabotaged: Option<std::path::PathBuf> = None;
+    let error = StagedValue::stage(PLAINTEXT, |file, path, bytes| {
+        use std::io::Write;
+        file.write_all(&bytes[..bytes.len() / 2])?;
+        // The removal the cleanup attempts cannot succeed: the staging
+        // path holds a directory now, and `remove_file` on a directory
+        // fails.
+        std::fs::remove_file(path)?;
+        std::fs::create_dir(path)?;
+        sabotaged = Some(path.to_path_buf());
+        Err(std::io::Error::other("synthetic disk full"))
+    })
+    .expect_err("the staging write failed");
+    assert!(
+        error.contains("could not be removed"),
+        "names the removal: {error}"
+    );
+    assert!(
+        !error.contains(".ruxel-fnox-stage"),
+        "the error never names the staging path: {error}"
+    );
+    // The plaintext is gone: the file that held the partial bytes is
+    // not on the disk any more.
+    let leaked = staging_files_containing(PLAINTEXT);
+    assert!(
+        leaked.is_empty(),
+        "the failed write left its bytes behind: {leaked:?}"
+    );
+    // The directory the test put in the staging path goes now.
+    let path = sabotaged.expect("the staging path");
+    std::fs::remove_dir(&path).expect("remove the directory in the staging path");
+}
+
+/// A store that never starts leaves the staging file behind: the spawn
+/// failed and the file holds the plaintext. The removal is part of that
+/// failure, and a removal that fails is reported — naming the removal,
+/// never the path — so the plaintext is never left on the disk with only
+/// a generic process error.
+#[test]
+fn a_spawn_failure_reports_a_removal_that_failed() {
+    let mut sabotaged: Option<std::path::PathBuf> = None;
+    let error = ProcessBackend::fnox_set_with("KEY", "synthetic-spawn-stage-plaintext", |staged| {
+        let path = staged.path();
+        // The store never starts, and the removal that follows
+        // cannot succeed: the staging path holds a directory now.
+        std::fs::remove_file(path)?;
+        std::fs::create_dir(path)?;
+        sabotaged = Some(path.to_path_buf());
+        Err(std::io::Error::other("synthetic spawn failure"))
+    })
+    .expect_err("the store could not start");
+    assert!(
+        error.contains("could not be removed"),
+        "names the removal: {error}"
+    );
+    assert!(
+        !error.contains(".ruxel-fnox-stage"),
+        "the error never names the staging path: {error}"
+    );
+    // The plaintext is gone: the file that held it is not on the disk
+    // any more.
+    let leaked = staging_files_containing("synthetic-spawn-stage-plaintext");
+    assert!(
+        leaked.is_empty(),
+        "the failed spawn left the plaintext behind: {leaked:?}"
+    );
+    // The directory the test put in the staging path goes now.
+    let path = sabotaged.expect("the staging path");
+    std::fs::remove_dir(&path).expect("remove the directory in the staging path");
 }
 
 /// A staging file that cannot be removed fails the store: the file holds

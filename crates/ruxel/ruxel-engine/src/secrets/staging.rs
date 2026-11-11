@@ -27,21 +27,22 @@ impl StagedValue {
     /// file cannot be created or written.
     pub(super) fn new(value: &str) -> Result<Self, String> {
         use std::io::Write;
-        Self::stage(value, |file, bytes| {
+        Self::stage(value, |file, _path, bytes| {
             file.write_all(bytes).and_then(|()| file.flush())
         })
     }
 
     /// Stages `value` behind a named write step, so a write that fails
     /// partway is testable: the bytes that reached the disk before the
-    /// failure are the value's.
+    /// failure are the value's. The write step is handed the staging
+    /// path too, so a step that fails can act on the file it wrote.
     ///
     /// # Errors
     /// Returns an error, naming the staging and never the value, if the
     /// file cannot be created or written.
     pub(super) fn stage(
         value: &str,
-        write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+        write: impl FnOnce(&mut std::fs::File, &Path, &[u8]) -> std::io::Result<()>,
     ) -> Result<Self, String> {
         let path = std::env::temp_dir().join(format!(
             ".ruxel-fnox-stage-{}-{}",
@@ -58,17 +59,25 @@ impl StagedValue {
         let mut file = options
             .open(&path)
             .map_err(|_| "store staging unavailable".to_owned())?;
-        // The cleanup guard is installed the moment the file exists,
-        // before the first byte is written: a write that fails partway
-        // has already put plaintext on the disk, and only a guard that
-        // predates the write removes it on that path. Constructed after
-        // the write instead, its cleanup would never run there — the
-        // error return would leave the partial file behind.
-        let staged = Self {
+        // The staged value exists from the moment the file does, before
+        // the first byte is written: a write that fails partway has
+        // already put plaintext on the disk, and the value is what
+        // removes it — explicitly on the failure path below, and through
+        // its drop when a panic unwinds past it.
+        let mut staged = Self {
             path,
             removed: false,
         };
-        write(&mut file, value.as_bytes()).map_err(|_| "store staging failed".to_owned())?;
+        if write(&mut file, &staged.path, value.as_bytes()).is_err() {
+            // The removal is part of the failed write, not a detail to
+            // drop on the floor: the file holds the bytes that reached
+            // the disk, and a removal that cannot be confirmed fails
+            // the write rather than leave the plaintext behind under a
+            // generic staging error. The drop stays the best-effort
+            // fallback for a removal that failed here.
+            staged.cleanup()?;
+            return Err("store staging failed".to_owned());
+        }
         Ok(staged)
     }
 
@@ -103,9 +112,10 @@ impl Drop for StagedValue {
     fn drop(&mut self) {
         // The best-effort fallback: [`StagedValue::cleanup`] reports
         // removal failures to the store that can still fail on them; a
-        // drop that happens without one — an early return, a panic —
-        // still removes the file, silently when it must. A file that is
-        // already gone, or already cleaned up, counts as removed.
+        // drop that happens without one — a panic, a path that never
+        // reached the cleanup — still removes the file, silently when it
+        // must. A file that is already gone, or already cleaned up,
+        // counts as removed.
         if !self.removed {
             drop(std::fs::remove_file(&self.path));
         }

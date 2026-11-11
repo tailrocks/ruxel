@@ -1,5 +1,4 @@
 use super::Backend;
-use super::staging::StagedValue;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -306,39 +305,15 @@ impl Backend for ProcessBackend {
     }
 
     fn fnox_set(&self, key: &str, value: &str) -> Result<(), String> {
-        // The value reaches `fnox set` in a staging file through
-        // `--from-file`, never in a command argument and never on stdin:
-        // the pinned fnox trims the whitespace around a value it reads from
-        // stdin, and `--from-file` keeps the file's exact bytes, so the
-        // read-back comparison sees the value that was meant, byte for
-        // byte. The staging file is removed when the store call finishes,
-        // on success and failure alike.
-        if !super::is_fnox_key(key) {
-            return Err(format!(
-                "fnox key \"{key}\" is malformed: {}",
-                super::FNOX_KEY_GRAMMAR
-            ));
-        }
-        let mut staged = StagedValue::new(value)?;
-        let mut child = Command::new(&self.fnox)
-            .args(["set", key, "--from-file"])
-            .arg(staged.path())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|_| "process could not start".to_owned())?;
-        let waited = child.wait().map_err(|_| "store did not finish".to_owned());
-        // The staging file holds the plaintext, so its removal is part of
-        // the store, not a cleanup after it: a removal that fails fails
-        // the store rather than report success with the complete secret
-        // left behind. `Drop` stays the best-effort fallback for the paths
-        // that never reach this line.
-        staged.cleanup()?;
-        if !waited?.success() {
-            return Err("process failed".into());
-        }
-        Ok(())
+        Self::fnox_set_with(key, value, |staged| {
+            Command::new(&self.fnox)
+                .args(["set", key, "--from-file"])
+                .arg(staged.path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+        })
     }
 
     fn fnox_write_lock(&self, _key: &str) -> Result<super::FnoxLock, String> {
