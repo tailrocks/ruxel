@@ -41,13 +41,11 @@ const EXAMPLES: &[&str] = &[
 
 /// The official `pkl` binary.
 ///
-/// `RUXEL_PKL` points the check at a binary of its own, and is authoritative:
-/// a binary named there that does not run is a loud failure, never a reason
-/// to look further. Otherwise the binary is looked for on the `PATH` and in
-/// the places an operator's tools live, because the environment a test runs
-/// in does not always carry the `PATH` of the shell. An absent binary is a
-/// loud failure too: the check is mandatory, and a skipped check would pass
-/// every regression the corpus was added to cover.
+/// `RUXEL_PKL` points at a binary of its own and is authoritative: a named binary that does not
+/// run is a loud failure, never a reason to look further. Otherwise the binary is looked up on
+/// the `PATH` and in the places an operator's tools live, because a test does not always carry
+/// the shell's `PATH`. An absent binary is a loud failure too: the check is mandatory, and a
+/// skipped check would pass every regression the corpus was added to cover.
 fn pkl() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("RUXEL_PKL") {
         let path = PathBuf::from(path);
