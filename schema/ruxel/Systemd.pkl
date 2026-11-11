@@ -35,6 +35,15 @@ typealias Name = Static(!isEmpty && !startsWith("-"))
 /// `getty@`.
 typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && (!contains(".") && length <= 247 || endsWith(".service") && length > 8) && !startsWith("@") && !endsWith("@") && !contains("@.service"))
 
+/// A systemd timer unit: `postgresql-multixact-monitor`, the name of the
+/// `.timer` unit it manages. Canonical unit name characters only, at most
+/// 247 of them, and no `.`: a timer is named by its own name, and the
+/// `.timer` unit is that name with the suffix, so a timer is never a
+/// service (`Service` names `.service` units only). The limit leaves room
+/// for the suffix, so the unit name systemd reads fits its own limit of
+/// 255 characters.
+typealias TimerName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && !contains(".") && length <= 247 && !startsWith("@") && !endsWith("@"))
+
 /// A systemd service.
 class Service extends core.Step {
   hidden fixed kind = "service"
@@ -53,4 +62,44 @@ class Service extends core.Step {
   /// started or stopped the service, not when the restart ran. To react to a
   /// restart, react to the steps the service restarts on.
   restartOnChangeOf: Listing<core.Step>
+  /// Reloads the service at the end of the stage when one of these steps
+  /// changed: the service reads its new configuration without restarting
+  /// (a PostgreSQL `SIGHUP`). Each must be an earlier step of the same
+  /// stage that can report a change, and not a recipe. Only for a running
+  /// service.
+  ///
+  /// A service takes restart triggers or reload triggers, not both: writing
+  /// both is an evaluation error naming the service. A reload needs a
+  /// running service, so a stopped service with reload triggers is rejected
+  /// like a stopped service with restart triggers.
+  reloadOnChangeOf: Listing<core.Step>
+}
+
+/// A systemd timer: a `.timer` unit that starts a service on a schedule.
+///
+/// The timer owns its unit file and its enablement, and nothing else: it
+/// names the service it starts — the service of its own name when it
+/// names none — but the unit file of that service stays a `File`. Writing
+/// the timer file and reloading systemd stay the author's `File` and
+/// `Command` steps, in the order the author wrote them.
+class SystemdTimer extends core.Step {
+  hidden fixed kind = "systemdTimer"
+  /// The name of the `.timer` unit: `postgresql-multixact-monitor` is
+  /// `postgresql-multixact-monitor.timer`.
+  name: TimerName
+  /// The service the timer starts: the unit the timer activates when it
+  /// fires. A timer that names no service starts the service of its own
+  /// name, as systemd does: `postgresql-maintenance.timer` starts
+  /// `postgresql-maintenance.service`. The workflow declares that service
+  /// as a `Service` of its own, or the unit comes from a package.
+  service: ServiceName? = null
+  /// When the timer fires: a systemd calendar expression, such as `daily`
+  /// or `*-*-* 03:00:00`.
+  onCalendar: Static? = null
+  /// How long after boot the timer fires.
+  onBoot: Duration? = null
+  /// Whether the timer fires for a run it missed while the machine was off.
+  persistent: Boolean = false
+  /// Enabled at boot.
+  enabled: Boolean = true
 }

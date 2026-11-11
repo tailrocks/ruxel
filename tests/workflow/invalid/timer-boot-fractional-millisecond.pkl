@@ -1,0 +1,14 @@
+// expect: 'The precise check': onBoot 1000.0000005.ms must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires half a nanosecond after a whole millisecond"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The precise check"; name = "postgresql-precise-check"; onBoot = 1000.0000005.ms }
+    }
+  }
+}

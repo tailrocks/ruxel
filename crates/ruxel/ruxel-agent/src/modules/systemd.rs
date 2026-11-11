@@ -54,6 +54,7 @@ pub(super) fn run(
                         "started" => "start",
                         "stopped" => "stop",
                         "restarted" => "restart",
+                        "reloaded" => "reload",
                         _ => unreachable!("validated by state_needs_action"),
                     };
                     let st = systemctl(&[verb, unit])?;
@@ -77,7 +78,12 @@ pub(super) fn run(
 fn state_needs_action(state: &str, active: bool) -> Result<bool, String> {
     match state {
         "started" => Ok(!active),
-        "stopped" => Ok(active),
+        // A stopped unit is stopped, and a reload needs a running unit:
+        // `systemctl reload` on an inactive unit fails, and a stopped
+        // service reads its configuration when it starts, so there is
+        // nothing to reload and nothing to report. This is the read-only
+        // answer, unlike the restart, which always acts.
+        "stopped" | "reloaded" => Ok(active),
         "restarted" => Ok(true),
         other => Err(format!(
             "systemd: state {other:?} outside the closed surface"
@@ -104,5 +110,16 @@ mod tests {
         assert!(!super::state_needs_action("started", true).unwrap());
         assert!(super::state_needs_action("stopped", true).unwrap());
         assert!(super::state_needs_action("restarted", false).unwrap());
+    }
+
+    #[test]
+    fn a_reload_needs_a_running_unit_and_says_so_without_acting() {
+        // The read-only answer: a running unit would be reloaded, an
+        // inactive one has nothing to reload.
+        assert!(super::state_needs_action("reloaded", true).unwrap());
+        assert!(!super::state_needs_action("reloaded", false).unwrap());
+        // Every other state stays outside the closed surface.
+        assert!(super::state_needs_action("reload", true).is_err());
+        assert!(super::state_needs_action("reloaded!", true).is_err());
     }
 }

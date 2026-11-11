@@ -1,0 +1,16 @@
+// A timer with a large boot delay: the delay is a whole number of
+// milliseconds, so it is kept as it is written, and the unit file reads
+// it in seconds, as systemd reads a delay of whole seconds.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires a long time after the boot"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The long delay"; name = "postgresql-long-delay"; service = "postgresql-long-delay"; onBoot = 1000000000.ms }
+    }
+  }
+}

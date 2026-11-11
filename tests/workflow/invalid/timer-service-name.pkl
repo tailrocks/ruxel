@@ -1,0 +1,9 @@
+// expect-pkl: !contains(".")
+// expect-pklr: expected TimerName
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { name = "thing.service"; onCalendar = "daily" }
+} } }

@@ -134,7 +134,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "daemon_reload" => false, FieldType::Flag;
         "enabled" => false, FieldType::Flag;
         "name" => false, FieldType::Text;
-        "state" => false, FieldType::Choice(&["started","stopped","restarted"]);
+        "state" => false, FieldType::Choice(&["started","stopped","restarted","reloaded"]);
     ),
     operation!("user";
         "append" => false, FieldType::Flag;

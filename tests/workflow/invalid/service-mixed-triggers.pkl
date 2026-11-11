@@ -1,0 +1,18 @@
+// expect: 'app' has both restartOnChangeOf and reloadOnChangeOf in this stage; a service takes restart triggers or reload triggers, not both
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local config = new File { path = "/etc/app.conf"; content = "listen = 8080\n" }
+
+stages {
+  new Stage {
+    title = "A service takes restart triggers or reload triggers, not both"
+    hosts = inventory.workers
+    steps {
+      config
+      new systemd.Service { name = "app"; restartOnChangeOf { config } }
+      new systemd.Service { name = "app"; reloadOnChangeOf { config } }
+    }
+  }
+}

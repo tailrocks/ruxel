@@ -77,6 +77,11 @@ fn record_skips_noncacheable_modules() {
             "systemd",
             json!({"name": "unused", "state": "restarted"}),
         ),
+        (
+            "reload",
+            "systemd",
+            json!({"name": "unused", "state": "reloaded"}),
+        ),
     ] {
         ledger.record(key, module, &params, "ok", &json!({}));
         assert!(ledger.cached_ok(key).is_none());
@@ -105,6 +110,21 @@ fn apt_latest_is_not_cached() {
     );
 }
 
+/// A reload's effect depends on the notification that triggered it, not on
+/// the unit's state alone, so it is never probed and never cached: a cached
+/// `reloaded ok` would skip a reload that a changed configuration file
+/// still requires.
+#[test]
+fn a_reload_is_not_probed() {
+    let mut state = crate::system_state::SystemState::with_test_units();
+    let reloaded = json!({"name": "synthetic.service", "state": "reloaded"});
+    assert!(probe_for("systemd", &reloaded, &mut state).is_none());
+    // The same unit in another state is probed: it is the reload that is
+    // not a fact about the host, not the unit.
+    let started = json!({"name": "synthetic.service", "state": "started"});
+    assert!(probe_for("systemd", &started, &mut state).is_some());
+}
+
 #[test]
 fn explicit_refreshes_and_actions_bypass_even_existing_records() {
     let dir = Scratch::new("action-cache-gate");
@@ -121,6 +141,7 @@ fn explicit_refreshes_and_actions_bypass_even_existing_records() {
         ("systemd", json!({"name":"unit", "daemon_reload":true})),
         ("systemd", json!({"name":"unit", "daemon_reload":"yes"})),
         ("systemd", json!({"name":"unit", "state":"restarted"})),
+        ("systemd", json!({"name":"unit", "state":"reloaded"})),
     ] {
         assert!(!cache_allowed(module, &params), "{module} {params}");
         ledger.record("new-record", module, &params, "ok", &json!({}));

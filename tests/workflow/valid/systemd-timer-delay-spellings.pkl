@@ -1,0 +1,18 @@
+// Two spellings of one delay are one timer: the delay is fingerprinted
+// by the whole milliseconds it is, so `1.001.s` and `1001.ms` are one
+// schedule and one step, not two steps that manage the same unit file
+// with different settings.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires a second and a millisecond after the boot"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The delay in seconds"; name = "postgresql-spelled-delay"; service = "postgresql-spelled-delay"; onBoot = 1.001.s }
+      new systemd.SystemdTimer { title = "The delay in milliseconds"; name = "postgresql-spelled-delay"; service = "postgresql-spelled-delay"; onBoot = 1001.ms }
+    }
+  }
+}

@@ -104,16 +104,18 @@ impl SystemState {
         if self.units.is_some() {
             return Ok(());
         }
+        // Timer units are listed too: a timer is enabled and disabled like
+        // a service, and its enablement is only known if the unit is read.
         let units = systemctl(&[
             "list-units",
             "--all",
-            "--type=service",
+            "--type=service,timer",
             "--no-legend",
             "--plain",
         ])?;
         let files = systemctl(&[
             "list-unit-files",
-            "--type=service",
+            "--type=service,timer",
             "--no-legend",
             "--plain",
         ])?;

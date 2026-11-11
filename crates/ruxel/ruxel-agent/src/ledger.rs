@@ -110,6 +110,10 @@ pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
         "systemd" => {
             !probe::bool_value(params.get("daemon_reload"), false)
                 && params.get("state").and_then(Value::as_str) != Some("restarted")
+                // A reload always acts when it runs, and the run that
+                // triggers it is the one that says whether it changed, so
+                // its result is never a fact about the host to cache.
+                && params.get("state").and_then(Value::as_str) != Some("reloaded")
         }
         "copy" | "template" | "lineinfile" | "replace" | "blockinfile" | "sysctl" => true,
         _ => false,

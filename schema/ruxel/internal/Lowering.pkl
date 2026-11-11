@@ -76,6 +76,7 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["fetchSecret"] = (s) -> s is core.FetchSecret
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
+  ["systemdTimer"] = (s) -> s is systemd.SystemdTimer
   ["packageIndex"] = (s) -> s is debian.AptPackageIndex
   ["packages"] = (s) -> s is debian.AptPackages
   ["aptRepository"] = (s) -> s is debian.AptRepository
@@ -209,7 +210,7 @@ function withMetas(ix: StageIndex): StageIndex =
   (ix) { metas = _metas }
 
 function stageProblems(s: core.Stage, ix: StageIndex): List<String> =
-  (hostsTwice(s) + positions(ix.steps).flatMap((i) -> problemsAt(ix, i)) + repeatedCaptures(ix)).map((p) -> "Stage \"\(s.title)\": \(p)")
+  (hostsTwice(s) + positions(ix.steps).flatMap((i) -> problemsAt(ix, i)) + repeatedCaptures(ix) + mixedTriggers(ix)).map((p) -> "Stage \"\(s.title)\": \(p)")
 
 /// A capture runs once per stage, so every `stdout()` names exactly one
 /// read, and a `local` holding a capture holds one value.
@@ -235,12 +236,42 @@ function playOf(_title: String, _targets: List<String>, ix: StageIndex): engine.
   name = _title
   targets { for (t in _targets) { t } }
   tasks { for (i, _ in ix.steps) { for (t in lower(ix, i)) { t } } }
-  handlers { for (n in restartedServices(ix.steps)) { restartHandler(n) } }
+  handlers {
+    for (n in restartedServices(ix.steps)) { restartHandler(n) }
+    for (n in reloadedServices(ix.steps)) { reloadHandler(n) }
+  }
 }
 
 /// One restart handler per service name, however many steps ask for it.
 function restartedServices(steps: List<core.Step>): List<String> =
   steps.filter((x) -> x is systemd.Service && !x.restartOnChangeOf.isEmpty).map((x) -> x.name).toSet().toList()
+
+/// One reload handler per service name, however many steps ask for it. A
+/// service takes restart triggers or reload triggers, not both: the rule is
+/// about the service, not about the step (`mixedTriggers`), so the two
+/// lists never name the same service.
+function reloadedServices(steps: List<core.Step>): List<String> =
+  steps.filter((x) -> x is systemd.Service && !x.reloadOnChangeOf.isEmpty).map((x) -> x.name).toSet().toList()
+
+/// A service takes restart triggers or reload triggers, not both. The rule
+/// is about the service, not about the step: two steps that name the same
+/// service, one with restart triggers and one with reload triggers, would
+/// lower to two handlers for the same unit — a restart and a reload of one
+/// unit, which the engine cannot carry out.
+///
+/// The steps are compared by the unit they name (`app` and `app.service`
+/// are one unit), across the whole stage: a service takes one kind of
+/// trigger wherever it is written.
+function mixedTriggers(ix: StageIndex): List<String> =
+  serviceUnits(ix).flatMap((unit) ->
+    let (restarting = ix.steps.filter((s) -> s is systemd.Service && unitName(s.name) == unit && !s.restartOnChangeOf.isEmpty))
+    let (reloading = ix.steps.filter((s) -> s is systemd.Service && unitName(s.name) == unit && !s.reloadOnChangeOf.isEmpty))
+    if (restarting.isEmpty || reloading.isEmpty) List()
+    else List("'\(restarting.first.name)' has both restartOnChangeOf and reloadOnChangeOf in this stage; a service takes restart triggers or reload triggers, not both"))
+
+/// The units the stage's services name, once each.
+function serviceUnits(ix: StageIndex): List<String> =
+  ix.steps.filter((s) -> s is systemd.Service).map((s) -> unitName(s.name)).toSet().toList()
 
 /// A step, the tags it inherits from the recipes around it, and where the
 /// author wrote it.
@@ -326,8 +357,18 @@ function problemsAt(ix: StageIndex, i: Int): List<String> =
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
 function settings(s: core.Step): List<String> =
-  if (s is systemd.Service && !s.running && !s.restartOnChangeOf.isEmpty)
+  if (s is systemd.Service && !s.restartOnChangeOf.isEmpty && !s.reloadOnChangeOf.isEmpty)
+    List("'\(name(s))' has both restartOnChangeOf and reloadOnChangeOf; a service takes restart triggers or reload triggers, not both")
+  else if (s is systemd.Service && !s.running && !s.restartOnChangeOf.isEmpty)
     List("'\(name(s))' has running = false, so it cannot restart on a change; remove restartOnChangeOf or set running = true")
+  else if (s is systemd.Service && !s.running && !s.reloadOnChangeOf.isEmpty)
+    List("'\(name(s))' has running = false, so it cannot reload on a change; remove reloadOnChangeOf or set running = true")
+  else if (s is systemd.SystemdTimer && s.onCalendar == null && s.onBoot == null)
+    List("'\(name(s))' has no schedule: set onCalendar or onBoot")
+  else if (s is systemd.SystemdTimer && s.onBoot != null && onBootNegative(s.onBoot))
+    List("'\(name(s))': onBoot \(s.onBoot) is negative; a timer fires after the boot, not before it")
+  else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMillis(s.onBoot) == null)
+    List(onBootRefusal(s))
   else if (s is debian.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
   else if (s is core.Action && s.changes is core.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
@@ -433,9 +474,10 @@ function nested(ix: StageIndex, i: Int): List<String> =
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
 
-/// Paths a step writes as a regular file or a link.
+/// Paths a step writes as a regular file or a link. A timer writes its
+/// unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
-  if (List("file", "symlink", "aptRepository").contains(s.kind)) subjectsOf(s) else List()
+  if (List("file", "symlink", "aptRepository", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -481,10 +523,11 @@ function where(p: Placed): String =
   positions(p.scope).fold("", (acc, k) ->
     if (k == 0) "step \(p.scope[0] + 1)" else "step \(p.scope[k] + 1) of the recipe at " + acc)
 
-/// Steps listed in `onChangeOf` or `restartOnChangeOf`, as written.
+/// Steps listed in `onChangeOf`, `restartOnChangeOf` or `reloadOnChangeOf`, as
+/// written.
 const function listed(s: core.Step): List<core.Step> =
   if (s is core.Action) s.onChangeOf.toList()
-  else if (s is systemd.Service) s.restartOnChangeOf.toList()
+  else if (s is systemd.Service) s.restartOnChangeOf.toList() + s.reloadOnChangeOf.toList()
   else List()
 
 /// Steps whose change this step reacts to. Recipes are rejected by
@@ -576,8 +619,10 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> fields(List(s.user, s.shell))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
-  // Restart triggers add up across steps, so they are not part of identity.
+  // Restart and reload triggers add up across steps, so they are not part of
+  // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
+  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), "\(s.persistent)", "\(s.enabled)"))
   ["capture"] = (s) -> s.id()
 }
 
@@ -596,6 +641,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["gitCheckout"] = (s) -> List(s.path)
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
+  ["systemdTimer"] = (s) -> List(timerPath(s.name))
   ["loginShell"] = (s) -> List("the login shell of \(s.user)")
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
@@ -609,6 +655,115 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
 /// systemd's name for a service: `foo` is `foo.service`.
 const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
 
+/// The service a timer starts: the one it names, or the service of its
+/// own name when it names none, as systemd does: `foo.timer` starts
+/// `foo.service`.
+const function timerTarget(t: systemd.SystemdTimer): String = unitName(t.service ?? t.name)
+
+/// systemd's name for a timer: `foo` is `foo.timer`.
+const function timerUnit(name: String): String = "\(name).timer"
+
+/// Where a timer's unit file lives: the directory systemd reads its own
+/// units from.
+const function timerPath(name: String): String = "/etc/systemd/system/\(timerUnit(name))"
+
+/// The timer file: the schedule the timer fires on. The `[Install]` section
+/// is what `systemctl enable` reads, so the unit can be enabled at boot;
+/// whether it is enabled is the unit's own state, not the file's.
+function timerContent(t: systemd.SystemdTimer): String =
+  new Listing {
+    "[Unit]"
+    "Description=\(t.name) timer"
+    ""
+    "[Timer]"
+    when (t.onCalendar != null) { "OnCalendar=\(t.onCalendar)" }
+    when (t.onBoot != null) { "OnBootSec=\(onBootSpan(t))" }
+    // The unit the timer activates when it fires: a timer that names no
+    // service starts the service of its own name.
+    "Unit=\(timerTarget(t))"
+    when (t.persistent) { "Persistent=true" }
+    ""
+    "[Install]"
+    "WantedBy=timers.target"
+    ""
+  }.join("\n")
+
+/// The boot delay as the unit systemd reads it: whole seconds, or whole
+/// milliseconds.
+///
+/// The delay has been checked before the timer is lowered — `settings`
+/// refuses a delay that is not a whole number of milliseconds — so the
+/// count of milliseconds is there. The throw is the backstop that keeps a
+/// `0ms` from being written when it is not: a delay that is not a whole
+/// number of milliseconds is refused, never rounded to another delay.
+const function onBootSpan(t: systemd.SystemdTimer): String =
+  let (millis = onBootMillis(t.onBoot))
+  if (millis == null) throw(onBootRefusal(t))
+  else
+    let (seconds = millis / 1000.0)
+    if (seconds.floor == seconds) "\(seconds.toInt())"
+    else "\(millis)ms"
+
+/// The sentence that refuses a boot delay that is not a whole number of
+/// milliseconds. One sentence for both places that refuse one, so that
+/// the refusal reads the same wherever it is found.
+const function onBootRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': onBoot \(t.onBoot) must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds"
+
+/// The boot delay in whole milliseconds, when it is a whole number of them:
+/// `null` when it is a fraction of a millisecond, or negative.
+///
+/// The count is taken in the unit the delay was written in, so that it is
+/// the delay the author wrote and not one the conversion produced: a
+/// delay in milliseconds is a whole number of milliseconds exactly, with
+/// no tolerance at all, so `1000000000.0000005.ms` is refused rather than
+/// rounded to `1000000000.ms`. A delay in another unit is converted, and
+/// the noise a float conversion leaves — the last place of the value it
+/// was written in — is allowed, so that `1.001.s` stays the 1001
+/// milliseconds it asks for.
+const function onBootMillis(d: Duration?): Int? =
+  if (d == null) null
+  else
+    let (value = d.value.toFloat())
+    let (millis = millisOf(d.unit, value))
+    let (rounded = (millis + 0.5).floor)
+    if (millis < 0 || (millis - rounded).abs > millisNoise(d.unit, value)) null else rounded.toInt()
+
+/// The delay in milliseconds, counted in the unit the delay was written
+/// in. The count of a delay in milliseconds is the delay itself, so it
+/// needs no conversion and keeps every digit the author wrote.
+const function millisOf(unit: String, value: Float): Float =
+  if (unit == "ns") value / 1000000.0
+  else if (unit == "us") value / 1000.0
+  else if (unit == "ms") value
+  else if (unit == "s") value * 1000.0
+  else if (unit == "min") value * 60000.0
+  else if (unit == "h") value * 3600000.0
+  else value * 86400000.0
+
+/// The noise a conversion leaves in a millisecond count, in milliseconds:
+/// the last place of the value the delay was written in, twice over, so
+/// that a delay that is a whole number of milliseconds stays one. A delay
+/// written in milliseconds needs no conversion, so it has no noise: a
+/// fraction of a millisecond there is a fraction, not noise.
+const function millisNoise(unit: String, value: Float): Float =
+  if (unit == "ms") 0.0 else value.abs * millisOf(unit, 1.0) * 4.44e-16
+
+/// Whether a boot delay is before the boot: a timer fires after it.
+const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0
+
+/// The boot delay as the text that identifies the step: the delay in
+/// whole milliseconds, so that two spellings of one delay — `1.001.s` and
+/// `1001.ms` — are one step, and not two steps that manage the same unit
+/// file with different settings. A delay that is not a whole number of
+/// milliseconds is refused (`settings`), and keeps its own text here, so
+/// that it is never the same step as a delay it is not.
+const function onBootText(d: Duration?): String =
+  if (d == null) "-"
+  else
+    let (millis = onBootMillis(d))
+    if (millis == null) "\(d)" else "\(millis)"
+
 const function sourcesPath(r: debian.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
 const function keyringPath(r: debian.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"
 
@@ -618,6 +773,14 @@ function name(s: core.Step): String = label(s)
 const function label(s: core.Step): String = s.title ?? (if (s is core.Recipe) "a recipe" else describe(s))
 
 function restartName(serviceName: String): String = "Restart \(serviceName)"
+
+function reloadName(serviceName: String): String = "Reload \(serviceName)"
+
+/// The handler a service's watched steps notify: the restart handler, or
+/// the reload handler when the service takes reload triggers. A service
+/// takes one kind of trigger or the other (`settings`).
+function handlerName(s: core.Step): String =
+  if (s is systemd.Service && !s.reloadOnChangeOf.isEmpty) reloadName(s.name) else restartName(s.name)
 
 /// Common task fields, worked out once per step.
 class Meta {
@@ -636,7 +799,7 @@ class Meta {
 
 function metaOf(ix: StageIndex, i: Int, _tags: List<String>): Meta =
   let (_name = name(ix.steps[i]))
-  let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is systemd.Service).map((j) -> restartName(ix.steps[j].name)).toSet().toList())
+  let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is systemd.Service).map((j) -> handlerName(ix.steps[j])).toSet().toList())
   let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is core.Action) || ix.steps[i] is core.Capture) ix.results[i] else null)
   new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]); environment = envOf(ix.steps[i]); noLog = secretStep(ix.steps[i]) }
 
@@ -679,6 +842,7 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
   ["gitCheckout"] = (s) -> "Check out \(s.repository) into \(s.path)"
   ["service"] = (s) -> (if (s.running) "Start " else "Stop ") + s.name + (if (s.enabled) ", enabled at boot" else ", disabled at boot")
+  ["systemdTimer"] = (s) -> "Manage timer " + s.name + (if (s.onCalendar == null) "" else " on \(s.onCalendar)")
   ["command"] = (s) -> "Run " + s.run.join(" ")
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
@@ -725,6 +889,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
+  ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), service(timerUnit(s.name), s.enabled, null), null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
@@ -914,6 +1079,45 @@ function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 3
 function restartHandler(serviceName: String): engine.Task =
   task(new Meta { name = restartName(serviceName); tags = List(); notify = List(); register = null }, service(serviceName, null, "restarted"), null, null)
 
+/// The reload handler: a handler kind of its own, beside the restart. The
+/// engine's `reloaded` state asks the unit to reload its configuration,
+/// which only a running unit can do.
+function reloadHandler(serviceName: String): engine.Task =
+  task(new Meta { name = reloadName(serviceName); tags = List(); notify = List(); register = null }, service(serviceName, null, "reloaded"), null, null)
+
+/// The task that writes the timer file: the step's own plan line, and the
+/// handlers its change notifies. Its result is registered under its own
+/// name, so that the enablement task can fold the file's change into the
+/// step's result.
+function timerFileMeta(m: Meta): Meta = new Meta {
+  name = m.name
+  tags = m.tags
+  notify = m.notify
+  register = if (m.register == null) null else "\(m.register)_unit"
+  noLog = m.noLog
+}
+
+/// The task that enables the timer unit: the unit's own state, not the
+/// step's plan line, so the plan says which unit was enabled. It holds the
+/// step's result, so that a watcher of the timer sees the change of both
+/// of the step's tasks.
+function timerEnableMeta(t: systemd.SystemdTimer, m: Meta): Meta = new Meta {
+  name = (if (t.enabled) "Enable timer " else "Disable timer ") + t.name
+  tags = m.tags
+  notify = m.notify
+  register = m.register
+  noLog = m.noLog
+}
+
+/// The change rule of the enablement task: the step changed when the
+/// enablement was repaired, or when the unit file changed. The file's own
+/// result is registered beside the step's, so both changes are one, and a
+/// watcher of the timer sees the enablement drift even when the file was
+/// unchanged.
+function timerChanged(m: Meta): engine.Expr? =
+  if (m.register == null) null
+  else call2("or", ref(List("result", "changed")), ref(List("results", "\(m.register)_unit", "changed")))
+
 function bash(script: String): List<String> = List("/bin/bash", "-c", "set -euo pipefail\n" + script)
 
 // ── Engine constructors ─────────────────────────────────────────────────────
@@ -962,7 +1166,7 @@ function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.A
 function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
 function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
-function service(_name: String, _enabled: Boolean?, _state: String): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
+function service(_name: String, _enabled: Boolean?, _state: String?): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
 function stat(_path: String): engine.Stat = new engine.Stat { path = _path; follow = true }

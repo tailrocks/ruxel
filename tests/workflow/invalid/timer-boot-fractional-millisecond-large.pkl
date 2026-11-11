@@ -1,0 +1,14 @@
+// expect: 'The large check': onBoot 1.0000000000000005E9.ms must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires half a nanosecond after a whole million seconds"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The large check"; name = "postgresql-large-check"; onBoot = 1000000000.0000005.ms }
+    }
+  }
+}

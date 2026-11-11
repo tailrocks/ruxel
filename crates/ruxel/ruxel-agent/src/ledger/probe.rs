@@ -52,7 +52,7 @@ pub(super) fn probe_for(
         }
         "systemd" => {
             let name = s("name")?;
-            if s("state") == Some("restarted") {
+            if s("state") == Some("restarted") || s("state") == Some("reloaded") {
                 return None;
             }
             Some(vec![Probe::Unit {

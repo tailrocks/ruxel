@@ -34,6 +34,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         ("started", "start"),
         ("stopped", "stop"),
         ("restarted", "restart"),
+        ("reloaded", "reload"),
     ] {
         std::fs::write(root.join("actions"), "")?;
         let params = json!({"name":"demo","state":state});
@@ -46,7 +47,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
         assert_eq!(
             dispatch("systemd", &params, false).changed,
-            state == "restarted"
+            state == "restarted" || state == "reloaded"
         );
     }
     std::fs::write(root.join("actions"), "")?;
@@ -76,6 +77,63 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         "daemon-reload\n"
     );
     verify_cache(root, &enabled);
+    verify_timer(root)?;
+    verify_timer_discovery(root)?;
+    verify_stopped_reload(root)?;
+    Ok(())
+}
+
+/// The timer units are discovered, not only the services: the agent
+/// reads that a timer unit is running, so it stops it when the workflow
+/// says so. A discovery that asked for the services only would leave the
+/// timer unknown, and the agent would report no change.
+fn verify_timer_discovery(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::write(root.join("timer-active"), "")?;
+    std::fs::write(root.join("actions"), "")?;
+    let stopped = json!({"name":"demo.timer","state":"stopped"});
+    assert_eq!(dispatch("systemd", &stopped, true).status, "changed");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    assert_eq!(dispatch("systemd", &stopped, false).status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "stop demo.timer\n"
+    );
+    // The timer is stopped now, so a second run reports no change.
+    assert_eq!(dispatch("systemd", &stopped, false).status, "ok");
+    Ok(())
+}
+
+/// A stopped unit has nothing to reload: the read-only answer says no, and
+/// the apply does not act either.
+fn verify_stopped_reload(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    assert_eq!(dispatch("systemd", &reloaded, true).status, "ok");
+    assert_eq!(dispatch("systemd", &reloaded, false).status, "ok");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    Ok(())
+}
+
+/// A timer unit is enabled like a service: the agent reads the timer units
+/// too, so the enablement converges and a second apply reports no change.
+fn verify_timer(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let timer = json!({"name":"demo.timer","enabled":true});
+    std::fs::write(root.join("actions"), "")?;
+    assert_eq!(dispatch("systemd", &timer, true).status, "changed");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    assert_eq!(dispatch("systemd", &timer, false).status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo.timer\n"
+    );
+    assert_eq!(dispatch("systemd", &timer, false).status, "ok");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo.timer\n"
+    );
     Ok(())
 }
 
@@ -115,4 +173,5 @@ fn verify_cache(root: &Path, params: &Value) {
     assert!(!cache_allowed("unknown", params));
     assert!(!cache_allowed("systemd", &json!({"daemon_reload":true})));
     assert!(!cache_allowed("systemd", &json!({"state":"restarted"})));
+    assert!(!cache_allowed("systemd", &json!({"state":"reloaded"})));
 }
