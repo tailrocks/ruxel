@@ -1,0 +1,309 @@
+//! The workflow examples of the secret language under both evaluators:
+//! pklr, which the engine evaluates with, and the official `pkl` CLI, which
+//! the language must also evaluate.
+//!
+//! The official CLI is optional: where it is not installed, the check says
+//! so and passes. `RUXEL_PKL` points the check at a binary of its own.
+
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+fn root() -> PathBuf {
+    Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tests/workflow"
+    ))
+    .to_path_buf()
+}
+
+/// The examples of the secret language: each must evaluate the same way
+/// under both evaluators, and each invalid one must be refused by both.
+const EXAMPLES: &[&str] = &[
+    "valid/secret-op-reference-dotted.pkl",
+    "valid/secret-literal-prefix.pkl",
+    "invalid/secret-op-reference-dotted-selector.pkl",
+    "invalid/secret-placeholder-orphaned-runtime.pkl",
+    "invalid/secret-placeholder-orphaned-secret.pkl",
+    "invalid/secret-unterminated-placeholder.pkl",
+    "invalid/secret-decoder-oversized-prefix.pkl",
+];
+
+/// The official `pkl` binary, if it is installed.
+///
+/// `RUXEL_PKL` points the check at a binary of its own. Otherwise the
+/// binary is looked for on the `PATH` and in the places an operator's
+/// tools live, because the environment a test runs in does not always
+/// carry the `PATH` of the shell.
+fn pkl() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("RUXEL_PKL") {
+        candidates.push(PathBuf::from(path));
+    }
+    candidates.push(PathBuf::from("pkl"));
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        let installs = home.join(".local/share/mise/installs/pkl");
+        if let Ok(versions) = std::fs::read_dir(&installs) {
+            let mut found: Vec<PathBuf> = versions
+                .flatten()
+                .map(|entry| entry.path().join("pkl"))
+                .filter(|path| path.is_file())
+                .collect();
+            found.sort();
+            candidates.extend(found.into_iter().rev());
+        }
+        candidates.push(home.join(".local/share/mise/shims/pkl"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
+    candidates.push(PathBuf::from("/usr/local/bin/pkl"));
+    candidates.into_iter().find(|candidate| {
+        Command::new(candidate)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    })
+}
+
+/// The served modules as files, for the official CLI: it serves them under
+/// `modulepath:/ruxel/`, as the binary does.
+fn modules() -> Result<PathBuf> {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let directory = std::env::temp_dir().join(format!(
+        "ruxel-dual-evaluator-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&directory)?;
+    ruxel_config::schema::export(&directory)?;
+    Ok(directory)
+}
+
+/// What an evaluator answered: the value it lowered to, or the error it
+/// refused the file with.
+struct Answer {
+    value: Option<Value>,
+    error: Option<String>,
+}
+
+impl Answer {
+    fn failed(&self) -> bool {
+        self.value.is_none()
+    }
+}
+
+/// The evaluation under pklr, which the engine uses.
+fn under_pklr(path: &Path, root_dir: &Path) -> Answer {
+    let options = ruxel_config::EvalOptions {
+        root_dir: Some(root_dir.to_path_buf()),
+        ..ruxel_config::EvalOptions::default()
+    };
+    match ruxel_config::eval(path, &options) {
+        Ok(value) => Answer {
+            value: Some(value),
+            error: None,
+        },
+        Err(error) => Answer {
+            value: None,
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+/// The evaluation under the official CLI.
+fn under_pkl(pkl: &Path, modules: &Path, path: &Path, root_dir: &Path) -> Answer {
+    let output = Command::new(pkl)
+        .args(["eval", "--format", "json"])
+        .arg("--module-path")
+        .arg(modules)
+        .arg("--root-dir")
+        .arg(root_dir)
+        .arg(path)
+        .output();
+    let Ok(output) = output else {
+        return Answer {
+            value: None,
+            error: Some("the official pkl could not run".to_owned()),
+        };
+    };
+    if output.status.success() {
+        match serde_json::from_slice::<Value>(&output.stdout) {
+            Ok(value) => Answer {
+                value: Some(value),
+                error: None,
+            },
+            Err(error) => Answer {
+                value: None,
+                error: Some(error.to_string()),
+            },
+        }
+    } else {
+        Answer {
+            value: None,
+            error: Some(String::from_utf8_lossy(&output.stderr).into_owned()),
+        }
+    }
+}
+
+/// The value without the fingerprints: the served modules carry a nonce,
+/// the exported ones the hash alone, so the two evaluators never agree on
+/// them.
+fn without_fingerprints(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("schemaFingerprint");
+        object.remove("languageFingerprint");
+    }
+    value
+}
+
+/// The text the error must contain: `// expect-pklr:` when pklr's wording
+/// differs from Pkl's, otherwise `// expect: `.
+fn expected(source: &str) -> Option<&str> {
+    let line = |prefix: &str| source.lines().find_map(|line| line.strip_prefix(prefix));
+    line("// expect-pklr: ").or_else(|| line("// expect: "))
+}
+
+/// The text the official CLI's error must contain.
+fn expected_official(source: &str) -> Option<&str> {
+    source
+        .lines()
+        .find_map(|line| line.strip_prefix("// expect-pkl: "))
+}
+
+/// One example: the two evaluators must agree on it, and it must be the
+/// outcome the corpus says it is.
+fn compare(
+    name: &str,
+    path: &Path,
+    root_dir: &Path,
+    pkl: &Path,
+    modules: &Path,
+    succeeds: bool,
+) -> Result {
+    let source = std::fs::read_to_string(path)?;
+    let under_pklr = under_pklr(path, root_dir);
+    let under_official = under_pkl(pkl, modules, path, root_dir);
+    if under_pklr.failed() != under_official.failed() {
+        return Err(format!(
+            "{name}: pklr failed: {}, the official pkl failed: {}",
+            under_pklr.error.unwrap_or_default(),
+            under_official.error.unwrap_or_default()
+        )
+        .into());
+    }
+    if succeeds && under_pklr.failed() {
+        return Err(format!(
+            "{name}: pklr refused it: {}",
+            under_pklr.error.unwrap_or_default()
+        )
+        .into());
+    }
+    // The inverse: an invalid example must fail under both evaluators, so
+    // an example both accept identically can no longer silently pass.
+    if !succeeds && !under_pklr.failed() {
+        return Err(format!(
+            "{name}: an invalid example must fail under both evaluators; \
+             pklr and the official pkl both accepted it"
+        )
+        .into());
+    }
+    if under_pklr.failed() {
+        let error = under_pklr.error.unwrap_or_default();
+        let official = under_official.error.unwrap_or_default();
+        if let Some(expected) = expected(&source)
+            && !error.contains(expected)
+        {
+            return Err(format!("{name}: pklr refused it with {error:?}").into());
+        }
+        if let Some(expected) = expected_official(&source)
+            && !official.contains(expected)
+        {
+            return Err(format!("{name}: the official pkl refused it with {official:?}").into());
+        }
+        return Ok(());
+    }
+    let value = without_fingerprints(&under_pklr.value.unwrap_or_default());
+    let official = without_fingerprints(&under_official.value.unwrap_or_default());
+    if value != official {
+        return Err(format!("{name}: the two evaluators lowered it differently").into());
+    }
+    Ok(())
+}
+
+/// The examples of the secret language evaluate the same way under both
+/// evaluators.
+#[test]
+fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
+    let Some(pkl) = pkl() else {
+        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
+        return Ok(());
+    };
+    let modules = modules()?;
+    for example in EXAMPLES {
+        compare(
+            example,
+            &root().join(example),
+            &root(),
+            &pkl,
+            &modules,
+            example.starts_with("valid/"),
+        )?;
+    }
+    Ok(())
+}
+
+/// A `join` separator of a million characters is a seven-digit length
+/// prefix: the encoder writes it, so the decoder must read it. The
+/// workflow is generated, because a million characters do not belong in a
+/// committed file.
+///
+/// The secret is an environment value, not file content: the content of a
+/// file is scanned for placeholders, and pklr's regular expressions do not
+/// walk a million characters.
+#[test]
+fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
+    let Some(pkl) = pkl() else {
+        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
+        return Ok(());
+    };
+    let modules = modules()?;
+    let directory = std::env::temp_dir().join(format!(
+        "ruxel-dual-evaluator-long-{}-{}",
+        std::process::id(),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory)?;
+    std::fs::copy(
+        root().join("inventory.pkl"),
+        directory.join("inventory.pkl"),
+    )?;
+    let separator = "x".repeat(1_000_000);
+    let workflow = format!(
+        "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
+         import \"modulepath:/ruxel/Core.pkl\" as core\n\
+         import \"inventory.pkl\"\n\
+         \n\
+         stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
+         \x20 new Command {{\n\
+         \x20   run {{ \"/bin/true\" }}\n\
+         \x20   environment {{ [\"BIG\"] = core.fnox(\"APP_SECRET\").join(\"{separator}\", core.fnox(\"APP_SECRET_TWO\")) }}\n\
+         \x20 }}\n\
+         }} }} }}\n"
+    );
+    let path = directory.join("long-separator.pkl");
+    std::fs::write(&path, workflow)?;
+    compare(
+        "long-separator.pkl",
+        &path,
+        &directory,
+        &pkl,
+        &modules,
+        true,
+    )?;
+    drop(std::fs::remove_dir_all(&directory));
+    Ok(())
+}
