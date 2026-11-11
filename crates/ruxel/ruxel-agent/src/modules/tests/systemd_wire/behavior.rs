@@ -1,4 +1,5 @@
 use super::*;
+use std::path::Path;
 
 fn dispatch(module: &str, params: &Value, check: bool) -> Outcome {
     let ctx = ExecContext {
