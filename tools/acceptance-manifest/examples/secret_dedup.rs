@@ -121,7 +121,8 @@ fn phase(root: &Path, cli: &Path, agent: &Path, mode: &str, success: bool) -> Re
         fs::read_to_string(calls)
             .context("fake op was not invoked")?
             .lines()
-            .count() == 2,
+            .count()
+            == 2,
         "{mode}: expected one field-scoped request per named field"
     );
     Ok(())
