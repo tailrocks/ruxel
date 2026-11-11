@@ -49,7 +49,11 @@ stages {{ new Stage {{
 /// The fake fnox: values live in files beside the script, reads go through
 /// `fnox get --if-missing error` (the store's read path), `set` takes the
 /// value on stdin (never argv) and counts its calls per key, and a missing
-/// key exits 1 with `not found`. No real secret value is read.
+/// key exits 1 with `not found`. The store's own question about a key —
+/// `fnox env --json --describe`, the unfiltered query — lists every key of
+/// the active profile with its `env` and `as_file` flags, and `--keys`
+/// names the keys to describe; this fixture's keys hold plain values, never
+/// file-backed ones. No real secret value is read.
 fn prepare(root: &Path) -> Result<()> {
     fs::write(root.join("workflow.pkl"), workflow(root))?;
     fs::write(root.join("admin.conf"), KUBECONFIG)?;
@@ -78,6 +82,45 @@ if [ "$1" = "set" ]; then
   printf '1\n' >> "$counts/$key"
   mkdir -p "$store"
   cat > "$store/$key"
+  exit 0
+fi
+if [ "$1" = "env" ]; then
+  # The store's own question about a key, the way the CLI answers it:
+  # the unfiltered query lists every key of the active profile with its
+  # `env` and `as_file` flags, and `--keys` names the keys to describe.
+  [ "$2" = "--json" ] || { echo "env takes --json" >&2; exit 7; }
+  shift 2
+  keys=''
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --describe) shift ;;
+    --keys) keys="$2"; shift 2 ;;
+    *) echo "env takes --describe and --keys" >&2; exit 7 ;;
+    esac
+  done
+  if [ -n "$keys" ]; then
+    # `--keys` names only the keys of the profile: an unknown key is
+    # refused with the CLI's own invalid_keys error document.
+    if [ -f "$store/$keys" ]; then
+      printf '{"schema":1,"keys":[{"key":"%s","kind":"secret","env":true,"as_file":false}]}' "$keys"
+      exit 0
+    fi
+    printf '{"schema":1,"error":{"kind":"invalid_keys","message":"fnox env cannot provide: unknown keys: %s","unknown":["%s"]}}' "$keys" "$keys"
+    exit 1
+  fi
+  # The unfiltered query lists every key of the active profile with its
+  # `env` and `as_file` flags: the store's own answer to whether a key is
+  # a file-backed secret. This fixture's keys hold plain values.
+  printf '{"schema":1,"keys":['
+  separator=''
+  if [ -d "$store" ]; then
+    for file in "$store"/*; do
+      [ -f "$file" ] || continue
+      printf '%s{"key":"%s","kind":"secret","env":true,"as_file":false}' "$separator" "${file##*/}"
+      separator=','
+    done
+  fi
+  printf ']}'
   exit 0
 fi
 exit 8
