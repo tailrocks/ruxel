@@ -2,8 +2,9 @@
 //! pklr, which the engine evaluates with, and the official `pkl` CLI, which
 //! the language must also evaluate.
 //!
-//! The official CLI is optional: where it is not installed, the check says
-//! so and passes. `RUXEL_PKL` points the check at a binary of its own.
+//! The official CLI is required: where it is not installed, the check fails
+//! loudly, because a skipped check passes every regression the corpus was
+//! added to cover. `RUXEL_PKL` points the check at a binary of its own.
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -30,20 +31,33 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-orphaned-secret.pkl",
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-prefix.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
 ];
 
-/// The official `pkl` binary, if it is installed.
+/// The official `pkl` binary.
 ///
-/// `RUXEL_PKL` points the check at a binary of its own. Otherwise the
-/// binary is looked for on the `PATH` and in the places an operator's
-/// tools live, because the environment a test runs in does not always
-/// carry the `PATH` of the shell.
-fn pkl() -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
+/// `RUXEL_PKL` points the check at a binary of its own, and is authoritative:
+/// a binary named there that does not run is a loud failure, never a reason
+/// to look further. Otherwise the binary is looked for on the `PATH` and in
+/// the places an operator's tools live, because the environment a test runs
+/// in does not always carry the `PATH` of the shell. An absent binary is a
+/// loud failure too: the check is mandatory, and a skipped check would pass
+/// every regression the corpus was added to cover.
+fn pkl() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("RUXEL_PKL") {
-        candidates.push(PathBuf::from(path));
+        let path = PathBuf::from(path);
+        return if runs(&path) {
+            Ok(path)
+        } else {
+            Err(format!(
+                "RUXEL_PKL points at {}, which is not a working official pkl",
+                path.display()
+            )
+            .into())
+        };
     }
-    candidates.push(PathBuf::from("pkl"));
+    let mut candidates: Vec<PathBuf> = vec![PathBuf::from("pkl")];
     if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
         let installs = home.join(".local/share/mise/installs/pkl");
@@ -60,12 +74,23 @@ fn pkl() -> Option<PathBuf> {
     }
     candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
     candidates.push(PathBuf::from("/usr/local/bin/pkl"));
-    candidates.into_iter().find(|candidate| {
-        Command::new(candidate)
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    })
+    candidates
+        .into_iter()
+        .find(|candidate| runs(candidate))
+        .ok_or_else(|| {
+            "the official pkl is not installed: the dual-evaluator check is mandatory and \
+             cannot run without it; install the Pkl CLI or point RUXEL_PKL at its binary"
+                .into()
+        })
+}
+
+/// Whether the binary answers `--version`: the probe that separates the
+/// official CLI from an arbitrary file of the same name.
+fn runs(candidate: &Path) -> bool {
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 /// The served modules as files, for the official CLI: it serves them under
@@ -238,10 +263,7 @@ fn compare(
 /// evaluators.
 #[test]
 fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
-    let Some(pkl) = pkl() else {
-        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
-        return Ok(());
-    };
+    let pkl = pkl()?;
     let modules = modules()?;
     for example in EXAMPLES {
         compare(
@@ -266,10 +288,7 @@ fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
 /// walk a million characters.
 #[test]
 fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
-    let Some(pkl) = pkl() else {
-        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
-        return Ok(());
-    };
+    let pkl = pkl()?;
     let modules = modules()?;
     let directory = std::env::temp_dir().join(format!(
         "ruxel-dual-evaluator-long-{}-{}",
