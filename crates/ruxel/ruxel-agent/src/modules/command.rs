@@ -31,10 +31,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
 
     validate_become_options(obj, ctx)?;
-    if let Some(result) = creates_guard(obj, Value::from(argv.clone())) {
-        return Ok(result);
-    }
-    if let Some(result) = check_mode_guard(obj, Value::from(argv.clone()), ctx.check_mode) {
+    if let Some(result) = check_mode_guard(Value::from(argv.clone()), ctx.check_mode) {
         return Ok(result);
     }
 
@@ -51,55 +48,19 @@ pub(super) fn validate_become_options(
     params: &serde_json::Map<String, Value>,
     ctx: &ExecContext,
 ) -> Result<(), String> {
-    if ctx.become_user.is_some() {
-        for option in ["creates", "chdir"] {
-            if str_param(params, option).is_some() {
-                return Err(format!("{option} is not supported with become_user"));
-            }
-        }
+    if ctx.become_user.is_some() && str_param(params, "chdir").is_some() {
+        return Err("chdir is not supported with become_user".into());
     }
     Ok(())
 }
 
-pub(super) fn check_mode_guard(
-    params: &serde_json::Map<String, Value>,
-    cmd: Value,
-    check_mode: bool,
-) -> Option<Value> {
+pub(super) fn check_mode_guard(cmd: Value, check_mode: bool) -> Option<Value> {
     check_mode.then(|| {
-        if str_param(params, "creates").is_some() {
-            json!({
-                "cmd": cmd, "rc": 0, "changed": true, "failed": false,
-                "msg": "Command would have run if not in check mode",
-                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
-            })
-        } else {
-            json!({
-                "cmd": cmd, "rc": 0, "changed": false, "failed": false,
-                "skipped": true,
-                "msg": "Command would have run if not in check mode",
-                "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
-            })
-        }
-    })
-}
-
-pub(super) fn creates_guard(params: &serde_json::Map<String, Value>, cmd: Value) -> Option<Value> {
-    let creates = str_param(params, "creates")?;
-    std::path::Path::new(creates).exists().then(|| {
         json!({
-            "cmd": cmd,
-            "rc": 0,
-            "changed": false,
-            "failed": false,
-            "msg": format!("Did not run command since '{creates}' exists"),
-            "stdout": format!("skipped, since {creates} exists"),
-            "stderr": "",
-            "stdout_lines": [format!("skipped, since {creates} exists")],
-            "stderr_lines": [],
-            "start": null,
-            "end": null,
-            "delta": null,
+            "cmd": cmd, "rc": 0, "changed": false, "failed": false,
+            "skipped": true,
+            "msg": "Command would have run if not in check mode",
+            "stdout": "", "stderr": "", "stdout_lines": [], "stderr_lines": [],
         })
     })
 }
@@ -168,31 +129,5 @@ mod tests {
         assert_eq!(result["failed"], true);
         assert_eq!(result["stdout_lines"], json!(["one", "two"]));
         assert_eq!(result["stderr_lines"], json!(["bad"]));
-    }
-
-    #[test]
-    fn creates_guard_matches_ansible_skip_shape() {
-        let marker =
-            std::env::temp_dir().join(format!("ruxel-command-creates-{}", std::process::id()));
-        std::fs::write(&marker, b"").unwrap();
-        let params = json!({"creates": marker});
-        let result = creates_guard(
-            params.as_object().unwrap(),
-            json!(["/usr/bin/touch", "synthetic"]),
-        )
-        .unwrap();
-        std::fs::remove_file(marker).unwrap();
-
-        assert_eq!(result["changed"], false);
-        assert_eq!(result["rc"], 0);
-        assert_eq!(result["cmd"], json!(["/usr/bin/touch", "synthetic"]));
-        assert!(
-            result["stdout"]
-                .as_str()
-                .unwrap()
-                .starts_with("skipped, since ")
-        );
-        assert!(result["start"].is_null());
-        assert!(result["delta"].is_null());
     }
 }

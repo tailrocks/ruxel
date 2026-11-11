@@ -13,7 +13,7 @@ fn lookup_accepts_command_argv_and_rejects_legacy_pipe() {
 }
 
 #[test]
-fn fnox_lookup_keys_are_environment_identifiers_before_execution() -> Result<()> {
+fn fnox_keys_follow_the_store_grammar_before_execution() -> Result<()> {
     let mut value = config(json!({"kind":"debug"}));
     value["plays"][0]["tasks"]
         .as_array_mut()
@@ -24,7 +24,20 @@ fn fnox_lookup_keys_are_environment_identifiers_before_execution() -> Result<()>
             }}
         }));
     for key in [
-        "", "1KEY", "KEY-NAME", "KEY.NAME", "KEY NAME", "KEY\n", "éKEY", "KEYé",
+        "",
+        "1KEY",
+        "KEY-NAME",
+        "KEY.NAME",
+        "KEY NAME",
+        "KEY\n",
+        "éKEY",
+        "KEYé",
+        "a",
+        "_",
+        "_KEY_123",
+        "key123",
+        "app_secret",
+        "K".repeat(129).as_str(),
     ] {
         value["plays"][0]["tasks"][1]["operation"]["msg"]["key"] = json!(key);
         assert!(validate_config(&value).is_err(), "invalid fnox key {key:?}");
@@ -36,7 +49,7 @@ fn fnox_lookup_keys_are_environment_identifiers_before_execution() -> Result<()>
         .context("lookup")?
         .remove("key");
     assert!(validate_config(&value).is_err());
-    for key in ["KEY", "a", "_", "_KEY_123", "key123"] {
+    for key in ["KEY", "KEY_1", "A1_B2", "K".repeat(128).as_str()] {
         value["plays"][0]["tasks"][1]["operation"]["msg"]["key"] = json!(key);
         validate_config(&value)?;
     }

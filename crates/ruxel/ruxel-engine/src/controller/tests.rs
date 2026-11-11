@@ -8,6 +8,7 @@ mod block_delegation;
 mod block_skip;
 mod block_tags;
 mod cases;
+mod creates_environment;
 mod excluded_vars;
 mod fact_control;
 mod failures;

@@ -63,15 +63,19 @@ output { value = new Ruxel.Config {
         checkMode = true
         operation = new Ruxel.Slurp { src = "__RUN_ROOT__/slurp" }
       }
+      new { name = "Check whether the command target exists"; operation = new Ruxel.Stat { path = "__RUN_ROOT__/command"; follow = true }; register = "fixture_command_creates" }
       new {
         name = "Exercise literal command args"
+        `when` = call("not", new Listing { ref(new Listing { "results"; "fixture_command_creates"; "stat"; "exists" }) })
         checkMode = true
-        operation = new Ruxel.Command { argv { "/usr/bin/true" }; chdir = "/tmp"; creates = "__RUN_ROOT__/command" }
+        operation = new Ruxel.Command { argv { "/usr/bin/true" }; chdir = "/tmp" }
       }
+      new { name = "Check whether the shell target exists"; operation = new Ruxel.Stat { path = "__RUN_ROOT__/shell"; follow = true }; register = "fixture_shell_creates" }
       new {
         name = "Exercise literal shell args"
+        `when` = call("not", new Listing { ref(new Listing { "results"; "fixture_shell_creates"; "stat"; "exists" }) })
         checkMode = true
-        operation = new Ruxel.Shell { cmd = "/usr/bin/true"; chdir = "/tmp"; creates = "__RUN_ROOT__/shell" }
+        operation = new Ruxel.Shell { cmd = "/usr/bin/true"; chdir = "/tmp" }
       }
       new {
         name = "Exercise string apt flags and literal name"

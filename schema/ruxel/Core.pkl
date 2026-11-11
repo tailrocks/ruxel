@@ -482,7 +482,9 @@ class Symlink extends Step {
 ///
 /// Ruxel cannot see what a program does, so say when it has to run:
 ///
-/// - `creates`: skip it when this path exists;
+/// - `creates`: skip it when this path exists — the check happens on the
+///   controller before the environment is resolved, so a skipped action
+///   reads no secret store;
 /// - `onChangeOf`: run it only when one of these steps changed;
 /// - both: run it when the path is missing or one of the steps changed;
 /// - neither: run it on every apply.

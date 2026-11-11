@@ -200,12 +200,31 @@ fn edge_values_lower_with_their_guards() -> Result {
     ]});
     let reload = &all[named("Run /usr/local/bin/app-reload")?];
     assert_eq!(reload["changedWhen"], ran);
-    // The `creates` probe follows links, like the command's own guard.
-    let probe = all
-        .iter()
-        .find(|task| task["name"] == "Check whether /var/lib/app/migrated exists")
-        .ok_or("no creates probe")?;
-    assert_eq!(probe["operation"]["follow"], true);
+    // The `creates` probes follow links: a dangling link does not count as
+    // the path existing. The guard is a `when` condition on the controller,
+    // so the command itself carries no `creates` and a skipped action
+    // resolves no secret environment.
+    let position = |name: &str| all.iter().position(|task| task["name"] == name);
+    for (probe_name, action_name, function) in [
+        (
+            "Check whether /var/lib/app/migrated exists",
+            "Run /usr/local/bin/app-migrate",
+            "or",
+        ),
+        (
+            "Check whether /var/lib/app/initialized exists",
+            "Run /usr/local/bin/app-init",
+            "not",
+        ),
+    ] {
+        let probe = position(probe_name).ok_or("no creates probe")?;
+        let action = position(action_name).ok_or("no guarded action")?;
+        assert_eq!(probe + 1, action);
+        assert_eq!(all[probe]["operation"]["follow"], true);
+        assert!(all[action]["operation"]["creates"].is_null());
+        assert_eq!(all[action]["when"]["function"], function);
+        assert_eq!(all[action]["when"]["args"][0]["path"][0], "results");
+    }
     // A `creates` skip reports no change even though its output lacks the marker.
     let init = &all[named("Run /usr/local/bin/app-init")?];
     assert_eq!(init["changedWhen"]["function"], "and");

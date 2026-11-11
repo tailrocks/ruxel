@@ -99,12 +99,9 @@ fn validate_call(object: &Map<String, Value>) -> Result<()> {
 }
 fn validate_fnox_key(key: Option<&str>) -> Result<()> {
     ensure!(
-        key.is_some_and(|key| {
-            !key.is_empty()
-                && !key.as_bytes()[0].is_ascii_digit()
-                && key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
-        }),
-        "fnox lookup requires an environment identifier key"
+        key.is_some_and(crate::secrets::is_fnox_key),
+        "fnox lookup key is malformed: {}",
+        crate::secrets::FNOX_KEY_GRAMMAR
     );
     Ok(())
 }

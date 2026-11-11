@@ -47,11 +47,13 @@ fn process_output(mut command: Command) -> Result<String, String> {
 
 impl Backend for ProcessBackend {
     fn fnox(&self, key: &str) -> Result<String, String> {
-        if key.is_empty()
-            || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            || key.as_bytes()[0].is_ascii_digit()
-        {
-            return Err("invalid environment key".into());
+        // The same grammar the Engine schema and model validation enforce;
+        // the message names it with the sentence Core and Lowering use.
+        if !super::is_fnox_key(key) {
+            return Err(format!(
+                "fnox key \"{key}\" is malformed: {}",
+                super::FNOX_KEY_GRAMMAR
+            ));
         }
         let mut cmd = Command::new(&self.fnox);
         cmd.args([

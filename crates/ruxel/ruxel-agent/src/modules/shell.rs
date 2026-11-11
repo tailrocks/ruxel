@@ -1,4 +1,4 @@
-use super::command::{check_mode_guard, command_result, creates_guard, validate_become_options};
+use super::command::{check_mode_guard, command_result, validate_become_options};
 use super::{ExecContext, params_object, str_param};
 use serde_json::Value;
 
@@ -9,10 +9,7 @@ pub(super) fn run(params: &Value, free_form: &str, ctx: &ExecContext) -> Result<
     }
 
     validate_become_options(obj, ctx)?;
-    if let Some(result) = creates_guard(obj, Value::from(free_form)) {
-        return Ok(result);
-    }
-    if let Some(result) = check_mode_guard(obj, Value::from(free_form), ctx.check_mode) {
+    if let Some(result) = check_mode_guard(Value::from(free_form), ctx.check_mode) {
         return Ok(result);
     }
 

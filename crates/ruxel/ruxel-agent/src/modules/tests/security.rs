@@ -57,30 +57,28 @@ fn command_and_shell_refuse_path_options_with_become_before_check_or_execution()
             become_user: Some("synthetic-user".into()),
         };
         for module in ["command", "shell"] {
-            for option in ["creates", "chdir"] {
-                for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
-                    let params = if module == "command" {
-                        json!({(option): path, "argv":["true"]})
-                    } else {
-                        json!({(option): path})
-                    };
-                    let result = super::execute(
-                        module,
-                        &params,
-                        if module == "command" { "" } else { "true" },
-                        None,
-                        &ctx,
-                        &mut crate::system_state::SystemState::default(),
-                    );
-                    assert_eq!(result.status, "failed", "{module} {option} {path}");
-                    assert!(!result.changed);
-                    assert!(
-                        result.result["msg"]
-                            .as_str()
-                            .unwrap()
-                            .contains("not supported with become_user")
-                    );
-                }
+            for path in ["/", "/ruxel-nonexistent-synthetic-path"] {
+                let params = if module == "command" {
+                    json!({"chdir": path, "argv":["true"]})
+                } else {
+                    json!({"chdir": path})
+                };
+                let result = super::execute(
+                    module,
+                    &params,
+                    if module == "command" { "" } else { "true" },
+                    None,
+                    &ctx,
+                    &mut crate::system_state::SystemState::default(),
+                );
+                assert_eq!(result.status, "failed", "{module} chdir {path}");
+                assert!(!result.changed);
+                assert!(
+                    result.result["msg"]
+                        .as_str()
+                        .unwrap()
+                        .contains("not supported with become_user")
+                );
             }
         }
     }

@@ -7,6 +7,22 @@ mod backend;
 
 pub use backend::ProcessBackend;
 
+/// The one fnox key grammar, enforced by the Core schema's `FnoxKey`, the
+/// Engine schema's `Lookup.key` constraint, model validation and the backend
+/// alike. Core and Lowering reuse this sentence in their messages.
+pub(crate) const FNOX_KEY_GRAMMAR: &str =
+    "uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters";
+
+/// Whether `key` is an `FnoxKey`: `[A-Z][A-Z0-9_]{1,127}`.
+pub(crate) fn is_fnox_key(key: &str) -> bool {
+    let bytes = key.as_bytes();
+    (2..=128).contains(&bytes.len())
+        && bytes[0].is_ascii_uppercase()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || *byte == b'_')
+}
+
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Lookup {
     Fnox {

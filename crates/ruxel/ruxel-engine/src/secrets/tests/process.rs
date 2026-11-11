@@ -1,4 +1,4 @@
-use super::super::{Lookup, ProcessBackend, Resolver};
+use super::super::{Backend, Lookup, ProcessBackend, Resolver};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -303,4 +303,36 @@ esac"#,
         );
     }
     assert_eq!(fixture.count(), 3);
+}
+
+#[test]
+fn fnox_keys_follow_the_store_grammar() {
+    let backend = ProcessBackend::with_programs("/nonexistent/ruxel-fnox", "/nonexistent/ruxel-op");
+    // Keys outside the store's grammar are refused before any process starts,
+    // with the same sentence Core and Lowering use.
+    for key in [
+        "",
+        "a",
+        "_",
+        "_KEY",
+        "key123",
+        "app_secret",
+        "KEY-NAME",
+        "KEY NAME",
+    ] {
+        let error = backend.fnox(key).unwrap_err();
+        assert!(
+            error.contains(
+                "is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters",
+            ),
+            "{key:?}: {error}"
+        );
+    }
+    // A key of the store's grammar reaches the program: the failure is the
+    // missing process, not the key.
+    assert_eq!(backend.fnox("KEY").unwrap_err(), "process could not start");
+    assert_eq!(
+        backend.fnox("KEY_2").unwrap_err(),
+        "process could not start"
+    );
 }

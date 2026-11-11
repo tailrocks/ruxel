@@ -2,9 +2,21 @@ use super::{Result, evaluate};
 use serde_json::json;
 
 #[test]
-fn fnox_lookup_keys_are_environment_identifiers() -> Result {
+fn fnox_keys_follow_the_store_grammar() -> Result {
     for key in [
-        "", "1KEY", "KEY-NAME", "KEY.NAME", "KEY NAME", "KEY\n", "éKEY", "KEYé",
+        "",
+        "1KEY",
+        "KEY-NAME",
+        "KEY.NAME",
+        "KEY NAME",
+        "KEY\n",
+        "éKEY",
+        "KEYé",
+        "a",
+        "_",
+        "_KEY_123",
+        "key123",
+        "app_secret",
     ] {
         let key = serde_json::to_string(key)?;
         assert!(
@@ -23,7 +35,7 @@ fn fnox_lookup_keys_are_environment_identifiers() -> Result {
             .is_err()
         );
     }
-    for key in ["KEY", "a", "_", "_KEY_123", "key123"] {
+    for key in ["KEY", "KEY_1", "A1_B2"] {
         evaluate(&format!(
             r#"new R.Lookup {{ provider = "fnox"; key = "{key}" }}"#
         ))?;

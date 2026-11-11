@@ -10,7 +10,11 @@ class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|Li
 class Lookup {
   fixed kind = "lookup"
   provider: "fnox"|"op"|"command"|"synthetic"
-  key: String?(provider != "fnox" || (this != null && this.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*$")))) = null
+  /// A fnox key is an `FnoxKey` (`Core.pkl`): `[A-Z][A-Z0-9_]{1,127}` —
+  /// the grammar model validation and the backend enforce with the same
+  /// sentence. The constraint cannot carry a message; the Rust layers name
+  /// it when they refuse a key.
+  key: String?(provider != "fnox" || (this != null && this.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))) = null
   /// The structured 1Password selector. Vault, item and field are always
   /// stated — there is no default vault or field; the engine's own checks
   /// (model validation and resolution) refuse a lookup that omits one. The
@@ -145,7 +149,6 @@ class Command {
   fixed kind = "command"
   argv: CommandArgs
   chdir: Text? = null
-  creates: Text? = null
 }
 
 class Copy {
@@ -231,7 +234,6 @@ class Shell {
   fixed kind = "shell"
   chdir: Text? = null
   cmd: String(this.length > 0)|Expr
-  creates: Text? = null
   executable: Text? = null
 }
 
