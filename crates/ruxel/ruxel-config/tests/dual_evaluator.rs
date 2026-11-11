@@ -62,9 +62,8 @@ fn pkl() -> Result<PathBuf> {
         };
     }
     let mut candidates: Vec<PathBuf> = vec![PathBuf::from("pkl")];
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        let installs = home.join(".local/share/mise/installs/pkl");
+    for data in mise_data_dirs() {
+        let installs = data.join("installs/pkl");
         if let Ok(versions) = std::fs::read_dir(&installs) {
             let mut found: Vec<PathBuf> = versions
                 .flatten()
@@ -74,7 +73,7 @@ fn pkl() -> Result<PathBuf> {
             found.sort();
             candidates.extend(found.into_iter().rev());
         }
-        candidates.push(home.join(".local/share/mise/shims/pkl"));
+        candidates.push(data.join("shims/pkl"));
     }
     candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
     candidates.push(PathBuf::from("/usr/local/bin/pkl"));
@@ -95,6 +94,24 @@ fn runs(candidate: &Path) -> bool {
         .arg("--version")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+/// Every Mise data directory the lookup must scan, most specific first:
+/// `MISE_DATA_DIR` when the environment redirects it, else
+/// `XDG_DATA_HOME/mise`, and always the default under `$HOME`, because a
+/// redirect does not move an earlier install. This is where
+/// `mise install pkl@0.33.0` puts the binary.
+fn mise_data_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(data) = std::env::var_os("MISE_DATA_DIR") {
+        dirs.push(PathBuf::from(data));
+    } else if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+        dirs.push(PathBuf::from(xdg).join("mise"));
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share/mise"));
+    }
+    dirs
 }
 
 /// The served modules as files, for the official CLI: it serves them under
@@ -328,5 +345,65 @@ fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
         true,
     )?;
     drop(std::fs::remove_dir_all(&directory));
+    Ok(())
+}
+
+/// Prints the `pkl` this process discovers: the probe that the discovery
+/// test runs in a child process, where the environment it sets cannot
+/// disturb the mandatory tests above.
+#[test]
+fn the_discovery_probe_reports_the_pkl_it_found() -> Result {
+    println!("{}", pkl()?.display());
+    Ok(())
+}
+
+/// The discovery must find the binary Mise just installed: a redirected
+/// `MISE_DATA_DIR` (or `XDG_DATA_HOME`) is where the lane's
+/// `mise install pkl@0.33.0` puts it, and a lookup that scans only
+/// `$HOME` fails with "not installed" even though Mise installed the
+/// pinned binary. The probe runs as a child process so the environment
+/// this test sets cannot race the mandatory tests in this binary.
+#[test]
+fn the_discovery_finds_the_binary_mise_just_installed() -> Result {
+    let scratch = std::env::temp_dir().join(format!(
+        "ruxel-pkl-discovery-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let data = scratch.join("mise-data");
+    let home = scratch.join("home");
+    let installed = data.join("installs/pkl/0.33.0/pkl");
+    std::fs::create_dir_all(installed.parent().unwrap())?;
+    std::fs::create_dir_all(&home)?;
+    std::fs::write(&installed, "#!/bin/sh\necho 'pkl 0.33.0'\n")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o755))?;
+    }
+    let output = Command::new(std::env::current_exe()?)
+        .args([
+            "the_discovery_probe_reports_the_pkl_it_found",
+            "--exact",
+            "--nocapture",
+        ])
+        .env("MISE_DATA_DIR", &data)
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("RUXEL_PKL")
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains(&*installed.display().to_string()),
+        "the probe must find the binary Mise just installed at {}; status: {}; \
+         stdout: {stdout}; stderr: {}",
+        installed.display(),
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    drop(std::fs::remove_dir_all(&scratch));
     Ok(())
 }
