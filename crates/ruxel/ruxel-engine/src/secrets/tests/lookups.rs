@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn fetches_are_field_scoped_and_select_ids_or_labels() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let user = Lookup::OnePasswordUri {
         reference: "op://vault/item/username".into(),
     };
@@ -22,7 +22,7 @@ fn fetches_are_field_scoped_and_select_ids_or_labels() {
 #[test]
 fn a_label_shared_by_sections_fails_naming_them() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let lookup = Lookup::OnePassword {
         vault: "vault".into(),
         item: "item".into(),
@@ -52,7 +52,7 @@ fn a_label_shared_by_sections_fails_naming_them() {
 #[test]
 fn labels_match_case_insensitively_like_1password_references() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     // 1Password resolves reference parts case-insensitively, so selection
     // folds case too: by label ("ApiKey" for "APIKEY") and by id
     // ("username" for "USERNAME"), through references and structured
@@ -84,7 +84,7 @@ fn labels_match_case_insensitively_like_1password_references() {
 #[test]
 fn labels_differing_only_by_case_are_ambiguous_and_named() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let lookup = Lookup::OnePasswordUri {
         reference: "op://vault/item/Pin".into(),
     };
@@ -99,7 +99,7 @@ fn labels_differing_only_by_case_are_ambiguous_and_named() {
 #[test]
 fn fields_in_different_sections_never_share_a_fetch() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     for (section, expected) in [("API", "fake-password-api"), ("Login", "fake-password")] {
         let lookup = Lookup::OnePassword {
             vault: "vault".into(),
@@ -115,7 +115,7 @@ fn fields_in_different_sections_never_share_a_fetch() {
 #[test]
 fn other_lookup_types_cache_and_redact_errors() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let key = Lookup::Fnox { key: "KEY".into() };
     resolver.prefetch(&[key.clone(), key.clone()]).unwrap();
     assert_eq!(resolver.resolve(&key).unwrap(), "fake-value");

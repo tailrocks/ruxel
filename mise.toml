@@ -89,6 +89,7 @@ run = [
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-manifest/Cargo.toml 1>&2",
   "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation 1>&2",
   "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml --example secret_dedup -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml --example secret_generation -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-pty/Cargo.toml 1>&2",
   "cargo run --locked --manifest-path tools/acceptance-pty/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-control/Cargo.toml 1>&2",

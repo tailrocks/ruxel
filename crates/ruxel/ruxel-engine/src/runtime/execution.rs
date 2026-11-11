@@ -211,21 +211,34 @@ impl Execution {
     /// The apply-time `FetchSecret` receive: decode the slurped bytes, store
     /// them in fnox when they differ from the stored value, and strip the
     /// content from the result — the value never reaches output or results.
+    /// The decoded value is registered with the redaction registry the
+    /// moment it arrives, so a later task that echoes it is censored in
+    /// every derived form. Under the synthetic resolver nothing is ever
+    /// written: the fetch reports known-after-apply and unchanged.
     fn receive_fetch_secret(
         &self,
         value: &mut Value,
         params: Option<&Value>,
         result: &v1::TaskResult,
     ) -> Result<Value> {
-        let content = value["content"]
+        let encoded = value["content"]
             .as_str()
             .context("fetchSecret result carries no content")?;
         let key = params
             .and_then(|params| params.get("key").and_then(Value::as_str).map(str::to_owned))
             .context("fetchSecret has no key")?;
-        let decoded = base64_decode(content)?;
+        let decoded = base64_decode(encoded)?;
         let content = String::from_utf8(decoded)
             .map_err(|_| anyhow::anyhow!("fetched content is not text"))?;
+        // The content never leaves this function: strip it from the result
+        // before anything can carry it into results, stdout or the event
+        // log, and register the value with the redaction registry first.
+        value
+            .as_object_mut()
+            .context("fetchSecret result must be an object")?
+            .remove("content");
+        self.lookups.record(&content);
+        let synthetic = self.lookups.resolver.is_synthetic();
         let (changed, fingerprint) = self
             .lookups
             .resolver
@@ -233,6 +246,12 @@ impl Execution {
             .map_err(anyhow::Error::msg)?;
         if changed {
             value["diff"] = json!(format!("stored in fnox (fingerprint {fingerprint})"));
+        }
+        if synthetic {
+            // The synthetic resolver writes nothing: the fetch reports
+            // known-after-apply and unchanged, the same shape check and
+            // diff answer with.
+            value["knownAfterApply"] = Value::Bool(true);
         }
         value["fingerprint"] = json!(fingerprint);
         value["changed"] = Value::Bool(changed);

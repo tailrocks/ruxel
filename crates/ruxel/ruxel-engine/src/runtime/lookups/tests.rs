@@ -5,6 +5,8 @@ use crate::{
 };
 use serde_json::json;
 use std::sync::Arc;
+
+mod generated;
 struct Fake;
 impl Backend for Fake {
     fn onepassword_reference(&self, _: &str) -> Result<String, String> {
@@ -40,7 +42,7 @@ impl Backend for Fake {
 }
 #[test]
 fn item_lookups_require_vault_item_and_field_or_a_reference() -> Result<()> {
-    let resolver = Lookups::new(Resolver::new(Arc::new(Fake)));
+    let resolver = Lookups::new(Resolver::new(Arc::new(Fake)).expect("resolver"));
     for (node, expected) in [
         (
             json!({"kind":"lookup", "provider":"op", "vault":"Private", "item":"synthetic-item", "field":"password"}),
@@ -91,7 +93,7 @@ fn overlapping_secrets_are_redacted_independent_of_order() {
         vec!["aaa", "cdefg", "abcdef", "abc"],
     ] {
         let resolver = Lookups::with_values(
-            Resolver::synthetic(),
+            Resolver::synthetic().expect("synthetic resolver"),
             secrets.into_iter().map(str::to_owned).collect(),
         );
         let input =
@@ -109,11 +111,30 @@ fn overlapping_secrets_are_redacted_independent_of_order() {
 #[test]
 fn redaction_handles_unicode_overlaps_and_does_not_rescan_the_marker() {
     let resolver = Lookups::with_values(
-        Resolver::synthetic(),
+        Resolver::synthetic().expect("synthetic resolver"),
         vec!["é🙂".into(), "🙂z".into(), "REDACTED".into(), String::new()],
     );
     assert_eq!(
         resolver.redact(&json!("start é🙂z end")),
         json!("start [REDACTED] end")
     );
+}
+
+/// A multi-line value registers each of its lines of 6 bytes or more, with
+/// the same derived forms: one line of a fetched document, printed on its
+/// own, is censored like the whole value; a line shorter than 6 bytes is
+/// not registered on its own and remains covered as part of the whole
+/// value.
+#[test]
+fn a_multi_line_value_registers_each_of_its_lines() {
+    let resolver = Lookups::with_values(
+        Resolver::synthetic().expect("synthetic resolver"),
+        vec!["alpha-secret-line\nbeta-secret-line\n".into()],
+    );
+    let line = "beta-secret-line";
+    let line_wire = "YmV0YS1zZWNyZXQtbGluZQ==";
+    let output = resolver.redact(&json!({
+        "msg": format!("grep gives {line} and {line_wire}"),
+    }));
+    assert_eq!(output["msg"], "grep gives [REDACTED] and [REDACTED]");
 }

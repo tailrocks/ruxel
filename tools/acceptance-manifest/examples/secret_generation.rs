@@ -46,7 +46,8 @@ stages {{ new Stage {{
     )
 }
 
-/// The fake fnox: values live in files beside the script, `set` takes the
+/// The fake fnox: values live in files beside the script, reads go through
+/// `fnox get --if-missing error` (the store's read path), `set` takes the
 /// value on stdin (never argv) and counts its calls per key, and a missing
 /// key exits 1 with `not found`. No real secret value is read.
 fn prepare(root: &Path) -> Result<()> {
@@ -58,9 +59,9 @@ fn prepare(root: &Path) -> Result<()> {
         r##"#!/bin/sh
 store="${0%/*}/store"
 counts="${0%/*}/counts"
-if [ "$1" = "exec" ]; then
-  shift 3  # drop exec --no-redact --only
-  key="$1"
+if [ "$1" = "get" ]; then
+  [ "$#" -eq 4 ] && [ "$2" = "--if-missing" ] && [ "$3" = "error" ] || { echo "get takes --if-missing error and the key" >&2; exit 7; }
+  key="$4"
   if [ -f "$store/$key" ]; then
     cat "$store/$key"
     exit 0

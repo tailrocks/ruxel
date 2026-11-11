@@ -285,10 +285,12 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 true,
             )
             .await?;
+            let resolver = Resolver::new(std::sync::Arc::new(ProcessBackend::default()))
+                .map_err(anyhow::Error::msg)?;
             let mut observer = Observer {
                 connection,
                 observed: Observations::default(),
-                resolver: Resolver::new(std::sync::Arc::new(ProcessBackend::default())),
+                resolver,
             };
             let mut facts = BTreeMap::new();
             let recap = tokio::time::timeout(

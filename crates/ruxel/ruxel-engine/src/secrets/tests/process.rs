@@ -39,7 +39,7 @@ impl Drop for Fixture {
 }
 
 fn resolver(fnox: &Path, op: &Path) -> Resolver {
-    Resolver::new(Arc::new(ProcessBackend::with_programs(fnox, op)))
+    Resolver::new(Arc::new(ProcessBackend::with_programs(fnox, op))).unwrap()
 }
 
 #[test]

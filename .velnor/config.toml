@@ -167,6 +167,7 @@ inputs = [
   "tools/acceptance-manifest/control-oracles/cli-drift_repair.jsonl",
   "tools/acceptance-manifest/control-oracles/cli-fresh.jsonl",
   "tools/acceptance-manifest/examples/secret_dedup.rs",
+  "tools/acceptance-manifest/examples/secret_generation.rs",
   "tools/acceptance-manifest/files-contract.json",
   "tools/acceptance-manifest/postgres-contract.json",
   "tools/acceptance-manifest/restart-contract.json",

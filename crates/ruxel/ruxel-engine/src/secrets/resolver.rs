@@ -44,15 +44,18 @@ impl fmt::Debug for Resolver {
 }
 
 impl Resolver {
-    #[must_use]
-    pub fn new(backend: Arc<dyn Backend>) -> Self {
-        Self {
+    /// # Errors
+    /// Returns an error if the per-process fingerprint key cannot be drawn
+    /// from the operating system's random source: with no safe key the
+    /// resolver fails closed rather than fall back to a weak one.
+    pub fn new(backend: Arc<dyn Backend>) -> Result<Self, String> {
+        Ok(Self {
             backend,
             synthetic: false,
             values: Arc::default(),
             items: Arc::default(),
-            fingerprints: Arc::new(Fingerprints::new()),
-        }
+            fingerprints: Arc::new(Fingerprints::new()?),
+        })
     }
 
     /// The synthetic resolver: every lookup answers a selector-derived
@@ -62,11 +65,30 @@ impl Resolver {
     /// value, so synthetic mode is rotation-blind: a rotated value is never
     /// detected there, which the design states rather than promises away.
     /// Nothing is ever generated in this mode.
-    #[must_use]
-    pub fn synthetic() -> Self {
-        let mut resolver = Self::new(Arc::new(ProcessBackend::default()));
+    /// # Errors
+    /// Returns an error if the per-process fingerprint key cannot be drawn
+    /// from the operating system's random source.
+    pub fn synthetic() -> Result<Self, String> {
+        Self::synthetic_with(Arc::new(ProcessBackend::default()))
+    }
+
+    /// The synthetic resolver over a named backend, for runs and tests that
+    /// must see that the store is never contacted in synthetic mode.
+    ///
+    /// # Errors
+    /// Returns an error if the per-process fingerprint key cannot be drawn
+    /// from the operating system's random source.
+    pub fn synthetic_with(backend: Arc<dyn Backend>) -> Result<Self, String> {
+        let mut resolver = Self::new(backend)?;
         resolver.synthetic = true;
-        resolver
+        Ok(resolver)
+    }
+
+    /// Whether this resolver runs synthetic: every lookup answers a
+    /// selector-derived placeholder and no store is ever contacted.
+    #[must_use]
+    pub fn is_synthetic(&self) -> bool {
+        self.synthetic
     }
 
     /// The keyed fingerprint of one secret value: a keyed BLAKE3 derivation
@@ -248,14 +270,16 @@ impl Resolver {
     /// a rerun after a partial failure presents the value the first run
     /// registered. `plan`, `check` and `diff` never reach this: they run in
     /// synthetic mode, which generates nothing. `emit` is called once per
-    /// key this run created.
+    /// key this run created, with the key, the format and the generated
+    /// value — the caller registers the value with the redaction registry
+    /// and never reports it.
     ///
     /// # Errors
     /// Returns a redacted error, naming the store and key, never a value.
     pub fn ensure_generated(
         &self,
         requests: &[GeneratedRequest],
-        emit: &mut dyn FnMut(&str, &str),
+        emit: &mut dyn FnMut(&str, &str, &str),
     ) -> Result<(), String> {
         if self.synthetic {
             return Err("generation never runs in synthetic mode".to_owned());
@@ -298,7 +322,7 @@ impl Resolver {
                         request.key
                     ));
                 }
-                emit(&request.key, &request.format);
+                emit(&request.key, &request.format, &value);
             }
         }
         Ok(())
@@ -308,7 +332,9 @@ impl Resolver {
     /// content with the stored value and writes fnox only when they differ.
     /// Returns whether fnox now holds a new value, and the fingerprint of
     /// the fetched content. The comparison is exact, on the controller; the
-    /// fingerprint is what the run reports.
+    /// fingerprint is what the run reports. Under the synthetic resolver
+    /// nothing is ever written: the fetch reports unchanged, known after
+    /// apply, without contacting the store's read or write path.
     ///
     /// # Errors
     /// Returns a redacted error, naming the store and key, never a value.
@@ -319,6 +345,9 @@ impl Resolver {
             ));
         }
         let fingerprint = self.fingerprints.of(key, content);
+        if self.synthetic {
+            return Ok((false, fingerprint));
+        }
         let _lock = self.backend.fnox_write_lock(key)?;
         let stored = self.backend.fnox_get(key)?;
         if stored

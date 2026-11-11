@@ -78,7 +78,9 @@ fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Resu
         template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(std::path::Path::new("."))?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups::new(Resolver::new(backend.clone()))),
+        lookups: Arc::new(Lookups::new(
+            Resolver::new(backend.clone()).expect("resolver"),
+        )),
     };
     let alpha = json!({"kind":"lookup","provider":"op","vault":"Private","item":"alpha","field":"password"});
     let beta = json!({"kind":"lookup","provider":"op","reference":"op://Private/beta/password"});

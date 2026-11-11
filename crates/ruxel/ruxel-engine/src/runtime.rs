@@ -79,6 +79,18 @@ pub async fn run(
     let config = &validated;
     let copy_root = Arc::new(copy_sources::SourceRoot::open(&runtime.source_dir)?);
     let template_root = Arc::new(copy_root.template_root(&runtime.source_dir)?);
+    // Synthetic mode is wired to plan, check and diff — it is the
+    // mode's property, not an opt-in flag. Every secret answers a
+    // selector-derived placeholder, no store is contacted, and nothing
+    // is generated: synthetic mode is rotation-blind by design (a
+    // placeholder derives from the selector, never the value). Only
+    // apply resolves real values, and only apply generates.
+    let resolver = if options.mode != Mode::Apply || runtime.synthetic_secrets {
+        Resolver::synthetic()
+    } else {
+        Resolver::new(Arc::new(ProcessBackend::default()))
+    }
+    .map_err(anyhow::Error::msg)?;
     let execution = Execution {
         connection_failures: 0,
         conservative_sensitive: Arc::new(std::sync::atomic::AtomicBool::new(
@@ -99,19 +111,7 @@ pub async fn run(
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root,
         copy_root,
-        // Synthetic mode is wired to plan, check and diff — it is the
-        // mode's property, not an opt-in flag. Every secret answers a
-        // selector-derived placeholder, no store is contacted, and nothing
-        // is generated: synthetic mode is rotation-blind by design (a
-        // placeholder derives from the selector, never the value). Only
-        // apply resolves real values, and only apply generates.
-        lookups: Arc::new(Lookups::new(
-            if options.mode != Mode::Apply || runtime.synthetic_secrets {
-                Resolver::synthetic()
-            } else {
-                Resolver::new(Arc::new(ProcessBackend::default()))
-            },
-        )),
+        lookups: Arc::new(Lookups::new(resolver)),
     };
     let result = async {
         // Generation happens once per run, on the controller, before any
@@ -123,9 +123,11 @@ pub async fn run(
             let requests = secrets::generated_requests(config);
             let output = execution.output.clone();
             let lookups = execution.lookups.clone();
+            // `Lookups::ensure_generated` registers every generated value
+            // with the redaction registry as it is created; the event names
+            // the key and the format, never the value.
             execution
                 .lookups
-                .resolver
                 .ensure_generated(&requests, &mut |key, format| {
                     let event = json!({"event":"secret_generated","name":key,"format":format,"message":format!("generated secret {key} (stored in fnox)")});
                     if let Err(error) = output.event(&lookups.redact(&event)) {

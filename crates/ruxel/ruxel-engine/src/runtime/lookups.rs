@@ -1,6 +1,6 @@
 use crate::{
     expression::{Expr, LookupResolver},
-    secrets::{Lookup, Resolver},
+    secrets::{GeneratedRequest, Lookup, Resolver},
 };
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -55,13 +55,23 @@ impl Lookups {
         }
     }
 
-    /// Records one resolved secret for the redactor, together with its
-    /// derived forms: the exact value, its standard and URL-safe base64 and
-    /// its hex encodings. An interpolated or joined secret carries the exact
-    /// value as a substring, so the value's own patterns cover those
-    /// compositions; the encodings cover a secret that passes through a
-    /// base64 or hex step in the workflow's expressions.
-    fn record(&self, value: &str) {
+    /// Records one secret value for the redactor, together with its
+    /// derived forms: the exact value, its standard and URL-safe base64
+    /// (padded and trimmed), its lower- and uppercase hex, and its
+    /// percent-encoded (`urlencode`) form. A multi-line value registers
+    /// each of its lines of 6 bytes or more, with the same forms, so one
+    /// line of a fetched document cannot leak on its own; a line shorter
+    /// than 6 bytes is not registered on its own and remains covered as
+    /// part of the whole value. An interpolated or joined secret
+    /// carries the exact value as a substring, so the value's own patterns
+    /// cover those compositions; the encodings cover a secret that passes
+    /// through a `base64Encode` or `urlencode` step in the workflow's
+    /// expressions. What cannot be derived from the value is not covered:
+    /// the base64 of a `join`, say, or a `sha256` digest. Resolution
+    /// records every value here; a fetched or generated value is recorded
+    /// the moment it exists, so a later task that echoes one is still
+    /// censored.
+    pub(super) fn record(&self, value: &str) {
         let Ok(mut values) = self.values.lock() else {
             return;
         };
@@ -73,11 +83,25 @@ impl Lookups {
         }
     }
 
-    /// Records a value through the same path resolution does; the no-
-    /// plaintext grep test drives this directly.
-    #[cfg(test)]
-    pub(super) fn record_value_for_tests(&self, value: &str) {
-        self.record(value);
+    /// Creates every missing generated key and registers each generated
+    /// value with the redaction registry the moment it exists — the exact
+    /// value and its derived forms, the same treatment a resolved lookup
+    /// gets — so a later task that echoes one is censored. `emit` is called
+    /// once per key this run created with the key and the format, never the
+    /// value.
+    ///
+    /// # Errors
+    /// Returns a redacted error if generation fails.
+    pub(super) fn ensure_generated(
+        &self,
+        requests: &[GeneratedRequest],
+        emit: &mut dyn FnMut(&str, &str),
+    ) -> Result<(), String> {
+        self.resolver
+            .ensure_generated(requests, &mut |key, format, value| {
+                self.record(value);
+                emit(key, format);
+            })
     }
 
     fn patterns(&self) -> Vec<String> {
@@ -196,10 +220,37 @@ impl LookupResolver for Lookups {
 mod tests;
 
 /// Every pattern the redactor matches: the exact resolved values and their
-/// standard and URL-safe base64 and hex forms.
+/// standard and URL-safe base64 (padded and trimmed), lower- and uppercase
+/// hex, and percent-encoded (`urlencode`) forms. A multi-line value
+/// registers each of its lines of 6 bytes or more, with the same forms, so
+/// one line of a fetched document cannot leak on its own; a line shorter
+/// than 6 bytes is not registered on its own and remains covered as part
+/// of the whole value.
 fn derived_patterns(values: &[String]) -> Vec<String> {
+    let mut patterns = Vec::new();
+    for value in values {
+        push_forms(&mut patterns, value);
+        // A multi-line value reaches the registry whole; a later task can
+        // still print one of its lines on its own, so every line of 6 bytes
+        // or more is registered too, with the same forms; a shorter line is
+        // not registered on its own and stays covered as part of the whole
+        // value.
+        for line in value.lines().filter(|line| line.len() >= 6) {
+            push_forms(&mut patterns, line);
+        }
+    }
+    patterns.sort();
+    patterns.dedup();
+    patterns
+}
+
+/// Registers one value's forms: the exact text, its standard and URL-safe
+/// base64 (padded and trimmed), its lower- and uppercase hex, and its
+/// percent-encoded (`urlencode`) form.
+fn push_forms(patterns: &mut Vec<String>, value: &str) {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    const HEX: &[u8; 16] = b"0123456789abcdef";
+    const HEX_LOWER: &[u8; 16] = b"0123456789abcdef";
+    const HEX_UPPER: &[u8; 16] = b"0123456789ABCDEF";
     let base64 = |urlsafe: bool, text: &[u8]| -> String {
         let mut out = String::new();
         for chunk in text.chunks(3) {
@@ -228,24 +279,23 @@ fn derived_patterns(values: &[String]) -> Vec<String> {
             out
         }
     };
-    let mut patterns = Vec::new();
-    for value in values {
-        patterns.push(value.clone());
-        let bytes = value.as_bytes();
-        for encoded in [base64(false, bytes), base64(true, bytes)] {
-            patterns.push(encoded.trim_end_matches('=').to_owned());
-            patterns.push(encoded);
-        }
+    let hex = |digits: &[u8; 16], bytes: &[u8]| {
         let mut hex = String::with_capacity(bytes.len() * 2);
         for byte in bytes {
-            hex.push(char::from(HEX[usize::from(byte >> 4)]));
-            hex.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            hex.push(char::from(digits[usize::from(byte >> 4)]));
+            hex.push(char::from(digits[usize::from(byte & 0x0f)]));
         }
-        patterns.push(hex);
+        hex
+    };
+    patterns.push(value.to_owned());
+    let bytes = value.as_bytes();
+    for encoded in [base64(false, bytes), base64(true, bytes)] {
+        patterns.push(encoded.trim_end_matches('=').to_owned());
+        patterns.push(encoded);
     }
-    patterns.sort();
-    patterns.dedup();
-    patterns
+    patterns.push(hex(HEX_LOWER, bytes));
+    patterns.push(hex(HEX_UPPER, bytes));
+    patterns.push(crate::expression::percent_encode(value));
 }
 
 /// Every lookup expression of a value, in field order.

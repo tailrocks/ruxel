@@ -14,6 +14,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
+/// Percent-encodes `text` with the `urlencode` transform's encode set:
+/// unreserved characters and `/` pass through, everything else becomes
+/// `%HH`. The redactor reuses this exact encoding so a value that passes
+/// through `urlencode` is censored like the value itself.
+pub(crate) fn percent_encode(text: &str) -> String {
+    utf8_percent_encode(text, URL_ENCODE_SET).to_string()
+}
+
 pub mod provenance;
 mod values;
 use values::{compare, equal, render_string};
@@ -318,13 +326,9 @@ fn evaluate_transform(function: &str, args: &[Expr], values: &[Value]) -> Result
         "trim" => Ok(json!(
             values[0].as_str().context("trim expects a string")?.trim()
         )),
-        "urlencode" => Ok(json!(
-            utf8_percent_encode(
-                values[0].as_str().context("urlencode expects a string")?,
-                URL_ENCODE_SET
-            )
-            .to_string()
-        )),
+        "urlencode" => Ok(json!(percent_encode(
+            values[0].as_str().context("urlencode expects a string")?,
+        ))),
         "list" => match &values[0] {
             Value::Array(_) => Ok(values[0].clone()),
             Value::String(value) => Ok(json!(

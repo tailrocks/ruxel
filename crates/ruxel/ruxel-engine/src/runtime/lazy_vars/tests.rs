@@ -39,7 +39,9 @@ fn execution() -> Result<Execution> {
             std::path::Path::new("."),
         )?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups::new(Resolver::synthetic())),
+        lookups: Arc::new(Lookups::new(
+            Resolver::synthetic().expect("synthetic resolver"),
+        )),
     })
 }
 

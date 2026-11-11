@@ -63,7 +63,7 @@ exit 8
     }
 
     fn resolver(&self) -> Resolver {
-        Resolver::new(Arc::new(self.backend()))
+        Resolver::new(Arc::new(self.backend())).unwrap()
     }
 
     fn set_calls(&self) -> usize {
@@ -104,7 +104,7 @@ fn applying_the_same_workflow_twice_generates_exactly_once() {
     let mut generated = 0;
     fixture
         .resolver()
-        .ensure_generated(&requests, &mut |_, _| generated += 1)
+        .ensure_generated(&requests, &mut |_, _, _| generated += 1)
         .expect("first apply generates");
     assert_eq!(fixture.set_calls(), 1);
     assert_eq!(generated, 1);
@@ -113,7 +113,7 @@ fn applying_the_same_workflow_twice_generates_exactly_once() {
     let mut generated = 0;
     fixture
         .resolver()
-        .ensure_generated(&requests, &mut |_, _| generated += 1)
+        .ensure_generated(&requests, &mut |_, _, _| generated += 1)
         .expect("second apply finds the key present");
     assert_eq!(fixture.set_calls(), 1, "generated exactly once");
     assert_eq!(generated, 0);
@@ -161,9 +161,13 @@ fn a_key_that_appears_between_check_and_store_fails_without_overwriting() {
     }
     let resolver = Resolver::new(Arc::new(Appearing {
         reads: AtomicUsize::new(0),
-    }));
+    }))
+    .unwrap();
     let error = resolver
-        .ensure_generated(&[request("PROCESSOR_DB_PASSWORD", "hex32")], &mut |_, _| {})
+        .ensure_generated(
+            &[request("PROCESSOR_DB_PASSWORD", "hex32")],
+            &mut |_, _, _| {},
+        )
         .expect_err("the run fails");
     assert!(
         error.contains("appeared in fnox"),
@@ -210,48 +214,19 @@ fn a_read_back_that_differs_fails_the_run() {
     }
     let resolver = Resolver::new(Arc::new(Tampering {
         reads: AtomicUsize::new(0),
-    }));
+    }))
+    .unwrap();
     let error = resolver
-        .ensure_generated(&[request("PROCESSOR_DB_PASSWORD", "hex32")], &mut |_, _| {})
+        .ensure_generated(
+            &[request("PROCESSOR_DB_PASSWORD", "hex32")],
+            &mut |_, _, _| {},
+        )
         .expect_err("read-back compare fails the run");
     assert!(
         error.contains("read back from fnox differs"),
         "names the comparison: {error}"
     );
     assert!(!error.contains("tampered"), "errors never carry values");
-}
-
-/// Every named format generates its shape: hex16 and hex32 are lowercase
-/// hex of the right length, base64-32 encodes 32 bytes, alnum32 is 32
-/// letters and digits. There is no kubeadm token format.
-#[test]
-fn every_generated_format_has_its_shape() {
-    let hex16 = generate_value("hex16").expect("hex16");
-    assert_eq!(hex16.len(), 16);
-    assert!(
-        hex16
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    );
-    let hex32 = generate_value("hex32").expect("hex32");
-    assert_eq!(hex32.len(), 32);
-    assert!(
-        hex32
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    );
-    let base64 = generate_value("base64-32").expect("base64-32");
-    assert_eq!(base64.len(), 44);
-    assert!(base64.ends_with('='));
-    let alnum = generate_value("alnum32").expect("alnum32");
-    assert_eq!(alnum.len(), 32);
-    assert!(alnum.bytes().all(|byte| byte.is_ascii_alphanumeric()));
-    assert!(generate_value("kubeadmToken").is_err());
-    // Values are random: two generations of one format differ.
-    assert_ne!(
-        generate_value("hex32").expect("hex32"),
-        generate_value("hex32").expect("hex32")
-    );
 }
 
 /// The store round-trips the value through the real fixture: `set` receives
@@ -267,7 +242,7 @@ fn the_fixture_store_round_trips_stdin_values() {
     ];
     let mut created = Vec::new();
     resolver
-        .ensure_generated(&requests, &mut |key, _| created.push(key.to_owned()))
+        .ensure_generated(&requests, &mut |key, _, _| created.push(key.to_owned()))
         .expect("generate");
     assert_eq!(created, ["HEX_KEY", "ALNUM_KEY", "B64_KEY"]);
     assert_eq!(fixture.set_calls(), 3);
@@ -335,10 +310,13 @@ fn a_fetched_secret_stores_only_a_change_and_fingerprints_are_keyed_and_truncate
 /// refuses the generate preflight outright.
 #[test]
 fn synthetic_mode_never_generates() {
-    let resolver = Resolver::synthetic();
+    let resolver = Resolver::synthetic().unwrap();
     assert!(
         resolver
-            .ensure_generated(&[request("PROCESSOR_DB_PASSWORD", "hex32")], &mut |_, _| {})
+            .ensure_generated(
+                &[request("PROCESSOR_DB_PASSWORD", "hex32")],
+                &mut |_, _, _| {}
+            )
             .is_err()
     );
 }

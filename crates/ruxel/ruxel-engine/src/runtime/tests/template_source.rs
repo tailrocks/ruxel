@@ -29,7 +29,9 @@ fn template_execution(directory: &std::path::Path) -> Result<Execution> {
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(templates::SourceRoot::open(directory)?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(directory)?),
-        lookups: Arc::new(Lookups::new(Resolver::synthetic())),
+        lookups: Arc::new(Lookups::new(
+            Resolver::synthetic().expect("synthetic resolver"),
+        )),
     })
 }
 

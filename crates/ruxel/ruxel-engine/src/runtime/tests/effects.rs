@@ -6,8 +6,24 @@ type Started = (bool, oneshot::Sender<()>);
 pub(super) struct TestConnection {
     started: mpsc::UnboundedSender<Started>,
     pending: Option<(u64, oneshot::Receiver<()>)>,
+    result_json: Vec<u8>,
 }
 impl TestConnection {
+    /// A scripted agent connection answering every task with the one
+    /// named result, so tests can drive the full receive path.
+    pub(super) fn scripted(
+        result_json: Vec<u8>,
+    ) -> (Self, mpsc::UnboundedReceiver<(bool, oneshot::Sender<()>)>) {
+        let (started, observed) = mpsc::unbounded_channel();
+        (
+            Self {
+                started,
+                pending: None,
+                result_json,
+            },
+            observed,
+        )
+    }
     pub(super) fn send(&mut self, envelope: &v1::Envelope) -> Result<()> {
         let Some(v1::envelope::Msg::Plan(plan)) = &envelope.msg else {
             anyhow::bail!("expected plan");
@@ -27,7 +43,7 @@ impl TestConnection {
             msg: Some(v1::event::Msg::TaskResult(v1::TaskResult {
                 task_id: id,
                 status: "ok".into(),
-                result_json: b"{}".to_vec(),
+                result_json: self.result_json.clone(),
                 ..Default::default()
             })),
         }))
@@ -60,7 +76,9 @@ fn execution() -> Result<Execution> {
         template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(std::path::Path::new("."))?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups::new(Resolver::synthetic())),
+        lookups: Arc::new(Lookups::new(
+            Resolver::synthetic().expect("synthetic resolver"),
+        )),
     })
 }
 async fn add(execution: &Execution, host: &str, started: mpsc::UnboundedSender<Started>) {
@@ -69,6 +87,7 @@ async fn add(execution: &Execution, host: &str, started: mpsc::UnboundedSender<S
         Arc::new(tokio::sync::Mutex::new(Connection::Test(TestConnection {
             started,
             pending: None,
+            result_json: b"{}".to_vec(),
         }))),
     );
 }

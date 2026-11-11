@@ -17,21 +17,29 @@ pub(super) struct Fingerprints {
 }
 
 impl Fingerprints {
-    pub(super) fn new() -> Self {
+    /// Draws the per-process key from the operating system's random source.
+    /// This fails closed: with no random source there is no safe key, so
+    /// construction errors and the run stops rather than falling back to a
+    /// weak or constant key an attacker could enumerate.
+    ///
+    /// # Errors
+    /// Returns an error if the operating system's random source is
+    /// unavailable.
+    pub(super) fn new() -> Result<Self, String> {
+        Self::from_random(random_bytes)
+    }
+
+    /// The same construction over a named entropy draw, so the fail-closed
+    /// path is testable: any draw that errors aborts construction.
+    ///
+    /// # Errors
+    /// Returns an error if the draw fails.
+    pub(super) fn from_random(
+        draw: impl FnOnce(&mut [u8]) -> Result<(), String>,
+    ) -> Result<Self, String> {
         let mut key = [0_u8; 32];
-        if random_bytes(&mut key).is_err() {
-            // Without the kernel source, fall back to process-unique
-            // mixing; fingerprints only ever compare within one process.
-            let time = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_nanos());
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(&time.to_le_bytes());
-            hasher.update(&std::process::id().to_le_bytes());
-            hasher.update(&(std::ptr::from_ref(&key) as usize).to_le_bytes());
-            key = *hasher.finalize().as_bytes();
-        }
-        Self { key }
+        draw(&mut key)?;
+        Ok(Self { key })
     }
 
     pub(super) fn of(&self, selector: &str, value: &str) -> String {
@@ -40,11 +48,5 @@ impl Fingerprints {
         hasher.update(&[31]);
         hasher.update(value.as_bytes());
         hasher.finalize().to_hex()[..8].to_owned()
-    }
-}
-
-impl Default for Fingerprints {
-    fn default() -> Self {
-        Self::new()
     }
 }

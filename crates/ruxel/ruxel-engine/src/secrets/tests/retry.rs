@@ -45,7 +45,7 @@ fn transient_failures_retry_and_successes_are_shared() {
         values: AtomicUsize::new(0),
         items: AtomicUsize::new(0),
     });
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let key = Lookup::Fnox { key: "KEY".into() };
     assert_eq!(resolver.resolve(&key).unwrap_err(), "secret lookup failed");
     std::thread::scope(|scope| {

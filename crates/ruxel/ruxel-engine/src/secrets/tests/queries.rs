@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn query_references_preserve_cli_semantics_and_cache_full_reference() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     for (query, expected) in [("otp", "synthetic-otp"), ("type", "synthetic-type")] {
         let lookup = Lookup::OnePasswordUri {
             reference: format!("op://vault/item/username?attribute={query}"),
@@ -22,7 +22,7 @@ fn query_references_preserve_cli_semantics_and_cache_full_reference() {
 #[test]
 fn query_failures_remain_redacted_and_are_retried() {
     let backend = Arc::new(Fake::default());
-    let resolver = Resolver::new(backend.clone());
+    let resolver = Resolver::new(backend.clone()).unwrap();
     let lookup = Lookup::OnePasswordUri {
         reference: "op://vault/item/username?attribute=synthetic-invalid".into(),
     };
