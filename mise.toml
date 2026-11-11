@@ -60,18 +60,23 @@ description = "Unit and integration tests"
 # (crates/ruxel/ruxel-config/tests/dual_evaluator.rs) needs the official Pkl CLI,
 # which Velnor's closed pinned-tool set does not cover, so the lane's own command
 # installs it into the default data dir ($HOME/.local/share/mise/installs/pkl/*/pkl)
-# that the suite's discovery scans. The version is repeated because Velnor executes
+# and verifies it: the version is repeated because Velnor executes
 # task commands with MISE_NO_CONFIG=1 and MISE_LOCKFILE=0: the [tools] pin and the
 # lockfile setting are invisible there, and `--locked` fails with "locked mode
-# requires lockfile to be enabled"; the explicit X.Y.Z also avoids @latest resolution.
-run = "mise install pkl@0.33.0 && cargo nextest run --workspace --all-features --locked --no-tests=pass"
+# requires lockfile to be enabled"; the explicit X.Y.Z also avoids @latest
+# resolution. Because MISE_LOCKFILE=0 also hides the committed checksums,
+# tools/verify-pkl-artifact hashes the installed binary against the mise.lock
+# entry for this platform and refuses a mismatch before any test executes it.
+run = "mise install pkl@0.33.0 && tools/verify-pkl-artifact && cargo nextest run --workspace --all-features --locked --no-tests=pass"
 
 [tasks."dual-evaluator"]
 description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin"
 run = [
   # Same constraints as the test task above: no config and no lockfile under the
-  # generated executor, so pin the exact version instead of relying on [tools]/mise.lock.
+  # generated executor, so pin the exact version instead of relying on
+  # [tools]/mise.lock, then verify the artifact against the committed checksum.
   "mise install pkl@0.33.0",
+  "tools/verify-pkl-artifact",
   "cargo test --locked -p ruxel-config --test dual_evaluator",
 ]
 
