@@ -280,7 +280,6 @@ fn a_missing_account_lowers_to_the_user_operation() -> Result {
     assert_eq!(user["operation"]["kind"], "user");
     assert_eq!(user["operation"]["name"], "ruxel-app");
     assert_eq!(user["operation"]["shell"], "/bin/zsh");
-    // No pre-check reads /etc/passwd before the operation.
     assert!(
         all.iter()
             .all(|task| task["operation"]["kind"] != "command"),
