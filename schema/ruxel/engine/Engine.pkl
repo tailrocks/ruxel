@@ -7,14 +7,27 @@ class Ref { fixed kind = "ref"; path: Listing<String>(!this.isEmpty) }
 class Call { fixed kind = "call"; `function`: "eq"|"ne"|"lt"|"le"|"gt"|"ge"|"and"|"or"|"not"|"default"|"contains"|"length"|"concat"|"sha256"|"base64Encode"|"base64Decode"|"mapAttribute"|"if"|"map"|"flatMap"|"string"|"bool"|"trim"|"join"|"urlencode"|"list"; args: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup>(`function` == "concat" || (List("if", "flatMap").contains(`function`) && this.length == 3) || (List("not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 1) || (!List("concat", "if", "flatMap", "not", "length", "sha256", "base64Encode", "base64Decode", "string", "bool", "trim", "urlencode", "list").contains(`function`) && this.length == 2)) }
 class ListExpr { fixed kind = "list"; items: Listing<Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
 class MapExpr { fixed kind = "map"; entries: Mapping<String, Literal|Ref|Call|ListExpr|MapExpr|Lookup> }
+/// The formats generation creates a missing key in: 16 or 32 hex characters,
+/// 32 bytes base64-encoded, or 32 letters and digits. Authoring spells the
+/// same union in `Core.pkl` (`GeneratedFormat`); there is no kubeadm token
+/// format — the kubeadm recipe composes the pair from two fnox keys.
+typealias GeneratedFormat = "hex16"|"hex32"|"base64-32"|"alnum32"
 class Lookup {
   fixed kind = "lookup"
-  provider: "fnox"|"op"|"command"|"synthetic"
+  /// `fnox-generated` reads the key like `fnox`, and `apply` additionally
+  /// creates it, once per run, under the fnox write lock, when it is missing
+  /// (generation, stdin store, read-back and byte-compare). `plan`, `check`
+  /// and `diff` never generate: they resolve every lookup in synthetic mode,
+  /// so a generated key is a selector-derived placeholder there.
+  provider: "fnox"|"fnox-generated"|"op"|"command"|"synthetic"
   /// A fnox key is an `FnoxKey` (`Core.pkl`): `[A-Z][A-Z0-9_]{1,127}` —
   /// the grammar model validation and the backend enforce with the same
   /// sentence. The constraint cannot carry a message; the Rust layers name
   /// it when they refuse a key.
-  key: String?(provider != "fnox" || (this != null && this.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))) = null
+  key: String?((provider != "fnox" && provider != "fnox-generated") || (this != null && this.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))) = null
+  /// The format a missing generated key is created in. Set only for
+  /// `fnox-generated`; model validation refuses it anywhere else.
+  format: GeneratedFormat? = null
   /// The structured 1Password selector. Vault, item and field are always
   /// stated — there is no default vault or field; the engine's own checks
   /// (model validation and resolution) refuse a lookup that omits one. The
@@ -101,7 +114,7 @@ class Task {
   always: Listing<Task>
   noLog: Boolean = false
 }
-typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
+typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|FetchSecret|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
 
 class Apt {
   fixed kind = "apt"
@@ -190,6 +203,19 @@ class Filesystem {
   dev: Text
   fstype: "ext4"|"xfs"|Expr
   resizefs: Flag? = null
+}
+
+/// Reads one file on the host the task runs on and hands the bytes back to
+/// the controller, which stores them in fnox (`fnox set` with the value on
+/// stdin). The task itself is read-only and carries no secret: the content
+/// travels back as a no-log slurp result and never reaches output, results
+/// or the ledger. In check and diff the controller does not even send the
+/// task: FetchSecret is known-after-apply, never fingerprint-convergent.
+class FetchSecret {
+  fixed kind = "fetchSecret"
+  path: Text
+  /// The fnox key the content is stored under; the step's identity.
+  key: Text
 }
 
 class GetUrl {

@@ -69,6 +69,14 @@ pub trait Backend {
     ) -> Result<()> {
         Ok(())
     }
+    /// The keyed fingerprint of a secret-bearing task's content, built
+    /// from the selectors alone. The controller asks for it before the
+    /// operation's expressions are evaluated: the evaluated parameters
+    /// carry the placeholders the selectors resolve to, not the selectors
+    /// themselves.
+    fn content_fingerprint(&self, _params: &Value) -> Option<String> {
+        None
+    }
     async fn prepare_operation_tracked(
         &mut self,
         kind: &str,

@@ -8,9 +8,12 @@ struct Fake {
     references: Mutex<Vec<String>>,
 }
 impl Backend for Fake {
-    fn fnox(&self, _: &str) -> Result<String, String> {
+    fn fnox_get(&self, _: &str) -> Result<Option<String>, String> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok("fake-value".into())
+        Ok(Some("fake-value".into()))
+    }
+    fn fnox_set(&self, _: &str, _: &str) -> Result<(), String> {
+        Err("unexpected fnox store".into())
     }
     fn onepassword_fields(
         &self,
@@ -65,6 +68,11 @@ impl Backend for Fake {
 #[cfg(unix)]
 mod process;
 
+mod conflict;
+mod fingerprint;
+mod formats;
+mod generation;
+mod newlines;
 mod queries;
 mod synthetic;
 

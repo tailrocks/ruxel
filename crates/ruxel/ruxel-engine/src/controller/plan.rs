@@ -21,7 +21,20 @@ fn redact_lookups(value: &mut Value) {
 
 fn visible(task: &Value) -> Value {
     if flag(task, "noLog") {
-        return json!({"name":string(task,"name"),"noLog":true,"censored":true});
+        // A no-log task's fields never reach the plan. An apply-only step
+        // (FetchSecret) marks itself known-after-apply: in check and diff it
+        // contacts neither fnox nor the host, so there is no fingerprint to
+        // compare.
+        let mut output = json!({"name":string(task,"name"),"noLog":true,"censored":true});
+        if task
+            .get("operation")
+            .and_then(|o| o.get("kind"))
+            .and_then(Value::as_str)
+            == Some("fetchSecret")
+        {
+            output["knownAfterApply"] = json!(true);
+        }
+        return output;
     }
     let mut output = task.clone();
     for section in ["block", "rescue", "always"] {
@@ -80,7 +93,16 @@ pub(super) fn plan_tasks<B: Backend>(
     for task in tasks {
         if let Some((selected, task_count)) = project(task, filter, inherited) {
             let selected = if backend.conservative_sensitive() {
-                json!({"censored":true})
+                // The conservative projection censors the task, but the
+                // marker the controller builds itself — the known-after-apply
+                // marker of an apply-only step — is safe metadata and
+                // stays: the plan says that the step happens at apply, and
+                // nothing else about it.
+                let mut censored = json!({"censored":true});
+                if selected.get("knownAfterApply") == Some(&json!(true)) {
+                    censored["knownAfterApply"] = json!(true);
+                }
+                censored
             } else {
                 selected
             };

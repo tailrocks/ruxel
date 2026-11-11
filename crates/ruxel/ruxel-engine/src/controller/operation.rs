@@ -52,6 +52,15 @@ impl<B: Backend> Runner<'_, B> {
             .filter(|v| !v.is_null())
             .context("task has no operation")?;
         let kind = string(operation, "kind").context("operation has no kind")?;
+        // FetchSecret is apply-only: in check and diff it contacts neither
+        // fnox nor the host, and reports known-after-apply rather than a
+        // fingerprint comparison. The comparison and the store happen only
+        // in apply.
+        if kind == "fetchSecret" && matches!(self.options.mode, Mode::Check | Mode::Diff) {
+            return Ok(TrackedValue::public(json!(
+                {"changed": false, "failed": false, "knownAfterApply": true}
+            )));
+        }
         let mut params = Map::new();
         for (key, value) in operation
             .as_object()
@@ -79,6 +88,13 @@ impl<B: Backend> Runner<'_, B> {
                 source_sensitive || layer.no_log || layer.control_sensitive,
             )
             .await?;
+        // The fingerprint of a secret-bearing content is built from the
+        // selectors alone, so it is read from the parameters before the
+        // evaluation: the evaluated ones carry the placeholders the
+        // selectors resolve to, and the selectors are gone.
+        let content_fingerprint = self
+            .backend
+            .content_fingerprint(&Value::Object(params.clone()));
         let tracked_params = if kind == "assert" {
             self.assertion_params(
                 &params,
@@ -192,6 +208,7 @@ impl<B: Backend> Runner<'_, B> {
         };
         let mut request = Request {
             host: destination,
+            content_fingerprint,
             task: v1::RenderedTask {
                 task_id: id,
                 name: string(task, "name").unwrap_or(kind).to_owned(),

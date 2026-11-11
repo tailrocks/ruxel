@@ -16,34 +16,53 @@ mod process_guard;
 const ALPHA: &str = "RUXEL_SYNTHETIC_ALPHA_824";
 const BETA: &str = "RUXEL_SYNTHETIC_BETA_627";
 const WRONG: &str = "RUXEL_SYNTHETIC_WRONG_913";
-const CONFIG: &str = r#"
-import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
-function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
-function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
-function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
-output { value = new Ruxel.Config {
-  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
-  plays { new {
-    name = "Synthetic same item lookup"
-    targets { "all" }
-    vars {
-      ["alpha"] = new Ruxel.Lookup { provider = "op"; vault = "fixture-vault"; item = "fixture-item"; field = "alpha" }
-      ["beta"] = new Ruxel.Lookup { provider = "op"; vault = "fixture-vault"; item = "fixture-item"; field = "beta" }
-    }
-    tasks { new {
-      name = "Verify both synthetic item fields"
-      noLog = true
-      operation = new Ruxel.Assert { that = call("and", new Listing {
-        call("eq", new Listing { ref(new Listing { "vars"; "alpha" }); literal("RUXEL_SYNTHETIC_ALPHA_824") })
-        call("eq", new Listing { ref(new Listing { "vars"; "beta" }); literal("RUXEL_SYNTHETIC_BETA_627") })
-      }) }
-    } }
-  } }
-} }
-"#;
 
-fn prepare(dir: &Path) -> Result<()> {
-    fs::write(dir.join("fixture.pkl"), CONFIG)?;
+/// Check and diff resolve every lookup synthetically, so the same task must
+/// succeed there whatever the stores hold: the assertion compares each value
+/// with itself. Apply reads the real store, so the same shape compares the
+/// values with the fixture's.
+fn config(compare_with_fixture: bool) -> String {
+    let alpha = if compare_with_fixture {
+        format!("literal(\"{ALPHA}\")")
+    } else {
+        "ref(new {\"vars\"; \"alpha\"})".to_owned()
+    };
+    let beta = if compare_with_fixture {
+        format!("literal(\"{BETA}\")")
+    } else {
+        "ref(new {\"vars\"; \"beta\"})".to_owned()
+    };
+    format!(
+        r#"
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new {{ value = v }}
+function ref(p: Listing<String>): Ruxel.Ref = new {{ path = p }}
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new {{ `function` = n; args = a }}
+output {{ value = new Ruxel.Config {{
+  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
+  plays {{ new {{
+    name = "Same item lookup"
+    targets {{ "all" }}
+    vars {{
+      ["alpha"] = new Ruxel.Lookup {{ provider = "op"; vault = "fixture-vault"; item = "fixture-item"; field = "alpha" }}
+      ["beta"] = new Ruxel.Lookup {{ provider = "op"; vault = "fixture-vault"; item = "fixture-item"; field = "beta" }}
+    }}
+    tasks {{ new {{
+      name = "Verify both item fields"
+      noLog = true
+      operation = new Ruxel.Assert {{ that = call("and", new Listing {{
+        call("eq", new Listing {{ ref(new Listing {{ "vars"; "alpha" }}); {alpha} }})
+        call("eq", new Listing {{ ref(new Listing {{ "vars"; "beta" }}); {beta} }})
+      }}) }}
+    }} }}
+  }} }}
+}} }}
+"#
+    )
+}
+
+fn prepare(dir: &Path, compare_with_fixture: bool) -> Result<()> {
+    fs::write(dir.join("fixture.pkl"), config(compare_with_fixture))?;
     let op = dir.join("op");
     fs::write(
         &op,
@@ -105,7 +124,7 @@ fn phase(root: &Path, cli: &Path, agent: &Path, mode: &str, success: bool) -> Re
         .collect::<std::result::Result<_, _>>()?;
     let task: Vec<_> = events
         .iter()
-        .filter(|e| e["task"] == "Verify both synthetic item fields")
+        .filter(|e| e["task"] == "Verify both item fields")
         .collect();
     ensure!(
         task.len() == 1 && task[0]["result"]["censored"] == true,
@@ -117,14 +136,21 @@ fn phase(root: &Path, cli: &Path, agent: &Path, mode: &str, success: bool) -> Re
             .any(|e| e["recap"]["failed"] == u64::from(!success)),
         "{mode}: unexpected recap"
     );
-    ensure!(
-        fs::read_to_string(calls)
-            .context("fake op was not invoked")?
-            .lines()
-            .count()
-            == 2,
-        "{mode}: expected one field-scoped request per named field"
-    );
+    let calls_made = fs::read_to_string(&calls).map(|calls| calls.lines().count());
+    if mode == "apply" {
+        // Apply is the only mode that reads the store, and the fetch is
+        // field-scoped: one request per named field, never the whole item.
+        ensure!(
+            calls_made.context("fake op was not invoked")? == 2,
+            "apply: expected one field-scoped request per named field"
+        );
+    } else {
+        // Check and diff are synthetic: no store is contacted.
+        ensure!(
+            calls_made.is_err(),
+            "{mode}: the store was contacted in a synthetic mode"
+        );
+    }
     Ok(())
 }
 
@@ -137,14 +163,19 @@ fn main() -> Result<()> {
         "expected exactly CLI and agent paths"
     );
     let temp = tempfile::tempdir()?;
-    prepare(temp.path())?;
+    // Check and diff run synthetic: the fixture compares values with
+    // themselves, and the fake op must never be called.
+    prepare(temp.path(), false)?;
     for mode in ["check", "diff"] {
         phase(temp.path(), &cli, &agent, mode, true)?;
     }
+    // Apply reads the real store through the same field-scoped fetch.
+    prepare(temp.path(), true)?;
+    phase(temp.path(), &cli, &agent, "apply", true)?;
     fs::write(temp.path().join("wrong"), b"")?;
-    phase(temp.path(), &cli, &agent, "check", false)?;
+    phase(temp.path(), &cli, &agent, "apply", false)?;
     println!(
-        "check and diff: one field-scoped request per named field each; both fields resolved and output redacted"
+        "check and diff: synthetic, no store contact; apply: one field-scoped request per named field, values redacted"
     );
     Ok(())
 }

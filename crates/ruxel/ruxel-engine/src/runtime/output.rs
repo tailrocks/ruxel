@@ -33,6 +33,22 @@ pub(super) fn sensitive_event(value: &Value) -> Value {
                 censored.insert(key.into(), Value::Bool(value));
             }
         }
+        // The known-after-apply marker and the keyed fingerprint sentences
+        // are controller-built and carry no value, so a sensitive run keeps
+        // them: an apply-only step still reports known-after-apply, and a
+        // secret-bearing file still shows its keyed fingerprint.
+        if let Some(true) = result.get("knownAfterApply").and_then(Value::as_bool) {
+            censored.insert("knownAfterApply".into(), Value::Bool(true));
+        }
+        if let Some(fingerprint) = result.get("fingerprint").and_then(Value::as_str) {
+            censored.insert("fingerprint".into(), Value::String(fingerprint.to_owned()));
+        }
+        if let Some(diff) = result.get("diff").and_then(Value::as_str).filter(|diff| {
+            diff.starts_with("content changed (fingerprint ")
+                || diff.starts_with("stored in fnox (fingerprint ")
+        }) {
+            censored.insert("diff".into(), Value::String(diff.to_owned()));
+        }
         output.insert("result".into(), Value::Object(censored));
     }
     if value.get("pause").is_some() {

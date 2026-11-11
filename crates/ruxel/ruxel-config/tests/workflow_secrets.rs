@@ -232,3 +232,102 @@ fn a_joined_secret_pair_lowers_as_two_lookups() -> Result {
     );
     Ok(())
 }
+
+/// A generated key lowers with its format on the `fnox-generated` provider:
+/// apply creates the key in that format when it is missing, once per run,
+/// under the fnox write lock. The task that writes the file is never logged.
+#[test]
+fn a_generated_key_lowers_with_its_format() -> Result {
+    let config = valid("secret-generated.pkl")?;
+    let task = tasks(&config)
+        .into_iter()
+        .find(|task| task["operation"]["dest"] == "/etc/processor/processor.env")
+        .ok_or("no generated-secret task")?;
+    assert_eq!(task["noLog"], serde_json::json!(true));
+    assert_eq!(task["operation"]["mode"], "0600");
+    assert_eq!(
+        task["operation"]["content"]["args"][1],
+        serde_json::json!({
+            "kind": "lookup",
+            "provider": "fnox-generated",
+            "key": "PROCESSOR_DB_PASSWORD",
+            "format": "hex32",
+            "argv": [],
+        })
+    );
+    Ok(())
+}
+
+/// `FetchSecret` lowers to the apply-only slurp the controller turns into a
+/// fnox store: the path travels, never the content, and the task is never
+/// logged. The one host it reads from joins the inventory.
+///
+/// The task is delegated to that one host, like a capture with a `runOn`:
+/// the file is read where the step names it, never on every host of the
+/// stage. The fixture's stage runs on the workers and the fetch reads on the
+/// control plane, so the delegation names a host outside the stage's own
+/// targets — and only that host.
+#[test]
+fn a_fetched_secret_lowers_to_an_apply_only_slurp() -> Result {
+    let config = valid("secret-fetch.pkl")?;
+    let task = tasks(&config)
+        .into_iter()
+        .find(|task| task["operation"]["kind"] == "fetchSecret")
+        .ok_or("no fetchSecret task")?;
+    assert_eq!(task["noLog"], serde_json::json!(true));
+    assert_eq!(task["operation"]["path"], "/etc/kubernetes/admin.conf");
+    assert_eq!(task["operation"]["key"], "K8S_ADMIN_KUBECONFIG");
+    assert_eq!(task["delegateTo"], serde_json::json!("cp-1"));
+    assert_eq!(task["delegateAllow"], serde_json::json!(["cp-1"]));
+    let hosts = config["inventory"]["hosts"]
+        .as_object()
+        .ok_or("no inventory")?;
+    assert!(hosts.contains_key("cp-1"), "the runOn host is inventoried");
+    // The stage runs on the workers: the fetch reads on the one host the
+    // step names, which is not a target of the stage.
+    let targets = config["plays"][0]["targets"]
+        .as_array()
+        .ok_or("no play targets")?;
+    let targets: Vec<&str> = targets
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert_eq!(targets, ["worker-1", "worker-2"]);
+    assert!(!targets.contains(&"cp-1"), "the read host is not a target");
+    Ok(())
+}
+
+/// An exact repeat is the same step: the stage lists it twice, one task
+/// lowers.
+#[test]
+fn an_exact_fetch_repeat_is_the_same_step() -> Result {
+    let directory = std::env::temp_dir().join(format!(
+        "ruxel-fetch-repeat-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or_default(),
+    ));
+    std::fs::create_dir_all(&directory)?;
+    let root = directory.join("repeat.pkl");
+    std::fs::write(
+        &root,
+        r#"amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+local web = new core.Host { name = "web"; address = "192.0.2.1" }
+stages { new Stage { title = "t"; hosts { web }; steps {
+  new core.FetchSecret { fromPath = "/etc/kubernetes/admin.conf"; runOn = web; fnoxKey = "K8S_ADMIN_KUBECONFIG" }
+  new core.FetchSecret { fromPath = "/etc/kubernetes/admin.conf"; runOn = web; fnoxKey = "K8S_ADMIN_KUBECONFIG" }
+} } }
+"#,
+    )?;
+    let config = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())?;
+    let fetched = tasks(&config)
+        .into_iter()
+        .filter(|task| task["operation"]["kind"] == "fetchSecret")
+        .count();
+    assert_eq!(fetched, 1, "an exact repeat is the same step");
+    drop(std::fs::remove_dir_all(&directory));
+    Ok(())
+}

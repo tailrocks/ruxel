@@ -5,6 +5,7 @@ use serde_json::json;
 fn request(module: &str, params: &Value) -> Result<Request> {
     Ok(Request {
         host: "fixture".into(),
+        content_fingerprint: None,
         task: v1::RenderedTask {
             module: module.into(),
             iterations: vec![v1::Iteration {

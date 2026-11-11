@@ -1,11 +1,12 @@
 use super::Backend;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug)]
 pub struct ProcessBackend {
     fnox: PathBuf,
     op: PathBuf,
+    lock_dir: Option<PathBuf>,
 }
 
 impl Default for ProcessBackend {
@@ -20,7 +21,18 @@ impl ProcessBackend {
         Self {
             fnox: fnox.into(),
             op: op.into(),
+            lock_dir: None,
         }
+    }
+
+    /// Pins the directory the write lock lives in. The store fixture tests
+    /// pin their own directory; unset, the lock is searched from the fnox
+    /// configuration's directory, like the fnox CLI resolves its config,
+    /// falling back to the working directory.
+    #[must_use]
+    pub fn with_lock_dir(mut self, lock_dir: impl Into<PathBuf>) -> Self {
+        self.lock_dir = Some(lock_dir.into());
+        self
     }
 }
 
@@ -31,22 +43,113 @@ fn process_output(mut command: Command) -> Result<String, String> {
     if !result.status.success() {
         return Err("process failed".into());
     }
-    // The CLIs behind these lookups append exactly one record terminator:
-    // `fnox get`, and `op read`. A value that legitimately ends in a newline
-    // — PEM keys do — must keep it, so at most one trailing `\n` goes, plus
-    // the `\r` only when it is part of that terminator.
-    let mut stdout = String::from_utf8_lossy(&result.stdout).into_owned();
-    if stdout.ends_with('\n') {
-        stdout.pop();
-        if stdout.ends_with('\r') {
-            stdout.pop();
+    Ok(with_record_terminator(&result.stdout))
+}
+
+/// The directory holding `fnox.toml`, searched upward from the working
+/// directory, like the fnox CLI resolves its configuration. Without one, the
+/// working directory itself.
+fn fnox_config_dir() -> Option<std::path::PathBuf> {
+    let mut directory = std::env::current_dir().ok()?;
+    loop {
+        if directory.join("fnox.toml").is_file() {
+            return Some(directory);
+        }
+        if !directory.pop() {
+            return None;
         }
     }
-    Ok(stdout)
+}
+
+impl ProcessBackend {
+    /// Reads one key through `fnox get --if-missing error`: a key configured
+    /// `env = false` is never injected into `fnox exec`'s environment, so an
+    /// exec+printenv read always fails for it; `get` prints the resolved
+    /// value whatever the key's env setting. `--if-missing error` keeps a
+    /// missing key distinct from an empty one: with the config's `warn` or
+    /// `ignore`, `get` prints nothing and exits 0, which would silently
+    /// resolve to an empty value.
+    fn fnox_read(&self, key: &str) -> Result<Result<String, ReadFailure>, String> {
+        let mut cmd = Command::new(&self.fnox);
+        cmd.args(["get", "--if-missing", "error", key]);
+        let result = cmd
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|_| "process could not start".to_owned())?;
+        if result.status.success() {
+            return Ok(Ok(with_record_terminator(&result.stdout)));
+        }
+        // "Missing" maps from the pinned fnox version's exit code and
+        // stderr, so a missing key is distinct from a failed store: a
+        // generated key's absence means create it; a store failure fails
+        // the run. The pinned CLI exits 1 and says `not found`.
+        if result.status.code() == Some(1)
+            && String::from_utf8_lossy(&result.stderr)
+                .to_lowercase()
+                .contains("not found")
+        {
+            return Ok(Err(ReadFailure::Missing));
+        }
+        Ok(Err(ReadFailure::Failed))
+    }
+
+    /// The store's write lock: an exclusive `flock` on
+    /// `<fnox config dir>/.ruxel-fnox-write.lock`, held while a run creates
+    /// a missing generated key or stores a fetched secret. Runs that honor
+    /// the lock serialize; the guard releases on drop.
+    fn write_lock(&self) -> Result<super::FnoxLock, String> {
+        let directory = self
+            .lock_dir
+            .clone()
+            .or_else(fnox_config_dir)
+            .or_else(|| std::env::current_dir().ok())
+            .ok_or("fnox write lock unavailable")?;
+        let path = directory.join(".ruxel-fnox-write.lock");
+        #[cfg(unix)]
+        let file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&path)
+                .map_err(|_| "fnox write lock unavailable".to_owned())?
+        };
+        #[cfg(not(unix))]
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|_| "fnox write lock unavailable".to_owned())?;
+        super::FnoxLock::exclusive(file)
+    }
+}
+
+/// Why a fnox read failed. A missing key is not a failed store.
+enum ReadFailure {
+    Missing,
+    Failed,
+}
+
+/// The CLIs behind these lookups append exactly one record terminator:
+/// `fnox get`, and `op read`. A value that legitimately ends in a
+/// newline — PEM keys do — must keep it, so at most one trailing `\n` goes,
+/// plus the `\r` only when it is part of that terminator. This is the
+/// terminator the CLI adds, never one the value carries: a value that
+/// ends in `\n` is read back as the value with its `\n`.
+fn with_record_terminator(stdout: &[u8]) -> String {
+    let mut value = String::from_utf8_lossy(stdout).into_owned();
+    if value.ends_with('\n') {
+        value.pop();
+        if value.ends_with('\r') {
+            value.pop();
+        }
+    }
+    value
 }
 
 impl Backend for ProcessBackend {
-    fn fnox(&self, key: &str) -> Result<String, String> {
+    fn fnox_get(&self, key: &str) -> Result<Option<String>, String> {
         // The same grammar the Engine schema and model validation enforce;
         // the message names it with the sentence Core and Lowering use.
         if !super::is_fnox_key(key) {
@@ -55,16 +158,48 @@ impl Backend for ProcessBackend {
                 super::FNOX_KEY_GRAMMAR
             ));
         }
-        // A key configured `env = false` is never injected into `fnox
-        // exec`'s environment, so an exec+printenv read always fails for it;
-        // `fnox get` prints the resolved value whatever the key's env
-        // setting. `--if-missing error` keeps a missing key a failure: with
-        // the config's `warn` or `ignore`, `get` prints nothing and exits 0,
-        // which would silently resolve to an empty value.
-        let mut cmd = Command::new(&self.fnox);
-        cmd.args(["get", "--if-missing", "error", key]);
-        process_output(cmd)
+        match self.fnox_read(key)? {
+            Ok(value) => Ok(Some(value)),
+            Err(ReadFailure::Missing) => Ok(None),
+            Err(ReadFailure::Failed) => Err("process failed".to_owned()),
+        }
     }
+
+    fn fnox_set(&self, key: &str, value: &str) -> Result<(), String> {
+        // The value reaches `fnox set` on stdin, never in a command argument.
+        use std::io::Write;
+        if !super::is_fnox_key(key) {
+            return Err(format!(
+                "fnox key \"{key}\" is malformed: {}",
+                super::FNOX_KEY_GRAMMAR
+            ));
+        }
+        let mut child = Command::new(&self.fnox)
+            .arg("set")
+            .arg(key)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| "process could not start".to_owned())?;
+        let mut stdin = child.stdin.take().ok_or("store stdin unavailable")?;
+        stdin
+            .write_all(value.as_bytes())
+            .map_err(|_| "store stdin failed".to_owned())?;
+        drop(stdin);
+        let status = child
+            .wait()
+            .map_err(|_| "store did not finish".to_owned())?;
+        if !status.success() {
+            return Err("process failed".into());
+        }
+        Ok(())
+    }
+
+    fn fnox_write_lock(&self, _key: &str) -> Result<super::FnoxLock, String> {
+        self.write_lock()
+    }
+
     fn onepassword_fields(
         &self,
         vault: &str,

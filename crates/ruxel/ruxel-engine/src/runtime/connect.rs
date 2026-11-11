@@ -43,7 +43,7 @@ pub(super) fn report_failure(
     } else {
         json!({"host":host,"event":event,"failed":true,"msg":message})
     };
-    execution.output.event(&execution.lookups.redact(&value)?)
+    execution.output.event(&execution.lookups.redact(&value))
 }
 
 pub(super) async fn preconnect(

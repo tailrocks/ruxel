@@ -159,6 +159,13 @@ pub(crate) fn execute(
         "file" => file::run(params, ctx),
         "copy" => copy::run(params, source, ctx),
         "slurp" => slurp::run(params),
+        // A FetchSecret task is the controller's no-log slurp: the agent
+        // reads the file, the controller stores it in fnox. The controller
+        // sends it in apply only.
+        "fetchSecret" => match params.get("path").and_then(Value::as_str) {
+            Some(path) => slurp::run(&json!({"src": path})),
+            None => Err("fetchSecret: path required".to_owned()),
+        },
         "systemd" => systemd::run(params, ctx, system_state),
         _ => Err(format!(
             "module {module:?} is not implemented in this agent build"
