@@ -215,3 +215,40 @@ fn a_staged_value_is_removed_on_every_path() {
     staged.cleanup().expect("a gone file counts as removed");
     drop(staged);
 }
+
+/// A staging file orphaned by abrupt termination is recovered by the
+/// next store, not left to accumulate: the naming pattern attributes the
+/// file to a process, and a process that is gone will never drop it, so
+/// the next store removes it before it stages its own value. A staging
+/// file a live process may still be using is left alone — a concurrent
+/// run's store is not a stale file.
+#[test]
+fn a_staging_file_orphaned_by_a_terminated_run_is_recovered_on_the_next_store() {
+    // A process that has been reaped: its `Drop` can never run again.
+    let mut gone = std::process::Command::new("true").spawn().expect("spawn");
+    let dead = gone.id();
+    gone.wait().expect("wait");
+    // A concurrent run that is still alive owns its staging files.
+    let mut live_run = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("spawn");
+    let live = live_run.id();
+
+    let orphan = std::env::temp_dir().join(format!(".ruxel-fnox-stage-{dead}-0"));
+    let owned = std::env::temp_dir().join(format!(".ruxel-fnox-stage-{live}-0"));
+    std::fs::write(&orphan, "synthetic-orphan-stage-plaintext").expect("write the orphan");
+    std::fs::write(&owned, "synthetic-live-stage-plaintext").expect("write the live staging");
+
+    let staged = StagedValue::new("synthetic-recovery-store").expect("the next store stages");
+
+    assert!(
+        !orphan.exists(),
+        "the staging file of the terminated run was left to accumulate"
+    );
+    assert!(owned.exists(), "the staging file of a live run was taken");
+    let _result = std::fs::remove_file(&owned);
+    let _result = live_run.kill();
+    let _result = live_run.wait();
+    drop(staged);
+}
