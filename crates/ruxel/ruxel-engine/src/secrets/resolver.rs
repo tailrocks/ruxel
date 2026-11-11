@@ -15,6 +15,25 @@ use std::sync::{Arc, Mutex};
 #[path = "onepassword.rs"]
 mod onepassword;
 
+/// The CLI's selector punctuation in one component of a selector or a
+/// reference: `op item get --fields` parses `,` as a list separator and
+/// `=` as `label=`/`type=` selectors, so a legal component like "API,key"
+/// would fetch a different selector than the author named. Authoring
+/// refuses the same characters (Core's `onePassword`, and `op://`
+/// references alike); this mirrors it, because a configuration can name a
+/// selector directly.
+/// # Errors
+/// Returns the refusal naming the component, never a value.
+pub(super) fn selector_punctuation(what: &str, label: &str) -> Result<(), String> {
+    if label.contains(',') || label.contains('=') {
+        return Err(format!(
+            "1Password {what} \"{label}\" may not contain a comma or an equals sign: \
+             `op item get --fields` reads them as selectors, so it would fetch unintended fields"
+        ));
+    }
+    Ok(())
+}
+
 type ItemCache =
     Arc<Mutex<HashMap<(String, String, Option<String>, String), Cell<serde_json::Value>>>>;
 
@@ -141,6 +160,15 @@ impl Resolver {
                 }
                 let (vault, item, section, field) =
                     parse_op_reference(reference).ok_or_else(generic)?;
+                // The reference components are validated before the read
+                // path is chosen: a dotted reference goes to `op read` as
+                // written, which `op_field`'s guard would otherwise never
+                // reach, and a comma or an equals sign would ride along as
+                // the CLI's selector punctuation.
+                if let Some(section) = section {
+                    selector_punctuation("section", section)?;
+                }
+                selector_punctuation("field", field)?;
                 // A label with a dot in it cannot be spelled as a
                 // `--fields` selector: the CLI reads the dot as the
                 // section separator and would fetch another field. The

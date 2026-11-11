@@ -1001,9 +1001,12 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 ///
 /// The terminator of a secret may not be the opening of another reserved
 /// prefix: `ruxel_rt_8d41.` or `ruxel_secret_8d41.` followed by a
-/// placeholder body. Literal text that only looks like a prefix — the
-/// reserved words without a body — is ordinary content and passes.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_(?:rt|secret)_8d41\.[A-Za-z0-9_.]+__)"#)
+/// placeholder body — the run-time name, or the secret's actual encoded
+/// body: its length-prefixed parts (`f`, `g`, `o`, `r`, `s` atoms of
+/// `size:text`, `Core.sized`), whose text is escaped and so holds no `_`.
+/// Literal text that only looks like a prefix — the reserved words without
+/// a body — is ordinary content and passes.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:f[0-9]{1,18}:[^_]*|g(?:[0-9]{1,18}:[^_]*){2}|o(?:[0-9]{1,18}:[^_]*){4}|r[0-9]{1,18}:[^_]*|s[0-9]{1,18}:[^_]*)+__)"#)
 const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
 /// Text without placeholders stays a string. Run-time placeholders

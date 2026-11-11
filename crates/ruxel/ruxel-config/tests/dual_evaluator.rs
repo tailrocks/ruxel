@@ -27,6 +27,7 @@ const EXAMPLES: &[&str] = &[
     "valid/secret-literal-prefix.pkl",
     "invalid/secret-op-reference-dotted-selector.pkl",
     "invalid/secret-placeholder-orphaned-runtime.pkl",
+    "invalid/secret-placeholder-orphaned-secret.pkl",
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
 ];

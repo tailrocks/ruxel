@@ -2,7 +2,7 @@
 //! `onePassword` selector and the `op://` reference both read one field of
 //! one item through it, with the CLI's own selector grammar mirrored.
 
-use super::{Resolver, cached, select_field};
+use super::{Resolver, cached, select_field, selector_punctuation};
 
 impl Resolver {
     pub(super) fn op_field(
@@ -18,14 +18,11 @@ impl Resolver {
         // like "API,key" or "API.Password" would fetch a different selector
         // than the author named. Authoring refuses the same characters
         // (Core's `onePassword`); this mirrors it, because a configuration
-        // can name a selector directly.
-        if let Some(section) = section
-            && (section.contains(',') || section.contains('='))
-        {
-            return Err(format!(
-                "1Password section \"{section}\" may not contain a comma or an equals sign: \
-                 `op item get --fields` reads them as selectors, so it would fetch unintended fields"
-            ));
+        // can name a selector directly. The punctuation rule is shared with
+        // the `op://` reference path, which validates it before choosing a
+        // read path.
+        if let Some(section) = section {
+            selector_punctuation("section", section)?;
         }
         if let Some(section) = section
             && section.contains('.')
@@ -35,12 +32,7 @@ impl Resolver {
                  `op item get --fields` reads a dot as the section separator, so it would fetch a different selector than the author named"
             ));
         }
-        if field.contains(',') || field.contains('=') {
-            return Err(format!(
-                "1Password field \"{field}\" may not contain a comma or an equals sign: \
-                 `op item get --fields` reads them as selectors, so it would fetch unintended fields"
-            ));
-        }
+        selector_punctuation("field", field)?;
         if field.contains('.') {
             return Err(format!(
                 "1Password field \"{field}\" may not contain a dot: \

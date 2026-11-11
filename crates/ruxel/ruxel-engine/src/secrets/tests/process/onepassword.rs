@@ -212,6 +212,80 @@ esac"#,
     assert_eq!(fixture.count(), 1);
 }
 
+/// The reference components are validated before the dotted-reference path
+/// is chosen: `op read` names the reference as it is written, so a dot in a
+/// label is fine there, but a comma or an equals sign is still the CLI's
+/// selector punctuation and is refused before either read path runs. The
+/// accepted forms keep their routes: a plain reference through the field
+/// lookup, a dotted one through the reference path.
+#[test]
+fn selector_punctuation_is_refused_before_a_dotted_reference_is_routed() {
+    let fixture = Fixture::new();
+    let op = fixture.script(
+        "fake-op",
+        r#"printf 'call\n' >> "${0%/*}/calls"
+case "$1" in
+read)
+  [ "$#" -eq 3 ] && [ "$2" = -- ] || exit 4
+  [ "$3" = 'op://vault/item/API.Password' ] || exit 5
+  printf 'dotted-value';;
+item)
+  [ "$#" -eq 10 ] && [ "$2" = get ] && [ "$5" = --fields ] && [ "$6" = username ] || exit 4
+  printf '%s' '[{"id":"username","label":"Username","value":"alice"}]';;
+*) exit 9;;
+esac"#,
+    );
+    let instance = resolver(&op, &op);
+    // The same sentence `op_field` refuses a direct selector with: the
+    // components of a reference reach `op item get --fields` selectors or
+    // a reference `op read` names, so the CLI's selector punctuation is
+    // forbidden either way.
+    let refusal = "may not contain a comma or an equals sign: `op item get --fields` reads them as selectors, so it would fetch unintended fields";
+    for (reference, named) in [
+        (
+            "op://vault/item/API.Password,key",
+            format!("1Password field \"API.Password,key\" {refusal}"),
+        ),
+        (
+            "op://vault/item/API.Password=type",
+            format!("1Password field \"API.Password=type\" {refusal}"),
+        ),
+        (
+            "op://vault/item/API.Section,Name/Password",
+            format!("1Password section \"API.Section,Name\" {refusal}"),
+        ),
+    ] {
+        assert_eq!(
+            instance
+                .resolve(&Lookup::OnePasswordUri {
+                    reference: reference.into(),
+                })
+                .unwrap_err(),
+            named
+        );
+    }
+    // The refusals happen before anything runs.
+    assert_eq!(fixture.count(), 0);
+    // The accepted forms still route to their own read paths.
+    assert_eq!(
+        instance
+            .resolve(&Lookup::OnePasswordUri {
+                reference: "op://vault/item/username".into(),
+            })
+            .unwrap(),
+        "alice"
+    );
+    assert_eq!(
+        instance
+            .resolve(&Lookup::OnePasswordUri {
+                reference: "op://vault/item/API.Password".into(),
+            })
+            .unwrap(),
+        "dotted-value"
+    );
+    assert_eq!(fixture.count(), 2);
+}
+
 /// These CLIs append exactly one record terminator to the value: `fnox get`,
 /// and `op read`. A value that legitimately ends in a newline — PEM keys
 /// do — must keep it, so the terminator alone is removed, never a newline
