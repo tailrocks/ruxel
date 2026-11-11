@@ -1,0 +1,7 @@
+// expect-pkl: Cannot find type `PackageIndex` in module `Debian`.
+// expect-pklr: Cannot instantiate unresolved type `debian.PackageIndex`.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.PackageIndex {} } } }

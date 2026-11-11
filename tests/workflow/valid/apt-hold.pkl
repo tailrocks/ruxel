@@ -1,0 +1,26 @@
+// A hold is part of a package step's identity. The two `curl` steps below
+// differ only in `hold`, and their plan lines are the same, so they are two
+// steps with two results: a watcher of one does not see the other.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local plain = new debian.AptPackages { title = "Install curl"; names { "curl" } }
+local held = new debian.AptPackages { title = "Install curl"; names { "curl" }; hold = true }
+
+// The same pair without a title: the plan line names the hold.
+local plainNamed = new debian.AptPackages { names { "nginx" } }
+local heldNamed = new debian.AptPackages { names { "nginx" }; hold = true }
+
+// A hold with pinned names: install the version, then freeze it.
+local pinned = new debian.AptPackages { names { "kubelet=1.37.2-1.1"; "kubeadm=1.37.2-1.1" }; hold = true }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  plain
+  held
+  plainNamed
+  heldNamed
+  pinned
+  new Command { title = "Reload plain"; run { "echo"; "plain" }; onChangeOf { plain } }
+  new Command { title = "Reload held"; run { "echo"; "held" }; onChangeOf { held } }
+} } }
