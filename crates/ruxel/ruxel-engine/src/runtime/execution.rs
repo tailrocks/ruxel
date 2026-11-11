@@ -1,0 +1,278 @@
+//! The execution backend: how the controller evaluates, redacts, sends
+//! tasks to hosts, and receives their results.
+
+use super::{Execution, Request, Scope, copy_sources, lazy_vars, output, templates};
+use crate::controller::{Backend, ledger_key};
+use crate::expression::provenance::TrackedValue;
+use anyhow::{Context, Result, bail};
+use ruxel_proto::v1;
+use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
+
+impl Backend for Execution {
+    fn connection_failures(&self) -> u64 {
+        self.connection_failures
+    }
+    fn conservative_sensitive(&self) -> bool {
+        self.conservative_sensitive
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+    fn prepare_operation(
+        &mut self,
+        kind: &str,
+        params: &mut Map<String, Value>,
+        scope: &Map<String, Value>,
+    ) -> Result<()> {
+        templates::prepare(self, kind, params, scope)
+    }
+    fn evaluate(&mut self, value: &Value, map: &Map<String, Value>) -> Result<Value> {
+        self.prefetch_lookups(value)?;
+        let scope = Scope {
+            facts: map.get("facts").cloned().unwrap_or(Value::Null),
+            results: map.get("results").cloned().unwrap_or(Value::Null),
+            variables: map.get("vars").cloned().unwrap_or(Value::Null),
+            item: map.get("item").cloned().unwrap_or(Value::Null),
+            extra: map.clone(),
+        };
+        self.evaluate_value(value, &scope)
+    }
+    fn evaluate_tracked(&mut self, value: &Value, scope: &TrackedValue) -> Result<TrackedValue> {
+        self.prefetch_lookups(value)?;
+        self.evaluate_value_tracked(value, scope)
+    }
+    fn evaluate_layered_expression(
+        &mut self,
+        value: &Value,
+        scope: &TrackedValue,
+        layers: &[Map<String, Value>],
+    ) -> Result<(TrackedValue, BTreeMap<String, TrackedValue>)> {
+        self.prefetch_lookups(value)?;
+        lazy_vars::evaluate_layers(self, value, scope, layers)
+    }
+    async fn prepare_operation_tracked(
+        &mut self,
+        kind: &str,
+        params: &mut Map<String, Value>,
+        scope: &Map<String, Value>,
+        mut sensitive: bool,
+    ) -> Result<bool> {
+        sensitive |= self.conservative_sensitive();
+        if kind != "template" || params.get("content").is_some_and(|v| !v.is_null()) {
+            self.prepare_operation(kind, params, scope)
+                .map_err(|error| {
+                    if sensitive {
+                        anyhow::anyhow!("sensitive operation preparation failed")
+                    } else {
+                        error
+                    }
+                })?;
+            return Ok(sensitive);
+        }
+        let gate = self.source_gate.clone();
+        let _guard = gate.write().await;
+        sensitive |= self.conservative_sensitive();
+        let trackers: Vec<_> = self.resources.lock().await.values().cloned().collect();
+        for tracker in trackers {
+            sensitive |= tracker.lock().await.has_sensitive_effects();
+        }
+        self.prepare_operation(kind, params, scope)
+            .map_err(|error| {
+                if sensitive {
+                    anyhow::anyhow!("sensitive operation preparation failed")
+                } else {
+                    error
+                }
+            })?;
+        Ok(sensitive)
+    }
+    async fn execute_tracked(
+        &mut self,
+        mut request: Request,
+        sensitive: bool,
+    ) -> Result<TrackedValue> {
+        if !self.connections.lock().await.contains_key(&request.host) {
+            self.connect(&request.host).await.map_err(|error| {
+                self.connection_failures += 1;
+                if sensitive || self.conservative_sensitive() {
+                    anyhow::anyhow!("sensitive connection failed")
+                } else {
+                    error
+                }
+            })?;
+        }
+        let gate = self.source_gate.clone();
+        let _guard = gate.read().await;
+        let effects = self.effect_gate.clone();
+        let _effect_read;
+        let _effect_write;
+        if sensitive && !self.conservative_sensitive() {
+            _effect_read = None;
+            _effect_write = Some(effects.write().await);
+        } else {
+            _effect_read = Some(effects.read().await);
+            _effect_write = None;
+        }
+        let sensitive = sensitive || self.conservative_sensitive();
+        let host = request.host.clone();
+        let tracker = {
+            let mut resources = self.resources.lock().await;
+            resources.entry(host).or_default().clone()
+        };
+        let mut resources = tracker.lock().await;
+        let sensitive = resources.observe(&request, sensitive)?;
+        if sensitive {
+            self.conservative_sensitive
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+        request.task.no_log |= sensitive;
+        let result = self.execute(request).await.map_err(|error| {
+            if sensitive {
+                anyhow::anyhow!("sensitive operation failed")
+            } else {
+                error
+            }
+        })?;
+        Ok(if sensitive {
+            TrackedValue::secret(result)
+        } else {
+            TrackedValue::public(result)
+        })
+    }
+    async fn execute(&mut self, mut request: Request) -> Result<Value> {
+        copy_sources::prepare(&mut request.task, &self.copy_root)?;
+        for index in 0..request.task.iterations.len() {
+            let key = ledger_key(&request.task, &request.task.iterations[index])?;
+            request.task.iterations[index].ledger_key = key;
+        }
+        let connection = self
+            .connections
+            .lock()
+            .await
+            .get(&request.host)
+            .cloned()
+            .context("execution host is not connected")?;
+        let mut connection = connection.lock().await;
+        let id = request.task.task_id;
+        let module = request.task.module.clone();
+        let params = request
+            .task
+            .iterations
+            .first()
+            .and_then(|iteration| serde_json::from_slice::<Value>(&iteration.params_json).ok());
+        let plan = copy_sources::plan(request.task)?;
+        connection.send(&plan).await.inspect_err(|_| {
+            self.connection_failures += 1;
+        })?;
+        loop {
+            let event = connection
+                .next()
+                .await
+                .and_then(|event| event.context("agent closed before task result"))
+                .inspect_err(|_| {
+                    self.connection_failures += 1;
+                })?;
+            match event.msg {
+                Some(v1::event::Msg::TaskResult(result)) if result.task_id == id => {
+                    let mut value: Value = serde_json::from_slice(&result.result_json)
+                        .context("invalid agent result")?;
+                    // A FetchSecret result never carries the content: the
+                    // controller takes the slurped bytes, compares them with
+                    // the stored value, and writes fnox only when they
+                    // differ, with the value on stdin. The comparison and
+                    // the store happen here, on the controller, in apply
+                    // only; in check and diff the task never reaches the
+                    // host (the controller answers known-after-apply).
+                    if module == "fetchSecret" {
+                        return self.receive_fetch_secret(&mut value, params.as_ref(), &result);
+                    }
+                    self.receive_task_result(&module, params.as_ref(), &mut value, &result);
+                    return Ok(value);
+                }
+                Some(v1::event::Msg::Crash(_)) => {
+                    self.connection_failures += 1;
+                    bail!("agent crashed");
+                }
+                Some(v1::event::Msg::PauseRequest(_)) => bail!("unexpected agent pause"),
+                _ => {}
+            }
+        }
+    }
+    fn event(&mut self, event: &Value) -> Result<()> {
+        let event = if self.conservative_sensitive() {
+            output::sensitive_event(event)
+        } else {
+            self.lookups.redact(event)
+        };
+        self.output.event(&event)
+    }
+}
+
+impl Execution {
+    /// The apply-time `FetchSecret` receive: decode the slurped bytes, store
+    /// them in fnox when they differ from the stored value, and strip the
+    /// content from the result — the value never reaches output or results.
+    fn receive_fetch_secret(
+        &self,
+        value: &mut Value,
+        params: Option<&Value>,
+        result: &v1::TaskResult,
+    ) -> Result<Value> {
+        let content = value["content"]
+            .as_str()
+            .context("fetchSecret result carries no content")?;
+        let key = params
+            .and_then(|params| params.get("key").and_then(Value::as_str).map(str::to_owned))
+            .context("fetchSecret has no key")?;
+        let decoded = base64_decode(content)?;
+        let content = String::from_utf8(decoded)
+            .map_err(|_| anyhow::anyhow!("fetched content is not text"))?;
+        let (changed, fingerprint) = self
+            .lookups
+            .resolver
+            .fetch_secret(&key, &content)
+            .map_err(anyhow::Error::msg)?;
+        if changed {
+            value["diff"] = json!(format!("stored in fnox (fingerprint {fingerprint})"));
+        }
+        value["fingerprint"] = json!(fingerprint);
+        value["changed"] = Value::Bool(changed);
+        value["failed"] = Value::Bool(result.status == "failed");
+        Ok(value.clone())
+    }
+
+    /// A secret-bearing file in check and diff shows a keyed, truncated
+    /// fingerprint of the placeholder its lookups resolve to, never text and
+    /// never an unsalted hash of a value. The agent ships no diff for a
+    /// no-log task; the sentence is built here, from the selectors alone.
+    fn receive_task_result(
+        &self,
+        module: &str,
+        params: Option<&Value>,
+        value: &mut Value,
+        result: &v1::TaskResult,
+    ) {
+        value["changed"] = Value::Bool(result.changed);
+        value["failed"] = Value::Bool(result.status == "failed");
+        if module == "copy"
+            && result.changed
+            && value.get("diff").is_none_or(Value::is_null)
+            && let Some(fingerprint) = self
+                .lookups
+                .content_fingerprint(params.unwrap_or(&Value::Null))
+        {
+            value["diff"] = json!(format!("content changed (fingerprint {fingerprint})"));
+            value["fingerprint"] = json!(fingerprint);
+        }
+        if !result.diff.is_empty() {
+            value["diff"] = Value::String(result.diff.clone());
+        }
+    }
+}
+
+/// Decodes the base64 an agent slurp result carries.
+pub(super) fn base64_decode(text: &str) -> Result<Vec<u8>> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(text)
+        .context("invalid base64 in agent result")
+}

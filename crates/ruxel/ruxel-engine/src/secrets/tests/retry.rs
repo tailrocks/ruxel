@@ -7,12 +7,15 @@ fn transient_failures_retry_and_successes_are_shared() {
         items: AtomicUsize,
     }
     impl Backend for Flaky {
-        fn fnox(&self, _: &str) -> Result<String, String> {
+        fn fnox_get(&self, _: &str) -> Result<Option<String>, String> {
             if self.values.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err("sensitive failure".into())
             } else {
-                Ok("recovered".into())
+                Ok(Some("recovered".into()))
             }
+        }
+        fn fnox_set(&self, _: &str, _: &str) -> Result<(), String> {
+            unreachable!()
         }
         fn onepassword_fields(
             &self,

@@ -1,5 +1,8 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE},
+};
 use std::{borrow::Cow, fmt};
 
 pub struct Redactor {
@@ -59,15 +62,29 @@ impl Redactor {
 }
 
 fn collect_patterns<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut patterns = Vec::new();
     for value in values {
         if value.len() >= 6 {
             patterns.push(value.to_owned());
         }
-        let encoded = STANDARD.encode(value.as_bytes());
-        if encoded.len() >= 6 {
-            patterns.push(encoded.trim_end_matches('=').to_owned());
-            patterns.push(encoded);
+        let bytes = value.as_bytes();
+        // Redaction covers the exact value and its standard and URL-safe
+        // base64 and hex forms: a secret that passes through an encoding
+        // step in the workflow is redacted in that shape too.
+        for encoded in [STANDARD.encode(bytes), URL_SAFE.encode(bytes)] {
+            if encoded.len() >= 6 {
+                patterns.push(encoded.trim_end_matches('=').to_owned());
+                patterns.push(encoded);
+            }
+        }
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            hex.push(char::from(HEX[usize::from(byte >> 4)]));
+            hex.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        if hex.len() >= 6 {
+            patterns.push(hex);
         }
         if value.contains('\n') {
             patterns.extend(

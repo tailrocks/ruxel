@@ -11,6 +11,10 @@ pub struct RuntimeOptions {
     pub output: OutputFormat,
     pub log_file: Option<PathBuf>,
     pub source_dir: PathBuf,
+    /// Apply-time fixture switch for local acceptance runs: resolve every
+    /// lookup deterministically without running secret tools. `plan`,
+    /// `check` and `diff` are always synthetic whatever this says; only
+    /// `apply` reads real stores, and only `apply` generates.
     pub synthetic_secrets: bool,
     pub local_state: Option<PathBuf>,
     pub local_agent: Option<PathBuf>,

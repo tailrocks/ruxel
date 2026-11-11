@@ -43,6 +43,10 @@ pub enum Expr {
         provider: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        /// The format a missing generated key is created in; set only for
+        /// the `fnox-generated` provider.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        format: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vault: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

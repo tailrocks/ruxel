@@ -16,6 +16,7 @@ enum FieldType {
     Flags,
     Scalar,
     Text,
+    FnoxKey,
     HttpUrl,
     Timezone,
     SysctlKey,
@@ -68,6 +69,7 @@ fn validate_field(value: &Value, kind: FieldType, deferred: bool) -> Result<()> 
             }
         }
         FieldType::Text => value.is_string(),
+        FieldType::FnoxKey => value.as_str().is_some_and(crate::secrets::is_fnox_key),
         FieldType::HttpUrl => value
             .as_str()
             .is_some_and(|s| s.starts_with("http://") || s.starts_with("https://")),

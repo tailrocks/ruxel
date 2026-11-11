@@ -12,6 +12,7 @@ mod creates_environment;
 mod excluded_vars;
 mod fact_control;
 mod failures;
+mod fetch_secret;
 mod flows;
 mod handler_control;
 mod handler_failure;

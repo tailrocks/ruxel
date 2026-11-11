@@ -111,6 +111,13 @@ pub(super) const OPERATIONS: &[Operation] = &[
     operation!("slurp";
         "src" => true, FieldType::Text;
     ),
+    operation!("fetchSecret";
+        // The key must match the fnox key grammar: the controller stores
+        // under it, and the backend refuses anything else with the sentence
+        // Core and Lowering use.
+        "key" => true, FieldType::FnoxKey;
+        "path" => true, FieldType::Text;
+    ),
     operation!("stat";
         "follow" => false, FieldType::Flag;
         "path" => true, FieldType::Text;

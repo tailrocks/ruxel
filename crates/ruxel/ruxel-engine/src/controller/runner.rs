@@ -290,7 +290,30 @@ impl<B: Backend> Runner<'_, B> {
             }
         }
         let visible = if layer.no_log || result.is_secret() {
-            json!({"censored":true,"changed":flag(&result.value,"changed"),"failed":is_failed})
+            // A no-log task's own fields never reach output. What may are
+            // the controller-built, keyed secret fingerprints (never text,
+            // never an unsalted hash) and the known-after-apply marker of an
+            // apply-only step.
+            let mut output =
+                json!({"censored":true,"changed":flag(&result.value,"changed"),"failed":is_failed});
+            if flag(&result.value, "knownAfterApply") {
+                output["knownAfterApply"] = json!(true);
+            }
+            if let Some(fingerprint) = result.value.get("fingerprint").and_then(Value::as_str) {
+                output["fingerprint"] = json!(fingerprint);
+            }
+            if let Some(diff) = result
+                .value
+                .get("diff")
+                .and_then(Value::as_str)
+                .filter(|diff| {
+                    diff.starts_with("content changed (fingerprint ")
+                        || diff.starts_with("stored in fnox (fingerprint ")
+                })
+            {
+                output["diff"] = json!(diff);
+            }
+            output
         } else {
             result.value
         };

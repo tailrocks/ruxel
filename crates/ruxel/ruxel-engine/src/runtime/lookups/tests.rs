@@ -10,7 +10,10 @@ impl Backend for Fake {
     fn onepassword_reference(&self, _: &str) -> Result<String, String> {
         Err("unexpected".into())
     }
-    fn fnox(&self, _: &str) -> Result<String, String> {
+    fn fnox_get(&self, _: &str) -> Result<Option<String>, String> {
+        Err("unexpected".into())
+    }
+    fn fnox_set(&self, _: &str, _: &str) -> Result<(), String> {
         Err("unexpected".into())
     }
     fn onepassword_fields(
@@ -37,10 +40,7 @@ impl Backend for Fake {
 }
 #[test]
 fn item_lookups_require_vault_item_and_field_or_a_reference() -> Result<()> {
-    let resolver = Lookups {
-        resolver: Resolver::new(Arc::new(Fake)),
-        values: Mutex::new(Vec::new()),
-    };
+    let resolver = Lookups::new(Resolver::new(Arc::new(Fake)));
     for (node, expected) in [
         (
             json!({"kind":"lookup", "provider":"op", "vault":"Private", "item":"synthetic-item", "field":"password"}),
@@ -85,18 +85,18 @@ fn item_lookups_require_vault_item_and_field_or_a_reference() -> Result<()> {
 }
 
 #[test]
-fn overlapping_secrets_are_redacted_independent_of_order() -> Result<()> {
+fn overlapping_secrets_are_redacted_independent_of_order() {
     for secrets in [
         vec!["abc", "abcdef", "cdefg", "aaa"],
         vec!["aaa", "cdefg", "abcdef", "abc"],
     ] {
-        let resolver = Lookups {
-            resolver: Resolver::synthetic(),
-            values: Mutex::new(secrets.into_iter().map(str::to_owned).collect()),
-        };
+        let resolver = Lookups::with_values(
+            Resolver::synthetic(),
+            secrets.into_iter().map(str::to_owned).collect(),
+        );
         let input =
             json!({"error":"public: abcdefg / aaaa; suffix stays", "abcdefg":"aaa", "number":42});
-        let output = resolver.redact(&input)?;
+        let output = resolver.redact(&input);
         assert_eq!(
             output["error"],
             "public: [REDACTED] / [REDACTED]; suffix stays"
@@ -104,23 +104,16 @@ fn overlapping_secrets_are_redacted_independent_of_order() -> Result<()> {
         assert_eq!(output["[REDACTED]"], "[REDACTED]");
         assert_eq!(output["number"], 42);
     }
-    Ok(())
 }
 
 #[test]
-fn redaction_handles_unicode_overlaps_and_does_not_rescan_the_marker() -> Result<()> {
-    let resolver = Lookups {
-        resolver: Resolver::synthetic(),
-        values: Mutex::new(vec![
-            "é🙂".into(),
-            "🙂z".into(),
-            "REDACTED".into(),
-            String::new(),
-        ]),
-    };
+fn redaction_handles_unicode_overlaps_and_does_not_rescan_the_marker() {
+    let resolver = Lookups::with_values(
+        Resolver::synthetic(),
+        vec!["é🙂".into(), "🙂z".into(), "REDACTED".into(), String::new()],
+    );
     assert_eq!(
-        resolver.redact(&json!("start é🙂z end"))?,
+        resolver.redact(&json!("start é🙂z end")),
         json!("start [REDACTED] end")
     );
-    Ok(())
 }

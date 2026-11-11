@@ -21,7 +21,20 @@ fn redact_lookups(value: &mut Value) {
 
 fn visible(task: &Value) -> Value {
     if flag(task, "noLog") {
-        return json!({"name":string(task,"name"),"noLog":true,"censored":true});
+        // A no-log task's fields never reach the plan. An apply-only step
+        // (FetchSecret) marks itself known-after-apply: in check and diff it
+        // contacts neither fnox nor the host, so there is no fingerprint to
+        // compare.
+        let mut output = json!({"name":string(task,"name"),"noLog":true,"censored":true});
+        if task
+            .get("operation")
+            .and_then(|o| o.get("kind"))
+            .and_then(Value::as_str)
+            == Some("fetchSecret")
+        {
+            output["knownAfterApply"] = json!(true);
+        }
+        return output;
     }
     let mut output = task.clone();
     for section in ["block", "rescue", "always"] {

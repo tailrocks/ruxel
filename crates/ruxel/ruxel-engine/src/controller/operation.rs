@@ -52,6 +52,15 @@ impl<B: Backend> Runner<'_, B> {
             .filter(|v| !v.is_null())
             .context("task has no operation")?;
         let kind = string(operation, "kind").context("operation has no kind")?;
+        // FetchSecret is apply-only: in check and diff it contacts neither
+        // fnox nor the host, and reports known-after-apply rather than a
+        // fingerprint comparison. The comparison and the store happen only
+        // in apply.
+        if kind == "fetchSecret" && matches!(self.options.mode, Mode::Check | Mode::Diff) {
+            return Ok(TrackedValue::public(json!(
+                {"changed": false, "failed": false, "knownAfterApply": true}
+            )));
+        }
         let mut params = Map::new();
         for (key, value) in operation
             .as_object()

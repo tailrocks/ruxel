@@ -1,4 +1,5 @@
 use super::*;
+use ruxel_proto::v1;
 use tokio::sync::{mpsc, oneshot};
 
 type Started = (bool, oneshot::Sender<()>);
@@ -59,10 +60,7 @@ fn execution() -> Result<Execution> {
         template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(std::path::Path::new("."))?),
         output: Arc::new(Output::new(OutputFormat::Json, None)?),
-        lookups: Arc::new(Lookups {
-            resolver: Resolver::synthetic(),
-            values: Mutex::new(Vec::new()),
-        }),
+        lookups: Arc::new(Lookups::new(Resolver::synthetic())),
     })
 }
 async fn add(execution: &Execution, host: &str, started: mpsc::UnboundedSender<Started>) {

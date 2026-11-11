@@ -427,6 +427,40 @@ const local function referenceChecked(reference: String): String =
 const local function sized(text: String?): String =
   if (text == null) "0:" else "\(text.length):\(text.replaceAll("\u{1f}", "\u{1e}").replaceAll("_", "\u{1f}"))"
 
+/// Reads one file on exactly one host and stores it in the controller's fnox
+/// store under `fnoxKey`:
+///
+///     new FetchSecret {
+///       title = "Store the cluster admin kubeconfig"
+///       fromPath = "/etc/kubernetes/admin.conf"
+///       runOn = inventory.firstControlPlane
+///       fnoxKey = "K8S_ADMIN_KUBECONFIG"
+///     }
+///
+/// - The content travels as a no-log slurp and is written with `fnox set` on
+///   stdin; it never appears in output, results or the ledger, and it is
+///   never copied anywhere else — no workflow step handles the plaintext.
+/// - It reports a change only when the fetched content differs from the
+///   stored value, compared on the controller by the keyed secret
+///   fingerprint. Identity is the `fnoxKey`: two `FetchSecret` steps with
+///   one key and a different `fromPath` or `runOn` conflict like two states
+///   of one thing, and an exact repeat is the same step.
+/// - In `plan`, `check` and `diff` it contacts neither fnox nor the host, so
+///   it reports known-after-apply rather than a fingerprint comparison; the
+///   comparison and the store happen only in `apply`.
+class FetchSecret extends Step {
+  hidden fixed kind = "fetchSecret"
+  /// The file to read, on the one named host. Read at apply only.
+  fromPath: FilePath
+  /// The one host the file is read on, stated and never inferred: a stage
+  /// with several hosts must not race to write one key (last writer wins,
+  /// possibly a host without the file).
+  runOn: Host
+  /// The fnox key the content is stored under. It must match the fnox key
+  /// shape.
+  fnoxKey: FnoxKey
+}
+
 // ── Files ───────────────────────────────────────────────────────────────────
 
 /// A file with exactly this content. A stage writes it once, where it first

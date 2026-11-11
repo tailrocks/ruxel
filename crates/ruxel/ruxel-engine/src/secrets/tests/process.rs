@@ -377,7 +377,7 @@ fn fnox_keys_follow_the_store_grammar() {
         "KEY-NAME",
         "KEY NAME",
     ] {
-        let error = backend.fnox(key).unwrap_err();
+        let error = backend.fnox_get(key).unwrap_err();
         assert!(
             error.contains(
                 "is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters",
@@ -387,9 +387,12 @@ fn fnox_keys_follow_the_store_grammar() {
     }
     // A key of the store's grammar reaches the program: the failure is the
     // missing process, not the key.
-    assert_eq!(backend.fnox("KEY").unwrap_err(), "process could not start");
     assert_eq!(
-        backend.fnox("KEY_2").unwrap_err(),
+        backend.fnox_get("KEY").unwrap_err(),
+        "process could not start"
+    );
+    assert_eq!(
+        backend.fnox_get("KEY_2").unwrap_err(),
         "process could not start"
     );
 }

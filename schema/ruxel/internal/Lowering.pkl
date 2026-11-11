@@ -73,6 +73,7 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["command"] = (s) -> s is core.Command
   ["script"] = (s) -> s is core.Script
   ["capture"] = (s) -> s is core.Capture
+  ["fetchSecret"] = (s) -> s is core.FetchSecret
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
   ["packageIndex"] = (s) -> s is debian.PackageIndex
@@ -118,11 +119,15 @@ function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<Stage
 /// Every host a stage runs on or a capture reads from, once.
 function hostsOf(stages: Listing<core.Stage>): List<core.Host> =
   stages.toList()
-    .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())))
+    .flatMap((s) -> s.hosts.toList() + captureHosts(flatten(s.steps.toList())) + fetchHosts(flatten(s.steps.toList())))
     .fold(List(), (seen, h) -> addHost(seen, h))
 
 function captureHosts(steps: List<core.Step>): List<core.Host> =
   steps.filter((s) -> s is core.Capture && s.runOn != null).map((s) -> s.runOn)
+
+/// The one host each FetchSecret reads from, which the inventory must name.
+function fetchHosts(steps: List<core.Step>): List<core.Host> =
+  steps.filter((s) -> s is core.FetchSecret).map((s) -> s.runOn)
 
 /// Compares hosts by their settings. Not `==`: comparing objects from the
 /// inventory module takes exponential time in pklr (P12).
@@ -285,6 +290,7 @@ class Walker {
     if (!(s is core.Step)) throw(copyMessage("step"))
     else if (!canonicalStep(s)) throw(copyMessage("step"))
     else if (s is core.Capture && s.runOn != null && !(s.runOn is core.Host)) throw(copyMessage("host"))
+    else if (s is core.FetchSecret && !(s.runOn is core.Host)) throw(copyMessage("host"))
     else if (listed(s).any((w) -> !(w is core.Step) || !canonicalStep(w))) throw(copyMessage("step"))
     else if (s is core.Recipe && s.title != null) throw("A recipe takes no title: '\(s.title)'. Title its steps instead.")
     else if (s is core.Recipe) this.walk(s.steps().toList(), _inherited + s.tags.toList(), _written, _scope)
@@ -338,6 +344,8 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': retry delay \(s.retry.delay) must be whole seconds, at least 1.s")
   else if (s is core.File && hasSecrets(s.content) && !secretMode(s.mode))
     List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
+  else if (s is core.FetchSecret && !s.fnoxKey.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
+    List("fnox key \"\(s.fnoxKey)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -559,6 +567,7 @@ const local keyOrder = new KeyOrder {}
 
 const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["file"] = (s) -> fields(List(s.path, s.content.sha256, canonicalMode(s.mode), optional(s.owner), optional(s.group), fields(s.validate.toList())))
+  ["fetchSecret"] = (s) -> fields(List(s.fromPath, s.runOn.name, s.fnoxKey))
   ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
@@ -589,6 +598,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["loginShell"] = (s) -> List("the login shell of \(s.user)")
   ["timezone"] = (_) -> List("the timezone")
+  ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
   ["packageIndex"] = (_) -> List()
   ["command"] = (_) -> List()
@@ -672,6 +682,7 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["command"] = (s) -> "Run " + s.run.join(" ")
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
+  ["fetchSecret"] = (s) -> "Fetch \(s.fromPath) into fnox"
 }
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
@@ -714,7 +725,15 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
+  ["fetchSecret"] = (s, m) -> List(task(m, fetchSecret(s), null, null))
 }
+
+/// The FetchSecret task: a read-only slurp the controller turns into a fnox
+/// store. The task is no-log (a secret-bearing step), and the controller
+/// runs it in apply only — in check and diff it answers known-after-apply
+/// without contacting the host or fnox.
+function fetchSecret(s: core.FetchSecret): engine.FetchSecret =
+  new engine.FetchSecret { path = s.fromPath; key = s.fnoxKey }
 
 // File: stage, validate, then publish. A secret's candidate is temporary:
 // validation removes it in the block's `always`, success or failure, so no
@@ -1081,7 +1100,7 @@ class SecretParser {
     if (tag == "f")
       let (v = this.take(body)) atom(List(fnoxLookup(fnoxKeyValidated(unescape(v[0])))), v[1])
     else if (tag == "g")
-      let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(fnoxLookup(fnoxKeyValidated(unescape(key[0])))), formatValidated(unescape(format[0]), format[1])))
+      let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(generatedLookup(fnoxKeyValidated(unescape(key[0])), generatedFormatValidated(unescape(format[0])))), format[1]))
     else if (tag == "r")
       let (v = this.take(body)) atom(List(opReference(opReferenceValidated(unescape(v[0])))), v[1])
     else if (tag == "o")
@@ -1126,11 +1145,11 @@ const function fnoxKeyValidated(key: String): String =
   if (key.matches(Regex("[A-Z][A-Z0-9_]{1,127}"))) key
   else throw("fnox key \"\(key)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
 
-/// Validates a generated key's format and hands the rest of the encoding on:
-/// the format itself lowers to nothing, because generation is apply-time
-/// work.
-const function formatValidated(format: String, rest: String): String =
-  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) rest
+/// Validates a generated key's format and hands the whole encoding on: the
+/// format reaches the engine, because generation is apply-time work the
+/// engine performs.
+const function generatedFormatValidated(format: String): String =
+  if (List("hex16", "hex32", "base64-32", "alnum32").contains(format)) format
   else throw("fnoxGenerated format \"\(format)\" is not one of hex16, hex32, base64-32 or alnum32")
 
 const function opReferenceValidated(reference: String): String =
@@ -1221,6 +1240,8 @@ const local function isOpReference(r: String): Boolean =
 const local function unescape(text: String): String = text.replaceAll("\u{1f}", "_").replaceAll("\u{1e}", "\u{1f}")
 
 const function fnoxLookup(_key: String): engine.Lookup = new engine.Lookup { provider = "fnox"; key = _key }
+const function generatedLookup(_key: String, _format: String): engine.Lookup =
+  new engine.Lookup { provider = "fnox-generated"; key = _key; format = _format }
 const function opReference(_reference: String): engine.Lookup = new engine.Lookup { provider = "op"; reference = _reference }
 const function opFields(_vault: String, _item: String, _section: String?, _field: String): engine.Lookup =
   new engine.Lookup { provider = "op"; vault = _vault; item = _item; section = _section; field = _field }
@@ -1240,10 +1261,12 @@ function envOf(s: core.Step): Mapping<String, engine.Expr> =
   if (!(s is core.Action)) new Mapping {}
   else new Mapping { for (k, v in s.environment) { [envKey(s, k)] = envValue(s, k, v) } }
 
-/// Whether a secret appears anywhere in a step: its file content, or an
-/// environment value. Such a task is never logged.
+/// Whether a secret appears anywhere in a step: its file content, an
+/// environment value, or the step itself carrying one (FetchSecret). Such a
+/// task is never logged.
 const function secretStep(s: core.Step): Boolean =
-  (s is core.File && hasSecrets(s.content))
+  s is core.FetchSecret
+    || (s is core.File && hasSecrets(s.content))
     || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
 
 function envKey(s: core.Step, key: String): String =
