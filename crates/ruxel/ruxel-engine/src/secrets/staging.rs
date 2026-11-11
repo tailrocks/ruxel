@@ -1,11 +1,74 @@
 //! The staging file a byte-preserving store write travels in.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The staging name pattern: `.ruxel-fnox-stage-<pid>-<n>`, where the
 /// process id names the run that owns the file.
 const STAGING_PREFIX: &str = ".ruxel-fnox-stage-";
+
+/// This run's staging directory, with the lock file whose `flock` is this
+/// run's ownership identity: `.ruxel-fnox-stage-<pid>-<unpredictable>/`,
+/// holding `lock` and the staging files. The identity is the kernel-held
+/// lock, not a number a later process can be handed: a process id is
+/// recycled, so a name carrying only a pid can be mistaken for a live
+/// run's file — a new run that receives the pid skips the orphan and can
+/// collide with it, and an unrelated long-lived process that receives it
+/// keeps the plaintext for its lifetime. A lock the owner holds is
+/// released only when the owner is gone, whatever pid anything holds by
+/// then, and the unpredictable tail means no two runs ever share a name.
+fn run_directory() -> Result<&'static std::path::Path, String> {
+    static OWN: OnceLock<(PathBuf, std::fs::File)> = OnceLock::new();
+    if let Some((directory, _held)) = OWN.get() {
+        return Ok(directory);
+    }
+    let base = std::env::temp_dir();
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    let mut attempt = 0_u32;
+    loop {
+        let directory = base.join(format!(
+            "{STAGING_PREFIX}{}-{started:x}-{}",
+            std::process::id(),
+            NEXT_STAGING.fetch_add(1, Ordering::Relaxed),
+        ));
+        if std::fs::create_dir(&directory).is_err() {
+            attempt += 1;
+            if attempt > 32 {
+                return Err("store staging unavailable".to_owned());
+            }
+            continue;
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let held = options
+            .open(directory.join("lock"))
+            .and_then(|file| {
+                use std::os::unix::io::AsFd;
+                rustix::fs::flock(file.as_fd(), rustix::fs::FlockOperation::LockExclusive)
+                    .map_err(std::io::Error::other)?;
+                Ok(file)
+            })
+            .map_err(|_| "store staging unavailable".to_owned())?;
+        // The lock file and its `flock` stay held for the life of the
+        // process: the run's ownership of the directory outlives every
+        // staging value in it, and no later run can mistake the directory
+        // for an orphan while this one lives.
+        let _unused = OWN.set((directory, held));
+        if let Some((directory, _held)) = OWN.get() {
+            return Ok(directory);
+        }
+        unreachable!("the run directory was just recorded");
+    }
+}
 
 /// The staged value of one store write: a file under mode 0600 in the
 /// temporary directory whose exact bytes `fnox set KEY --from-file` reads.
@@ -49,15 +112,11 @@ impl StagedValue {
         write: impl FnOnce(&mut std::fs::File, &Path, &[u8]) -> std::io::Result<()>,
     ) -> Result<Self, String> {
         // A staging file orphaned by abrupt termination is recovered by
-        // the next store, never left to accumulate: the naming pattern
-        // attributes the file to a process, and a process that is gone
-        // will never drop it.
+        // the next store, never left to accumulate: the run directory's
+        // `flock` attributes the files to a process, and a process that is
+        // gone will never drop them.
         Self::recover_stale()?;
-        let path = std::env::temp_dir().join(format!(
-            "{STAGING_PREFIX}{}-{}",
-            std::process::id(),
-            NEXT_STAGING.fetch_add(1, Ordering::Relaxed),
-        ));
+        let path = run_directory()?.join(NEXT_STAGING.fetch_add(1, Ordering::Relaxed).to_string());
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -94,34 +153,74 @@ impl StagedValue {
         &self.path
     }
 
-    /// Removes every staging file left behind by a process that is no
-    /// longer running — a killed process never ran its `Drop`, and the
-    /// file holds the plaintext. Only regular files of the staging
-    /// pattern are staging artifacts; anything else that carries the
-    /// name is not a file a store wrote and is left alone. A file a live
-    /// process may still be using — this run's, or a concurrent run's —
-    /// is left alone too: only a file whose owning process is provably
-    /// gone is an orphan. A removal that cannot be confirmed fails the
-    /// store loudly, never silently: the file holds a secret and this run
-    /// will not pretend otherwise. The error names the failure, never the
-    /// path — the path is where the plaintext is.
+    /// Removes every staging artifact left behind by a run that is no
+    /// longer alive — a killed run never ran its `Drop`, and the files hold
+    /// the plaintext. A staging run is a directory whose `lock` the owner
+    /// holds: only a run that is provably gone has released it, whatever
+    /// process ids exist by then, so the lock is tried and a run that
+    /// still holds it is left alone. A directory without the lock file, or
+    /// anything else that carries the name, is not a staging run and is
+    /// left alone. The flat files of runs from before the directory
+    /// scheme are recovered by their pid alone, the only identity they
+    /// carry, and only when that pid is provably gone. A removal that
+    /// cannot be confirmed fails the store loudly, never silently: the
+    /// files hold a secret and this run will not pretend otherwise. The
+    /// error names the failure, never the path — the path is where the
+    /// plaintext is.
     ///
     /// # Errors
-    /// Returns an error if a stale staging file cannot be removed.
+    /// Returns an error if a stale staging artifact cannot be removed.
     fn recover_stale() -> Result<(), String> {
         let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
             return Ok(());
         };
         let own = std::process::id();
         for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(rest) = name
+                .to_str()
+                .and_then(|name| name.strip_prefix(STAGING_PREFIX))
+            else {
+                continue;
+            };
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                // The owner's liveness is the lock it holds, not a number.
+                let lock = path.join("lock");
+                match std::fs::OpenOptions::new().write(true).open(&lock) {
+                    Ok(file) => {
+                        use std::os::unix::io::AsFd;
+                        let held = rustix::fs::flock(
+                            file.as_fd(),
+                            rustix::fs::FlockOperation::NonBlockingLockExclusive,
+                        )
+                        .is_err();
+                        if held {
+                            // A live run still owns this directory.
+                            continue;
+                        }
+                    }
+                    // No lock file, or one this run cannot open: not a
+                    // staging run this run may speak for.
+                    Err(_) => continue,
+                }
+                match std::fs::remove_dir_all(&path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "stale store staging left by a terminated run could not be removed: {error}"
+                        ));
+                    }
+                }
+                continue;
+            }
             if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
                 continue;
             }
-            let name = entry.file_name();
-            let Some(pid) = name
-                .to_str()
-                .and_then(|name| name.strip_prefix(STAGING_PREFIX))
-                .and_then(|rest| rest.split('-').next())
+            let Some(pid) = rest
+                .split('-')
+                .next()
                 .and_then(|pid| pid.parse::<u32>().ok())
             else {
                 continue;

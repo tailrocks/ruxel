@@ -5,30 +5,45 @@
 use super::super::staging::StagedValue;
 use super::generation::Fixture;
 use super::*;
+use std::fs;
+use std::path::PathBuf;
 
 /// The staging files of this process whose content carries `marker`: the
 /// temp directory is shared — across runs and across tests — so a leak is
 /// named by this process's name and the bytes it holds, never by which
 /// file appeared.
-fn staging_files_containing(marker: &str) -> Vec<std::path::PathBuf> {
-    let prefix = format!(".ruxel-fnox-stage-{}-", std::process::id());
+fn staging_files_containing(marker: &str) -> Vec<PathBuf> {
+    let prefix = format!(".ruxel-fnox-stage-{}", std::process::id());
     let mut found = Vec::new();
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return found;
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let leaked = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(&prefix))
-            && std::fs::read(&path).is_ok_and(|bytes| {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        // This run stages inside its own directory, and earlier runs left
+        // flat files: both spellings name this process, and both are a leak
+        // when they carry the marker.
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let candidates: Vec<PathBuf> = if path.is_dir() {
+            std::fs::read_dir(&path)
+                .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+                .unwrap_or_default()
+        } else {
+            vec![path]
+        };
+        for candidate in candidates {
+            if std::fs::read(&candidate).is_ok_and(|bytes| {
                 bytes
                     .windows(marker.len())
                     .any(|window| window == marker.as_bytes())
-            });
-        if leaked {
-            found.push(path);
+            }) {
+                found.push(candidate);
+            }
         }
     }
     found
@@ -251,4 +266,71 @@ fn a_staging_file_orphaned_by_a_terminated_run_is_recovered_on_the_next_store() 
     let _result = live_run.kill();
     let _result = live_run.wait();
     drop(staged);
+}
+
+/// A staging run is a directory whose `lock` the owner holds: a run that
+/// is gone has released the lock, whatever process ids exist by then, so
+/// the next store removes the whole directory — the plaintext files and
+/// the lock — and never leaves it to accumulate. A name alone, even one
+/// carrying a live process's id, is not ownership: the orphan here
+/// carries this process's own id, the recycled-identity case, and is
+/// recovered anyway because no one holds its lock.
+#[test]
+fn a_staging_directory_of_a_gone_run_is_recovered_whatever_pid_its_name_carries() {
+    let orphan = std::env::temp_dir().join(format!(
+        ".ruxel-fnox-stage-{}-recycled-identity",
+        std::process::id()
+    ));
+    fs::create_dir_all(&orphan).expect("create the orphaned run directory");
+    fs::write(orphan.join("lock"), "").expect("write the released lock");
+    fs::write(
+        orphan.join("0"),
+        "synthetic-recycled-orphan-stage-plaintext",
+    )
+    .expect("write the orphaned staging file");
+
+    let staged =
+        StagedValue::new("synthetic-recycled-identity-store").expect("the next store stages");
+
+    assert!(
+        !orphan.exists(),
+        "a staging directory no run holds was left to accumulate"
+    );
+    drop(staged);
+}
+
+/// A staging directory a live run holds is left alone: ownership is the
+/// kernel-held lock, so a concurrent run's staging — and this run's own —
+/// is never mistaken for an orphan, and the `create_new` of a later store
+/// cannot collide with it, whatever process ids were recycled in between.
+#[test]
+fn a_staging_directory_a_live_run_holds_is_left_alone() {
+    let live = std::env::temp_dir().join(format!(
+        ".ruxel-fnox-stage-{}-live-identity",
+        std::process::id()
+    ));
+    fs::create_dir_all(&live).expect("create the live run directory");
+    let held = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(live.join("lock"))
+        .expect("open the live lock");
+    {
+        use std::os::unix::io::AsFd;
+        rustix::fs::flock(held.as_fd(), rustix::fs::FlockOperation::LockExclusive)
+            .expect("hold the live lock");
+    }
+    fs::write(live.join("0"), "synthetic-live-stage-plaintext")
+        .expect("write the live staging file");
+
+    let staged = StagedValue::new("synthetic-live-identity-store").expect("the store stages");
+
+    assert!(
+        live.join("0").exists(),
+        "the staging directory of a run holding its lock was taken"
+    );
+    drop(staged);
+    drop(held);
+    let _removed = fs::remove_dir_all(&live);
 }
