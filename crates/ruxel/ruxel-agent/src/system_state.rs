@@ -6,6 +6,7 @@ mod apt_request;
 mod apt_version;
 #[cfg(test)]
 use apt_policy::{parse_dpkg_status, parse_policy};
+pub(crate) use apt_policy::parse_showhold;
 pub(crate) use apt_request::PackageRequest;
 
 #[derive(Default)]

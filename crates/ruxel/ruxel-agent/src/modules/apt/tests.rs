@@ -18,6 +18,7 @@ fn summary(changed: bool) -> String {
 }
 
 mod cache;
+mod hold;
 mod maintenance;
 mod pins;
 mod process;

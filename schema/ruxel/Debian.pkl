@@ -1,18 +1,21 @@
-/// Debian package management: apt repositories, the package index, and the
-/// packages a host has installed.
+/// Debian package management: apt repositories, the package index, the
+/// packages a host has installed, the whole-system upgrade, apt preferences
+/// and debconf selections.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Debian.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
 ///
 ///     import "modulepath:/ruxel/Debian.pkl" as debian
-///     new debian.Packages { names { "nginx" } }
+///     new debian.AptPackages { names { "nginx" } }
 module Debian
 
 import "modulepath:/ruxel/Core.pkl" as core
 
-// The typealiases and functions below are copied from Core.pkl; keep them in
-// sync — pklr cannot share typealiases across modules, and would silently
-// drop the constraints of a dotted alias such as `core.Static`.
+// The typealiases and functions below repeat the ones in Core.pkl: pklr
+// cannot share typealiases across modules, and would silently drop the
+// constraints of a dotted alias such as `core.Static`. Keep the copies in
+// sync with Core.pkl. `PackageSelector` and `OneLine` below are Debian's
+// own: Core.pkl has no counterpart for them.
 
 /// Text known before the run. Run-time values (`currentHost`,
 /// `Capture.stdout()`) are allowed only in `File.content`; secrets
@@ -76,20 +79,124 @@ const local function isIpv4(s: String): Boolean =
   let (parts = s.split("."))
   !s.endsWith(".") && parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
 
+/// The package selector of `AptPreference` and `DebconfEntry` (BB §13):
+/// a Debian package name with an optional architecture (`name`,
+/// `name:amd64`) or a trailing glob (`name*`). Unlike `AptPackages.names`
+/// it carries no version pin: it selects the packages a preference or a
+/// debconf answer applies to.
+typealias PackageSelector = Static(matches(Regex(#"[a-z0-9][a-z0-9+.-]+(\*|:([a-z0-9][a-z0-9-]*))?"#)))
+
+/// Text that fits on one line: no line break, so one field cannot smuggle a
+/// second stanza or a second answer into one value. A field written into a
+/// file as one line must carry no line break.
+typealias OneLine = Static(!contains("\n") && !contains("\r"))
+
+/// A secret answer to a debconf question: the secret of `Core.pkl` in a
+/// class of this module.
+///
+/// The union `Static|core.SecretText` cannot be written here: pklr loses the
+/// parent class of every class of a module that the module path serves when
+/// one of its property types names a class of another module — the step
+/// classes of this module would no longer be `core.Step`s, and the lowering
+/// would refuse every workflow that uses them. The repro is in
+/// `crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs`; official
+/// Pkl 0.33.0 evaluates the same files correctly. A class of this module in
+/// the union keeps the union closed and pklr whole; the secret reaches it
+/// through `secretAnswer`, whose parameter names the secret class — a
+/// function parameter does not trigger the defect.
+class SecretAnswer {
+  /// The secret's parts, encoded: what store each part is read from and, for
+  /// `join`, the separators between them. The Lowering decodes them, as it
+  /// does for an action's environment value; the secret itself is read from
+  /// the store at apply time.
+  hidden parts: String
+}
+
+/// The secret answer of a debconf question. `secret` is a secret of
+/// `Core.pkl` (`core.fnox(…)`, `core.onePassword(…)`, …); it is the only
+/// way to make a `SecretAnswer`, so an answer is never forged by hand.
+function secretAnswer(secret: core.SecretText): SecretAnswer =
+  new SecretAnswer { parts = secret.parts }
+
 /// Downloads the current apt package lists. Never reports a change.
-class PackageIndex extends core.Step {
+class AptPackageIndex extends core.Step {
   hidden fixed kind = "packageIndex"
 }
 
 /// Debian packages that are installed. Each name is `name`, `name=version`,
 /// `name:arch` or `name:arch=version`, with one exact Debian version; a
 /// package is listed once, or once per explicit architecture.
-class Packages extends core.Step {
+class AptPackages extends core.Step {
   hidden fixed kind = "packages"
   names: StaticList(!isEmpty)
   /// Upgrades them to the newest version on every run, not only once. The
   /// names cannot then pin a version.
-  upgrade: Boolean = false
+  latest: Boolean = false
+  /// Holds every listed package at its installed version with `apt-mark
+  /// hold` after installation; reporting reads `apt-mark showhold`, and a
+  /// held package counts as installed. Only `true` holds: the step never
+  /// lifts a hold. Holds are part of the step's identity, like pins. The
+  /// names can then pin a version (install it, then freeze it), but not
+  /// `latest = true` — a held package is never upgraded — and no later step
+  /// of the stage may pin or upgrade a held package: apt refuses to move
+  /// one.
+  hold: Boolean = false
+}
+
+/// Upgrades every installed package to the newest candidate (apt
+/// `dist-upgrade`) and, with `autoremove`, removes packages nothing needs
+/// any more. It runs where it is written and never merges, like
+/// `AptPackages`; two of them in one stage run twice, which is almost
+/// certainly a mistake. It reports a change when apt changed anything, and
+/// can be watched; in `check` and `diff` it simulates the run and reports
+/// what apt would upgrade or remove, and never changes the system.
+class AptSystemUpgrade extends core.Step {
+  hidden fixed kind = "aptSystemUpgrade"
+  /// Also removes orphaned packages.
+  autoremove: Boolean = false
+}
+
+/// One apt preferences stanza (apt_preferences(5)), written to its own file
+/// in `/etc/apt/preferences.d/` as one managed change. Identity is the
+/// package plus the pin: a repeat of the same stanza is the same step, and
+/// a second stanza for one package — with another pin — is another step
+/// that conflicts with it.
+class AptPreference extends core.Step {
+  hidden fixed kind = "aptPreference"
+  package: PackageSelector
+  /// The `Pin:` line, such as `"version 1.37.2-1.1"` or `"release
+  /// n=stable"`. One line: it is written into the stanza as one field, so a
+  /// line break in it would smuggle a second stanza into the file.
+  pin: OneLine
+  /// The `Pin-Priority:` value. apt reads every priority of 1001 or more as
+  /// "never downgrade" — the `Pin-Priority: 1001` idiom the Kubernetes
+  /// recipe writes by hand — and -1 as "never install"; a priority below -1
+  /// means the same as -1, so it is refused as a likely mistake.
+  priority: Int(this >= -1)
+}
+
+/// One debconf selection (`debconf-set-selections`). The answer on the host
+/// is compared with `value` and set only when it differs, so a second apply
+/// reports no change. A secret value is `core.SecretText` (the secret
+/// sink), never static text: the engine resolves it in its store, the task
+/// is never logged, and the answer reaches the host on the standard input
+/// of `debconf-set-selections`, never in an argument. A resolved secret
+/// that contains a line break is refused when the selection is written.
+class DebconfEntry extends core.Step {
+  hidden fixed kind = "debconfEntry"
+  package: PackageSelector
+  /// The question's name, such as `"nginx/nginx-user"`. One line: it is
+  /// written into the selection as one field.
+  question: OneLine
+  type: "string"|"boolean"|"select"|"multiselect"|"password"|"note"|"text"
+  /// A static answer, or a `SecretAnswer` (the secret sink). The union is
+  /// closed: the two branches are the only ones the language admits, and a
+  /// secret interpolated into static text is refused by `Static` itself,
+  /// which rejects the reserved secret prefix. The secret branch is a class
+  /// of this module and not `core.SecretText` because of the pklr defect
+  /// `SecretAnswer` names; both pklr and official Pkl check the union the
+  /// same way (`crates/ruxel/ruxel-config/tests/debconf_value_union.rs`).
+  value: Static|SecretAnswer
 }
 
 /// A signed apt repository, written as a deb822 source with its own keyring.

@@ -116,11 +116,11 @@ fn copied_layer_steps_are_refused() -> Result {
         ),
         (
             "copied-packages.pkl",
-            "new copiedDebian.Packages { names { \"nginx*\" } }",
+            "new copiedDebian.AptPackages { names { \"nginx*\" } }",
         ),
         (
             "copied-reference.pkl",
-            "new debian.Packages { names { \"nginx\" } }; new systemd.Service { name = \"nginx\"; restartOnChangeOf { new copiedDebian.Packages { names { \"nginx\" } } } }",
+            "new debian.AptPackages { names { \"nginx\" } }; new systemd.Service { name = \"nginx\"; restartOnChangeOf { new copiedDebian.AptPackages { names { \"nginx\" } } } }",
         ),
     ] {
         let root = scratch.join(name);

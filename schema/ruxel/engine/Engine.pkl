@@ -101,7 +101,7 @@ class Task {
   always: Listing<Task>
   noLog: Boolean = false
 }
-typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
+typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|Debconf|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
 
 class Apt {
   fixed kind = "apt"
@@ -118,6 +118,24 @@ class Apt {
   state: ("present"|"latest"|Expr)? = null
   update_cache: Flag? = null
   upgrade: ("dist"|Expr)? = null
+  /// Holds every listed package at its installed version with `apt-mark
+  /// hold`, after the installation. The answer is read back from `apt-mark
+  /// showhold`, and a held package counts as installed. A hold cannot be
+  /// combined with `state = "latest"`: a held package is never upgraded.
+  hold: Flag? = null
+}
+
+/// One debconf selection (`debconf-set-selections`). The answer on the host
+/// is compared with `value` and set only when it differs. The value may be
+/// an expression, so a secret reaches the host resolved and never logged;
+/// it is written to the standard input of `debconf-set-selections`, never
+/// into an argument.
+class Debconf {
+  fixed kind = "debconf"
+  package: Text
+  question: Text
+  type: ("string"|"boolean"|"select"|"multiselect"|"password"|"note"|"text")
+  value: Text
 }
 
 class AptRepository {
