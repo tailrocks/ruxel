@@ -16,9 +16,10 @@ class Lookup {
   fixed kind = "lookup"
   /// `fnox-generated` reads the key like `fnox`, and `apply` additionally
   /// creates it, once per run, under the fnox write lock, when it is missing
-  /// (generation, stdin store, read-back and byte-compare). `plan`, `check`
-  /// and `diff` never generate: they resolve every lookup in synthetic mode,
-  /// so a generated key is a selector-derived placeholder there.
+  /// (generation, byte-preserving store, read-back and byte-compare).
+  /// `plan`, `check` and `diff` never generate: they resolve every lookup
+  /// in synthetic mode, so a generated key is a selector-derived placeholder
+  /// there.
   provider: "fnox"|"fnox-generated"|"op"|"command"|"synthetic"
   /// A fnox key is an `FnoxKey` (`Core.pkl`): `[A-Z][A-Z0-9_]{1,127}` —
   /// the grammar model validation and the backend enforce with the same
@@ -206,8 +207,9 @@ class Filesystem {
 }
 
 /// Reads one file on the host the task runs on and hands the bytes back to
-/// the controller, which stores them in fnox (`fnox set` with the value on
-/// stdin). The task itself is read-only and carries no secret: the content
+/// the controller, which stores them in fnox (`fnox set --from-file`, the
+/// byte-preserving store, with the value in a staging file). The task
+/// itself is read-only and carries no secret: the content
 /// travels back as a no-log slurp result and never reaches output, results
 /// or the ledger. In check and diff the controller does not even send the
 /// task: FetchSecret is known-after-apply, never fingerprint-convergent.

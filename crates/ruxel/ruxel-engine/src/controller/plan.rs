@@ -20,23 +20,29 @@ fn redact_lookups(value: &mut Value) {
 }
 
 fn visible(task: &Value) -> Value {
+    // An apply-only step (FetchSecret) marks itself known-after-apply: in
+    // check and diff it contacts neither fnox nor the host, so there is no
+    // fingerprint to compare. The marker is controller-built whatever the
+    // step's own logging is, so it is not a no-log privilege: a step that
+    // is not no-log carries it beside its fields, and the conservative
+    // projection keeps it after censoring them.
+    let apply_only = task
+        .get("operation")
+        .and_then(|operation| operation.get("kind"))
+        .and_then(Value::as_str)
+        == Some("fetchSecret");
     if flag(task, "noLog") {
-        // A no-log task's fields never reach the plan. An apply-only step
-        // (FetchSecret) marks itself known-after-apply: in check and diff it
-        // contacts neither fnox nor the host, so there is no fingerprint to
-        // compare.
+        // A no-log task's fields never reach the plan.
         let mut output = json!({"name":string(task,"name"),"noLog":true,"censored":true});
-        if task
-            .get("operation")
-            .and_then(|o| o.get("kind"))
-            .and_then(Value::as_str)
-            == Some("fetchSecret")
-        {
+        if apply_only {
             output["knownAfterApply"] = json!(true);
         }
         return output;
     }
     let mut output = task.clone();
+    if apply_only {
+        output["knownAfterApply"] = json!(true);
+    }
     for section in ["block", "rescue", "always"] {
         if let Some(children) = output.get_mut(section).and_then(Value::as_array_mut) {
             for child in children {

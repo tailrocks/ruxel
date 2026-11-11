@@ -247,6 +247,50 @@ async fn a_failed_fetch_reports_a_failed_task() -> Result<()> {
     Ok(())
 }
 
+/// The fingerprint and the diff of a fetch are the controller's, never the
+/// agent's: the agent's result is a slurp that carries only the content, so
+/// fingerprint or diff fields it ships anyway are agent material, and they
+/// never reach the result — not even when the store is unchanged and the
+/// controller writes no sentence of its own. The fingerprint the result
+/// carries is the controller's keyed one.
+#[tokio::test]
+async fn agent_supplied_fingerprint_and_diff_never_reach_the_fetch_result() -> Result<()> {
+    const PLAINTEXT: &str = "kubeconfig-fixture-3f9c\n";
+    let wire = STANDARD.encode(PLAINTEXT);
+    let store = Arc::new(Store::default());
+    store
+        .values
+        .lock()
+        .map_err(|_| anyhow::anyhow!("poisoned store"))?
+        .insert("K8S_ADMIN_KUBECONFIG".into(), PLAINTEXT.into());
+    let execution = execution(
+        Lookups::new(Resolver::new(store.clone()).expect("resolver")),
+        None,
+    )?;
+    let value = run_fetch(
+        &execution,
+        serde_json::to_vec(&json!({
+            "content": wire,
+            "fingerprint": "synthetic-agent-fingerprint",
+            "diff": "stored in fnox (fingerprint abcd1234) synthetic-agent-material"
+        }))?,
+    )
+    .await?;
+    assert_eq!(value["changed"], json!(false), "the store already holds it");
+    assert_eq!(store.sets.load(Ordering::SeqCst), 0, "no store write");
+    assert!(
+        value.get("diff").is_none(),
+        "an agent-supplied diff reached the result: {value}"
+    );
+    assert_eq!(
+        value["fingerprint"].as_str().map(str::len),
+        Some(8),
+        "the fingerprint is the controller's eight-hex one: {value}"
+    );
+    assert!(!serde_json::to_string(&value)?.contains("synthetic-agent"));
+    Ok(())
+}
+
 /// Under the synthetic resolver `FetchSecret` never writes: the fetch
 /// reports known-after-apply and unchanged, and the fake store counts no
 /// contact at all — neither the write nor the read path is touched.
@@ -275,5 +319,45 @@ async fn synthetic_fetch_reports_known_after_apply_without_writing() -> Result<(
         "the synthetic resolver read the store"
     );
     assert!(!serde_json::to_string(&value)?.contains(&wire));
+    Ok(())
+}
+
+/// A failed fetch that ships a valid-shape sentence in its JSON result —
+/// `73656372` is the hex of `secr`, four bytes of secret in the
+/// fingerprint's own shape — reaches no result: a failed task carries no
+/// content and no controller sentence, so the diff it ships anyway is
+/// agent material, dropped whole. Shape proves nothing about who built a
+/// value; only the controller's sentence, which a failed fetch has none
+/// of, is ever projected.
+#[tokio::test]
+async fn a_valid_shaped_agent_diff_reaches_no_failed_fetch_result() -> Result<()> {
+    let store = Arc::new(Store::default());
+    let execution = execution(
+        Lookups::new(Resolver::new(store.clone()).expect("resolver")),
+        None,
+    )?;
+    let value = run_fetch_with_status(
+        &execution,
+        serde_json::to_vec(&json!({
+            "error": "no such file",
+            "fingerprint": "73656372",
+            "diff": "content changed (fingerprint 73656372)"
+        }))?,
+        "failed",
+    )
+    .await?;
+    assert_eq!(value["failed"], json!(true), "the task failed");
+    assert!(
+        value.get("diff").is_none(),
+        "an agent-supplied diff reached the result: {value}"
+    );
+    assert!(
+        value.get("fingerprint").is_none(),
+        "an agent-supplied fingerprint reached the result: {value}"
+    );
+    assert!(
+        !serde_json::to_string(&value)?.contains("73656372"),
+        "four bytes of agent material reached the result: {value}"
+    );
     Ok(())
 }

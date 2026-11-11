@@ -50,3 +50,34 @@ impl Fingerprints {
         hasher.finalize().to_hex()[..8].to_owned()
     }
 }
+
+/// A controller-built fingerprint: exactly eight lowercase hex characters,
+/// the shape [`Fingerprints::of`] builds by truncating a keyed BLAKE3 hex
+/// digest. Output projections keep a fingerprint only in this shape — a
+/// result's fingerprint field is untrusted input, and anything else is
+/// agent material that reaches no censored output.
+pub(crate) fn is_fingerprint(text: &str) -> bool {
+    text.len() == 8
+        && text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The controller-built diff sentence over one named fingerprint:
+/// exactly `content changed (fingerprint <fingerprint>)` or `stored in
+/// fnox (fingerprint <fingerprint>)`, whole, over exactly that
+/// fingerprint. The censored projections keep a diff only in this form:
+/// the controller builds the sentence and the fingerprint beside it, so
+/// a diff that names any other fingerprint — however well shaped — is
+/// agent material. Shape alone proves nothing about who built a value;
+/// this does, because an agent cannot know the keyed fingerprint the
+/// controller computed, so it cannot build a sentence that passes as the
+/// controller's own.
+pub(crate) fn is_sentence_over(fingerprint: &str, text: &str) -> bool {
+    [
+        "content changed (fingerprint ",
+        "stored in fnox (fingerprint ",
+    ]
+    .iter()
+    .any(|prefix| text == format!("{prefix}{fingerprint})"))
+}

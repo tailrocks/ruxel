@@ -4,8 +4,10 @@ mod generation;
 mod lock;
 mod lookup;
 mod resolver;
+mod staging;
 
 pub use backend::ProcessBackend;
+pub(crate) use fingerprint::{is_fingerprint, is_sentence_over};
 pub use generation::{GeneratedRequest, generate_value, generated_requests};
 pub use lock::FnoxLock;
 pub use lookup::Lookup;
@@ -47,8 +49,9 @@ pub trait Backend: Send + Sync {
     /// # Errors
     /// Returns an error if the backend cannot resolve the key.
     fn fnox_get(&self, key: &str) -> Result<Option<String>, String>;
-    /// Stores one fnox key with the value on stdin, never in a command
-    /// argument.
+    /// Stores one fnox key with the value staged in a file — `fnox set KEY
+    /// --from-file`, the byte-preserving store — never in a command
+    /// argument and never on stdin, which the store trims.
     ///
     /// # Errors
     /// Returns an error if the value cannot be stored.

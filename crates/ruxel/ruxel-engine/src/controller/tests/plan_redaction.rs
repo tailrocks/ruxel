@@ -69,6 +69,54 @@ async fn the_conservative_plan_keeps_the_known_after_apply_marker() -> Result<()
     Ok(())
 }
 
+/// The marker of an apply-only step is not a no-log privilege: a
+/// `FetchSecret` step that is not itself no-log is still apply-only, so
+/// its plan line carries the known-after-apply marker — and the
+/// conservative projection censors the task but keeps the marker, exactly
+/// as it does for a no-log one.
+#[tokio::test]
+async fn the_conservative_plan_keeps_the_marker_of_a_step_that_is_not_no_log() -> Result<()> {
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"Store the cluster admin kubeconfig","operation":{"kind":"fetchSecret","path":"/etc/kubernetes/admin.conf","key":"K8S_ADMIN_KUBECONFIG"}}]}]});
+    let mut backend = Fake {
+        conservative_sensitive: true,
+        ..Default::default()
+    };
+    let options = Options {
+        mode: Mode::Plan,
+        ..Options::default()
+    };
+    run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.events.len(), 1);
+    assert_eq!(
+        backend.events[0]["task"],
+        json!({"censored":true,"knownAfterApply":true})
+    );
+    // Without a sensitive run to censor it, the plan line carries the
+    // marker beside the step's own fields.
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(
+        backend.events[0]["task"]["knownAfterApply"],
+        json!(true),
+        "the plan line of an apply-only step marks itself known-after-apply"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn plan_censors_lookup_nodes_in_tasks_blocks_and_handlers() -> Result<()> {
     let lookup = json!({"kind":"lookup","provider":"synthetic","key":"fixture-sensitive-value","argv":["fixture-sensitive-argument"]});

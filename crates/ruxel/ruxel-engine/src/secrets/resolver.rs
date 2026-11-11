@@ -237,8 +237,8 @@ impl Resolver {
 impl Resolver {
     /// Creates every missing generated key, once per run, on the controller,
     /// before any secret is resolved: under the fnox write lock, check
-    /// presence, generate in the named format, store with the value on
-    /// stdin, read back and byte-compare.
+    /// presence, generate in the named format, store from a staging file,
+    /// read back and byte-compare.
     ///
     /// The creation is atomic against the writers that share the fnox write
     /// lock: they wait for it, and the key is created once. A writer that
@@ -351,7 +351,18 @@ impl Resolver {
         {
             return Ok((false, fingerprint));
         }
-        self.backend.fnox_set(key, content)?;
+        // The store attempt may change the key whatever it reports — a
+        // `set` that fails can leave the key half-written — so every
+        // cached resolution that reads the key is dropped after the
+        // attempt, on its success and its error paths alike. The
+        // verification that follows never carries the invalidation: a
+        // read-back that fails leaves the cache correct — empty — where
+        // it was stale, and a retry that finds the store already holding
+        // the content takes the unchanged early return above without ever
+        // reaching a verified store.
+        let attempted = self.backend.fnox_set(key, content);
+        self.forget(key);
+        attempted?;
         let read_back = self
             .backend
             .fnox_get(key)?
@@ -362,5 +373,17 @@ impl Resolver {
             ));
         }
         Ok((true, fingerprint))
+    }
+
+    /// Drops every cached resolution that reads this key. A fetch that
+    /// attempted a store may have changed what the key answers — the
+    /// attempt's own report says nothing certain about it — so the values
+    /// cached before the attempt must not outlive it, and the drop runs
+    /// after every attempt, verified or not; a lock failure keeps the
+    /// stale entry, which the next store attempt or a fresh run drops.
+    fn forget(&self, key: &str) {
+        if let Ok(mut values) = self.values.lock() {
+            values.retain(|lookup, _| !lookup.reads_fnox_key(key));
+        }
     }
 }

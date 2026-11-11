@@ -11,7 +11,17 @@ pub(super) fn sensitive_event(value: &Value) -> Value {
         output.insert(
             "task".into(),
             if task.is_object() {
-                serde_json::json!({"censored":true})
+                // A task object is a plan projection the controller built,
+                // and the known-after-apply marker it carries is the same
+                // controller-built metadata the plan's own conservative
+                // projection keeps: an apply-only step still says it happens
+                // at apply, and nothing else of the task's fields.
+                let mut censored = serde_json::Map::new();
+                censored.insert("censored".into(), Value::Bool(true));
+                if let Some(true) = task.get("knownAfterApply").and_then(Value::as_bool) {
+                    censored.insert("knownAfterApply".into(), Value::Bool(true));
+                }
+                Value::Object(censored)
             } else {
                 Value::String("[censored]".into())
             },
@@ -33,21 +43,33 @@ pub(super) fn sensitive_event(value: &Value) -> Value {
                 censored.insert(key.into(), Value::Bool(value));
             }
         }
-        // The known-after-apply marker and the keyed fingerprint sentences
-        // are controller-built and carry no value, so a sensitive run keeps
+        // The known-after-apply marker and the keyed fingerprint are
+        // controller-built and carry no value, so a sensitive run keeps
         // them: an apply-only step still reports known-after-apply, and a
-        // secret-bearing file still shows its keyed fingerprint.
+        // secret-bearing file still shows its keyed fingerprint. The
+        // result is untrusted input, so the fingerprint passes only in
+        // the controller's own shape — eight lowercase hex — and the diff
+        // only as the controller's own sentence over that same
+        // fingerprint: shape alone proves nothing about who built a
+        // value, and eight hex characters hold four bytes of anything, so
+        // a sentence that stands alone, or names a fingerprint the
+        // controller did not set beside it, is censored.
         if let Some(true) = result.get("knownAfterApply").and_then(Value::as_bool) {
             censored.insert("knownAfterApply".into(), Value::Bool(true));
         }
-        if let Some(fingerprint) = result.get("fingerprint").and_then(Value::as_str) {
+        if let Some(fingerprint) = result
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .filter(|fingerprint| crate::secrets::is_fingerprint(fingerprint))
+        {
             censored.insert("fingerprint".into(), Value::String(fingerprint.to_owned()));
-        }
-        if let Some(diff) = result.get("diff").and_then(Value::as_str).filter(|diff| {
-            diff.starts_with("content changed (fingerprint ")
-                || diff.starts_with("stored in fnox (fingerprint ")
-        }) {
-            censored.insert("diff".into(), Value::String(diff.to_owned()));
+            if let Some(diff) = result
+                .get("diff")
+                .and_then(Value::as_str)
+                .filter(|diff| crate::secrets::is_sentence_over(fingerprint, diff))
+            {
+                censored.insert("diff".into(), Value::String(diff.to_owned()));
+            }
         }
         output.insert("result".into(), Value::Object(censored));
     }

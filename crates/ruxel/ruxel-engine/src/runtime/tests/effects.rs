@@ -9,6 +9,7 @@ pub(super) struct TestConnection {
     result_json: Vec<u8>,
     status: String,
     changed: bool,
+    diff: String,
 }
 impl TestConnection {
     /// A scripted agent connection answering every task with the one named
@@ -18,6 +19,25 @@ impl TestConnection {
         status: &str,
     ) -> (Self, mpsc::UnboundedReceiver<(bool, oneshot::Sender<()>)>) {
         Self::scripted_result(result_json, status, false)
+    }
+    /// A scripted agent connection answering every task with the one named
+    /// result, status, change and protocol diff — the untrusted `diff`
+    /// field of `TaskResult`, which a hostile agent can ship for a task
+    /// whose own agent never would.
+    pub(super) fn scripted_with_diff(
+        result_json: Vec<u8>,
+        status: &str,
+        changed: bool,
+        diff: &str,
+    ) -> (Self, mpsc::UnboundedReceiver<(bool, oneshot::Sender<()>)>) {
+        let (connection, started) = Self::scripted_result(result_json, status, changed);
+        (
+            Self {
+                diff: diff.to_owned(),
+                ..connection
+            },
+            started,
+        )
     }
     /// A scripted agent connection answering every task with the one named
     /// result, status and change.
@@ -34,6 +54,7 @@ impl TestConnection {
                 result_json,
                 status: status.to_owned(),
                 changed,
+                diff: String::new(),
             },
             observed,
         )
@@ -59,6 +80,7 @@ impl TestConnection {
                 status: self.status.clone(),
                 changed: self.changed,
                 result_json: self.result_json.clone(),
+                diff: self.diff.clone(),
                 ..Default::default()
             })),
         }))
@@ -105,6 +127,7 @@ async fn add(execution: &Execution, host: &str, started: mpsc::UnboundedSender<S
             result_json: b"{}".to_vec(),
             status: "ok".to_owned(),
             changed: false,
+            diff: String::new(),
         }))),
     );
 }
