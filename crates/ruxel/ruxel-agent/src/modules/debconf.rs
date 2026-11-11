@@ -35,26 +35,46 @@ fn run_with(
         return Err("debconf: the package and the question must be one line".into());
     }
     let answer = current()?;
-    let changed = answer_of(&answer, package, question).as_deref() != Some(value);
+    let changed = match answer_of(&answer, package, question) {
+        Some(answer) => answer.kind != kind || answer.value != value,
+        None => true,
+    };
     if changed && !ctx.check_mode {
         set(&format!("{package} {question} {kind} {value}\n"))?;
     }
     Ok(json!({"changed": changed, "failed": false}))
 }
 
-/// The answer the host has for one question, if it has one. The selections
-/// are lines of `package question type value`; the value may hold spaces,
-/// so only the first three fields are split.
-fn answer_of(selections: &str, package: &str, question: &str) -> Option<String> {
+/// One answer of the debconf database: the type of the question and the
+/// value the database holds for it.
+struct Answer {
+    /// The type of the question, as the database knows it.
+    kind: String,
+    /// The value of the answer.
+    value: String,
+}
+
+/// The answer the host has for one question, if it has one.
+///
+/// `debconf-get-selections` prints the database as TAB separated fields,
+/// `owner<TAB>question<TAB>type<TAB>value`; the value is the rest of the
+/// line, so it may hold spaces and tabs. The lines that begin with `#` are
+/// the comments of the tool and carry no answer.
+fn answer_of(selections: &str, package: &str, question: &str) -> Option<Answer> {
     for line in selections.lines() {
-        let mut fields = line.splitn(4, ' ');
-        let (Some(line_package), Some(line_question), Some(_)) =
-            (fields.next(), fields.next(), fields.next())
+        if line.starts_with('#') {
+            continue;
+        }
+        let mut fields = line.splitn(4, '\t');
+        let (Some(owner), Some(name), Some(kind)) = (fields.next(), fields.next(), fields.next())
         else {
             continue;
         };
-        if line_package == package && line_question == question {
-            return Some(fields.next().unwrap_or("").to_owned());
+        if owner == package && name == question {
+            return Some(Answer {
+                kind: kind.to_owned(),
+                value: fields.next().unwrap_or_default().to_owned(),
+            });
         }
     }
     None
