@@ -4,18 +4,21 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The platform's raw mode for a permission set, as `Mode`.
+#[cfg(target_os = "linux")]
+fn mode_of(mode: u32) -> rustix::fs::Mode {
+    rustix::fs::Mode::from_raw_mode(mode)
+}
+
+/// The platform's raw mode for a permission set, as `Mode`.
+///
+/// This platform's raw mode is narrower than `u32`, so a mode outside its
+/// range is rejected instead of truncated.
+#[cfg(not(target_os = "linux"))]
 fn mode_of(mode: u32) -> Result<rustix::fs::Mode, String> {
-    #[cfg(target_os = "linux")]
-    {
-        Ok(rustix::fs::Mode::from_raw_mode(mode))
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let raw = mode
-            .try_into()
-            .map_err(|_| "file mode exceeds platform range".to_owned())?;
-        Ok(rustix::fs::Mode::from_raw_mode(raw))
-    }
+    let raw = mode
+        .try_into()
+        .map_err(|_| "file mode exceeds platform range".to_owned())?;
+    Ok(rustix::fs::Mode::from_raw_mode(raw))
 }
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -48,6 +51,13 @@ pub(crate) fn write_atomic_with(
     let final_mode = mode
         .or_else(|| existing.as_ref().map(|m| m.permissions().mode() & 0o7777))
         .unwrap_or(0o600);
+    // Converted once, before any file exists: only the platforms whose raw
+    // mode is narrower than `u32` can reject a mode, and doing it here keeps
+    // the `fchmod` below one plain call on every platform.
+    #[cfg(target_os = "linux")]
+    let permissions = mode_of(final_mode);
+    #[cfg(not(target_os = "linux"))]
+    let permissions = mode_of(final_mode)?;
     let preserved = existing.as_ref().map(|m| (m.uid(), m.gid()));
     let final_owner = (
         owner.0.or_else(|| preserved.map(|(uid, _)| uid)),
@@ -88,7 +98,7 @@ pub(crate) fn write_atomic_with(
             }
             file.write_all(bytes).map_err(|e| e.to_string())?;
             file.sync_all().map_err(|e| e.to_string())?;
-            rustix::fs::fchmod(&file, mode_of(final_mode)?).map_err(|e| e.to_string())?;
+            rustix::fs::fchmod(&file, permissions).map_err(|e| e.to_string())?;
             std::fs::rename(&temp, path).map_err(|e| e.to_string())
         })();
         if result.is_err() {

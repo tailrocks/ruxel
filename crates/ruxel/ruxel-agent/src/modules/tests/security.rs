@@ -107,6 +107,30 @@ fn atomic_write_replaces_symlink_not_its_target() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// Beyond the platform's raw mode width the conversion reports the range,
+/// which only the narrower platforms can reach. The write refuses before any
+/// file exists, so nothing is published under a truncated mode.
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn atomic_write_rejects_modes_exceeding_the_platform_range() {
+    let root = std::env::temp_dir().join(format!("ruxel-mode-range-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let dest = root.join("dest");
+    let error = write_atomic_with(&dest, b"content", Some(1 << 20), (None, None)).unwrap_err();
+    assert!(
+        error.contains("file mode exceeds platform range"),
+        "{error}"
+    );
+    assert!(!dest.exists());
+    assert_eq!(
+        std::fs::read_dir(&root).unwrap().count(),
+        0,
+        "the refused write left a file behind"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// A second thread keeps swapping the temporary pathname for a symlink to
 /// the victim while a replacement is written: ownership and mode must reach
 /// the file that was opened, so a swapped pathname cannot redirect the
