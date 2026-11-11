@@ -542,7 +542,7 @@ jobs:
       - &s26
         name: Prepare pinned tools
         env: *m9
-        run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
+        run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\" pkl@0.33.0"
       - *s7
       - &s27
         name: Prepare Rust components

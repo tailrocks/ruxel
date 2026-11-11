@@ -24,6 +24,7 @@ hk = "2.12.0"
 gitleaks = "8.30.1"
 rumdl = "0.3.2"
 "cargo:alint" = "0.21.1"
+pkl = "0.33.0"
 
 [settings]
 cargo.binstall = true
