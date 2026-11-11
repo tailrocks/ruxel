@@ -53,7 +53,16 @@ run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warn
 
 [tasks.test]
 description = "Unit and integration tests"
-run = "cargo nextest run --workspace --all-features --locked --no-tests=pass"
+run = [
+  # The mandatory dual-evaluator suite (crates/ruxel/ruxel-config/tests/dual_evaluator.rs)
+  # needs the official Pkl CLI, and the generated rust lanes install only Velnor's
+  # closed pinned-tool set (no pkl), so this task provisions the CLI from the mise
+  # pin into the default data dir ($HOME/.local/share/mise/installs/pkl/*/pkl) that
+  # the suite's discovery scans. Provisioning lives in this repo-owned task, which
+  # the generator consumes and re-digests, so it survives Velnor regeneration.
+  "mise install --locked pkl",
+  "cargo nextest run --workspace --all-features --locked --no-tests=pass",
+]
 
 [tasks."dual-evaluator"]
 description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin"
