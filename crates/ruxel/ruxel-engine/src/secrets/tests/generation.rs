@@ -127,7 +127,7 @@ exit 8
         fs::read_to_string(self.directory.join("store").join(key)).ok()
     }
 
-    fn put(&self, key: &str, value: &str) {
+    pub(super) fn put(&self, key: &str, value: &str) {
         let store = self.directory.join("store");
         drop(fs::create_dir_all(&store));
         fs::write(store.join(key), value).expect("write fixture value");

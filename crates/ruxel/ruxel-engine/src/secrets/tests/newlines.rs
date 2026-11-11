@@ -115,3 +115,53 @@ fn a_store_that_keeps_another_form_fails_the_run() {
     );
     assert!(!error.contains("kubeconfig"), "errors never carry values");
 }
+
+/// A value that ends in a bare CR round-trips through the store transport
+/// byte for byte: the record terminator the CLI appends is one `\n`, so
+/// the `\r` before it belongs to the value and must survive the read.
+/// The store keeps the bytes it was given — CR and all — and the read
+/// back that verifies the store finds them unchanged.
+#[test]
+fn a_value_that_ends_in_a_bare_cr_round_trips_through_the_store_transport() {
+    let fixture = Fixture::new();
+    let resolver = fixture.resolver();
+    let (changed, _) = resolver.fetch_secret("BARE_CR", "value\r").expect("store");
+    assert!(changed, "the first fetch stores the content");
+    assert_eq!(
+        fixture.value("BARE_CR").as_deref(),
+        Some("value\r"),
+        "the store kept the bytes it was given, CR and all"
+    );
+    let (changed, _) = resolver
+        .fetch_secret("BARE_CR", "value\r")
+        .expect("compare");
+    assert!(
+        !changed,
+        "the stored value round-trips byte for byte, CR and all"
+    );
+}
+
+/// The comparison distinguishes `value` from `value\r`: the CR belongs to
+/// the value, not to the record terminator, so a store that holds one is
+/// a change when the fetch carries the other — in both directions, never
+/// an equality.
+#[test]
+fn the_comparison_distinguishes_a_bare_cr_value_from_one_without() {
+    let fixture = Fixture::new();
+    let resolver = fixture.resolver();
+    for (held, fetched) in [("value\r", "value"), ("value", "value\r")] {
+        fixture.put("BARE_CR_CHANGE", held);
+        let (changed, _) = resolver
+            .fetch_secret("BARE_CR_CHANGE", fetched)
+            .expect("compare");
+        assert!(
+            changed,
+            "the store holds {held:?}, the fetch of {fetched:?} is a change"
+        );
+        assert_eq!(
+            fixture.value("BARE_CR_CHANGE").as_deref(),
+            Some(fetched),
+            "the fetch replaces the stored value"
+        );
+    }
+}

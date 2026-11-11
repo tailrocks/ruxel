@@ -253,18 +253,16 @@ enum ReadFailure {
 }
 
 /// The CLIs behind these lookups append exactly one record terminator:
-/// `fnox get`, and `op read`. A value that legitimately ends in a
-/// newline — PEM keys do — must keep it, so at most one trailing `\n` goes,
-/// plus the `\r` only when it is part of that terminator. This is the
-/// terminator the CLI adds, never one the value carries: a value that
-/// ends in `\n` is read back as the value with its `\n`.
+/// `fnox get`, and `op read` — a single `\n`. A value that legitimately
+/// ends in a newline — PEM keys do — must keep it, and so must a value
+/// that ends in a bare CR: the `\r` is never part of the terminator, so
+/// only the one trailing `\n` the CLI added goes. A value that ends in
+/// `\n` is read back as the value with its `\n`, and one that ends in
+/// `\r` as the value with its `\r`.
 fn with_record_terminator(stdout: &[u8]) -> String {
     let mut value = String::from_utf8_lossy(stdout).into_owned();
     if value.ends_with('\n') {
         value.pop();
-        if value.ends_with('\r') {
-            value.pop();
-        }
     }
     value
 }
