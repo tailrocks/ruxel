@@ -28,7 +28,10 @@ fn root() -> PathBuf {
 /// evaluators, and the bad selector, the secret carried as static text
 /// and the hold that conflicts with a pin are refused by both, each with
 /// its own wording.
+///
+/// The user step that lowers to the engine's user operation is here too.
 const EXAMPLES: &[&str] = &[
+    "valid/user-missing-account.pkl",
     "valid/secret-op-reference-dotted.pkl",
     "valid/secret-literal-prefix.pkl",
     "invalid/secret-op-reference-dotted-selector.pkl",
