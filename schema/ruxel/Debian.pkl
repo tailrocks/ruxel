@@ -100,6 +100,12 @@ typealias OneLine = Static(!contains("\n") && !contains("\r"))
 /// into the question, the type and the value.
 typealias QuestionName = OneLine(!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#)))
 
+/// An apt preference `Pin:` line: a pin of at least one non-whitespace
+/// character. A blank pin is refused: apt warns `Did not understand pin
+/// type` and applies no preference for one, so the declared policy would
+/// silently do nothing.
+typealias PreferencePin = OneLine(matches(Regex(#".*\S.*"#)))
+
 /// A secret answer to a debconf question: the secret of `Core.pkl` in a
 /// class of this module.
 ///
@@ -174,9 +180,10 @@ class AptPreference extends core.Step {
   hidden fixed kind = "aptPreference"
   package: PackageSelector
   /// The `Pin:` line, such as `"version 1.37.2-1.1"` or `"release
-  /// n=stable"`. One line: it is written into the stanza as one field, so a
-  /// line break in it would smuggle a second stanza into the file.
-  pin: OneLine
+  /// n=stable"`. One line, and never blank: it is written into the stanza
+  /// as one field, so a line break in it would smuggle a second stanza
+  /// into the file, and apt applies no preference for a blank pin.
+  pin: PreferencePin
   /// The `Pin-Priority:` value. apt never downgrades a package unless the
   /// pin priority of the available version exceeds 1000 (apt_preferences
   /// (5)), so the `Pin-Priority: 1001` idiom the Kubernetes recipe writes
