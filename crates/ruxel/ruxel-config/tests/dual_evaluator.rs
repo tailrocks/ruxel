@@ -96,11 +96,7 @@ fn runs(candidate: &Path) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-/// Every Mise data directory the lookup must scan, most specific first:
-/// `MISE_DATA_DIR` when the environment redirects it, else
-/// `XDG_DATA_HOME/mise`, and always the default under `$HOME`, because a
-/// redirect does not move an earlier install. This is where
-/// `mise install pkl@0.33.0` puts the binary.
+/// Every Mise data directory the lookup must scan, most specific first: `MISE_DATA_DIR` (else `XDG_DATA_HOME/mise`) and always the default under `$HOME`, where `mise install pkl@0.33.0` puts the binary.
 fn mise_data_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(data) = std::env::var_os("MISE_DATA_DIR") {
@@ -348,21 +344,14 @@ fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
     Ok(())
 }
 
-/// Prints the `pkl` this process discovers: the probe that the discovery
-/// test runs in a child process, where the environment it sets cannot
-/// disturb the mandatory tests above.
+/// Prints the `pkl` this process discovers: the probe the discovery test runs in a child process, where its environment cannot race the tests above.
 #[test]
 fn the_discovery_probe_reports_the_pkl_it_found() -> Result {
     println!("{}", pkl()?.display());
     Ok(())
 }
 
-/// The discovery must find the binary Mise just installed: a redirected
-/// `MISE_DATA_DIR` (or `XDG_DATA_HOME`) is where the lane's
-/// `mise install pkl@0.33.0` puts it, and a lookup that scans only
-/// `$HOME` fails with "not installed" even though Mise installed the
-/// pinned binary. The probe runs as a child process so the environment
-/// this test sets cannot race the mandatory tests in this binary.
+/// The discovery must find the binary Mise just installed: a redirected `MISE_DATA_DIR` (or `XDG_DATA_HOME`) is where `mise install pkl@0.33.0` puts it; a lookup that scans only `$HOME` fails with "not installed".
 #[test]
 fn the_discovery_finds_the_binary_mise_just_installed() -> Result {
     let scratch = std::env::temp_dir().join(format!(
@@ -372,10 +361,13 @@ fn the_discovery_finds_the_binary_mise_just_installed() -> Result {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos()
     ));
-    let data = scratch.join("mise-data");
-    let home = scratch.join("home");
+    let (data, home) = (scratch.join("mise-data"), scratch.join("home"));
     let installed = data.join("installs/pkl/0.33.0/pkl");
-    std::fs::create_dir_all(installed.parent().unwrap())?;
+    std::fs::create_dir_all(
+        installed
+            .parent()
+            .ok_or("the fake install path has no parent")?,
+    )?;
     std::fs::create_dir_all(&home)?;
     std::fs::write(&installed, "#!/bin/sh\necho 'pkl 0.33.0'\n")?;
     #[cfg(unix)]
@@ -398,8 +390,7 @@ fn the_discovery_finds_the_binary_mise_just_installed() -> Result {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success() && stdout.contains(&*installed.display().to_string()),
-        "the probe must find the binary Mise just installed at {}; status: {}; \
-         stdout: {stdout}; stderr: {}",
+        "the probe must find the binary Mise just installed at {}; status: {}; stdout: {stdout}; stderr: {}",
         installed.display(),
         output.status,
         String::from_utf8_lossy(&output.stderr)
