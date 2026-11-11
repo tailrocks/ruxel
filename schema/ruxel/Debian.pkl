@@ -182,8 +182,10 @@ class AptPreference extends core.Step {
   /// (5)), so the `Pin-Priority: 1001` idiom the Kubernetes recipe writes
   /// by hand permits — and with a matching `version` pin forces — a
   /// downgrade; -1 means "never install". A priority below -1 means the
-  /// same as -1, so it is refused as a likely mistake.
-  priority: Int(this >= -1)
+  /// same as -1 and 0 is no usable priority at all (apt refuses it with
+  /// `E: No priority (or zero) specified for pin`), so both are refused as
+  /// likely mistakes.
+  priority: Int(this == -1 || this >= 1)
 }
 
 /// One debconf selection (`debconf-set-selections`). The answer on the host

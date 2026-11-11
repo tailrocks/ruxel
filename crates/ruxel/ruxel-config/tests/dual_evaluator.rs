@@ -49,6 +49,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/apt-preference-package-selector-pin.pkl",
     "invalid/apt-preference-pseudo-arch.pkl",
     "invalid/apt-preference-priority-mismatch.pkl",
+    "invalid/apt-preference-priority-zero.pkl",
     "invalid/debconf-entry-pseudo-arch.pkl",
     "invalid/debconf-entry-bad-type.pkl",
     "invalid/debconf-entry-secret-as-static.pkl",
