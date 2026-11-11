@@ -1003,14 +1003,21 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// prefix: `ruxel_rt_8d41.` or `ruxel_secret_8d41.` followed by a
 /// placeholder body — the run-time name, or a secret's encoded-body attempt:
 /// its length-prefixed parts (`f`, `g`, `o`, `r`, `s` atoms of `size:text`,
-/// `Core.sized`). The guard recognizes any terminated candidate and leaves
-/// body validation to the parser: a tagged `size:text` shape is enough to
-/// refuse the terminator, and an oversized length prefix, an underscore-
-/// bearing text or a wrong atom count is what the parser refuses as
-/// malformed — never text the guard lets the terminator swallow into
-/// literal content. Literal text that only looks like a prefix — the
-/// reserved words without an encoded body — is ordinary content and passes.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.[fgors](?:(?!__)[\s\S])*?:(?:(?!__)[\s\S])*?__)"#)
+/// `Core.sized`). The guard recognizes every terminated candidate and
+/// leaves body validation to the parser: a body that carries the `:` of a
+/// `size:text` part refuses the terminator whatever its tag — unknown or
+/// uppercase, oversized length prefix, underscore-bearing text, wrong atom
+/// count are the parser's refusals — and so does a body that is empty or
+/// only the encoding's tag, size and text characters, which is an attempt
+/// without its colon. Malformed text is parsed and refused, never left
+/// behind as literal content. A candidate body is scanned once: one
+/// lookahead asserts the `:`, one pass finds the terminator, never a
+/// rescan of the suffix per split — a long colon-bearing run without a
+/// terminator is linear to pass as the literal text it is, never a
+/// quadratic stall. Literal text that only looks like a prefix — the
+/// reserved words without an encoded body, a body outside the encoding's
+/// characters or carrying no `:` — is ordinary content and passes.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[A-Za-z0-9_:])*)__)"#)
 const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
 /// Text without placeholders stays a string. Run-time placeholders

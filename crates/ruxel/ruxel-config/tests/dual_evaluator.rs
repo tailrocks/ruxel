@@ -33,6 +33,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-decoder-oversized-prefix.pkl",
     "invalid/secret-placeholder-overlapping-malformed-prefix.pkl",
     "invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-empty-body.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl",
 ];
 
 /// The official `pkl` binary.
