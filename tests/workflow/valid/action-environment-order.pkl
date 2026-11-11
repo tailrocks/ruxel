@@ -1,0 +1,27 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// One action identity across environment order. The reload carries three
+// environment pairs; each `onChangeOf` reconstruction declares the same
+// pairs in a different order. Lowering fingerprints environment entries in
+// canonical key order, so each reconstruction is the same identity as the
+// reload — the restarts depend on it — rather than twins that no earlier
+// step has.
+local reload = new Command {
+  run { "app"; "reload" }
+  environment { ["A"] = "1"; ["B"] = "2"; ["C"] = "3" }
+}
+local firstView = new Command {
+  run { "app"; "reload" }
+  environment { ["C"] = "3"; ["B"] = "2"; ["A"] = "1" }
+}
+local secondView = new Command {
+  run { "app"; "reload" }
+  environment { ["B"] = "2"; ["A"] = "1"; ["C"] = "3" }
+}
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  reload
+  new Command { title = "Restart first"; run { "app"; "restart" }; onChangeOf { firstView } }
+  new Command { title = "Restart second"; run { "app"; "restart" }; onChangeOf { secondView } }
+} } }

@@ -221,6 +221,59 @@ fn op_fields_with_cli_selector_syntax_are_refused_before_op_runs() {
     assert_eq!(fixture.count(), 0);
 }
 
+/// These CLIs append exactly one record terminator to the value: printenv
+/// under fnox, and `op read`. A value that legitimately ends in a newline —
+/// PEM keys do — must keep it, so the terminator alone is removed, never a
+/// newline the value itself carries.
+#[test]
+fn only_the_record_terminator_is_removed_not_value_newlines() {
+    let fixture = Fixture::new();
+    let instance = resolver(
+        &fixture.script("fake-fnox-keep", "printf 'line1\\n\\n'"),
+        &fixture.script("fake-op-keep", "printf 'line1\\n\\n'"),
+    );
+    assert_eq!(
+        instance
+            .resolve(&Lookup::Fnox { key: "KEY".into() })
+            .unwrap(),
+        "line1\n"
+    );
+    assert_eq!(
+        instance
+            .resolve(&Lookup::OnePasswordUri {
+                reference: "op://vault/item/password?attribute=pem".into(),
+            })
+            .unwrap(),
+        "line1\n"
+    );
+
+    // One terminator, spelled \r\n, is removed whole: the value is empty of
+    // newlines afterwards.
+    let instance = resolver(
+        &fixture.script("fake-fnox-crlf", "printf 'line1\\r\\n'"),
+        &fixture.script("fake-op-crlf", "printf 'line1\\r\\n'"),
+    );
+    assert_eq!(
+        instance
+            .resolve(&Lookup::Fnox { key: "KEY".into() })
+            .unwrap(),
+        "line1"
+    );
+
+    // A value that already ends in \r\n keeps it when the terminator joins:
+    // only the terminator is the CLI's addition.
+    let instance = resolver(
+        &fixture.script("fake-fnox-crlf-keep", "printf 'line1\\r\\n\\n'"),
+        &fixture.script("fake-op-crlf-keep", "printf 'line1\\r\\n\\n'"),
+    );
+    assert_eq!(
+        instance
+            .resolve(&Lookup::Fnox { key: "KEY".into() })
+            .unwrap(),
+        "line1\r\n"
+    );
+}
+
 #[test]
 fn query_references_reach_mock_op_unchanged_and_failures_stay_redacted() {
     let fixture = Fixture::new();

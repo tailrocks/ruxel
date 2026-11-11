@@ -31,9 +31,18 @@ fn process_output(mut command: Command) -> Result<String, String> {
     if !result.status.success() {
         return Err("process failed".into());
     }
-    Ok(String::from_utf8_lossy(&result.stdout)
-        .trim_end_matches('\n')
-        .to_owned())
+    // The CLIs behind these lookups append exactly one record terminator:
+    // printenv under fnox, and `op read`. A value that legitimately ends in
+    // a newline — PEM keys do — must keep it, so at most one trailing `\n`
+    // goes, plus the `\r` only when it is part of that terminator.
+    let mut stdout = String::from_utf8_lossy(&result.stdout).into_owned();
+    if stdout.ends_with('\n') {
+        stdout.pop();
+        if stdout.ends_with('\r') {
+            stdout.pop();
+        }
+    }
+    Ok(stdout)
 }
 
 impl Backend for ProcessBackend {

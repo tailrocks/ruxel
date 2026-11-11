@@ -378,6 +378,12 @@ const function secretMode(mode: String): Boolean =
     && octal(mode.substring(mode.length - 2, mode.length - 1)) == 0
     && octal(mode.substring(mode.length - 1, mode.length)) == 0
 
+/// The canonical four-digit spelling of a mode: Core accepts `600` and
+/// `0600` as the same mode, so identity and emission read one mode, not one
+/// spelling.
+const function canonicalMode(mode: String): String =
+  if (mode.length == 3) "0\(mode)" else mode
+
 /// A recipe has no change of its own: name the steps that matter.
 function recipeDeps(ix: StageIndex, i: Int): List<String> =
   listed(ix.steps[i]).filter((w) -> w is core.Recipe)
@@ -517,18 +523,43 @@ class Identity {
 }
 
 /// A command's environment in its identity: two commands that differ only in
-/// their environment are different steps. Keys in mapping order; a value is
-/// its text (`SecretText.toString()` is the reference placeholder, which no
-/// static text can contain, so the two cannot collide).
+/// their environment are different steps. Entries in canonical key order —
+/// the same pairs in another declaration order are one action — and a value
+/// as its text (`SecretText.toString()` is the reference placeholder, which
+/// no static text can contain, so the two cannot collide).
 const function envFingerprint(s: core.Step): String =
   if (!(s is core.Action)) ""
-  else s.environment.keys.toList().map((k) -> fields(List(k, s.environment[k].toString()))).join("")
+  else keyOrder.canonical(s.environment.keys.toList()).map((k) -> fields(List(k, s.environment[k].toString()))).join("")
 
 local identity = new Identity {}
 
+/// Canonical key order for a fingerprint: declaration order is an accident
+/// of authoring, so the same mapping written in another order must
+/// fingerprint alike. pklr has no `sort`, so this is an insertion sort; the
+/// keys are validated (`EnvKey` is `[A-Za-z_][A-Za-z0-9_]*`), so plain
+/// string comparison is the one order both evaluators agree on. A class,
+/// like `Walker`: pklr cannot recurse through a module function inside a
+/// lambda (P11); every module member it calls is `const`, which official Pkl
+/// requires of a class body.
+class KeyOrder {
+  function canonical(keys: List<String>): List<String> =
+    keys.fold(List(), (sorted, key) -> this.insert(key, sorted))
+
+  function insert(key: String, sorted: List<String>): List<String> =
+    if (sorted.isEmpty || key <= sorted.first)
+      List(key) + sorted
+    else List(sorted.first) + this.insert(key, this.tail(sorted))
+
+  /// pklr has no `drop`; the tail is rebuilt by position.
+  function tail(sorted: List<String>): List<String> =
+    positions(sorted).filter((i) -> i > 0).map((i) -> sorted[i])
+}
+
+const local keyOrder = new KeyOrder {}
+
 const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
-  ["file"] = (s) -> fields(List(s.path, s.content.sha256, s.mode, optional(s.owner), optional(s.group), fields(s.validate.toList())))
-  ["directory"] = (s) -> fields(List(s.path, s.mode))
+  ["file"] = (s) -> fields(List(s.path, s.content.sha256, canonicalMode(s.mode), optional(s.owner), optional(s.group), fields(s.validate.toList())))
+  ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
   ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.upgrade)"))
@@ -854,7 +885,7 @@ function captureTask(t: engine.Task, c: core.Capture, _result: String): engine.T
 function copy(_dest: String, f: core.File): engine.Copy = new engine.Copy {
   dest = _dest
   content = runtimeText(f.content)
-  mode = f.mode
+  mode = canonicalMode(f.mode)
   owner = f.owner
   group = f.group
 }
@@ -862,7 +893,7 @@ function copy(_dest: String, f: core.File): engine.Copy = new engine.Copy {
 function copyText(_dest: String, _content: String): engine.Copy =
   new engine.Copy { dest = _dest; content = _content; mode = "0644"; owner = "root"; group = "root" }
 
-function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = _mode }
+function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
 function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
@@ -965,10 +996,14 @@ const function codePointOffset(text: String, utf16Offset: Int): Int =
   else matches.first
 
 /// Decodes the reference encoding of a secret (`core.SecretText.parts`): one
-/// engine lookup per store part, a literal per `join` separator. A class,
-/// like `Walker`: pklr cannot recurse through a module function inside a
-/// lambda (P11); every module member it calls is `const`, which official Pkl
-/// requires of a class body.
+/// engine lookup per store part, a literal per `join` separator, in the
+/// authoring grammar `lookup (separator lookup)*` — `join` writes a
+/// separator only between two lookups, so a leading, doubled or trailing
+/// separator is a forged encoding, refused as malformed rather than lowered
+/// to a lookup plus arbitrary static text. A class, like `Walker`: pklr
+/// cannot recurse through a module function inside a lambda (P11); every
+/// module member it calls is `const`, which official Pkl requires of a class
+/// body.
 class SecretParser {
   /// A complete encoding is never empty and never contains a literal `_`:
   /// the length-prefixed encoding writes every underscore as `\u{1f}`.
@@ -976,19 +1011,31 @@ class SecretParser {
   /// malformed-reference sentence rather than a later atom's error.
   function exprs(code: String): List<engine.Expr> =
     if (code.isEmpty || code.contains("_")) throw(malformed)
-    else this.remaining(code)
+    else this.afterLookup(code)
 
-  /// The recursive remainder is empty at the end of a complete encoding;
-  /// only the top-level entry point treats empty as malformed.
-  function remaining(code: String): List<engine.Expr> =
-    if (code.isEmpty) List() else (let (head = this.head(code)) head.exprs + this.remaining(head.rest))
+  /// A lookup may end the encoding; a separator may not sit at the start.
+  function afterLookup(code: String): List<engine.Expr> =
+    if (code.isEmpty) throw(malformed)
+    else (let (head = this.lookup(code))
+      if (head.rest.isEmpty) head.exprs
+      else head.exprs + this.afterSeparator(head.rest))
 
-  function head(code: String): Atom =
+  /// A separator must sit between two lookups: what follows is a lookup,
+  /// never the end of the encoding.
+  function afterSeparator(code: String): List<engine.Expr> =
+    (let (head = this.separator(code)) head.exprs + this.afterLookup(head.rest))
+
+  function separator(code: String): Atom =
     let (tag = code.take(1))
     let (body = code.substring(1, code.length))
     if (tag == "s")
       let (v = this.take(body)) atom(List(lit(separatorValidated(unescape(v[0])))), v[1])
-    else if (tag == "f")
+    else throw(malformed)
+
+  function lookup(code: String): Atom =
+    let (tag = code.take(1))
+    let (body = code.substring(1, code.length))
+    if (tag == "f")
       let (v = this.take(body)) atom(List(fnoxLookup(fnoxKeyValidated(unescape(v[0])))), v[1])
     else if (tag == "g")
       let (key = this.take(body)) (let (format = this.take(key[1])) atom(List(fnoxLookup(fnoxKeyValidated(unescape(key[0])))), formatValidated(unescape(format[0]), format[1])))

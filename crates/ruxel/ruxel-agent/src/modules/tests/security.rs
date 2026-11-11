@@ -1,8 +1,9 @@
 use super::{
     bool_param, default_file_mode, parse_mode, resolve_gid_from, resolve_uid_from, write_atomic,
+    write_atomic_with,
 };
 use serde_json::json;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 
 #[test]
 fn in_process_modules_refuse_become_before_reading_or_writing() {
@@ -104,6 +105,72 @@ fn atomic_write_replaces_symlink_not_its_target() {
             .is_symlink()
     );
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// A second thread keeps swapping the temporary pathname for a symlink to
+/// the victim while a replacement is written: ownership and mode must reach
+/// the file that was opened, so a swapped pathname cannot redirect the
+/// privileged calls onto the victim.
+#[cfg(unix)]
+#[test]
+fn swapping_the_temporary_path_for_a_symlink_cannot_redirect_ownership() {
+    let root = std::env::temp_dir().join(format!("ruxel-atomic-swap-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir(&root).unwrap();
+    let victim = root.join("victim");
+    std::fs::write(&victim, "victim").unwrap();
+    // A mode no atomic write would request, so a redirected chmod shows.
+    std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let uid = std::fs::metadata(&victim).unwrap().uid();
+    let gid = std::fs::metadata(&victim).unwrap().gid();
+
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let racer_root = root.clone();
+    let racer_victim = victim.clone();
+    let racer_stop = stop.clone();
+    let racer = std::thread::spawn(move || {
+        while !racer_stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let Ok(entries) = std::fs::read_dir(&racer_root) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if !name.starts_with('.') || !name.ends_with(".tmp") {
+                    continue;
+                }
+                let path = entry.path();
+                if std::fs::symlink_metadata(&path).is_ok() {
+                    let _ = std::fs::remove_file(&path);
+                }
+                let _ = symlink(&racer_victim, &path);
+            }
+        }
+    });
+
+    // A large body keeps the write running, so the swap lands while the
+    // replacement is open: the ownership and mode calls follow. A swap that
+    // races the publish itself fails the write; that failure is the racer's,
+    // not the function's, so it retries.
+    let buffer = vec![7u8; 64 * 1024 * 1024];
+    let dest = root.join("dest");
+    let mut published = 0;
+    for _ in 0..200 {
+        if write_atomic_with(&dest, &buffer, Some(0o600), (Some(uid), Some(gid))).is_ok() {
+            published += 1;
+            if published == 3 {
+                break;
+            }
+        }
+    }
+    assert_eq!(published, 3, "the racer starved the writes");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    racer.join().unwrap();
+
+    let mode = std::fs::metadata(&victim).unwrap().permissions().mode() & 0o7777;
+    assert_eq!(mode, 0o640, "the victim's mode was redirected");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "victim");
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

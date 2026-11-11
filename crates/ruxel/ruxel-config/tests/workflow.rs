@@ -249,3 +249,77 @@ fn validator_candidates_fit_a_file_name() -> Result {
     );
     Ok(())
 }
+
+/// The `results.…` names an `onChangeOf` reaction reads.
+fn watched_results(expr: &serde_json::Value) -> Vec<String> {
+    let nested = |key: &str| {
+        expr[key]
+            .as_array()
+            .map(|items| items.iter().flat_map(watched_results).collect())
+            .unwrap_or_default()
+    };
+    match expr["kind"].as_str() {
+        Some("ref") => expr["path"]
+            .as_array()
+            .filter(|path| {
+                path.first().and_then(|v| v.as_str()) == Some("results") && path.len() >= 2
+            })
+            .map(|path| vec![path[1].as_str().unwrap_or_default().to_owned()])
+            .unwrap_or_default(),
+        Some("call") => nested("args"),
+        Some("list") => nested("items"),
+        _ => Vec::new(),
+    }
+}
+
+/// A file declared with `600` and reconstructed with `0600` is one
+/// identity: both reloads react to the file step's result, and every mode
+/// lowers in its canonical four-digit form.
+#[test]
+fn file_mode_spellings_are_one_identity_and_lower_canonically() -> Result {
+    let config = valid("file-mode-spellings.pkl")?;
+    let all = tasks(&config);
+    let file = all
+        .iter()
+        .find(|task| task["operation"]["dest"] == "/etc/app.conf")
+        .ok_or("no file task")?;
+    assert_eq!(file["operation"]["mode"], "0600");
+    let directory = all
+        .iter()
+        .find(|task| task["operation"]["path"] == "/etc/app")
+        .ok_or("no directory task")?;
+    assert_eq!(directory["operation"]["mode"], "0755");
+    let watchers: Vec<Vec<String>> = all
+        .iter()
+        .filter(|task| {
+            task["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("Reload "))
+        })
+        .map(|task| watched_results(&task["when"]))
+        .collect();
+    assert_eq!(watchers.len(), 2, "both reloads reacted: {watchers:?}");
+    assert!(watchers.iter().all(|ids| ids.len() == 1), "{watchers:?}");
+    assert_eq!(watchers[0], watchers[1], "one identity: {watchers:?}");
+    Ok(())
+}
+
+/// An action reconstructed with its environment pairs in another order is
+/// one identity: both restarts react to the reload step's result.
+#[test]
+fn action_environment_order_is_one_identity() -> Result {
+    let config = valid("action-environment-order.pkl")?;
+    let watchers: Vec<Vec<String>> = tasks(&config)
+        .into_iter()
+        .filter(|task| {
+            task["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("Restart "))
+        })
+        .map(|task| watched_results(&task["when"]))
+        .collect();
+    assert_eq!(watchers.len(), 2, "both restarts reacted: {watchers:?}");
+    assert!(watchers.iter().all(|ids| ids.len() == 1), "{watchers:?}");
+    assert_eq!(watchers[0], watchers[1], "one identity: {watchers:?}");
+    Ok(())
+}

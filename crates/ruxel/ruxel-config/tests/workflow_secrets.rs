@@ -191,7 +191,9 @@ fn unicode_around_a_secret_keeps_the_literal_text_intact() -> Result {
 }
 
 /// A three-digit mode spells the same file mode as its four-digit form:
-/// "600" is 0600, narrow enough for secret content.
+/// "600" is 0600, narrow enough for secret content. Lowering emits the
+/// canonical four-digit spelling, so the engine reads one mode, not one
+/// spelling.
 #[test]
 fn short_secret_file_modes_lower() -> Result {
     let config = valid("secret-file-short-mode.pkl")?;
@@ -199,7 +201,7 @@ fn short_secret_file_modes_lower() -> Result {
         .into_iter()
         .find(|task| task["operation"]["dest"] == "/etc/lightdash/short.env")
         .ok_or("no short-mode task")?;
-    assert_eq!(task["operation"]["mode"], "600");
+    assert_eq!(task["operation"]["mode"], "0600");
     assert_eq!(task["noLog"], serde_json::json!(true));
     Ok(())
 }
