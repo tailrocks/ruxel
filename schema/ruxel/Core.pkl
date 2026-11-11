@@ -183,7 +183,7 @@ abstract class Step {
   /// Identifies the step type for tools; every step class sets it.
   hidden fixed kind: String
   /// Replaces the generated description in plans and progress output. For
-  /// `Packages`, `PackageIndex`, `Service`, `Command`, `Script` and
+  /// `AptPackages`, `AptPackageIndex`, `Service`, `Command`, `Script` and
   /// `Capture`, two otherwise equal steps with different plan lines are
   /// different steps; for steps that manage a thing (`File`, `Directory`, …)
   /// the title is only a label.
@@ -494,7 +494,7 @@ abstract class Action extends Step {
   /// change. Not a recipe: a recipe has no change of its own, so list the
   /// recipe's steps that matter.
   ///
-  /// A step that runs again where it is written (`Packages`, `Command`, …)
+  /// A step that runs again where it is written (`AptPackages`, `Command`, …)
   /// counts once for every earlier run with the same settings, including
   /// runs added by another use of the same recipe. This step runs when any
   /// of them changed.

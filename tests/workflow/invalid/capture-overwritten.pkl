@@ -10,7 +10,7 @@ local kernelAfter = new Capture { bash = "uname -r" }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   kernelBefore
-  new debian.Packages { names { "linux-image-amd64" }; upgrade = true }
+  new debian.AptPackages { names { "linux-image-amd64" }; latest = true }
   kernelAfter
   new File { path = "/etc/kernels"; content = "before \(kernelBefore.stdout()) after \(kernelAfter.stdout())\n" }
 } } }

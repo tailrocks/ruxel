@@ -15,8 +15,8 @@ class ApiProxy extends Recipe {
   function steps(): Listing<Step> =
     let (config = haproxyConfig())
     new Listing {
-      new debian.PackageIndex {}
-      new debian.Packages { names { "haproxy" } }
+      new debian.AptPackageIndex {}
+      new debian.AptPackages { names { "haproxy" } }
       config
       new systemd.Service { name = "haproxy"; restartOnChangeOf { config } }
     }

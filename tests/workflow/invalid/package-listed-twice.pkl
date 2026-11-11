@@ -3,4 +3,4 @@ amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
-stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.Packages { names { "curl"; "curl=8.0.0-1" } } } } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptPackages { names { "curl"; "curl=8.0.0-1" } } } } }

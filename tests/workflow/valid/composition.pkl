@@ -12,8 +12,8 @@ local reloadA = new Command { run { "systemctl"; "daemon-reload" }; onChangeOf {
 local proxy = new recipes.ApiProxy { backends = inventory.controlPlanes }
 local release = new Capture { bash = "cat /etc/debian_version" }
 local motd = new File { path = "/etc/motd"; content = "Debian \(release.stdout())\n" }
-local first = new debian.Packages { title = "Install xz-utils for the build"; names { "xz-utils" } }
-local again = new debian.Packages { title = "Make sure x is still there"; names { "xz-utils" } }
+local first = new debian.AptPackages { title = "Install xz-utils for the build"; names { "xz-utils" } }
+local again = new debian.AptPackages { title = "Make sure x is still there"; names { "xz-utils" } }
 
 stages {
   new Stage {

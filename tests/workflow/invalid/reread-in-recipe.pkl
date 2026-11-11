@@ -10,7 +10,7 @@ local class Upgrade extends Recipe {
     let (after = new Capture { bash = "uname -r" })
     new Listing {
       before
-      new debian.Packages { names { "linux-image-amd64" }; upgrade = true }
+      new debian.AptPackages { names { "linux-image-amd64" }; latest = true }
       after
       new File { path = "/etc/kernels"; content = "\(before.stdout()) \(after.stdout())" }
     }

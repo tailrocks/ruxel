@@ -97,10 +97,15 @@ class Timezone extends core.Step {
   name: TimezoneName
 }
 
-/// The login shell of an existing user.
-/// The login shell of an account that already exists. A missing account
-/// fails the stage; it is never created.
-class LoginShell extends core.Step {
+/// The login shell of an existing account.
+///
+/// CAT.03 renamed `LoginShell` to `User`: the new name says that the step
+/// manages the account, and `User` is to create a missing account. The
+/// account is not created yet — the lowering still probes for it, so a
+/// missing account fails the stage. Dropping that probe is Lowering
+/// surgery beyond the rename and waits for the serial Lowering queue; until
+/// then the step changes the shell of an existing account only.
+class User extends core.Step {
   hidden fixed kind = "loginShell"
   user: Account
   shell: FilePath

@@ -42,7 +42,7 @@ stages {
       new Join { ca = caHash; site = "b" }
       new recipes.KubeadmJoinConfig { endpoint = "k8s-api.example.test:7443"; sharedCaHash = caHash }
       new RecordRelease { label = "before" }
-      new debian.Packages { names { "base-files" }; upgrade = true }
+      new debian.AptPackages { names { "base-files" }; latest = true }
       new RecordRelease { label = "after" }
     }
   }
