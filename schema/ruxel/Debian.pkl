@@ -177,10 +177,12 @@ class AptPreference extends core.Step {
   /// n=stable"`. One line: it is written into the stanza as one field, so a
   /// line break in it would smuggle a second stanza into the file.
   pin: OneLine
-  /// The `Pin-Priority:` value. apt reads every priority of 1001 or more as
-  /// "never downgrade" — the `Pin-Priority: 1001` idiom the Kubernetes
-  /// recipe writes by hand — and -1 as "never install"; a priority below -1
-  /// means the same as -1, so it is refused as a likely mistake.
+  /// The `Pin-Priority:` value. apt never downgrades a package unless the
+  /// pin priority of the available version exceeds 1000 (apt_preferences
+  /// (5)), so the `Pin-Priority: 1001` idiom the Kubernetes recipe writes
+  /// by hand permits — and with a matching `version` pin forces — a
+  /// downgrade; -1 means "never install". A priority below -1 means the
+  /// same as -1, so it is refused as a likely mistake.
   priority: Int(this >= -1)
 }
 
