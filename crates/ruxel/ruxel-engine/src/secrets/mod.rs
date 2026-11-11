@@ -1,5 +1,6 @@
 mod backend;
 mod fingerprint;
+mod gate;
 mod generation;
 mod lock;
 mod lookup;
