@@ -20,9 +20,11 @@ fn root() -> PathBuf {
     .to_path_buf()
 }
 
-/// The examples of the secret language: each must evaluate the same way
-/// under both evaluators, and each invalid one must be refused by both.
+/// The examples both evaluators must lower the same way: the secret
+/// language's, and the user step that lowers to the engine's user
+/// operation. Each invalid one must be refused by both.
 const EXAMPLES: &[&str] = &[
+    "valid/user-missing-account.pkl",
     "valid/secret-op-reference-dotted.pkl",
     "valid/secret-literal-prefix.pkl",
     "invalid/secret-op-reference-dotted-selector.pkl",

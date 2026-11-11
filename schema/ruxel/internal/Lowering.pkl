@@ -719,7 +719,10 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.latest), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
-  ["loginShell"] = (s, m) -> List(accountProbe(s.user, m), task(m, user(s.user, s.shell), null, null))
+  // `linux.User` lowers to the engine's user operation alone: the operation
+  // creates a missing account and sets the shell of an existing one, so no
+  // pre-check reads /etc/passwd before it.
+  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -905,23 +908,6 @@ const createsRecheckSkip = "creates_exists"
 function unlessOutput(u: core.UnlessOutput, wouldRun: engine.Expr): engine.Expr = call2("and", wouldRun,
   if (u.stdoutContains != null) call1("not", call2("contains", ref(List("result", "stdout")), lit(u.stdoutContains)))
   else call1("not", call2("contains", ref(List("result", "stderr")), lit(u.stderrContains))))
-
-/// The engine's user operation creates a missing account. This step only
-/// changes an existing one, so a read-only probe fails first, in check and
-/// diff too. It looks the name up exactly as the user operation does: a
-/// literal name in /etc/passwd, not NSS and not a numeric ID. The name is
-/// only ever passed as a quoted argument.
-///
-/// CAT.03 renamed the class `LoginShell` to `User`, which is to create a
-/// missing account (building-blocks §3.2). The probe then contradicts the
-/// class: dropping it is Lowering surgery beyond the rename and waits for
-/// the serial Lowering queue, so it stays and the step still changes the
-/// shell of an existing account only.
-function accountProbe(account: String, m: Meta): engine.Task = (task(helperMeta("Check that account \(account) exists", m, null), command(bash(
-  "awk -F: 'BEGIN { account = ARGV[1]; ARGV[1] = \"\" } $1 == account { found = 1 } END { exit !found }' \(shellQuote(account)) /etc/passwd || { printf 'account %s does not exist in /etc/passwd; User changes the shell of an existing account\\n' \(shellQuote(account)) >&2; exit 1; }"
-), null, null), null, lit(false))) { checkMode = false }
-
-function shellQuote(s: String): String = "'" + s.replaceAll("'", #"'\''"#) + "'"
 
 function probeKey(path: String): String = "exists_" + path.sha256.substring(0, 32)
 

@@ -184,11 +184,13 @@ fn edge_values_lower_with_their_guards() -> Result {
         motd["operation"]["content"],
         "literal __ruxel.inventoryHost__ text\n"
     );
-    // The account probe runs first, in check mode too, and changes nothing.
-    let probe = named("Check that account root exists")?;
-    assert_eq!(probe + 1, named("Set root login shell to /bin/zsh")?);
-    assert_eq!(all[probe]["checkMode"], false);
-    assert_eq!(all[probe]["changedWhen"]["value"], false);
+    // The user step lowers to the engine's user operation alone: no
+    // pre-check reads /etc/passwd before it.
+    let user = named("Set root login shell to /bin/zsh")?;
+    assert_eq!(all[user]["operation"]["kind"], "user");
+    assert_eq!(all[user]["operation"]["name"], "root");
+    assert_eq!(all[user]["operation"]["shell"], "/bin/zsh");
+    assert!(named("Check that account root exists").is_err());
     // A command that ran, or would run in check and diff (`skipped`), is a
     // change, so the steps that react to it see one there too.
     let ran = serde_json::json!({"kind": "call", "function": "or", "args": [
@@ -264,6 +266,27 @@ fn ran_except_recheck() -> serde_json::Value {
             ]},
         ]},
     ]})
+}
+
+/// A missing account is not a failure: the step lowers to the engine's user
+/// operation alone, which creates the account.
+#[test]
+fn a_missing_account_lowers_to_the_user_operation() -> Result {
+    let config = valid("user-missing-account.pkl")?;
+    let all = tasks(&config);
+    assert_eq!(all.len(), 1, "{all:#?}");
+    let user = &all[0];
+    assert_eq!(user["name"], "Set ruxel-app login shell to /bin/zsh");
+    assert_eq!(user["operation"]["kind"], "user");
+    assert_eq!(user["operation"]["name"], "ruxel-app");
+    assert_eq!(user["operation"]["shell"], "/bin/zsh");
+    // No pre-check reads /etc/passwd before the operation.
+    assert!(
+        all.iter()
+            .all(|task| task["operation"]["kind"] != "command"),
+        "{all:#?}"
+    );
+    Ok(())
 }
 
 /// The validator reads a candidate only root can change, whatever the

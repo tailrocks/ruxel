@@ -28,6 +28,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `linux.User` lowers to the engine's user operation alone: the pre-check that read `/etc/passwd` and failed a missing account is gone, so the step creates a missing account — the engine's user operation does — and sets the login shell of an existing one.
 - The workflow language renames its authoring spellings: `linux.LoginShell` is now `linux.User`, `debian.Packages` is now `debian.AptPackages` and its `upgrade` field is now `latest`, and `debian.PackageIndex` is now `debian.AptPackageIndex`. The old spellings are gone rather than aliased, since the language is pre-1.0. The pin-conflict sentence now advises removing the pin or setting `latest = false`, not the rejected state.
 - The engine schema moves to `modulepath:/ruxel/engine/Engine.pkl` (module `Engine`); the workflow language is now the layer split under `modulepath:/ruxel/` (`Core` for generic blocks, `Linux`, `Systemd`, `Debian` for the layers; recipes extend `Core`). Configuration that imports the engine schema must change its import. The schema fingerprint covers every served module, and `ruxel schema export` writes them all.
 - `check` and `diff` resolve secrets in synthetic mode only: the stores are not contacted, nothing is generated, and a rotated value is not detected there (rotation-blind by design, stated rather than promised). The field-scoped 1Password fetch acceptance now runs in apply, the only mode that reads a store.
