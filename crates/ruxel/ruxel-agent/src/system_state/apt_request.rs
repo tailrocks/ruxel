@@ -120,10 +120,12 @@ impl PackageRequest {
     /// Whether a hold entry covers this request.
     ///
     /// An entry names a package with an optional architecture. An entry
-    /// without one covers an unqualified request only, an entry with one
-    /// covers exactly that architecture, so `pkg:arm64` and `pkg` are never
-    /// the same package. An unqualified request names the native package,
-    /// so an entry for the native architecture covers it.
+    /// without one covers an unqualified request and one that names the
+    /// native architecture (`apt-mark showhold` prints the native
+    /// architecture unqualified), an entry with one covers exactly that
+    /// architecture, so `pkg:arm64` and `pkg` are never the same package.
+    /// An unqualified request names the native package, so an entry for the
+    /// native architecture covers it.
     pub(crate) fn covered_by(&self, entry: &Self, native: Option<&str>) -> bool {
         if self.name != entry.name {
             return false;
@@ -132,7 +134,7 @@ impl PackageRequest {
             (None, None) => true,
             (Some(wanted), Some(held)) => wanted == held,
             (None, Some(held)) => native == Some(held),
-            (Some(_), None) => false,
+            (Some(wanted), None) => native == Some(wanted),
         }
     }
 }
@@ -247,6 +249,17 @@ mod tests {
             let error = PackageRequest::parse(text).expect_err(text);
             assert!(error.contains("unsupported package selector"), "{error}");
         }
+    }
+
+    #[test]
+    fn an_unqualified_hold_entry_covers_the_native_architecture() {
+        // `apt-mark showhold` canonicalizes `bash:amd64` to `bash` when
+        // amd64 is the native architecture, so an entry without an
+        // architecture must cover a request that names the native one.
+        let request = PackageRequest::parse("bash:amd64").expect("supported selector");
+        let entry = PackageRequest::parse("bash").expect("supported selector");
+        assert!(request.covered_by(&entry, Some("amd64")));
+        assert!(!request.covered_by(&entry, Some("arm64")));
     }
 
     #[test]
