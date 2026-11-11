@@ -306,10 +306,7 @@ env)
 esac"#,
     );
     let backend = ProcessBackend::with_programs(&fnox, &fnox);
-    assert_eq!(
-        backend.fnox_get("MISSING").unwrap_err(),
-        "process failed"
-    );
+    assert_eq!(backend.fnox_get("MISSING").unwrap_err(), "process failed");
 }
 
 #[test]
