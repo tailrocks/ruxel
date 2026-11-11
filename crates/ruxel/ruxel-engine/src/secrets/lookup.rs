@@ -45,3 +45,17 @@ impl fmt::Debug for Lookup {
         })
     }
 }
+
+impl Lookup {
+    /// Whether this lookup resolves to the named fnox key's stored value:
+    /// `Fnox` reads the key, and `FnoxGenerated` reads the same key once
+    /// the run has created it. A store that writes the key changed what
+    /// both of them answer, which is what the resolver's cache
+    /// invalidation asks.
+    pub(super) fn reads_fnox_key(&self, key: &str) -> bool {
+        matches!(
+            self,
+            Self::Fnox { key: cached } | Self::FnoxGenerated { key: cached, .. } if cached == key
+        )
+    }
+}

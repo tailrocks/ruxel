@@ -460,8 +460,9 @@ const local function sized(text: String?): String =
 ///       fnoxKey = "K8S_ADMIN_KUBECONFIG"
 ///     }
 ///
-/// - The content travels as a no-log slurp and is written with `fnox set` on
-///   stdin; it never appears in output, results or the ledger, and it is
+/// - The content travels as a no-log slurp and is written with `fnox set
+///   --from-file`, the byte-preserving store; it never appears in output,
+///   results or the ledger, and it is
 ///   never copied anywhere else — no workflow step handles the plaintext.
 /// - It reports a change only when the fetched content differs from the
 ///   stored value, compared on the controller by the keyed secret

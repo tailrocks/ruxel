@@ -2,6 +2,7 @@
 //! apply-time generation and fetch-store paths.
 
 use super::Cell;
+use super::gate::key_gate;
 use super::{
     Backend, FNOX_KEY_GRAMMAR, GENERATED_FORMATS, Lookup, ProcessBackend, is_fnox_key,
     is_generated_format, parse_op_reference, select_field, synthetic_value,
@@ -14,25 +15,6 @@ use std::sync::{Arc, Mutex};
 
 #[path = "onepassword.rs"]
 mod onepassword;
-
-/// The CLI's selector punctuation in one component of a selector or a
-/// reference: `op item get --fields` parses `,` as a list separator and
-/// `=` as `label=`/`type=` selectors, so a legal component like "API,key"
-/// would fetch a different selector than the author named. Authoring
-/// refuses the same characters (Core's `onePassword`, and `op://`
-/// references alike); this mirrors it, because a configuration can name a
-/// selector directly.
-/// # Errors
-/// Returns the refusal naming the component, never a value.
-pub(super) fn selector_punctuation(what: &str, label: &str) -> Result<(), String> {
-    if label.contains(',') || label.contains('=') {
-        return Err(format!(
-            "1Password {what} \"{label}\" may not contain a comma or an equals sign: \
-             `op item get --fields` reads them as selectors, so it would fetch unintended fields"
-        ));
-    }
-    Ok(())
-}
 
 type ItemCache =
     Arc<Mutex<HashMap<(String, String, Option<String>, String), Cell<serde_json::Value>>>>;
@@ -128,6 +110,24 @@ impl Resolver {
     /// # Errors
     /// Returns a redacted error if the lookup fails.
     pub fn resolve(&self, lookup: &Lookup) -> Result<String, String> {
+        // A cached read and a store attempt on the same key serialize on
+        // the key's in-memory gate: `fetch_secret` and `ensure_generated`
+        // hold it across their store attempts and the cache invalidation
+        // that follows, so a read that races a store cannot answer the
+        // value cached before the attempt and cannot run before the
+        // store's invalidation — it waits, then answers what the store now
+        // holds. The gate is memory, not the store's filesystem lock: an
+        // ordinary read never opens or creates a lock file beside the
+        // fnox configuration, so a read-only checkout still reads. A
+        // lookup that reads no fnox key, and a synthetic resolver that
+        // never contacts the store, takes no gate.
+        let gate = match lookup {
+            Lookup::Fnox { key } | Lookup::FnoxGenerated { key, .. } if !self.synthetic => {
+                Some(key_gate(key))
+            }
+            _ => None,
+        };
+        let _read = gate.as_ref().and_then(|gate| gate.lock().ok());
         let cell = self
             .values
             .lock()
@@ -166,9 +166,9 @@ impl Resolver {
                 // reach, and a comma or an equals sign would ride along as
                 // the CLI's selector punctuation.
                 if let Some(section) = section {
-                    selector_punctuation("section", section)?;
+                    onepassword::selector_punctuation("section", section)?;
                 }
-                selector_punctuation("field", field)?;
+                onepassword::selector_punctuation("field", field)?;
                 // A label with a dot in it cannot be spelled as a
                 // `--fields` selector: the CLI reads the dot as the
                 // section separator and would fetch another field. The
@@ -237,8 +237,8 @@ impl Resolver {
 impl Resolver {
     /// Creates every missing generated key, once per run, on the controller,
     /// before any secret is resolved: under the fnox write lock, check
-    /// presence, generate in the named format, store with the value on
-    /// stdin, read back and byte-compare.
+    /// presence, generate in the named format, store from a staging file,
+    /// read back and byte-compare.
     ///
     /// The creation is atomic against the writers that share the fnox write
     /// lock: they wait for it, and the key is created once. A writer that
@@ -287,6 +287,11 @@ impl Resolver {
             one_format(&request.key, &request.format, &mut formats)?;
         }
         for request in requests {
+            // The in-memory gate first, then the store's filesystem lock:
+            // cloned resolvers reading the key wait for this attempt and
+            // the invalidation that follows it, whatever they hold.
+            let store_gate = key_gate(&request.key);
+            let _store = store_gate.lock().map_err(|_| "lookup cache unavailable")?;
             let _lock = self.backend.fnox_write_lock(&request.key)?;
             if self.backend.fnox_get(&request.key)?.is_none() {
                 let value = generate_value(&request.format)?;
@@ -343,6 +348,8 @@ impl Resolver {
         if self.synthetic {
             return Ok((false, fingerprint));
         }
+        let store_gate = key_gate(key);
+        let _store = store_gate.lock().map_err(|_| "lookup cache unavailable")?;
         let _lock = self.backend.fnox_write_lock(key)?;
         let stored = self.backend.fnox_get(key)?;
         if stored
@@ -351,7 +358,18 @@ impl Resolver {
         {
             return Ok((false, fingerprint));
         }
-        self.backend.fnox_set(key, content)?;
+        // The store attempt may change the key whatever it reports — a
+        // `set` that fails can leave the key half-written — so every
+        // cached resolution that reads the key is dropped after the
+        // attempt, on its success and its error paths alike. The
+        // verification that follows never carries the invalidation: a
+        // read-back that fails leaves the cache correct — empty — where
+        // it was stale, and a retry that finds the store already holding
+        // the content takes the unchanged early return above without ever
+        // reaching a verified store.
+        let attempted = self.backend.fnox_set(key, content);
+        self.forget(key);
+        attempted?;
         let read_back = self
             .backend
             .fnox_get(key)?
@@ -362,5 +380,17 @@ impl Resolver {
             ));
         }
         Ok((true, fingerprint))
+    }
+
+    /// Drops every cached resolution that reads this key. A fetch that
+    /// attempted a store may have changed what the key answers — the
+    /// attempt's own report says nothing certain about it — so the values
+    /// cached before the attempt must not outlive it, and the drop runs
+    /// after every attempt, verified or not; a lock failure keeps the
+    /// stale entry, which the next store attempt or a fresh run drops.
+    fn forget(&self, key: &str) {
+        if let Ok(mut values) = self.values.lock() {
+            values.retain(|lookup, _| !lookup.reads_fnox_key(key));
+        }
     }
 }

@@ -48,11 +48,13 @@ stages {{ new Stage {{
 
 /// The fake fnox: values live in files beside the script, reads go through
 /// `fnox get --if-missing error` (the store's read path), `set` takes the
-/// value on stdin (never argv) and counts its calls per key, and a missing
-/// key exits 1 with `not found`. The store's own question about a key —
-/// `fnox env --json --describe`, the unfiltered query — lists every key of
-/// the active profile with its `env` and `as_file` flags, and `--keys`
-/// names the keys to describe; this fixture's keys hold plain values, never
+/// value from a file — `--from-file`, the byte-preserving store of the
+/// pinned CLI — and counts its calls per key; the stdin form is modelled
+/// too, and it trims the way the pinned CLI trims. A missing key exits 1
+/// with `not found`. The store's own question about a key — `fnox env
+/// --json --describe`, the unfiltered query — lists every key of the
+/// active profile with its `env` and `as_file` flags, and `--keys` names
+/// the keys to describe; this fixture's keys hold plain values, never
 /// file-backed ones. No real secret value is read.
 fn prepare(root: &Path) -> Result<()> {
     fs::write(root.join("workflow.pkl"), workflow(root))?;
@@ -77,11 +79,24 @@ if [ "$1" = "get" ]; then
   exit 1
 fi
 if [ "$1" = "set" ]; then
-  [ "$#" -eq 2 ] || { echo "set takes only the key argument" >&2; exit 9; }
   key="$2"
+  if [ "$#" -eq 4 ] && [ "$3" = "--from-file" ]; then
+    # `--from-file` is the byte-preserving store of the pinned CLI: the
+    # store keeps the file's exact bytes, terminator and all.
+    printf '1\n' >> "$counts/$key"
+    mkdir -p "$store"
+    cat "$4" > "$store/$key"
+    exit 0
+  fi
+  [ "$#" -eq 2 ] || { echo "set takes the key and --from-file <file>" >&2; exit 9; }
+  # The stdin store of the pinned CLI trims: '  padded value  ' is kept
+  # as 'padded value', and the trailing newline goes with the trim, so a
+  # value that must round-trip byte for byte never travels this path.
   printf '1\n' >> "$counts/$key"
+  value=$(cat)
+  value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   mkdir -p "$store"
-  cat > "$store/$key"
+  printf '%s' "$value" > "$store/$key"
   exit 0
 fi
 if [ "$1" = "env" ]; then

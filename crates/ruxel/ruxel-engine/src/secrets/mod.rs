@@ -1,11 +1,16 @@
 mod backend;
 mod fingerprint;
+mod gate;
 mod generation;
 mod lock;
 mod lookup;
 mod resolver;
+mod staging;
+mod store;
+mod version;
 
 pub use backend::ProcessBackend;
+pub(crate) use fingerprint::{is_fingerprint, is_sentence_over};
 pub use generation::{GeneratedRequest, generate_value, generated_requests};
 pub use lock::FnoxLock;
 pub use lookup::Lookup;
@@ -47,15 +52,18 @@ pub trait Backend: Send + Sync {
     /// # Errors
     /// Returns an error if the backend cannot resolve the key.
     fn fnox_get(&self, key: &str) -> Result<Option<String>, String>;
-    /// Stores one fnox key with the value on stdin, never in a command
-    /// argument.
+    /// Stores one fnox key with the value staged in a file — `fnox set KEY
+    /// --from-file`, the byte-preserving store — never in a command
+    /// argument and never on stdin, which the store trims.
     ///
     /// # Errors
     /// Returns an error if the value cannot be stored.
     fn fnox_set(&self, key: &str, value: &str) -> Result<(), String>;
     /// Holds the store's write lock while generation checks presence,
-    /// generates, stores and reads back, and while a `FetchSecret` store
-    /// compares and writes. Runs that honor the lock serialize; the guard
+    /// generates, stores and reads back, while a `FetchSecret` store
+    /// compares, writes and invalidates the cache, and while a lookup
+    /// resolves a cached read of the key — reads and writes of one key
+    /// serialize on it. Runs that honor the lock serialize; the guard
     /// releases on drop.
     ///
     /// # Errors

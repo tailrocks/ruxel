@@ -72,8 +72,10 @@ mod conflict;
 mod fingerprint;
 mod formats;
 mod generation;
+mod invalidation;
 mod newlines;
 mod queries;
+mod staging;
 mod synthetic;
 
 mod lookups;

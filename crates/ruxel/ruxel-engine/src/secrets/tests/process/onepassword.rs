@@ -312,8 +312,9 @@ fn only_the_record_terminator_is_removed_not_value_newlines() {
         "line1\n"
     );
 
-    // One terminator, spelled \r\n, is removed whole: the value is empty of
-    // newlines afterwards.
+    // The record terminator is one `\n`, so a `\r` before it belongs to
+    // the value: `line1\r\n` is the value `line1\r` with its terminator,
+    // and the CR survives the read.
     let instance = resolver(
         &fake_fnox_printing(&fixture, "fake-fnox-crlf", "line1\\r\\n"),
         &fixture.script("fake-op-crlf", "printf 'line1\\r\\n'"),
@@ -322,7 +323,7 @@ fn only_the_record_terminator_is_removed_not_value_newlines() {
         instance
             .resolve(&Lookup::Fnox { key: "KEY".into() })
             .unwrap(),
-        "line1"
+        "line1\r"
     );
 
     // A value that already ends in \r\n keeps it when the terminator joins:

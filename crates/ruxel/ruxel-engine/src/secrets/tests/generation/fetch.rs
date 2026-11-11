@@ -3,8 +3,36 @@
 //! reports.
 
 use super::Fixture;
+use crate::secrets::Lookup;
 
-/// The fetched secret is stored only when it differs from the stored value,
+/// A fetch that stores a new value invalidates the resolver's cached
+/// resolutions of the key: the lookup that ran before the fetch cached the
+/// old value, and the same lookup after the fetch answers the new one — no
+/// cached value survives the store that changed it.
+#[test]
+fn a_fetch_that_stores_invalidates_the_cached_resolutions_of_the_key() {
+    let fixture = Fixture::new();
+    fixture.put("K8S_ADMIN_KUBECONFIG", "old kubeconfig content");
+    let resolver = fixture.resolver();
+    let lookup = Lookup::Fnox {
+        key: "K8S_ADMIN_KUBECONFIG".into(),
+    };
+    assert_eq!(
+        resolver.resolve(&lookup).expect("resolve the stored value"),
+        "old kubeconfig content"
+    );
+    let (changed, _) = resolver
+        .fetch_secret("K8S_ADMIN_KUBECONFIG", "new kubeconfig content")
+        .expect("store the fetched content");
+    assert!(changed, "the fetch stores the new content");
+    assert_eq!(
+        resolver.resolve(&lookup).expect("resolve after the fetch"),
+        "new kubeconfig content",
+        "the value cached before the fetch survived the store"
+    );
+}
+
+/// A fetched secret is stored only when it differs from the stored value,
 /// compared on the controller; the fingerprint it reports is eight hex
 /// characters and keyed, never an unsalted full hash.
 #[test]

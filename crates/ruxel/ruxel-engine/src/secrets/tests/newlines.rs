@@ -39,6 +39,35 @@ fn a_value_that_ends_in_a_newline_round_trips_and_a_missing_one_is_a_change() {
     }
 }
 
+/// The write transport is byte-preserving: the pinned fnox trims the
+/// whitespace around a value it reads from stdin — `'  padded value  \n'`
+/// is stored as `padded value` — so the value travels in a staging file
+/// and `fnox set KEY --from-file` reads the file's exact bytes. A value
+/// with surrounding whitespace — and one that is only whitespace —
+/// round-trips byte for byte, and the read-back comparison catches a
+/// transport that trims. A value whose whitespace is inner, which no trim
+/// touches, is the control.
+#[test]
+fn surrounding_whitespace_round_trips_through_the_store_transport() {
+    let fixture = Fixture::new();
+    let resolver = fixture.resolver();
+    for (key, content) in [
+        ("PADDED", "  padded value  \n"),
+        ("SPACES_ONLY", "   \n"),
+        ("INNER", "value  with  inner  spaces\n"),
+    ] {
+        let (changed, _) = resolver.fetch_secret(key, content).expect("store");
+        assert!(changed, "{key}: the first fetch stores the content");
+        assert_eq!(
+            fixture.value(key).as_deref(),
+            Some(content),
+            "{key}: the store kept another form than the bytes it was given"
+        );
+        let (changed, _) = resolver.fetch_secret(key, content).expect("read back");
+        assert!(!changed, "{key}: the stored value round-trips exactly");
+    }
+}
+
 /// A store that keeps the value in another form than it was given — the
 /// fnox CLI trims the whitespace around the value it reads from stdin — is
 /// caught by the read-back comparison: the run fails rather than reporting
@@ -85,4 +114,54 @@ fn a_store_that_keeps_another_form_fails_the_run() {
         "names the comparison: {error}"
     );
     assert!(!error.contains("kubeconfig"), "errors never carry values");
+}
+
+/// A value that ends in a bare CR round-trips through the store transport
+/// byte for byte: the record terminator the CLI appends is one `\n`, so
+/// the `\r` before it belongs to the value and must survive the read.
+/// The store keeps the bytes it was given — CR and all — and the read
+/// back that verifies the store finds them unchanged.
+#[test]
+fn a_value_that_ends_in_a_bare_cr_round_trips_through_the_store_transport() {
+    let fixture = Fixture::new();
+    let resolver = fixture.resolver();
+    let (changed, _) = resolver.fetch_secret("BARE_CR", "value\r").expect("store");
+    assert!(changed, "the first fetch stores the content");
+    assert_eq!(
+        fixture.value("BARE_CR").as_deref(),
+        Some("value\r"),
+        "the store kept the bytes it was given, CR and all"
+    );
+    let (changed, _) = resolver
+        .fetch_secret("BARE_CR", "value\r")
+        .expect("compare");
+    assert!(
+        !changed,
+        "the stored value round-trips byte for byte, CR and all"
+    );
+}
+
+/// The comparison distinguishes `value` from `value\r`: the CR belongs to
+/// the value, not to the record terminator, so a store that holds one is
+/// a change when the fetch carries the other — in both directions, never
+/// an equality.
+#[test]
+fn the_comparison_distinguishes_a_bare_cr_value_from_one_without() {
+    let fixture = Fixture::new();
+    let resolver = fixture.resolver();
+    for (held, fetched) in [("value\r", "value"), ("value", "value\r")] {
+        fixture.put("BARE_CR_CHANGE", held);
+        let (changed, _) = resolver
+            .fetch_secret("BARE_CR_CHANGE", fetched)
+            .expect("compare");
+        assert!(
+            changed,
+            "the store holds {held:?}, the fetch of {fetched:?} is a change"
+        );
+        assert_eq!(
+            fixture.value("BARE_CR_CHANGE").as_deref(),
+            Some(fetched),
+            "the fetch replaces the stored value"
+        );
+    }
 }

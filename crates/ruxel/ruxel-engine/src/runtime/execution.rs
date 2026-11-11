@@ -160,6 +160,7 @@ impl Backend for Execution {
         let mut connection = connection.lock().await;
         let id = request.task.task_id;
         let module = request.task.module.clone();
+        let no_log = request.task.no_log;
         let fingerprint = request.content_fingerprint.clone();
         let params = request
             .task
@@ -199,7 +200,19 @@ impl Backend for Execution {
                     if module == "fetchSecret" && result.status != "failed" {
                         return self.receive_fetch_secret(&mut value, params.as_ref(), &result);
                     }
-                    Self::receive_task_result(&module, fingerprint.as_deref(), &mut value, &result);
+                    // A result whose task is censored — no-log, sensitive,
+                    // or the run turned conservative — never carries an
+                    // agent diff: the receive below strips the fields the
+                    // agent shipped anyway and drops the protocol's own, so
+                    // only the controller's sentence can be in the value.
+                    let censored = no_log || self.conservative_sensitive();
+                    Self::receive_task_result(
+                        &module,
+                        fingerprint.as_deref(),
+                        censored,
+                        &mut value,
+                        &result,
+                    );
                     return Ok(value);
                 }
                 Some(v1::event::Msg::Crash(_)) => {
@@ -247,10 +260,17 @@ impl Execution {
         // The content never leaves this function: strip it from the result
         // before anything can carry it into results, stdout or the event
         // log, and register the value with the redaction registry first.
-        value
+        // The fingerprint and the diff of a fetch are the controller's too:
+        // the agent's result is a slurp that carries only the content, so
+        // fingerprint or diff fields it ships anyway are agent material,
+        // and they are stripped here rather than trusted — the controller
+        // builds both itself below.
+        let object = value
             .as_object_mut()
-            .context("fetchSecret result must be an object")?
-            .remove("content");
+            .context("fetchSecret result must be an object")?;
+        object.remove("content");
+        object.remove("fingerprint");
+        object.remove("diff");
         self.lookups.record(&content);
         let synthetic = self.lookups.resolver.is_synthetic();
         let (changed, fingerprint) = self
@@ -282,21 +302,36 @@ impl Execution {
     fn receive_task_result(
         module: &str,
         fingerprint: Option<&str>,
+        censored: bool,
         value: &mut Value,
         result: &v1::TaskResult,
     ) {
         value["changed"] = Value::Bool(result.changed);
         value["failed"] = Value::Bool(result.status == "failed");
+        // The fingerprint of a result is controller-built — the agent ships
+        // none — so an agent-supplied `fingerprint` field is stripped here
+        // and only the controller's own, set below, ever reaches output.
+        // The diff is the same, for a task whose result is censored: the
+        // agent ships none for one, so a `diff` field it ships
+        // anyway is agent material, and it is dropped whole — a sentence
+        // that carries the controller's shape proves nothing about who
+        // built it, and eight lowercase hex characters hold four bytes of
+        // anything, which is the whole of the channel when shape is the
+        // test. The protocol's diff field is dropped for every task
+        // alike: the agent's result already carries its own display
+        // material, and a hostile one carries whatever it likes.
+        if let Some(object) = value.as_object_mut() {
+            object.remove("fingerprint");
+            if censored {
+                object.remove("diff");
+            }
+        }
         if module == "copy"
             && result.changed
-            && value.get("diff").is_none_or(Value::is_null)
             && let Some(fingerprint) = fingerprint
         {
             value["diff"] = json!(format!("content changed (fingerprint {fingerprint})"));
             value["fingerprint"] = json!(fingerprint);
-        }
-        if !result.diff.is_empty() {
-            value["diff"] = Value::String(result.diff.clone());
         }
     }
 }

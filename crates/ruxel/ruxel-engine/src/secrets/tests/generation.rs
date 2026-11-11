@@ -15,12 +15,15 @@ static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
 /// A fake fnox for the store fixture: values live in files beside the
 /// script, reads go through `fnox get --if-missing error` (the store's read
-/// path), `set` reads the value from stdin (never argv) and counts its
-/// calls, and a missing key exits 1 with `not found`. The store's own
-/// question about the key — `env --json --describe`, the unfiltered query —
-/// lists every key of the active profile with its `env` and `as_file`
-/// flags; the fixture's keys hold plain values, never file-backed ones. No
-/// real secret value is ever read: the fixture writes its own.
+/// path), `set` takes the value from a file — `--from-file`, the
+/// byte-preserving store of the pinned CLI, which reads the file's exact
+/// bytes — and counts its calls; the stdin form is modelled too, and it
+/// trims the way the pinned CLI trims. A missing key exits 1 with
+/// `not found`. The store's own question about the key — `env --json
+/// --describe`, the unfiltered query — lists every key of the active
+/// profile with its `env` and `as_file` flags; the fixture's keys hold
+/// plain values, never file-backed ones. No real secret value is ever
+/// read: the fixture writes its own.
 pub(super) struct Fixture {
     pub(super) directory: PathBuf,
 }
@@ -53,11 +56,24 @@ if [ "$1" = "get" ]; then
   exit 1
 fi
 if [ "$1" = "set" ]; then
-  [ "$#" -eq 2 ] || { echo "set takes only the key argument" >&2; exit 9; }
-  printf 'set\n' >> "$calls"
   key="$2"
+  if [ "$#" -eq 4 ] && [ "$3" = "--from-file" ]; then
+    # `--from-file` is the byte-preserving store of the pinned CLI: the
+    # store keeps the file's exact bytes, terminator and all.
+    printf 'set\n' >> "$calls"
+    mkdir -p "$store"
+    cat "$4" > "$store/$key"
+    exit 0
+  fi
+  [ "$#" -eq 2 ] || { echo "set takes the key and --from-file <file>" >&2; exit 9; }
+  # The stdin store of the pinned CLI trims: '  padded value  ' is kept
+  # as 'padded value', and the trailing newline goes with the trim, so a
+  # value that must round-trip byte for byte never travels this path.
+  printf 'set\n' >> "$calls"
+  value=$(cat)
+  value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   mkdir -p "$store"
-  cat > "$store/$key"
+  printf '%s' "$value" > "$store/$key"
   exit 0
 fi
 if [ "$1" = "env" ]; then
@@ -90,6 +106,15 @@ exit 8
             .with_lock_dir(&self.directory)
     }
 
+    /// Writes a named executable script into the fixture directory, for
+    /// store doubles the default script does not model.
+    pub(super) fn script(&self, name: &str, body: &str) -> PathBuf {
+        let path = self.directory.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write fixture script");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).expect("mode script");
+        path
+    }
+
     pub(super) fn resolver(&self) -> Resolver {
         Resolver::new(Arc::new(self.backend())).unwrap()
     }
@@ -102,7 +127,7 @@ exit 8
         fs::read_to_string(self.directory.join("store").join(key)).ok()
     }
 
-    fn put(&self, key: &str, value: &str) {
+    pub(super) fn put(&self, key: &str, value: &str) {
         let store = self.directory.join("store");
         drop(fs::create_dir_all(&store));
         fs::write(store.join(key), value).expect("write fixture value");
@@ -123,8 +148,8 @@ pub(super) fn request(key: &str, format: &str) -> GeneratedRequest {
 }
 
 /// The twice-apply guarantee: the same workflow applied twice creates the
-/// key exactly once. The first run generates, stores on stdin, reads back
-/// and compares; the second finds the key present and stores nothing.
+/// key exactly once. The first run generates, stores from a file, reads
+/// back and compares; the second finds the key present and stores nothing.
 #[test]
 fn applying_the_same_workflow_twice_generates_exactly_once() {
     let fixture = Fixture::new();
@@ -151,10 +176,11 @@ fn applying_the_same_workflow_twice_generates_exactly_once() {
     );
 }
 
-/// The store round-trips the value through the real fixture: `set` receives
-/// the value on stdin only, and the read back matches byte for byte.
+/// The store round-trips the value through the real fixture: `set` reads
+/// the value from a staging file via `--from-file`, never in an argument,
+/// and the read back matches byte for byte.
 #[test]
-fn the_fixture_store_round_trips_stdin_values() {
+fn the_fixture_store_round_trips_from_file_values() {
     let fixture = Fixture::new();
     let resolver = fixture.resolver();
     let requests = [
@@ -178,7 +204,8 @@ fn the_fixture_store_round_trips_stdin_values() {
         }
     }
     // The key is on argv for `set`, the value never is: the script refuses
-    // any second argument, so a run that tried it would fail, not leak.
+    // any argument beside the key and `--from-file <file>`, so a run that
+    // tried it would fail, not leak.
     assert_eq!(fixture.set_calls(), 3);
 }
 
@@ -248,4 +275,36 @@ fn the_write_lock_serializes_holders() {
     );
     drop(second);
     let _removed = fs::remove_dir_all(&directory);
+}
+
+/// An ordinary fnox read never opens, creates, or writes a lock file
+/// beside the fnox configuration: a read-only checkout or configuration
+/// mount — the store's own directory, unwritable — reads exactly as it
+/// did before the store's write lock existed. The lock file belongs to
+/// the store attempts that may really write, so a run that only reads
+/// keys touches nothing but the store itself.
+#[test]
+fn an_ordinary_fnox_read_never_opens_a_lock_file_beside_the_configuration() {
+    let fixture = Fixture::new();
+    fixture.put("READONLY_KEY", "synthetic-readonly-value");
+    let read_only = fixture.directory.join("read-only-configuration");
+    fs::create_dir_all(&read_only).expect("create the configuration directory");
+    fs::set_permissions(&read_only, fs::Permissions::from_mode(0o500)).expect("read-only mode");
+    let backend =
+        ProcessBackend::with_programs(fixture.directory.join("fnox"), "/nonexistent/ruxel-op")
+            .with_lock_dir(&read_only);
+    let resolver = Resolver::new(std::sync::Arc::new(backend)).expect("resolver");
+    let answer = resolver.resolve(&Lookup::Fnox {
+        key: "READONLY_KEY".into(),
+    });
+    fs::set_permissions(&read_only, fs::Permissions::from_mode(0o700)).expect("restore the mode");
+    assert_eq!(
+        answer.expect("the read on the read-only configuration resolves"),
+        "synthetic-readonly-value",
+        "a read-only store was never a write-lock failure"
+    );
+    assert!(
+        !read_only.join(".ruxel-fnox-write.lock").exists(),
+        "a run that only read a key left a lock file beside the configuration"
+    );
 }

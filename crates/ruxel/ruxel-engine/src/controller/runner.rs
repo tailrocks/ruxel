@@ -293,25 +293,33 @@ impl<B: Backend> Runner<'_, B> {
             // A no-log task's own fields never reach output. What may are
             // the controller-built, keyed secret fingerprints (never text,
             // never an unsalted hash) and the known-after-apply marker of an
-            // apply-only step.
+            // apply-only step. A result is untrusted input, so a fingerprint
+            // passes only in the controller's own shape — eight lowercase
+            // hex — and a diff only as the controller's own sentence over
+            // that same fingerprint: shape alone proves nothing about who
+            // built a value, and eight hex characters hold four bytes of
+            // anything, so a sentence that stands alone, or names a
+            // fingerprint the controller did not set beside it, is censored.
             let mut output =
                 json!({"censored":true,"changed":flag(&result.value,"changed"),"failed":is_failed});
             if flag(&result.value, "knownAfterApply") {
                 output["knownAfterApply"] = json!(true);
             }
-            if let Some(fingerprint) = result.value.get("fingerprint").and_then(Value::as_str) {
-                output["fingerprint"] = json!(fingerprint);
-            }
-            if let Some(diff) = result
+            if let Some(fingerprint) = result
                 .value
-                .get("diff")
+                .get("fingerprint")
                 .and_then(Value::as_str)
-                .filter(|diff| {
-                    diff.starts_with("content changed (fingerprint ")
-                        || diff.starts_with("stored in fnox (fingerprint ")
-                })
+                .filter(|fingerprint| crate::secrets::is_fingerprint(fingerprint))
             {
-                output["diff"] = json!(diff);
+                output["fingerprint"] = json!(fingerprint);
+                if let Some(diff) = result
+                    .value
+                    .get("diff")
+                    .and_then(Value::as_str)
+                    .filter(|diff| crate::secrets::is_sentence_over(fingerprint, diff))
+                {
+                    output["diff"] = json!(diff);
+                }
             }
             output
         } else {
