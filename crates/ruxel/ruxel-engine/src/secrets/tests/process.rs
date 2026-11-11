@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "process/files.rs"]
+mod files;
 #[path = "process/onepassword.rs"]
 mod onepassword;
 

@@ -43,7 +43,9 @@ impl ProcessBackend {
     /// --json --describe` — the unfiltered query — lists every key of the
     /// active profile with its `env` and `as_file` flags, and resolves
     /// nothing. The answer is the store's own contract, never a guess
-    /// about what the printed text looks like.
+    /// about what the printed text looks like. The query runs before any
+    /// `fnox get`, so a file-backed key is known without `get` ever
+    /// creating its persistent file.
     ///
     /// Anything that is not a complete report of the key's flag fails
     /// closed: an error document, or one too short to name the flag, means
@@ -119,10 +121,12 @@ impl ProcessBackend {
     /// Reads one key through `fnox get --if-missing error`: a key configured
     /// `env = false` is never injected into `fnox exec`'s environment, so an
     /// exec+printenv read always fails for it; `get` prints the resolved
-    /// value whatever the key's env setting. `--if-missing error` keeps a
-    /// missing key distinct from an empty one: with the config's `warn` or
-    /// `ignore`, `get` prints nothing and exits 0, which would silently
-    /// resolve to an empty value.
+    /// value whatever the key's env setting. For a key configured
+    /// `as_file = true`, the resolved value `get` prints is the path of the
+    /// persistent file it created to hold the decrypted content. `--if-missing
+    /// error` keeps a missing key distinct from an empty one: with the
+    /// config's `warn` or `ignore`, `get` prints nothing and exits 0, which
+    /// would silently resolve to an empty value.
     fn fnox_read(&self, key: &str) -> Result<Result<String, ReadFailure>, String> {
         let mut cmd = Command::new(&self.fnox);
         cmd.args(["get", "--if-missing", "error", key]);
@@ -145,6 +149,68 @@ impl ProcessBackend {
             return Ok(Err(ReadFailure::Missing));
         }
         Ok(Err(ReadFailure::Failed))
+    }
+
+    /// The raw contents of a file-backed key from the `files` entry of
+    /// `fnox env --json --keys <key>`.
+    ///
+    /// `as_file` secrets come back as raw contents in `files`, so fnox
+    /// leaves no files behind: the caller writes them. This is the preferred
+    /// read of a file-backed key over `fnox get`, whose persistent file
+    /// holds the decrypted value on disk.
+    ///
+    /// `Ok(None)` — the preferred contract cannot serve the key: `--keys`
+    /// refuses a key configured `env = false` as not injectable, and a
+    /// document without the key's entry is the same answer. The caller then
+    /// falls back to `fnox get`, whose file it removes.
+    fn fnox_env_files(&self, key: &str) -> Result<Option<String>, String> {
+        let mut cmd = Command::new(&self.fnox);
+        cmd.args(["env", "--json", "--keys", key]);
+        let output = cmd
+            .output()
+            .map_err(|_| "process could not start".to_owned())?;
+        let Ok(document) = serde_json::from_str::<serde_json::Value>(
+            String::from_utf8_lossy(&output.stdout).trim(),
+        ) else {
+            // An error document, or no document at all: the contract cannot
+            // serve this key.
+            return Ok(None);
+        };
+        Ok(document
+            .get("files")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|files| files.get(key))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned))
+    }
+
+    /// The fallback read of a file-backed key: `fnox get` prints the path of
+    /// the persistent file it created, and the value is that file's content.
+    ///
+    /// The file is removed before this returns on every path — read success,
+    /// read error, and any early return after the path is known — because the
+    /// file holds the decrypted value: plaintext must not outlive the
+    /// lookup. A removal failure fails the read closed even when the content
+    /// read fine; a file already gone counts as removed, which is the
+    /// guarantee: no plaintext left behind.
+    fn fnox_read_persistent_file(&self, key: &str) -> Result<Option<String>, String> {
+        let path = match self.fnox_read(key)? {
+            Ok(path) => path,
+            Err(ReadFailure::Missing) => return Ok(None),
+            Err(ReadFailure::Failed) => return Err("process failed".to_owned()),
+        };
+        let content = std::fs::read_to_string(&path);
+        let removal_failed = std::fs::remove_file(&path)
+            .err()
+            .filter(|error| error.kind() != std::io::ErrorKind::NotFound);
+        if let Some(error) = removal_failed {
+            return Err(format!(
+                "the file of the file-backed secret \"{key}\" could not be removed: {error}"
+            ));
+        }
+        content
+            .map(Some)
+            .map_err(|error| format!("the file-backed secret \"{key}\" could not be read: {error}"))
     }
 
     /// The store's write lock: an exclusive `flock` on
@@ -212,22 +278,32 @@ impl Backend for ProcessBackend {
                 super::FNOX_KEY_GRAMMAR
             ));
         }
-        match self.fnox_read(key)? {
-            Ok(value) => {
-                if !self.fnox_file_backed(key)? {
-                    return Ok(Some(value));
-                }
-                // A file-backed secret: `fnox get` printed the path of a
-                // temporary file that holds the value, and the value is that
-                // file's content. The path never leaves this function as a
-                // secret.
-                std::fs::read_to_string(&value).map(Some).map_err(|error| {
-                    format!("the file-backed secret \"{key}\" could not be read: {error}")
-                })
-            }
-            Err(ReadFailure::Missing) => Ok(None),
-            Err(ReadFailure::Failed) => Err("process failed".to_owned()),
+        // The store's report of the key's flags comes first: a file-backed
+        // key is known before `fnox get` ever runs. `fnox get` creates a
+        // persistent temporary file that holds the decrypted value of an
+        // `as_file = true` key and prints its path — plaintext left on disk —
+        // so a key known file-backed up front is served without ever running
+        // `get`: no `get`, no file.
+        if !self.fnox_file_backed(key)? {
+            return match self.fnox_read(key)? {
+                Ok(value) => Ok(Some(value)),
+                Err(ReadFailure::Missing) => Ok(None),
+                Err(ReadFailure::Failed) => Err("process failed".to_owned()),
+            };
         }
+        // A file-backed secret: `fnox env --json --keys` returns the raw
+        // contents in its `files` entry and explicitly leaves no files
+        // behind — the caller writes them. That contract cannot serve a key
+        // configured `env = false`: `--keys` refuses it as not injectable,
+        // and the read falls back to `get`.
+        if let Some(contents) = self.fnox_env_files(key)? {
+            return Ok(Some(contents));
+        }
+        // The fallback: `fnox get` prints the path of the persistent file it
+        // created, and that file is removed on every path after. If it
+        // cannot be removed the read fails closed: decrypted plaintext must
+        // never stay on disk after Ruxel finishes, and never silently.
+        self.fnox_read_persistent_file(key)
     }
 
     fn fnox_set(&self, key: &str, value: &str) -> Result<(), String> {
