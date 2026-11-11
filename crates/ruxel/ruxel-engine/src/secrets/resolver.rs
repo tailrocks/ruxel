@@ -10,13 +10,33 @@ use crate::secrets::fingerprint::Fingerprints;
 use crate::secrets::generation::{GeneratedRequest, generate_value, one_format};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[path = "onepassword.rs"]
 mod onepassword;
 
 type ItemCache =
     Arc<Mutex<HashMap<(String, String, Option<String>, String), Cell<serde_json::Value>>>>;
+
+/// The in-memory gate every fnox key has: a resolution holds it across the
+/// read, a store attempt holds it across the attempt and the cache
+/// invalidation that follows. Cloned resolvers share the registry, so a
+/// read that races a store in this process waits for the invalidation
+/// instead of answering the value cached before it. The gate is memory,
+/// not the store's write lock: a run that only reads keys never opens,
+/// creates, or writes a lock file beside `fnox.toml`, so a read-only
+/// checkout or configuration mount reads as it always did — the filesystem
+/// lock stays with the store attempts that may really write. The caller
+/// holds the gate next to its guard, which is what keeps the guard alive.
+fn key_gate(key: &str) -> Arc<Mutex<()>> {
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    match GATES.get_or_init(Mutex::default).lock() {
+        Ok(mut gates) => gates.entry(key.to_owned()).or_default().clone(),
+        // A poisoned registry still serializes what it can: a fresh gate
+        // for this key is the conservative answer, never an open one.
+        Err(_) => Arc::new(Mutex::new(())),
+    }
+}
 
 fn cached<T: Clone>(
     cell: &Cell<T>,
@@ -110,19 +130,23 @@ impl Resolver {
     /// Returns a redacted error if the lookup fails.
     pub fn resolve(&self, lookup: &Lookup) -> Result<String, String> {
         // A cached read and a store attempt on the same key serialize on
-        // the fnox write lock: `fetch_secret` and `ensure_generated` hold
-        // it across their store attempts and the cache invalidation that
-        // follows, so a read that races a store cannot answer the value
-        // cached before the attempt and cannot run before the store's
-        // invalidation — it waits, then answers what the store now holds.
-        // A lookup that reads no fnox key, and a synthetic resolver that
-        // never contacts the store, take no lock.
-        let _lock = match lookup {
+        // the key's in-memory gate: `fetch_secret` and `ensure_generated`
+        // hold it across their store attempts and the cache invalidation
+        // that follows, so a read that races a store cannot answer the
+        // value cached before the attempt and cannot run before the
+        // store's invalidation — it waits, then answers what the store now
+        // holds. The gate is memory, not the store's filesystem lock: an
+        // ordinary read never opens or creates a lock file beside the
+        // fnox configuration, so a read-only checkout still reads. A
+        // lookup that reads no fnox key, and a synthetic resolver that
+        // never contacts the store, takes no gate.
+        let gate = match lookup {
             Lookup::Fnox { key } | Lookup::FnoxGenerated { key, .. } if !self.synthetic => {
-                Some(self.backend.fnox_write_lock(key)?)
+                Some(key_gate(key))
             }
             _ => None,
         };
+        let _read = gate.as_ref().and_then(|gate| gate.lock().ok());
         let cell = self
             .values
             .lock()
@@ -282,6 +306,11 @@ impl Resolver {
             one_format(&request.key, &request.format, &mut formats)?;
         }
         for request in requests {
+            // The in-memory gate first, then the store's filesystem lock:
+            // cloned resolvers reading the key wait for this attempt and
+            // the invalidation that follows it, whatever they hold.
+            let store_gate = key_gate(&request.key);
+            let _store = store_gate.lock().map_err(|_| "lookup cache unavailable")?;
             let _lock = self.backend.fnox_write_lock(&request.key)?;
             if self.backend.fnox_get(&request.key)?.is_none() {
                 let value = generate_value(&request.format)?;
@@ -338,6 +367,8 @@ impl Resolver {
         if self.synthetic {
             return Ok((false, fingerprint));
         }
+        let store_gate = key_gate(key);
+        let _store = store_gate.lock().map_err(|_| "lookup cache unavailable")?;
         let _lock = self.backend.fnox_write_lock(key)?;
         let stored = self.backend.fnox_get(key)?;
         if stored

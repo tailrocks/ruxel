@@ -276,3 +276,35 @@ fn the_write_lock_serializes_holders() {
     drop(second);
     let _removed = fs::remove_dir_all(&directory);
 }
+
+/// An ordinary fnox read never opens, creates, or writes a lock file
+/// beside the fnox configuration: a read-only checkout or configuration
+/// mount — the store's own directory, unwritable — reads exactly as it
+/// did before the store's write lock existed. The lock file belongs to
+/// the store attempts that may really write, so a run that only reads
+/// keys touches nothing but the store itself.
+#[test]
+fn an_ordinary_fnox_read_never_opens_a_lock_file_beside_the_configuration() {
+    let fixture = Fixture::new();
+    fixture.put("READONLY_KEY", "synthetic-readonly-value");
+    let read_only = fixture.directory.join("read-only-configuration");
+    fs::create_dir_all(&read_only).expect("create the configuration directory");
+    fs::set_permissions(&read_only, fs::Permissions::from_mode(0o500)).expect("read-only mode");
+    let backend =
+        ProcessBackend::with_programs(fixture.directory.join("fnox"), "/nonexistent/ruxel-op")
+            .with_lock_dir(&read_only);
+    let resolver = Resolver::new(std::sync::Arc::new(backend)).expect("resolver");
+    let answer = resolver.resolve(&Lookup::Fnox {
+        key: "READONLY_KEY".into(),
+    });
+    fs::set_permissions(&read_only, fs::Permissions::from_mode(0o700)).expect("restore the mode");
+    assert_eq!(
+        answer.expect("the read on the read-only configuration resolves"),
+        "synthetic-readonly-value",
+        "a read-only store was never a write-lock failure"
+    );
+    assert!(
+        !read_only.join(".ruxel-fnox-write.lock").exists(),
+        "a run that only read a key left a lock file beside the configuration"
+    );
+}
