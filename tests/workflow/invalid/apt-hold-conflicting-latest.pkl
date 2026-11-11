@@ -1,0 +1,13 @@
+// expect: Stage "t": 'Hold curl' (step 1) holds curl, and 'Upgrade curl' (step 2) would move it; a held package is never upgraded, so put the second in a later stage
+// A held package is never moved: `latest` on a later step of the same
+// stage would ask apt to move a frozen package to the newest candidate,
+// which apt refuses. Only actual version movements are refused; a plain
+// install, a repeat of the hold and another architecture are not.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
+  new debian.AptPackages { title = "Upgrade curl"; names { "curl" }; latest = true }
+} } }

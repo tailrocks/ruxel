@@ -93,6 +93,13 @@ typealias PackageSelector = Static(matches(Regex(#"[a-z0-9][a-z0-9+.-]+(\*|:([a-
 /// file as one line must carry no line break.
 typealias OneLine = Static(!contains("\n") && !contains("\r"))
 
+/// The question's name in a debconf selection (`nginx/nginx-user`): a
+/// nonempty token without whitespace. The selection is written as the four
+/// fields `package question type value` on one line, so whitespace in the
+/// question would push the fields after it out of place — field injection
+/// into the question, the type and the value.
+typealias QuestionName = OneLine(!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#)))
+
 /// A secret answer to a debconf question: the secret of `Core.pkl` in a
 /// class of this module.
 ///
@@ -187,9 +194,11 @@ class AptPreference extends core.Step {
 class DebconfEntry extends core.Step {
   hidden fixed kind = "debconfEntry"
   package: PackageSelector
-  /// The question's name, such as `"nginx/nginx-user"`. One line: it is
-  /// written into the selection as one field.
-  question: OneLine
+  /// The question's name, such as `"nginx/nginx-user"`: a nonempty token
+  /// without whitespace, because the selection is written as one field of
+  /// `package question type value` and whitespace in it would shift the
+  /// fields after it.
+  question: QuestionName
   type: "string"|"boolean"|"select"|"multiselect"|"password"|"note"|"text"
   /// A static answer, or a `SecretAnswer` (the secret sink). The union is
   /// closed: the two branches are the only ones the language admits, and a

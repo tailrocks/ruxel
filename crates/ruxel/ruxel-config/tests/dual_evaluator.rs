@@ -40,15 +40,20 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
     "valid/apt-hold.pkl",
+    "valid/apt-hold-non-movements.pkl",
     "valid/apt-system-upgrade.pkl",
     "valid/apt-preference.pkl",
     "valid/debconf-entry.pkl",
     "invalid/apt-hold-conflicting-pin.pkl",
+    "invalid/apt-hold-conflicting-latest.pkl",
     "invalid/apt-preference-package-selector-pin.pkl",
     "invalid/apt-preference-pseudo-arch.pkl",
+    "invalid/apt-preference-priority-mismatch.pkl",
     "invalid/debconf-entry-pseudo-arch.pkl",
     "invalid/debconf-entry-bad-type.pkl",
     "invalid/debconf-entry-secret-as-static.pkl",
+    "invalid/debconf-entry-secret-collision.pkl",
+    "invalid/debconf-entry-question-space.pkl",
 ];
 
 /// The official `pkl` binary, if it is installed.

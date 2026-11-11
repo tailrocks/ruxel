@@ -1,0 +1,14 @@
+// expect: 'Pin nginx' (step 1) and 'Pin nginx again' (step 2) pin nginx with version 1.25.* at different priorities (1001 and 500); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage
+// The identity of a preference is the package plus the pin (BB §3.7): a
+// repeat of the same stanza is the same step. The priority is not part of
+// the identity, so two stanzas that differ only in the priority would
+// collapse into one and silently drop a priority; the merge compares the
+// priorities and refuses a mismatch.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 1001 }
+  new debian.AptPreference { title = "Pin nginx again"; package = "nginx"; pin = "version 1.25.*"; priority = 500 }
+} } }
