@@ -77,3 +77,26 @@ fn a_system_account_is_never_removed_whatever_the_workflow_states() {
     assert!(group_removal_allowed("app", Some(1000), 1500).is_err());
     assert!(group_removal_allowed("wheel", None, 0).is_err());
 }
+
+#[test]
+fn a_recursive_removal_verifies_the_declared_home_against_the_live_entry() {
+    // `userdel -r` deletes the LIVE home and mail spool whatever the
+    // workflow names: a declared home that is not the live one reserves
+    // the wrong path in the lowering while the deletion takes another —
+    // a same-stage file beneath the live home would be deleted though no
+    // check reserved it.
+    let app = PasswdEntry {
+        uid: 1500,
+        gid: 1500,
+        home: "/home/app".to_string(),
+        ..PasswdEntry::default()
+    };
+    assert!(removal_home_allowed("app", Some("/home/app"), true, &app.home).is_ok());
+    assert!(removal_home_allowed("app", None, true, &app.home).is_err());
+    assert!(
+        removal_home_allowed("app", Some("/srv/app"), true, &app.home).is_err(),
+        "a recursive removal must not delete a home the workflow never declared"
+    );
+    // Without removeHome nothing is deleted, so any declared home is fine.
+    assert!(removal_home_allowed("app", Some("/srv/app"), false, &app.home).is_ok());
+}
