@@ -50,3 +50,31 @@ fn upstream_refuses_an_unknown_module_path_entry() {
     );
     assert!(error.is_err());
 }
+
+#[test]
+fn every_gap_cites_an_upstream_file_and_line_and_a_grep_result() {
+    for gap in super::CAPABILITY_GAPS {
+        let (file, line) = gap
+            .location
+            .rsplit_once(':')
+            .unwrap_or_else(|| panic!("{}: no line number in {}", gap.family, gap.location));
+        assert!(
+            file.starts_with("src/"),
+            "{}: {} is not an upstream path",
+            gap.family,
+            file
+        );
+        assert!(
+            !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()),
+            "{}: {} does not end in a line number",
+            gap.family,
+            gap.location
+        );
+        assert!(
+            gap.absent.contains("0 hits"),
+            "{}: {} does not record a grep result",
+            gap.family,
+            gap.absent
+        );
+    }
+}
