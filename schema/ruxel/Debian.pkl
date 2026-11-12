@@ -1,5 +1,6 @@
-/// Debian package management: apt repositories, the package index, and the
-/// packages a host has installed.
+/// Debian package management: apt repositories, the package index, the
+/// packages a host has installed, the whole-system upgrade, apt preferences
+/// and debconf selections.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Debian.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
@@ -10,9 +11,11 @@ module Debian
 
 import "modulepath:/ruxel/Core.pkl" as core
 
-// The typealiases and functions below are copied from Core.pkl; keep them in
-// sync — pklr cannot share typealiases across modules, and would silently
-// drop the constraints of a dotted alias such as `core.Static`.
+// The typealiases and functions below repeat the ones in Core.pkl: pklr
+// cannot share typealiases across modules, and would silently drop the
+// constraints of a dotted alias such as `core.Static`. Keep the copies in
+// sync with Core.pkl. `PackageSelector` and `OneLine` below are Debian's
+// own: Core.pkl has no counterpart for them.
 
 /// Text known before the run. Run-time values (`currentHost`,
 /// `Capture.stdout()`) are allowed only in `File.content`; secrets
@@ -76,6 +79,81 @@ const local function isIpv4(s: String): Boolean =
   let (parts = s.split("."))
   !s.endsWith(".") && parts.length == 4 && parts.every((p) -> p.matches(Regex("0|[1-9][0-9]{0,2}")) && p.toInt() <= 255)
 
+/// The package selector of `AptPreference` (BB §13):
+/// a Debian package name with an optional architecture (`name`,
+/// `name:amd64`) or a trailing glob (`name*`). Unlike `AptPackages.names`
+/// it carries no version pin: it selects the packages a preference
+/// applies to. A pseudo-architecture (`any`, `native`,
+/// `all`) names no real architecture and is refused by the Lowering, as it
+/// is in a package step.
+typealias PackageSelector = Static(matches(Regex(#"[a-z0-9][a-z0-9+.-]+(\*|:([a-z0-9][a-z0-9-]*))?"#)))
+
+/// The exact package name of a debconf selection (`nginx`): the owner
+/// field `debconf-set-selections` matches exactly, so a trailing glob or
+/// an architecture qualifier would name no owner and the answer would
+/// never reach the question it names. Unlike `PackageSelector` it is a
+/// name and only a name.
+typealias DebconfPackage = Static(matches(Regex(#"[a-z0-9][a-z0-9+.-]+"#)))
+
+/// Text that fits on one line: no line break, so one field cannot smuggle a
+/// second stanza or a second answer into one value. A field written into a
+/// file as one line must carry no line break.
+typealias OneLine = Static(!contains("\n") && !contains("\r"))
+
+/// The question's name in a debconf selection (`nginx/nginx-user`): a
+/// nonempty token without whitespace. The selection is written as the four
+/// fields `package question type value` on one line, so whitespace in the
+/// question would push the fields after it out of place — field injection
+/// into the question, the type and the value.
+typealias QuestionName = OneLine(!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#)))
+
+/// An apt preference `Pin:` line: one of the pin types apt's parser
+/// recognizes — `version`, `release` or `origin`, in any case, as apt
+/// compares the type word case-insensitively — whitespace, and a value
+/// that means something to apt. A version or origin pin takes one
+/// whitespace-free pattern: a Debian version contains no whitespace, and
+/// trailing free text is discarded by apt (the package receives the
+/// configured priority unconditionally). A release pin takes its documented conditions (apt_preferences
+/// § "Terminology"): comma-separated `a=`, `n=`, `v=`, `c=`, `o=` and
+/// `l=` attributes, each with a populated value, or the bare
+/// release-version shorthand — `release 1.01` pins `v=1.01`. Anything
+/// else — a blank pin, a typo such as `banana`, the `source-version` form
+/// no apt release implements (apt-cache 2.8.3 prints `W: Did not
+/// understand pin type source-version` and ignores the policy), an
+/// attribute with an empty value (`a=`) or an attribute apt discards
+/// (`x=stable`) — makes apt warn `Did not understand pin type` or drop
+/// the condition and apply the priority unconditionally, so the declared
+/// policy would silently mean something else; such a pin is refused here
+/// instead.
+typealias PreferencePin = OneLine(matches(Regex(#"((?i:version|origin)\s+\S+|(?i:release)\s+(([anvcol]=[^,=\s]([^,=]*[^,=\s])?)(,[anvcol]=[^,=\s]([^,=]*[^,=\s])?)*|([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))"#)))
+
+/// A secret answer to a debconf question: the secret of `Core.pkl` in a
+/// class of this module.
+///
+/// The union `Static|core.SecretText` cannot be written here: pklr loses the
+/// parent class of every class of a module that the module path serves when
+/// one of its property types names a class of another module — the step
+/// classes of this module would no longer be `core.Step`s, and the lowering
+/// would refuse every workflow that uses them. The repro is in
+/// `crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs`; official
+/// Pkl 0.33.0 evaluates the same files correctly. A class of this module in
+/// the union keeps the union closed and pklr whole; the secret reaches it
+/// through `secretAnswer`, whose parameter names the secret class — a
+/// function parameter does not trigger the defect.
+class SecretAnswer {
+  /// The secret's parts, encoded: what store each part is read from and, for
+  /// `join`, the separators between them. The Lowering decodes them, as it
+  /// does for an action's environment value; the secret itself is read from
+  /// the store at apply time.
+  hidden parts: String
+}
+
+/// The secret answer of a debconf question. `secret` is a secret of
+/// `Core.pkl` (`core.fnox(…)`, `core.onePassword(…)`, …); it is the only
+/// way to make a `SecretAnswer`, so an answer is never forged by hand.
+function secretAnswer(secret: core.SecretText): SecretAnswer =
+  new SecretAnswer { parts = secret.parts }
+
 /// Downloads the current apt package lists. Never reports a change.
 class AptPackageIndex extends core.Step {
   hidden fixed kind = "packageIndex"
@@ -90,6 +168,96 @@ class AptPackages extends core.Step {
   /// Upgrades them to the newest version on every run, not only once. The
   /// names cannot then pin a version.
   latest: Boolean = false
+  /// Holds every listed package at its installed version with `apt-mark
+  /// hold` after installation; reporting reads `apt-mark showhold`, and a
+  /// held package counts as installed. Only `true` holds: the step never
+  /// lifts a hold. Holds are part of the step's identity, like pins. The
+  /// names can then pin a version (install it, then freeze it), but not
+  /// `latest = true` — a held package is never upgraded — and no later step
+  /// of the stage may pin or upgrade a held package: apt refuses to move
+  /// one.
+  hold: Boolean = false
+}
+
+/// Upgrades every installed package to the newest candidate (apt
+/// `dist-upgrade`) and, with `autoremove`, removes packages nothing needs
+/// any more. It runs where it is written and never merges, like
+/// `AptPackages`; two of them in one stage run twice, which is almost
+/// certainly a mistake. It reports a change when apt changed anything, and
+/// can be watched; in `check` and `diff` it simulates the run and reports
+/// what apt would upgrade or remove, and never changes the system.
+class AptSystemUpgrade extends core.Step {
+  hidden fixed kind = "aptSystemUpgrade"
+  /// Also removes orphaned packages.
+  autoremove: Boolean = false
+}
+
+/// One apt preferences stanza (apt_preferences(5)), written to its own file
+/// in `/etc/apt/preferences.d/` as one managed change. Identity is the
+/// package plus the pin: a repeat of the same stanza is the same step, and
+/// a second stanza for one package — with another pin — is another step
+/// that conflicts with it.
+class AptPreference extends core.Step {
+  hidden fixed kind = "aptPreference"
+  package: PackageSelector
+  /// The `Pin:` line, such as `"version 1.37.2-1.1"` or `"release
+  /// n=stable"`: a pin type apt recognizes (`version`, `release`,
+  /// `origin`) and a nonblank value, on one line. A line break
+  /// would smuggle a second stanza into the file, and apt applies no
+  /// preference for a pin it does not understand.
+  pin: PreferencePin
+  /// The `Pin-Priority:` value. apt never downgrades a package unless the
+  /// pin priority of the available version exceeds 1000 (apt_preferences
+  /// (5)), so the `Pin-Priority: 1001` idiom the Kubernetes recipe writes
+  /// by hand permits — and with a matching `version` pin forces — a
+  /// downgrade; -1 means "never install". A priority below -1 means the
+  /// same as -1 and 0 is no usable priority at all (apt refuses it with
+  /// `E: No priority (or zero) specified for pin`), so both are refused as
+  /// likely mistakes. A priority above 32767 makes apt ≥ 2.8.3 exit 100
+  /// with `E: Priority 32768 is out of range`, which would break every
+  /// later apt command, so the priority is capped at the largest value apt
+  /// accepts — the 16-bit maximum.
+  priority: Int(this == -1 || (this >= 1 && this <= 32767))
+}
+
+/// One debconf selection (`debconf-set-selections`). The answer on the host
+/// is compared with `value` and set only when it differs, so a second apply
+/// reports no change; where only `debconf-communicate` can read the answer
+/// the type of the template is never answered there, and the selection is
+/// written again so a wrong-typed answer is corrected instead of kept. A secret value is a `SecretAnswer` (the secret
+/// sink, made with `secretAnswer`), never static text: the engine resolves
+/// it in its store, the task
+/// is never logged, and the answer reaches the host on the standard input
+/// of `debconf-set-selections`, never in an argument. A resolved secret
+/// that contains a line break is refused when the selection is written.
+class DebconfEntry extends core.Step {
+  hidden fixed kind = "debconfEntry"
+  /// The exact package name the question belongs to: the owner field of
+  /// the selection, matched exactly, so no glob and no architecture
+  /// qualifier.
+  package: DebconfPackage
+  /// The question's name, such as `"nginx/nginx-user"`: a nonempty token
+  /// without whitespace, because the selection is written as one field of
+  /// `package question type value` and whitespace in it would shift the
+  /// fields after it.
+  question: QuestionName
+  type: "string"|"boolean"|"select"|"multiselect"|"password"|"note"
+  /// A static answer, or a `SecretAnswer` (the secret sink). The union is
+  /// closed: the two branches are the only ones the language admits, and a
+  /// secret interpolated into static text is refused by `Static` itself,
+  /// which rejects the reserved secret prefix. A `password` entry takes a
+  /// `SecretAnswer` alone: a literal password would be committed to the
+  /// workflow and printed in the clear, so the Lowering refuses one. The
+  /// static branch is
+  /// `OneLine`, not `Static`: a line break would write a second selection
+  /// on the standard input of `debconf-set-selections`, so a multiline
+  /// static answer is refused here instead of failing every apply at the
+  /// runtime check; a resolved secret that carries a line break stays
+  /// runtime-validated. The secret branch is a class
+  /// of this module and not `core.SecretText` because of the pklr defect
+  /// `SecretAnswer` names; both pklr and official Pkl check the union the
+  /// same way (`crates/ruxel/ruxel-config/tests/debconf_value_union.rs`).
+  value: OneLine|SecretAnswer
 }
 
 /// A signed apt repository, written as a deb822 source with its own keyring.

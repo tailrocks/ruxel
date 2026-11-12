@@ -1,0 +1,16 @@
+// expect: 'Add the repo' (step 1) of stage "a" writes an apt repository, and 'Upgrade the system' (step 1) of stage "b" plans against the candidate policy; in check and diff mode the repository is never written before the plan runs, so check and apply disagree — put the two stages on different hosts
+// The same refusal across the stages of one host: the `.sources` file
+// outlives its stage, so the later play's simulation still runs against
+// the candidates the host had while apply wrote the repository first.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptSystemUpgrade { title = "Upgrade the system" }
+  } }
+}

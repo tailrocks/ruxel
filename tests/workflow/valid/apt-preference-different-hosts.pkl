@@ -1,0 +1,16 @@
+// The cross-stage preference planning refusal is about the hosts the
+// stages share: a preference in one stage and a package step in a later
+// stage on other hosts never see one apt policy, so nothing diverges and
+// the run is admitted.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
+  } }
+  new Stage { title = "b"; hosts = inventory.controlPlanes; steps {
+    new debian.AptPackages { title = "Track nginx"; names { "nginx" }; latest = true }
+  } }
+}

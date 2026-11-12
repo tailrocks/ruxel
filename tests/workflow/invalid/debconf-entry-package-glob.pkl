@@ -1,0 +1,12 @@
+// expect-pkl: Type constraint `matches(Regex(#"[a-z0-9][a-z0-9+.-]+"#))` violated.
+// expect-pklr: property 'package' expected DebconfPackage, got String
+// The owner field of a debconf selection is an exact package name: apt
+// matches it exactly, so a trailing glob names no owner and the answer
+// would never reach the question it names.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { package = "curl*"; question = "curl/x"; type = "string"; value = "x" }
+} } }

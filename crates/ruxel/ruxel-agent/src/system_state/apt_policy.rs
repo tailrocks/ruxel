@@ -1,3 +1,4 @@
+use super::apt_request::PackageRequest;
 use std::collections::HashMap;
 
 /// Installed packages from a dpkg status database, keyed `name:arch`.
@@ -31,6 +32,33 @@ pub(super) fn parse_dpkg_status(text: &str) -> HashMap<String, String> {
         }
     }
     packages
+}
+
+/// The packages `apt-mark showhold` lists: one package selector per line.
+///
+/// A hold the host reports is a package the agent must be able to name, so
+/// a line that is not a package selector is refused instead of accepted as
+/// a hold.
+///
+/// # Errors
+/// Returns an error naming the first line that is not a package selector.
+pub(crate) fn parse_showhold(text: &str) -> Result<Vec<PackageRequest>, String> {
+    let mut holds = Vec::new();
+    for line in text.lines() {
+        let selector = line.trim();
+        if selector.is_empty() {
+            continue;
+        }
+        let entry = PackageRequest::parse(selector).map_err(|error| {
+            format!(
+                "apt: apt-mark showhold returned an invalid package selector {selector:?} ({error})"
+            )
+        })?;
+        if !holds.contains(&entry) {
+            holds.push(entry);
+        }
+    }
+    Ok(holds)
 }
 
 /// One `apt-cache policy` stanza: the default candidate and every version in

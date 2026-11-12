@@ -1,0 +1,14 @@
+// expect-pklr: property 'pin' expected PreferencePin, got String
+// expect-pkl: Type constraint `matches(Regex(#"((?i:version|origin)\s+\S+|(?i:release)\s+(([anvcol]=[^,=\s]([^,=]*[^,=\s])?)(,[anvcol]=[^,=\s]([^,=]*[^,=\s])?)*|([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))"#))` violated.
+// A Debian version contains no whitespace, and apt_preferences(5)
+// describes the value of a version pin as the version pattern: trailing
+// free text is discarded by apt and the package receives the configured
+// priority unconditionally, so the declared policy silently means
+// something else. The pattern takes one whitespace-free token (`5.*`).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin jq"; package = "jq"; pin = "version 5.* extra"; priority = 100 }
+} } }

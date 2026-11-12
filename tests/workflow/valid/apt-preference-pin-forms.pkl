@@ -1,0 +1,22 @@
+// Every pin form apt's parser recognizes is admitted: a version pin, a
+// release pin and an origin pin (apt's parser accepts the type word in
+// any case). A release pin carries its documented conditions — the
+// populated attributes a=, n=, v=, c=, o= and l= — or the bare
+// release-version shorthand; a value may itself read as a version
+// (`a=1.01`). `source-version` is no such type: apt prints `W: Did not
+// understand pin type source-version` and ignores the policy.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { package = "bash"; pin = "version 5.9-1"; priority = 100 }
+  new debian.AptPreference { package = "zsh"; pin = "VERSION 5.9-1"; priority = 100 }
+  new debian.AptPreference { package = "jq"; pin = "version 5.*"; priority = 100 }
+  new debian.AptPreference { package = "vim"; pin = "release n=stable"; priority = 500 }
+  new debian.AptPreference { package = "docker"; pin = "origin example.test"; priority = 500 }
+  new debian.AptPreference { package = "curl"; pin = "release a=stable,n=bookworm"; priority = 500 }
+  new debian.AptPreference { package = "htop"; pin = "release 1.01"; priority = 100 }
+  new debian.AptPreference { package = "wget"; pin = "release a=1.01"; priority = 100 }
+  new debian.AptPreference { package = "tmux"; pin = "release o=Google LLC"; priority = 500 }
+} } }

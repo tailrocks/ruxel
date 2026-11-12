@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn debconf_type_is_one_of_the_six_debconf_types() -> Result<()> {
+    for kind in [
+        "string",
+        "boolean",
+        "select",
+        "multiselect",
+        "password",
+        "note",
+    ] {
+        let value = json!({"package": "nginx", "question": "nginx/nginx-user", "type": kind, "value": "www-data"});
+        assert!(
+            validate_operation("debconf", value.as_object().context("object")?).is_ok(),
+            "{kind}"
+        );
+    }
+    // The removed `text` type stays out of the engine surface: the
+    // workflow side (`Debian.pkl`) refuses it, and a `text` question the
+    // engine admitted would never converge — `debconf-get-selections`
+    // skips text questions while `debconf-set-selections` accepts them,
+    // so every apply would rewrite the answer indefinitely.
+    let value = json!({"package": "nginx", "question": "nginx/nginx-user", "type": "text", "value": "www-data"});
+    assert!(
+        validate_operation("debconf", value.as_object().context("object")?).is_err(),
+        "the removed text type must not pass the engine surface"
+    );
+    Ok(())
+}
+
+#[test]
 fn command_accepts_only_nonempty_argv() -> Result<()> {
     for value in [
         json!({}),

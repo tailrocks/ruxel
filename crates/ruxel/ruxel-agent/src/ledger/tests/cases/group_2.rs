@@ -138,6 +138,7 @@ fn explicit_refreshes_and_actions_bypass_even_existing_records() {
         ("apt", json!({"name":"pkg", "autoremove":"yes"})),
         ("apt", json!({"name":"pkg", "upgrade":"dist"})),
         ("apt", json!({"name":"pkg", "state":"latest"})),
+        ("apt", json!({"name":"pkg", "hold":true})),
         ("systemd", json!({"name":"unit", "daemon_reload":true})),
         ("systemd", json!({"name":"unit", "daemon_reload":"yes"})),
         ("systemd", json!({"name":"unit", "state":"restarted"})),

@@ -1,0 +1,13 @@
+// expect: 'Write the fragment child' (step 1) and 'Pin nginx' (step 2) conflict: /etc/apt/preferences.d/nginx-5be1ecc7935f1dd85635d4feedaf660594030253cc97c9e9ca3819ffeac36b65.pref is a file, so /etc/apt/preferences.d/nginx-5be1ecc7935f1dd85635d4feedaf660594030253cc97c9e9ca3819ffeac36b65.pref/child cannot be inside it
+// The preference stanza writes its fragment as one regular file, so the
+// fragment admits nothing beneath it: a `File` at `<fragment>/child` is
+// admitted by the kind list of the nested check and fails at apply with
+// ENOTDIR, so the fragment counts as a leaf here too.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { title = "Write the fragment child"; path = "/etc/apt/preferences.d/nginx-5be1ecc7935f1dd85635d4feedaf660594030253cc97c9e9ca3819ffeac36b65.pref/child"; content = "Package: nginx\n" }
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 500 }
+} } }

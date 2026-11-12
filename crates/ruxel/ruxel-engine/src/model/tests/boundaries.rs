@@ -182,3 +182,17 @@ fn blocks_reject_loop_controls() {
         assert!(validate_config(&value).is_ok(), "operation with {field}");
     }
 }
+
+/// A hold is part of an apt operation: the engine admits it, and only a
+/// flag is a hold (T9).
+#[test]
+fn apt_operation_accepts_a_hold() -> Result<()> {
+    let params = json!({"name": "pkg", "hold": true});
+    validate_operation("apt", params.as_object().context("object")?)?;
+    let listed = json!({"name": "pkg", "hold": ["pkg"]});
+    assert!(
+        validate_operation("apt", listed.as_object().context("object")?).is_err(),
+        "a hold is a flag, not a list"
+    );
+    Ok(())
+}

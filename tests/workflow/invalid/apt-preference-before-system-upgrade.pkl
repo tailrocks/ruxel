@@ -1,0 +1,14 @@
+// expect: 'Pin nginx' (step 1) writes an apt preference, and 'Upgrade the system' (step 2) plans against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two in different stages
+// Like `latest` packages, a system upgrade plans against the candidate
+// policy: the preference stanza is written with the generic copy task,
+// which in check and diff mode writes nothing, so a later AptSystemUpgrade
+// of the same stage plans against the policy the host still has, while
+// apply mode plans against the stanza just written.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
+  new debian.AptSystemUpgrade { title = "Upgrade the system" }
+} } }

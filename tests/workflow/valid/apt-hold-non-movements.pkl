@@ -1,0 +1,17 @@
+// A held package is never moved, but not every later step that names it
+// moves it. A plain install moves nothing (a held package counts as
+// installed), a repeat of the hold freezes it again, and another
+// architecture is another package. Only an overlapping version movement —
+// a pin to a version the hold does not name, or `latest` — is refused.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
+  new debian.AptPackages { title = "Install curl"; names { "curl" } }
+  new debian.AptPackages { title = "Hold curl again"; names { "curl" }; hold = true }
+  new debian.AptPackages { title = "Hold the amd64 kubelet"; names { "kubelet:amd64=1.37.2-1.1" }; hold = true }
+  new debian.AptPackages { title = "Install the arm64 kubelet"; names { "kubelet:arm64=1.37.2-1.1" } }
+  new debian.AptPackages { title = "Reinstall the pinned kubelet"; names { "kubelet:amd64=1.37.2-1.1" } }
+} } }

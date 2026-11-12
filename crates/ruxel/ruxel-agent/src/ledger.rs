@@ -104,6 +104,7 @@ pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
         "apt" => {
             !probe::bool_value(params.get("update_cache"), false)
                 && !probe::bool_value(params.get("autoremove"), false)
+                && !probe::bool_value(params.get("hold"), false)
                 && params.get("upgrade").and_then(Value::as_str).is_none()
                 && params.get("state").and_then(Value::as_str) != Some("latest")
         }

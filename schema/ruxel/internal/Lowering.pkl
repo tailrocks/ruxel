@@ -79,6 +79,9 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["systemdTimer"] = (s) -> s is systemd.SystemdTimer
   ["packageIndex"] = (s) -> s is debian.AptPackageIndex
   ["packages"] = (s) -> s is debian.AptPackages
+  ["aptSystemUpgrade"] = (s) -> s is debian.AptSystemUpgrade
+  ["aptPreference"] = (s) -> s is debian.AptPreference
+  ["debconfEntry"] = (s) -> s is debian.DebconfEntry
   ["aptRepository"] = (s) -> s is debian.AptRepository
   ["timezone"] = (s) -> s is linux.Timezone
   ["loginShell"] = (s) -> s is linux.User
@@ -110,7 +113,12 @@ function checkedIndexes(stages: Listing<core.Stage>): List<StageIndex> =
   accepted(stages.toList(), stages.toList().map((s) -> stageIndex(merged(identified(walker.stage(s.steps.toList()))))))
 
 function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<StageIndex> =
-  orFail(_indexes, positions(_indexes).flatMap((n) -> stageProblems(_stages[n], _indexes[n])))
+  orFail(_indexes, positions(_indexes).flatMap((n) -> stageProblems(_stages[n], _indexes[n]))
+    + heldMovesAcrossStages(_stages, _indexes)
+    + preferenceOverlapAcrossStages(_stages, _indexes)
+    + preferencePlanningAcrossStages(_stages, _indexes)
+    + indexPlanningAcrossStages(_stages, _indexes)
+    + repositoryPlanningAcrossStages(_stages, _indexes))
 
 function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<StageIndex> =
   if (_problems.isEmpty) _indexes.map((ix) -> withMetas(ix)) else throw(_problems.first)
@@ -340,7 +348,16 @@ function merged(placed: List<Placed>): List<Placed> = placed.fold(List(), (kept,
 
 function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
   if (!mergeable(p.step) || !kept.any((q) -> q.id == p.id)) kept + List(p)
-  else kept.map((q) -> if (q.id == p.id) withInherited(q, ownTags(p)) else q)
+  else kept.map((q) -> if (q.id == p.id) withInherited(sameStanza(q, p), ownTags(p)) else q)
+
+/// The kept step of a merge. Two preferences that share the identity —
+/// the package plus the pin (BB §3.7) — are one step, but their priorities
+/// must then agree: the priority is not part of the identity, so a mismatch
+/// would silently collapse the two stanzas into one and drop a priority.
+function sameStanza(q: Placed, p: Placed): Placed =
+  if (q.step is debian.AptPreference && p.step is debian.AptPreference && q.step.priority != p.step.priority)
+    throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) pin \(q.step.package) with \(q.step.pin) at different priorities (\(q.step.priority) and \(p.step.priority)); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage")
+  else q
 
 /// A step that manages a thing merges with an exact repeat. Package steps,
 /// commands and scripts run again where they are written: their effect
@@ -352,7 +369,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -385,6 +402,10 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': UnlessOutput takes exactly one of stdoutContains and stderrContains")
   else if (s is debian.AptPackages && !packageProblems(s.names.toList()).isEmpty)
     List("'\(name(s))': \(packageProblems(s.names.toList()).first)")
+  else if (s is debian.AptPreference && !selectorProblems(s.package).isEmpty)
+    List("'\(name(s))': \(selectorProblems(s.package).first)")
+  else if (s is debian.AptPackages && s.hold && s.latest)
+    List("'\(name(s))': a held package is never upgraded, so hold and latest cannot both be true; remove one of them")
   else if (s is debian.AptPackages && s.latest && s.names.toList().any((n) -> n.contains("=")))
     List("'\(name(s))': latest installs the newest version, so it cannot pin one (\(s.names.toList().filter((n) -> n.contains("=")).first)); remove the pin or set latest = false")
   else if (s is debian.AptRepository && s.suite.isEmpty)
@@ -397,6 +418,10 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
   else if (s is core.FetchSecret && !s.fnoxKey.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
     List("fnox key \"\(s.fnoxKey)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
+  else if (s is debian.DebconfEntry && s.type == "password" && !(s.value is debian.SecretAnswer))
+    List("'\(name(s))': a password's answer is a secret (debian.secretAnswer(…)), never static text; a literal password would be committed to the workflow and printed in the clear")
+  else if (s is debian.DebconfEntry && s.type == "boolean" && !(s.value is debian.SecretAnswer) && s.value != "true" && s.value != "false")
+    List("'\(name(s))': a boolean answer is \"true\" or \"false\", not \"\(s.value)\"; debconf frontends read those two strings alone")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -409,6 +434,15 @@ const function packageProblems(names: List<String>): List<String> =
   else
     let (repeated = names.map((n) -> packageName(n)).filter((p) -> let (same = names.filter((n) -> packageName(n) == p)) same.length > 1 && (same.any((n) -> archOf(n) == null) || same.map((n) -> archOf(n)).toSet().length != same.length)))
     if (repeated.isEmpty) List() else List("package \"\(repeated.first)\" is listed more than once; list it once, or once per explicit architecture")
+
+/// A `PackageSelector` names the packages a preference applies to: a
+/// name, a name with a real architecture or a trailing glob. A
+/// pseudo-architecture names no real architecture, so it is refused, as it
+/// is in a package step. A debconf answer takes a `DebconfPackage`
+/// instead, whose exact-name type refuses the selector forms itself.
+const function selectorProblems(selector: String): List<String> =
+  if (!pseudoArch(selector)) List()
+  else List("unsupported package \"\(selector)\"; use a name, a name with a real architecture (not any, native or all), or a trailing glob")
 
 const function packageName(n: String): String = n.split("=").first.split(":").first
 const function archOf(n: String): String? = let (s = n.split("=").first) if (s.contains(":")) s.split(":").last else null
@@ -487,7 +521,7 @@ function nested(ix: StageIndex, i: Int): List<String> =
 /// Paths a step writes as a regular file or a link. A timer writes its
 /// unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
-  if (List("file", "symlink", "aptRepository", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
+  if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -508,14 +542,367 @@ function packageVersions(ix: StageIndex, i: Int): List<String> =
     if (clashes.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different versions of \(packageName(clashes.first.first)) (\(clashes.first.first) and \(clashes.first.last)\(if (ix.steps[j].latest || ix.steps[i].latest) ", one upgrading" else "")); a stage declares one state for each thing, so put the second in a later stage"))
 
+/// A held package is never moved: a step that holds a package and a later
+/// step of the same stage that moves its version — `latest`, or a pin to a
+/// version the hold does not name — would ask apt to move a frozen
+/// package, which apt refuses. A plain install moves nothing (a held
+/// package counts as installed), a repeat of the hold freezes it again,
+/// and another architecture is another package, so only an overlapping
+/// version movement is refused. A whole-system upgrade is a movement of
+/// every package: the plain `dist-upgrade` apt-get runs without
+/// `--ignore-hold` leaves the held package below its candidate, so the
+/// declared whole-system result is false wherever a hold stands — drop
+/// the hold or the upgrade.
+function holdConflicts(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPackages || ix.steps[i] is debian.AptSystemUpgrade)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPackages && ix.steps[j].hold).flatMap((j) ->
+    let (held = ix.steps[j].names.toList())
+    let (moved = if (ix.steps[i] is debian.AptSystemUpgrade) List() else ix.steps[i].names.toList().filter((x) -> held.any((h) -> holdMove(ix.steps[i], h, x)) && !supersededInStage(ix, j, i, x)))
+    if (ix.steps[i] is debian.AptSystemUpgrade)
+      List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) holds \(held.first), and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) upgrades the whole system; a system upgrade moves every package to its candidate and cannot leave a held package behind, so drop the hold or the upgrade")
+    else if (moved.isEmpty) List()
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) holds \(moved.first), and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) would move it; a held package is never upgraded, so put the second in a later stage"))
+
+/// Whether the later package step `i` moves the held name `h`: the same
+/// package with an overlapping architecture, and a version movement —
+/// `latest`, or a pin naming a version the hold does not (the hold froze
+/// whatever was installed, so any pin may move it). Versions are compared
+/// as Debian orders them, so one version spelled two ways (`1.01`, `1.1`)
+/// moves nothing. A later `hold` step is not a mover: the agent lifts the
+/// requested holds for that transaction alone, installs the new pin and
+/// restores and verifies the hold (`install.rs`), so the step that
+/// re-freezes the package may move it. The same-stage pair of two `hold`
+/// steps for one package stays refused by `packageVersions`: one stage
+/// declares one state for the package, while across stages the steps are
+/// sequential plays and the later hold is the one transition that
+/// re-freezes it.
+const function holdMove(i: debian.AptPackages, h: String, n: String): Boolean =
+  coversHold(h, n)
+    && !i.hold
+    && (i.latest || (versionOf(n) != null && !versionEqual(versionOf(n), versionOf(h))))
+
+/// Whether one held name covers the other's package: the same package
+/// with an overlapping architecture. Another architecture is another
+/// package, and a name without an architecture is any of them.
+const function coversHold(h: String, n: String): Boolean =
+  packageName(h) == packageName(n)
+    && (archOf(h) == null || archOf(n) == null || archOf(h) == archOf(n))
+
+/// Whether a later hold supersedes the hold at step `j` for the name
+/// `x` within the stage: a later hold step that covers `x` re-froze the
+/// package at its own version, so the superseded hold no longer blocks a
+/// movement of `x` — the effective hold does.
+const function supersededInStage(ix: StageIndex, j: Int, i: Int, x: String): Boolean =
+  positions(ix.steps).any((k) -> k > j && k < i
+    && ix.steps[k] is debian.AptPackages && ix.steps[k].hold
+    && ix.steps[k].names.toList().any((h) -> coversHold(h, x)))
+
+/// Whether the hold at `(n, j)` still freezes `x` on some machine the
+/// mover runs: supersession is tracked per shared machine, not by stage
+/// order — a re-freeze on another host does not supersede this host's
+/// hold. The re-pin and re-hold is the one supported transition that
+/// moves a frozen package, so the freeze it leaves is the effective one
+/// where it runs.
+const function effectiveHold(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, j: Int, m: Int, i: Int, x: String): Boolean =
+  _stages[n].hosts.toList().any((a) -> _stages[m].hosts.toList().any((b) -> sameConnection(a, b)
+    && !supersededOn(_stages, _indexes, n, j, m, i, x, a)))
+
+/// Whether a later hold step that covers `x` re-froze the package on the
+/// machine `host` before the mover ran — including a hold in the mover's
+/// own stage before the mover.
+const function supersededOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, j: Int, m: Int, i: Int, x: String, host: core.Host): Boolean =
+  positions(_indexes).any((n2) ->
+    _stages[n2].hosts.toList().any((h2) -> sameConnection(h2, host))
+      && positions(_indexes[n2].steps).any((j2) -> (n2 > n || (n2 == n && j2 > j)) && (n2 < m || (n2 == m && j2 < i))
+        && _indexes[n2].steps[j2] is debian.AptPackages && _indexes[n2].steps[j2].hold
+        && _indexes[n2].steps[j2].names.toList().any((h) -> coversHold(h, x))))
+
+/// Whether two stages run on at least one common machine: holds and apt
+/// preference fragments outlive the stage that wrote them, so the stages
+/// collide wherever they share one. Hosts are one machine when they
+/// connect alike — the effective SSH target (`sshHost`, or the address),
+/// the user and the port decide, not the inventory name: an alias of the
+/// same machine shares its apt state just the same.
+const function hostsOverlap(a: core.Stage, b: core.Stage): Boolean =
+  a.hosts.toList().any((x) -> b.hosts.toList().any((y) -> sameConnection(x, y)))
+
+/// Whether two hosts open the same connection.
+const function sameConnection(x: core.Host, y: core.Host): Boolean =
+  (x.sshHost ?? x.address) == (y.sshHost ?? y.address) && x.user == y.user && x.port == y.port
+
+/// The same refusal as `holdConflicts`, across stages of one host: a hold
+/// is a mark on the package, and the mark outlives the stage that set it,
+/// so a later stage that moves the held package asks apt to move a frozen
+/// package just the same — and a later whole-system upgrade cannot leave
+/// the held package behind and still deliver its declared result. Only
+/// the order (hold, then move) collides — the reverse converges — and
+/// only between stages whose hosts overlap.
+function heldMovesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> earlier(m).filter((n) -> hostsOverlap(_stages[n], _stages[m])).flatMap((n) ->
+    positions(_indexes[n].steps).filter((j) -> _indexes[n].steps[j] is debian.AptPackages && _indexes[n].steps[j].hold).flatMap((j) ->
+      let (held = _indexes[n].steps[j].names.toList())
+      let (upgraded = positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptSystemUpgrade).map((i) ->
+        "'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" holds \(held.first), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" upgrades the whole system; a system upgrade moves every package to its candidate and cannot leave a held package behind, and the hold outlives its stage, so drop the hold or the upgrade"))
+      let (movedSteps = positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptPackages).flatMap((i) ->
+        let (moved = _indexes[m].steps[i].names.toList().filter((x) -> held.any((h) -> holdMove(_indexes[m].steps[i], h, x)) && effectiveHold(_stages, _indexes, n, j, m, i, x)))
+        if (moved.isEmpty) List()
+        else List("'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" holds \(moved.first), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" would move it; a held package is never upgraded, and the hold outlives its stage, so put the two stages on different hosts")))
+      upgraded + movedSteps)))
+
 const function versionClash(p: debian.AptPackages, a: String, q: debian.AptPackages, b: String): Boolean =
   packageName(a) == packageName(b)
     && (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b))
-    && (versionOf(a) != null && versionOf(b) != null && versionOf(a) != versionOf(b)
+    && (versionOf(a) != null && versionOf(b) != null && !versionEqual(versionOf(a), versionOf(b))
       || versionOf(a) != null && q.latest
       || versionOf(b) != null && p.latest)
 
 const function versionOf(n: String): String? = if (n.contains("=")) n.split("=").last else null
+
+/// Whether two pins name one Debian version: `versionCompare` orders
+/// them equal. A pin with no version is never equal to a pin with one:
+/// an unversioned hold froze whatever the host has installed, so any pin
+/// may move it — even `0`, whose digit run the ordering reads as the
+/// empty string. This is the one comparison `versionClash` and
+/// `holdMove` share, so the two rules cannot disagree about one
+/// spelling.
+const function versionEqual(a: String?, b: String?): Boolean =
+  if (a == null || b == null) a == b else versionCompare(a, b) == 0
+
+/// The Debian ordering of two versions (`[epoch:]upstream[-revision]`),
+/// mirroring the agent's `apt_version.rs` (itself dpkg's `verrevcmp`),
+/// which is the contract: the epoch compares numerically (an absent
+/// epoch is `0`), the upstream and the revision compare character by
+/// character — `~` sorts before everything, including the end of the
+/// string, letters before other characters, digit runs numerically with
+/// leading zeros insignificant — and an absent revision equals a zero
+/// revision, so `1.0` and `1.0-0` are one version. Answers -1, 0 or 1.
+const function versionCompare(a: String, b: String): Int =
+  let (pa = versionSplit(a))
+  let (pb = versionSplit(b))
+  let (epoch = verrevcmp(pa[0], pb[0]))
+  if (epoch != 0) epoch
+  else let (upstream = verrevcmp(pa[1], pb[1]))
+    if (upstream != 0) upstream else verrevcmp(pa[2], pb[2])
+
+/// The three parts of a version. The epoch is the text before the first
+/// colon (a text no digit parses to `0`, as `apt_version.rs`'s
+/// `parse().unwrap_or(0)` reads it); the revision follows the last
+/// hyphen of the rest, and an absent revision is the empty string.
+const function versionSplit(v: String): List<String> =
+  let (colons = v.split(":"))
+  let (rest = if (colons.length < 2) v else IntSeq(1, colons.length - 1).toList().map((k) -> colons[k]).join(":"))
+  let (hyphen = rest.split("-"))
+  List(
+    (if (colons.length < 2 || !colons.first.matches(Regex("[0-9]*"))) "" else colons.first),
+    (if (hyphen.length < 2) rest else IntSeq(0, hyphen.length - 2).toList().map((k) -> hyphen[k]).join("-")),
+    (if (hyphen.length < 2) "" else hyphen.last))
+
+/// One `verrevcmp` walk over two components. `s` is
+/// `(i, j, phase, first, result)`: the two positions, the phase (0 the
+/// character loop, 1 and 2 the leading-zero skips, 3 the digit run, 4
+/// the run's verdict, 5 done), the first differing digit and the result
+/// once decided. Every step consumes what one loop turn of
+/// `apt_version.rs` consumes, so the walk mirrors it turn for turn.
+const function verrevcmp(a: String, b: String): Int =
+  IntSeq(0, 2 * (a.length + b.length) + 12).toList()
+    .fold(List(0, 0, 0, 0, 0), (s, _) -> verrevStep(a, b, s)).last
+
+const function verrevStep(a: String, b: String, s: List<Int>): List<Int> =
+  let (i = s.first)
+  let (j = s[1])
+  let (first = s[3])
+  if (s[2] == 5) s
+  else if (s[2] == 0)
+    if ((i < a.length && !isDigit(a.substring(i, i + 1))) || (j < b.length && !isDigit(b.substring(j, j + 1))))
+      let (cmp = orderCompare(orderAt(a, i), orderAt(b, j)))
+      if (cmp != 0) List(i, j, 5, first, cmp) else List(i + 1, j + 1, 0, first, 0)
+    else List(i, j, 1, first, 0)
+  else if (s[2] == 1)
+    if (i < a.length && a.substring(i, i + 1) == "0") List(i + 1, j, 1, first, 0) else List(i, j, 2, first, 0)
+  else if (s[2] == 2)
+    if (j < b.length && b.substring(j, j + 1) == "0") List(i, j + 1, 2, first, 0) else List(i, j, 3, first, 0)
+  else if (s[2] == 3)
+    if (i < a.length && j < b.length && isDigit(a.substring(i, i + 1)) && isDigit(b.substring(j, j + 1)))
+      List(i + 1, j + 1, 3, (if (first != 0) first else digitCompare(a.substring(i, i + 1), b.substring(j, j + 1))), 0)
+    else List(i, j, 4, first, 0)
+  else if (i < a.length && isDigit(a.substring(i, i + 1))) List(i, j, 5, first, 1)
+  else if (j < b.length && isDigit(b.substring(j, j + 1))) List(i, j, 5, first, -1)
+  else if (first != 0) List(i, j, 5, first, first)
+  else if (i >= a.length && j >= b.length) List(i, j, 5, first, 0)
+  else List(i, j, 0, first, 0)
+
+const function isDigit(c: String): Boolean = "0123456789".contains(c)
+
+/// The character's weight in the character loop: `apt_version.rs`'s
+/// `order` reads a digit or the end of the string as `0`, `~` as -1, a
+/// letter as itself and anything else above every letter. A digit is
+/// never compared here — both positions at digits end the loop — so its
+/// weight only meets a real character, where it plays the end of the
+/// string.
+const function orderAt(s: String, i: Int): String =
+  if (i >= s.length) "" else let (c = s.substring(i, i + 1)) if (isDigit(c)) "" else c
+
+const local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+const local others = ##"!"#$%&'()*+,-./:;<=>?@[\]^_`{|}"##
+
+/// How two weights order: `~` before the end of the string before
+/// letters before others, and one weight equal to itself.
+const function orderCompare(x: String, y: String): Int =
+  if (orderRank(x) != orderRank(y)) (if (orderRank(x) < orderRank(y)) -1 else 1)
+  else if (x == y) 0
+  else let (table = if (letters.contains(x)) letters else others)
+    (if (table.indexOf(x) < table.indexOf(y)) -1 else 1)
+
+const function orderRank(z: String): Int =
+  if (z == "~") 0 else if (z == "") 1 else if (letters.contains(z)) 2 else 3
+
+/// One digit's weight in the first differing digit of a run.
+const function digitCompare(x: String, y: String): Int =
+  if (x == y) 0 else (if ("0123456789".indexOf(x) < "0123456789".indexOf(y)) -1 else 1)
+
+/// Two preference stanzas whose selectors can name one package declare
+/// two states for it: apt_preferences(5) applies every matching stanza,
+/// so the higher priority would decide silently. A second stanza for one
+/// and the same selector is the `conflicts` pass's business; here the
+/// selectors differ and only overlap.
+function preferenceConflicts(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPreference)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPreference && ix.steps[j].package != ix.steps[i].package && selectorsOverlap(ix.steps[j].package, ix.steps[i].package))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) pin overlapping package selectors (\(ix.steps[j].package) and \(ix.steps[i].package)); apt applies every matching stanza and the highest priority decides, so keep one selector or put the second in a later stage")
+
+/// The same collision as `preferenceConflicts`, across stages of one host:
+/// the fragment each stage writes persists in /etc/apt/preferences.d/, and
+/// apt applies every matching stanza. One and the same selector stays the
+/// `conflicts` pass's business; here the selectors differ and only overlap.
+function preferenceOverlapAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> earlier(m).filter((n) -> hostsOverlap(_stages[n], _stages[m])).flatMap((n) ->
+    positions(_indexes[n].steps).filter((j) -> _indexes[n].steps[j] is debian.AptPreference).flatMap((j) ->
+      positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptPreference && _indexes[m].steps[i].package != _indexes[n].steps[j].package && selectorsOverlap(_indexes[n].steps[j].package, _indexes[m].steps[i].package)).map((i) ->
+        "'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" pin overlapping package selectors (\(_indexes[n].steps[j].package) and \(_indexes[m].steps[i].package)); apt applies every matching stanza and the highest priority decides, so keep one selector or put the two stages on different hosts")
+      )))
+
+/// A whole-system upgrade moves every package to its candidate, so an
+/// exact version pin in the same stage cannot hold: the upgrade moves the
+/// package away from the declared pin — and a later apply of the pin may
+/// even refuse the downgrade — so the stage cannot converge. The two
+/// never belong in one stage, in either order.
+function pinUpgradeClashes(ix: StageIndex, i: Int): List<String> =
+  if (ix.steps[i] is debian.AptSystemUpgrade)
+    earlier(i).flatMap((j) ->
+      if (!(ix.steps[j] is debian.AptPackages)) List()
+      else let (pinned = ix.steps[j].names.toList().filter((n) -> versionOf(n) != null))
+        if (pinned.isEmpty) List()
+        else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) pins \(pinned.first), and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) upgrades the whole system; a system upgrade moves the package away from the declared pin, so put the two in different stages"))
+  else if (ix.steps[i] is debian.AptPackages && ix.steps[i].names.toList().any((n) -> versionOf(n) != null))
+    earlier(i).filter((j) -> ix.steps[j] is debian.AptSystemUpgrade)
+      .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) upgrades the whole system, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) pins \(ix.steps[i].names.toList().filter((n) -> versionOf(n) != null).first); a system upgrade moves the package away from the declared pin, so put the two in different stages")
+  else List()
+
+/// A preference stanza is written with the generic copy task, which in
+/// `check` and `diff` writes nothing: a later package step or system
+/// upgrade of the same stage then plans against the candidate policy the
+/// host still has, while apply mode plans against the stanza just
+/// written. A plain install is such a plan too: it resolves every package
+/// it may not find installed against the candidate of that policy, so a
+/// stanza that leaves a package without a candidate makes apply fail
+/// where check reported a pending install. Check and apply would
+/// disagree, so the combination is refused. Only an earlier preference is
+/// a problem: a preference written after the plan reads nothing the plan
+/// needed.
+function preferencePlanning(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPackages || ix.steps[i] is debian.AptSystemUpgrade)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPreference)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) writes an apt preference, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) plans against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two in different stages")
+
+/// The same refusal as `preferencePlanning`, across stages of one host:
+/// the host has one apt policy, and the fragment the earlier stage writes
+/// outlives the stage, so splitting the steps across stages does not
+/// separate them — the stage-local advice cannot apply here. Check and
+/// diff skip the Copy that writes the stanza in every stage, so the later
+/// stage plans against the candidate policy the host still has, while
+/// apply writes the preference in the earlier play first. The stages must
+/// not share a host.
+function preferencePlanningAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> earlier(m).filter((n) -> hostsOverlap(_stages[n], _stages[m])).flatMap((n) ->
+    positions(_indexes[n].steps).filter((j) -> _indexes[n].steps[j] is debian.AptPreference).flatMap((j) ->
+      positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptPackages || _indexes[m].steps[i] is debian.AptSystemUpgrade).map((i) ->
+        "'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" writes an apt preference, and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" plans against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two stages on different hosts")
+      )))
+
+/// The package index is refreshed by a task that never reports a change
+/// and runs only in apply, so a system upgrade after it simulates
+/// `dist-upgrade` in check and diff against the package lists the host
+/// already has, while apply refreshes first and can move versions that
+/// only appeared in the refresh. Check and apply would disagree, so the
+/// combination is refused. Only an earlier refresh is a problem: a
+/// refresh written after the upgrade reads the same lists the upgrade
+/// moved.
+function indexPlanning(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptSystemUpgrade)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPackageIndex)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) refreshes the package index, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) plans against the package lists the host already has; in check and diff mode the index is never refreshed before the plan runs, so check and apply disagree — put the two in different stages")
+
+/// A repository is written with the generic copy task, which in `check`
+/// and `diff` writes nothing: a system upgrade after it simulates
+/// `dist-upgrade` against the candidates the old source or suite still
+/// names, while apply writes the `.sources` file first and can move
+/// versions the new one offers. Check and apply would disagree, so the
+/// combination is refused. Only an earlier repository is a problem: a
+/// repository written after the upgrade reads the same candidates the
+/// upgrade moved.
+function repositoryPlanning(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPackages || ix.steps[i] is debian.AptSystemUpgrade)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptRepository)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) writes an apt repository, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) plans against the candidate policy; in check and diff mode the repository is never written before the plan runs, so check and apply disagree — put the two in different stages")
+
+/// The same refusal as `indexPlanning`, across stages of one host: the
+/// lists the earlier stage refreshes outlive the stage, so splitting the
+/// steps across stages does not separate them — the stage-local advice
+/// cannot apply here. Check and diff skip the index command in every
+/// stage, so the later stage simulates `dist-upgrade` against the package
+/// lists the host already has, while apply refreshes the lists in the
+/// earlier play first and can move versions that only appeared in the
+/// refresh. The stages must not share a host.
+function indexPlanningAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> earlier(m).filter((n) -> hostsOverlap(_stages[n], _stages[m])).flatMap((n) ->
+    positions(_indexes[n].steps).filter((j) -> _indexes[n].steps[j] is debian.AptPackageIndex).flatMap((j) ->
+      positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptSystemUpgrade).map((i) ->
+        "'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" refreshes the package index, and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" plans against the package lists the host already has; in check and diff mode the index is never refreshed before the plan runs, so check and apply disagree — put the two stages on different hosts")
+      )))
+
+/// The same refusal as `repositoryPlanning`, across stages of one host:
+/// the `.sources` file the earlier stage writes outlives the stage, so
+/// the later stage's simulation still runs against the candidates the
+/// host had while apply wrote the repository first. The stages must not
+/// share a host.
+function repositoryPlanningAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> earlier(m).filter((n) -> hostsOverlap(_stages[n], _stages[m])).flatMap((n) ->
+    positions(_indexes[n].steps).filter((j) -> _indexes[n].steps[j] is debian.AptRepository).flatMap((j) ->
+      positions(_indexes[m].steps).filter((i) -> _indexes[m].steps[i] is debian.AptPackages || _indexes[m].steps[i] is debian.AptSystemUpgrade).map((i) ->
+        "'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" writes an apt repository, and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" plans against the candidate policy; in check and diff mode the repository is never written before the plan runs, so check and apply disagree — put the two stages on different hosts")
+      )))
+
+/// Whether two package selectors can name one package: an unarchived
+/// selector covers the package on every architecture, so the
+/// architectures must not clash, and the names must overlap.
+const function selectorsOverlap(a: String, b: String): Boolean =
+  (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b)) && nameOverlap(a, b)
+
+/// The names of two selectors overlap when either one's trailing glob
+/// (BB §13 knows no other) matches the other's name, or when both spell
+/// one name. Every glob match is a prefix match, so no regex support of
+/// either evaluator is needed.
+const function nameOverlap(a: String, b: String): Boolean =
+  let (x = baseOf(a))
+  let (y = baseOf(b))
+  (if (a.endsWith("*") && b.endsWith("*")) x.startsWith(y) || y.startsWith(x)
+  else if (a.endsWith("*")) y.startsWith(x)
+  else if (b.endsWith("*")) x.startsWith(y)
+  else x == y)
+
+/// The package name of a selector: without its trailing glob and without
+/// its architecture (`ba*` is `ba`, `bash:amd64` is `bash`).
+const function baseOf(s: String): String = packageName(if (s.endsWith("*")) s.substring(0, s.length - 1) else s)
 
 const function paths(s: core.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
 
@@ -624,7 +1011,14 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> fields(List(s.path, canonicalMode(s.mode)))
   ["symlink"] = (s) -> fields(List(s.path, s.target))
   ["packageIndex"] = (_) -> ""
-  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.latest)"))
+  ["packages"] = (s) -> fields(List(fields(s.names.toList()), "\(s.latest)", "\(s.hold)"))
+  ["aptSystemUpgrade"] = (s) -> "\(s.autoremove)"
+  // Identity is the package plus the pin (BB §3.7): the priority is not
+  // part of it, so a repeat of the same stanza is the same step. Two
+  // stanzas that differ only in the priority are refused at the merge
+  // (`sameStanza`), which compares the priorities.
+  ["aptPreference"] = (s) -> fields(List(s.package, s.pin))
+  ["debconfEntry"] = (s) -> fields(List(s.package, s.question, s.type, valueIdentity(s.value)))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> fields(List(s.user, s.shell))
@@ -657,6 +1051,17 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
   ["packageIndex"] = (_) -> List()
+  ["aptSystemUpgrade"] = (_) -> List()
+  // One answer per question: the debconf config database stores one value
+  // per question name, and the owners are just owners, so the question —
+  // not the owning package — is the thing managed. A second answer for one
+  // question declares a second state for it, so the two conflict.
+  ["debconfEntry"] = (s) -> List("the debconf answer of \(s.question)")
+  // One apt preference stanza per package: a second stanza for one package
+  // declares a second state for it, so the two conflict. The fragment the
+  // stanza writes is managed too: a `File` at that path would write a
+  // second state for the same file, overwriting the stanza on every apply.
+  ["aptPreference"] = (s) -> List("the apt preference of \(s.package)", preferencePath(s.package))
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
@@ -982,7 +1387,10 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["directory"] = (s) -> "Create directory \(s.path)"
   ["symlink"] = (s) -> "Link \(s.path) to \(s.target)"
   ["packageIndex"] = (_) -> "Refresh apt package index"
-  ["packages"] = (s) -> (if (s.latest) "Install or upgrade " else "Install ") + s.names.join(", ")
+  ["packages"] = (s) -> (if (s.hold) "Install and hold " else (if (s.latest) "Install or upgrade " else "Install ")) + s.names.join(", ")
+  ["aptSystemUpgrade"] = (s) -> "Upgrade every installed package to the newest candidate" + (if (s.autoremove) " and remove the orphaned ones" else "")
+  ["aptPreference"] = (s) -> "Pin \(s.package) with \(s.pin) at priority \(s.priority)"
+  ["debconfEntry"] = (s) -> "Set \(s.question) for \(s.package)"
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
   ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
@@ -1026,7 +1434,10 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["directory"] = (s, m) -> List(task(m, directory(s.path, s.mode), null, null))
   ["symlink"] = (s, m) -> List(task(m, symlink(s.path, s.target), null, null))
   ["packageIndex"] = (_, m) -> List(task(m, command(List("apt-get", "-q", "update"), null, null), null, lit(false)))
-  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.latest), null, null))
+  ["packages"] = (s, m) -> List(task(m, apt(s.names.toList(), s.latest, s.hold), null, null))
+  ["aptSystemUpgrade"] = (s, m) -> List(task(m, aptUpgrade(s.autoremove), null, null))
+  ["aptPreference"] = (s, m) -> List(task(m, copyText(preferencePath(s.package), preferenceContent(s)), null, null))
+  ["debconfEntry"] = (s, m) -> List(task(m, debconf(s), null, null))
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   // `linux.User` lowers to the engine's user operation alone: the operation
@@ -1305,10 +1716,71 @@ function copyText(_dest: String, _content: String): engine.Copy =
 
 function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
-function apt(_names: List<String>, _upgrade: Boolean): engine.Apt = new engine.Apt {
+function apt(_names: List<String>, _upgrade: Boolean, _hold: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
   state = if (_upgrade) "latest" else "present"
+  hold = if (_hold) true else null
 }
+
+/// The whole system: apt's `dist-upgrade`, and with it the removal of the
+/// packages nothing needs any more.
+function aptUpgrade(_autoremove: Boolean): engine.Apt = new engine.Apt {
+  upgrade = "dist"
+  autoremove = if (_autoremove) true else null
+}
+
+/// One apt preferences stanza, in the file apt reads it from. The name is
+/// the package selector with the characters apt_preferences(5) refuses in
+/// a fragment name replaced by a dash, and the full SHA-256 of the
+/// selector, so two selectors never write one file: the sanitizing is not
+/// one-to-one (`+`, `:` and `*` all become a dash), so the digest alone
+/// separates two selectors that sanitize to one basename — a truncated
+/// one does not (two such selectors once shared an eight-hex-digit
+/// prefix). apt loads only fragments without an extension or with the
+/// `.pref` extension, so the file ends in `.pref`.
+///
+/// The sanitized selector is capped at 185 characters: a fragment name
+/// must fit NAME_MAX (255 bytes), and the name carries the separator, the
+/// 64-hex digest and the `.pref` extension besides the selector (185 + 1
+/// + 64 + 5 = 255), while a selector may be far longer. A `PackageSelector`
+/// admits only ASCII (Debian.pkl), so one character is one byte. The digest
+/// stays full, so the cap cannot make two selectors share a file.
+const function preferencePath(package: String): String =
+  "/etc/apt/preferences.d/\(preferenceName(package)).pref"
+
+const function preferenceName(package: String): String =
+  let (sanitized = package.replaceAll(":", "-").replaceAll("*", "-").replaceAll("+", "-"))
+  "\(sanitized.substring(0, if (sanitized.length > 185) 185 else sanitized.length))-\(package.sha256)"
+
+/// The stanza itself: one field per line, the way apt_preferences(5) reads
+/// it.
+function preferenceContent(p: debian.AptPreference): String =
+  "Package: \(p.package)\nPin: \(p.pin)\nPin-Priority: \(p.priority)\n"
+
+/// One debconf selection. A secret answer lowers to a lookup, which the
+/// engine resolves in its store; the task is never logged, and the answer
+/// reaches the host on the standard input, never in an argument.
+function debconf(e: debian.DebconfEntry): engine.Debconf = new engine.Debconf {
+  package = e.package
+  question = e.question
+  type = e.type
+  value = debconfValue(e.value)
+}
+
+/// The answer of a debconf selection: static text, or a secret the engine
+/// resolves at apply time. `DebconfEntry.value` is the closed
+/// `OneLine|SecretAnswer` union (Debian.pkl), so no other branch exists.
+function debconfValue(v: Any): engine.Expr =
+  if (v is debian.SecretAnswer) secretValue(v.parts)
+  else lit(v)
+
+/// What enters the identity of a debconf answer: the text of a static
+/// answer, or the encoded reference of a secret one — the reference, never
+/// the secret itself. Each variant is tagged and length-encoded (`fields`),
+/// so a static answer that spells a secret's encoding ("f3:KEY") cannot
+/// collide with the secret answer of that secret and silently discard it.
+const function valueIdentity(v: Any): String =
+  if (v is debian.SecretAnswer) fields(List("secret", v.parts)) else fields(List("static", v.toString()))
 function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
 function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
@@ -1715,6 +2187,7 @@ const function secretStep(s: core.Step): Boolean =
   s is core.FetchSecret
     || (s is core.File && hasSecrets(s.content))
     || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
+    || (s is debian.DebconfEntry && s.value is debian.SecretAnswer)
 
 function envKey(s: core.Step, key: String): String =
   if (key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) key

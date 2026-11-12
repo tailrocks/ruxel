@@ -1,0 +1,8 @@
+// expect-pklr: property 'package' expected DebconfPackage, got String
+// expect-pkl: Expected value of type `String(matches(Regex(#"[a-z0-9][a-z0-9+.-]+"#)))|Expr`, but got a different `String`.
+// A debconf owner is an exact Debian package name: the Engine surface
+// refuses the selector forms, as the Debian surface does — a glob names
+// no owner and the answer would never reach the question.
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+output { value = new Ruxel.Debconf { package = "nginx*"; question = "nginx/user"; type = "string"; value = "x" } }

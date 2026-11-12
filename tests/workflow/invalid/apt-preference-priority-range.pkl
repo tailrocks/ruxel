@@ -1,0 +1,13 @@
+// expect-pklr: property 'priority' expected Int(... ), got Int
+// expect-pkl: Type constraint `this == -1 || (this >= 1 && this <= 32767)` violated.
+// apt ≥ 2.8.3 refuses a fragment whose priority exceeds 32767 with
+// `E: Priority 32768 is out of range` and exits 100, which would break
+// every later apt command, so the priority is capped at the 16-bit
+// maximum.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 32768 }
+} } }

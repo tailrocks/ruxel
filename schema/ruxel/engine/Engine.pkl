@@ -55,6 +55,16 @@ typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")))
 /// treat a numeric key as a UID, so such a name could select a different account.
 typealias BecomeUser = Username(!matches(Regex("^[0-9]+$")))
 typealias Text = String|Expr
+/// The debconf owner of a selection: an exact Debian package name — the
+/// copy of `Debian.pkl`'s `DebconfPackage`, widened with the engine's
+/// runtime expressions (pklr cannot share typealiases across modules, so
+/// keep the copies in sync). A glob or an architecture names no owner.
+typealias DebconfPackage = String(matches(Regex(#"[a-z0-9][a-z0-9+.-]+"#)))|Expr
+/// The question's name: a nonempty token without whitespace — the copy
+/// of `Debian.pkl`'s `QuestionName`. The selection is written as one
+/// field of `package question type value`, so whitespace in the question
+/// shifts the fields after it.
+typealias QuestionName = String(!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#)))|Expr
 typealias Flag = Boolean|Expr
 typealias NumberValue = Int(this >= 0)|Expr
 typealias FileMode = String(matches(Regex("^[0-7]{3,4}$")))|Expr
@@ -115,7 +125,7 @@ class Task {
   always: Listing<Task>
   noLog: Boolean = false
 }
-typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|FetchSecret|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
+typealias Operation = Apt|AptRepository|AuthorizedKey|BlockInFile|Command|Copy|Debconf|FetchSecret|File|Filesystem|GetUrl|Git|SystemGroup|Firewall|LineInFile|Replace|Shell|Slurp|Stat|Sysctl|Service|User|VolumeGroup|LogicalVolume|Timezone|Mount|PostgresDatabase|PostgresRole|PostgresSchema|PostgresPrivileges|Template|Assert|Debug|Fail|Pause|SetFact
 
 class Apt {
   fixed kind = "apt"
@@ -132,6 +142,26 @@ class Apt {
   state: ("present"|"latest"|Expr)? = null
   update_cache: Flag? = null
   upgrade: ("dist"|Expr)? = null
+  /// Holds every listed package at its installed version with `apt-mark
+  /// hold`, after the installation. The answer is read back from `apt-mark
+  /// showhold`, and a held package counts as installed. A hold cannot be
+  /// combined with `state = "latest"`: a held package is never upgraded,
+  /// so the pair is refused at admission (an expression `hold` is
+  /// resolved later, where the agent refuses it the same way).
+  hold: Flag?(this != true || state != "latest") = null
+}
+
+/// One debconf selection (`debconf-set-selections`). The answer on the host
+/// is compared with `value` and set only when it differs. The value may be
+/// an expression, so a secret reaches the host resolved and never logged;
+/// it is written to the standard input of `debconf-set-selections`, never
+/// into an argument.
+class Debconf {
+  fixed kind = "debconf"
+  package: DebconfPackage
+  question: QuestionName
+  type: ("string"|"boolean"|"select"|"multiselect"|"password"|"note")
+  value: Text
 }
 
 class AptRepository {

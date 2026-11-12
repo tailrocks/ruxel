@@ -1,0 +1,11 @@
+// expect-pkl: Expected value of type `"string"|"boolean"|"select"|"multiselect"|"password"|"note"`, but got `"hidden"`.
+// expect-pklr: property 'type' expected "string"|"boolean"|"select"|"multiselect"|"password"|"note", got String
+// The type of a debconf answer is a closed union: a type apt does not
+// know is refused, and the refusal names the property.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { package = "postfix"; question = "postfix/x"; type = "hidden"; value = "x" }
+} } }

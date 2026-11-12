@@ -1,0 +1,23 @@
+// Debian's version ordering (Debian Policy §5.6.12, which the agent
+// follows with `apt_version::equal`) compares digit runs numerically and
+// treats an absent revision as zero: `1.01` and `1.1` are one version
+// spelled two ways, and `1.0` and `1.0-0` are one version. A step that
+// names the same version does not move a held package — in the stage or
+// in a later stage on the same host — so the run admits both spellings
+// of each pin.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold curl"; names { "curl=1.01" }; hold = true }
+    new debian.AptPackages { title = "The same pin, spelled"; names { "curl=1.1" } }
+    new debian.AptPackages { title = "Hold bash"; names { "bash=1.0" }; hold = true }
+    new debian.AptPackages { title = "The same bash, with its zero revision"; names { "bash=1.0-0" } }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Install the same curl"; names { "curl=1.1" } }
+    new debian.AptPackages { title = "Install the same bash"; names { "bash=1.0-0" } }
+  } }
+}

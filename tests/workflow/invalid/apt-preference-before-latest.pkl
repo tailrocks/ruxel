@@ -1,0 +1,13 @@
+// expect: 'Pin nginx' (step 1) writes an apt preference, and 'Track nginx' (step 2) plans against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two in different stages
+// The preference stanza is written with the generic copy task, which in
+// check and diff mode writes nothing: a later `latest` package step then
+// plans against the candidate policy the host still has, while apply mode
+// plans against the stanza just written.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
+  new debian.AptPackages { title = "Track nginx"; names { "nginx" }; latest = true }
+} } }

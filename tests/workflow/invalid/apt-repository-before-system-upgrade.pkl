@@ -1,0 +1,14 @@
+// expect: 'Add the repo' (step 1) writes an apt repository, and 'Upgrade the system' (step 2) plans against the candidate policy; in check and diff mode the repository is never written before the plan runs, so check and apply disagree — put the two in different stages
+// A repository is written with the generic copy task, which in check
+// and diff writes nothing: a system upgrade after it simulates
+// `dist-upgrade` against the candidates the old source or suite still
+// names, while apply writes the `.sources` file first and can move
+// versions the new one offers.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
+  new debian.AptSystemUpgrade { title = "Upgrade the system" }
+} } }

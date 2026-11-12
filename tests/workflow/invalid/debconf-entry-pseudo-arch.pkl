@@ -1,0 +1,12 @@
+// expect-pkl: Type constraint `matches(Regex(#"[a-z0-9][a-z0-9+.-]+"#))` violated.
+// expect-pklr: property 'package' expected DebconfPackage, got String
+// A debconf selection names its package exactly: a pseudo-architecture
+// (`any`, `native`, `all`) is part of a selector, not of a name, and apt
+// would match no owner for it. The name is refused by the type itself.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { package = "curl:any"; question = "curl/x"; type = "string"; value = "x" }
+} } }

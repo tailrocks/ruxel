@@ -1,0 +1,17 @@
+// expect: 'Hold curl' (step 1) of stage "a" holds curl, and 'Upgrade the system' (step 1) of stage "b" upgrades the whole system; a system upgrade moves every package to its candidate and cannot leave a held package behind, and the hold outlives its stage, so drop the hold or the upgrade
+// The same clash across the stages of one host: the hold mark outlives
+// its stage, so the later whole-system upgrade still cannot deliver its
+// declared result. Splitting the steps across stages cannot separate
+// them; only hosts apart can.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptSystemUpgrade { title = "Upgrade the system" }
+  } }
+}

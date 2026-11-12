@@ -1,0 +1,19 @@
+// expect: 'Set the relay retry': a boolean answer is "true" or "false", not "yes"; debconf frontends read those two strings alone
+// A boolean entry's static answer is admitted only as literal `true` or
+// `false`: check and diff skip the runtime boolean validation, and every
+// apply would fail in `debconf::run_with`, so the wrong spelling is
+// refused while the workflow is read. A resolved secret stays
+// runtime-validated, where its value is known.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry {
+    title = "Set the relay retry"
+    package = "postfix"
+    question = "postfix/relay_retry"
+    type = "boolean"
+    value = "yes"
+  }
+} } }

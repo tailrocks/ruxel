@@ -1,0 +1,25 @@
+// A hold superseded by a later re-pin and re-hold stops blocking: the
+// stage that re-freezes the package at a new version replaces the frozen
+// state, so a later no-op install of the newly held version moves
+// nothing. The same holds within one stage: the later hold is the
+// effective one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "one"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold curl at 1"; names { "curl=1" }; hold = true }
+  } }
+  new Stage { title = "two"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Re-freeze curl at 2"; names { "curl=2" }; hold = true }
+  } }
+  new Stage { title = "three"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Install the held curl again"; names { "curl=2" } }
+  } }
+  new Stage { title = "four"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold bash"; names { "bash" }; hold = true }
+    new debian.AptPackages { title = "Re-freeze bash at 2"; names { "bash=2" }; hold = true }
+    new debian.AptPackages { title = "Install the held bash again"; names { "bash=2" } }
+  } }
+}

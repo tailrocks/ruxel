@@ -1,0 +1,22 @@
+// expect: 'Hold curl at 1' (step 1) of stage "ab" holds curl=2, and 'Install curl' (step 1) of stage "ab2" would move it; a held package is never upgraded, and the hold outlives its stage, so put the two stages on different hosts
+// The re-freeze superseded the hold on 127.0.0.1 alone: the mover runs
+// on both machines, and on 127.0.0.2 the original hold still freezes
+// curl at 1, so the pin to 2 moves it there.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "ab"; hosts { a; b }; steps {
+    new debian.AptPackages { title = "Hold curl at 1"; names { "curl=1" }; hold = true }
+  } }
+  new Stage { title = "a"; hosts { a }; steps {
+    new debian.AptPackages { title = "Re-freeze curl at 2 on a"; names { "curl=2" }; hold = true }
+  } }
+  new Stage { title = "ab2"; hosts { a; b }; steps {
+    new debian.AptPackages { title = "Install curl"; names { "curl=2" } }
+  } }
+}
