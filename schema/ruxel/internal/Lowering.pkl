@@ -436,6 +436,14 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': uid = 0 is rejected: the superuser's id is not for a managed account")
   else if (s is linux.User && s.state == "absent" && (s.user == "root" || s.uid == null || s.uid < 1000))
     List("'\(name(s))': state = \"absent\" is rejected for root and for an account below UID 1000; state the account's uid (1000 or more) to remove it")
+  // The root group's id is never a managed group's id, and the root group
+  // itself is never removed: the account side refuses the superuser's id
+  // and removal, and the group side refuses the superuser's primary group
+  // the same way, for groupdel root strands every file root owns.
+  else if (s is linux.Group && s.gid != null && s.gid == 0)
+    List("'\(name(s))': gid = 0 is rejected: the root group's id is not for a managed group")
+  else if (s is linux.Group && s.state == "absent" && s.name == "root")
+    List("'\(name(s))': state = \"absent\" is rejected for the root group: the superuser's primary group is the host's to keep")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
