@@ -55,6 +55,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/debconf-entry-bad-type.pkl",
     "invalid/debconf-entry-secret-as-static.pkl",
     "invalid/debconf-entry-secret-collision.pkl",
+    "invalid/debconf-entry-shared-question.pkl",
     "invalid/debconf-entry-question-space.pkl",
 ];
 

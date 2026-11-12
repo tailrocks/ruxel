@@ -659,9 +659,11 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["packages"] = (_) -> List()
   ["packageIndex"] = (_) -> List()
   ["aptSystemUpgrade"] = (_) -> List()
-  // One answer per question: a second answer for one question declares a
-  // second state for it, so the two conflict.
-  ["debconfEntry"] = (s) -> List("the debconf answer of \(s.package) \(s.question)")
+  // One answer per question: the debconf config database stores one value
+  // per question name, and the owners are just owners, so the question —
+  // not the owning package — is the thing managed. A second answer for one
+  // question declares a second state for it, so the two conflict.
+  ["debconfEntry"] = (s) -> List("the debconf answer of \(s.question)")
   // One apt preference stanza per package: a second stanza for one package
   // declares a second state for it, so the two conflict.
   ["aptPreference"] = (s) -> List("the apt preference of \(s.package)")
