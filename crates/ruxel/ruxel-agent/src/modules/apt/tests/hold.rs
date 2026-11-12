@@ -70,7 +70,7 @@ fn hold_installs_then_marks_held_and_reports_holds() -> Result<(), String> {
         calls,
         vec![
             vec!["showhold"],
-            vec!["install", "pkg=2"],
+            vec!["install", "--allow-change-held-packages", "pkg=2"],
             vec!["hold", "pkg"],
             vec!["showhold"]
         ]
@@ -316,4 +316,76 @@ fn hold_refuses_unsupported_selectors_before_any_command() {
     )
     .expect_err("refused");
     assert!(error.contains("unsupported package selector"), "{error}");
+}
+
+/// A pinned hold converges over an old hold: the host holds `pkg` at 1
+/// and the step asks for `pkg=2`, so the transaction must move a held
+/// package. apt refuses that without `--allow-change-held-packages`; a
+/// `hold` step whose pin changed can never converge without it. The hold
+/// survives the move, so the marks are not run again.
+#[test]
+fn a_pinned_hold_moves_the_version_the_host_holds() -> Result<(), String> {
+    let (mut state, database) = host(&[("pkg", "1")]);
+    let mut calls = Vec::new();
+    let mut command = |args: &[&str], _: &ExecContext| {
+        calls_of(&mut calls, args);
+        match args {
+            ["showhold"] => Ok(("pkg\n".into(), 0, String::new())),
+            ["install", rest @ ..] => {
+                if !rest.contains(&"--allow-change-held-packages") {
+                    // apt's own refusal.
+                    return Ok((
+                        String::new(),
+                        1,
+                        "E: Held packages were changed and -y was used without --allow-change-held-packages".into(),
+                    ));
+                }
+                *database.lock().map_err(|error| error.to_string())? = status(&[("pkg", "2")]);
+                Ok((summary(true), 0, String::new()))
+            }
+            other => Err(format!("unexpected apt call {other:?}")),
+        }
+    };
+    let result = run_with(
+        &json!({"name": "pkg=2", "hold": true}),
+        &context(false),
+        &mut state,
+        &mut command,
+    )?;
+    assert_eq!(
+        calls,
+        vec![
+            vec!["showhold"],
+            vec!["install", "--allow-change-held-packages", "pkg=2"]
+        ]
+    );
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["failed"], false);
+    assert_eq!(result["holds"], json!(["pkg"]));
+    Ok(())
+}
+
+/// The relaxation is for `hold` transactions alone: a plain install keeps
+/// apt's refusal to move a held package, so a plan that could not know of
+/// the hold still fails loudly instead of moving a frozen package.
+#[test]
+fn a_plain_install_is_not_allowed_to_change_held_packages() {
+    let (mut state, _) = host(&[("pkg", "1")]);
+    let mut calls = Vec::new();
+    let error = run_with(
+        &json!({"name": "pkg=2"}),
+        &context(false),
+        &mut state,
+        &mut |args, _| {
+            calls_of(&mut calls, args);
+            Ok((
+                String::new(),
+                1,
+                "E: Held packages were changed and -y was used without --allow-change-held-packages".into(),
+            ))
+        },
+    )
+    .expect_err("apt refuses to move a held package");
+    assert_eq!(calls, vec![vec!["install", "pkg=2"]]);
+    assert!(error.contains("apt install failed"), "{error}");
 }

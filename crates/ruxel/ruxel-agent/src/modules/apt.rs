@@ -236,6 +236,14 @@ fn install(
         if bool_param(obj, "force", false) {
             args.push("--allow-downgrades");
         }
+        if bool_param(obj, "hold", false) {
+            // A `hold` step whose pin changed must move the package the
+            // host already holds, and apt refuses that without this
+            // relaxation. The hold survives the move, so the marks are
+            // not run again. A plain install keeps apt's refusal: a plan
+            // could not know of the hold.
+            args.push("--allow-change-held-packages");
+        }
         args.extend(plan.transaction.iter().map(String::as_str));
         let (stdout, rc, stderr) = command(&args, ctx)?;
         system_state.invalidate_packages();
