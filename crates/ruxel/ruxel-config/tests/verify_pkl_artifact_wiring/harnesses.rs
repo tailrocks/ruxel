@@ -5,6 +5,7 @@
 //! — utilities, not the contract itself.
 
 use super::super::*;
+use super::scan::declared_at;
 
 /// The dual-evaluator harness targets, derived from the `[[test]]`
 /// entries Cargo gates behind the `dual-evaluator` feature
@@ -51,7 +52,7 @@ pub(super) fn harnesses() -> Result<Vec<(String, String)>> {
             .map_err(|error| format!("{path}: {error}"))?;
         let Some(declaration) = declarations
             .iter()
-            .find(|declaration| text.contains(*declaration))
+            .find(|declaration| declared_at(&text, declaration).is_some())
         else {
             return Err(format!(
                 "{path} carries no EXAMPLES corpus this parse knows; a dual-evaluator \
@@ -94,35 +95,117 @@ fn sources_under(stem: &str, sources: &mut Vec<String>) -> Result<()> {
 /// unaffected.
 pub(super) fn harness_sources() -> Result<Vec<String>> {
     let mut sources = Vec::new();
-    for (harness, _) in harnesses()? {
-        sources.push(harness.clone());
-        sources_under(harness.trim_end_matches(".rs"), &mut sources)?;
-    }
-    Ok(sources)
-}
-
-/// The corpus fixtures the harnesses read directly, beyond what their
-/// examples import — derived from the `root().join("...")` calls their
-/// own sources make (`PRRT_kwDOS3Fimc62oWc-`): the day a harness module
-/// starts reading a new fixture, that fixture is required the same
-/// day, instead of a second hand-kept list drifting the way the corpus
-/// list once did.
-pub(super) fn fixtures() -> Result<Vec<String>> {
-    let mut fixtures = Vec::new();
-    for source in harness_sources()? {
+    let mut frontier: Vec<String> = harnesses()?
+        .into_iter()
+        .map(|(harness, _)| harness)
+        .collect();
+    while let Some(source) = frontier.pop() {
+        if sources.contains(&source) {
+            continue;
+        }
+        sources.push(source.clone());
+        sources_under(source.trim_end_matches(".rs"), &mut sources)?;
+        // A `#[path = "..."]`-attributed module may point anywhere; the
+        // harness reads it, so the contract follows it there.
         let path = repo().join(&source);
         let text = std::fs::read_to_string(&path)
             .map_err(|error| format!("{}: {error}", path.display()))?;
-        for rest in text.split("root().join(\"").skip(1) {
+        for rest in text.split("#[path = \"").skip(1) {
             let Some((literal, _)) = rest.split_once('"') else {
-                return Err(format!("{source}: a root().join carries no string literal").into());
+                return Err(
+                    format!("{source}: a #[path] attribute carries no closing quote").into(),
+                );
             };
-            fixtures.push(format!("tests/workflow/{literal}"));
+            let directory = source
+                .rsplit_once('/')
+                .map(|(head, _)| head)
+                .ok_or("a harness source has no directory")?;
+            // Lexical resolution, the way #[path] itself resolves: `..`
+            // pops, `.` drops, and the result names one canonical path.
+            let mut parts: Vec<&str> = Vec::new();
+            for piece in Path::new(directory)
+                .iter()
+                .chain(Path::new(literal).iter())
+                .map(|piece| piece.to_str())
+            {
+                let Some(piece) = piece else {
+                    continue;
+                };
+                match piece {
+                    "." => {}
+                    ".." => {
+                        parts.pop();
+                    }
+                    part => parts.push(part),
+                }
+            }
+            if parts.first().is_none_or(|first| *first == "..") {
+                return Err(
+                    format!("{source}: #[path = \"{literal}\"] leaves the repository").into(),
+                );
+            }
+            frontier.push(parts.join("/"));
         }
     }
-    fixtures.sort();
-    fixtures.dedup();
-    Ok(fixtures)
+    sources.sort();
+    Ok(sources)
+}
+
+/// The corpus files the harnesses touch at runtime, from the
+/// committed manifest each harness verifies against its own `touched()`:
+/// the examples it names and every fixture a harness source opens by a
+/// literal `root().join(...)`. The manifest is the runtime truth as a
+/// value — no Pkl source is parsed to predict it — and every section
+/// must name a discovered harness, every harness a section, or the
+/// manifest enforces the wrong list.
+pub(super) fn runtime_files(harnesses: &[(String, String)]) -> Result<Vec<String>> {
+    let path = repo().join("crates/ruxel/ruxel-config/testdata/dual_evaluator_corpus_files.tsv");
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut sections: Vec<(String, Vec<String>)> = Vec::new();
+    for line in text.lines() {
+        if let Some(file) = line.strip_prefix("  ") {
+            sections
+                .last_mut()
+                .ok_or("the manifest lists a file before any section header")?
+                .1
+                .push(file.to_owned());
+        } else if !line.starts_with('#') && !line.is_empty() {
+            sections.push((line.to_owned(), Vec::new()));
+        }
+    }
+    let mut files = Vec::new();
+    for (harness, _) in harnesses {
+        let name = match harness.rsplit_once('/') {
+            Some((_, name)) => name,
+            None => harness,
+        }
+        .trim_end_matches(".rs");
+        let (_, listed) = sections
+            .iter()
+            .find(|(header, _)| header == name)
+            .ok_or(format!(
+                "the corpus-files manifest carries no {name} section"
+            ))?;
+        files.extend(listed.iter().cloned());
+    }
+    for (header, _) in &sections {
+        let known = harnesses.iter().any(|(harness, _)| {
+            harness
+                .rsplit_once('/')
+                .map(|(_, name)| name)
+                .is_some_and(|name| name.trim_end_matches(".rs") == header)
+        });
+        if !known {
+            return Err(format!(
+                "the corpus-files manifest carries a {header} section no gated harness backs"
+            )
+            .into());
+        }
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
 }
 
 /// The mise `dual-evaluator` task is CI's mandatory runner for the
@@ -155,10 +238,19 @@ pub(super) fn task_runs_every_harness(harnesses: &[(String, String)]) -> Result<
             None => harness,
         }
         .trim_end_matches(".rs");
-        let flag = format!("--test {name}");
-        if !commands.iter().any(|command| command.contains(&flag)) {
+        // Each harness needs its own exact command: `--test dual_evaluator`
+        // is a prefix of `--test dual_evaluator_systemd`, and a substring
+        // check would let the systemd command stand in for the main one.
+        let executed = commands.iter().any(|command| {
+            command
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .any(|pair| pair == ["--test", name])
+        });
+        if !executed {
             return Err(format!(
-                "the mise dual-evaluator task never runs {name} (no `{flag}` command); \
+                "the mise dual-evaluator task never runs {name} (no `--test {name}` argument); \
                  a harness the mandatory task does not execute is a corpus nobody checks"
             )
             .into());

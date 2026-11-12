@@ -18,6 +18,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+#[path = "dual_evaluator_systemd/corpus_files.rs"]
+mod corpus_files;
+
 /// The examples of the catalogue's systemd block: a service that takes
 /// reload triggers, a timer, and the ways of writing them that are
 /// refused.

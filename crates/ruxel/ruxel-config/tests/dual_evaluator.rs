@@ -21,6 +21,9 @@ mod discovery;
 #[path = "dual_evaluator/join_separator.rs"]
 mod join_separator;
 
+#[path = "dual_evaluator/corpus_files.rs"]
+mod corpus_files;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn root() -> PathBuf {

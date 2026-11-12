@@ -27,7 +27,7 @@ use fnmatch::matching_inputs;
 #[path = "scan.rs"]
 mod scan;
 
-use scan::{code, corpus_path, literal, nonrelative};
+use scan::{declared_at, literal};
 
 /// The harness discovery — the gated targets, their module sources,
 /// their fixtures, the task that must run them; utilities kept beside
@@ -35,7 +35,7 @@ use scan::{code, corpus_path, literal, nonrelative};
 #[path = "harnesses.rs"]
 mod harnesses;
 
-use harnesses::{fixtures, harness_sources, harnesses};
+use harnesses::{harness_sources, harnesses};
 
 /// One harness's `EXAMPLES` array, resolved against `tests/workflow` the
 /// way that suite's own `root()` resolves them. The array is parsed
@@ -55,9 +55,8 @@ fn examples(harness: &str, declaration: &str) -> Result<Vec<String>> {
     let path = repo().join(harness);
     let text =
         std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let start = text
-        .find(declaration)
-        .ok_or(format!("{harness} declares no EXAMPLES corpus"))?;
+    let start =
+        declared_at(&text, declaration).ok_or(format!("{harness} declares no EXAMPLES corpus"))?;
     let body: Vec<char> = text[start + declaration.len()..].chars().collect();
     let mut examples = Vec::new();
     let mut at = 0;
@@ -130,80 +129,6 @@ fn examples(harness: &str, declaration: &str) -> Result<Vec<String>> {
     Ok(examples)
 }
 
-/// The corpus files one file reads beyond itself: the relative
-/// `import`/`amends` targets, resolved against the file's own
-/// directory, in either of Pkl's two forms — the statement
-/// `import "path"` and the expression `import("path")`, an `amends`
-/// amending the same way (`PRRT_kwDOS3Fimc62jyWw`: the evaluator
-/// honours both, `eval/confined/tests.rs` among its proofs). The
-/// expression is a value, taken wherever it stands — an assignment's
-/// right-hand side (`hosts = import("../x.pkl").workers`, the
-/// follow-up finding) as much as a line-leading clause, more than once
-/// a line — while comment text never is, and nonrelative targets — a
-/// URI scheme, an absolute path — never are either.
-fn imports(file: &str) -> Result<Vec<String>> {
-    let path = repo().join("tests/workflow").join(file);
-    let text =
-        std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let parent = Path::new(file)
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut imports = Vec::new();
-    // The scan reads the mask the tokenizer draws over the source —
-    // string text and comments name no file the evaluator opens —
-    // while each target literal is read from the source itself, at
-    // the very offset the mask pointed to: a form is found in code,
-    // its argument is a string either way (`PRRT_kwDOS3Fimc62pCSD`).
-    let code = code(&text);
-    for (line, code) in text.lines().zip(code.lines()) {
-        let mut targets = Vec::new();
-        for form in ["import \"", "amends \"", "import(", "amends("] {
-            let mut from = 0;
-            while let Some(at) = code[from..].find(form) {
-                // A token has a boundary before it: `reimport(` is not
-                // `import(`, and no identifier breaks mid-word.
-                let token = from + at;
-                let bounded = token == 0 || {
-                    let byte = code.as_bytes()[token - 1];
-                    !(byte.is_ascii_alphanumeric() || byte == b'_')
-                };
-                from = token + form.len();
-                if !bounded {
-                    continue;
-                }
-                // The statement forms have spent their opening quote in
-                // the form; the expression forms still carry it,
-                // possibly behind whitespace.
-                let rest = if form.ends_with('"') {
-                    &line[from..]
-                } else {
-                    let rest = line[from..].trim_start();
-                    match rest.strip_prefix('"') {
-                        Some(rest) => rest,
-                        None => continue,
-                    }
-                };
-                let (target, _) = rest
-                    .split_once('"')
-                    .ok_or(format!("{file}: an import carries no closing quote"))?;
-                targets.push(target.to_owned());
-            }
-        }
-        for target in targets {
-            if nonrelative(&target) {
-                continue;
-            }
-            if let Some(path) = corpus_path(parent, &target) {
-                imports.push(format!("tests/workflow/{path}"));
-            }
-        }
-    }
-    imports.sort();
-    imports.dedup();
-    Ok(imports)
-}
-
 /// `PRRT_kwDOS3Fimc62ioGG`: every workflow each dual-evaluator harness
 /// names must be an input of the `dual-evaluator` check — the
 /// secret-language corpus and PR #94's systemd corpus alike. The lists
@@ -257,7 +182,26 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let inputs = check_inputs(&config, "dual-evaluator")?;
     let harnesses = harnesses()?;
     harnesses::task_runs_every_harness(&harnesses)?;
-    let mut read = fixtures()?;
+    // The corpus the harnesses touch at runtime, from the manifest each
+    // verifies against its own touched(): the examples it names and
+    // every fixture a harness source opens by a literal root().join().
+    let mut read = harnesses::runtime_files(&harnesses)?;
+    read.sort();
+    read.dedup();
+    for path in &read {
+        if !repo().join(path).is_file() {
+            return Err(format!(
+                "the corpus-files manifest names {path}, which is not a committed file"
+            )
+            .into());
+        }
+        if matching_inputs(&inputs, path).is_empty() {
+            return Err(format!(
+                "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
+            )
+            .into());
+        }
+    }
     // A harness source is a file the check reads too: an undeclared
     // module would classify the mandatory check unaffected for a PR
     // that changes only it (`PRRT_kwDOS3Fimc62pCSO`).
@@ -265,36 +209,6 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
         if matching_inputs(&inputs, &source).is_empty() {
             return Err(format!(
                 "the dual-evaluator check must declare {source} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
-            )
-            .into());
-        }
-    }
-    let mut frontier = Vec::new();
-    for (harness, declaration) in &harnesses {
-        frontier.extend(examples(harness, declaration)?);
-    }
-    let mut visited = std::collections::HashSet::new();
-    while let Some(file) = frontier.pop() {
-        if !visited.insert(file.clone()) {
-            continue;
-        }
-        for path in imports(&file)? {
-            if !read.contains(&path) {
-                read.push(path.clone());
-            }
-            // A corpus file the evaluator opens through this import has
-            // imports of its own, and those are read the same way.
-            if let Some(next) = path.strip_prefix("tests/workflow/") {
-                frontier.push(next.to_owned());
-            }
-        }
-    }
-    read.sort();
-    read.dedup();
-    for path in &read {
-        if matching_inputs(&inputs, path).is_empty() {
-            return Err(format!(
-                "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
             )
             .into());
         }
