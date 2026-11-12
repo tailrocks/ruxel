@@ -174,7 +174,7 @@ typealias SshHost = Static(matches(Regex(#"[A-Za-z0-9._:%\[\]-]+"#)) && !startsW
 /// with a literal dot needs. The notations never mix: a dotted name
 /// admits no slash, and a slash-first name keeps its dots inside
 /// components.
-typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) || matches(Regex(#"[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+"#))) && !startsWith("-"))
+typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) || matches(Regex(#"[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+"#))) && !startsWith("-") && !split("/").any((segment) -> segment == "." || segment == ".."))
 
 /// A kernel parameter value: one line of text, with no line break in it, so
 /// one entry is one line of one file.
