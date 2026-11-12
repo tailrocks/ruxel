@@ -93,6 +93,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     verify_predicted_start_feeds_the_reload_handler(root)?;
     verify_forced_execution_clears_the_stale_prediction(root)?;
     verify_predicted_enablement_spans_repeated_services(root)?;
+    verify_opaque_commands_clear_the_predictions(root)?;
     Ok(())
 }
 
@@ -210,6 +211,34 @@ fn verify_predicted_enablement_spans_repeated_services(
     assert_eq!(
         std::fs::read_to_string(root.join("actions"))?,
         "enable demo\n"
+    );
+    Ok(())
+}
+
+/// An opaque command can change units behind the agent's back: the
+/// snapshot and every prediction are dropped together, so a later
+/// check-mode task judges against the refreshed host and not against a
+/// prediction an invisible change made stale.
+fn verify_opaque_commands_clear_the_predictions(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    // The command runs; whatever it did to the unit is re-read.
+    let ran = dispatch_with("command", &json!({"argv":["true"]}), false, &mut shared);
+    assert_ne!(ran.status, "failed");
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "ok"
     );
     Ok(())
 }

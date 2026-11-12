@@ -143,6 +143,14 @@ impl SystemState {
         self.predicted_enabled.remove(&unit_key(name));
     }
 
+    /// An opaque change made every prediction stale at once: a command or
+    /// shell task can start, stop, enable and disable any unit behind the
+    /// agent's back, so the overlays are dropped beside the snapshot.
+    pub(crate) fn clear_predictions(&mut self) {
+        self.predicted_activity.clear();
+        self.predicted_enabled.clear();
+    }
+
     fn ensure_units(&mut self) -> Result<(), String> {
         if self.units.is_some() {
             return Ok(());

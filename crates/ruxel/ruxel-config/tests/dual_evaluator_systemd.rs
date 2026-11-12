@@ -226,6 +226,8 @@ fn pkl_evaluates(modules: &Modules, file: &Path) -> Result<(bool, String)> {
         .arg("json")
         .arg("--module-path")
         .arg(&modules.0)
+        .arg("--root-dir")
+        .arg(root())
         .arg(file)
         .output()?;
     let said = format!(
