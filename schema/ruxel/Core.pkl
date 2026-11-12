@@ -69,6 +69,10 @@ const local function isPort(p: String): Boolean =
 /// and `644` are the same mode, as they are to `chmod`).
 typealias FileMode = String(matches(Regex("0?[0-7]{3}")))
 
+/// Whether a managed thing is there or not: `"present"` (the default) or
+/// `"absent"`. Copied to `Linux.pkl`; keep the copies in sync.
+typealias Presence = "present"|"absent"
+
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
 
@@ -537,6 +541,24 @@ class Symlink extends Step {
   hidden fixed kind = "symlink"
   path: FilePath
   target: AbsolutePath
+}
+
+/// A path that must not be there: the step removes what is there and does
+/// nothing when nothing is.
+///
+///     new Absent { path = "/etc/motd"; recursive = true }
+///
+/// The path is absolute. A removal never takes a system root (`/`, `/etc`,
+/// `/var`, `/root`, `/home`, `/usr`, `/boot`, `/dev`, `/proc` or `/sys`) and
+/// never takes a directory that holds a path another step of the stage
+/// manages: a stage declares one state for each thing.
+///
+/// `recursive` removes a directory with everything in it; without it only
+/// an empty directory goes.
+class Absent extends Step {
+  hidden fixed kind = "absent"
+  path: AbsolutePath
+  recursive: Boolean = false
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────

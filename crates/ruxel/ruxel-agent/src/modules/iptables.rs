@@ -14,7 +14,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Some("ipv6") => "ip6tables",
         Some(other) => return Err(format!("iptables: ip_version {other:?} invalid")),
     };
+    run_with(binary, chain, obj, ctx)
+}
 
+/// The work of `run`, with the binary that carries it: a test hands it a
+/// stub instead of the system's iptables.
+fn run_with(
+    binary: &str,
+    chain: &str,
+    obj: &serde_json::Map<String, Value>,
+    ctx: &ExecContext,
+) -> Result<Value, String> {
     if let Some(policy) = str_param(obj, "policy") {
         let current = current_policy(binary, chain)?;
         let changed = current.as_deref() != Some(policy);
@@ -28,6 +38,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let mut check: Vec<&str> = vec!["-C", chain];
     check.extend(spec.iter().map(String::as_str));
     let present = probe(binary, &check)?;
+    let state = str_param(obj, "state").unwrap_or("present");
+    if state == "absent" {
+        // A removal deletes the rule and reports no change when the rule is
+        // not there. Check mode only probes: it never deletes.
+        let changed = present;
+        if changed && !ctx.check_mode {
+            let mut remove: Vec<&str> = vec!["-D", chain];
+            remove.extend(spec.iter().map(String::as_str));
+            exec_rule(binary, &remove)?;
+        }
+        return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
+    }
     let changed = !present;
     if changed && !ctx.check_mode {
         let mut append: Vec<&str> = vec!["-A", chain];

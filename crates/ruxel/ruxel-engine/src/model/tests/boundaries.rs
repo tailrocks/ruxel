@@ -182,3 +182,12 @@ fn blocks_reject_loop_controls() {
         assert!(validate_config(&value).is_ok(), "operation with {field}");
     }
 }
+
+#[test]
+fn authorized_key_state_absent_and_firewall_state_are_valid() -> Result<()> {
+    let key = json!({"key":"ssh-ed25519 AAAAC3Nza", "user":"deploy", "state":"absent"});
+    validate_operation("authorized_key", key.as_object().context("object")?)?;
+    let firewall = json!({"chain":"INPUT", "state":"absent"});
+    validate_operation("iptables", firewall.as_object().context("object")?)?;
+    Ok(())
+}
