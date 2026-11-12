@@ -1,0 +1,21 @@
+// expect: both manage the group app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// On USERGROUPS_ENAB hosts useradd creates a group with the login name
+// when the account states no primary group: the account's footprint is
+// that implicit group, so a Group step of the same name is a second state
+// for it whatever the order — the user first leaves a group entry a later
+// groupmod changes behind the account's back, the group first makes
+// account creation fail on the existing group.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app" }
+      new linux.Group { name = "app"; gid = 1500 }
+    }
+  }
+}
