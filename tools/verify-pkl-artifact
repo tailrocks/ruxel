@@ -20,13 +20,21 @@
 # comments that say why). The artifact that is verified is the
 # artifact that is executed: stdout carries the absolute path of the
 # hashed binary and nothing else, which the task commands capture into
-# RUXEL_PKL so the suite runs exactly the verified binary.
+# RUXEL_PKL so the suite runs exactly the verified binary — and every
+# candidate is PROBED before it is returned: a checksum proves the
+# bytes, not that the binary can start (a mode bit lost in a manual
+# cache restore, a cache directory mounted noexec), and the suite's
+# own first act is to run the artifact's --version, so a candidate
+# that cannot execute is passed over — the remaining candidates are
+# still tried — and never handed to the task as RUXEL_PKL.
 #
 # Exit codes:
-#   0  an artifact matching the committed checksum is at the printed path
+#   0  an artifact matching the committed checksum is executable and at
+#      the printed path
 #   1  the artifact is missing — nothing reusable and the fetch failed —
-#      or an obtained artifact does not match the committed checksum, or
-#      mise.lock carries no url or checksum for this platform
+#      or an obtained artifact does not match the committed checksum or
+#      cannot be executed, or mise.lock carries no url or checksum for
+#      this platform
 #   3  this platform has no official pkl artifact to verify against
 #
 # Code 3 is a verdict of its own: a platform upstream does not publish
@@ -164,6 +172,34 @@ matches() {
   [ -f "$1" ] && [ "$($hasher < "$1" | awk '{ print $1 }')" = "$want" ]
 }
 
+# Whether the artifact actually starts: the suite executes the binary's
+# --version as its first act, so a candidate that cannot run is refused
+# here instead of failing the mandatory suite later. Redirected both
+# ways: the probe's output belongs to no one.
+runnable() {
+  "$1" --version >/dev/null 2>&1
+}
+
+# A candidate fit to be returned: it hashes to the committed checksum
+# and it executes. A mismatch or a failed probe is named on stderr —
+# the probe failure says why (a lost mode bit, a noexec-mounted
+# directory) — and the caller continues with the remaining candidates:
+# the working Mise installation or a fresh fetch still get their turn.
+usable() {
+  if [ ! -f "$1" ]; then
+    return 1
+  fi
+  if ! matches "$1"; then
+    echo "verify-pkl-artifact: $1 does not match the committed $platform checksum; passing it over" >&2
+    return 1
+  fi
+  if ! runnable "$1"; then
+    echo "verify-pkl-artifact: $1 hashes to the committed $platform checksum but cannot be executed ($1 --version failed; a lost mode bit or a noexec-mounted directory); passing it over" >&2
+    return 1
+  fi
+  return 0
+}
+
 # The verifier's own cache, keyed by the committed checksum: the
 # artifact is identified by what it must hash to, so a platform whose
 # slot shares an asset shares the entry, and a new pin lands in a new
@@ -180,7 +216,7 @@ else
   exit 1
 fi
 artifact=$cache_root/$want/$name
-if matches "$artifact"; then
+if usable "$artifact"; then
   verified "$artifact"
 fi
 
@@ -204,10 +240,9 @@ fi
 for data in "$@"; do
   for candidate in "$data/installs/pkl/$version/pkl" "$data/shims/pkl"; do
     if [ -f "$candidate" ]; then
-      if matches "$candidate"; then
+      if usable "$candidate"; then
         verified "$candidate"
       fi
-      echo "verify-pkl-artifact: $candidate does not match the committed $platform checksum; passing it over" >&2
     fi
   done
 done
@@ -234,5 +269,15 @@ if [ "$got" != "$want" ]; then
   exit 1
 fi
 chmod 755 "$tmp"
+# The fetched artifact is probed before it is installed into the cache
+# and before any path is printed: bytes that hash right but cannot
+# start — a noexec-mounted cache directory, a restored mode bit the
+# chmod could not help — are exit 1, never a success path the suite
+# would fail on.
+if ! runnable "$tmp"; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: the artifact fetched from $url hashes to the committed $want for $platform but cannot be executed ($tmp --version failed; is the cache directory mounted noexec?); refusing to run it" >&2
+  exit 1
+fi
 mv -f "$tmp" "$artifact"
 verified "$artifact"

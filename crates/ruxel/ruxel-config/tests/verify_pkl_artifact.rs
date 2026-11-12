@@ -27,6 +27,8 @@ use std::process::Command;
 
 #[path = "verify_pkl_artifact/platforms.rs"]
 mod platforms;
+#[path = "verify_pkl_artifact/probe.rs"]
+mod probe;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -152,9 +154,9 @@ fn curl_log(scratch: &Path) -> Result<String> {
 /// test names — whitespace included, because a configured path is one
 /// directory, not a word list — and Mise data directories under the
 /// scratch tree alone, so nothing of the operator's host is scanned.
-fn run(scratch: &Path, curl_status: u8) -> Result<std::process::Output> {
+fn run_script(script: &Path, scratch: &Path, curl_status: u8) -> Result<std::process::Output> {
     let output = Command::new("sh")
-        .arg(verifier())
+        .arg(script)
         .env(
             "PATH",
             format!("{}:/usr/bin:/bin", scratch.join("bin").display()),
@@ -224,7 +226,7 @@ fn the_verifier_fetches_the_committed_glibc_asset_for_linux_x64() -> Result {
     fake_ldd(&bin, "ldd (Ubuntu GLIBC 2.35-0ubuntu3.1) 2.35")?;
     fake_curl(&bin)?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     assert_refused(
         &output,
         "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64",
@@ -256,7 +258,7 @@ fn the_verifier_fetches_the_committed_alpine_asset_for_a_musl_host() -> Result {
     fake_ldd(&bin, "musl libc (x86_64)")?;
     fake_curl(&bin)?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     assert_refused(
         &output,
         "https://github.com/apple/pkl/releases/download/0.33.0/pkl-alpine-linux-amd64",
@@ -282,7 +284,7 @@ fn the_verifier_follows_the_active_libc_over_an_installed_musl_loader() -> Resul
     fake_ldd(&bin, "ldd (Ubuntu GLIBC 2.35-0ubuntu3.1) 2.35")?;
     fake_curl(&bin)?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     assert_refused(
         &output,
         "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64",
@@ -314,7 +316,7 @@ fn the_verifier_passes_a_foreign_mise_install_over() -> Result {
     fake_curl(&bin)?;
     let installed = fake_install(&tree.join("mise data"))?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     let passed = format!(
         "{} does not match the committed linux-x64 checksum; passing it over",
@@ -355,7 +357,7 @@ fn the_verifier_reports_an_unobtainable_artifact_as_missing() -> Result {
     fake_ldd(&bin, "ldd (Ubuntu GLIBC 2.35-0ubuntu3.1) 2.35")?;
     fake_curl(&bin)?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 22)?;
+    let output = run_script(&verifier(), &tree, 22)?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     let missing = "cannot obtain the linux-x64 artifact from \
                    https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64";

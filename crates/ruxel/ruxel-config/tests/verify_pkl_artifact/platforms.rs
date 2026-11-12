@@ -5,7 +5,7 @@
 //!
 //! See the parent `verify_pkl_artifact.rs` for the harness.
 
-use super::{fake_curl, fake_install, fake_ldd, fake_uname, run, scratch};
+use super::{fake_curl, fake_install, fake_ldd, fake_uname, run_script, scratch, verifier};
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -83,7 +83,7 @@ fn the_verifier_refuses_macos_x64_as_an_unsupported_platform() -> Result {
     fake_curl(&bin)?;
     let _installed = fake_install(&tree.join("mise data"))?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     assert_unsupported(
         &output,
         &tree,
@@ -110,7 +110,7 @@ fn the_verifier_refuses_linux_arm64_musl_as_an_unsupported_platform() -> Result 
     fake_curl(&bin)?;
     let _installed = fake_install(&tree.join("mise data"))?;
     std::fs::create_dir_all(tree.join("home"))?;
-    let output = run(&tree, 0)?;
+    let output = run_script(&verifier(), &tree, 0)?;
     assert_unsupported(&output, &tree, "linux-arm64-musl", &["alpine", "glibc"])?;
     drop(std::fs::remove_dir_all(&tree));
     Ok(())
