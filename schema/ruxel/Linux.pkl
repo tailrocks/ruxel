@@ -1,5 +1,5 @@
-/// Linux system steps: the timezone, an account and its login shell, and a
-/// Git working tree pinned to one commit.
+/// Linux system steps: the timezone, accounts and groups, a kernel
+/// parameter, and a Git working tree pinned to one commit.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Linux.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
@@ -39,6 +39,20 @@ typealias FilePath = AbsolutePath(this != "/")
 
 /// A user or group name: a `Name` without the passwd and group delimiters.
 typealias Account = Name(!contains(":") && !contains("\n"))
+
+/// A user or group name: a lower-case name of at most 32 characters, the
+/// way the passwd and group files spell one. A name starts with a letter
+/// or an underscore and continues with letters, digits, `_` or `-`.
+typealias Username = Static(matches(Regex("[a-z_][a-z0-9_-]{0,31}")))
+
+/// A numeric user id: 0 to 60000.
+typealias Uid = Int(isBetween(0, 60000))
+
+/// A numeric group id: 0 to 60000.
+typealias Gid = Int(isBetween(0, 60000))
+
+/// Whether a thing is there or not.
+typealias Presence = "present"|"absent"
 
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
@@ -92,21 +106,79 @@ const local function isIpv4(s: String): Boolean =
 /// or `..` components.
 typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*")))
 
+/// A kernel parameter name: dot-separated segments of letters, digits and
+/// underscores, the way `/proc/sys` spells them (`net.ipv4.ip_forward`).
+typealias SysctlName = Static(matches(Regex(#"[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*"#)))
+
+/// A kernel parameter value: one line of text, with no line break in it, so
+/// one entry is one line of one file.
+typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
+
 class Timezone extends core.Step {
   hidden fixed kind = "timezone"
   name: TimezoneName
 }
 
-/// An account and its login shell.
+/// A kernel parameter, set in a sysctl file and applied live.
 ///
-/// CAT.03 renamed `LoginShell` to `User`: the new name says that the step
-/// manages the account, and `User` is to create a missing account. The
-/// step lowers to the engine's user operation alone, which creates the
-/// account when it is missing and sets the login shell of an existing one.
+/// The step manages one entry in the file at `path` and applies it live.
+/// Its identity is the name and the path, so two stages (or one stage with
+/// two files) may set the same name in different files; two different values
+/// for one name in one file and stage conflict.
+class Sysctl extends core.Step {
+  hidden fixed kind = "sysctl"
+  name: SysctlName
+  value: SysctlValue
+  path: AbsolutePath = "/etc/sysctl.d/90-ruxel.conf"
+}
+
+/// An account and the settings of it.
+///
+/// The step manages one account: it creates the account when it is missing
+/// and changes the settings of an existing one. There is no `create = false`
+/// field: a step that must not create an account states the account
+/// earlier in the same stage, or keeps the existence probe as a `Capture`.
+///
+/// Its identity is the whole account, so two steps that manage one account
+/// with different settings conflict: a stage declares one state for each
+/// thing it manages.
 class User extends core.Step {
   hidden fixed kind = "loginShell"
-  user: Account
-  shell: FilePath
+  /// The account's name.
+  user: Username
+  /// The account's login shell. The shell must exist on the host; a site
+  /// that manages login access says in its runbook that root account and
+  /// key changes run only through its gated apply path.
+  shell: AbsolutePath? = null
+  /// The account's home directory.
+  home: AbsolutePath? = null
+  /// The group the account belongs to.
+  group: Username? = null
+  /// The other groups the account belongs to.
+  groups: Listing<Username> = new {}
+  /// The account's numeric id.
+  uid: Uid? = null
+  /// Whether the account is a system account.
+  system: Boolean = false
+  /// Whether the account is there (`present`) or gone (`absent`).
+  state: Presence = "present"
+  /// Whether removing the account removes its home directory too.
+  removeHome: Boolean = false
+}
+
+/// A group.
+///
+/// The step manages one group: it creates the group when it is missing and
+/// changes the id of an existing one. Its identity is the group, so two
+/// steps that manage one group with different ids conflict.
+class Group extends core.Step {
+  hidden fixed kind = "group"
+  /// The group's name.
+  name: Username
+  /// The group's numeric id.
+  gid: Gid? = null
+  /// Whether the group is there (`present`) or gone (`absent`).
+  state: Presence = "present"
 }
 
 /// A Git working tree pinned to one commit. Another step may manage a path

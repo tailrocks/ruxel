@@ -86,6 +86,8 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["timezone"] = (s) -> s is linux.Timezone
   ["loginShell"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
+  ["sysctl"] = (s) -> s is linux.Sysctl
+  ["group"] = (s) -> s is linux.Group
 }
 
 /// Whether the step's class is the served class of its kind, or a subclass
@@ -422,11 +424,38 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': a password's answer is a secret (debian.secretAnswer(…)), never static text; a literal password would be committed to the workflow and printed in the clear")
   else if (s is debian.DebconfEntry && s.type == "boolean" && !(s.value is debian.SecretAnswer) && s.value != "true" && s.value != "false")
     List("'\(name(s))': a boolean answer is \"true\" or \"false\", not \"\(s.value)\"; debconf frontends read those two strings alone")
+  // `pklr` does not check the elements of a `Listing`, so the names of the
+  // groups of an account are checked here: each one must be a user or group
+  // name, with no NUL and no run-time value in it.
+  else if (s is linux.User && !badAccountNames(s.group, s.groups.toList()).isEmpty)
+    List("'\(name(s))': \"\(badAccountNames(s.group, s.groups.toList()).first)\" is not a user or group name")
+  // The superuser's id is never a managed account's id, and an account
+  // below UID 1000 is a system account the host keeps: it is never removed.
+  // Removing an account therefore states its id, and the id is 1000 or more.
+  else if (s is linux.User && s.uid != null && s.uid == 0)
+    List("'\(name(s))': uid = 0 is rejected: the superuser's id is not for a managed account")
+  else if (s is linux.User && s.state == "absent" && (s.user == "root" || s.uid == null || s.uid < 1000))
+    List("'\(name(s))': state = \"absent\" is rejected for root and for an account below UID 1000; state the account's uid (1000 or more) to remove it")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
 /// never run fails before the run starts.
 const local selector = Regex(#"([a-z0-9][a-z0-9+.-]+)(:([a-z0-9][a-z0-9-]*))?(=(([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))?"#)
+
+/// The names of an account that are not user or group names: the group the
+/// account belongs to, and the other groups it belongs to. `pklr` does not
+/// check the elements of a `Listing`, so they are checked here.
+const local function badAccountNames(group: String?, groups: List<String>): List<String> =
+  ((if (group == null) List() else List(group)) + groups)
+    .filter((n) -> !isAccountName(n))
+
+/// Whether a string is a user or group name: the passwd spelling of one,
+/// with no NUL and no run-time value in it.
+const local function isAccountName(n: String): Boolean =
+  n.matches(Regex("[a-z_][a-z0-9_-]{0,31}"))
+    && !n.contains("\u{0}")
+    && !n.contains("__ruxel_rt_8d41.")
+    && !n.contains("__ruxel_secret_8d41.")
 
 const function packageProblems(names: List<String>): List<String> =
   let (bad = names.filter((n) -> !n.matches(selector) || pseudoArch(n)))
@@ -1021,8 +1050,10 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> fields(List(s.package, s.question, s.type, valueIdentity(s.value)))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
-  ["loginShell"] = (s) -> fields(List(s.user, s.shell))
+  ["loginShell"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(s.groups.toList()), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
+  ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
+  ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -1043,10 +1074,12 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
+  ["sysctl"] = (s) -> List("the sysctl \(s.name) in \(s.path)")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
-  ["loginShell"] = (s) -> List("the login shell of \(s.user)")
+  ["loginShell"] = (s) -> List("the account \(s.user)")
+  ["group"] = (s) -> List("the group \(s.name)")
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
@@ -1393,8 +1426,10 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> "Set \(s.question) for \(s.package)"
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
-  ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
+  ["loginShell"] = (s) -> (if (s.state == "absent") "Remove account " else "Manage account ") + s.user
+  ["group"] = (s) -> (if (s.state == "absent") "Remove group " else "Manage group ") + s.name
   ["gitCheckout"] = (s) -> "Check out \(s.repository) into \(s.path)"
+  ["sysctl"] = (s) -> "Set sysctl \(s.name) to \(s.value) in \(s.path)"
   ["service"] = (s) -> (if (s.running) "Start " else "Stop ") + s.name + (if (s.enabled) ", enabled at boot" else ", disabled at boot")
   ["systemdTimer"] = (s) -> "Manage timer " + s.name + (if (s.onCalendar == null) "" else " on \(s.onCalendar)")
   ["command"] = (s) -> "Run " + s.run.join(" ")
@@ -1441,10 +1476,12 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   // `linux.User` lowers to the engine's user operation alone: the operation
-  // creates a missing account and sets the shell of an existing one, so no
-  // pre-check reads /etc/passwd before it.
-  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
+  // creates a missing account and changes the settings of an existing one,
+  // so no pre-check reads /etc/passwd before it.
+  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, s.groups.toList(), s.uid, s.system, s.state, s.removeHome), null, null))
+  ["group"] = (s, m) -> List(task(m, group(s.name, s.gid, s.state), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
+  ["sysctl"] = (s, m) -> List(task(m, sysctl(s.name, s.value, s.path), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -1782,8 +1819,31 @@ function debconfValue(v: Any): engine.Expr =
 const function valueIdentity(v: Any): String =
   if (v is debian.SecretAnswer) fields(List("secret", v.parts)) else fields(List("static", v.toString()))
 function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
-function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
+/// The engine's user operation: the account and every setting the step
+/// manages. The flags it offers beyond these (`append`, `comment`,
+/// `create_home`) are not exposed: create-home follows the engine default.
+function user(_name: String, _shell: String?, _home: String?, _group: String?, _groups: List<String>, _uid: Int?, _system: Boolean, _state: "present"|"absent", _removeHome: Boolean): engine.User = new engine.User {
+  name = _name
+  when (_shell != null) { shell = _shell }
+  when (_home != null) { home = _home }
+  when (_group != null) { group = _group }
+  when (!_groups.isEmpty) { groups = new Listing { for (g in _groups) { g } } }
+  when (_uid != null) { uid = _uid }
+  system = _system
+  state = _state
+  remove = _removeHome
+}
+/// The engine's group operation: the group, its id and whether it is there.
+function group(_name: String, _gid: Int?, _state: "present"|"absent"): engine.SystemGroup = new engine.SystemGroup {
+  name = _name
+  when (_gid != null) { gid = _gid }
+  state = _state
+}
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
+/// The engine's sysctl operation: the parameter, its value, and the file
+/// that holds the entry. The engine writes the entry and applies the file;
+/// the flags it offers beyond this (`sysctl_set`, `reload`) are not exposed.
+function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; state = "present" }
 function service(_name: String, _enabled: Boolean?, _state: String?): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.

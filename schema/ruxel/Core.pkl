@@ -143,6 +143,20 @@ typealias Name = Static(!isEmpty && !startsWith("-"))
 /// A user or group name: a `Name` without the passwd and group delimiters.
 typealias Account = Name(!contains(":") && !contains("\n"))
 
+/// A user or group name: a lower-case name of at most 32 characters, the
+/// way the passwd and group files spell one. A name starts with a letter
+/// or an underscore and continues with letters, digits, `_` or `-`.
+typealias Username = Static(matches(Regex("[a-z_][a-z0-9_-]{0,31}")))
+
+/// A numeric user id: 0 to 60000.
+typealias Uid = Int(isBetween(0, 60000))
+
+/// A numeric group id: 0 to 60000.
+typealias Gid = Int(isBetween(0, 60000))
+
+/// Whether a thing is there or not.
+typealias Presence = "present"|"absent"
+
 /// The SSH user ruxel logs in as: letters, digits, `._-`, not starting with
 /// `-`, as the engine accepts.
 typealias SshUser = Static(matches(Regex("[A-Za-z0-9._-]+")) && !startsWith("-"))
@@ -150,6 +164,14 @@ typealias SshUser = Static(matches(Regex("[A-Za-z0-9._-]+")) && !startsWith("-")
 /// An SSH config alias or host: letters, digits, `._:%[]-`, not starting with
 /// `-`, as the engine accepts.
 typealias SshHost = Static(matches(Regex(#"[A-Za-z0-9._:%\[\]-]+"#)) && !startsWith("-"))
+
+/// A kernel parameter name: dot-separated segments of letters, digits and
+/// underscores, the way `/proc/sys` spells them (`net.ipv4.ip_forward`).
+typealias SysctlName = Static(matches(Regex(#"[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*"#)))
+
+/// A kernel parameter value: one line of text, with no line break in it, so
+/// one entry is one line of one file.
+typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
 
 // ── Hosts and stages ────────────────────────────────────────────────────────
 

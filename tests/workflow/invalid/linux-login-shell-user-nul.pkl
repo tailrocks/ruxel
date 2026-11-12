@@ -1,5 +1,5 @@
-// expect-pkl: contains("\u{0}")
-// expect-pklr: expected Account
+// expect-pkl: Type constraint `!contains("__ruxel_rt_8d41.") && !contains("__ruxel_secret_8d41.") && !contains("\u{0}")` violated.
+// expect-pklr: expected Username
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
