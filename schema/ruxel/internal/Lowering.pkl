@@ -371,7 +371,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -568,6 +568,19 @@ function keyringModes(ix: StageIndex, i: Int): List<String> =
 
 const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
+
+/// A sysctl step manages the entries of the file at its `path`, never the
+/// file itself, so a `File`, `Directory`, `Symlink` or `GitCheckout` at that
+/// path declares a second state for the same file: whichever ran later
+/// would clobber the other. Two sysctl steps may share a file — each
+/// manages its own entry, and their subjects are their names in it.
+function sysctlFiles(ix: StageIndex, i: Int): List<String> =
+  earlier(i).filter((j) -> sysctlClash(ix.steps[j], ix.steps[i]) || sysctlClash(ix.steps[i], ix.steps[j]))
+    .map((j) -> let (p = if (ix.steps[j] is linux.Sysctl) ix.steps[j].path else ix.steps[i].path)
+      "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage the file \(p): a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the other step to another stage")
+
+const function sysctlClash(a: core.Step, b: core.Step): Boolean =
+  a is linux.Sysctl && List("file", "directory", "symlink", "gitCheckout").contains(b.kind) && subjectsOf(b).contains(a.path)
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.

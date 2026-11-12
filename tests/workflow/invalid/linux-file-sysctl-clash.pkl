@@ -1,0 +1,18 @@
+// expect: both manage the file /etc/sysctl.d/80-tuning.conf
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The clash in the other order: the sysctl comes first, the file second,
+// and the file at the sysctl's own path (here an explicit one) still
+// declares a second state for the same file.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "vm.swappiness"; value = "10"; path = "/etc/sysctl.d/80-tuning.conf" }
+      new File { path = "/etc/sysctl.d/80-tuning.conf"; content = "vm.swappiness = 1\n" }
+    }
+  }
+}
