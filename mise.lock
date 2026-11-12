@@ -256,11 +256,14 @@ checksum_source = "mise-versions"
 url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-aarch64"
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
 
-[tools.pkl."platforms.linux-arm64-musl"]
-checksum = "sha256:edcea361402ecab0f3a93f86b1a896c41d00a9241f4962f70278254b08fbd26d"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-aarch64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
+# linux-arm64-musl carries no entry on purpose: apple/pkl 0.33.0 ships
+# no alpine aarch64 asset (pkl-alpine-linux-aarch64 does not exist;
+# only pkl-alpine-linux-amd64 does), and pkl-linux-aarch64 is a glibc
+# binary that cannot run on a musl host, so no musl-compatible aarch64
+# artifact can be pinned. `mise lock` resolves the absent slot back to
+# the glibc asset, so the slot stays hand-removed like the linux-x64-musl
+# alpine correction above; tools/verify-pkl-artifact refuses the
+# platform with its unsupported result before any lookup instead.
 
 [tools.pkl."platforms.linux-x64"]
 checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"

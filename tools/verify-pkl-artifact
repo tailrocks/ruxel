@@ -56,12 +56,28 @@ case "$platform" in
     ;;
 esac
 # The musl slot pins a different asset than the glibc one; only Linux can
-# be musl. A musl loader is the tell.
+# be musl. The ACTIVE libc decides: `ldd` speaks for the loader in use,
+# while a musl loader that some toolchain merely installed beside glibc
+# is not the running libc and must not reclassify the host (that
+# secondary presence used to send glibc hosts to the alpine checksum,
+# which then rejected the correct binary).
 if [ "$platform" = "linux-x64" ] || [ "$platform" = "linux-arm64" ]; then
-  if ldd --version 2>&1 | grep -qi musl || ls /lib/ld-musl-* >/dev/null 2>&1; then
+  if ldd --version 2>&1 | grep -qi musl; then
     platform="$platform-musl"
   fi
 fi
+# Alpine aarch64 has no official pkl artifact to pin either: 0.33.0
+# ships pkl-alpine-linux-amd64 only (pkl-alpine-linux-aarch64 does not
+# exist), and pkl-linux-aarch64 is a glibc binary that cannot start on
+# a musl host. The checksum of a binary that cannot run is not a
+# verdict, so the platform is refused with the same unsupported result
+# as macos-x64, before the checksum lookup: a musl aarch64 host must
+# never be told that its pkl is missing or tampered.
+case "$platform" in
+  linux-arm64-musl)
+    unsupported "$platform" "official pkl ships no alpine aarch64 artifact (for 0.33.0 only pkl-alpine-linux-amd64 exists; pkl-linux-aarch64 is a glibc binary)"
+    ;;
+esac
 
 want=$(awk -v key="platforms.$platform" '
   $0 == "[tools.pkl.\"" key "\"]" { in_section = 1; next }
