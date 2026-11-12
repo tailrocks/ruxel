@@ -1,0 +1,10 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// A removal takes what is there and leaves the rest of the stage alone: a
+// file that goes, and a directory that goes with everything in it. A
+// removal of something that is not there is no change.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Absent { path = "/etc/obsolete.conf" }
+  new Absent { path = "/var/tmp/old-cache"; recursive = true }
+} } }

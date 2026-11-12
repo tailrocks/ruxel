@@ -15,12 +15,14 @@ use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod remove;
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let user = str_param(obj, "user").ok_or("authorized_key: user required")?;
     let key = str_param(obj, "key").ok_or("authorized_key: key required")?;
     let state = str_param(obj, "state").unwrap_or("present");
-    if state != "present" {
+    if state != "present" && state != "absent" {
         return Err(format!(
             "authorized_key: state {state:?} outside the closed surface"
         ));
@@ -28,7 +30,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let home = home_of(user)?;
     let (uid, gid) = ids_of(user)?;
-    let changed = update(Path::new(&home), uid, gid, key, ctx.check_mode)?;
+    let changed = if state == "absent" {
+        remove::remove_key(Path::new(&home), uid, gid, key, ctx.check_mode)?
+    } else {
+        update(Path::new(&home), uid, gid, key, ctx.check_mode)?
+    };
     Ok(json!({"changed": changed, "failed": false, "user": user}))
 }
 

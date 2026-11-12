@@ -3,8 +3,8 @@ use super::*;
 mod dynamic;
 
 #[test]
-fn file_recurse_requires_directory_before_and_after_expression_resolution() -> Result<()> {
-    for state in [Value::Null, json!("file"), json!("absent"), json!("link")] {
+fn file_recurse_needs_directory_or_absent_before_and_after_resolution() -> Result<()> {
+    for state in [Value::Null, json!("file"), json!("link")] {
         let fields =
             json!({"path":"/tmp/fixture","src":"/tmp/source","state":state,"recurse":true});
         let mut operation = fields.clone();
@@ -13,7 +13,7 @@ fn file_recurse_requires_directory_before_and_after_expression_resolution() -> R
         assert!(
             error
                 .to_string()
-                .contains("recurse requires state=directory"),
+                .contains("recurse requires state=directory or state=absent"),
             "{error:#}"
         );
         let error = validate_operation("file", fields.as_object().context("params")?)
@@ -21,7 +21,7 @@ fn file_recurse_requires_directory_before_and_after_expression_resolution() -> R
         assert!(
             error
                 .to_string()
-                .contains("recurse requires state=directory"),
+                .contains("recurse requires state=directory or state=absent"),
             "{error:#}"
         );
         for recurse in [Value::Null, json!(false)] {
@@ -34,6 +34,15 @@ fn file_recurse_requires_directory_before_and_after_expression_resolution() -> R
     }
     for recurse in [json!(true), json!(false)] {
         let fields = json!({"path":"/tmp/fixture","state":"directory","recurse":recurse});
+        validate_operation("file", fields.as_object().context("params")?)?;
+        let mut operation = fields;
+        operation["kind"] = json!("file");
+        validate_config(&config(operation))?;
+    }
+    // A removal takes a directory with everything in it: `recurse` with
+    // `state=absent` is how that is said.
+    for recurse in [json!(true), json!(false)] {
+        let fields = json!({"path":"/tmp/fixture","state":"absent","recurse":recurse});
         validate_operation("file", fields.as_object().context("params")?)?;
         let mut operation = fields;
         operation["kind"] = json!("file");

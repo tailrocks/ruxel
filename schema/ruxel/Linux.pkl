@@ -40,6 +40,13 @@ typealias FilePath = AbsolutePath(this != "/")
 /// A user or group name: a `Name` without the passwd and group delimiters.
 typealias Account = Name(!contains(":") && !contains("\n"))
 
+/// Whether a managed thing is there or not: `"present"` (the default) or
+/// `"absent"`. Copied from `Core.pkl`; keep the copies in sync.
+typealias Presence = "present"|"absent"
+
+/// An iptables chain name: at most 31 characters, as iptables itself allows.
+typealias ChainName = Static(!isEmpty && length <= 31)
+
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
 
@@ -117,4 +124,23 @@ class GitCheckout extends core.Step {
   repository: HttpsUrl
   path: AbsolutePath
   commit: CommitSha
+}
+
+/// A rule in an iptables chain.
+///
+///     new IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.0/8"; jump = "DROP" }
+///
+/// The chain and the match (protocol, destination, outgoing interface)
+/// identify the rule: two rules that match the same way in the same chain
+/// are the same rule, so they must agree on their jump. `state = "absent"`
+/// removes the rule instead of adding it.
+class IptablesRule extends core.Step {
+  hidden fixed kind = "iptablesRule"
+  chain: ChainName
+  destination: Static? = null
+  protocol: "all"|"tcp"|"udp"|"icmp"|"icmpv6" = "all"
+  outInterface: Static? = null
+  jump: "DROP"|"ACCEPT"|"REJECT"|"LOG" = "DROP"
+  ipVersion: "ipv4"|"ipv6" = "ipv4"
+  state: Presence = "present"
 }

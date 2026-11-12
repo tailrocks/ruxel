@@ -24,7 +24,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
     ),
     operation!("authorized_key";
         "key" => true, FieldType::Text;
-        "state" => false, FieldType::Choice(&["present"]);
+        "state" => false, FieldType::Choice(&["present","absent"]);
         "user" => true, FieldType::Text;
     ),
     operation!("blockinfile";
@@ -96,6 +96,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "out_interface" => false, FieldType::Text;
         "policy" => false, FieldType::Text;
         "protocol" => false, FieldType::Text;
+        "state" => false, FieldType::Choice(&["present","absent"]);
     ),
     operation!("lineinfile";
         "line" => false, FieldType::Text;

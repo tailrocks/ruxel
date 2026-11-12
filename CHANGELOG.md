@@ -29,6 +29,8 @@ All notable changes to this project are documented here. The format follows
 - alint repository policy (tailrocks rust-strict-v1) in `mise run check` and CI.
 - `hk.pkl` git hooks (mise, gitleaks, cargo fmt, check, clippy, deny, rumdl).
 - Initial research implementation and closed-workload CLI/agent surface.
+- `Absent`, a step that removes a path: the step takes what is there and leaves the rest of the stage alone, and a removal of something that is not there is no change. `recursive` takes a directory with everything in it; without it only an empty directory goes. A removal never takes a system root (`/`, `/etc`, `/var`, `/root`, `/home`, `/usr`, `/boot`, `/dev`, `/proc` or `/sys`) and never takes a directory that holds a path another step of the same stage manages. A removal's state is the path it takes away, so `recursive` is a means and not a state: two removals of one path are one state, not a conflict.
+- `linux.IptablesRule`, a step that adds or removes one firewall rule: it names the chain, the protocol, the destination, the outgoing interface, the jump and the IP version, and the rule is added or removed as the step says.
 
 ### Changed
 
@@ -69,6 +71,7 @@ All notable changes to this project are documented here. The format follows
 - Literal text that looks like a reserved prefix is ordinary content: a secret placeholder followed by `ruxel_rt_8d41.` or `ruxel_secret_8d41.` lowers to the lookup and the text. A placeholder that ends on another placeholder's opening is still refused as a malformed secret reference.
 - A secret configured `as_file = true` in the fnox store resolves to the content of the file the store names, not to the path it printed: the store's own query (`fnox env --json --describe`) says which keys are file-backed, and a store that cannot answer fails the read instead of returning a path as a secret.
 - The secret functions are documented the way they are called under pklr: through an import of Core (`core.fnox(…)`, `core.onePassword(…)`), because a call through `module.fnox(…)` from inside a step duplicates every play in the lowered configuration.
+- The engine's shape validator accepts a removal that recurses: `recurse` says how deep a step goes, so it belongs with the two states that have a depth (`directory` and `absent`) and not with `file` or `link`. The lowering already produced the removal; only the validator still refused it, so a valid workflow failed its own plan.
 
 ### Removed
 

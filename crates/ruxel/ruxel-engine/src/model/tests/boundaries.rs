@@ -196,3 +196,14 @@ fn apt_operation_accepts_a_hold() -> Result<()> {
     );
     Ok(())
 }
+
+/// A key and a firewall rule can be removed, so the engine admits the
+/// "absent" state of both.
+#[test]
+fn authorized_key_state_absent_and_firewall_state_are_valid() -> Result<()> {
+    let key = json!({"key":"ssh-ed25519 AAAAC3Nza", "user":"deploy", "state":"absent"});
+    validate_operation("authorized_key", key.as_object().context("object")?)?;
+    let firewall = json!({"chain":"INPUT", "state":"absent"});
+    validate_operation("iptables", firewall.as_object().context("object")?)?;
+    Ok(())
+}

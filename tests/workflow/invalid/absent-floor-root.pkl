@@ -1,0 +1,9 @@
+// expect: which is a system root
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// The filesystem root is never removed: a removal never takes a system
+// root.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Absent { path = "/"; recursive = true }
+} } }

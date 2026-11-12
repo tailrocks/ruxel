@@ -181,7 +181,7 @@ class AptRepository {
 class AuthorizedKey {
   fixed kind = "authorized_key"
   key: Text
-  state: ("present"|Expr)? = null
+  state: ("present"|"absent"|Expr)? = null
   user: Text
 }
 
@@ -230,7 +230,7 @@ class File {
   mode: FileMode? = null
   owner: Text? = null
   path: Text(state is Expr || state != "link" || src != null)
-  recurse: Flag?(this != true || state is Expr || state == "directory") = null
+  recurse: Flag?(this != true || state is Expr || state == "directory" || state == "absent") = null
   src: Text? = null
   state: ("file"|"directory"|"absent"|"link"|Expr)? = null
 }
@@ -289,6 +289,7 @@ class Firewall {
   out_interface: Text? = null
   policy: Text?(this == null || protocol == null && destination == null && out_interface == null && jump == null && comment == null) = null
   protocol: Text? = null
+  state: ("present"|"absent"|Expr)? = null
 }
 
 class LineInFile {

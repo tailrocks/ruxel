@@ -13,10 +13,16 @@ pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) 
         ensure!(present("src"), "link requires src");
     }
     if kind == "file" && params.get("recurse").and_then(Value::as_bool) == Some(true) {
+        // `recurse` says how deep the step goes: a directory is created with
+        // everything in it, and a removal takes a directory with everything
+        // in it. It is a means, not a state, so it is allowed with the two
+        // states that have a depth.
         ensure!(
-            params.get("state").and_then(Value::as_str) == Some("directory")
-                || (deferred && params.get("state").is_some_and(Value::is_object)),
-            "recurse requires state=directory"
+            matches!(
+                params.get("state").and_then(Value::as_str),
+                Some("directory" | "absent")
+            ) || (deferred && params.get("state").is_some_and(Value::is_object)),
+            "recurse requires state=directory or state=absent"
         );
     }
     if kind == "pause" {

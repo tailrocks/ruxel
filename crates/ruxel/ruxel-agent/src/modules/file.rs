@@ -56,12 +56,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             Ok(json!({"path": path, "state": "directory", "changed": changed, "failed": false}))
         }
         "absent" => {
+            // A removal without `recurse` takes an empty directory only; with
+            // it, the tree goes with the directory.
+            let recurse = super::bool_param(obj, "recurse", false);
             let existed = p.symlink_metadata().is_ok();
             if existed {
                 changed = true;
                 if !ctx.check_mode {
                     if p.is_dir() && !p.is_symlink() {
-                        std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+                        if recurse {
+                            std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+                        } else {
+                            std::fs::remove_dir(p).map_err(|e| e.to_string())?;
+                        }
                     } else {
                         std::fs::remove_file(p).map_err(|e| e.to_string())?;
                     }

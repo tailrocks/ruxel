@@ -1,0 +1,8 @@
+// expect: which is a system root
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// `/etc` is a system root: a removal never takes one.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Absent { path = "/etc" }
+} } }
