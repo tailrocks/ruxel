@@ -161,6 +161,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-shell-not-absolute.pkl",
     "invalid/linux-user-uid-out-of-range.pkl",
     "invalid/linux-user-root-uid.pkl",
+    "invalid/linux-user-root-group.pkl",
     "invalid/linux-group-root-gid.pkl",
     "invalid/linux-sysctl-path-root.pkl",
 ];
