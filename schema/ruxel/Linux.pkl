@@ -126,8 +126,9 @@ class Timezone extends core.Step {
 /// another process changed is corrected.
 ///
 /// Its identity is the name and the path, so two stages (or one stage with
-/// two files) may set the same name in different files; two different values
-/// for one name in one file and stage conflict. The file itself is not the
+/// two files) may set the same name in different files, each entry its
+/// own; two different values for one name in one stage conflict — the
+/// kernel holds one live value. The file itself is not the
 /// step's to own: any other step that manages that path — a `File`, a
 /// `Directory`, a `Symlink`, a `GitCheckout`, an apt repository's source
 /// file — conflicts with it, while any number of sysctl steps may share a
