@@ -1,0 +1,8 @@
+// expect: uid = 0 is rejected: the superuser's id is not for a managed account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The superuser's id is never a managed account's id: the rule refuses it
+// outright, whatever the state of the account is.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "ruxel-app"; uid = 0 } } } }

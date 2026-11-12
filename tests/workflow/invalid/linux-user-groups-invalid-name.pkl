@@ -1,0 +1,10 @@
+// expect-pkl: Type constraint `matches(Regex("[a-z_][a-z0-9_-]{0,31}"))` violated.
+// expect-pklr: is not a user or group name
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `pklr` does not check the elements of a `Listing`, so the name of a
+// group is checked in Lowering: the official Pkl refuses it with the
+// type constraint, pklr with the sentence of the settings rule.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "ruxel-app"; groups { "Not A Name" } } } } }
