@@ -1,0 +1,19 @@
+// The groups of an account are a set: the engine reconciles supplementary
+// groups by sorting and deduplicating what it passes to usermod, so the
+// same members in another order — or spelled with a repeat — are one state
+// of one account, not two states that conflict.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; groups { "docker"; "wheel" } }
+      new linux.User { user = "app"; groups { "wheel"; "docker" } }
+      new linux.User { user = "app"; groups { "docker"; "docker"; "wheel" } }
+    }
+  }
+}
