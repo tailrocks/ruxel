@@ -1,0 +1,14 @@
+// Selectors that cannot name one package are one state each: a glob and
+// an exact name it does not match, two globs with disjoint prefixes, and
+// two explicit architectures of one name (another architecture is another
+// package). All are admitted together.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { package = "bash*"; pin = "release n=stable"; priority = 500 }
+  new debian.AptPreference { package = "zsh"; pin = "version 5.9-1"; priority = 100 }
+  new debian.AptPreference { package = "vim:amd64"; pin = "version 9.0"; priority = 100 }
+  new debian.AptPreference { package = "vim:i386"; pin = "version 9.0"; priority = 100 }
+} } }

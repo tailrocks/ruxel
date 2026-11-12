@@ -10,6 +10,7 @@ pub(super) const OPERATIONS: &[Operation] = &[
     operation!("apt";
         "autoremove" => false, FieldType::Flag;
         "force" => false, FieldType::Flag;
+        "hold" => false, FieldType::Flag;
         "name" => false, FieldType::TextList;
         "state" => false, FieldType::Choice(&["present","latest"]);
         "update_cache" => false, FieldType::Flag;
@@ -48,6 +49,12 @@ pub(super) const OPERATIONS: &[Operation] = &[
         "mode" => false, FieldType::Mode;
         "owner" => false, FieldType::Text;
         "src" => false, FieldType::Text;
+    ),
+    operation!("debconf";
+        "package" => true, FieldType::Text;
+        "question" => true, FieldType::Text;
+        "type" => true, FieldType::Choice(&["string","boolean","select","multiselect","password","note"]);
+        "value" => true, FieldType::Text;
     ),
     operation!("file";
         "group" => false, FieldType::Text;

@@ -21,6 +21,7 @@ mod authorized_key;
 mod blockinfile;
 mod command;
 mod copy;
+mod debconf;
 mod file;
 mod filesystem;
 mod get_url;
@@ -150,14 +151,15 @@ pub(crate) fn execute(
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
         "volume_group" => lvg::run(params, ctx),
-        "template" => copy::run(params, None, ctx),
+        "template" => copy::run(params, None, ctx, system_state),
         "get_url" => get_url::run(params, ctx),
         "command" if !free_form.is_empty() => {
             Err("command requires argv, not free-form input".into())
         }
         "command" => command::run(params, ctx),
         "file" => file::run(params, ctx),
-        "copy" => copy::run(params, source, ctx),
+        "copy" => copy::run(params, source, ctx, system_state),
+        "debconf" => debconf::run(params, ctx),
         "slurp" => slurp::run(params),
         // A FetchSecret task is the controller's no-log slurp: the agent
         // reads the file, the controller stores it in fnox. The controller

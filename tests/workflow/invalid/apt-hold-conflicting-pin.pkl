@@ -1,0 +1,12 @@
+// expect: Stage "t": 'Hold curl' (step 1) holds curl=8.5.0-2, and 'Pin curl' (step 2) would move it; a held package is never upgraded, so put the second in a later stage
+// A held package is never moved: a step that holds a package and a later
+// step of the same stage that pins it would ask apt to move a frozen
+// package, which apt refuses. The second step belongs in a later stage.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
+  new debian.AptPackages { title = "Pin curl"; names { "curl=8.5.0-2" } }
+} } }

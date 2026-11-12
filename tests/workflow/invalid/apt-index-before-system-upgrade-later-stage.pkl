@@ -1,0 +1,19 @@
+// expect: 'Refresh the index' (step 1) of stage "a" refreshes the package index, and 'Upgrade the system' (step 1) of stage "b" plans against the package lists the host already has; in check and diff mode the index is never refreshed before the plan runs, so check and apply disagree — put the two stages on different hosts
+// The same refusal as the one-stage index planning check, across stages
+// of one host: check and diff skip the index command, so the later stage
+// simulates `dist-upgrade` against the package lists the host already
+// has, while apply refreshes the lists in the earlier play first and can
+// move versions that only appeared in the refresh. The refresh outlives
+// its stage, so the stages must not share a host.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPackageIndex { title = "Refresh the index" }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptSystemUpgrade { title = "Upgrade the system" }
+  } }
+}

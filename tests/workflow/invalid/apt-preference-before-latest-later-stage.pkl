@@ -1,0 +1,19 @@
+// expect: 'Pin nginx' (step 1) of stage "a" writes an apt preference, and 'Track nginx' (step 1) of stage "b" plans against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two stages on different hosts
+// The same refusal as the one-stage preference planning check, across
+// stages of one host: check and diff skip the Copy that writes the
+// stanza, so the later stage plans against the candidate policy the host
+// still has, while apply writes the preference in the earlier play first.
+// Splitting the steps across stages cannot separate them — the host has
+// one apt policy — so the advice of the stage-local check does not apply.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Track nginx"; names { "nginx" }; latest = true }
+  } }
+}

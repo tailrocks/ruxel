@@ -1,0 +1,10 @@
+// expect-pklr: property 'value' expected OneLine, got String
+// expect-pkl: Expected value of type `String(!contains("\n") && !contains("\r"))|Expr`, but got a different `String`.
+// A selection is one line on the standard input of
+// debconf-set-selections: a literal answer with a line break would write
+// a second selection, so the Engine surface refuses it as the Debian
+// surface does — an expression resolves later, where the runtime refuses
+// it the same way.
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+output { value = new Ruxel.Debconf { package = "nginx"; question = "nginx/user"; type = "string"; value = "a\nb" } }

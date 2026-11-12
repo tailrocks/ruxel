@@ -1,0 +1,16 @@
+// A long selector must still write a legal fragment file: the fragment
+// name carries the sanitized selector and the digest of the selector, and
+// Linux cannot create a file whose name exceeds NAME_MAX (255 bytes). The
+// selector here is 186 characters, which makes a 256-byte name when the
+// selector part is written whole: the name caps the selector part and
+// keeps the full digest, so every selector still writes its own file and
+// every file name fits.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "one"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin a long name"; package = "pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pkg-pk"; pin = "version 1.0"; priority = 1001 }
+  } }
+}

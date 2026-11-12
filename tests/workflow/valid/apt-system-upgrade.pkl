@@ -1,0 +1,18 @@
+// The whole-system upgrade runs where it is written and reports a change,
+// so a step can watch it. Two of them in one stage run twice: the step is
+// never merged, like every package step.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local upgrade = new debian.AptSystemUpgrade { autoremove = true }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  upgrade
+  new debian.AptSystemUpgrade { autoremove = true }
+  new Command { run { "echo"; "upgraded" }; onChangeOf { upgrade } }
+  // The refresh comes last: an index before a system upgrade is refused
+  // (`invalid/apt-index-before-system-upgrade.pkl`), because check and
+  // diff never refresh the lists the simulation plans against.
+  new debian.AptPackageIndex {}
+} } }

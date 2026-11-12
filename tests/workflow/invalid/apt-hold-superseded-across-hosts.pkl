@@ -1,0 +1,20 @@
+// expect: 'Hold curl at 1' (step 1) of stage "a" holds curl=2, and 'Install curl' (step 1) of stage "c" would move it; a held package is never upgraded, and the hold outlives its stage, so put the two stages on different hosts
+// Supersession is tracked per machine: a re-freeze on another host does
+// not supersede this host's hold. The hold on 127.0.0.1 still freezes
+// curl at 1 there, so the later pin to 2 on that machine moves a frozen
+// package even though 127.0.0.2 re-froze its own curl at 2.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts { new Host { name = "a"; address = "127.0.0.1" } }; steps {
+    new debian.AptPackages { title = "Hold curl at 1"; names { "curl=1" }; hold = true }
+  } }
+  new Stage { title = "b"; hosts { new Host { name = "b"; address = "127.0.0.2" } }; steps {
+    new debian.AptPackages { title = "Re-freeze curl at 2 elsewhere"; names { "curl=2" }; hold = true }
+  } }
+  new Stage { title = "c"; hosts { new Host { name = "a"; address = "127.0.0.1" } }; steps {
+    new debian.AptPackages { title = "Install curl"; names { "curl=2" } }
+  } }
+}

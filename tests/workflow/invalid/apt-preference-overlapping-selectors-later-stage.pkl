@@ -1,0 +1,17 @@
+// expect: 'Pin the ba glob' (step 1) of stage "a" and 'Pin bash' (step 1) of stage "b" pin overlapping package selectors (ba* and bash); apt applies every matching stanza and the highest priority decides, so keep one selector or put the two stages on different hosts
+// The preference fragments of both stages persist in
+// /etc/apt/preferences.d/: a trailing glob in one stage and an exact
+// name it matches in another would both pin the package and silently
+// disagree on its priority. One selector per package per host.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin the ba glob"; package = "ba*"; pin = "version 1.0"; priority = 100 }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin bash"; package = "bash"; pin = "version 2.0"; priority = 200 }
+  } }
+}

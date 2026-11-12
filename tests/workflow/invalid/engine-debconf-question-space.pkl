@@ -1,0 +1,8 @@
+// expect-pklr: property 'question' expected QuestionName, got String
+// expect-pkl: Expected value of type `String(!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#)))|Expr`, but got a different `String`.
+// The selection is written as one field of `package question type
+// value`: whitespace in the question shifts the fields after it, so the
+// Engine surface refuses it as the Debian surface does.
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+output { value = new Ruxel.Debconf { package = "nginx"; question = "a b"; type = "string"; value = "x" } }

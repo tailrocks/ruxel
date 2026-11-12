@@ -1,0 +1,29 @@
+// One debconf selection per question. The answer is either static text or
+// a secret: a secret answer is `debian.secretAnswer(core.fnox(…))`, never
+// text that interpolates the secret, so the secret reaches the host
+// resolved and the task that carries it is never logged.
+//
+// The secret functions are reached through an import of Core, not through
+// `module.fnox(…)`: under pklr, calling a function through the workflow's own
+// amended module chain from inside a step duplicates every play in the
+// lowered configuration (the same defect mis-lowers `module.currentHost` in
+// file content). Through an import both evaluators lower it once.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry {
+    package = "postfix"
+    question = "postfix/main_mailer_type"
+    type = "select"
+    value = "Local only"
+  }
+  new debian.DebconfEntry {
+    package = "postfix"
+    question = "postfix/relay_pw"
+    type = "password"
+    value = debian.secretAnswer(core.fnox("POSTFIX_RELAY_PW"))
+  }
+} } }

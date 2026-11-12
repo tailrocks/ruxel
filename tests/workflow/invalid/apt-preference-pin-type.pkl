@@ -1,0 +1,13 @@
+// expect-pklr: property 'pin' expected PreferencePin, got String
+// expect-pkl: Type constraint `matches(Regex(#"((?i:version|origin)\s+\S+|(?i:release)\s+(([anvcol]=[^,=\s]([^,=]*[^,=\s])?)(,[anvcol]=[^,=\s]([^,=]*[^,=\s])?)*|([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))"#))` violated.
+// A pin type apt does not recognize — `banana` here — makes apt warn
+// `Did not understand pin type` and apply no preference at all, while
+// the copy task reports success; the pin is refused here instead of
+// silently doing nothing.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "banana"; priority = 500 }
+} } }

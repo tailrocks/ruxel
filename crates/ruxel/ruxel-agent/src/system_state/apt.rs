@@ -136,6 +136,20 @@ impl SystemState {
         self.candidates.clear();
     }
 
+    /// The cached apt candidate policy. A write under the apt preference
+    /// or source paths changes which version apt would choose without
+    /// changing what is installed, so exactly the policy cache is
+    /// dropped and the next plan re-reads it.
+    pub(crate) fn invalidate_candidates(&mut self) {
+        self.candidates.clear();
+    }
+
+    /// The host's native architecture, known once the package snapshot is
+    /// loaded.
+    pub(crate) fn native_architecture(&self) -> Option<&str> {
+        self.native_architecture.as_deref()
+    }
+
     fn ensure_packages(&mut self) -> Result<(), String> {
         if self.packages.is_some() {
             return Ok(());

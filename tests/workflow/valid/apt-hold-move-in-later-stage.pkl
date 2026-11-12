@@ -1,0 +1,18 @@
+// A `hold` step whose pin names a newer version may move the package the
+// host already holds: the agent lifts the requested holds for that
+// transaction alone, installs the new pin and restores and verifies the
+// hold (`install.rs`). The frozen package is therefore only ever moved by
+// the step that re-freezes it at the new version; a plain install still
+// may not move it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold curl"; names { "curl=1.0" }; hold = true }
+  } }
+  new Stage { title = "b"; hosts = inventory.workers; steps {
+    new debian.AptPackages { title = "Hold the newer curl"; names { "curl=1.1" }; hold = true }
+  } }
+}

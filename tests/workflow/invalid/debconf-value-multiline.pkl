@@ -1,0 +1,13 @@
+// expect-pkl: Expected value of type `OneLine|SecretAnswer`, but got a different `String`.
+// expect-pklr: property 'value' expected OneLine|SecretAnswer, got String
+// A static answer carries no line break: `debconf-set-selections` reads
+// one selection per line, so a break would write a second selection and
+// every apply would fail at the runtime check. The refusal belongs at
+// evaluation; only a resolved secret stays runtime-validated.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { title = "Two lines"; package = "nginx"; question = "nginx/nginx-user"; type = "string"; value = "www-data\nsecond" }
+} } }

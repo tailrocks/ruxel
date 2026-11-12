@@ -1,0 +1,13 @@
+// expect-pklr: property 'priority' expected Int(... ), got Int
+// expect-pkl: Type constraint `this == -1 || (this >= 1 && this <= 32767)` violated.
+// The `Pin-Priority:` value: apt refuses a pin with no usable priority
+// (`E: No priority (or zero) specified for pin`), which would break every
+// later apt command, so 0 is refused here; only -1 and positive integers
+// name a priority.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 0 }
+} } }

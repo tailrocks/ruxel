@@ -1,0 +1,29 @@
+// One apt preferences stanza is one managed change: the file is written
+// whole, in one copy task, under `/etc/apt/preferences.d/`. The identity of
+// a stanza is the package plus the pin: a repeat of the same stanza is the
+// same step, and the same package with another pin is another step.
+//
+// The selectors here are a name with an architecture and a name with a glob:
+// a PackageSelector carries no version, so `name=version` is not one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local nginx = new debian.AptPreference { title = "Pin nginx"; package = "nginx:amd64"; pin = "version 1.25.*"; priority = 1001 }
+local docker = new debian.AptPreference { title = "Pin docker"; package = "docker*"; pin = "release o=Docker"; priority = 500 }
+// 32767 is the largest priority apt accepts: the boundary stays valid.
+local curl = new debian.AptPreference { title = "Pin curl"; package = "curl"; pin = "version 8.*"; priority = 32767 }
+
+stages {
+  new Stage { title = "one"; hosts = inventory.workers; steps {
+    nginx
+    docker
+    curl
+    nginx
+    new Command { title = "Reload nginx"; run { "echo"; "nginx" }; onChangeOf { nginx } }
+  } }
+  new Stage { title = "two"; hosts = inventory.workers; steps {
+    new debian.AptPreference { title = "Pin nginx"; package = "nginx:amd64"; pin = "release n=stable"; priority = 900 }
+    new Command { title = "Reload nginx again"; run { "echo"; "nginx" }; onChangeOf { new debian.AptPreference { package = "nginx:amd64"; pin = "release n=stable"; priority = 900 } } }
+  } }
+}

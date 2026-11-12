@@ -1,0 +1,13 @@
+// expect-pkl: Type constraint `!isEmpty && matches(Regex(#"[^ \t\n\x0B\f\r]+"#))` violated.
+// expect-pklr: property 'question' expected QuestionName, got String
+// The question is one nonempty, whitespace-free token: the selection is
+// written as the four fields `package question type value` on one line,
+// and whitespace in the question would push the fields after it out of
+// place — field injection into the question, the type and the value.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { package = "postfix"; question = "postfix/x note injected"; type = "string"; value = "x" }
+} } }

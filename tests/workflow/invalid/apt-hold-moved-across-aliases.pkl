@@ -1,0 +1,17 @@
+// expect: 'Hold bash' (step 1) of stage "a" holds bash=2, and 'Pin bash' (step 1) of stage "b" would move it; a held package is never upgraded, and the hold outlives its stage, so put the two stages on different hosts
+// Two inventory names that connect to one machine are one host: the
+// effective SSH target, the user and the port decide, not the alias.
+// The hold the first alias set outlives its stage on that machine, so
+// the second alias's pin would move a frozen package.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "a"; hosts { new Host { name = "web-a"; address = "192.0.2.50" } }; steps {
+    new debian.AptPackages { title = "Hold bash"; names { "bash=1" }; hold = true }
+  } }
+  new Stage { title = "b"; hosts { new Host { name = "web-b"; address = "192.0.2.50" } }; steps {
+    new debian.AptPackages { title = "Pin bash"; names { "bash=2" } }
+  } }
+}

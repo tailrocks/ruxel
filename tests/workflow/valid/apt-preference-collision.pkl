@@ -1,0 +1,12 @@
+// Two selectors that cannot name one package but sanitize to one
+// fragment basename: the fragments are two files, one per stanza. The
+// name carries the digest of the selector, so the sanitized basename
+// cannot make two stanzas share a file.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { package = "a-a-a-a-a+a+a-a-a+a-a+a-a-a-a+a-a+a-a"; pin = "release n=stable"; priority = 500 }
+  new debian.AptPreference { package = "a-a-a+a-a+a-a+a-a+a-a-a-a+a+a-a+a+a-a"; pin = "release n=stable"; priority = 500 }
+} } }

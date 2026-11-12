@@ -1,0 +1,12 @@
+// expect: 'Hold bash' (step 1) holds bash=0, and 'Pin bash' (step 2) would move it; a held package is never upgraded, so put the second in a later stage
+// An unversioned hold froze whatever the host has installed — a
+// `0~old` package moves when it is pinned to `0` — so any pin may move
+// it, and a pin whose version reads as zero does not stop being a pin.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Hold bash"; names { "bash" }; hold = true }
+  new debian.AptPackages { title = "Pin bash"; names { "bash=0" } }
+} } }

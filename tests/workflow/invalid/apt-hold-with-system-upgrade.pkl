@@ -1,0 +1,13 @@
+// expect: 'Hold curl' (step 1) holds curl, and 'Upgrade the system' (step 2) upgrades the whole system; a system upgrade moves every package to its candidate and cannot leave a held package behind, so drop the hold or the upgrade
+// A whole-system upgrade delivers every package to its candidate, and a
+// hold freezes one package where it is. The plain `dist-upgrade` apt-get
+// runs without `--ignore-hold` leaves the held package behind and the
+// declared whole-system result is false; the two never share a run.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
+  new debian.AptSystemUpgrade { title = "Upgrade the system" }
+} } }

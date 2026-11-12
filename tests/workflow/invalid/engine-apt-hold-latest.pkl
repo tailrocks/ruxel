@@ -1,0 +1,9 @@
+// expect-pklr: property 'hold' expected Flag?(... ), got Boolean
+// expect-pkl: Type constraint `this != true || state != "latest"` violated.
+// A held package is never upgraded: the Engine surface refuses the pair
+// at admission, as the Debian lowering does — a configuration written
+// directly against the documented surface must not reach the agent,
+// where every plan, check and apply would fail in check_requests.
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+output { value = new Ruxel.Apt { state = "latest"; hold = true } }

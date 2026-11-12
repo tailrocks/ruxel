@@ -1,0 +1,14 @@
+// expect: 'Set the relay host for postfix' (step 1) and 'Set the relay host for dovecot' (step 2) both manage the debconf answer of mail/relay-host with different settings; a stage declares one state for each thing, so put the second state in a later stage
+// The debconf config database stores one value per question name; the
+// owners are just owners. Two packages that own one shared question and
+// answer it differently would flip-flop forever, each apply undoing the
+// other, so a second answer for one question conflicts whatever package
+// owns it — the question, not the owner, is the thing managed.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.DebconfEntry { title = "Set the relay host for postfix"; package = "postfix"; question = "mail/relay-host"; type = "string"; value = "mx.example.com" }
+  new debian.DebconfEntry { title = "Set the relay host for dovecot"; package = "dovecot"; question = "mail/relay-host"; type = "string"; value = "mx2.example.com" }
+} } }

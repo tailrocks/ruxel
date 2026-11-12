@@ -31,9 +31,16 @@ fn root() -> PathBuf {
     .to_path_buf()
 }
 
-/// The examples both evaluators must lower the same way: the secret
-/// language's, and the user step that lowers to the engine's user
-/// operation. Each invalid one must be refused by both.
+/// The examples of the secret language: each must evaluate the same way
+/// under both evaluators, and each invalid one must be refused by both.
+///
+/// The apt completions are here too: a hold, a system upgrade, a
+/// preference and a debconf selection lower the same way under both
+/// evaluators, and the bad selector, the secret carried as static text
+/// and the hold that conflicts with a pin are refused by both, each with
+/// its own wording.
+///
+/// The user step that lowers to the engine's user operation is here too.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/secret-op-reference-dotted.pkl",
@@ -43,6 +50,73 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-orphaned-secret.pkl",
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
+    "valid/apt-hold.pkl",
+    "valid/apt-hold-non-movements.pkl",
+    "valid/apt-hold-equal-version.pkl",
+    "valid/apt-hold-move-in-later-stage.pkl",
+    "valid/apt-system-upgrade.pkl",
+    "valid/apt-preference.pkl",
+    "valid/apt-preference-collision.pkl",
+    "valid/apt-preference-pin-forms.pkl",
+    "valid/apt-preference-disjoint-selectors.pkl",
+    "valid/debconf-entry.pkl",
+    "invalid/apt-hold-conflicting-pin.pkl",
+    "invalid/apt-hold-conflicting-latest.pkl",
+    "invalid/apt-hold-moved-in-later-stage.pkl",
+    "invalid/apt-hold-moved-across-aliases.pkl",
+    "valid/apt-hold-superseded.pkl",
+    "invalid/apt-hold-superseded-across-hosts.pkl",
+    "invalid/apt-hold-superseded-partial-hosts.pkl",
+    "invalid/apt-hold-unversioned-moved-by-pin.pkl",
+    "invalid/apt-hold-unversioned-moved-by-pin-later-stage.pkl",
+    "invalid/apt-hold-revision-moved-in-later-stage.pkl",
+    "invalid/apt-hold-with-system-upgrade.pkl",
+    "invalid/apt-hold-with-system-upgrade-later-stage.pkl",
+    "invalid/apt-preference-package-selector-pin.pkl",
+    "invalid/apt-preference-pseudo-arch.pkl",
+    "invalid/apt-preference-priority-mismatch.pkl",
+    "invalid/apt-preference-priority-zero.pkl",
+    "invalid/apt-preference-pin-blank.pkl",
+    "invalid/apt-preference-pin-release-empty.pkl",
+    "invalid/apt-preference-pin-release-unknown.pkl",
+    "invalid/apt-preference-pin-source-version.pkl",
+    "invalid/apt-preference-pin-type.pkl",
+    "invalid/apt-preference-pin-version-whitespace.pkl",
+    "invalid/apt-preference-overlapping-selectors.pkl",
+    "invalid/apt-preference-overlapping-selectors-later-stage.pkl",
+    "invalid/apt-preference-file-at-fragment.pkl",
+    "invalid/apt-preference-fragment-child.pkl",
+    "invalid/apt-preference-before-latest.pkl",
+    "invalid/apt-preference-before-latest-later-stage.pkl",
+    "valid/apt-preference-different-hosts.pkl",
+    "invalid/apt-preference-before-install.pkl",
+    "invalid/apt-preference-before-system-upgrade.pkl",
+    "invalid/apt-index-before-system-upgrade.pkl",
+    "invalid/apt-index-before-system-upgrade-later-stage.pkl",
+    "invalid/engine-apt-hold-latest.pkl",
+    "invalid/engine-debconf-package-glob.pkl",
+    "invalid/engine-debconf-value-multiline.pkl",
+    "invalid/engine-debconf-question-space.pkl",
+    "invalid/apt-repository-before-install.pkl",
+    "invalid/apt-repository-before-install-later-stage.pkl",
+    "invalid/apt-repository-before-system-upgrade.pkl",
+    "invalid/apt-repository-before-system-upgrade-later-stage.pkl",
+    "invalid/apt-preference-priority-range.pkl",
+    "invalid/apt-pin-with-system-upgrade.pkl",
+    "invalid/apt-system-upgrade-with-pin.pkl",
+    "invalid/apt-preference-overlapping-globs.pkl",
+    "invalid/apt-preference-overlapping-arches.pkl",
+    "invalid/debconf-entry-pseudo-arch.pkl",
+    "invalid/debconf-entry-bad-type.pkl",
+    "invalid/debconf-entry-secret-as-static.pkl",
+    "invalid/debconf-entry-secret-collision.pkl",
+    "invalid/debconf-entry-shared-question.pkl",
+    "invalid/debconf-entry-question-space.pkl",
+    "invalid/debconf-entry-type-text.pkl",
+    "invalid/debconf-entry-password-static.pkl",
+    "invalid/debconf-entry-boolean-literal.pkl",
+    "invalid/debconf-entry-package-glob.pkl",
+    "invalid/debconf-value-multiline.pkl",
     "invalid/secret-placeholder-overlapping-malformed-prefix.pkl",
     "invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
     "invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",

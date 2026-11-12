@@ -1,0 +1,13 @@
+// expect: 'Refresh the index' (step 1) refreshes the package index, and 'Upgrade the system' (step 2) plans against the package lists the host already has; in check and diff mode the index is never refreshed before the plan runs, so check and apply disagree — put the two in different stages
+// The index task never reports a change and runs only in apply, so a
+// system upgrade after it simulates `dist-upgrade` in check and diff
+// against the package lists the host already has, while apply refreshes
+// first and can move versions that only appeared in the refresh.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackageIndex { title = "Refresh the index" }
+  new debian.AptSystemUpgrade { title = "Upgrade the system" }
+} } }
