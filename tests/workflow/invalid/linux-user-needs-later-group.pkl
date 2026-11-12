@@ -1,0 +1,18 @@
+// expect: needs the group docker, which 'Manage group docker' (step 2) creates; list the group before the account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The tasks run where the author wrote them: on a clean host the account
+// would run useradd -g before the group exists, so a same-stage group
+// the account needs is declared before it.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; group = "docker" }
+      new linux.Group { name = "docker"; gid = 1500 }
+    }
+  }
+}
