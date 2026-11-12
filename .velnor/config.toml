@@ -484,6 +484,7 @@ inputs = [
   "tests/workflow/valid/shared-capture.pkl",
   "tests/workflow/valid/tags.pkl",
   "tests/workflow/valid/watch-chain.pkl",
+  "tools/verify-pkl-artifact",
 ]
 tools = ["rust"]
 timeout_minutes = 20

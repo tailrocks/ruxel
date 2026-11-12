@@ -46,28 +46,30 @@ fi
 
 # Where Mise keeps (or just installed) the binary: the configured data
 # directory first, then the default, mirroring the dual-evaluator
-# discovery.
-data_dirs=""
+# discovery. Each directory is one quoted positional parameter: a
+# configured path may carry whitespace, and a word-split scalar would
+# turn one valid directory into several candidates.
+set --
 if [ -n "${MISE_DATA_DIR:-}" ]; then
-  data_dirs="$MISE_DATA_DIR"
+  set -- "$MISE_DATA_DIR"
 elif [ -n "${XDG_DATA_HOME:-}" ]; then
-  data_dirs="$XDG_DATA_HOME/mise"
+  set -- "$XDG_DATA_HOME/mise"
 fi
 if [ -n "${HOME:-}" ]; then
-  data_dirs="$data_dirs $HOME/.local/share/mise"
+  set -- "$@" "$HOME/.local/share/mise"
 fi
 
 binary=""
-for data in $data_dirs; do
+for data in "$@"; do
   for candidate in "$data/installs/pkl/0.33.0/pkl" "$data/shims/pkl"; do
     if [ -f "$candidate" ]; then
-      binary=$candidate
+      binary="$candidate"
       break 2
     fi
   done
 done
 if [ -z "$binary" ]; then
-  echo "verify-pkl-artifact: no pkl 0.33.0 install found under $data_dirs" >&2
+  echo "verify-pkl-artifact: no pkl 0.33.0 install found under: $*" >&2
   exit 1
 fi
 
