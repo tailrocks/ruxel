@@ -5,6 +5,10 @@
 #![expect(clippy::too_many_lines, reason = "replaced by the Ruxel rewrite")]
 
 use super::{ExecContext, bool_param, params_object, str_param};
+
+use home::ensure_home;
+
+mod home;
 use serde_json::{Value, json};
 
 #[derive(Default)]
@@ -34,6 +38,7 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                 if let Some(want) = gid
                     && current_gid != want
                 {
+                    group_change_allowed(name, current_gid)?;
                     changed = true;
                     if !ctx.check_mode {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
@@ -85,6 +90,30 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
         }
     }
     Ok(None)
+}
+
+/// Whether the agent may change the identity of the account whose host
+/// entry is `entry`: the live uid-0 account is the superuser's whatever
+/// it is named, and moving it off uid 0 — or off its primary group —
+/// strands every file it owns.
+fn identity_change_allowed(name: &str, entry: &PasswdEntry) -> Result<(), String> {
+    if entry.uid == 0 {
+        return Err(format!(
+            "user: refusing to change the identity of {name}: the superuser's account (uid 0) is the host's to keep"
+        ));
+    }
+    Ok(())
+}
+
+/// The gid counterpart: the live gid-0 group is the root group whatever
+/// it is named.
+fn group_change_allowed(name: &str, host_gid: u64) -> Result<(), String> {
+    if host_gid == 0 {
+        return Err(format!(
+            "group: refusing to change the gid of {name}: the root group (gid 0) is the host's to keep"
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the agent may remove the account whose host entry is `entry`.
@@ -248,6 +277,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if let Some(u) = uid
                 && u != current.uid
             {
+                identity_change_allowed(name, &current)?;
                 uid_s = u.to_string();
                 args.push("-u");
                 args.push(&uid_s);
@@ -255,6 +285,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if let Some(g) = group {
                 let want_gid = super::resolve_gid(g)?;
                 if u64::from(want_gid) != current.gid {
+                    identity_change_allowed(name, &current)?;
                     args.push("-g");
                     args.push(g);
                 }
@@ -295,6 +326,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     args.push(name);
                     run_cmd("usermod", &args)?;
                 }
+            }
+            // The declared home is managed as a directory too: usermod -d
+            // moves the passwd field only, so a missing directory is
+            // reconciled here — an account whose home field already
+            // matches still gets its directory.
+            if let Some(h) = home {
+                changed |= ensure_home(h, uid.unwrap_or(current.uid), current.gid, ctx.check_mode)?;
             }
         }
     }

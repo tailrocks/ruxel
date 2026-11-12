@@ -4,6 +4,7 @@
 
 use super::*;
 
+mod changes;
 mod parsing;
 mod reconciliation;
 mod removal;
