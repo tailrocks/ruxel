@@ -371,7 +371,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), groupRels(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -602,6 +602,32 @@ function sysctlFiles(ix: StageIndex, i: Int): List<String> =
 
 const function sysctlClash(a: core.Step, b: core.Step): Boolean =
   a is linux.Sysctl && !(b is linux.Sysctl) && paths(b).contains(a.path)
+
+/// An account needs the groups it names. A same-stage group step that
+/// removes one contradicts the account whatever the order — one side ends
+/// the stage needing a group the other removed — and one that creates it
+/// must come first: the tasks run where the author wrote them, so a clean
+/// host would run useradd -g before groupadd.
+function groupRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present") List()
+  else requiredGroups(u).flatMap((n) -> positions(ix.steps)
+    .filter((j) -> ix.steps[j] is linux.Group && ix.steps[j].name == n)
+    .flatMap((j) -> groupRel(ix, i, j, n)))
+
+/// The groups a present account needs: its primary group and its
+/// supplementary ones. A step that states no supplementary groups names
+/// none.
+const function requiredGroups(u: linux.User): List<String> =
+  (if (u.group == null) List() else List(u.group)) + (if (u.groups == null) List() else u.groups.toList())
+
+function groupRel(ix: StageIndex, i: Int, j: Int, n: String): List<String> =
+  let (g = ix.steps[j])
+  if (g is linux.Group && g.state == "absent")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
+  else if (j > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) creates; list the group before the account")
+  else List()
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
