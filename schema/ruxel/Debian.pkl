@@ -218,11 +218,16 @@ class DebconfEntry extends core.Step {
   /// A static answer, or a `SecretAnswer` (the secret sink). The union is
   /// closed: the two branches are the only ones the language admits, and a
   /// secret interpolated into static text is refused by `Static` itself,
-  /// which rejects the reserved secret prefix. The secret branch is a class
+  /// which rejects the reserved secret prefix. The static branch is
+  /// `OneLine`, not `Static`: a line break would write a second selection
+  /// on the standard input of `debconf-set-selections`, so a multiline
+  /// static answer is refused here instead of failing every apply at the
+  /// runtime check; a resolved secret that carries a line break stays
+  /// runtime-validated. The secret branch is a class
   /// of this module and not `core.SecretText` because of the pklr defect
   /// `SecretAnswer` names; both pklr and official Pkl check the union the
   /// same way (`crates/ruxel/ruxel-config/tests/debconf_value_union.rs`).
-  value: Static|SecretAnswer
+  value: OneLine|SecretAnswer
 }
 
 /// A signed apt repository, written as a deb822 source with its own keyring.

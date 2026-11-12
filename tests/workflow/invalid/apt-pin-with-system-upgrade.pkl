@@ -1,0 +1,12 @@
+// expect: 'Pin nginx' (step 1) pins nginx=1.25.1-1, and 'Upgrade everything' (step 2) upgrades the whole system; a system upgrade moves the package away from the declared pin, so put the two in different stages
+// A whole-system upgrade moves every package to its candidate, so an
+// exact version pin in the same stage cannot hold: the upgrade moves the
+// package away from the declared pin and the stage cannot converge.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Pin nginx"; names { "nginx=1.25.1-1" } }
+  new debian.AptSystemUpgrade { title = "Upgrade everything" }
+} } }

@@ -56,6 +56,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/apt-preference-pin-blank.pkl",
     "invalid/apt-preference-pin-type.pkl",
     "invalid/apt-preference-overlapping-selectors.pkl",
+    "invalid/apt-preference-file-at-fragment.pkl",
+    "invalid/apt-preference-before-latest.pkl",
+    "invalid/apt-pin-with-system-upgrade.pkl",
+    "invalid/apt-system-upgrade-with-pin.pkl",
     "invalid/apt-preference-overlapping-globs.pkl",
     "invalid/apt-preference-overlapping-arches.pkl",
     "invalid/debconf-entry-pseudo-arch.pkl",
@@ -64,6 +68,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/debconf-entry-secret-collision.pkl",
     "invalid/debconf-entry-shared-question.pkl",
     "invalid/debconf-entry-question-space.pkl",
+    "invalid/debconf-value-multiline.pkl",
 ];
 
 /// The official `pkl` binary, if it is installed.

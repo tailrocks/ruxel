@@ -1,0 +1,13 @@
+// expect: both manage /etc/apt/preferences.d/nginx-5be1ecc7935f1dd85635d4feedaf660594030253cc97c9e9ca3819ffeac36b65.pref: a File and an AptPreference
+// The preference stanza writes its fragment with the generic copy task,
+// so the fragment path is one of the stanza's managed things: a `File` at
+// that path would lower to a second copy task for the same file, and the
+// two would overwrite each other on every apply.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { title = "Write the fragment"; path = "/etc/apt/preferences.d/nginx-5be1ecc7935f1dd85635d4feedaf660594030253cc97c9e9ca3819ffeac36b65.pref"; content = "Package: nginx\n" }
+  new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 500 }
+} } }

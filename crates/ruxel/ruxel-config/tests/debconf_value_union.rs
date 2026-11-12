@@ -1,7 +1,7 @@
 //! The debconf answer union of `Debian.pkl` is closed and checked: a
 //! static answer, a secret answer, and nothing else.
 //!
-//! The union is `Static|SecretAnswer`, not `Static|core.SecretText`: the
+//! The union is `OneLine|SecretAnswer`, not `Static|core.SecretText`: the
 //! second would name a class of another module in a property type, and
 //! pklr then loses the parent class of every class of the module the
 //! module path serves (see `pklr_module_path_parent.rs`). Official Pkl

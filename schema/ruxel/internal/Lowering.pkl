@@ -333,7 +333,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -525,6 +525,33 @@ function preferenceConflicts(ix: StageIndex, i: Int): List<String> =
   else earlier(i).filter((j) -> ix.steps[j] is debian.AptPreference && ix.steps[j].package != ix.steps[i].package && selectorsOverlap(ix.steps[j].package, ix.steps[i].package))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) pin overlapping package selectors (\(ix.steps[j].package) and \(ix.steps[i].package)); apt applies every matching stanza and the highest priority decides, so keep one selector or put the second in a later stage")
 
+/// A whole-system upgrade moves every package to its candidate, so an
+/// exact version pin in the same stage cannot hold: the upgrade moves the
+/// package away from the declared pin — and a later apply of the pin may
+/// even refuse the downgrade — so the stage cannot converge. The two
+/// never belong in one stage, in either order.
+function pinUpgradeClashes(ix: StageIndex, i: Int): List<String> =
+  if (ix.steps[i] is debian.AptSystemUpgrade)
+    earlier(i).flatMap((j) ->
+      if (!(ix.steps[j] is debian.AptPackages)) List()
+      else let (pinned = ix.steps[j].names.toList().filter((n) -> versionOf(n) != null))
+        if (pinned.isEmpty) List()
+        else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) pins \(pinned.first), and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) upgrades the whole system; a system upgrade moves the package away from the declared pin, so put the two in different stages"))
+  else if (ix.steps[i] is debian.AptPackages && ix.steps[i].names.toList().any((n) -> versionOf(n) != null))
+    earlier(i).filter((j) -> ix.steps[j] is debian.AptSystemUpgrade)
+      .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) upgrades the whole system, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) pins \(ix.steps[i].names.toList().filter((n) -> versionOf(n) != null).first); a system upgrade moves the package away from the declared pin, so put the two in different stages")
+  else List()
+
+/// A preference stanza is written with the generic copy task, which in
+/// `check` and `diff` writes nothing: a later `latest` package step of the
+/// same stage then plans against the candidate policy the host still has,
+/// while apply mode plans against the stanza just written. Check and
+/// apply would disagree, so the combination is refused.
+function preferencePlanning(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPackages) || !ix.steps[i].latest) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPreference)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) writes an apt preference, and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) plans its packages against the candidate policy; in check and diff mode the preference is never written before the plan runs, so check and apply disagree — put the two in different stages")
+
 /// Whether two package selectors can name one package: an unarchived
 /// selector covers the package on every architecture, so the
 /// architectures must not clash, and the names must overlap.
@@ -697,8 +724,10 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // question declares a second state for it, so the two conflict.
   ["debconfEntry"] = (s) -> List("the debconf answer of \(s.question)")
   // One apt preference stanza per package: a second stanza for one package
-  // declares a second state for it, so the two conflict.
-  ["aptPreference"] = (s) -> List("the apt preference of \(s.package)")
+  // declares a second state for it, so the two conflict. The fragment the
+  // stanza writes is managed too: a `File` at that path would write a
+  // second state for the same file, overwriting the stanza on every apply.
+  ["aptPreference"] = (s) -> List("the apt preference of \(s.package)", preferencePath(s.package))
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
@@ -1081,7 +1110,7 @@ function aptUpgrade(_autoremove: Boolean): engine.Apt = new engine.Apt {
 /// one does not (two such selectors once shared an eight-hex-digit
 /// prefix). apt loads only fragments without an extension or with the
 /// `.pref` extension, so the file ends in `.pref`.
-function preferencePath(package: String): String =
+const function preferencePath(package: String): String =
   "/etc/apt/preferences.d/\(preferenceName(package)).pref"
 
 const function preferenceName(package: String): String =

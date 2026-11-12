@@ -1,0 +1,11 @@
+// expect: 'Upgrade everything' (step 1) upgrades the whole system, and 'Pin nginx' (step 2) pins nginx=1.25.1-1; a system upgrade moves the package away from the declared pin, so put the two in different stages
+// The same clash in the other order: the upgrade runs first and the pin
+// would undo its move — or refuse the downgrade — on the next apply.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptSystemUpgrade { title = "Upgrade everything" }
+  new debian.AptPackages { title = "Pin nginx"; names { "nginx=1.25.1-1" } }
+} } }
