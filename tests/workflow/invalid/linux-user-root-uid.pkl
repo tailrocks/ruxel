@@ -1,0 +1,9 @@
+// expect: uid = 1234 is rejected for root
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The superuser's account keeps uid 0: moving root to another id would
+// disconnect the root name from UID 0 and strand every file the
+// superuser owns.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "root"; uid = 1234 } } } }
