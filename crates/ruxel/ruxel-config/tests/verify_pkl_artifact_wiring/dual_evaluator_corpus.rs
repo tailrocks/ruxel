@@ -4,11 +4,14 @@
 //! `Check / dual-evaluator` job unaffected. The corpus lives in a
 //! feature-gated target the pkl-less lanes skip, so an omission there
 //! cannot catch itself: this target, an ordinary one of the same lane,
-//! reads the corpus source rather than running it. The scanner's
-//! scope is the five rules `scan.rs` states once — code-and-
-//! interpolation-only imports, nonrelative targets excluded, relative
-//! corpus paths only, harness sources declared too — and a file
-//! outside them is a scope question, not a defect.
+//! reads the corpus source rather than running it. The invariant's
+//! scope is the rule set `scan.rs` states once — imports recognized
+//! only in code and interpolation regions, never literal text or
+//! comments (line or block); block comments masked; only relative
+//! corpus paths followed; every URI scheme and `modulepath:` excluded;
+//! every discovered harness source path a declared input, and the mise
+//! task executing every discovered harness — and a file outside those
+//! rules is a scope question, not a defect.
 
 use super::*;
 
@@ -26,66 +29,13 @@ mod scan;
 
 use scan::{code, corpus_path, literal, nonrelative};
 
-/// The dual-evaluator harness targets, derived from the `[[test]]`
-/// entries Cargo gates behind the `dual-evaluator` feature
-/// (`PRRT_kwDOS3Fimc62pCSX`): the feature gate is what hides those
-/// targets from the pkl-less lanes, so it is also what names them — a
-/// third dual-evaluator target cannot run without Cargo declaring it,
-/// and a gated target that carries no `EXAMPLES` corpus this parse
-/// knows is a loud failure, never a corpus quietly outside the
-/// contract. Each harness declares its list in its own element shape
-/// — the plain string, the `(path, expected)` pair — and each list is
-/// half the contract: a systemd-only PR must rerun the mandatory
-/// check as surely as a secret-language one.
-fn harnesses() -> Result<Vec<(String, String)>> {
-    let path = repo().join("crates/ruxel/ruxel-config/Cargo.toml");
-    let text =
-        std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let manifest = text
-        .parse::<DocumentMut>()
-        .map_err(|error| format!("{}: {error}", path.display()))?;
-    let tests = manifest
-        .get("test")
-        .and_then(Item::as_array_of_tables)
-        .ok_or("ruxel-config's Cargo.toml declares no [[test]] targets")?;
-    let declarations = [
-        "const EXAMPLES: &[&str] = &[",
-        "const EXAMPLES: &[(&str, bool)] = &[",
-    ];
-    let mut harnesses = Vec::new();
-    for test in tests {
-        let gated = test
-            .get("required-features")
-            .and_then(Item::as_array)
-            .is_some_and(|features| {
-                features
-                    .iter()
-                    .any(|feature| feature.as_str() == Some("dual-evaluator"))
-            });
-        if !gated {
-            continue;
-        }
-        let name = test
-            .get("name")
-            .and_then(Item::as_str)
-            .ok_or("a dual-evaluator [[test]] target carries no name")?;
-        let path = format!("crates/ruxel/ruxel-config/tests/{name}.rs");
-        let text = std::fs::read_to_string(repo().join(&path))
-            .map_err(|error| format!("{path}: {error}"))?;
-        let Some(declaration) = declarations
-            .iter()
-            .find(|declaration| text.contains(*declaration))
-        else {
-            return Err(format!(
-                "{path} carries no EXAMPLES corpus this parse knows; a dual-evaluator \
-                 target without one is a corpus outside the contract"
-            )
-            .into());
-        };
-        harnesses.push((path, (*declaration).to_owned()));
-    }
-    Ok(harnesses)
-}
+/// The harness discovery — the gated targets, their module sources,
+/// their fixtures, the task that must run them; utilities kept beside
+/// this module so the contract itself stays small.
+#[path = "harnesses.rs"]
+mod harnesses;
+
+use harnesses::{fixtures, harness_sources, harnesses};
 
 /// One harness's `EXAMPLES` array, resolved against `tests/workflow` the
 /// way that suite's own `root()` resolves them. The array is parsed
@@ -277,58 +227,6 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
     Ok(())
 }
 
-/// The source files of the dual-evaluator harnesses — every gated
-/// target and every module file under its sibling directory — derived
-/// from the same manifest the harness set comes from. A harness module
-/// is itself a file the check reads (`PRRT_kwDOS3Fimc62pCSO`): its
-/// fixtures are demanded through `fixtures()`, and the module itself
-/// must be declared an input the same way, or a PR changing only it
-/// classifies the mandatory check unaffected.
-fn harness_sources() -> Result<Vec<String>> {
-    let mut sources = Vec::new();
-    for (harness, _) in harnesses()? {
-        sources.push(harness.clone());
-        let stem = harness.trim_end_matches(".rs");
-        let directory = repo().join(stem);
-        if !directory.is_dir() {
-            continue;
-        }
-        for module in std::fs::read_dir(&directory)
-            .map_err(|error| format!("{}: {error}", directory.display()))?
-        {
-            let module = module?;
-            if module.path().extension().is_some_and(|ext| ext == "rs") {
-                sources.push(format!("{stem}/{}", module.file_name().to_string_lossy()));
-            }
-        }
-    }
-    Ok(sources)
-}
-
-/// The corpus fixtures the harnesses read directly, beyond what their
-/// examples import — derived from the `root().join("...")` calls their
-/// own sources make (`PRRT_kwDOS3Fimc62oWc-`): the day a harness module
-/// starts reading a new fixture, that fixture is required the same
-/// day, instead of a second hand-kept list drifting the way the corpus
-/// list once did.
-fn fixtures() -> Result<Vec<String>> {
-    let mut fixtures = Vec::new();
-    for source in harness_sources()? {
-        let path = repo().join(&source);
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        for rest in text.split("root().join(\"").skip(1) {
-            let Some((literal, _)) = rest.split_once('"') else {
-                return Err(format!("{source}: a root().join carries no string literal").into());
-            };
-            fixtures.push(format!("tests/workflow/{literal}"));
-        }
-    }
-    fixtures.sort();
-    fixtures.dedup();
-    Ok(fixtures)
-}
-
 /// The corpus the dual-evaluator reads beyond the examples either
 /// harness names, derived from what the targets actually open: the
 /// fixtures the harness sources read directly, and every corpus file a
@@ -347,6 +245,8 @@ fn fixtures() -> Result<Vec<String>> {
 fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
+    let harnesses = harnesses()?;
+    harnesses::task_runs_every_harness(&harnesses)?;
     let mut read = fixtures()?;
     // A harness source is a file the check reads too: an undeclared
     // module would classify the mandatory check unaffected for a PR
@@ -360,8 +260,8 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
         }
     }
     let mut frontier = Vec::new();
-    for (harness, declaration) in harnesses()? {
-        frontier.extend(examples(&harness, &declaration)?);
+    for (harness, declaration) in &harnesses {
+        frontier.extend(examples(harness, declaration)?);
     }
     let mut visited = std::collections::HashSet::new();
     while let Some(file) = frontier.pop() {
