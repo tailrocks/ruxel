@@ -1,0 +1,9 @@
+// expect: both manage /etc/systemd/system/timers.target.wants/app.timer: a SystemdTimer and a Symlink; a stage declares one state for each thing, so put the second state in a later stage
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { name = "app"; service = "app"; onCalendar = "daily" }
+  new Symlink { path = "/etc/systemd/system/timers.target.wants/app.timer"; target = "/etc/systemd/system/app.timer" }
+} } }

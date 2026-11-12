@@ -47,6 +47,7 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/timer-boot-half-nanosecond.pkl", false),
     ("invalid/timer-boot-negative.pkl", false),
     ("invalid/timer-boot-fractional-huge-integer.pkl", false),
+    ("invalid/timer-enablement-symlink-conflict.pkl", false),
     ("invalid/timer-file-inside.pkl", false),
     ("invalid/reload-missing-dependency.pkl", false),
 ];

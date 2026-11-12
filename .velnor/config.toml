@@ -486,6 +486,7 @@ inputs = [
   "tests/workflow/invalid/timer-boot-negative.pkl",
   "tests/workflow/invalid/timer-boot-sub-millisecond.pkl",
   "tests/workflow/invalid/timer-empty-calendar.pkl",
+  "tests/workflow/invalid/timer-enablement-symlink-conflict.pkl",
   "tests/workflow/invalid/timer-file-inside.pkl",
   "tests/workflow/invalid/timer-multiline-calendar.pkl",
   "tests/workflow/invalid/timer-name-too-long.pkl",

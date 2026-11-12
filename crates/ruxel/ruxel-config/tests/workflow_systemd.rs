@@ -307,6 +307,24 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
     Ok(())
 }
 
+/// A timer owns its enablement link — the `[Install]` section its unit
+/// file carries is what `systemctl enable` reads — so a `Symlink` that
+/// declares a second state for it is refused.
+#[test]
+fn a_timer_refuses_a_second_state_for_its_enablement_link() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("timer-enablement-symlink-conflict.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "both manage /etc/systemd/system/timers.target.wants/app.timer: \
+                    a SystemdTimer and a Symlink; a stage declares one state for each \
+                    thing, so put the second state in a later stage";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
 
 /// The timer's result carries the change of both of its tasks: the unit
 /// file and the enablement. A step that watches the timer must see the

@@ -645,7 +645,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["gitCheckout"] = (s) -> List(s.path)
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
-  ["systemdTimer"] = (s) -> List(timerPath(s.name))
+  ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
   ["loginShell"] = (s) -> List("the login shell of \(s.user)")
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
@@ -670,6 +670,16 @@ const function timerUnit(name: String): String = "\(name).timer"
 /// Where a timer's unit file lives: the directory systemd reads its own
 /// units from.
 const function timerPath(name: String): String = "/etc/systemd/system/\(timerUnit(name))"
+
+/// Where `systemctl enable` puts the timer's enablement symlink: the
+/// `[Install]` section the unit file carries is what enable reads, and
+/// this schema writes that section itself (`WantedBy=timers.target`), so
+/// the link is the timer's own state — a `Symlink` there declares a
+/// second state for a thing the timer manages and is refused. A
+/// `Service` has no such known link: the `[Install]` section of its unit
+/// is the author's own, so its enablement link is not the service
+/// step's to own.
+const function timerEnablePath(name: String): String = "/etc/systemd/system/timers.target.wants/\(timerUnit(name))"
 
 /// The timer file: the schedule the timer fires on. The `[Install]` section
 /// is what `systemctl enable` reads, so the unit can be enabled at boot;
