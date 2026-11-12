@@ -445,6 +445,8 @@ inputs = [
   "tests/workflow/invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",
   "tests/workflow/invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl",
   "tests/workflow/invalid/secret-placeholder-overlapping-malformed-whitespace.pkl",
+  "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix-encoding.pkl",
+  "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix.pkl",
   "tests/workflow/invalid/secret-placeholder-vault.pkl",
   "tests/workflow/invalid/secret-unterminated-placeholder.pkl",
   "tests/workflow/invalid/separator-in-arguments.pkl",
