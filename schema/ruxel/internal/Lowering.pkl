@@ -1047,13 +1047,16 @@ const local standaloneCandidate = Regex(#"^__(?:ruxel_rt_8d41\.[A-Za-z0-9_.]+__|
 /// own — whatever follows elsewhere. The classification is local: only a
 /// candidate NAME after the prefix starts a candidate, the run of the
 /// name's allowed characters — `f2:AB` and its like, or a run-time name —
-/// while the reserved words without an encoded body (`ruxel_rt_8d41.` or
-/// `ruxel_secret_8d41.` beside the delimiters, a bare word that trails off
-/// with nothing after the dot) are ordinary content. A candidate name
-/// that is terminated is a whole placeholder and refused by the terminator
-/// rule; unterminated it alone fails the prefix count, and overlapped it
-/// counts as never covered, never left behind as literal content.
-const local candidateName = Regex(#"^__(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)(?!(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.))[A-Za-z0-9_.:]"#)
+/// while the reserved words WITHOUT an encoded body are ordinary content:
+/// `ruxel_rt_8d41.` or `ruxel_secret_8d41.` beside the delimiters, a bare
+/// word that trails off with nothing after the dot. The exemption is only
+/// for a genuinely bodyless word — the words, and then nothing that could
+/// continue a name: a reserved word followed by candidate content is a
+/// body-carrying candidate like any other. A candidate name that is
+/// terminated is a whole placeholder and refused by the terminator rule;
+/// unterminated it alone fails the prefix count, and overlapped it counts
+/// as never covered, never left behind as literal content.
+const local candidateName = Regex(#"^__(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)(?!(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)+(?![A-Za-z0-9_.:]))[A-Za-z0-9_.:]"#)
 
 /// Text without placeholders stays a string. Run-time placeholders
 /// (`currentHost`, `Capture.stdout()`) become engine references, secret

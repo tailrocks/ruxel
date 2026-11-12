@@ -56,6 +56,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-runtime-prefix-encoding.pkl",
     "invalid/secret-placeholder-overlapping-unterminated.pkl",
     "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
+    "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
 ];
 

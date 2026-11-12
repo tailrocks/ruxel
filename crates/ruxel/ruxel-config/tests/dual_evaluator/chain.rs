@@ -72,6 +72,10 @@ const VARIANTS: &[(&str, &str)] = &[
         "runtime-unterminated-shared",
         r"P=__ruxel_rt_8d41.inventoryHost__ruxel_secret_8d41.f2:CD\n",
     ),
+    (
+        "unterminated-body",
+        r"P=__ruxel_secret_8d41.f2:AB__ruxel_secret_8d41.ruxel_secret_8d41.f2:CD\n",
+    ),
 ];
 
 /// Every variant, refused by both evaluators as a malformed secret
