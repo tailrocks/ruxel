@@ -104,3 +104,76 @@ fn a_declared_shell_must_exist_and_be_executable() {
         .is_ok()
     );
 }
+
+#[test]
+fn a_home_that_is_a_regular_file_is_refused_before_the_account_changes() {
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let probe = std::env::temp_dir().join(format!("ruxel-home-file-{}", std::process::id()));
+    std::fs::write(&probe, b"").unwrap();
+    // `usermod -d` moves the passwd field even when the declared home is
+    // a regular file, so the path is validated before any mutation: a
+    // refused apply must leave the account as it was.
+    let error = run(
+        &json!({"name":"ruxel-synthetic-user", "home":probe.to_str().unwrap()}),
+        &ctx,
+    )
+    .expect_err("a home that is a regular file must be refused before the account changes");
+    assert!(error.contains("home"), "{error}");
+    // The home helper refuses the same path in both modes.
+    assert!(super::super::home_usable(probe.to_str().unwrap()).is_err());
+    std::fs::remove_file(&probe).unwrap();
+}
+
+#[test]
+fn an_existing_home_directory_reports_drifted_ownership() {
+    use std::os::unix::fs::MetadataExt;
+    // The identity the test process owns: a probe file of it.
+    let probe = std::env::temp_dir().join(format!("ruxel-home-drift-{}", std::process::id()));
+    std::fs::write(&probe, b"").unwrap();
+    let meta = std::fs::metadata(&probe).unwrap();
+    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
+    std::fs::remove_file(&probe).unwrap();
+    let dir = std::env::temp_dir().join(format!("ruxel-home-owned-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir(&dir).unwrap();
+    // A home that exists but drifted to another identity is the agent's
+    // to reconcile — the early return reported no change and left the
+    // directory belonging to no one the account declares.
+    assert!(
+        super::super::ensure_home(dir.to_str().unwrap(), uid + 1, gid + 1, true).unwrap(),
+        "check mode reports the pending repair"
+    );
+    assert!(
+        !super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap(),
+        "matching ownership is no change"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_created_home_takes_the_final_primary_gid() {
+    // When one step changes the primary group, `usermod -g` applies
+    // before the home is created: the directory must take the requested
+    // group's gid, never the account's old one, which no later apply
+    // would repair.
+    let host = std::fs::read_to_string("/etc/group").unwrap();
+    let (name, gid) = host
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            if f.len() >= 3 && f[2] != "0" {
+                f[2].parse::<u64>().ok().map(|gid| (f[0].to_string(), gid))
+            } else {
+                None
+            }
+        })
+        .expect("a non-root group on the host");
+    assert_eq!(super::super::home_gid(Some(&name), 1500).unwrap(), gid);
+    assert_eq!(super::super::home_gid(None, 1500).unwrap(), 1500);
+}

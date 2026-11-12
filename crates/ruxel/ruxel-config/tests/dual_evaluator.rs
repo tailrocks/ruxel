@@ -9,13 +9,14 @@
 //! `dual-evaluator` task exported, so verification and execution share one
 //! resolution.
 
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "dual_evaluator/chain.rs"]
 mod chain;
+#[path = "dual_evaluator/compare.rs"]
+mod compare;
 #[path = "dual_evaluator/discovery.rs"]
 mod discovery;
 #[path = "dual_evaluator/join_separator.rs"]
@@ -26,6 +27,8 @@ mod retired_path;
 
 #[path = "dual_evaluator/corpus_files.rs"]
 mod corpus_files;
+
+use compare::*;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -183,6 +186,9 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-sysctl-stage-order.pkl",
     "valid/linux-sysctl-hyphen.pkl",
     "valid/linux-sysctl-equals.pkl",
+    "valid/linux-sysctl-slash.pkl",
+    "invalid/linux-user-shell-later.pkl",
+    "invalid/linux-user-needs-later-account.pkl",
 ];
 
 /// The official `pkl` binary.
@@ -238,158 +244,6 @@ fn modules() -> Result<PathBuf> {
     std::fs::create_dir_all(&directory)?;
     ruxel_config::schema::export(&directory)?;
     Ok(directory)
-}
-
-/// What an evaluator answered: the value it lowered to, or the error it
-/// refused the file with.
-struct Answer {
-    value: Option<Value>,
-    error: Option<String>,
-}
-
-impl Answer {
-    fn failed(&self) -> bool {
-        self.value.is_none()
-    }
-}
-
-/// The evaluation under pklr, which the engine uses.
-fn under_pklr(path: &Path, root_dir: &Path) -> Answer {
-    let options = ruxel_config::EvalOptions {
-        root_dir: Some(root_dir.to_path_buf()),
-        ..ruxel_config::EvalOptions::default()
-    };
-    match ruxel_config::eval(path, &options) {
-        Ok(value) => Answer {
-            value: Some(value),
-            error: None,
-        },
-        Err(error) => Answer {
-            value: None,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
-/// The evaluation under the official CLI.
-fn under_pkl(pkl: &Path, modules: &Path, path: &Path, root_dir: &Path) -> Answer {
-    let output = Command::new(pkl)
-        .args(["eval", "--format", "json"])
-        .arg("--module-path")
-        .arg(modules)
-        .arg("--root-dir")
-        .arg(root_dir)
-        .arg(path)
-        .output();
-    let Ok(output) = output else {
-        return Answer {
-            value: None,
-            error: Some("the official pkl could not run".to_owned()),
-        };
-    };
-    if output.status.success() {
-        match serde_json::from_slice::<Value>(&output.stdout) {
-            Ok(value) => Answer {
-                value: Some(value),
-                error: None,
-            },
-            Err(error) => Answer {
-                value: None,
-                error: Some(error.to_string()),
-            },
-        }
-    } else {
-        Answer {
-            value: None,
-            error: Some(String::from_utf8_lossy(&output.stderr).into_owned()),
-        }
-    }
-}
-
-/// The value without the fingerprints: the served modules carry a nonce,
-/// the exported ones the hash alone, so the two evaluators never agree on
-/// them.
-fn without_fingerprints(value: &Value) -> Value {
-    let mut value = value.clone();
-    if let Some(object) = value.as_object_mut() {
-        object.remove("schemaFingerprint");
-        object.remove("languageFingerprint");
-    }
-    value
-}
-
-/// The text the error must contain: `// expect-pklr:` when pklr's wording
-/// differs from Pkl's, otherwise `// expect: `.
-fn expected(source: &str) -> Option<&str> {
-    let line = |prefix: &str| source.lines().find_map(|line| line.strip_prefix(prefix));
-    line("// expect-pklr: ").or_else(|| line("// expect: "))
-}
-
-/// The text the official CLI's error must contain.
-fn expected_official(source: &str) -> Option<&str> {
-    source
-        .lines()
-        .find_map(|line| line.strip_prefix("// expect-pkl: "))
-}
-
-/// One example: the two evaluators must agree on it, and it must be the
-/// outcome the corpus says it is.
-fn compare(
-    name: &str,
-    path: &Path,
-    root_dir: &Path,
-    pkl: &Path,
-    modules: &Path,
-    succeeds: bool,
-) -> Result {
-    let source = std::fs::read_to_string(path)?;
-    let under_pklr = under_pklr(path, root_dir);
-    let under_official = under_pkl(pkl, modules, path, root_dir);
-    if under_pklr.failed() != under_official.failed() {
-        return Err(format!(
-            "{name}: pklr failed: {}, the official pkl failed: {}",
-            under_pklr.error.unwrap_or_default(),
-            under_official.error.unwrap_or_default()
-        )
-        .into());
-    }
-    if succeeds && under_pklr.failed() {
-        return Err(format!(
-            "{name}: pklr refused it: {}",
-            under_pklr.error.unwrap_or_default()
-        )
-        .into());
-    }
-    // The inverse: an invalid example must fail under both evaluators, so
-    // an example both accept identically can no longer silently pass.
-    if !succeeds && !under_pklr.failed() {
-        return Err(format!(
-            "{name}: an invalid example must fail under both evaluators; \
-             pklr and the official pkl both accepted it"
-        )
-        .into());
-    }
-    if under_pklr.failed() {
-        let error = under_pklr.error.unwrap_or_default();
-        let official = under_official.error.unwrap_or_default();
-        if let Some(expected) = expected(&source)
-            && !error.contains(expected)
-        {
-            return Err(format!("{name}: pklr refused it with {error:?}").into());
-        }
-        if let Some(expected) = expected_official(&source)
-            && !official.contains(expected)
-        {
-            return Err(format!("{name}: the official pkl refused it with {official:?}").into());
-        }
-        return Ok(());
-    }
-    let value = without_fingerprints(&under_pklr.value.unwrap_or_default());
-    let official = without_fingerprints(&under_official.value.unwrap_or_default());
-    if value != official {
-        return Err(format!("{name}: the two evaluators lowered it differently").into());
-    }
-    Ok(())
 }
 
 /// The examples of the secret language evaluate the same way under both

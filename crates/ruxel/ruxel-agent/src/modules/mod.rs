@@ -102,6 +102,7 @@ impl Outcome {
 }
 
 pub(crate) use copy::validate_source;
+pub(crate) use sysctl::proc_sys_path;
 
 pub(crate) fn execute(
     module: &str,
