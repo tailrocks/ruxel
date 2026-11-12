@@ -8,69 +8,25 @@
 
 use super::*;
 
-/// fnmatch semantics, the classification a check's `inputs` carry: `*`
-/// matches any run of bytes, a slash included, because a pattern names
-/// a whole path; `?` one byte; a bracket expression one byte of its
-/// set, `!` or `^` at its head negating. Every other byte matches
-/// itself, so a plain-path input matches that path and nothing else —
-/// the form every committed input takes.
-fn matches(pattern: &str, path: &str) -> bool {
-    fn one(pattern: &[u8], path: &[u8]) -> bool {
-        let Some((&head, rest)) = pattern.split_first() else {
-            return path.is_empty();
-        };
-        match head {
-            b'*' => (0..=path.len()).any(|skip| one(rest, &path[skip..])),
-            b'?' => !path.is_empty() && one(rest, &path[1..]),
-            b'[' => {
-                // The set runs to the first `]`, which a leading one never
-                // closes; an expression that never closes matches nothing.
-                let opened = usize::from(rest.first() == Some(&b']'));
-                let Some(close) = rest[opened..]
-                    .iter()
-                    .position(|byte| *byte == b']')
-                    .map(|at| at + opened)
-                else {
-                    return false;
-                };
-                let set = &rest[..close];
-                let tail = &rest[close + 1..];
-                let Some(&byte) = path.first() else {
-                    return false;
-                };
-                let (negated, set) = match set.first() {
-                    Some(b'!' | b'^') => (true, &set[1..]),
-                    _ => (false, set),
-                };
-                let mut hit = false;
-                let mut at = 0;
-                while at < set.len() {
-                    if at + 2 < set.len() && set[at + 1] == b'-' {
-                        hit |= set[at] <= byte && byte <= set[at + 2];
-                        at += 3;
-                    } else {
-                        hit |= set[at] == byte;
-                        at += 1;
-                    }
-                }
-                hit != negated && one(tail, &path[1..])
-            }
-            byte => path.first() == Some(&byte) && one(rest, &path[1..]),
-        }
-    }
-    one(pattern.as_bytes(), path.as_bytes())
-}
+/// The fnmatch matcher the input classification means; a utility kept
+/// beside this module so the contract itself stays small.
+#[path = "fnmatch.rs"]
+mod fnmatch;
 
-/// The inputs of one generated check that match a path, in the fnmatch
-/// sense the classification applies.
-fn matching_inputs<'a>(inputs: &'a [&'a str], path: &str) -> Vec<&'a str> {
-    inputs
-        .iter()
-        .copied()
-        .filter(|input| matches(input, path))
-        .collect()
-}
+use fnmatch::matching_inputs;
 
+/// The Pkl text scanner the corpus contract reads sources with; a
+/// utility kept beside this module so the contract itself stays small.
+#[path = "scan.rs"]
+mod scan;
+
+use scan::{code, corpus_path, literal, nonrelative};
+
+/// corpus: the secret-language suite, and the systemd suite PR #94
+/// added. Each declares its own list in its own element shape — the
+/// plain string, the `(path, expected)` pair — and each list is half
+/// the contract: a systemd-only PR must rerun the mandatory check as
+/// surely as a secret-language one.
 /// The harnesses whose `EXAMPLES` arrays name the dual-evaluator
 /// corpus: the secret-language suite, and the systemd suite PR #94
 /// added. Each declares its own list in its own element shape — the
@@ -87,30 +43,6 @@ const HARNESSES: &[(&str, &str)] = &[
         "const EXAMPLES: &[(&str, bool)] = &[",
     ),
 ];
-
-/// One string literal of an `EXAMPLES` array, read from `at` — the
-/// opening quote — and past it. A corpus path needs no escape, and one
-/// the text ends before closing names nothing at all.
-fn literal(body: &[char], at: &mut usize) -> Result<String> {
-    *at += 1;
-    let mut literal = String::new();
-    loop {
-        let Some(&head) = body.get(*at) else {
-            return Err("an EXAMPLES entry carries no closing quote".into());
-        };
-        *at += 1;
-        match head {
-            '"' => break,
-            '\\' => {
-                return Err(
-                    "an EXAMPLES entry carries an escape, which a corpus path never needs".into(),
-                );
-            }
-            _ => literal.push(head),
-        }
-    }
-    Ok(literal)
-}
 
 /// One harness's `EXAMPLES` array, resolved against `tests/workflow` the
 /// way that suite's own `root()` resolves them. The array is parsed
@@ -205,23 +137,6 @@ fn examples(harness: &str, declaration: &str) -> Result<Vec<String>> {
     Ok(examples)
 }
 
-/// The corpus path a relative import names, or `None` when it leaves
-/// `tests/workflow` — a module outside the corpus is not a corpus file
-/// this contract covers.
-fn corpus_path(from: &Path, target: &str) -> Option<String> {
-    let mut parts: Vec<&str> = Vec::new();
-    for piece in from.iter().chain(Path::new(target).iter()) {
-        match piece.to_str()? {
-            "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            part => parts.push(part),
-        }
-    }
-    Some(parts.join("/"))
-}
-
 /// The corpus files one file reads beyond itself: the relative
 /// `import`/`amends` targets, resolved against the file's own
 /// directory, in either of Pkl's two forms — the statement
@@ -231,8 +146,8 @@ fn corpus_path(from: &Path, target: &str) -> Option<String> {
 /// expression is a value, taken wherever it stands — an assignment's
 /// right-hand side (`hosts = import("../x.pkl").workers`, the
 /// follow-up finding) as much as a line-leading clause, more than once
-/// a line — while comment text never is. `modulepath:` targets are the
-/// served schema, whose inputs are another contract.
+/// a line — while comment text never is, and nonrelative targets — a
+/// URI scheme, an absolute path — never are either.
 fn imports(file: &str) -> Result<Vec<String>> {
     let path = repo().join("tests/workflow").join(file);
     let text =
@@ -243,7 +158,9 @@ fn imports(file: &str) -> Result<Vec<String>> {
         .unwrap_or(Path::new("."));
     let mut imports = Vec::new();
     for line in text.lines() {
-        let line = line.split("//").next().unwrap_or_default().trim_start();
+        // Comment text names no file the evaluator opens, so the scan
+        // reads the code a tokenizer, not a substring split, sees.
+        let line = code(line).trim_start();
         let mut targets = Vec::new();
         // The statement form is a clause: the line leads with it, the
         // opening quote spent in the prefix.
@@ -271,7 +188,7 @@ fn imports(file: &str) -> Result<Vec<String>> {
             }
         }
         for target in targets {
-            if target.starts_with("modulepath:") {
+            if nonrelative(&target) {
                 continue;
             }
             if let Some(path) = corpus_path(parent, &target) {
@@ -317,11 +234,56 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
     Ok(())
 }
 
+/// The corpus fixtures the harnesses read directly, beyond what their
+/// examples import — derived from the `root().join("...")` calls their
+/// own sources make (`PRRT_kwDOS3Fimc62oWc-`): the day a harness module
+/// starts reading a new fixture, that fixture is required the same
+/// day, instead of a second hand-kept list drifting the way the corpus
+/// list once did.
+fn fixtures() -> Result<Vec<String>> {
+    let base = repo().join("crates/ruxel/ruxel-config/tests");
+    let mut sources = Vec::new();
+    let read = |dir: &Path| -> Result<_> {
+        Ok(std::fs::read_dir(dir).map_err(|error| format!("{}: {error}", dir.display()))?)
+    };
+    for entry in read(&base)? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if name == "dual_evaluator.rs" || name == "dual_evaluator_systemd.rs" {
+            sources.push(entry.path());
+        } else if name.starts_with("dual_evaluator") && entry.file_type()?.is_dir() {
+            for module in read(&entry.path())? {
+                sources.push(module?.path());
+            }
+        }
+    }
+    let mut fixtures = Vec::new();
+    for source in sources {
+        let text = std::fs::read_to_string(&source)
+            .map_err(|error| format!("{}: {error}", source.display()))?;
+        for rest in text.split("root().join(\"").skip(1) {
+            let Some((literal, _)) = rest.split_once('"') else {
+                return Err(format!(
+                    "{}: a root().join carries no string literal",
+                    source.display()
+                )
+                .into());
+            };
+            fixtures.push(format!("tests/workflow/{literal}"));
+        }
+    }
+    fixtures.sort();
+    fixtures.dedup();
+    Ok(fixtures)
+}
+
 /// The corpus the dual-evaluator reads beyond the examples either
 /// harness names, derived from what the targets actually open: the
-/// inventory the chain and join-separator suites copy through their
-/// `root()`, and every corpus file a listed example imports by a
-/// relative path — the only way a case reaches a file beyond itself.
+/// fixtures the harness sources read directly, and every corpus file a
+/// listed example imports by a relative path — the only way a case
+/// reaches a file beyond itself.
 /// `PRRT_kwDOS3Fimc62jyWq`: the walk is transitive — an example that
 /// imports an aggregator (`recipes.pkl`) makes the evaluator open the
 /// aggregator's own imports too, so a corpus file reached only through
@@ -335,7 +297,7 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
 fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
-    let mut read = vec!["tests/workflow/inventory.pkl".to_owned()];
+    let mut read = fixtures()?;
     let mut frontier = Vec::new();
     for (harness, declaration) in HARNESSES {
         frontier.extend(examples(harness, declaration)?);
@@ -367,31 +329,4 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
         }
     }
     Ok(())
-}
-
-/// The matcher is fnmatch, not a formality: a matcher that matched
-/// nothing — or everything — would vacate the contracts above while
-/// still passing.
-#[test]
-fn the_input_matcher_is_fnmatch() {
-    assert!(matches(
-        "tests/workflow/valid/user-missing-account.pkl",
-        "tests/workflow/valid/user-missing-account.pkl"
-    ));
-    assert!(!matches(
-        "tests/workflow/valid/user-missing-account.pkl",
-        "tests/workflow/valid/tags.pkl"
-    ));
-    assert!(matches(
-        "tests/workflow/valid/*.pkl",
-        "tests/workflow/valid/user-missing-account.pkl"
-    ));
-    assert!(matches("tests/*", "tests/workflow/valid/tags.pkl")); // `*` crosses a slash
-    assert!(matches("a?c", "abc"));
-    assert!(!matches("a?c", "ac"));
-    assert!(matches("[a-c]b", "bb"));
-    assert!(matches("[!x]b", "yb"));
-    assert!(!matches("[!x]b", "xb"));
-    assert!(!matches("[ab", "a"));
-    assert!(!matches("*.pkl", "corpus.pkl.txt"));
 }
