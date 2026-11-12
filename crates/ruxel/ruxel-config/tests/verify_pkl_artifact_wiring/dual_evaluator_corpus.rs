@@ -22,27 +22,66 @@ mod scan;
 
 use scan::{code, corpus_path, literal, nonrelative};
 
-/// corpus: the secret-language suite, and the systemd suite PR #94
-/// added. Each declares its own list in its own element shape — the
-/// plain string, the `(path, expected)` pair — and each list is half
-/// the contract: a systemd-only PR must rerun the mandatory check as
-/// surely as a secret-language one.
-/// The harnesses whose `EXAMPLES` arrays name the dual-evaluator
-/// corpus: the secret-language suite, and the systemd suite PR #94
-/// added. Each declares its own list in its own element shape — the
-/// plain string, the `(path, expected)` pair — and each list is half
-/// the contract: a systemd-only PR must rerun the mandatory check as
-/// surely as a secret-language one.
-const HARNESSES: &[(&str, &str)] = &[
-    (
-        "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+/// The dual-evaluator harness targets, derived from the `[[test]]`
+/// entries Cargo gates behind the `dual-evaluator` feature
+/// (`PRRT_kwDOS3Fimc62pCSX`): the feature gate is what hides those
+/// targets from the pkl-less lanes, so it is also what names them — a
+/// third dual-evaluator target cannot run without Cargo declaring it,
+/// and a gated target that carries no `EXAMPLES` corpus this parse
+/// knows is a loud failure, never a corpus quietly outside the
+/// contract. Each harness declares its list in its own element shape
+/// — the plain string, the `(path, expected)` pair — and each list is
+/// half the contract: a systemd-only PR must rerun the mandatory
+/// check as surely as a secret-language one.
+fn harnesses() -> Result<Vec<(String, String)>> {
+    let path = repo().join("crates/ruxel/ruxel-config/Cargo.toml");
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let manifest = text
+        .parse::<DocumentMut>()
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    let tests = manifest
+        .get("test")
+        .and_then(Item::as_array_of_tables)
+        .ok_or("ruxel-config's Cargo.toml declares no [[test]] targets")?;
+    let declarations = [
         "const EXAMPLES: &[&str] = &[",
-    ),
-    (
-        "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
         "const EXAMPLES: &[(&str, bool)] = &[",
-    ),
-];
+    ];
+    let mut harnesses = Vec::new();
+    for test in tests {
+        let gated = test
+            .get("required-features")
+            .and_then(Item::as_array)
+            .is_some_and(|features| {
+                features
+                    .iter()
+                    .any(|feature| feature.as_str() == Some("dual-evaluator"))
+            });
+        if !gated {
+            continue;
+        }
+        let name = test
+            .get("name")
+            .and_then(Item::as_str)
+            .ok_or("a dual-evaluator [[test]] target carries no name")?;
+        let path = format!("crates/ruxel/ruxel-config/tests/{name}.rs");
+        let text = std::fs::read_to_string(repo().join(&path))
+            .map_err(|error| format!("{path}: {error}"))?;
+        let Some(declaration) = declarations
+            .iter()
+            .find(|declaration| text.contains(*declaration))
+        else {
+            return Err(format!(
+                "{path} carries no EXAMPLES corpus this parse knows; a dual-evaluator \
+                 target without one is a corpus outside the contract"
+            )
+            .into());
+        };
+        harnesses.push((path, (*declaration).to_owned()));
+    }
+    Ok(harnesses)
+}
 
 /// One harness's `EXAMPLES` array, resolved against `tests/workflow` the
 /// way that suite's own `root()` resolves them. The array is parsed
@@ -157,29 +196,29 @@ fn imports(file: &str) -> Result<Vec<String>> {
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut imports = Vec::new();
-    for line in text.lines() {
-        // Comment text names no file the evaluator opens, so the scan
-        // reads the code a tokenizer, not a substring split, sees.
-        let line = code(line).trim_start();
+    // The scan reads the mask the tokenizer draws over the source —
+    // string text and comments name no file the evaluator opens —
+    // while each target literal is read from the source itself, at
+    // the very offset the mask pointed to: a form is found in code,
+    // its argument is a string either way (`PRRT_kwDOS3Fimc62pCSD`).
+    let code = code(&text);
+    for (line, code) in text.lines().zip(code.lines()) {
         let mut targets = Vec::new();
-        // The statement form is a clause: the line leads with it, the
-        // opening quote spent in the prefix.
-        for form in ["import \"", "amends \""] {
-            if let Some(rest) = line.strip_prefix(form) {
-                let (target, _) = rest
-                    .split_once('"')
-                    .ok_or(format!("{file}: an import carries no closing quote"))?;
-                targets.push(target.to_owned());
-            }
-        }
-        // The expression form is a value: it is taken wherever it
-        // stands, and a line may carry more than one.
-        for form in ["import(", "amends("] {
+        for form in ["import \"", "amends \"", "import(", "amends("] {
             let mut from = 0;
-            while let Some(at) = line[from..].find(form) {
+            while let Some(at) = code[from..].find(form) {
                 from += at + form.len();
-                let Some(rest) = line[from..].trim_start().strip_prefix('"') else {
-                    continue;
+                // The statement forms have spent their opening quote in
+                // the form; the expression forms still carry it,
+                // possibly behind whitespace.
+                let rest = if form.ends_with('"') {
+                    &line[from..]
+                } else {
+                    let rest = line[from..].trim_start();
+                    match rest.strip_prefix('"') {
+                        Some(rest) => rest,
+                        None => continue,
+                    }
                 };
                 let (target, _) = rest
                     .split_once('"')
@@ -214,8 +253,8 @@ fn imports(file: &str) -> Result<Vec<String>> {
 fn every_dual_evaluator_example_is_a_declared_input() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
-    for (harness, declaration) in HARNESSES {
-        for example in examples(harness, declaration)? {
+    for (harness, declaration) in harnesses()? {
+        for example in examples(&harness, &declaration)? {
             let path = format!("tests/workflow/{example}");
             if !repo().join(&path).is_file() {
                 return Err(format!(
@@ -234,6 +273,34 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
     Ok(())
 }
 
+/// The source files of the dual-evaluator harnesses — every gated
+/// target and every module file under its sibling directory — derived
+/// from the same manifest the harness set comes from. A harness module
+/// is itself a file the check reads (`PRRT_kwDOS3Fimc62pCSO`): its
+/// fixtures are demanded through `fixtures()`, and the module itself
+/// must be declared an input the same way, or a PR changing only it
+/// classifies the mandatory check unaffected.
+fn harness_sources() -> Result<Vec<String>> {
+    let mut sources = Vec::new();
+    for (harness, _) in harnesses()? {
+        sources.push(harness.clone());
+        let stem = harness.trim_end_matches(".rs");
+        let directory = repo().join(stem);
+        if !directory.is_dir() {
+            continue;
+        }
+        for module in std::fs::read_dir(&directory)
+            .map_err(|error| format!("{}: {error}", directory.display()))?
+        {
+            let module = module?;
+            if module.path().extension().is_some_and(|ext| ext == "rs") {
+                sources.push(format!("{stem}/{}", module.file_name().to_string_lossy()));
+            }
+        }
+    }
+    Ok(sources)
+}
+
 /// The corpus fixtures the harnesses read directly, beyond what their
 /// examples import — derived from the `root().join("...")` calls their
 /// own sources make (`PRRT_kwDOS3Fimc62oWc-`): the day a harness module
@@ -241,35 +308,14 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
 /// day, instead of a second hand-kept list drifting the way the corpus
 /// list once did.
 fn fixtures() -> Result<Vec<String>> {
-    let base = repo().join("crates/ruxel/ruxel-config/tests");
-    let mut sources = Vec::new();
-    let read = |dir: &Path| -> Result<_> {
-        Ok(std::fs::read_dir(dir).map_err(|error| format!("{}: {error}", dir.display()))?)
-    };
-    for entry in read(&base)? {
-        let entry = entry?;
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if name == "dual_evaluator.rs" || name == "dual_evaluator_systemd.rs" {
-            sources.push(entry.path());
-        } else if name.starts_with("dual_evaluator") && entry.file_type()?.is_dir() {
-            for module in read(&entry.path())? {
-                sources.push(module?.path());
-            }
-        }
-    }
     let mut fixtures = Vec::new();
-    for source in sources {
-        let text = std::fs::read_to_string(&source)
-            .map_err(|error| format!("{}: {error}", source.display()))?;
+    for source in harness_sources()? {
+        let path = repo().join(&source);
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
         for rest in text.split("root().join(\"").skip(1) {
             let Some((literal, _)) = rest.split_once('"') else {
-                return Err(format!(
-                    "{}: a root().join carries no string literal",
-                    source.display()
-                )
-                .into());
+                return Err(format!("{source}: a root().join carries no string literal").into());
             };
             fixtures.push(format!("tests/workflow/{literal}"));
         }
@@ -298,9 +344,20 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
     let mut read = fixtures()?;
+    // A harness source is a file the check reads too: an undeclared
+    // module would classify the mandatory check unaffected for a PR
+    // that changes only it (`PRRT_kwDOS3Fimc62pCSO`).
+    for source in harness_sources()? {
+        if matching_inputs(&inputs, &source).is_empty() {
+            return Err(format!(
+                "the dual-evaluator check must declare {source} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
+            )
+            .into());
+        }
+    }
     let mut frontier = Vec::new();
-    for (harness, declaration) in HARNESSES {
-        frontier.extend(examples(harness, declaration)?);
+    for (harness, declaration) in harnesses()? {
+        frontier.extend(examples(&harness, &declaration)?);
     }
     let mut visited = std::collections::HashSet::new();
     while let Some(file) = frontier.pop() {
