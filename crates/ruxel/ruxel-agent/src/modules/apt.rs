@@ -1,4 +1,6 @@
+mod install;
 use self::holds::{Holds, hold_packages, read_showhold};
+use self::install::{Installed, install};
 use super::{ExecContext, bool_param, params_object, str_param};
 use crate::system_state::{PackageRequest, SystemState};
 use serde_json::{Map, Value, json};
@@ -25,7 +27,6 @@ fn run_with(
     let autoremove = bool_param(obj, "autoremove", false);
     let hold = bool_param(obj, "hold", false);
     let requests = check_requests(obj, ctx)?;
-    let state = str_param(obj, "state").unwrap_or("present");
     let mut result = json!({"changed": false});
     let mut changed = false;
     if update_cache {
@@ -35,40 +36,23 @@ fn run_with(
             Some(refreshed) => changed |= refreshed,
         }
     }
-    if let Some(kind) = upgrade {
-        let action = match kind {
-            "dist" => "dist-upgrade",
-            other => return Err(format!("apt: upgrade={other:?} outside the closed surface")),
-        };
-        // In check and diff mode the upgrade and the autoremove are
-        // simulated as one transaction (`--auto-remove`): a separate
-        // `-s autoremove` after a simulated upgrade would evaluate the
-        // pre-upgrade dependency graph — the simulation changes nothing —
-        // while apply mode runs the autoremove after the real upgrade.
-        // Check and apply must agree on the removals.
-        let combined = autoremove && ctx.check_mode;
-        match maintenance(
-            action,
-            if combined { &["--auto-remove"] } else { &[] },
-            true,
-            ctx,
-            system_state,
-            &mut result,
-            command,
-        ) {
-            Ok(more) => changed |= more,
-            Err(error) => return Ok(failed(&mut result, changed, &error)),
+    let action = match upgrade {
+        Some("dist") => Some("dist-upgrade"),
+        Some(other) => {
+            return Err(format!("apt: upgrade={other:?} outside the closed surface"));
         }
-        if combined {
-            result["diff"] = json!({});
-        }
-    }
-    if autoremove && !(upgrade.is_some() && ctx.check_mode) {
-        match maintenance("autoremove", &[], false, ctx, system_state, &mut result, command) {
-            Ok(more) => changed |= more,
-            Err(error) => return Ok(failed(&mut result, changed, &error)),
-        }
-        result["diff"] = json!({});
+        None => None,
+    };
+    if let Err(error) = maintain(
+        action,
+        autoremove,
+        &mut changed,
+        ctx,
+        system_state,
+        &mut result,
+        command,
+    ) {
+        return Ok(failed(&mut result, changed, &error));
     }
     // The holds are read before anything runs: a package that is already
     // held is not held again, and the report names the holds of the host.
@@ -81,7 +65,6 @@ fn run_with(
         match install(
             &requests,
             holds.as_deref().unwrap_or_default(),
-            state,
             obj,
             ctx,
             system_state,
@@ -135,6 +118,44 @@ fn failed(result: &mut Value, changed: bool, error: &str) -> Value {
     result["failed"] = json!(true);
     result["msg"] = json!(error);
     std::mem::take(result)
+}
+
+/// The whole-system maintenance: the upgrade and the autoremove. In
+/// check and diff mode the two are simulated as one transaction
+/// (`--auto-remove`): a separate `-s autoremove` after a simulated
+/// upgrade would evaluate the pre-upgrade dependency graph — the
+/// simulation changes nothing — while apply mode runs the autoremove
+/// after the real upgrade. A failure stops the run after the host may
+/// already have changed; `changed` keeps what happened before it.
+fn maintain(
+    action: Option<&str>,
+    autoremove: bool,
+    changed: &mut bool,
+    ctx: &ExecContext,
+    system_state: &mut SystemState,
+    result: &mut Value,
+    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
+) -> Result<(), String> {
+    if let Some(action) = action {
+        let combined = autoremove && ctx.check_mode;
+        *changed |= maintenance(
+            action,
+            if combined { &["--auto-remove"] } else { &[] },
+            true,
+            ctx,
+            system_state,
+            result,
+            command,
+        )?;
+        if combined {
+            result["diff"] = json!({});
+        }
+    }
+    if autoremove && !(action.is_some() && ctx.check_mode) {
+        *changed |= maintenance("autoremove", &[], false, ctx, system_state, result, command)?;
+        result["diff"] = json!({});
+    }
+    Ok(())
 }
 
 /// The packages an apt step asks for, and the checks that must hold before
@@ -236,11 +257,7 @@ fn maintenance(
     result: &mut Value,
     command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
 ) -> Result<bool, String> {
-    let mut args = if ctx.check_mode {
-        vec!["-s"]
-    } else {
-        vec![]
-    };
+    let mut args = if ctx.check_mode { vec!["-s"] } else { vec![] };
     args.extend_from_slice(extra);
     args.push(action);
     let (stdout, rc, stderr) = command(&args, ctx)?;
@@ -253,111 +270,6 @@ fn maintenance(
     }
     fill_exec_fields(result, &stdout, &stderr, with_msg);
     Ok(summary_changed(&stdout))
-}
-
-enum Installed {
-    Unchanged,
-    Changed,
-    /// apt-get succeeded but the requests are not all satisfied afterwards.
-    Unverified(String),
-}
-
-fn install(
-    requests: &[PackageRequest],
-    held: &[PackageRequest],
-    state: &str,
-    obj: &Map<String, Value>,
-    ctx: &ExecContext,
-    system_state: &mut SystemState,
-    result: &mut Value,
-    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
-) -> Result<Installed, String> {
-    let latest = state == "latest";
-    let plan = system_state.plan_packages(requests, latest, &ctx.environment)?;
-    if plan.missing.is_empty() {
-        return Ok(Installed::Unchanged);
-    }
-    if !ctx.check_mode {
-        let mut args = vec!["install"];
-        if bool_param(obj, "force", false) {
-            args.push("--allow-downgrades");
-        }
-        // A `hold` step whose pin changed must move the packages the host
-        // already holds. Only the requested holds are lifted for this
-        // transaction and restored right after; every other held package
-        // keeps apt's refusal to move it. The transaction-wide
-        // `--allow-change-held-packages` is not used: apt documents it as
-        // a dangerous force-yes that lets the run change any held
-        // package, even one the workflow never requested.
-        let native = system_state.native_architecture().map(str::to_owned);
-        let lifted: Vec<String> = if bool_param(obj, "hold", false) {
-            requests
-                .iter()
-                .filter(|request| held.iter().any(|entry| request.covered_by(entry, native.as_deref())))
-                .map(PackageRequest::selector)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        if !lifted.is_empty() {
-            let mut marks = vec!["unhold"];
-            marks.extend(lifted.iter().map(String::as_str));
-            let (_, rc, stderr) = command(&marks, ctx)?;
-            if rc != 0 {
-                return Err(format!("apt-mark unhold failed: {stderr}"));
-            }
-        }
-        args.extend(plan.transaction.iter().map(String::as_str));
-        let (stdout, rc, stderr) = command(&args, ctx)?;
-        system_state.invalidate_packages();
-        // The holds are restored whatever the transaction answered: the
-        // host held the packages before the step, so the step leaves them
-        // held — or reports the mark that could not be restored.
-        let restored = restore_holds(&lifted, command, ctx);
-        if rc != 0 {
-            return Err(format!("apt install failed: {stderr}"));
-        }
-        if let Err(error) = restored {
-            return Ok(Installed::Unverified(format!(
-                "apt install succeeded but the hold could not be restored: {error}"
-            )));
-        }
-        fill_exec_fields(result, &stdout, &stderr, false);
-        match system_state.plan_packages(requests, latest, &ctx.environment) {
-            Ok(after) if after.missing.is_empty() => {}
-            Ok(after) => {
-                return Ok(Installed::Unverified(format!(
-                    "apt install did not satisfy the requested packages: {}",
-                    after.missing.join(", ")
-                )));
-            }
-            Err(error) => {
-                return Ok(Installed::Unverified(format!(
-                    "apt install succeeded but verification failed: {error}"
-                )));
-            }
-        }
-    }
-    Ok(Installed::Changed)
-}
-
-/// Puts back the holds the transaction lifted, so the host keeps the
-/// state the step promised.
-fn restore_holds(
-    lifted: &[String],
-    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
-    ctx: &ExecContext,
-) -> Result<(), String> {
-    if lifted.is_empty() {
-        return Ok(());
-    }
-    let mut marks = vec!["hold"];
-    marks.extend(lifted.iter().map(String::as_str));
-    let (_, rc, stderr) = command(&marks, ctx)?;
-    if rc != 0 {
-        return Err(format!("apt-mark hold failed: {stderr}"));
-    }
-    Ok(())
 }
 
 /// apt-get and apt-mark share one command: the arguments name the

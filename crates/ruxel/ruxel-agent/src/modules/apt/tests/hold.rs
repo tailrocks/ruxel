@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::{Arc, Mutex};
 
-fn status(packages: &[(&str, &str)]) -> String {
+pub(super) fn status(packages: &[(&str, &str)]) -> String {
     let packages: Vec<(&str, &str, &str)> = packages
         .iter()
         .map(|(name, version)| (*name, *version, "amd64"))
@@ -22,7 +22,7 @@ fn status_with_arch(packages: &[(&str, &str, &str)]) -> String {
     text
 }
 
-fn host(packages: &[(&str, &str)]) -> (SystemState, Arc<Mutex<String>>) {
+pub(super) fn host(packages: &[(&str, &str)]) -> (SystemState, Arc<Mutex<String>>) {
     let database = Arc::new(Mutex::new(status(packages)));
     (SystemState::with_dpkg_status(database.clone()), database)
 }
@@ -32,7 +32,7 @@ fn host_with_arch(packages: &[(&str, &str, &str)]) -> (SystemState, Arc<Mutex<St
     (SystemState::with_dpkg_status(database.clone()), database)
 }
 
-fn calls_of(calls: &mut Vec<Vec<String>>, args: &[&str]) {
+pub(super) fn calls_of(calls: &mut Vec<Vec<String>>, args: &[&str]) {
     calls.push(args.iter().map(ToString::to_string).collect::<Vec<_>>());
 }
 
@@ -318,68 +318,6 @@ fn hold_refuses_unsupported_selectors_before_any_command() {
     assert!(error.contains("unsupported package selector"), "{error}");
 }
 
-/// A pinned hold converges over an old hold: the host holds `pkg` at 1
-/// and the step asks for `pkg=2`, so the transaction must move a held
-/// package. Only the requested hold is lifted for the transaction and
-/// restored right after; apt's refusal to move any other held package
-/// stands, and `--allow-change-held-packages` is never passed.
-#[test]
-fn a_pinned_hold_moves_the_version_the_host_holds() -> Result<(), String> {
-    let (mut state, database) = host(&[("pkg", "1")]);
-    let mut calls = Vec::new();
-    let mut held = true;
-    let mut command = |args: &[&str], _: &ExecContext| {
-        calls_of(&mut calls, args);
-        match args {
-            ["showhold"] => Ok((
-                if held { "pkg\n".into() } else { String::new() },
-                0,
-                String::new(),
-            )),
-            ["unhold", ..] => {
-                held = false;
-                Ok((String::new(), 0, String::new()))
-            }
-            ["hold", ..] => {
-                held = true;
-                Ok((String::new(), 0, String::new()))
-            }
-            ["install", ..] => {
-                if held {
-                    // apt's own refusal.
-                    return Ok((
-                        String::new(),
-                        1,
-                        "E: Held packages were changed and -y was used without --allow-change-held-packages".into(),
-                    ));
-                }
-                *database.lock().map_err(|error| error.to_string())? = status(&[("pkg", "2")]);
-                Ok((summary(true), 0, String::new()))
-            }
-            other => Err(format!("unexpected apt call {other:?}")),
-        }
-    };
-    let result = run_with(
-        &json!({"name": "pkg=2", "hold": true}),
-        &context(false),
-        &mut state,
-        &mut command,
-    )?;
-    assert_eq!(
-        calls,
-        vec![
-            vec!["showhold"],
-            vec!["unhold", "pkg"],
-            vec!["install", "pkg=2"],
-            vec!["hold", "pkg"]
-        ]
-    );
-    assert_eq!(result["changed"], true);
-    assert_eq!(result["failed"], false);
-    assert_eq!(result["holds"], json!(["pkg"]));
-    Ok(())
-}
-
 /// The relaxation is for `hold` transactions alone: a plain install keeps
 /// apt's refusal to move a held package, so a plan that could not know of
 /// the hold still fails loudly instead of moving a frozen package.
@@ -403,47 +341,4 @@ fn a_plain_install_is_not_allowed_to_change_held_packages() {
     .expect_err("apt refuses to move a held package");
     assert_eq!(calls, vec![vec!["install", "pkg=2"]]);
     assert!(error.contains("apt install failed"), "{error}");
-}
-
-/// The relaxation is scoped to the requested holds: an unrelated held
-/// dependency keeps apt's refusal, so the run never moves a frozen
-/// package the workflow did not ask for. `--allow-change-held-packages`
-/// is never passed — it would authorize the whole transaction to change
-/// any held package.
-#[test]
-fn an_unrelated_held_package_is_never_lifted_for_a_hold_transaction() -> Result<(), String> {
-    let (mut state, _) = host(&[("pkg", "1"), ("bar", "1")]);
-    let mut calls = Vec::new();
-    let mut command = |args: &[&str], _: &ExecContext| {
-        calls_of(&mut calls, args);
-        match args {
-            ["showhold"] => Ok(("bar\n".into(), 0, String::new())),
-            ["hold", ..] | ["unhold", ..] => Ok((String::new(), 0, String::new())),
-            ["install", ..] => {
-                assert!(
-                    !args.contains(&"--allow-change-held-packages"),
-                    "the run passed the transaction-wide relaxation"
-                );
-                // The transaction wants bar too: apt's own refusal.
-                Ok((
-                    String::new(),
-                    1,
-                    "E: Held packages were changed and -y was used without --allow-change-held-packages"
-                        .into(),
-                ))
-            }
-            other => Err(format!("unexpected apt call {other:?}")),
-        }
-    };
-    let error = run_with(
-        &json!({"name": "pkg=2", "hold": true}),
-        &context(false),
-        &mut state,
-        &mut command,
-    )
-    .expect_err("apt refuses to move the unrelated held bar");
-    assert!(error.contains("apt install failed"), "{error}");
-    // bar is never unheld: pkg is not held, so no hold is lifted at all.
-    assert_eq!(calls, vec![vec!["showhold"], vec!["install", "pkg=2"]]);
-    Ok(())
 }

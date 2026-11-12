@@ -235,7 +235,11 @@ fn communicate_value(
 /// question the database does not know answers `10 ... doesn't exist` and
 /// exits 10; treating that as a crash would fail a first-time preseed that
 /// must simply proceed to `debconf-set-selections`.
-fn communicate_reply(stdout: &str, stderr: &str, status_success: bool) -> Result<Option<String>, String> {
+fn communicate_reply(
+    stdout: &str,
+    stderr: &str,
+    status_success: bool,
+) -> Result<Option<String>, String> {
     let reply = stdout.lines().next().unwrap_or_default();
     let (code, text) = reply.split_once(' ').unwrap_or((reply, ""));
     if !code.is_empty() && code.chars().all(|c| c.is_ascii_digit()) {
@@ -245,10 +249,7 @@ fn communicate_reply(stdout: &str, stderr: &str, status_success: bool) -> Result
         };
     }
     if !status_success {
-        return Err(format!(
-            "debconf-communicate failed: {}",
-            stderr.trim_end()
-        ));
+        return Err(format!("debconf-communicate failed: {}", stderr.trim_end()));
     }
     Err(format!("debconf-communicate: unexpected reply {reply:?}"))
 }

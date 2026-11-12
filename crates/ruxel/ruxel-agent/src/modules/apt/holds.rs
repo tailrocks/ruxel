@@ -89,7 +89,9 @@ fn apply_holds(
             return Ok((
                 true,
                 held,
-                Some(format!("apt-mark hold applied but the holds could not be read back: {error}")),
+                Some(format!(
+                    "apt-mark hold applied but the holds could not be read back: {error}"
+                )),
             ));
         }
     };

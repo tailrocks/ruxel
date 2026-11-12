@@ -324,7 +324,7 @@ fn apt_preference_file_names_are_apt_compatible() -> Result {
 
 /// Two stanzas never share a fragment file: the fragment name carries the
 /// digest of the selector, so two selectors that sanitize to one basename
-/// still write one file each (review thread PRRT_kwDOS3Fimc62bqId). The
+/// still write one file each (review thread `PRRT_kwDOS3Fimc62bqId`). The
 /// pair below once shared both the sanitized basename and an
 /// eight-hex-digit digest prefix (`7df67fd2`).
 #[test]

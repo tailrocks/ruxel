@@ -68,9 +68,10 @@ esac
 /// The runner forces a stable locale on its apt subprocesses: `maintenance`
 /// determines `changed` from the English summary strings, and apt-get
 /// prints translated prose under a non-C `LANG` or `LC_ALL` (review thread
-/// PRRT_kwDOS3Fimc62Z486).
+/// `PRRT_kwDOS3Fimc62Z486`).
 #[test]
-fn production_runner_forces_a_stable_locale_on_apt_subprocesses() -> Result<(), Box<dyn std::error::Error>> {
+fn production_runner_forces_a_stable_locale_on_apt_subprocesses()
+-> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("RUXEL_APT_TEST_CHILD").is_some() {
         let result = run(
             &json!({"upgrade":"dist"}),

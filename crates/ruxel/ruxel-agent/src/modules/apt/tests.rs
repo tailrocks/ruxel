@@ -20,6 +20,7 @@ fn summary(changed: bool) -> String {
 mod cache;
 mod failures;
 mod hold;
+mod hold_lift;
 mod maintenance;
 mod pins;
 mod process;
