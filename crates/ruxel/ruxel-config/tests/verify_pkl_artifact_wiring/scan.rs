@@ -7,8 +7,9 @@
 //! invariant's scope is exactly them:
 //!
 //! 1. An import is recognized only in code and interpolation regions —
-//!    never in literal string text (`"..."` or `"""..."""`) or a
-//!    comment, line `//` or block `/* ... */` — in either of Pkl's forms, the statement `import "…"`
+//!    never in literal string text (`"..."`, `"""..."""`, or a
+//!    raw `#"..."#` string) or a comment, line `//` or block
+//!    `/* ... */` — in either of Pkl's forms, the statement `import "…"`
 //!    / `amends "…"` and the expression `import("…")` / `amends("…")`,
 //!    wherever an expression stands, more than once a line.
 //! 2. `modulepath:` and every URI scheme, and every absolute path, are
@@ -91,6 +92,26 @@ fn string_byte(frames: &mut Vec<Frame>, bytes: &[u8], at: usize, mask: &mut Vec<
     }
 }
 
+/// A raw string's extent (`PRRT_kwDOS3Fimc62pCSD`'s class, the raw
+/// form): one or more `#` then a quote opens it, and only a quote plus
+/// as many `#` closes it. `None` when the bytes at `at` open no raw
+/// string; the whole literal is text Pkl never scans for imports.
+fn raw_string(bytes: &[u8], at: usize) -> Option<usize> {
+    let hashes = bytes[at..].iter().take_while(|&&byte| byte == b'#').count();
+    if bytes.get(at + hashes) != Some(&b'"') {
+        return None;
+    }
+    let opener = &bytes[at..at + hashes];
+    let mut end = at + hashes + 1;
+    while end < bytes.len() {
+        if bytes[end] == b'"' && bytes[end + 1..].starts_with(opener) {
+            return Some(end + 1 + hashes);
+        }
+        end += 1;
+    }
+    Some(bytes.len())
+}
+
 pub(super) fn code(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut mask = Vec::with_capacity(bytes.len());
@@ -107,6 +128,13 @@ pub(super) fn code(text: &str) -> String {
                     mask.push(b' ');
                     at += 1;
                 }
+                continue;
+            }
+            if let Some(end) = raw_string(bytes, at) {
+                for byte in &bytes[at..end] {
+                    mask.push(if *byte == b'\n' { b'\n' } else { b' ' });
+                }
+                at = end;
                 continue;
             }
             if bytes[at..].starts_with(b"/*") {

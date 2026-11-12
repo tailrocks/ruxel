@@ -161,7 +161,17 @@ fn imports(file: &str) -> Result<Vec<String>> {
         for form in ["import \"", "amends \"", "import(", "amends("] {
             let mut from = 0;
             while let Some(at) = code[from..].find(form) {
-                from += at + form.len();
+                // A token has a boundary before it: `reimport(` is not
+                // `import(`, and no identifier breaks mid-word.
+                let token = from + at;
+                let bounded = token == 0 || {
+                    let byte = code.as_bytes()[token - 1];
+                    !(byte.is_ascii_alphanumeric() || byte == b'_')
+                };
+                from = token + form.len();
+                if !bounded {
+                    continue;
+                }
                 // The statement forms have spent their opening quote in
                 // the form; the expression forms still carry it,
                 // possibly behind whitespace.
