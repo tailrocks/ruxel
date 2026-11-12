@@ -1,0 +1,18 @@
+// expect: both manage uid 1500 with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An explicit uid is a managed thing of its own: two accounts with one id
+// would run the first useradd and fail the second on the duplicate,
+// leaving a partially applied stage.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app-a"; uid = 1500 }
+      new linux.User { user = "app-b"; uid = 1500 }
+    }
+  }
+}

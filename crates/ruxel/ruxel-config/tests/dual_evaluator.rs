@@ -171,6 +171,9 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-group-absent.pkl",
     "invalid/linux-group-absent-after-user.pkl",
     "invalid/linux-user-needs-later-group.pkl",
+    "invalid/linux-user-uid-twice.pkl",
+    "invalid/linux-group-gid-twice.pkl",
+    "invalid/linux-sysctl-values-differ.pkl",
 ];
 
 /// The official `pkl` binary.
