@@ -84,7 +84,7 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["debconfEntry"] = (s) -> s is debian.DebconfEntry
   ["aptRepository"] = (s) -> s is debian.AptRepository
   ["timezone"] = (s) -> s is linux.Timezone
-  ["loginShell"] = (s) -> s is linux.User
+  ["user"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
   ["sysctl"] = (s) -> s is linux.Sysctl
   ["group"] = (s) -> s is linux.Group
@@ -432,16 +432,24 @@ function settings(s: core.Step): List<String> =
   // The superuser's id is never a managed account's id, and an account
   // below UID 1000 is a system account the host keeps: it is never removed.
   // Removing an account therefore states its id, and the id is 1000 or more.
+  // The root account itself keeps uid 0: changing it would disconnect the
+  // root name from UID 0 and strand every file the superuser owns.
   else if (s is linux.User && s.uid != null && s.uid == 0)
     List("'\(name(s))': uid = 0 is rejected: the superuser's id is not for a managed account")
+  else if (s is linux.User && s.user == "root" && s.uid != null)
+    List("'\(name(s))': uid = \(s.uid) is rejected for root: the superuser's account keeps uid 0, and a change would strand every file it owns")
   else if (s is linux.User && s.state == "absent" && (s.user == "root" || s.uid == null || s.uid < 1000))
     List("'\(name(s))': state = \"absent\" is rejected for root and for an account below UID 1000; state the account's uid (1000 or more) to remove it")
   // The root group's id is never a managed group's id, and the root group
   // itself is never removed: the account side refuses the superuser's id
   // and removal, and the group side refuses the superuser's primary group
-  // the same way, for groupdel root strands every file root owns.
+  // the same way, for groupdel root strands every file root owns. The root
+  // group itself keeps gid 0: changing it would detach every file owned by
+  // numeric GID 0 from the root group.
   else if (s is linux.Group && s.gid != null && s.gid == 0)
     List("'\(name(s))': gid = 0 is rejected: the root group's id is not for a managed group")
+  else if (s is linux.Group && s.name == "root" && s.gid != null)
+    List("'\(name(s))': gid = \(s.gid) is rejected for root: the root group keeps gid 0, and a change would strand every file it owns")
   else if (s is linux.Group && s.state == "absent" && s.name == "root")
     List("'\(name(s))': state = \"absent\" is rejected for the root group: the superuser's primary group is the host's to keep")
   else List()
@@ -1084,7 +1092,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // The groups are a set — the engine sorts and deduplicates what it
   // reconciles — so their fingerprint is the canonical set, not the order
   // the author wrote them in.
-  ["loginShell"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
+  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
@@ -1112,7 +1120,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
-  ["loginShell"] = (s) -> List("the account \(s.user)")
+  ["user"] = (s) -> List("the account \(s.user)")
   ["group"] = (s) -> List("the group \(s.name)")
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
@@ -1460,7 +1468,7 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> "Set \(s.question) for \(s.package)"
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
-  ["loginShell"] = (s) -> (if (s.state == "absent") "Remove account " else "Manage account ") + s.user
+  ["user"] = (s) -> (if (s.state == "absent") "Remove account " else "Manage account ") + s.user
   ["group"] = (s) -> (if (s.state == "absent") "Remove group " else "Manage group ") + s.name
   ["gitCheckout"] = (s) -> "Check out \(s.repository) into \(s.path)"
   ["sysctl"] = (s) -> "Set sysctl \(s.name) to \(s.value) in \(s.path)"
@@ -1512,7 +1520,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   // `linux.User` lowers to the engine's user operation alone: the operation
   // creates a missing account and changes the settings of an existing one,
   // so no pre-check reads /etc/passwd before it.
-  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, s.groups.toList(), s.uid, s.system, s.state, s.removeHome), null, null))
+  ["user"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, s.groups.toList(), s.uid, s.system, s.state, s.removeHome), null, null))
   ["group"] = (s, m) -> List(task(m, group(s.name, s.gid, s.state), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["sysctl"] = (s, m) -> List(task(m, sysctl(s.name, s.value, s.path), null, null))
@@ -1875,9 +1883,12 @@ function group(_name: String, _gid: Int?, _state: "present"|"absent"): engine.Sy
 }
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
 /// The engine's sysctl operation: the parameter, its value, and the file
-/// that holds the entry. The engine writes the entry and applies the file;
-/// the flags it offers beyond this (`sysctl_set`, `reload`) are not exposed.
-function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; state = "present" }
+/// that holds the entry. The engine writes the entry and applies the file,
+/// and `sysctl_set` turns on live-value reconciliation: every apply reads
+/// the live kernel value and corrects it when it drifted, so a parameter
+/// another process changed is never left stale. The flags it offers beyond
+/// this (`reload`) are not exposed.
+function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; sysctl_set = true; state = "present" }
 function service(_name: String, _enabled: Boolean?, _state: String?): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
