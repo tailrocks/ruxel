@@ -42,13 +42,13 @@ fn run_with(
         };
         match maintenance(action, true, ctx, system_state, &mut result, command) {
             Ok(more) => changed |= more,
-            Err(error) => return Ok(failed(&mut result, changed, error)),
+            Err(error) => return Ok(failed(&mut result, changed, &error)),
         }
     }
     if autoremove {
         match maintenance("autoremove", false, ctx, system_state, &mut result, command) {
             Ok(more) => changed |= more,
-            Err(error) => return Ok(failed(&mut result, changed, error)),
+            Err(error) => return Ok(failed(&mut result, changed, &error)),
         }
         result["diff"] = json!({});
     }
@@ -99,7 +99,7 @@ fn run_with(
             // Err into `changed: false`. The report keeps the change the
             // run accumulated (true after an install) alongside the
             // failure, like the Unverified arm above.
-            Err(error) => return Ok(failed(&mut result, changed, error)),
+            Err(error) => return Ok(failed(&mut result, changed, &error)),
         }
     }
     result["changed"] = json!(changed);
@@ -111,7 +111,7 @@ fn run_with(
 /// have changed: the change the run accumulated stays in the report
 /// alongside the failure and its message, because `modules::execute`
 /// would turn an Err into `changed: false` and hide that change.
-fn failed(result: &mut Value, changed: bool, error: String) -> Value {
+fn failed(result: &mut Value, changed: bool, error: &str) -> Value {
     result["changed"] = json!(changed);
     result["failed"] = json!(true);
     result["msg"] = json!(error);

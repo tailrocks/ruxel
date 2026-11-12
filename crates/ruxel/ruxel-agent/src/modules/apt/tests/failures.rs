@@ -32,11 +32,15 @@ fn a_holding_failure_after_a_changing_install_reports_the_install_change() -> Re
             ["showhold"] => {
                 showholds += 1;
                 let refused = fail == "read-back" && showholds > 1;
-                Ok((String::new(), i32::from(refused), "read-back refused".into()))
+                Ok((
+                    String::new(),
+                    i32::from(refused),
+                    "read-back refused".into(),
+                ))
             }
             ["hold", ..] => Ok((
                 String::new(),
-                if fail == "mark" { 1 } else { 0 },
+                i32::from(fail == "mark"),
                 "mark refused".into(),
             )),
             ["install", ..] => {
@@ -55,7 +59,10 @@ fn a_holding_failure_after_a_changing_install_reports_the_install_change() -> Re
         assert_eq!(result["changed"], true, "{fail}");
         assert_eq!(result["failed"], true, "{fail}");
         let message = result["msg"].as_str().unwrap_or_default();
-        assert!(message.contains("apt-mark") && message.contains("refused"), "{fail}: {message}");
+        assert!(
+            message.contains("apt-mark") && message.contains("refused"),
+            "{fail}: {message}"
+        );
     }
     Ok(())
 }
@@ -64,7 +71,8 @@ fn a_holding_failure_after_a_changing_install_reports_the_install_change() -> Re
 /// autoremove after it fails: the result keeps the upgrade's change
 /// alongside the failure.
 #[test]
-fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -> Result<(), String> {
+fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -> Result<(), String>
+{
     for check in [false, true] {
         let mut calls = Vec::new();
         let mut command = |args: &[&str], _: &ExecContext| {
@@ -86,7 +94,10 @@ fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -
         assert_eq!(result["changed"], true, "{calls:?}");
         assert_eq!(result["failed"], true, "{calls:?}");
         let message = result["msg"].as_str().unwrap_or_default();
-        assert!(message.contains("autoremove") && message.contains("refused"), "{message}");
+        assert!(
+            message.contains("autoremove") && message.contains("refused"),
+            "{message}"
+        );
     }
     Ok(())
 }

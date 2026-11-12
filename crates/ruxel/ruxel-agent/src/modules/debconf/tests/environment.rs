@@ -11,8 +11,7 @@ use std::os::unix::fs::PermissionsExt as _;
 /// reports the value it sees as the answer of the question.
 #[test]
 fn the_task_environment_reaches_the_selections_reader() -> Result<(), String> {
-    let directory =
-        std::env::temp_dir().join(format!("ruxel-debconf-env-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("ruxel-debconf-env-{}", std::process::id()));
     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     let reader = directory.join("reader");
     std::fs::write(
@@ -62,6 +61,9 @@ fn the_task_environment_reaches_the_selection_writer() -> Result<(), String> {
     )?;
     let seen = std::fs::read_to_string(&log).map_err(|error| error.to_string())?;
     std::fs::remove_dir_all(&directory).map_err(|error| error.to_string())?;
-    assert_eq!(seen, "present\n", "the writer must see the task environment");
+    assert_eq!(
+        seen, "present\n",
+        "the writer must see the task environment"
+    );
     Ok(())
 }

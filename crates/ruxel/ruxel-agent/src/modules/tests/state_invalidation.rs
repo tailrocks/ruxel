@@ -64,7 +64,10 @@ fn modules_that_cannot_change_packages_or_units_keep_the_snapshots() {
 
 /// The `apt-cache policy` reads a fixture log records.
 fn policy_reads(log: &std::path::Path) -> usize {
-    std::fs::read_to_string(log).unwrap_or_default().lines().count()
+    std::fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .count()
 }
 
 /// A write that lands under the apt policy paths drops the cached
@@ -107,7 +110,11 @@ fn a_policy_write_drops_the_cached_candidate_policy() {
         assert_eq!(policy_reads(&log), 1, "{dest:?}");
         let warm = super::apt::run(&params, &context(false), &mut state).expect("warm plan");
         assert_eq!(warm["failed"], false, "{dest:?}");
-        assert_eq!(policy_reads(&log), 1, "{dest:?}: the cached policy must be reused");
+        assert_eq!(
+            policy_reads(&log),
+            1,
+            "{dest:?}: the cached policy must be reused"
+        );
         let copied = super::copy::run_in(
             &json!({"dest": dest, "content": "x"}),
             None,
@@ -119,7 +126,8 @@ fn a_policy_write_drops_the_cached_candidate_policy() {
         assert_eq!(copied["changed"], true, "{dest:?}");
         assert_eq!(state.test_candidates_invalidated(), policy, "{dest:?}");
         assert!(!state.test_packages_invalidated(), "{dest:?}");
-        let after = super::apt::run(&params, &context(false), &mut state).expect("plan after write");
+        let after =
+            super::apt::run(&params, &context(false), &mut state).expect("plan after write");
         assert_eq!(after["failed"], false, "{dest:?}");
         assert_eq!(
             policy_reads(&log),
