@@ -45,6 +45,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-malformed-punctuation.pkl",
     "invalid/secret-placeholder-overlapping-malformed-punctuation-tagless.pkl",
     "invalid/secret-placeholder-overlapping-malformed-whitespace.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-newline.pkl",
 ];
 
 /// The official `pkl` binary.
