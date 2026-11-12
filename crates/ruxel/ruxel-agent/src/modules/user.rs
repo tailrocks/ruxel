@@ -7,8 +7,10 @@
 use super::{ExecContext, bool_param, params_object, str_param};
 
 use home::ensure_home;
+use shell::shell_allowed;
 
 mod home;
+mod shell;
 use serde_json::{Value, json};
 
 #[derive(Default)]
@@ -221,6 +223,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let home = str_param(obj, "home");
     let create_home = bool_param(obj, "create_home", true);
     let shell = str_param(obj, "shell");
+    if let Some(sh) = shell {
+        shell_allowed(sh)?;
+    }
     let comment = str_param(obj, "comment");
     let system = bool_param(obj, "system", false);
 
