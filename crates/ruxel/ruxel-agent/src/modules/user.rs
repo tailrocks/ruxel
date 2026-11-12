@@ -55,7 +55,8 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             }
         }
         "absent" => {
-            if entry.is_some() {
+            if let Some((_, current_gid)) = entry {
+                group_removal_allowed(name, gid, current_gid)?;
                 changed = true;
                 if !ctx.check_mode {
                     run_cmd("groupdel", &[name])?;
@@ -84,6 +85,55 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
         }
     }
     Ok(None)
+}
+
+/// Whether the agent may remove the account whose host entry is `entry`.
+/// The deletion verifies the host entry rather than trusting the workflow
+/// value: the superuser's account and a system account below UID 1000 are
+/// the host's to keep whatever the workflow states, and a declared uid
+/// must match the host's — `user = "daemon"; uid = 1000` must not remove
+/// an account whose real UID is below 1000.
+fn removal_allowed(name: &str, declared: Option<u64>, entry: &PasswdEntry) -> Result<(), String> {
+    if entry.uid == 0 {
+        return Err(format!(
+            "user: refusing to remove {name}: the superuser's account (uid 0) is the host's to keep"
+        ));
+    }
+    if entry.uid < 1000 {
+        return Err(format!(
+            "user: refusing to remove {name}: the host account is a system account (uid {}), which the host keeps",
+            entry.uid
+        ));
+    }
+    if let Some(want) = declared
+        && want != entry.uid
+    {
+        return Err(format!(
+            "user: refusing to remove {name}: the host uid {} is not the declared {want}",
+            entry.uid
+        ));
+    }
+    Ok(())
+}
+
+/// Whether the agent may remove the group of host gid `host_gid`. The
+/// root group (GID 0) is the host's to keep whatever it is named, and a
+/// declared gid must match the host's: the host entry, not the workflow
+/// value, is what deletion acts on.
+fn group_removal_allowed(name: &str, declared: Option<u64>, host_gid: u64) -> Result<(), String> {
+    if host_gid == 0 {
+        return Err(format!(
+            "group: refusing to remove {name}: the root group (gid 0) is the host's to keep"
+        ));
+    }
+    if let Some(want) = declared
+        && want != host_gid
+    {
+        return Err(format!(
+            "group: refusing to remove {name}: the host gid {host_gid} is not the declared {want}"
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -117,8 +167,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     };
 
     let entry = passwd_entry(name)?;
+    let uid = obj.get("uid").and_then(Value::as_u64);
 
     if state == "absent" {
+        // The deletion verifies the host entry, not the workflow value:
+        // see `removal_allowed`.
+        if let Some(current) = &entry {
+            removal_allowed(name, uid, current)?;
+        }
         let changed = entry.is_some();
         if changed && !ctx.check_mode {
             let mut args: Vec<&str> = Vec::new();
@@ -131,7 +187,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         return Ok(json!({"changed": changed, "failed": false, "name": name, "state": "absent"}));
     }
 
-    let uid = obj.get("uid").and_then(Value::as_u64);
     let group = str_param(obj, "group");
     let append = bool_param(obj, "append", false);
     let home = str_param(obj, "home");
@@ -292,144 +347,4 @@ fn groups_need_update(current: &[String], want: &[String], append: bool) -> bool
 }
 
 #[cfg(test)]
-fn desired_groups(current: &[String], want: &[String], append: bool) -> Vec<String> {
-    let mut desired = if append { current.to_vec() } else { Vec::new() };
-    desired.extend(want.iter().cloned());
-    desired.sort();
-    desired.dedup();
-    desired
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn strings(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| (*value).into()).collect()
-    }
-
-    #[test]
-    fn groups_reject_scalars_and_non_string_entries() {
-        let ctx = ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: Vec::new(),
-            become_user: None,
-        };
-        for groups in [json!("wheel,docker"), json!(["wheel", 2])] {
-            assert!(
-                run(
-                    &json!({"name":"ruxel-synthetic-user", "groups":groups}),
-                    &ctx
-                )
-                .is_err()
-            );
-            assert!(
-                run(
-                    &json!({"name":"ruxel-synthetic-user", "state":"absent", "groups":groups}),
-                    &ctx
-                )
-                .is_err()
-            );
-        }
-        assert!(
-            run(
-                &json!({"name":"ruxel-synthetic-user", "groups":["wheel", "docker"]}),
-                &ctx
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn rejects_option_like_group_names_before_running_utilities() {
-        for check_mode in [true, false] {
-            let ctx = ExecContext {
-                check_mode,
-                diff_mode: false,
-                no_log: false,
-                environment: Vec::new(),
-                become_user: None,
-            };
-            for state in ["present", "absent"] {
-                for name in ["--help", "-g"] {
-                    let error = group(&json!({"name":name, "state":state}), &ctx)
-                        .expect_err("option-like group name must be rejected");
-                    assert!(error.contains("group") && error.contains("name"));
-                }
-            }
-            if check_mode {
-                assert!(group(&json!({"name":"ruxel-synthetic-group"}), &ctx).is_ok());
-            }
-        }
-    }
-
-    #[test]
-    fn rejects_option_like_user_names_before_running_utilities() {
-        for check_mode in [true, false] {
-            let ctx = ExecContext {
-                check_mode,
-                diff_mode: false,
-                no_log: false,
-                environment: Vec::new(),
-                become_user: None,
-            };
-            for state in ["present", "absent"] {
-                for name in ["--help", "-u"] {
-                    let error = run(&json!({"name":name, "state":state}), &ctx)
-                        .expect_err("option-like user name must be rejected");
-                    assert!(error.contains("user") && error.contains("name"));
-                }
-            }
-            if check_mode {
-                assert!(run(&json!({"name":"ruxel-synthetic-user"}), &ctx).is_ok());
-            }
-        }
-    }
-
-    #[test]
-    fn supplementary_group_reconciliation_is_set_based() {
-        assert_eq!(
-            desired_groups(&strings(&["a"]), &strings(&["b", "b"]), true),
-            strings(&["a", "b"])
-        );
-        assert!(groups_need_update(&strings(&["a"]), &strings(&["b"]), true));
-        assert!(!groups_need_update(
-            &strings(&["a", "b"]),
-            &strings(&["b", "a"]),
-            false
-        ));
-        assert_eq!(
-            desired_groups(&strings(&["a", "b"]), &strings(&["b"]), false),
-            strings(&["b"])
-        );
-    }
-
-    #[test]
-    fn parses_passwd_and_group_content() {
-        let entry = passwd_entry_from("alice:x:1001:1002:Alice:/home/alice:/bin/sh\n", "alice")
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            (entry.uid, entry.gid, entry.home.as_str()),
-            (1001, 1002, "/home/alice")
-        );
-        assert_eq!(
-            supplementary_groups_from("wheel:x:10:alice,bob\ndocker:x:20:bob\n", "alice"),
-            strings(&["wheel"])
-        );
-    }
-    #[test]
-    fn parses_group_entry_from_canned_content() {
-        assert_eq!(
-            super::group_entry_from("wheel:x:10:a,b\n", "wheel").unwrap(),
-            Some(("wheel".into(), 10))
-        );
-        assert_eq!(
-            super::group_entry_from("wheel:x:10:a,b\n", "missing").unwrap(),
-            None
-        );
-        assert!(super::group_entry_from("broken:x:nope:\n", "broken").is_err());
-    }
-}
+mod tests;
