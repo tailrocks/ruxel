@@ -39,7 +39,7 @@ pub(super) fn run(
             let is_enabled = if ctx.check_mode {
                 system_state.predicted_unit(unit)?.enabled
             } else {
-                system_state.clear_prediction(unit);
+                system_state.clear_enablement_prediction(unit);
                 system_state.unit(unit)?.enabled
             };
             if is_enabled != want_enabled {
@@ -85,7 +85,7 @@ pub(super) fn run(
                     if st.1 != 0 {
                         return Err(format!("{verb} {unit}: {}", st.2));
                     }
-                    system_state.clear_prediction(unit);
+                    system_state.clear_activity_prediction(unit);
                     system_state.invalidate_units();
                 }
             } else if !ctx.check_mode {
@@ -94,8 +94,9 @@ pub(super) fn run(
                 // leaves behind, so a check-mode task's prediction of a
                 // different run state is stale, and a later check-mode
                 // task must judge against the state this task observed,
-                // not against one a prediction invented.
-                system_state.clear_prediction(unit);
+                // not against one a prediction invented. Only the run
+                // state is the state task's to reconcile.
+                system_state.clear_activity_prediction(unit);
             }
         }
     }
@@ -132,6 +133,26 @@ fn predicted_activity(state: &str) -> Option<bool> {
         "started" | "restarted" => Some(true),
         "stopped" => Some(false),
         _ => None,
+    }
+}
+
+/// The reconciliation a forced systemd task performs on the predictions
+/// of its own dimension, for the paths that never reach `run` — the
+/// ledger cache can satisfy the task and continue first.
+pub(crate) fn reconcile_predictions(
+    params: &Value,
+    system_state: &mut crate::system_state::SystemState,
+) {
+    let Ok(obj) = params_object(params) else {
+        return;
+    };
+    if let Some(name) = str_param(obj, "name") {
+        if obj.contains_key("state") {
+            system_state.clear_activity_prediction(name);
+        }
+        if obj.contains_key("enabled") {
+            system_state.clear_enablement_prediction(name);
+        }
     }
 }
 

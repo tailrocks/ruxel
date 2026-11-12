@@ -77,11 +77,13 @@ class Service extends core.Step {
 
 /// A systemd timer: a `.timer` unit that starts a service on a schedule.
 ///
-/// The timer owns its unit file and its enablement, and nothing else: it
-/// names the service it starts — the service of its own name when it
-/// names none — but the unit file of that service stays a `File`. Writing
-/// the timer file and reloading systemd stay the author's `File` and
-/// `Command` steps, in the order the author wrote them.
+/// The timer owns its unit file and its enablement, and nothing else. It
+/// writes `/etc/systemd/system/<name>.timer` itself and manages that
+/// path — declaring a `File` for it too is refused as a second state —
+/// and it names the service it starts: the service of its own name when
+/// it names none, whose unit file stays the author's `File`. Reloading
+/// systemd stays the author's `Command` step, in the order the author
+/// wrote it.
 class SystemdTimer extends core.Step {
   hidden fixed kind = "systemdTimer"
   /// The name of the `.timer` unit: `postgresql-multixact-monitor` is

@@ -136,10 +136,14 @@ impl SystemState {
         self.predicted_enabled.insert(unit_key(name), enabled);
     }
 
-    /// A performed change makes its prediction stale: the observed state
-    /// is the truth again.
-    pub(crate) fn clear_prediction(&mut self, name: &str) {
+    /// A forced task reconciles only the dimension it manages: an
+    /// enablement-only task neither observes nor changes activity, so a
+    /// predicted run state survives it exactly as apply leaves it.
+    pub(crate) fn clear_activity_prediction(&mut self, name: &str) {
         self.predicted_activity.remove(&unit_key(name));
+    }
+
+    pub(crate) fn clear_enablement_prediction(&mut self, name: &str) {
         self.predicted_enabled.remove(&unit_key(name));
     }
 

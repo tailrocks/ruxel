@@ -94,6 +94,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     verify_forced_execution_clears_the_stale_prediction(root)?;
     verify_predicted_enablement_spans_repeated_services(root)?;
     verify_opaque_commands_clear_the_predictions(root)?;
+    verify_forced_tasks_keep_unrelated_predictions(root)?;
     Ok(())
 }
 
@@ -239,6 +240,39 @@ fn verify_opaque_commands_clear_the_predictions(
     assert_eq!(
         dispatch_with("systemd", &reloaded, true, &mut shared).status,
         "ok"
+    );
+    Ok(())
+}
+
+/// A forced task reconciles only the dimension it manages: an
+/// enablement-only task neither observes nor changes activity, so the
+/// run state a check-mode start predicted survives it and the later
+/// reload still reports the change apply would make.
+fn verify_forced_tasks_keep_unrelated_predictions(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let enabled = json!({"name":"demo","enabled":true});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    if root.join("enabled").exists() {
+        std::fs::remove_file(root.join("enabled"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "changed"
     );
     Ok(())
 }

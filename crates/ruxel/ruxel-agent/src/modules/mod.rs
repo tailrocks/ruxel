@@ -37,7 +37,7 @@ mod slurp;
 mod stat;
 mod subprocess;
 mod sysctl;
-mod systemd;
+pub(crate) mod systemd;
 mod timezone;
 mod user;
 
