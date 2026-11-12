@@ -36,12 +36,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(format!("sysctl: cannot read {file}: {error}")),
     };
-    let (content, file_changed) = rewrite_file(&current, name, &value);
-    changed |= file_changed;
-    if file_changed && !ctx.check_mode {
-        write_atomic(std::path::Path::new(file), content.as_bytes())?;
-    }
 
+    // The live value is reconciled before the file is published: a key the
+    // kernel rejects must not leave a new invalid assignment behind in
+    // the persistence file.
     if sysctl_set {
         let live = read_sysctl(name)?;
         if normalized(&live) != normalized(&value) {
@@ -61,6 +59,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
     }
+
+    let (content, file_changed) = rewrite_file(&current, name, &value);
+    changed |= file_changed;
+    if file_changed && !ctx.check_mode {
+        write_atomic(std::path::Path::new(file), content.as_bytes())?;
+    }
+
     if changed && reload && !ctx.check_mode {
         let st = std::process::Command::new("sysctl")
             .arg("-p")
@@ -216,6 +221,34 @@ mod tests {
             super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
             ("net.test = 1  2\n".into(), false)
         );
+    }
+
+    #[test]
+    fn a_refused_live_value_leaves_the_persistence_file_untouched() {
+        let path = std::env::temp_dir().join(format!("ruxel-sysctl-order-{}", std::process::id()));
+        std::fs::write(&path, "net.test=1\n").unwrap();
+        let ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        // The key is absent from this host's kernel (and from any /proc on
+        // a non-Linux test host): the live write is refused, and the
+        // refusal must not leave a new invalid assignment behind in the
+        // persistence file.
+        let result = super::run(
+            &json!({"name":"ruxel.missing.key", "value":"2", "sysctl_file":path, "sysctl_set":true, "reload":false}),
+            &ctx,
+        );
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "net.test=1\n",
+            "a failed live reconciliation must not publish the entry"
+        );
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
