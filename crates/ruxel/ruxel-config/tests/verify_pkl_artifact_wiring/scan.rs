@@ -8,7 +8,7 @@
 //!
 //! 1. An import is recognized only in code and interpolation regions —
 //!    never in literal string text (`"..."` or `"""..."""`) or a
-//!    comment — in either of Pkl's forms, the statement `import "…"`
+//!    comment, line `//` or block `/* ... */` — in either of Pkl's forms, the statement `import "…"`
 //!    / `amends "…"` and the expression `import("…")` / `amends("…")`,
 //!    wherever an expression stands, more than once a line.
 //! 2. `modulepath:` and every URI scheme, and every absolute path, are
@@ -17,8 +17,11 @@
 //!    transitively, the walk bounded by a visited set.
 //! 4. Every harness source the contract discovers — each `[[test]]`
 //!    target gated behind the `dual-evaluator` feature, and every
-//!    module file under its sibling directory — must itself be a
-//!    declared input of the `dual-evaluator` check.
+//!    module file under its sibling directory, at any depth — must
+//!    itself be a declared input of the `dual-evaluator` check, and
+//!    the mise `dual-evaluator` task must run every discovered
+//!    harness: a corpus the mandatory task never executes is a corpus
+//!    nobody checks.
 //! 5. A file outside these rules is a scope question, not a defect:
 //!    the harnesses read only what these rules name.
 
@@ -104,6 +107,20 @@ pub(super) fn code(text: &str) -> String {
                     mask.push(b' ');
                     at += 1;
                 }
+                continue;
+            }
+            if bytes[at..].starts_with(b"/*") {
+                // A block comment runs to its `*/` and reads nothing
+                // (`PRRT_kwDOS3Fimc62plX3`).
+                let close = bytes[at + 2..]
+                    .windows(2)
+                    .position(|window| window == b"*/")
+                    .map(|skip| at + 2 + skip + 2);
+                let end = close.unwrap_or(bytes.len());
+                for byte in &bytes[at..end] {
+                    mask.push(if *byte == b'\n' { b'\n' } else { b' ' });
+                }
+                at = end;
                 continue;
             }
             if bytes[at..].starts_with(b"\"\"\"") {
