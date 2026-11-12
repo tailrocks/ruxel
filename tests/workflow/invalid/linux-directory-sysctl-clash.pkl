@@ -1,0 +1,17 @@
+// expect: both manage the file /etc/sysctl.d/90-ruxel.conf
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A Directory at a sysctl's entry file path declares a second state for
+// the same file: the sysctl writes a regular file there.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1" }
+      new Directory { path = "/etc/sysctl.d/90-ruxel.conf"; mode = "0755" }
+    }
+  }
+}
