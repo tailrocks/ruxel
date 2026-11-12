@@ -68,3 +68,39 @@ fn a_declared_home_directory_is_reconciled() {
     assert!(!super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_declared_shell_must_exist_and_be_executable() {
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    // useradd and usermod accept a missing or non-executable shell and
+    // only warn, leaving the account unable to log in while the apply
+    // reports success.
+    let error = run(
+        &json!({"name":"ruxel-synthetic-user", "shell":"/nonexistent/sh"}),
+        &ctx,
+    )
+    .expect_err("a missing shell must be refused before the account is touched");
+    assert!(error.contains("shell"), "{error}");
+    let probe = std::env::temp_dir().join(format!("ruxel-shell-probe-{}", std::process::id()));
+    std::fs::write(&probe, b"#!/bin/sh\n").unwrap();
+    let error = run(
+        &json!({"name":"ruxel-synthetic-user", "shell":probe.to_str().unwrap()}),
+        &ctx,
+    )
+    .expect_err("a non-executable shell must be refused");
+    assert!(error.contains("shell"), "{error}");
+    std::fs::remove_file(&probe).unwrap();
+    assert!(
+        run(
+            &json!({"name":"ruxel-synthetic-user", "shell":"/bin/sh"}),
+            &ctx
+        )
+        .is_ok()
+    );
+}

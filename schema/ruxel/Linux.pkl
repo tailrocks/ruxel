@@ -183,7 +183,10 @@ class User extends core.Step {
   /// The account's numeric id. The root account keeps uid 0: a step for
   /// `root` may not declare one.
   uid: Uid? = null
-  /// Whether the account is a system account.
+  /// Whether a created account is a system account (`useradd --system`).
+  /// Creation only: the flag shapes an account that does not exist yet —
+  /// `useradd --help` defines `--system` as "create a system account" —
+  /// and a step for an existing account leaves its kind alone.
   system: Boolean = false
   /// Whether the account is there (`present`) or gone (`absent`).
   state: Presence = "present"
