@@ -169,7 +169,10 @@ class User extends core.Step {
   /// it.
   home: FilePath? = null
   /// The group the account belongs to. The root account keeps its primary
-  /// group: a step for `root` may not declare one.
+  /// group: a step for `root` may not declare one. A present account that
+  /// states none gets the group `useradd` creates with its login name
+  /// (USERGROUPS_ENAB), and a same-stage `Group` of that name conflicts
+  /// with the account — state the group explicitly to manage it.
   group: Username? = null
   /// The other groups the account belongs to. Unset leaves the account's
   /// supplementary memberships unmanaged; an explicit empty listing

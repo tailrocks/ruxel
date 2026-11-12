@@ -174,6 +174,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-twice.pkl",
     "invalid/linux-group-gid-twice.pkl",
     "invalid/linux-sysctl-values-differ.pkl",
+    "invalid/linux-user-implicit-group-clash.pkl",
     "valid/linux-sysctl-hyphen.pkl",
     "valid/linux-sysctl-equals.pkl",
 ];

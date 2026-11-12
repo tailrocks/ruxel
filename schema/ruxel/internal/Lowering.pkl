@@ -1177,8 +1177,10 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // The account and the things it declares states for: its explicit uid
   // is a managed thing of its own — two accounts with one id fail the
   // second useradd on the duplicate — and its explicit home is a path the
-  // step creates.
-  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present" && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)"))
+  // step creates. A present account that states no primary group claims
+  // the group useradd creates with its login name (USERGROUPS_ENAB), so
+  // that implicit group is its footprint too.
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present" && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
   // An explicit gid is a managed thing of its own, the way a uid is.
   ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")
@@ -1950,9 +1952,12 @@ function git(_repo: String, _dest: String, _version: String): engine.Git = new e
 /// that holds the entry. The engine writes the entry and applies the file,
 /// and `sysctl_set` turns on live-value reconciliation: every apply reads
 /// the live kernel value and corrects it when it drifted, so a parameter
-/// another process changed is never left stale. The flags it offers beyond
-/// this (`reload`) are not exposed.
-function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; sysctl_set = true; state = "present" }
+/// another process changed is never left stale. `reload` is off: the file
+/// may hold other steps' and unmanaged entries, and a whole-file
+/// `sysctl -p` would reset every one of them — the managed key is applied
+/// live by `sysctl_set` alone. The flags it offers beyond this are not
+/// exposed.
+function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; sysctl_set = true; reload = false; state = "present" }
 function service(_name: String, _enabled: Boolean?, _state: String?): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
