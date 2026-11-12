@@ -4,7 +4,10 @@
 //!
 //! The official CLI is required: where it is not installed, the check fails
 //! loudly, because a skipped check passes every regression the corpus was
-//! added to cover. `RUXEL_PKL` points the check at a binary of its own.
+//! added to cover. `RUXEL_PKL` names the one binary the check executes:
+//! the artifact `tools/verify-pkl-artifact` hashed and printed and the mise
+//! `dual-evaluator` task exported, so verification and execution share one
+//! resolution.
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -53,48 +56,34 @@ const EXAMPLES: &[&str] = &[
 
 /// The official `pkl` binary.
 ///
-/// `RUXEL_PKL` points at a binary of its own and is authoritative: a named binary that does not
-/// run is a loud failure, never a reason to look further. Otherwise the binary is looked up on
-/// the `PATH` and in the places an operator's tools live, because a test does not always carry
-/// the shell's `PATH`. An absent binary is a loud failure too: the check is mandatory, and a
-/// skipped check would pass every regression the corpus was added to cover.
+/// `RUXEL_PKL` is the whole resolution: the absolute path `tools/verify-pkl-artifact` hashed
+/// against the committed checksum and printed, which the mise `dual-evaluator` task exports to
+/// this suite. There is no fallback to look the binary up on the `PATH` or in the places an
+/// operator's tools live: verification and execution must resolve to one binary, so a `pkl` the
+/// verifier never hashed may never run, and where no verified path is supplied the suite fails
+/// loudly instead of picking one of its own. A named binary that does not run is a loud failure
+/// too: the check is mandatory, and a skipped check would pass every regression the corpus was
+/// added to cover.
 fn pkl() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("RUXEL_PKL") {
-        let path = PathBuf::from(path);
-        return if runs(&path) {
-            Ok(path)
-        } else {
-            Err(format!(
-                "RUXEL_PKL points at {}, which is not a working official pkl",
-                path.display()
-            )
-            .into())
-        };
+    let Some(path) = std::env::var_os("RUXEL_PKL") else {
+        return Err(
+            "no verified official pkl was supplied: RUXEL_PKL must name the artifact that \
+             tools/verify-pkl-artifact hashed and printed; the dual-evaluator check is \
+             mandatory and executes exactly the verified binary, never one a PATH lookup \
+             happens to find"
+                .into(),
+        );
+    };
+    let path = PathBuf::from(path);
+    if runs(&path) {
+        Ok(path)
+    } else {
+        Err(format!(
+            "RUXEL_PKL points at {}, which is not a working official pkl",
+            path.display()
+        )
+        .into())
     }
-    let mut candidates: Vec<PathBuf> = vec![PathBuf::from("pkl")];
-    for data in mise_data_dirs() {
-        let installs = data.join("installs/pkl");
-        if let Ok(versions) = std::fs::read_dir(&installs) {
-            let mut found: Vec<PathBuf> = versions
-                .flatten()
-                .map(|entry| entry.path().join("pkl"))
-                .filter(|path| path.is_file())
-                .collect();
-            found.sort();
-            candidates.extend(found.into_iter().rev());
-        }
-        candidates.push(data.join("shims/pkl"));
-    }
-    candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
-    candidates.push(PathBuf::from("/usr/local/bin/pkl"));
-    candidates
-        .into_iter()
-        .find(|candidate| runs(candidate))
-        .ok_or_else(|| {
-            "the official pkl is not installed: the dual-evaluator check is mandatory and \
-             cannot run without it; install the Pkl CLI or point RUXEL_PKL at its binary"
-                .into()
-        })
 }
 
 /// Whether the binary answers `--version`: the probe that separates the
@@ -104,20 +93,6 @@ fn runs(candidate: &Path) -> bool {
         .arg("--version")
         .output()
         .is_ok_and(|output| output.status.success())
-}
-
-/// Every Mise data directory the lookup must scan, most specific first: `MISE_DATA_DIR` (else `XDG_DATA_HOME/mise`) and always the default under `$HOME`, where `mise install pkl@0.33.0` puts the binary.
-fn mise_data_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Some(data) = std::env::var_os("MISE_DATA_DIR") {
-        dirs.push(PathBuf::from(data));
-    } else if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
-        dirs.push(PathBuf::from(xdg).join("mise"));
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/mise"));
-    }
-    dirs
 }
 
 /// The served modules as files, for the official CLI: it serves them under

@@ -128,4 +128,14 @@ if [ "$got" != "$want" ]; then
   echo "verify-pkl-artifact: $binary is SHA-256 $got, not the committed $want for $platform; refusing to run it" >&2
   exit 1
 fi
-echo "verify-pkl-artifact: $binary matches the committed $platform checksum $want"
+# On success stdout carries the absolute path of the artifact just
+# hashed and nothing else: verification and execution must resolve to
+# one binary, so the dual-evaluator task captures this line into
+# RUXEL_PKL and the suite executes exactly the hashed artifact. The
+# human verdict goes to stderr, where diagnostics live.
+case "$binary" in
+  /*) absolute="$binary" ;;
+  *) absolute="$(CDPATH= cd -- "$(dirname -- "$binary")" && pwd)/$(basename -- "$binary")" ;;
+esac
+echo "verify-pkl-artifact: $absolute matches the committed $platform checksum $want" >&2
+echo "$absolute"

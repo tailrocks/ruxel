@@ -74,11 +74,13 @@ description = "Unit and integration tests"
 # resolution. Because MISE_LOCKFILE=0 also hides the committed
 # checksums, tools/verify-pkl-artifact hashes the installed binary against
 # the mise.lock entry for this platform and refuses a mismatch before any
-# test executes it. On macOS x86_64 it answers exit 3 (unsupported
-# platform) — official pkl ships no macOS x86_64 artifact since 0.32.2,
-# and 0.33.0 has only pkl-macos-aarch64 — so an Intel Mac is never told
-# that its pkl is missing or tampered.
-run = "mise install pkl@0.33.0 || tools/verify-pkl-artifact && tools/verify-pkl-artifact && cargo nextest run --workspace --all-features --locked --no-tests=pass"
+# test executes it; on success it prints the absolute path of the artifact
+# it hashed, which is exported as RUXEL_PKL so the dual-evaluator suite
+# executes exactly the verified binary. On macOS x86_64 it answers exit 3
+# (unsupported platform) — official pkl ships no macOS x86_64 artifact
+# since 0.32.2, and 0.33.0 has only pkl-macos-aarch64 — so an Intel Mac is
+# never told that its pkl is missing or tampered.
+run = 'mise install pkl@0.33.0 || tools/verify-pkl-artifact && pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo nextest run --workspace --all-features --locked --no-tests=pass'
 
 [tasks."dual-evaluator"]
 description = "Dual-evaluator suite under the official Pkl CLI provisioned by this task's own install step; the verifier refuses a binary that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
@@ -90,11 +92,15 @@ run = [
   # verdict: on macOS x86_64 upstream publishes no artifact, so the verifier
   # answers exit 3 (unsupported platform) instead of mise's raw install error.
   "mise install pkl@0.33.0 || tools/verify-pkl-artifact",
-  "tools/verify-pkl-artifact",
+  # Verification and execution share one resolver: the verifier prints the
+  # absolute path of the artifact it hashed on stdout, and that exact path
+  # is exported as RUXEL_PKL — the suite executes the hashed binary and
+  # refuses to run without a verified path, so a different pkl on PATH can
+  # never displace the verified artifact.
   # The feature flag is what lets this task see the target at all: the suite is
   # gated behind required-features so the pkl-less rust lanes skip it, and this
   # task is CI's mandatory runner for it.
-  "cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator",
+  'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator',
 ]
 
 [tasks.doctest]
