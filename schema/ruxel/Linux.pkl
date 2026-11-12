@@ -124,11 +124,13 @@ class Timezone extends core.Step {
 /// The step manages one entry in the file at `path` and applies it live:
 /// every apply reconciles the live kernel value too, so a parameter
 /// another process changed is corrected.
+///
 /// Its identity is the name and the path, so two stages (or one stage with
 /// two files) may set the same name in different files; two different values
 /// for one name in one file and stage conflict. The file itself is not the
-/// step's to own: a `File`, `Directory`, `Symlink` or `GitCheckout` at that
-/// path conflicts with it, while any number of sysctl steps may share a
+/// step's to own: any other step that manages that path — a `File`, a
+/// `Directory`, a `Symlink`, a `GitCheckout`, an apt repository's source
+/// file — conflicts with it, while any number of sysctl steps may share a
 /// file, each entry its own.
 class Sysctl extends core.Step {
   hidden fixed kind = "sysctl"
@@ -160,7 +162,9 @@ class User extends core.Step {
   /// key changes run only through its gated apply path.
   shell: FilePath? = null
   /// The account's home directory: a file path, any absolute path but `/`
-  /// itself.
+  /// itself. An explicit home of a present account is a path the step
+  /// manages — the agent creates the directory — so no other step may own
+  /// it.
   home: FilePath? = null
   /// The group the account belongs to. The root account keeps its primary
   /// group: a step for `root` may not declare one.
