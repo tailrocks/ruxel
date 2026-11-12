@@ -6,7 +6,7 @@
 
 use super::{ExecContext, bool_param, params_object, str_param};
 
-use home::ensure_home;
+use home::{ensure_home, home_gid, home_usable};
 use shell::shell_allowed;
 
 mod home;
@@ -228,6 +228,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     let comment = str_param(obj, "comment");
     let system = bool_param(obj, "system", false);
+    home.map(home_usable).transpose()?;
 
     let mut changed = false;
 
@@ -337,7 +338,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // reconciled here — an account whose home field already
             // matches still gets its directory.
             if let Some(h) = home {
-                changed |= ensure_home(h, uid.unwrap_or(current.uid), current.gid, ctx.check_mode)?;
+                changed |= ensure_home(
+                    h,
+                    uid.unwrap_or(current.uid),
+                    home_gid(group, current.gid)?,
+                    ctx.check_mode,
+                )?;
             }
         }
     }
