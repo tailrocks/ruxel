@@ -1022,6 +1022,16 @@ class KeyOrder {
   function canonical(keys: List<String>): List<String> =
     keys.fold(List(), (sorted, key) -> this.insert(key, sorted))
 
+  /// The entries as one canonical set: sorted, with a repeat dropped. The
+  /// groups of an account are a set — the engine sorts and deduplicates the
+  /// supplementary groups it reconciles — so the same members in another
+  /// order, or spelled with a repeat, are one state, not two.
+  function set(entries: List<String>): List<String> =
+    this.unique(this.canonical(entries))
+
+  function unique(sorted: List<String>): List<String> =
+    positions(sorted).filter((i) -> i == 0 || sorted[i] != sorted[i - 1]).map((i) -> sorted[i])
+
   function insert(key: String, sorted: List<String>): List<String> =
     if (sorted.isEmpty || key <= sorted.first)
       List(key) + sorted
@@ -1050,7 +1060,10 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> fields(List(s.package, s.question, s.type, valueIdentity(s.value)))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
-  ["loginShell"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(s.groups.toList()), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
+  // The groups are a set — the engine sorts and deduplicates what it
+  // reconciles — so their fingerprint is the canonical set, not the order
+  // the author wrote them in.
+  ["loginShell"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
