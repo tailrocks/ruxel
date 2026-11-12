@@ -1,0 +1,11 @@
+// expect: needs the owner app, which 'Manage account app' (step 2) creates; list the account before the file
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A file resolves its owner by name, so a same-stage account that creates
+// the name comes first.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/app.conf"; content = "x\n"; owner = "app" }
+  new linux.User { user = "app"; uid = 1500 }
+} } }

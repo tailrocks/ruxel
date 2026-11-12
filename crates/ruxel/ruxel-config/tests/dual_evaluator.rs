@@ -175,6 +175,12 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-group-gid-twice.pkl",
     "invalid/linux-sysctl-values-differ.pkl",
     "invalid/linux-user-implicit-group-clash.pkl",
+    "invalid/linux-user-remove-home-no-home.pkl",
+    "invalid/linux-user-remove-home-conflict.pkl",
+    "invalid/linux-group-removed-first.pkl",
+    "invalid/linux-file-owner-later.pkl",
+    "invalid/linux-file-owner-removed.pkl",
+    "invalid/linux-sysctl-stage-order.pkl",
     "valid/linux-sysctl-hyphen.pkl",
     "valid/linux-sysctl-equals.pkl",
 ];
