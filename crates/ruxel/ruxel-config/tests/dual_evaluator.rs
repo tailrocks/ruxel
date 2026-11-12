@@ -2,13 +2,24 @@
 //! pklr, which the engine evaluates with, and the official `pkl` CLI, which
 //! the language must also evaluate.
 //!
-//! The official CLI is optional: where it is not installed, the check says
-//! so and passes. `RUXEL_PKL` points the check at a binary of its own.
+//! The official CLI is required: where it is not installed, the check fails
+//! loudly, because a skipped check passes every regression the corpus was
+//! added to cover. `RUXEL_PKL` names the one binary the check executes:
+//! the artifact `tools/verify-pkl-artifact` hashed and printed and the mise
+//! `dual-evaluator` task exported, so verification and execution share one
+//! resolution.
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+#[path = "dual_evaluator/chain.rs"]
+mod chain;
+#[path = "dual_evaluator/discovery.rs"]
+mod discovery;
+#[path = "dual_evaluator/join_separator.rs"]
+mod join_separator;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -32,42 +43,64 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-orphaned-secret.pkl",
     "invalid/secret-unterminated-placeholder.pkl",
     "invalid/secret-decoder-oversized-prefix.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-prefix.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-chain.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-empty-body.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-punctuation.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-punctuation-tagless.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-whitespace.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-newline.pkl",
+    "invalid/secret-placeholder-overlapping-runtime-prefix.pkl",
+    "invalid/secret-placeholder-overlapping-runtime-prefix-encoding.pkl",
+    "invalid/secret-placeholder-overlapping-unterminated.pkl",
+    "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
+    "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
+    "valid/secret-placeholder-shared-terminator.pkl",
 ];
 
-/// The official `pkl` binary, if it is installed.
+/// The official `pkl` binary.
 ///
-/// `RUXEL_PKL` points the check at a binary of its own. Otherwise the
-/// binary is looked for on the `PATH` and in the places an operator's
-/// tools live, because the environment a test runs in does not always
-/// carry the `PATH` of the shell.
-fn pkl() -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(path) = std::env::var_os("RUXEL_PKL") {
-        candidates.push(PathBuf::from(path));
+/// `RUXEL_PKL` is the whole resolution: the absolute path `tools/verify-pkl-artifact` hashed
+/// against the committed checksum and printed, which the mise `dual-evaluator` task exports to
+/// this suite. There is no fallback to look the binary up on the `PATH` or in the places an
+/// operator's tools live: verification and execution must resolve to one binary, so a `pkl` the
+/// verifier never hashed may never run, and where no verified path is supplied the suite fails
+/// loudly instead of picking one of its own. A named binary that does not run is a loud failure
+/// too: the check is mandatory, and a skipped check would pass every regression the corpus was
+/// added to cover.
+fn pkl() -> Result<PathBuf> {
+    let Some(path) = std::env::var_os("RUXEL_PKL") else {
+        return Err(
+            "no verified official pkl was supplied: RUXEL_PKL must name the artifact that \
+             tools/verify-pkl-artifact hashed and printed; the dual-evaluator check is \
+             mandatory and executes exactly the verified binary, never one a PATH lookup \
+             happens to find"
+                .into(),
+        );
+    };
+    let path = PathBuf::from(path);
+    if runs(&path) {
+        Ok(path)
+    } else {
+        Err(format!(
+            "RUXEL_PKL points at {}, which is not a working official pkl",
+            path.display()
+        )
+        .into())
     }
-    candidates.push(PathBuf::from("pkl"));
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        let installs = home.join(".local/share/mise/installs/pkl");
-        if let Ok(versions) = std::fs::read_dir(&installs) {
-            let mut found: Vec<PathBuf> = versions
-                .flatten()
-                .map(|entry| entry.path().join("pkl"))
-                .filter(|path| path.is_file())
-                .collect();
-            found.sort();
-            candidates.extend(found.into_iter().rev());
-        }
-        candidates.push(home.join(".local/share/mise/shims/pkl"));
-    }
-    candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
-    candidates.push(PathBuf::from("/usr/local/bin/pkl"));
-    candidates.into_iter().find(|candidate| {
-        Command::new(candidate)
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    })
+}
+
+/// Whether the binary answers `--version`: the probe that separates the
+/// official CLI from an arbitrary file of the same name.
+fn runs(candidate: &Path) -> bool {
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 /// The served modules as files, for the official CLI: it serves them under
@@ -240,10 +273,7 @@ fn compare(
 /// evaluators.
 #[test]
 fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
-    let Some(pkl) = pkl() else {
-        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
-        return Ok(());
-    };
+    let pkl = pkl()?;
     let modules = modules()?;
     for example in EXAMPLES {
         compare(
@@ -255,57 +285,5 @@ fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
             example.starts_with("valid/"),
         )?;
     }
-    Ok(())
-}
-
-/// A `join` separator of a million characters is a seven-digit length
-/// prefix: the encoder writes it, so the decoder must read it. The
-/// workflow is generated, because a million characters do not belong in a
-/// committed file.
-///
-/// The secret is an environment value, not file content: the content of a
-/// file is scanned for placeholders, and pklr's regular expressions do not
-/// walk a million characters.
-#[test]
-fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
-    let Some(pkl) = pkl() else {
-        eprintln!("the official pkl is not installed: the dual-evaluator check is skipped");
-        return Ok(());
-    };
-    let modules = modules()?;
-    let directory = std::env::temp_dir().join(format!(
-        "ruxel-dual-evaluator-long-{}-{}",
-        std::process::id(),
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&directory)?;
-    std::fs::copy(
-        root().join("inventory.pkl"),
-        directory.join("inventory.pkl"),
-    )?;
-    let separator = "x".repeat(1_000_000);
-    let workflow = format!(
-        "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
-         import \"modulepath:/ruxel/Core.pkl\" as core\n\
-         import \"inventory.pkl\"\n\
-         \n\
-         stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
-         \x20 new Command {{\n\
-         \x20   run {{ \"/bin/true\" }}\n\
-         \x20   environment {{ [\"BIG\"] = core.fnox(\"APP_SECRET\").join(\"{separator}\", core.fnox(\"APP_SECRET_TWO\")) }}\n\
-         \x20 }}\n\
-         }} }} }}\n"
-    );
-    let path = directory.join("long-separator.pkl");
-    std::fs::write(&path, workflow)?;
-    compare(
-        "long-separator.pkl",
-        &path,
-        &directory,
-        &pkl,
-        &modules,
-        true,
-    )?;
-    drop(std::fs::remove_dir_all(&directory));
     Ok(())
 }

@@ -52,7 +52,66 @@ run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warn
 
 [tasks.test]
 description = "Unit and integration tests"
-run = "cargo nextest run --workspace --all-features --locked --no-tests=pass"
+# Local task only: the generated "Unit and integration tests" lane does not
+# execute this task — Velnor's rust adapter synthesizes its own nextest command
+# from the stack config, so nothing here runs in CI. The chain provisions the
+# official Pkl CLI for the mandatory dual-evaluator suite
+# (crates/ruxel/ruxel-config/tests/dual_evaluator.rs), which Velnor's closed
+# pinned-tool set cannot express; the suite is gated behind ruxel-config's
+# `dual-evaluator` feature (--all-features here enables it) so the pkl-less
+# lanes skip it instead of failing, and CI runs it in the dedicated
+# dual-evaluator check. pkl is a tool of the tasks that use it, never a
+# global one: a globally prepared pkl breaks `mise run` on macOS x86_64,
+# where upstream publishes no artifact, and only the tasks that execute
+# the official CLI need it at all. Each such task provisions it through
+# tools/verify-pkl-artifact — the per-task scope — because a mise task
+# `tools` entry is invisible under the generated executor
+# (`mise run --skip-tools`) and outside Velnor's mise-task contract. The
+# verifier, not Mise, provisions the CLI: it reads the url and checksum
+# of the `[tools.pkl."platforms.<platform>"]` slot for the host platform
+# from mise.lock, reuses an artifact already matching that checksum (its
+# cache, then a Mise install) and otherwise fetches the committed asset
+# itself. No install goes through Mise anymore: the runner's
+# `MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0`
+# step failed with "No lockfile URL found ... (--locked mode)" although
+# mise.lock carries the slot for its platform, and the task environment
+# (MISE_NO_CONFIG=1, MISE_LOCKFILE=0 re-enabled per subprocess) is not
+# one whose Mise behavior can be relied on; the lockfile-driven fetch
+# also makes the hand-corrected `platforms.linux-x64-musl` slot actually
+# reachable — a musl host gets the committed Alpine asset
+# pkl-alpine-linux-amd64, where Aqua's registry template has no musl
+# override and would install the glibc pkl-linux-amd64. On success the
+# verifier prints the absolute path of the artifact it hashed, which is
+# exported as RUXEL_PKL so the dual-evaluator suite executes exactly the
+# verified binary; a missing or mismatched artifact answers exit 1, and
+# macOS x86_64 and linux-arm64-musl answer exit 3 (unsupported platform)
+# — official pkl ships no macOS x86_64 artifact since 0.32.2 and no
+# alpine aarch64 one at all — so an Intel Mac is never told that its pkl
+# is missing or tampered.
+run = 'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo nextest run --workspace --all-features --locked --no-tests=pass'
+
+[tasks."dual-evaluator"]
+description = "Dual-evaluator suite under the official Pkl CLI provisioned by this task's own verifier step; the verifier fetches the artifact mise.lock pins for this platform and refuses one that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
+run = [
+  # Same provisioning as the test task above: tools/verify-pkl-artifact
+  # installs pkl from the lockfile's own url and checksum for the current
+  # platform — Mise's resolver is not in the path (its --locked lookup
+  # answered "No lockfile URL found" on the runner although mise.lock
+  # carries the slot) — and the x86_64-musl slot pins the Alpine asset,
+  # where Aqua registry metadata would install the glibc one. Platforms
+  # upstream publishes no artifact for (macOS x86_64, linux-arm64-musl)
+  # answer exit 3 (unsupported platform), never a missing or tampered
+  # verdict.
+  # Verification and execution share one resolver: the verifier prints the
+  # absolute path of the artifact it hashed on stdout, and that exact path
+  # is exported as RUXEL_PKL — the suite executes the hashed binary and
+  # refuses to run without a verified path, so a different pkl on PATH can
+  # never displace the verified artifact.
+  # The feature flag is what lets this task see the target at all: the suite is
+  # gated behind required-features so the pkl-less rust lanes skip it, and this
+  # task is CI's mandatory runner for it.
+  'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator',
+]
 
 [tasks.doctest]
 description = "Doctests (nextest does not run them)"

@@ -1,0 +1,283 @@
+#!/bin/sh
+# Provision and verify the official pkl CLI against the URL and
+# checksum committed in mise.lock, and print the artifact's path.
+#
+# mise.lock is the authority and Mise's resolver is not in the path.
+# This script reads the [tools.pkl."platforms.<platform>"] url and
+# checksum for the host platform, reuses an artifact that already
+# matches that checksum — its own cache first, then a Mise install —
+# and otherwise fetches the committed asset itself. The install step
+# this replaces asked Mise to do the lookup
+# (`MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0`)
+# and the runner answered "No lockfile URL found ... (--locked mode)"
+# although mise.lock carries the slot for its platform, so no install
+# goes through Mise anymore. The hand-maintained slots stay
+# authoritative as written — including the hand-corrected musl entry,
+# which pins the alpine asset where Aqua's registry template has no
+# musl override and would install the glibc binary — because nothing
+# regenerates or reshapes them here (`mise lock` is not run: it
+# resurrects the glibc mapping for the musl slots and strips the
+# comments that say why). The artifact that is verified is the
+# artifact that is executed: stdout carries the absolute path of the
+# hashed binary and nothing else, which the task commands capture into
+# RUXEL_PKL so the suite runs exactly the verified binary — and every
+# candidate is PROBED before it is returned: a checksum proves the
+# bytes, not that the binary can start (a mode bit lost in a manual
+# cache restore, a cache directory mounted noexec), and the suite's
+# own first act is to run the artifact's --version, so a candidate
+# that cannot execute is passed over — the remaining candidates are
+# still tried — and never handed to the task as RUXEL_PKL.
+#
+# Exit codes:
+#   0  an artifact matching the committed checksum is executable and at
+#      the printed path
+#   1  the artifact is missing — nothing reusable and the fetch failed —
+#      or an obtained artifact does not match the committed checksum or
+#      cannot be executed, or mise.lock carries no url or checksum for
+#      this platform
+#   3  this platform has no official pkl artifact to verify against
+#
+# Code 3 is a verdict of its own: a platform upstream does not publish
+# for is neither a missing nor a tampered binary, and saying so is the
+# only honest answer there.
+#
+# RUXEL_PKL_CACHE_DIR overrides where fetched artifacts are kept
+# (default: $XDG_CACHE_HOME/ruxel/pkl, else $HOME/.cache/ruxel/pkl).
+# MISE_DATA_DIR / XDG_DATA_HOME / HOME name the Mise data directories
+# scanned for an install to reuse; a Mise install that does not match
+# the committed checksum is reported and passed over, never executed
+# and never a verdict.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+lock="$script_dir/../mise.lock"
+
+# The refusal for a platform with no official artifact. The message
+# names the upstream fact, so the reader learns why the platform is
+# refused instead of guessing at a missing or a tampered binary.
+unsupported() {
+  echo "verify-pkl-artifact: unsupported platform $1: $2" >&2
+  exit 3
+}
+
+os=$(uname -s)
+arch=$(uname -m)
+case "$os" in
+  Linux) platform=linux ;;
+  Darwin) platform=macos ;;
+  *) unsupported "os $os" "the verifier judges Linux and macOS hosts only" ;;
+esac
+case "$arch" in
+  x86_64 | amd64) platform="$platform-x64" ;;
+  aarch64 | arm64) platform="$platform-arm64" ;;
+  *) unsupported "arch $arch" "the verifier judges x86_64 and aarch64 hosts only" ;;
+esac
+# Upstream publishes no macOS x86_64 (Intel) pkl artifact: 0.32.2 was
+# the last release that carried one (pkl-macos-amd64), and 0.33.0 ships
+# only pkl-macos-aarch64. There is no official build to compare an
+# installed binary against, so the platform is refused before the
+# lookup: an Intel Mac must never be told that its pkl is missing or
+# tampered, because no official Intel build exists to be missing.
+case "$platform" in
+  macos-x64)
+    unsupported "$platform" "official pkl ships no macOS x86_64 artifact since 0.32.2 (0.32.2's pkl-macos-amd64 was the last); for 0.33.0 only pkl-macos-aarch64 exists"
+    ;;
+esac
+# The musl slot pins a different asset than the glibc one; only Linux can
+# be musl. The ACTIVE libc decides: `ldd` speaks for the loader in use,
+# while a musl loader that some toolchain merely installed beside glibc
+# is not the running libc and must not reclassify the host (that
+# secondary presence used to send glibc hosts to the alpine checksum,
+# which then rejected the correct binary).
+if [ "$platform" = "linux-x64" ] || [ "$platform" = "linux-arm64" ]; then
+  if ldd --version 2>&1 | grep -qi musl; then
+    platform="$platform-musl"
+  fi
+fi
+# Alpine aarch64 has no official pkl artifact to pin either: 0.33.0
+# ships pkl-alpine-linux-amd64 only (pkl-alpine-linux-aarch64 does not
+# exist), and pkl-linux-aarch64 is a glibc binary that cannot start on
+# a musl host. The checksum of a binary that cannot run is not a
+# verdict, so the platform is refused with the same unsupported result
+# as macos-x64, before the checksum lookup: a musl aarch64 host must
+# never be told that its pkl is missing or tampered.
+case "$platform" in
+  linux-arm64-musl)
+    unsupported "$platform" "official pkl ships no alpine aarch64 artifact (for 0.33.0 only pkl-alpine-linux-amd64 exists; pkl-linux-aarch64 is a glibc binary)"
+    ;;
+esac
+
+# One field of the platform's lockfile slot: the quoted value of the
+# `url = "…"` or `checksum = "…"` line inside
+# [tools.pkl."platforms.<platform>"]. `url =` cannot match `url_api =`
+# and `checksum =` cannot match `checksum_source =` because the field
+# name is anchored to the line start and followed by " = ".
+lock_value() {
+  awk -v key="platforms.$platform" -v field="$1" '
+    $0 == "[tools.pkl.\"" key "\"]" { in_section = 1; next }
+    /^\[/ { in_section = 0 }
+    in_section && index($0, field " = ") == 1 {
+      sub(/^[^"]*"/, ""); sub(/".*/, ""); print; exit
+    }
+  ' "$lock"
+}
+
+checksum=$(lock_value checksum)
+checksum=${checksum#sha256:}
+url=$(lock_value url)
+if [ -z "$checksum" ] || [ -z "$url" ]; then
+  echo "verify-pkl-artifact: mise.lock carries no pkl url and checksum for $platform" >&2
+  exit 1
+fi
+want=$checksum
+
+# The locked pkl version, read from the [[tools.pkl]] entry itself so
+# Mise's install directories are scanned for the same version the
+# lockfile pins. Single brackets (the platform slots) do not reset the
+# scan; the next [[tools.…]] array header does.
+version=$(awk '
+  /^\[\[tools\.pkl\]\]/ { in_tool = 1; next }
+  /^\[\[/ { in_tool = 0 }
+  in_tool && index($0, "version = ") == 1 {
+    sub(/^[^"]*"/, ""); sub(/".*/, ""); print; exit
+  }
+' "$lock")
+if [ -z "$version" ]; then
+  echo "verify-pkl-artifact: mise.lock carries no [[tools.pkl]] version" >&2
+  exit 1
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  hasher="sha256sum"
+else
+  hasher="shasum -a 256"
+fi
+
+# The success verdict: stdout carries the absolute path of the artifact
+# just hashed and nothing else — verification and execution must resolve
+# to one binary, so the task commands capture this line into RUXEL_PKL
+# and the suite executes exactly the hashed artifact. The human verdict
+# goes to stderr, where diagnostics live.
+verified() {
+  case "$1" in
+    /*) absolute="$1" ;;
+    *) absolute="$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")" ;;
+  esac
+  echo "verify-pkl-artifact: $absolute matches the committed $platform checksum $want" >&2
+  echo "$absolute"
+  exit 0
+}
+
+matches() {
+  [ -f "$1" ] && [ "$($hasher < "$1" | awk '{ print $1 }')" = "$want" ]
+}
+
+# Whether the artifact actually starts: the suite executes the binary's
+# --version as its first act, so a candidate that cannot run is refused
+# here instead of failing the mandatory suite later. Redirected both
+# ways: the probe's output belongs to no one.
+runnable() {
+  "$1" --version >/dev/null 2>&1
+}
+
+# A candidate fit to be returned: it hashes to the committed checksum
+# and it executes. A mismatch or a failed probe is named on stderr —
+# the probe failure says why (a lost mode bit, a noexec-mounted
+# directory) — and the caller continues with the remaining candidates:
+# the working Mise installation or a fresh fetch still get their turn.
+usable() {
+  if [ ! -f "$1" ]; then
+    return 1
+  fi
+  if ! matches "$1"; then
+    echo "verify-pkl-artifact: $1 does not match the committed $platform checksum; passing it over" >&2
+    return 1
+  fi
+  if ! runnable "$1"; then
+    echo "verify-pkl-artifact: $1 hashes to the committed $platform checksum but cannot be executed ($1 --version failed; a lost mode bit or a noexec-mounted directory); passing it over" >&2
+    return 1
+  fi
+  return 0
+}
+
+# The verifier's own cache, keyed by the committed checksum: the
+# artifact is identified by what it must hash to, so a platform whose
+# slot shares an asset shares the entry, and a new pin lands in a new
+# directory instead of beside a stale binary.
+name=$(basename -- "$url")
+if [ -n "${RUXEL_PKL_CACHE_DIR:-}" ]; then
+  cache_root=$RUXEL_PKL_CACHE_DIR
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+  cache_root=$XDG_CACHE_HOME/ruxel/pkl
+elif [ -n "${HOME:-}" ]; then
+  cache_root=$HOME/.cache/ruxel/pkl
+else
+  echo "verify-pkl-artifact: no cache directory: HOME is unset and XDG_CACHE_HOME is unset; set RUXEL_PKL_CACHE_DIR" >&2
+  exit 1
+fi
+artifact=$cache_root/$want/$name
+if usable "$artifact"; then
+  verified "$artifact"
+fi
+
+# Where Mise may already keep the binary: the configured data directory
+# first, then the default. Each directory is one quoted positional
+# parameter: a configured path may carry whitespace, and a word-split
+# scalar would turn one valid directory into several candidates. An
+# install that does not hash to the committed checksum is named and
+# passed over — the fetch below still provisions the committed asset —
+# because a foreign "already installed" binary must neither run nor
+# end the check.
+set --
+if [ -n "${MISE_DATA_DIR:-}" ]; then
+  set -- "$MISE_DATA_DIR"
+elif [ -n "${XDG_DATA_HOME:-}" ]; then
+  set -- "$XDG_DATA_HOME/mise"
+fi
+if [ -n "${HOME:-}" ]; then
+  set -- "$@" "$HOME/.local/share/mise"
+fi
+for data in "$@"; do
+  for candidate in "$data/installs/pkl/$version/pkl" "$data/shims/pkl"; do
+    if [ -f "$candidate" ]; then
+      if usable "$candidate"; then
+        verified "$candidate"
+      fi
+    fi
+  done
+done
+
+# Nothing reusable: fetch the committed asset itself, hash it before it
+# is ever named on stdout, and only then install it into the cache. The
+# transfer flags mirror the CI workflow's own curl discipline (bounded
+# connect and total times, retried failures, https only).
+if ! command -v curl >/dev/null 2>&1; then
+  echo "verify-pkl-artifact: curl is required to fetch the $platform artifact from $url and was not found" >&2
+  exit 1
+fi
+mkdir -p "$(dirname -- "$artifact")"
+tmp=$cache_root/$want/.$name.download.$$
+if ! curl -fsSL --connect-timeout 15 --max-time 600 --retry 5 --retry-all-errors --retry-max-time 900 --proto '=https' --tlsv1.2 -o "$tmp" "$url"; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: cannot obtain the $platform artifact from $url; no cached artifact and no Mise install matches the committed checksum $want" >&2
+  exit 1
+fi
+got=$($hasher < "$tmp" | awk '{ print $1 }')
+if [ "$got" != "$want" ]; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: the artifact fetched from $url is SHA-256 $got, not the committed $want for $platform; refusing to run it" >&2
+  exit 1
+fi
+chmod 755 "$tmp"
+# The fetched artifact is probed before it is installed into the cache
+# and before any path is printed: bytes that hash right but cannot
+# start — a noexec-mounted cache directory, a restored mode bit the
+# chmod could not help — are exit 1, never a success path the suite
+# would fail on.
+if ! runnable "$tmp"; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: the artifact fetched from $url hashes to the committed $want for $platform but cannot be executed ($tmp --version failed; is the cache directory mounted noexec?); refusing to run it" >&2
+  exit 1
+fi
+mv -f "$tmp" "$artifact"
+verified "$artifact"

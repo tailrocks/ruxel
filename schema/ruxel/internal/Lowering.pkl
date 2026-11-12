@@ -991,15 +991,64 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// fails the prefix count in `segmentsOf` and is refused. Malformed text is
 /// parsed and refused, never left behind as literal content.
 ///
-/// The terminator of a secret may not be the opening of another reserved
+/// The terminator of a placeholder — secret or run-time alike — may not
+/// be the opening of another reserved
 /// prefix: `ruxel_rt_8d41.` or `ruxel_secret_8d41.` followed by a
-/// placeholder body — the run-time name, or the secret's actual encoded
-/// body: its length-prefixed parts (`f`, `g`, `o`, `r`, `s` atoms of
-/// `size:text`, `Core.sized`), whose text is escaped and so holds no `_`.
-/// Literal text that only looks like a prefix — the reserved words without
-/// a body — is ordinary content and passes.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:f[0-9]{1,18}:[^_]*|g(?:[0-9]{1,18}:[^_]*){2}|o(?:[0-9]{1,18}:[^_]*){4}|r[0-9]{1,18}:[^_]*|s[0-9]{1,18}:[^_]*)+__)"#)
-const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
+/// placeholder body — the run-time name, or a secret's encoded-body attempt:
+/// its length-prefixed parts (`f`, `g`, `o`, `r`, `s` atoms of `size:text`,
+/// `Core.sized`). The guard recognizes every terminated candidate and
+/// leaves body validation to the parser: a body that carries the `:` of a
+/// `size:text` part refuses the terminator whatever its tag — unknown or
+/// uppercase, oversized length prefix, underscore-bearing text, wrong atom
+/// count are the parser's refusals — and so does a body that is empty or
+/// one run of words — punctuation, whitespace and line breaks included —
+/// which is an attempt without its colon: the same
+/// candidate alone is parsed and refused, so overlapped it is refused too,
+/// never left behind as literal content. A chained candidate — its own
+/// terminator opening yet another reserved prefix that begins a
+/// placeholder of its own — is recognized the same way: the run of three
+/// sharing their delimiters refuses every terminator in turn and leaves
+/// no middle body behind. A candidate body is scanned
+/// once: one lookahead asserts the `:`, one pass finds the terminator,
+/// never a rescan of the suffix per split — a long colon-bearing run
+/// without a terminator is linear to pass as the literal text it is, never
+/// a quadratic stall. A candidate is terminated only by a `__` that opens
+/// no reserved prefix of its own: the `__` that a following word completes
+/// into another reserved prefix is that opening's delimiter, never the
+/// candidate's terminator. Both alternatives carry that same terminator
+/// lookahead: a run-time name's `__` may not open a reserved candidate
+/// either — the run-time match would consume the secret's opening `__`,
+/// the overlap-aware prefix count would call the prefix covered, and the
+/// candidate would be left behind as literal content beside the reference.
+/// Literal text that only looks like a prefix —
+/// the reserved words without an encoded body — is ordinary content and
+/// passes: the words beside a placeholder's delimiters carry no terminator
+/// of their own.
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?=ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)))|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?=ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)))"#)
+/// The reserved prefixes, of both kinds: a run-time name's opening and a
+/// secret's are counted alike.
+const local reservedPrefix = Regex(#"__ruxel_rt_8d41\.|__ruxel_secret_8d41\."#)
+/// The same terminator rule as a whole candidate from its opening `__`: a
+/// reserved prefix a terminator opened counts as covered only where the
+/// words carry no candidate of their own — the `__` that completes into a
+/// whole placeholder is that placeholder's opening delimiter, never the
+/// match's accounting.
+const local standaloneCandidate = Regex(#"^__(?:ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?=ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)))"#)
+/// The reserved words beside a placeholder's delimiters: a prefix a
+/// terminator opened is the word's own text — never a candidate of its
+/// own — whatever follows elsewhere. The classification is local: only a
+/// candidate NAME after the prefix starts a candidate, the run of the
+/// name's allowed characters — `f2:AB` and its like, or a run-time name —
+/// while the reserved words WITHOUT an encoded body are ordinary content:
+/// `ruxel_rt_8d41.` or `ruxel_secret_8d41.` beside the delimiters, a bare
+/// word that trails off with nothing after the dot. The exemption is only
+/// for a genuinely bodyless word — the words, and then nothing that could
+/// continue a name: a reserved word followed by candidate content is a
+/// body-carrying candidate like any other. A candidate name that is
+/// terminated is a whole placeholder and refused by the terminator rule;
+/// unterminated it alone fails the prefix count, and overlapped it counts
+/// as never covered, never left behind as literal content.
+const local candidateName = Regex(#"^__(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)(?!(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)+(?![A-Za-z0-9_.:]))[A-Za-z0-9_.:]"#)
 
 /// Text without placeholders stays a string. Run-time placeholders
 /// (`currentHost`, `Capture.stdout()`) become engine references, secret
@@ -1050,11 +1099,24 @@ function segmentsOf(text: String): List<Segment> =
   // The prefix count is overlap-aware: a placeholder's own reserved
   // prefixes are accounted for — its opening, and the terminator that
   // following literal text completes into another full prefix, which is
-  // the word's own text and never a second secret. Only a prefix that
-  // starts outside every placeholder is a secret reference of its own
-  // that never matched, and refuses the text as malformed.
-  let (stray = secretPrefix.findMatchesIn(text).filter((p) ->
-    matches.filter((m) -> m.start <= p.start && p.start < m.end).isEmpty).length)
+  // the word's own text and never a second secret: the reserved words
+  // beside a placeholder's delimiters, carrying no terminator of their
+  // own, classified by their local shape alone. A prefix the terminator
+  // opened is never covered when the words begin a candidate name —
+  // terminated it is a whole candidate, refused by the same rule the
+  // terminator lookahead carries; unterminated it trails off as an
+  // attempt whose absence of a closing `__` is not evidence that the
+  // prefix belongs to the match. A prefix a run-time body swallowed whole
+  // is never covered either: both are a placeholder's opening delimiter,
+  // not the match's accounting. Only a prefix that starts outside every
+  // placeholder's own delimiters is a secret reference of its own that
+  // never matched, and refuses the text as malformed.
+  let (stray = reservedPrefix.findMatchesIn(text).filter((p) ->
+    matches.filter((m) ->
+      m.start == p.start
+        || (m.end - 2 <= p.start && p.start < m.end
+          && standaloneCandidate.findMatchesIn(text.substring(codePointOffset(text, p.start), text.length)).isEmpty
+          && candidateName.findMatchesIn(text.substring(codePointOffset(text, p.start), text.length)).isEmpty)).isEmpty).length)
   let (badSecret = all.filter((s) -> s.secret != null && ((s.secret ?? "").isEmpty || (s.secret ?? "").contains("_"))))
   let (strange = all.filter((s) -> s.runtime != null && !(s.runtime ?? "").matches(knownPlaceholder)))
   if (stray > 0 || !badSecret.isEmpty) throw(malformed)
