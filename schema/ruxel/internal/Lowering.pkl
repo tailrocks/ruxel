@@ -2003,6 +2003,8 @@ function timezone(_name: String): engine.Timezone = new engine.Timezone { name =
 /// The engine's user operation: the account and every setting the step
 /// manages. The flags it offers beyond these (`append`, `comment`,
 /// `create_home`) are not exposed: create-home follows the engine default.
+/// `system` is creation-only — it shapes an account the operation
+/// creates, never an existing one (`useradd --system`).
 /// The supplementary groups are the canonical set the fingerprint takes,
 /// and the operation carries them whenever the step states them — an
 /// explicit empty list is `groups = []`, which removes every membership;
