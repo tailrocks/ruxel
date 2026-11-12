@@ -17,6 +17,11 @@ pub(crate) struct SystemState {
     /// behind: the reload handler a start's change queues runs after the
     /// start, so check must report the reload the start makes possible.
     predicted_activity: HashMap<String, bool>,
+    /// The predicted enablement beside the predicted run state: the same
+    /// enabled service written twice is two tasks of one run, and the
+    /// second must judge against the enablement the first leaves behind
+    /// exactly as apply performs it once.
+    predicted_enabled: HashMap<String, bool>,
     candidates: HashMap<String, apt_policy::PolicyEntry>,
     /// Task environment the cached candidates were observed with.
     candidate_environment: Vec<(String, String)>,
@@ -113,6 +118,9 @@ impl SystemState {
         if let Some(active) = self.predicted_activity.get(&unit_key(name)) {
             unit.active = *active;
         }
+        if let Some(enabled) = self.predicted_enabled.get(&unit_key(name)) {
+            unit.enabled = *enabled;
+        }
         Ok(unit)
     }
 
@@ -122,10 +130,17 @@ impl SystemState {
         self.predicted_activity.insert(unit_key(name), active);
     }
 
+    /// Records the enablement a predicted change leaves behind, beside
+    /// the run state.
+    pub(crate) fn predict_enablement(&mut self, name: &str, enabled: bool) {
+        self.predicted_enabled.insert(unit_key(name), enabled);
+    }
+
     /// A performed change makes its prediction stale: the observed state
     /// is the truth again.
     pub(crate) fn clear_prediction(&mut self, name: &str) {
         self.predicted_activity.remove(&unit_key(name));
+        self.predicted_enabled.remove(&unit_key(name));
     }
 
     fn ensure_units(&mut self) -> Result<(), String> {

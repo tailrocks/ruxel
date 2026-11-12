@@ -31,10 +31,22 @@ pub(super) fn run(
 
     if let Some(unit) = name {
         if let Some(want_enabled) = enabled {
-            let is_enabled = system_state.unit(unit)?.enabled;
+            // A check-mode task judges against the enablement the run
+            // will leave behind: the same enabled service written twice
+            // is one enablement performed once, and the second task must
+            // see the first one's prediction. A forced task observes the
+            // real enablement and makes the prediction stale.
+            let is_enabled = if ctx.check_mode {
+                system_state.predicted_unit(unit)?.enabled
+            } else {
+                system_state.clear_prediction(unit);
+                system_state.unit(unit)?.enabled
+            };
             if is_enabled != want_enabled {
                 changed = true;
-                if !ctx.check_mode {
+                if ctx.check_mode {
+                    system_state.predict_enablement(unit, want_enabled);
+                } else {
                     let verb = if want_enabled { "enable" } else { "disable" };
                     let st = systemctl(&[verb, unit])?;
                     if st.1 != 0 {

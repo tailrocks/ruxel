@@ -92,6 +92,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     verify_stopped_reload(root)?;
     verify_predicted_start_feeds_the_reload_handler(root)?;
     verify_forced_execution_clears_the_stale_prediction(root)?;
+    verify_predicted_enablement_spans_repeated_services(root)?;
     Ok(())
 }
 
@@ -170,6 +171,45 @@ fn verify_forced_execution_clears_the_stale_prediction(
     assert_eq!(
         dispatch_with("systemd", &reloaded, true, &mut shared).status,
         "ok"
+    );
+    Ok(())
+}
+
+/// The same enabled service written twice is one enablement performed
+/// once: the first check-mode task predicts the enablement it leaves
+/// behind, and the second occurrence must report no change exactly as
+/// apply performs the first and leaves the second unchanged.
+fn verify_predicted_enablement_spans_repeated_services(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let enabled = json!({"name":"demo","enabled":true});
+    if root.join("enabled").exists() {
+        std::fs::remove_file(root.join("enabled"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &enabled, true, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, true, &mut shared).status,
+        "ok"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    // Apply performs the enablement once and reports the repeat flat.
+    let mut applied = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut applied).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut applied).status,
+        "ok"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo\n"
     );
     Ok(())
 }
