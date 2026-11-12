@@ -373,7 +373,9 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': onBoot \(s.onBoot) is negative; a timer fires after the boot, not before it")
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootTooLong(s.onBoot))
     List(onBootTooLongRefusal(s))
-  else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMillis(s.onBoot) == null)
+  else if (s is systemd.SystemdTimer && s.onBoot != null && onBootUntrusted(s.onBoot))
+    List(onBootUntrustedRefusal(s))
+  else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMicros(s.onBoot) == null)
     List(onBootRefusal(s))
   else if (s is systemd.SystemdTimer && s.service == null && s.name.length > 247)
     List("'\(name(s))': a timer name of \(s.name.length) characters without a service of its own would name the \(s.name.length + 8)-character unit \(timerTarget(s)), past systemd's 255; a timer name without a service may be at most 247 characters")
@@ -706,27 +708,35 @@ function timerContent(t: systemd.SystemdTimer): String =
     ""
   }.join("\n")
 
-/// The boot delay as the unit systemd reads it: whole seconds, or whole
-/// milliseconds.
+/// The boot delay as the unit systemd reads it: whole seconds, whole
+/// milliseconds, or milliseconds carrying the fraction the evaluators
+/// delivered exactly (`1000.5.ms` is the `1000.5ms` it is).
 ///
 /// The delay has been checked before the timer is lowered — `settings`
-/// refuses a delay that is not a whole number of milliseconds — so the
-/// count of milliseconds is there. The seconds spelling is taken in
-/// integer arithmetic too, so a whole-second delay whose count of
-/// milliseconds a `Float` cannot hold keeps the second the author
-/// wrote. The throw is the backstop that keeps a `0ms` from being
-/// written when it is not: a delay that is not a whole number of
-/// milliseconds is refused, never rounded to another delay.
+/// refuses one that is not provably the delay the author wrote — so the
+/// count of microseconds is there. The throw is the backstop that keeps
+/// a wrong delay from being written: each refusal is refused, never
+/// rounded to another delay.
 const function onBootSpan(t: systemd.SystemdTimer): String =
-  let (millis = onBootMillis(t.onBoot))
+  let (micros = onBootMicros(t.onBoot))
   if (onBootTooLong(t.onBoot)) throw(onBootTooLongRefusal(t))
-  else if (millis == null) throw(onBootRefusal(t))
-  else if (millis % 1000 == 0) "\(millis ~/ 1000)"
-  else "\(millis)ms"
+  else if (onBootUntrusted(t.onBoot)) throw(onBootUntrustedRefusal(t))
+  else if (micros == null) throw(onBootRefusal(t))
+  else if (micros % 1000000 == 0) "\(micros ~/ 1000000)"
+  else if (micros % 1000 == 0) "\(micros ~/ 1000)ms"
+  else "\(micros ~/ 1000).\(microFraction(micros))ms"
+
+/// The sub-millisecond part of a count as the decimals systemd reads:
+/// the three microsecond digits, trailing zeros dropped, so 1000500µs is
+/// the `1000.5ms` it is.
+const function microFraction(micros: Int): String =
+  let (frac = micros % 1000)
+  let (padded = if (frac < 10) "00\(frac)" else if (frac < 100) "0\(frac)" else "\(frac)")
+  if (padded.endsWith("00")) padded.take(1) else if (padded.endsWith("0")) padded.take(2) else padded
 
 /// The sentence that refuses a boot delay that is not a whole number of
-/// milliseconds. One sentence for both places that refuse one, so that
-/// the refusal reads the same wherever it is found.
+/// milliseconds this schema can carry. One sentence for both places that
+/// refuse one, so that the refusal reads the same wherever it is found.
 const function onBootRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot \(t.onBoot) must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds"
 
@@ -749,12 +759,55 @@ const maxExactMillis = 9007199254740992
 /// schema admits is a span systemd can parse.
 const maxSchedulableMillis = 18446744073709551
 
+/// The magnitude where a `.5` fraction is no longer representable in a
+/// `Float` — 2^52 milliseconds, where the resolution reaches one whole
+/// millisecond. Above it a `.5` is silently lost and rounds into an even
+/// millisecond count (the tie-break is to even), so an even count there
+/// cannot be proven to be the delay the author wrote, and a value that
+/// still carries a fraction cannot have carried one honestly.
+const maxFractionalMillis = 4503599627370496
+
+/// The delay in whole microseconds: `null` when it is negative, beyond
+/// the milliseconds this schema can hold exactly, inside the neighborhood
+/// a lost `.5` leaves, or not a whole number of microseconds. Every
+/// accepted count is the one the author wrote: below 2^53 milliseconds
+/// every integer is exact in the `Float` the evaluators deliver, below
+/// 2^52 milliseconds a surviving fraction is kept exactly, and the
+/// integer path never meets a `Float` at all.
+const function onBootMicros(d: Duration?): Int? =
+  if (d == null) null
+  else if (onBootTooLong(d) || onBootUntrusted(d)) null
+  else if (d.value is Int)
+    let (count = exactMicros(d.value, d.unit))
+    if (count == null || count >= maxExactMillis * 1000) null else count
+  else
+    let (value = d.value.toFloat())
+    let (millis = millisOf(d.unit, value))
+    if (millis < 0 || millis >= maxExactMillis.toFloat()) null
+    else
+      let (floor = millis.floor)
+      let (ceil = millis.ceil)
+      if (roundedOf(d.unit, floor) == value) wholeMicros(floor)
+      else if (roundedOf(d.unit, ceil) == value) wholeMicros(ceil)
+      else fractionalMicros(millis, d.unit, value)
+
 /// Whether the delay is beyond the milliseconds this schema can hold
 /// exactly (or beyond systemd's own span, which the first bound already
 /// covers): the whole neighborhood of an unrecoverable literal is
 /// refused, so every accepted delay is the one the author wrote.
 const function onBootTooLong(d: Duration): Boolean =
-  millisOf(d.unit, d.value.toFloat()) >= maxExactMillis.toFloat()
+  microsOf(d.unit, d.value.toFloat()) >= maxExactMillis.toFloat() * 1000.0
+
+/// Whether the delay is inside the neighborhood a silently lost `.5`
+/// leaves behind: at or beyond `maxFractionalMillis` the fraction cannot
+/// survive the evaluators' `Float`, so a value still carrying one never
+/// carried it honestly, and an even millisecond count may be the
+/// rounding of an odd one's `.5` (the tie-break is to even). Only an odd
+/// whole-millisecond count is provably the authored integer there.
+const function onBootUntrusted(d: Duration): Boolean =
+  let (micros = microsOf(d.unit, d.value.toFloat()))
+  micros >= maxFractionalMillis.toFloat() * 1000.0
+    && (d.value is Float || microsOf(d.unit, d.value.toFloat()) / 1000.0 == (microsOf(d.unit, d.value.toFloat()) / 1000.0).floor && micros.toInt() / 1000 % 2 == 0)
 
 /// The sentence that refuses a boot delay this schema cannot hold
 /// exactly. It names the bound and deliberately not the delay: the
@@ -764,85 +817,40 @@ const function onBootTooLong(d: Duration): Boolean =
 const function onBootTooLongRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote"
 
-/// The boot delay in whole milliseconds, when it is a whole number of
-/// them this schema can hold exactly: `null` when it is a fraction of a
-/// millisecond, negative, or at or beyond `maxExactMillis`.
-///
-/// The evaluators deliver a `Duration` as a number in its unit held in a
-/// `Float`, so an authored literal at or beyond 2^53 in its unit is
-/// rounded before this function ever runs — `9007199254740993.ms`
-/// arrives as `9007199254740992.ms` — and no arithmetic here can
-/// recover it. The whole neighborhood is therefore refused
-/// (`onBootTooLong`): every delay this function accepts is below 2^53
-/// milliseconds, where every integer is exact in a `Float`, so the
-/// evaluators' conversion cannot alter it and an integer the author
-/// wrote stays an integer — its count of milliseconds is taken in
-/// whole-number arithmetic (`exactMillis`), and an exactly integral
-/// value is never refused because a half-up rounding of its magnitude
-/// moved it to a neighbor (`4503599627370497.ms` is the millisecond it
-/// is). A delay that arrives as a `Float` is converted, and the
-/// conversion is proven by converting it back: the count must reproduce
-/// the value the author wrote exactly, so that `1.001.s` stays the 1001
-/// milliseconds it asks for, and a delay whose fraction of a millisecond
-/// its own conversion cannot carry — `2000000000000.0005.s`, whose
-/// half-millisecond fraction is inside the noise of its magnitude — is
-/// refused rather than rounded to a millisecond the author never wrote.
-/// The count is taken in the unit the delay was written in, so that it
-/// is the delay the author wrote and not one the conversion produced: a
-/// delay in milliseconds is a whole number of milliseconds exactly,
-/// with no tolerance at all, so `1000000000.0000005.ms` is refused
-/// rather than rounded to `1000000000ms`. Both neighbors of the delay
-/// are tried — floor and ceil — where the old arithmetic added a `0.5`
-/// and took the floor: at a magnitude where the half is below the
-/// `Float`'s own resolution that addition rounds upward and would refuse
-/// an exactly integral value (`4503599627370497.0.ms` grows a `.5`, and
-/// the `.5` rounds up).
-const function onBootMillis(d: Duration?): Int? =
-  if (d == null) null
-  else if (d.value is Int)
-    let (count = exactMillis(d.value, d.unit))
-    if (count == null || count >= maxExactMillis) null else count
-  else
-    let (value = d.value.toFloat())
-    let (millis = millisOf(d.unit, value))
-    if (millis < 0 || millis >= maxExactMillis.toFloat()) null
-    else
-      let (floor = millis.floor)
-      if (roundedOf(d.unit, floor) == value) floor.toInt()
-      else
-        let (ceil = millis.ceil)
-        if (roundedOf(d.unit, ceil) == value) ceil.toInt()
-        else null
+/// The sentence that refuses a boot delay that cannot be proven to be
+/// the delay the author wrote. Like the others, one sentence for both
+/// places that refuse one.
+const function onBootUntrustedRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': onBoot cannot be proven at this magnitude: at or beyond \(maxFractionalMillis)ms a .5 fraction is silently lost and may round into an even millisecond count, so the delay is refused rather than misfired"
 
-/// The whole-millisecond count of a delay whose value is an integer,
-/// taken in whole-number arithmetic. Every delay this schema admits is
-/// below 2^53 milliseconds, where the unit factors convert exactly, so
-/// the count is the one the author wrote; a count at or beyond
-/// `maxExactMillis` is refused with the others there, and a multiplication
-/// that would leave the range of an `Int` is refused, never rounded.
-const function exactMillis(value: Int, unit: String): Int? =
+/// The whole-microsecond count of a delay whose value is an integer in
+/// its own unit, taken in whole-number arithmetic and still a whole
+/// number of milliseconds: an integer a finer unit counts must divide
+/// into milliseconds exactly (`500.us` is the half millisecond it is and
+/// stays refused), and only a `Float`'s fraction is kept where it
+/// survives. A multiplication that would leave the range of an `Int` is
+/// refused, never rounded.
+const function exactMicros(value: Int, unit: String): Int? =
   if (value < 0) null
-  else if (unit == "ms") value
-  else if (unit == "ns") (if (value % 1000000 == 0) value ~/ 1000000 else null)
-  else if (unit == "us") (if (value % 1000 == 0) value ~/ 1000 else null)
-  else if (unit == "s") scaledMillis(value, 1000)
-  else if (unit == "min") scaledMillis(value, 60000)
-  else if (unit == "h") scaledMillis(value, 3600000)
-  else scaledMillis(value, 86400000)
+  else if (unit == "ns") (if (value % 1000000 == 0) value ~/ 1000 else null)
+  else if (unit == "us") (if (value % 1000 == 0) value else null)
+  else if (unit == "ms") scaledMicros(value, 1000)
+  else if (unit == "s") scaledMicros(value, 1000000)
+  else if (unit == "min") scaledMicros(value, 60000000)
+  else if (unit == "h") scaledMicros(value, 3600000000)
+  else scaledMicros(value, 86400000000)
 
-/// The count of an integer delay in a unit coarser than the millisecond:
-/// the multiplication is refused where it would leave the range of an
-/// `Int`, because a wrapped or rounded overflow is a delay the author
-/// never wrote.
-const function scaledMillis(value: Int, factor: Int): Int? =
+/// The microsecond count of an integer delay in a coarser unit: the
+/// multiplication is refused where it would leave the range of an `Int`,
+/// because a wrapped or rounded overflow is a delay the author never
+/// wrote.
+const function scaledMicros(value: Int, factor: Int): Int? =
   if (value > 9223372036854775807 ~/ factor) null else value * factor
 
 /// The delay in milliseconds, counted in the unit the delay was written
-/// in. The count of a delay in milliseconds is the delay itself, so it
-/// needs no conversion and keeps every digit the author wrote. The
-/// factors are whole numbers, so the conversion is exact in one
-/// direction and inexact only in the other, which the check that
-/// converts back undoes.
+/// in. The whole-millisecond proof runs in this space on purpose: at a
+/// magnitude where the microsecond product would round, this one still
+/// shows the fraction the conversion cannot carry.
 const function millisOf(unit: String, value: Float): Float =
   if (unit == "ns") value / 1000000.0
   else if (unit == "us") value / 1000.0
@@ -853,10 +861,8 @@ const function millisOf(unit: String, value: Float): Float =
   else value * 86400000.0
 
 /// The whole-millisecond count, converted back to the unit the delay was
-/// written in: the delay the author wrote, if the count is the one they
-/// wrote. The conversion is the inverse of `millisOf`, so the two
-/// together say that the count is exactly the delay and not a millisecond
-/// next to it.
+/// written in: the inverse of `millisOf`, so the two together say the
+/// count is exactly the delay and not a millisecond next to it.
 const function roundedOf(unit: String, millis: Float): Float =
   if (unit == "ns") millis * 1000000.0
   else if (unit == "us") millis * 1000.0
@@ -866,6 +872,48 @@ const function roundedOf(unit: String, millis: Float): Float =
   else if (unit == "h") millis / 3600000.0
   else millis / 86400000.0
 
+/// The microsecond count of a whole-millisecond candidate: the integer
+/// arithmetic keeps every digit the float proof just approved.
+const function wholeMicros(millis: Float): Int? =
+  if (millis >= maxExactMillis.toFloat()) null else millis.toInt() * 1000
+
+/// The microsecond count of a delay carrying a fraction of a millisecond,
+/// kept only where the fraction is proven: below the horizon where the
+/// microsecond product is itself exact — 2^53µs — and only when it
+/// converts back to the delay the author wrote. Above the horizon a
+/// fraction is refused with the ones the conversion cannot carry.
+const function fractionalMicros(millis: Float, unit: String, value: Float): Int? =
+  let (micros = millis * 1000.0)
+  if (millis >= 9007199254741.0 || micros != micros.floor || roundedMicrosOf(unit, micros) != value) null
+  else micros.toInt()
+
+/// The delay in microseconds, counted in the unit the delay was written
+/// in. The factors are whole numbers or clean halves of one, so the
+/// conversion is exact in one direction and the check that converts back
+/// undoes the other.
+const function microsOf(unit: String, value: Float): Float =
+  if (unit == "ns") value / 1000.0
+  else if (unit == "us") value
+  else if (unit == "ms") value * 1000.0
+  else if (unit == "s") value * 1000000.0
+  else if (unit == "min") value * 60000000.0
+  else if (unit == "h") value * 3600000000.0
+  else value * 86400000000.0
+
+/// The whole-microsecond count, converted back to the unit the delay was
+/// written in: the delay the author wrote, if the count is the one they
+/// wrote. The conversion is the inverse of `microsOf`, so the two
+/// together say that the count is exactly the delay and not a
+/// microsecond next to it.
+const function roundedMicrosOf(unit: String, micros: Float): Float =
+  if (unit == "ns") micros * 1000.0
+  else if (unit == "us") micros
+  else if (unit == "ms") micros / 1000.0
+  else if (unit == "s") micros / 1000000.0
+  else if (unit == "min") micros / 60000000.0
+  else if (unit == "h") micros / 3600000000.0
+  else micros / 86400000000.0
+
 /// Whether a boot delay is before the boot: a timer fires after it.
 const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0
 
@@ -873,13 +921,16 @@ const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0
 /// whole milliseconds, so that two spellings of one delay — `1.001.s` and
 /// `1001.ms` — are one step, and not two steps that manage the same unit
 /// file with different settings. A delay that is not a whole number of
-/// milliseconds is refused (`settings`), and keeps its own text here, so
-/// that it is never the same step as a delay it is not.
+/// milliseconds keeps its fraction the same way (`1000.5.ms` is the
+/// `1000.5` it is), and one not provable keeps its own text, so that it
+/// is never the same step as a delay it is not.
 const function onBootText(d: Duration?): String =
   if (d == null) "-"
   else
-    let (millis = onBootMillis(d))
-    if (millis == null) "\(d)" else "\(millis)"
+    let (micros = onBootMicros(d))
+    if (micros == null) "\(d)"
+    else if (micros % 1000 == 0) "\(micros ~/ 1000)"
+    else "\(micros ~/ 1000).\(microFraction(micros))"
 
 const function sourcesPath(r: debian.AptRepository): String = "/etc/apt/sources.list.d/\(r.name).sources"
 const function keyringPath(r: debian.AptRepository): String = "/etc/apt/keyrings/\(r.name).asc"

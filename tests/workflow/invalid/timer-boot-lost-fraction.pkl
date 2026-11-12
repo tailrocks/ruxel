@@ -1,0 +1,14 @@
+// expect: onBoot cannot be proven at this magnitude: at or beyond 4503599627370496ms a .5 fraction is silently lost and may round into an even millisecond count, so the delay is refused rather than misfired
+// A delay whose .5 fraction is silently lost: at this magnitude the
+// float both evaluators hold a Duration in reaches whole milliseconds,
+// and 4503599627370497.5.ms arrives as the even 4503599627370498.ms —
+// the tie-break of the dropped .5. An even count here cannot be proven
+// to be the delay the author wrote, so the whole neighborhood is
+// refused rather than emitted half a millisecond late.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The lost fraction"; name = "postgresql-lost-fraction"; onBoot = 4503599627370497.5.ms }
+} } }

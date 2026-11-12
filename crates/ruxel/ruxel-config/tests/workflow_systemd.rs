@@ -16,8 +16,6 @@ fn root() -> PathBuf {
     .to_path_buf()
 }
 
-/// Cases import the shared inventory and recipes from the corpus root, so
-/// that is the directory they may read.
 fn options() -> ruxel_config::EvalOptions {
     ruxel_config::EvalOptions {
         root_dir: Some(root()),
@@ -58,20 +56,14 @@ fn a_reload_service_lowers_to_a_reload_handler() -> Result {
     assert_eq!(reload["operation"]["kind"], "systemd");
     assert_eq!(reload["operation"]["state"], "reloaded");
     assert_eq!(reload["operation"]["name"], "postgresql");
-    // The restart of another service keeps its own handler kind.
     let restart = handler("Restart nginx")?;
     assert_eq!(restart["operation"]["state"], "restarted");
-    // A reload-only service grows no restart handler: the two handler
-    // kinds are not merged, and the play carries one handler per service
-    // that takes triggers.
     let mut names: Vec<&str> = handlers
         .iter()
         .map(|handler| handler["name"].as_str().unwrap_or_default())
         .collect();
     names.sort_unstable();
     assert_eq!(names, ["Reload postgresql", "Restart nginx"]);
-    // The watched step notifies the handler of its own service, and no
-    // other.
     let all = tasks(&config);
     let config_file = all
         .iter()
@@ -117,8 +109,6 @@ fn a_timer_lowers_to_its_unit_file_and_its_enablement() -> Result {
         "postgresql-multixact-monitor.timer"
     );
     assert_eq!(enable["operation"]["enabled"], true);
-    // A timer that is not enabled is disabled, and its unit file says so
-    // by not carrying the enablement.
     let disable = all
         .iter()
         .find(|task| task["name"] == "Disable timer postgresql-backup")
@@ -214,10 +204,8 @@ fn a_timer_keeps_the_precision_of_its_boot_delay() -> Result {
             .and_then(|task| task["operation"]["content"].as_str().map(str::to_owned))
             .ok_or_else(|| format!("no timer file {unit}"))
     };
-    // Whole seconds stay seconds.
     let daily = content("/etc/systemd/system/postgresql-multixact-monitor.timer")?;
     assert!(daily.contains("OnBootSec=300"), "{daily}");
-    // Milliseconds stay milliseconds.
     let quick = content("/etc/systemd/system/postgresql-quick-check.timer")?;
     assert!(quick.contains("OnBootSec=500ms"), "{quick}");
     assert!(!quick.contains("OnBootSec=0"), "{quick}");
@@ -234,8 +222,6 @@ fn a_large_boot_delay_keeps_its_milliseconds() -> Result {
         .find(|task| task["operation"]["dest"] == "/etc/systemd/system/postgresql-long-delay.timer")
         .and_then(|task| task["operation"]["content"].as_str().map(str::to_owned))
         .ok_or("no timer file task")?;
-    // A million seconds is a whole number of seconds, so systemd reads it
-    // in seconds; the delay keeps every millisecond it was written with.
     assert!(content.contains("OnBootSec=1000000"), "{content}");
     // Every delay at or beyond the exact limit is refused with one sentence.
     for name in [
@@ -276,8 +262,6 @@ fn two_spellings_of_one_delay_are_one_timer() -> Result {
     let content = timers[0]["operation"]["content"]
         .as_str()
         .ok_or("no timer file content")?;
-    // The delay keeps the millisecond it was written with, whether it was
-    // written in seconds or in milliseconds.
     assert!(content.contains("OnBootSec=1001ms"), "{content}");
     Ok(())
 }
@@ -300,6 +284,19 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
             .ok_or_else(|| format!("no timer file {dest}"))?;
         assert!(content.contains(on_boot), "{dest}: {content}");
     }
+    // A half millisecond survives the evaluators exactly and is kept;
+    // the .5 the evaluators silently lose is refused as unprovable.
+    let half = valid("systemd-timer-fractional-delay.pkl")?;
+    assert!(serde_json::to_string(&half)?.contains("OnBootSec=1000.5ms"));
+    let lost = root().join("invalid").join("timer-boot-lost-fraction.pkl");
+    let error = ruxel_config::eval_config(&lost, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    assert!(
+        error.contains("onBoot cannot be proven at this magnitude"),
+        "{error}"
+    );
     Ok(())
 }
 
@@ -374,18 +371,14 @@ fn a_timer_reports_the_change_of_its_file_and_its_enablement() -> Result {
 fn a_timer_basename_may_be_249_characters() -> Result {
     let config = valid("systemd-timer-long-name.pkl")?;
     let all = tasks(&config);
-    // The basename the corpus case writes: a `t` and 248 `a`s.
     let basename: String = "t".to_owned() + &"a".repeat(248);
     assert_eq!(basename.len(), 249);
-    // The unit file the timer owns carries the basename the author wrote.
     let dest = format!("/etc/systemd/system/{basename}.timer");
     let timer = all
         .iter()
         .find(|task| task["operation"]["dest"] == dest)
         .ok_or("no timer file")?;
     assert_eq!(timer["operation"]["dest"], dest);
-    // The unit name systemd reads is the basename with its suffix, and it
-    // fits systemd's own limit of 255 characters.
     assert_eq!(basename.len() + ".timer".len(), 255);
     // The same basename naming no service is refused.
     let implicit = root()

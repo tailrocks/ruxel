@@ -1,0 +1,11 @@
+// A timer whose boot delay carries half a millisecond: the fraction is
+// representable in the float both evaluators deliver a Duration in, so
+// the delay is the 1000.5 milliseconds the author wrote and the unit
+// file reads them exactly.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The half millisecond"; name = "postgresql-half-millisecond"; onBoot = 1000.5.ms }
+} } }
