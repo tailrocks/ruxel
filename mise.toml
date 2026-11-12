@@ -24,7 +24,6 @@ hk = "2.12.0"
 gitleaks = "8.30.1"
 rumdl = "0.3.2"
 "cargo:alint" = "0.21.1"
-pkl = "0.33.0"
 
 [settings]
 cargo.binstall = true
@@ -61,24 +60,32 @@ description = "Unit and integration tests"
 # pinned-tool set cannot express; the suite is gated behind ruxel-config's
 # `dual-evaluator` feature (--all-features here enables it) so the pkl-less
 # lanes skip it instead of failing, and CI runs it in the dedicated
-# dual-evaluator check. The version is repeated because task commands execute
-# with MISE_NO_CONFIG=1 and MISE_LOCKFILE=0: the [tools] pin and the
-# lockfile setting are invisible there, and `--locked` fails with "locked mode
-# requires lockfile to be enabled"; the explicit X.Y.Z also avoids @latest
-# resolution. Because MISE_LOCKFILE=0 also hides the committed checksums,
-# tools/verify-pkl-artifact hashes the installed binary against the mise.lock
-# entry for this platform and refuses a mismatch before any test executes it.
-# On macOS x86_64 it answers exit 3 (unsupported platform) — official pkl ships
-# no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64 —
-# so an Intel Mac is never told that its pkl is missing or tampered.
+# dual-evaluator check. pkl is a tool of the tasks that use it, never a
+# global one: a globally prepared pkl breaks `mise run` on macOS x86_64,
+# where upstream publishes no artifact, and only the tasks that execute
+# the official CLI need it at all. Each such task provisions it with its
+# own `mise install pkl@0.33.0` run step — the per-task scope — because a
+# mise task `tools` entry is invisible under the generated executor
+# (`mise run --skip-tools`) and outside Velnor's mise-task contract. The
+# version is repeated because task commands execute with MISE_NO_CONFIG=1
+# and MISE_LOCKFILE=0: the [tools] pin and the lockfile setting are
+# invisible there, and `--locked` fails with "locked mode requires
+# lockfile to be enabled"; the explicit X.Y.Z also avoids @latest
+# resolution. Because MISE_LOCKFILE=0 also hides the committed
+# checksums, tools/verify-pkl-artifact hashes the installed binary against
+# the mise.lock entry for this platform and refuses a mismatch before any
+# test executes it. On macOS x86_64 it answers exit 3 (unsupported
+# platform) — official pkl ships no macOS x86_64 artifact since 0.32.2,
+# and 0.33.0 has only pkl-macos-aarch64 — so an Intel Mac is never told
+# that its pkl is missing or tampered.
 run = "mise install pkl@0.33.0 || tools/verify-pkl-artifact && tools/verify-pkl-artifact && cargo nextest run --workspace --all-features --locked --no-tests=pass"
 
 [tasks."dual-evaluator"]
-description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin; the verifier refuses a binary that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
+description = "Dual-evaluator suite under the official Pkl CLI provisioned by this task's own install step; the verifier refuses a binary that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
 run = [
   # Same constraints as the test task above: no config and no lockfile under the
-  # generated executor, so pin the exact version instead of relying on
-  # [tools]/mise.lock, then verify the artifact against the committed checksum.
+  # generated executor, so pin the exact version instead of relying on [tools]
+  # and mise.lock, then verify the artifact against the committed checksum.
   # A failed install is handed to the verifier, which names the platform's
   # verdict: on macOS x86_64 upstream publishes no artifact, so the verifier
   # answers exit 3 (unsupported platform) instead of mise's raw install error.

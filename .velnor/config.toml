@@ -24,7 +24,7 @@ globs = [
 packages = ["ruxel-acceptance-xfs"]
 
 [[stacks.rust.inputs]]
-globs = ["schema/ruxel/**/*.pkl", "tests/schema/valid.pkl", "tests/workflow/**/*.pkl", "testdata/workloads/pr66/*.pkl", "testdata/workloads/pr66/assets/template.pkl", "tools/verify-pkl-artifact"]
+globs = ["mise.lock", "schema/ruxel/**/*.pkl", "tests/schema/valid.pkl", "tests/workflow/**/*.pkl", "testdata/workloads/pr66/*.pkl", "testdata/workloads/pr66/assets/template.pkl", "tools/verify-pkl-artifact"]
 packages = ["ruxel-config"]
 
 [[checks]]
