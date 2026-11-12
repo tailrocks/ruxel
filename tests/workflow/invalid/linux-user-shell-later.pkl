@@ -1,0 +1,19 @@
+// expect: names the shell /opt/esh, which 'Write /opt/esh' (step 2) manages; list the shell's step before the account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The apply runs the steps where the author wrote them: useradd verifies
+// the shell path, so a same-stage File that writes the shell must come
+// first — an otherwise self-contained workflow would fail only at apply
+// time.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; shell = "/opt/esh" }
+      new File { path = "/opt/esh"; content = "#!/bin/sh\n"; mode = "0755" }
+    }
+  }
+}
