@@ -1,0 +1,13 @@
+// Every pin type apt recognizes is admitted: a version pin, a source
+// version pin, a release pin and an origin pin (apt's parser accepts the
+// type word in any case).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { package = "bash"; pin = "version 5.9-1"; priority = 100 }
+  new debian.AptPreference { package = "zsh"; pin = "Source-Version 5.9-1"; priority = 100 }
+  new debian.AptPreference { package = "vim"; pin = "release n=stable"; priority = 500 }
+  new debian.AptPreference { package = "docker"; pin = "origin example.test"; priority = 500 }
+} } }

@@ -1,5 +1,5 @@
 // expect-pklr: property 'pin' expected PreferencePin, got String
-// expect-pkl: Type constraint `matches(Regex(#".*\S.*"#))` violated.
+// expect-pkl: Type constraint `matches(Regex(#"(?i)(version|source-version|release|origin)\s+.*\S.*"#))` violated.
 // The `Pin:` line must carry a pin: apt warns `Did not understand pin
 // type` and applies no preference for a blank pin, so a blank one is
 // refused here instead of silently doing nothing.
