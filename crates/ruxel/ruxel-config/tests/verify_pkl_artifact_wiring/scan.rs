@@ -5,60 +5,123 @@
 
 use super::super::*;
 
-/// The line's code: everything before a `//` comment that sits outside
-/// the strings and interpolations a Pkl line carries
-/// (`PRRT_kwDOS3Fimc62oWc2`). A `//` inside a string — the `//` of a
-/// URL, an interpolation's own text — is string content, not a
-/// comment, so an import an interpolation carries survives; one in
-/// code ends the line, for nothing after it can be read.
-pub(super) fn code(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    // One depth per open string literal: its still-open `\(...)`
-    // interpolations, inside which the rules are code again.
-    let mut strings: Vec<usize> = Vec::new();
+/// The code of a Pkl source as a mask over it, byte for byte: the
+/// bytes its evaluator parses are kept, string-literal text and
+/// comment text become blanks (`PRRT_kwDOS3Fimc62oWc2`,
+/// `PRRT_kwDOS3Fimc62pCSD`). A `//` inside a string — the `//` of a
+/// URL — is content, not a comment; an `import(` inside a string is
+/// doc text Pkl never loads, `"..."` or a `"""` multi-line string
+/// alike; the same call inside a string's `\(...)` interpolation is
+/// code and stays. A quote that opens a string from code stays too,
+/// for the statement form ends in one. Offsets are preserved — every
+/// byte of the source answers one byte of the mask — so a form found
+/// in the mask names its target at the same offset of the source.
+/// One open string literal: `"..."`, or `"""..."""` multi-line.
+#[derive(Clone, Copy)]
+enum Delimited {
+    Single,
+    Multi,
+}
+
+/// The enclosing regions, innermost last: a string literal, or a
+/// `\(...)` interpolation of the string beneath it — code again,
+/// with its own nesting of parens and strings.
+enum Frame {
+    Str(Delimited),
+    Interp(usize),
+}
+
+/// One byte of a string literal's region: its text is blanked, an
+/// escape is consumed with its byte, `\(` opens an interpolation, and
+/// a closing quote ends the literal. The return is the bytes consumed
+/// beyond the one the caller advances.
+fn string_byte(frames: &mut Vec<Frame>, bytes: &[u8], at: usize, mask: &mut Vec<u8>) -> usize {
+    match bytes[at] {
+        b'\\' if at + 1 < bytes.len() => {
+            if bytes[at + 1] == b'(' {
+                frames.push(Frame::Interp(1));
+                mask.push(b'(');
+            } else {
+                mask.push(b' ');
+            }
+            1
+        }
+        b'\n' => {
+            mask.push(b'\n');
+            0
+        }
+        b'"' if bytes[at..].starts_with(b"\"\"\"")
+            && matches!(frames.last(), Some(Frame::Str(Delimited::Multi))) =>
+        {
+            frames.pop();
+            mask.extend_from_slice(b"\"\"\"");
+            2
+        }
+        b'"' if matches!(frames.last(), Some(Frame::Str(Delimited::Single))) => {
+            frames.pop();
+            mask.push(b'"');
+            0
+        }
+        _ => {
+            mask.push(b' ');
+            0
+        }
+    }
+}
+
+pub(super) fn code(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut mask = Vec::with_capacity(bytes.len());
+    let mut frames: Vec<Frame> = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        let interpolation = strings.last().is_some_and(|depth| *depth > 0);
-        if strings.is_empty() || interpolation {
-            if bytes[at..].starts_with(b"//") {
-                return &line[..at];
-            }
-            match bytes[at] {
-                b'"' => strings.push(0),
-                b'(' if interpolation => {
-                    if let Some(depth) = strings.last_mut() {
-                        *depth += 1;
-                    }
-                }
-                b')' if interpolation => {
-                    if let Some(depth) = strings.last_mut() {
-                        *depth -= 1;
-                    }
-                }
-                _ => {}
-            }
+        let in_string = matches!(frames.last(), Some(Frame::Str(_)));
+        if in_string {
+            at += string_byte(&mut frames, bytes, at, &mut mask);
         } else {
-            match bytes[at] {
-                // An escape is consumed with its byte; `\(` opens an
-                // interpolation instead.
-                b'\\' if at + 1 < bytes.len() => {
-                    if bytes[at + 1] == b'('
-                        && let Some(depth) = strings.last_mut()
-                    {
-                        *depth += 1;
-                    }
+            if bytes[at..].starts_with(b"//") {
+                // A comment runs to the line's end and reads nothing.
+                while at < bytes.len() && bytes[at] != b'\n' {
+                    mask.push(b' ');
                     at += 1;
                 }
-                b'"' => {
-                    strings.pop();
+                continue;
+            }
+            if bytes[at..].starts_with(b"\"\"\"") {
+                frames.push(Frame::Str(Delimited::Multi));
+                mask.extend_from_slice(b"\"\"\"");
+                at += 2;
+            } else {
+                match bytes[at] {
+                    b'\n' => mask.push(b'\n'),
+                    b'"' => {
+                        frames.push(Frame::Str(Delimited::Single));
+                        mask.push(b'"');
+                    }
+                    b'(' => {
+                        if let Some(Frame::Interp(depth)) = frames.last_mut() {
+                            *depth += 1;
+                        }
+                        mask.push(b'(');
+                    }
+                    b')' => {
+                        mask.push(b')');
+                        if let Some(Frame::Interp(depth)) = frames.last_mut() {
+                            *depth -= 1;
+                        }
+                        if matches!(frames.last(), Some(Frame::Interp(0))) {
+                            frames.pop();
+                        }
+                    }
+                    byte => mask.push(byte),
                 }
-                _ => {}
             }
         }
         at += 1;
     }
-    line
+    String::from_utf8_lossy(&mask).into_owned()
 }
+
 /// A target no relative corpus import names (`PRRT_kwDOS3Fimc62oWc8`):
 /// any URI scheme — `modulepath:` served schema, an `https:` network
 /// module an invalid case deliberately imports — or an absolute path;
@@ -73,6 +136,7 @@ pub(super) fn nonrelative(target: &str) -> bool {
             .chars()
             .all(|head| head.is_ascii_alphanumeric() || matches!(head, '+' | '-' | '.'))
 }
+
 /// One string literal of an `EXAMPLES` array, read from `at` — the
 /// opening quote — and past it. A corpus path needs no escape, and one
 /// the text ends before closing names nothing at all.
@@ -96,6 +160,7 @@ pub(super) fn literal(body: &[char], at: &mut usize) -> Result<String> {
     }
     Ok(literal)
 }
+
 /// The corpus path a relative import names, or `None` when it leaves
 /// `tests/workflow` — a module outside the corpus is not a corpus file
 /// this contract covers.
