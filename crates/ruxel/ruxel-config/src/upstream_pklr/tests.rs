@@ -1,8 +1,17 @@
-use super::{eval_source_json, expand_glob};
+use super::{eval_confined, expand_glob};
+use crate::eval::EvalOptions;
 use std::path::{Path, PathBuf};
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// A scratch directory outside every confined root.
+fn scratch(name: &str) -> PathBuf {
+    let directory =
+        std::env::temp_dir().join(format!("ruxel-upstream-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("scratch directory");
+    directory
 }
 
 #[test]
@@ -16,38 +25,74 @@ fn upstream_expands_globs() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn upstream_evaluates_a_source() -> Result<(), Box<dyn std::error::Error>> {
-    let path = manifest_dir().join("testdata/eval/entry.pkl");
-    let value = eval_source_json("value = 1", &path, &[])?;
-    assert_eq!(value, serde_json::json!({"value": 1}));
+fn the_upstream_path_evaluates_a_module_inside_the_root() -> Result<(), Box<dyn std::error::Error>>
+{
+    let directory = scratch("inside");
+    let module = directory.join("main.pkl");
+    std::fs::write(&module, "value = \"evaluated\"\n")?;
+    let value = eval_confined(&module, &EvalOptions::default())?;
+    assert_eq!(value, serde_json::json!({"value": "evaluated"}));
     Ok(())
 }
 
 #[test]
-fn upstream_searches_the_module_path() -> Result<(), Box<dyn std::error::Error>> {
-    let directory =
-        std::env::temp_dir().join(format!("ruxel-upstream-pklr-{}", std::process::id()));
-    std::fs::create_dir_all(&directory)?;
-    std::fs::write(directory.join("served.pkl"), "value = \"served\"")?;
-    let path = manifest_dir().join("testdata/eval/entry.pkl");
-    let value = eval_source_json(
-        "import \"modulepath:/served.pkl\"\nvalue = served.value",
-        &path,
-        &[directory],
+fn the_upstream_path_refuses_a_read_outside_the_root() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = scratch("outside");
+    let outside = directory.join("outside.txt");
+    std::fs::write(&outside, "outside")?;
+    let root = scratch("root");
+    let module = root.join("main.pkl");
+    std::fs::write(
+        &module,
+        format!("value = read(\"file:{}\")\n", outside.display()),
     )?;
+    let error = eval_confined(&module, &EvalOptions::default());
+    let message = match error {
+        Ok(value) => panic!("the read outside the root succeeded: {value}"),
+        Err(error) => error.to_string(),
+    };
+    // Ruxel's own refusal, from the confined capabilities the corpus uses.
+    assert!(
+        message.contains("outside the configuration root"),
+        "{message}"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_upstream_path_searches_the_module_path() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = scratch("module-path");
+    std::fs::write(directory.join("served.pkl"), "value = \"served\"")?;
+    let root = scratch("module-path-root");
+    let module = root.join("main.pkl");
+    std::fs::write(
+        &module,
+        "import \"modulepath:/served.pkl\"\nvalue = served.value\n",
+    )?;
+    let options = EvalOptions {
+        module_path: vec![directory],
+        root_dir: None,
+    };
+    let value = eval_confined(&module, &options)?;
     assert_eq!(value, serde_json::json!({"value": "served"}));
     Ok(())
 }
 
 #[test]
-fn upstream_refuses_an_unknown_module_path_entry() {
-    let path = manifest_dir().join("testdata/eval/entry.pkl");
+fn the_upstream_path_refuses_an_unknown_module_path_entry() {
+    let root = scratch("module-path-missing");
+    let module = root.join("main.pkl");
+    std::fs::write(
+        &module,
+        "import \"modulepath:/absent.pkl\"\nvalue = absent.value\n",
+    )
+    .expect("module");
     let missing = Path::new("/nonexistent-ruxel-module-path");
-    let error = eval_source_json(
-        "import \"modulepath:/absent.pkl\"\nvalue = absent.value",
-        &path,
-        &[missing.to_path_buf()],
-    );
+    let options = EvalOptions {
+        module_path: vec![missing.to_path_buf()],
+        root_dir: None,
+    };
+    let error = eval_confined(&module, &options);
     assert!(error.is_err());
 }
 

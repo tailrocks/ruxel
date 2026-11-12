@@ -53,45 +53,56 @@
 //! code today, the grep result that shows the family itself is absent, and
 //! what Ruxel needs from it.
 //!
-//! # What the adapter covers today
+//! # What the lane exercises today
 //!
-//! - [`expand_glob`] calls upstream's own glob expansion
-//!   (`src/eval/glob.rs:24`, re-exported at `src/eval.rs:57`).
-//! - [`eval_source_json`] builds an upstream evaluator over
-//!   `EvalCapabilities` (`src/capabilities.rs:35`), searches `modulepath:`
-//!   module URIs in the directories given to it
-//!   (`src/eval/setup.rs:186`), and evaluates a source with
-//!   `Evaluator::eval_source` (`src/eval/loading.rs:386`).
+//! [`eval_confined`] drives upstream's evaluator through Ruxel's own
+//! evaluation path, not through a hand-built upstream capability:
 //!
-//! # What the adapter cannot cover today
+//! - the roots are opened by `crate::eval::confined_roots`, the same
+//!   descriptor-pinned, symlink-refusing opening the corpus uses;
+//! - the host IO is `ConfinedCapabilities`, which forwards to the same
+//!   confined implementation the fork's evaluator uses, so a read outside
+//!   the roots is refused by Ruxel's own code;
+//! - the policy is `crate::eval::apply_policy`, the same policy the corpus
+//!   runs under; and
+//! - upstream's evaluator reads the module and its imports through those
+//!   capabilities and searches the module path directories
+//!   (`src/eval/setup.rs:186`).
 //!
-//! - The confined evaluator: upstream reads modules through paths, not
-//!   through a `ModuleSource`, so Ruxel's descriptor-pinned roots and its
-//!   refusal to follow symlinks have no upstream counterpart.
-//! - In-memory module path entries: upstream's `set_module_path`
+//! [`expand_glob`] calls upstream's own glob expansion
+//! (`src/eval/glob.rs:24`, re-exported at `src/eval.rs:57`).
+//!
+//! # What the lane cannot exercise today
+//!
+//! The four capability families upstream still lacks keep the rest of Ruxel's
+//! evaluation path out of reach, and the lane says so instead of pretending
+//! otherwise:
+//!
+//! - **Ruxel's module source.** Upstream has no `ModuleSource` (0 hits at
+//!   [`UPSTREAM_REV`]), so upstream's evaluator reads the root module itself
+//!   — through the confined capabilities, so the confinement still holds —
+//!   instead of through Ruxel's `ModuleSource`, whose import validation
+//!   (module globs and ancestor searches are refused) is fork-bound.
+//! - **In-memory module path entries.** Upstream's `set_module_path`
 //!   (`src/eval/setup.rs:186`) takes directories only, so the schema Ruxel
 //!   compiles into the module path cannot be served from memory.
-//! - `modulepath:` resources: upstream resolves a `modulepath:` URI to a
-//!   module file (`src/eval/loading.rs:22`), never to a resource, so
-//!   Ruxel's `modulepath:` resource reads have no upstream counterpart.
-//! - The rendered output: upstream's JSON entry point is `pub(crate)`
-//!   (`src/eval/output.rs:742`), so [`eval_source_json`] returns the module
-//!   value, not the rendered `output.value`.
+//! - **`modulepath:` resources.** Upstream resolves a `modulepath:` URI to a
+//!   module file (`src/eval/loading.rs:22`), never to a resource.
+//! - **The rendered output.** Upstream's JSON entry point is `pub(crate)`
+//!   (`src/eval/output.rs:742`), so the lane sees the module value, not the
+//!   rendered `output.value`.
 //!
 //! The flip of the default dependency therefore stays blocked on
 //! `jdx/pklr#419`.
 
-use std::collections::BTreeMap;
+use crate::ConfigError;
+use crate::eval::{Confined, EvalOptions, EvaluationPolicy, Resources};
+use pklr::EvalCapabilities as ForkCapabilities;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The upstream revision the `pklr-upstream` alias pins.
 pub const UPSTREAM_REV: &str = "77828272d37b3e51f45582a75e345a0ae0b963a0";
-
-/// The depth limit the upstream evaluator is given.
-///
-/// The fork's evaluator counts every nested expression against this limit;
-/// 256 fits a chain of 16 commands that each react to the one before.
-const MAX_DEPTH: usize = 256;
 
 /// A capability family Ruxel needs and upstream `jdx/pklr` does not expose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,39 +197,170 @@ pub fn expand_glob(base: &Path, pattern: &str) -> pklr_upstream::Result<Vec<Path
     pklr_upstream::eval::expand_glob(base, pattern)
 }
 
-/// Evaluate a Pkl source with the upstream evaluator and return its JSON.
+/// Ruxel's confined capabilities, adapted to upstream's `EvalCapabilities`.
 ///
-/// The evaluator searches `modulepath:` module URIs in `module_path`, in
-/// order, refuses every resource scheme but `file:` and `modulepath:`, reads
-/// no environment variable, takes no external property and stays offline.
+/// The fork's `Resources` is the evaluator's real host IO: reads are confined
+/// to the pinned roots, globs and writes are refused, and no environment
+/// variable and no network are reachable. This adapter exposes that
+/// implementation through upstream's trait, so the feature-gated lane
+/// compiles the *project's* capabilities against upstream's interface
+/// instead of upstream's own `NativeCapabilities`: an incompatible change to
+/// upstream's trait breaks this file, and the lane fails before the default
+/// dependency is flipped.
+#[derive(Debug)]
+pub(crate) struct ConfinedCapabilities {
+    resources: Resources,
+}
+
+impl ConfinedCapabilities {
+    /// Wrap Ruxel's confined capabilities for an upstream evaluator.
+    #[must_use]
+    pub(crate) fn new(files: Arc<Confined>) -> Self {
+        Self {
+            resources: Resources(files),
+        }
+    }
+}
+
+/// The fork's error as upstream's error.
 ///
-/// The result is the JSON of the module value, not of the rendered
-/// `output.value`: upstream's JSON entry point is `pub(crate)` (see
-/// [`CAPABILITY_GAPS`]), so this is the closest upstream can get today.
+/// The two crates carry their own error types. An IO error keeps its path and
+/// its cause; every other error becomes an evaluation error that keeps the
+/// message.
+fn upstream_error(error: pklr::Error) -> pklr_upstream::Error {
+    match error {
+        pklr::Error::Io(path, cause) => pklr_upstream::Error::Io(path, cause),
+        pklr::Error::Eval(message) => pklr_upstream::Error::Eval(message),
+        other => pklr_upstream::Error::Eval(other.to_string()),
+    }
+}
+
+impl pklr_upstream::EvalCapabilities for ConfinedCapabilities {
+    fn read_to_string(&mut self, path: &Path) -> pklr_upstream::Result<String> {
+        ForkCapabilities::read_to_string(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn read_bytes(&mut self, path: &Path) -> pklr_upstream::Result<Vec<u8>> {
+        ForkCapabilities::read_bytes(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn path_exists(&mut self, path: &Path) -> pklr_upstream::Result<bool> {
+        ForkCapabilities::path_exists(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn canonicalize(&mut self, path: &Path) -> pklr_upstream::Result<PathBuf> {
+        ForkCapabilities::canonicalize(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn create_dir_all(&mut self, path: &Path) -> pklr_upstream::Result<()> {
+        ForkCapabilities::create_dir_all(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn write_atomic(&mut self, path: &Path, bytes: &[u8]) -> pklr_upstream::Result<()> {
+        ForkCapabilities::write_atomic(&mut self.resources, path, bytes).map_err(upstream_error)
+    }
+
+    fn remove_file(&mut self, path: &Path) -> pklr_upstream::Result<()> {
+        ForkCapabilities::remove_file(&mut self.resources, path).map_err(upstream_error)
+    }
+
+    fn read_env(&mut self, name: &str) -> pklr_upstream::Result<Option<String>> {
+        ForkCapabilities::read_env(&mut self.resources, name).map_err(upstream_error)
+    }
+
+    fn fetch_text(&mut self, url: &str) -> pklr_upstream::Result<String> {
+        ForkCapabilities::fetch_text(&mut self.resources, url).map_err(upstream_error)
+    }
+
+    fn fetch_bytes(&mut self, url: &str) -> pklr_upstream::Result<Vec<u8>> {
+        ForkCapabilities::fetch_bytes(&mut self.resources, url).map_err(upstream_error)
+    }
+
+    fn temp_dir(&mut self, prefix: &str) -> pklr_upstream::Result<PathBuf> {
+        ForkCapabilities::temp_dir(&mut self.resources, prefix).map_err(upstream_error)
+    }
+
+    fn glob(&mut self, base: &Path, pattern: &str) -> pklr_upstream::Result<Vec<PathBuf>> {
+        ForkCapabilities::glob(&mut self.resources, base, pattern).map_err(upstream_error)
+    }
+}
+
+/// Ruxel's evaluation policy, applied to upstream's evaluator.
 ///
-/// This is a preparation adapter, not a replacement for the confined
-/// evaluator: upstream reads through host paths, so nothing here confines
-/// the evaluation to Ruxel's roots.
+/// The setters are the same ones the fork's evaluator gets, so the upstream
+/// path runs under the policy the corpus runs under instead of a copy of it.
+impl EvaluationPolicy for pklr_upstream::Evaluator {
+    fn set_base_path(&mut self, path: &Path) {
+        pklr_upstream::Evaluator::set_base_path(self, path);
+    }
+
+    fn set_allowed_resources(&mut self, resources: Vec<String>) {
+        pklr_upstream::Evaluator::set_allowed_resources(self, resources);
+    }
+
+    fn set_environment_variables(&mut self, variables: std::collections::BTreeMap<String, String>) {
+        pklr_upstream::Evaluator::set_environment_variables(self, variables);
+    }
+
+    fn set_external_properties(&mut self, properties: std::collections::BTreeMap<String, String>) {
+        pklr_upstream::Evaluator::set_external_properties(self, properties);
+    }
+
+    fn set_offline(&mut self, offline: bool) {
+        pklr_upstream::Evaluator::set_offline(self, offline);
+    }
+
+    fn set_max_depth(&mut self, depth: usize) {
+        pklr_upstream::Evaluator::set_max_depth(self, depth);
+    }
+}
+
+/// Evaluate a configuration with the upstream evaluator, through Ruxel's own
+/// evaluation path.
+///
+/// This is the largest slice of Ruxel's evaluation path that can run against
+/// upstream today, and every part of it is the production one:
+///
+/// - the roots are opened by `crate::eval::confined_roots`, the same
+///   descriptor-pinned, symlink-refusing opening the corpus uses;
+/// - the host IO is `ConfinedCapabilities`, the same confined
+///   implementation the fork's evaluator uses;
+/// - the policy is `crate::eval::apply_policy`, the same policy the corpus
+///   runs under; and
+/// - upstream's evaluator reads the module and its imports through those
+///   capabilities, so a read outside the roots is refused by Ruxel's own
+///   code.
+///
+/// The four capability families upstream still lacks keep the rest of the
+/// path out of reach: there is no `ModuleSource`, so upstream's evaluator
+/// reads the module itself (through the confined capabilities) instead of
+/// through Ruxel's module source, whose import validation is fork-bound; the
+/// module path serves directories only, so the compiled-in schema cannot be
+/// served from memory; and upstream's JSON entry point is `pub(crate)`, so
+/// the result is the module value rather than the rendered `output.value`.
 ///
 /// # Errors
-/// Returns an error when the source does not parse, when it reads something
-/// the evaluator refuses, or when its value cannot be rendered as JSON.
-pub fn eval_source_json(
-    source: &str,
-    path: &Path,
-    module_path: &[PathBuf],
-) -> pklr_upstream::Result<serde_json::Value> {
+/// Returns an error when a root directory cannot be opened, when the module
+/// lies outside the roots, when the evaluation reads something outside them,
+/// or when the value cannot be rendered as JSON.
+pub fn eval_confined(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, ConfigError> {
+    let roots = crate::eval::confined_roots(root, options)?;
     let mut evaluator =
-        pklr_upstream::Evaluator::with_capabilities(pklr_upstream::NativeCapabilities::new());
-    evaluator.set_base_path(path.parent().unwrap_or(Path::new("/")));
-    evaluator.set_module_path(module_path.to_vec());
-    evaluator.set_allowed_resources(vec!["file:".to_owned(), "modulepath:".to_owned()]);
-    evaluator.set_environment_variables(BTreeMap::new());
-    evaluator.set_external_properties(BTreeMap::new());
-    evaluator.set_offline(true);
-    evaluator.set_max_depth(MAX_DEPTH);
-    let value = evaluator.eval_source(source, path)?;
-    value.try_to_json()
+        pklr_upstream::Evaluator::with_capabilities(ConfinedCapabilities::new(roots.files.clone()));
+    crate::eval::apply_policy(&mut evaluator, &roots.module);
+    evaluator.set_module_path(roots.module_path.clone());
+    let value = evaluator
+        .eval_file(&roots.module)
+        .map_err(|error| ConfigError::Pkl {
+            module: root.to_path_buf(),
+            message: error.to_string(),
+            located: None,
+        })?;
+    value.try_to_json().map_err(|error| ConfigError::Pkl {
+        module: root.to_path_buf(),
+        message: error.to_string(),
+        located: None,
+    })
 }
 
 #[cfg(test)]

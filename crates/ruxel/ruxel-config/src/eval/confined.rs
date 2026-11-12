@@ -16,7 +16,7 @@ use std::{
 
 /// A directory pinned by descriptor, with the absolute path that names it.
 #[derive(Debug)]
-pub(super) struct Root {
+pub(crate) struct Root {
     /// The canonical name of the directory.
     path: PathBuf,
     /// The spelling the caller gave, normalized, when it differs from `path`
@@ -47,7 +47,7 @@ pub(super) fn search_flags() -> OFlags {
 
 impl Root {
     /// Open the directory `path` names now (following symlinks in it).
-    pub(super) fn open(path: &Path) -> std::io::Result<Self> {
+    pub(crate) fn open(path: &Path) -> std::io::Result<Self> {
         let directory = rustix::fs::open(path, search_flags(), Mode::empty())?;
         Self::verified(path, directory.into())
     }
@@ -137,12 +137,12 @@ impl Root {
 
 /// The roots one evaluation may read from.
 #[derive(Debug)]
-pub(super) struct Confined {
+pub(crate) struct Confined {
     roots: Vec<Root>,
 }
 
 impl Confined {
-    pub(super) fn new(roots: Vec<Root>) -> Self {
+    pub(crate) fn new(roots: Vec<Root>) -> Self {
         Self { roots }
     }
 
@@ -287,7 +287,8 @@ fn refused(what: &str) -> Error {
 
 /// Host IO for configuration evaluation: confined file reads, no
 /// environment, no network, no writes.
-pub(super) struct Resources(pub(super) std::sync::Arc<Confined>);
+#[derive(Debug)]
+pub(crate) struct Resources(pub(crate) std::sync::Arc<Confined>);
 
 impl EvalCapabilities for Resources {
     fn read_to_string(&mut self, path: &Path) -> Result<String> {

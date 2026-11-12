@@ -1,5 +1,5 @@
 use crate::ConfigError;
-use confined::{Confined, Resources, Root};
+pub(crate) use confined::{Confined, Resources, Root};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -51,41 +51,98 @@ fn evaluate(
     })
 }
 
-fn evaluate_here(
-    path: &Path,
-    files: Arc<Confined>,
-    module_path: &[PathBuf],
-) -> pklr::Result<serde_json::Value> {
-    let mut modules = templates::Modules::new(files.clone());
-    let source = pklr::ModuleSource::read(&mut modules, path)?;
-    let mut evaluator = pklr::Evaluator::with_capabilities(Resources(files));
+/// The depth limit Ruxel applies to its evaluator.
+///
+/// pklr counts every nested expression against this limit; its default of
+/// 32 does not fit the workflow language. 256 fits a chain of 16 commands
+/// that each react to the one before (see `EVAL_STACK`).
+pub(crate) const MAX_DEPTH: usize = 256;
+
+/// The evaluation policy Ruxel applies to its evaluator.
+///
+/// The fork's evaluator and upstream's evaluator expose the same setters, so
+/// both paths apply the same policy through this trait. The feature-gated
+/// upstream path (see [`crate::upstream_pklr`]) therefore cannot drift away
+/// from the policy the corpus runs under.
+pub(crate) trait EvaluationPolicy {
+    /// The directory relative imports resolve against.
+    fn set_base_path(&mut self, path: &Path);
+    /// The URI prefixes resources may be read from.
+    fn set_allowed_resources(&mut self, resources: Vec<String>);
+    /// The environment variables the evaluation may read.
+    fn set_environment_variables(&mut self, variables: BTreeMap<String, String>);
+    /// The external properties the evaluation may read.
+    fn set_external_properties(&mut self, properties: BTreeMap<String, String>);
+    /// Whether the evaluation may use the network.
+    fn set_offline(&mut self, offline: bool);
+    /// The depth limit of the evaluation.
+    fn set_max_depth(&mut self, depth: usize);
+}
+
+impl EvaluationPolicy for pklr::Evaluator {
+    fn set_base_path(&mut self, path: &Path) {
+        pklr::Evaluator::set_base_path(self, path);
+    }
+
+    fn set_allowed_resources(&mut self, resources: Vec<String>) {
+        pklr::Evaluator::set_allowed_resources(self, resources);
+    }
+
+    fn set_environment_variables(&mut self, variables: BTreeMap<String, String>) {
+        pklr::Evaluator::set_environment_variables(self, variables);
+    }
+
+    fn set_external_properties(&mut self, properties: BTreeMap<String, String>) {
+        pklr::Evaluator::set_external_properties(self, properties);
+    }
+
+    fn set_offline(&mut self, offline: bool) {
+        pklr::Evaluator::set_offline(self, offline);
+    }
+
+    fn set_max_depth(&mut self, depth: usize) {
+        pklr::Evaluator::set_max_depth(self, depth);
+    }
+}
+
+/// Apply Ruxel's evaluation policy: only `file:` and `modulepath:` resources,
+/// no environment variable, no external property, no network, and the depth
+/// limit of the workflow language.
+pub(crate) fn apply_policy<E: EvaluationPolicy>(evaluator: &mut E, path: &Path) {
     evaluator.set_allowed_resources(vec!["file:".to_owned(), "modulepath:".to_owned()]);
     evaluator.set_environment_variables(BTreeMap::new());
     evaluator.set_external_properties(BTreeMap::new());
     evaluator.set_offline(true);
-    // pklr counts every nested expression against this limit; its default of
-    // 32 does not fit the workflow language. 256 fits a chain of 16 commands
-    // that each react to the one before (see `EVAL_STACK`).
-    evaluator.set_max_depth(256);
-    for (served, source) in crate::schema::modules() {
-        evaluator.add_module_path_source(served, source.as_str())?;
-    }
-    for directory in module_path {
-        evaluator.add_module_path_directory(directory);
-    }
-    evaluator.set_module_source(modules);
+    evaluator.set_max_depth(MAX_DEPTH);
     evaluator.set_base_path(path.parent().unwrap_or(Path::new("/")));
-    evaluator.eval_source_json_blocking(&source, path)
 }
 
-/// Evaluate a module. Imports and `file:` resources must lie beneath
-/// `options.root_dir` or a module path directory, and may not pass through a
-/// symlink; see [`EvalOptions`].
+/// The confined roots of an evaluation: the root directory, the module path
+/// directories, and the root module beneath them.
+pub(crate) struct ConfinedRoots {
+    /// The roots every read is confined to.
+    pub(crate) files: Arc<Confined>,
+    /// The module path directories, in order.
+    pub(crate) module_path: Vec<PathBuf>,
+    /// The root module's own path beneath the roots.
+    pub(crate) module: PathBuf,
+}
+
+/// Open the root directory and the module path directories of an evaluation
+/// and confine them.
+///
+/// This is the repository's real root opening: every directory is opened by
+/// descriptor without following a symlink, and the root module is resolved
+/// through those descriptors. The feature-gated upstream path uses it too,
+/// so the upstream lane opens the roots exactly as the corpus does.
 ///
 /// # Errors
-/// Returns a Pkl error when the module cannot be evaluated or reads outside
-/// its roots.
-pub fn eval(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, ConfigError> {
+/// Returns an error when a root directory cannot be opened, or when the root
+/// module lies outside the roots.
+pub(crate) fn confined_roots(
+    root: &Path,
+    options: &EvalOptions,
+) -> Result<ConfinedRoots, ConfigError> {
     let error = |message: String| ConfigError::Pkl {
         module: root.to_path_buf(),
         message,
@@ -123,7 +180,48 @@ pub fn eval(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, Con
                 base_path.display()
             ))
         })?;
-    evaluate(&module, Arc::new(files), &module_path).map_err(|error_| error(error_.to_string()))
+    Ok(ConfinedRoots {
+        files: Arc::new(files),
+        module_path,
+        module,
+    })
+}
+
+fn evaluate_here(
+    path: &Path,
+    files: Arc<Confined>,
+    module_path: &[PathBuf],
+) -> pklr::Result<serde_json::Value> {
+    let mut modules = templates::Modules::new(files.clone());
+    let source = pklr::ModuleSource::read(&mut modules, path)?;
+    let mut evaluator = pklr::Evaluator::with_capabilities(Resources(files));
+    apply_policy(&mut evaluator, path);
+    for (served, source) in crate::schema::modules() {
+        evaluator.add_module_path_source(served, source.as_str())?;
+    }
+    for directory in module_path {
+        evaluator.add_module_path_directory(directory);
+    }
+    evaluator.set_module_source(modules);
+    evaluator.eval_source_json_blocking(&source, path)
+}
+
+/// Evaluate a module. Imports and `file:` resources must lie beneath
+/// `options.root_dir` or a module path directory, and may not pass through a
+/// symlink; see [`EvalOptions`].
+///
+/// # Errors
+/// Returns a Pkl error when the module cannot be evaluated or reads outside
+/// its roots.
+pub fn eval(root: &Path, options: &EvalOptions) -> Result<serde_json::Value, ConfigError> {
+    let error = |message: String| ConfigError::Pkl {
+        module: root.to_path_buf(),
+        message,
+        located: None,
+    };
+    let roots = confined_roots(root, options)?;
+    evaluate(&roots.module, roots.files, &roots.module_path)
+        .map_err(|error_| error(error_.to_string()))
 }
 
 /// Evaluate a configuration root and admit it against the served schema
