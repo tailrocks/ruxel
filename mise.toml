@@ -104,13 +104,15 @@ run = [
   # verdict.
   # Verification and execution share one resolver: the verifier prints the
   # absolute path of the artifact it hashed on stdout, and that exact path
-  # is exported as RUXEL_PKL — the suite executes the hashed binary and
-  # refuses to run without a verified path, so a different pkl on PATH can
+  # is exported as RUXEL_PKL — the suites execute the hashed binary and
+  # refuse to run without a verified path, so a different pkl on PATH can
   # never displace the verified artifact.
-  # The feature flag is what lets this task see the target at all: the suite is
-  # gated behind required-features so the pkl-less rust lanes skip it, and this
-  # task is CI's mandatory runner for it.
+  # The feature flag is what lets this task see the targets at all: the suites
+  # (tests/dual_evaluator.rs and tests/dual_evaluator_systemd.rs) are gated
+  # behind required-features so the pkl-less rust lanes skip them, and this
+  # task is CI's mandatory runner for both harness targets.
   'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator',
+  'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator_systemd',
 ]
 
 [tasks.doctest]

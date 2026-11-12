@@ -1,0 +1,15 @@
+// expect-pkl: endsWith(".service")
+// expect-pklr: expected ServiceName
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A service names a .service unit, never a timer"
+    hosts = inventory.workers
+    steps {
+      new systemd.Service { name = "postgresql.timer" }
+    }
+  }
+}

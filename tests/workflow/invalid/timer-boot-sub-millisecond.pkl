@@ -1,0 +1,14 @@
+// expect: 'The quick check': onBoot 500.us must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires a fraction of a millisecond after the boot"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The quick check"; name = "postgresql-quick-check"; service = "postgresql-quick-check"; onBoot = 500.us }
+    }
+  }
+}

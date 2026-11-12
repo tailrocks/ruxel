@@ -37,7 +37,7 @@ mod slurp;
 mod stat;
 mod subprocess;
 mod sysctl;
-mod systemd;
+pub(crate) mod systemd;
 mod timezone;
 mod user;
 
@@ -174,10 +174,12 @@ pub(crate) fn execute(
     // A command or shell task can install packages or start, stop, enable
     // and disable units without the agent seeing it. Later apt and systemd
     // tasks, and the ledger probes that let them skip, must read the host
-    // again instead of trusting the snapshot taken before it ran.
+    // again instead of trusting the snapshot taken before it ran — and no
+    // prediction survives it either.
     if matches!(module, "command" | "shell") && !ctx.check_mode {
         system_state.invalidate_packages();
         system_state.invalidate_units();
+        system_state.clear_predictions();
     }
     match result {
         Ok(value) => Outcome::from_result(value),

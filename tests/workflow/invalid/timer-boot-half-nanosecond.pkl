@@ -1,0 +1,14 @@
+// expect: 'The smallest check': onBoot 0.5.ns must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires half a nanosecond after the boot"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The smallest check"; name = "postgresql-smallest-check"; onBoot = 0.5.ns }
+    }
+  }
+}

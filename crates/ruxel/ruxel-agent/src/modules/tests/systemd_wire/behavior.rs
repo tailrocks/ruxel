@@ -2,6 +2,23 @@ use super::*;
 use std::path::Path;
 
 fn dispatch(module: &str, params: &Value, check: bool) -> Outcome {
+    dispatch_with(
+        module,
+        params,
+        check,
+        &mut crate::system_state::SystemState::default(),
+    )
+}
+
+/// A dispatch against a `SystemState` shared with the dispatches beside
+/// it: the tasks of one run judge against one shared state, so a
+/// prediction one task makes is what the next task reads.
+fn dispatch_with(
+    module: &str,
+    params: &Value,
+    check: bool,
+    system_state: &mut crate::system_state::SystemState,
+) -> Outcome {
     let ctx = ExecContext {
         check_mode: check,
         diff_mode: false,
@@ -9,14 +26,7 @@ fn dispatch(module: &str, params: &Value, check: bool) -> Outcome {
         environment: vec![],
         become_user: None,
     };
-    execute(
-        module,
-        params,
-        "",
-        None,
-        &ctx,
-        &mut crate::system_state::SystemState::default(),
-    )
+    execute(module, params, "", None, &ctx, system_state)
 }
 
 pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -34,6 +44,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         ("started", "start"),
         ("stopped", "stop"),
         ("restarted", "restart"),
+        ("reloaded", "reload"),
     ] {
         std::fs::write(root.join("actions"), "")?;
         let params = json!({"name":"demo","state":state});
@@ -46,7 +57,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
         assert_eq!(
             dispatch("systemd", &params, false).changed,
-            state == "restarted"
+            state == "restarted" || state == "reloaded"
         );
     }
     std::fs::write(root.join("actions"), "")?;
@@ -76,6 +87,247 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         "daemon-reload\n"
     );
     verify_cache(root, &enabled);
+    verify_timer(root)?;
+    verify_timer_discovery(root)?;
+    verify_stopped_reload(root)?;
+    verify_predicted_start_feeds_the_reload_handler(root)?;
+    verify_forced_execution_clears_the_stale_prediction(root)?;
+    verify_predicted_enablement_spans_repeated_services(root)?;
+    verify_opaque_commands_clear_the_predictions(root)?;
+    verify_forced_tasks_keep_unrelated_predictions(root)?;
+    Ok(())
+}
+
+/// A reload-watching service that is initially inactive is started by its
+/// service task, and the change queues the reload handler, which runs
+/// after the start. Apply starts the unit and then reloads it, so check
+/// must report the pending reload beside the pending start: the handler
+/// is judged against the start the run predicts, not the still-inactive
+/// host.
+fn verify_predicted_start_feeds_the_reload_handler(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    // Apply: the start and the queued handler both act and both change.
+    std::fs::write(root.join("actions"), "")?;
+    let mut applied = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, false, &mut applied).status,
+        "changed"
+    );
+    let handler = dispatch_with("systemd", &reloaded, false, &mut applied);
+    assert_eq!(handler.status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "start demo\nreload demo\n"
+    );
+    // Check: the same scenario reports the same changes, and acts on nothing.
+    std::fs::write(root.join("actions"), "")?;
+    std::fs::remove_file(root.join("active"))?;
+    let mut predicted = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut predicted).status,
+        "changed"
+    );
+    let pending = dispatch_with("systemd", &reloaded, true, &mut predicted);
+    assert_eq!(pending.changed, handler.changed);
+    assert_eq!(pending.status, handler.status);
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    Ok(())
+}
+
+/// A forced execution establishes the observed state even where it acts
+/// on nothing: a check-mode `started` on an inactive unit predicts it
+/// active, and a later execute-mode `stopped` observes it already
+/// inactive and does nothing — but the stale active prediction must not
+/// survive into a later check-mode `reloaded`, which would report a
+/// reload that cannot occur.
+fn verify_forced_execution_clears_the_stale_prediction(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let stopped = json!({"name":"demo","state":"stopped"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    // Forced execution observes the unit already inactive and acts on
+    // nothing.
+    assert_eq!(
+        dispatch_with("systemd", &stopped, false, &mut shared).status,
+        "ok"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    // The reload handler judges against the state the run leaves behind:
+    // an inactive unit has nothing to reload.
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "ok"
+    );
+    Ok(())
+}
+
+/// The same enabled service written twice is one enablement performed
+/// once: the first check-mode task predicts the enablement it leaves
+/// behind, and the second occurrence must report no change exactly as
+/// apply performs the first and leaves the second unchanged.
+fn verify_predicted_enablement_spans_repeated_services(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let enabled = json!({"name":"demo","enabled":true});
+    if root.join("enabled").exists() {
+        std::fs::remove_file(root.join("enabled"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &enabled, true, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, true, &mut shared).status,
+        "ok"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    // Apply performs the enablement once and reports the repeat flat.
+    let mut applied = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut applied).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut applied).status,
+        "ok"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo\n"
+    );
+    Ok(())
+}
+
+/// An opaque command can change units behind the agent's back: the
+/// snapshot and every prediction are dropped together, so a later
+/// check-mode task judges against the refreshed host and not against a
+/// prediction an invisible change made stale.
+fn verify_opaque_commands_clear_the_predictions(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    // The command runs; whatever it did to the unit is re-read.
+    let ran = dispatch_with("command", &json!({"argv":["true"]}), false, &mut shared);
+    assert_ne!(ran.status, "failed");
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "ok"
+    );
+    Ok(())
+}
+
+/// A forced task reconciles only the dimension it manages: an
+/// enablement-only task neither observes nor changes activity, so the
+/// run state a check-mode start predicted survives it and the later
+/// reload still reports the change apply would make.
+fn verify_forced_tasks_keep_unrelated_predictions(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let enabled = json!({"name":"demo","enabled":true});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    if root.join("enabled").exists() {
+        std::fs::remove_file(root.join("enabled"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &enabled, false, &mut shared).status,
+        "changed"
+    );
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "changed"
+    );
+    Ok(())
+}
+
+/// The timer units are discovered, not only the services: the agent
+/// reads that a timer unit is running, so it stops it when the workflow
+/// says so. A discovery that asked for the services only would leave the
+/// timer unknown, and the agent would report no change.
+fn verify_timer_discovery(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::write(root.join("timer-active"), "")?;
+    std::fs::write(root.join("actions"), "")?;
+    let stopped = json!({"name":"demo.timer","state":"stopped"});
+    assert_eq!(dispatch("systemd", &stopped, true).status, "changed");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    assert_eq!(dispatch("systemd", &stopped, false).status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "stop demo.timer\n"
+    );
+    // The timer is stopped now, so a second run reports no change.
+    assert_eq!(dispatch("systemd", &stopped, false).status, "ok");
+    Ok(())
+}
+
+/// A stopped unit has nothing to reload: the read-only answer says no, and
+/// the apply does not act either.
+fn verify_stopped_reload(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    assert_eq!(dispatch("systemd", &reloaded, true).status, "ok");
+    assert_eq!(dispatch("systemd", &reloaded, false).status, "ok");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    Ok(())
+}
+
+/// A timer unit is enabled like a service: the agent reads the timer units
+/// too, so the enablement converges and a second apply reports no change.
+fn verify_timer(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let timer = json!({"name":"demo.timer","enabled":true});
+    std::fs::write(root.join("actions"), "")?;
+    assert_eq!(dispatch("systemd", &timer, true).status, "changed");
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    assert_eq!(dispatch("systemd", &timer, false).status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo.timer\n"
+    );
+    assert_eq!(dispatch("systemd", &timer, false).status, "ok");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "enable demo.timer\n"
+    );
     Ok(())
 }
 
@@ -115,4 +367,5 @@ fn verify_cache(root: &Path, params: &Value) {
     assert!(!cache_allowed("unknown", params));
     assert!(!cache_allowed("systemd", &json!({"daemon_reload":true})));
     assert!(!cache_allowed("systemd", &json!({"state":"restarted"})));
+    assert!(!cache_allowed("systemd", &json!({"state":"reloaded"})));
 }

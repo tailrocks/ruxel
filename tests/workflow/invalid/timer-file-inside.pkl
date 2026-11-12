@@ -1,0 +1,9 @@
+// expect: conflict: /etc/systemd/system/app.timer is a file, so /etc/systemd/system/app.timer/child cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/systemd/system/app.timer/child"; content = "a" }
+  new systemd.SystemdTimer { name = "app"; service = "app"; onCalendar = "daily" }
+} } }

@@ -1,0 +1,17 @@
+// A timer that names no service starts the service of its own name, as
+// systemd does: `postgresql-maintenance.timer` starts
+// `postgresql-maintenance.service`, so the unit file needs no `Unit=` line
+// of its own.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer starts the service of its own name"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { name = "postgresql-maintenance"; onCalendar = "daily" }
+    }
+  }
+}

@@ -10,11 +10,12 @@ name = "check-deny-inputs"
 path = "src/bin/check_deny_inputs.rs"
 
 [features]
-# Gates the dual-evaluator suite. The suite demands the official Pkl CLI
-# (see tests/dual_evaluator.rs) and fails loudly without it, and Velnor's
+# Gates the dual-evaluator suites. The suites demand the official Pkl CLI
+# (see tests/dual_evaluator.rs and tests/dual_evaluator_systemd.rs) and fail
+# loudly without it, and Velnor's
 # rust lanes synthesize their own nextest command from the stack config —
 # no provisioning hook of theirs runs the repo's test task — so a
-# default-feature run must not compile the target. The runners that
+# default-feature run must not compile the targets. The runners that
 # provision the CLI opt in explicitly: the dual-evaluator check task (and
 # its CI job) passes the feature to cargo test, and the local test task
 # provisions the CLI and runs with --all-features.
@@ -22,6 +23,10 @@ dual-evaluator = []
 
 [[test]]
 name = "dual_evaluator"
+required-features = ["dual-evaluator"]
+
+[[test]]
+name = "dual_evaluator_systemd"
 required-features = ["dual-evaluator"]
 
 [dependencies]

@@ -1,0 +1,14 @@
+// expect: onBoot 2.0000000000000005E12.s must be a whole number of milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer whose boot delay carries a fraction of a millisecond"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The huge check"; name = "postgresql-huge-check"; onBoot = 2000000000000.0005.s }
+    }
+  }
+}

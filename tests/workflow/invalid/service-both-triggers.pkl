@@ -1,0 +1,17 @@
+// expect: 'Start postgresql, enabled at boot' has both restartOnChangeOf and reloadOnChangeOf; a service takes restart triggers or reload triggers, not both
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local config = new File { path = "/etc/postgresql/18/main/postgresql.conf"; content = "listen_addresses = '*'\n" }
+
+stages {
+  new Stage {
+    title = "A service takes restart triggers or reload triggers, not both"
+    hosts = inventory.workers
+    steps {
+      config
+      new systemd.Service { name = "postgresql"; restartOnChangeOf { config }; reloadOnChangeOf { config } }
+    }
+  }
+}

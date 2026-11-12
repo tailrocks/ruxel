@@ -1,0 +1,12 @@
+// expect: onBoot is beyond the 9007199254740991ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote
+// One millisecond past the span systemd's usec_t can parse (the ceiling
+// is 18446744073709551ms = 18446744073709s). The exactness bound below
+// that ceiling binds first, so this is refused before systemd would ever
+// see it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The span boundary"; name = "postgresql-beyond-systemd-span"; onBoot = 18446744073709552.ms }
+} } }

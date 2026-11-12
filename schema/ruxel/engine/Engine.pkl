@@ -307,7 +307,11 @@ class Service {
   daemon_reload: Flag? = null
   enabled: Flag? = null
   name: Text?(this != null || state == null && enabled == null) = null
-  state: ("started"|"stopped"|"restarted"|Expr)? = null
+  /// `reloaded` asks the unit to reload its configuration, which only a
+  /// running unit can do; unlike `restarted`, it has a read-only answer:
+  /// a running unit would be reloaded, an inactive one has nothing to
+  /// reload.
+  state: ("started"|"stopped"|"restarted"|"reloaded"|Expr)? = null
 }
 
 class User {

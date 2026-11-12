@@ -1,0 +1,12 @@
+// expect: onBoot is beyond the 9007199254740991ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote
+// The longest 64-bit millisecond literal: official pkl rounds it to a
+// float, pklr saturates it back to the same integer, and the two used to
+// disagree — one refusing, one emitting. Both refuse it now, with the
+// same sentence.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The longest literal"; name = "postgresql-beyond-exact-limit-huge"; onBoot = 9223372036854775807.ms }
+} } }

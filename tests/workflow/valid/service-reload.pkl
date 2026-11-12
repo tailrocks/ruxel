@@ -1,0 +1,22 @@
+// A PostgreSQL that reads its new configuration without restarting: the
+// service takes reload triggers, never restart triggers, and the stage ends
+// with a reload of the running service.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local config = new File { path = "/etc/postgresql/18/main/postgresql.conf"; content = "listen_addresses = '*'\n" }
+local nginxConfig = new File { path = "/etc/nginx/nginx.conf"; content = "worker_processes auto;\n" }
+
+stages {
+  new Stage {
+    title = "PostgreSQL reads its configuration without a restart"
+    hosts = inventory.workers
+    steps {
+      config
+      new systemd.Service { name = "postgresql"; reloadOnChangeOf { config } }
+      nginxConfig
+      new systemd.Service { name = "nginx"; restartOnChangeOf { nginxConfig } }
+    }
+  }
+}

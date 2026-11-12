@@ -1,0 +1,25 @@
+// A systemd timer: the class owns the `.timer` unit file and the unit's
+// enablement, and names the service it starts. The unit file of that
+// service and the daemon-reload stay the author's own steps, in the order
+// the author wrote them.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local unit = new File { path = "/etc/systemd/system/postgresql-multixact-monitor.service"; content = "[Service]\nExecStart=/usr/local/bin/multixact-monitor\n" }
+local monitor = new systemd.SystemdTimer { name = "postgresql-multixact-monitor"; service = "postgresql-multixact-monitor"; onCalendar = "daily"; onBoot = 5.min; persistent = true }
+
+stages {
+  new Stage {
+    title = "A timer fires the monitor every day"
+    hosts = inventory.workers
+    steps {
+      unit
+      new Command { title = "Reload systemd"; run { "systemctl"; "daemon-reload" }; onChangeOf { unit }; changes = "never" }
+      monitor
+      new Command { title = "List the timers"; run { "systemctl"; "list-timers"; "--no-pager" }; onChangeOf { monitor } }
+      new systemd.SystemdTimer { title = "The weekly backup"; name = "postgresql-backup"; service = "postgresql-backup"; onCalendar = "Sun *-*-* 02:00:00"; enabled = false }
+      new systemd.SystemdTimer { title = "The quick check"; name = "postgresql-quick-check"; service = "postgresql-quick-check"; onBoot = 500.ms }
+    }
+  }
+}

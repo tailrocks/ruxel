@@ -1,0 +1,21 @@
+// A timer whose boot delay is the largest whole-millisecond count the
+// evaluators can hold exactly, and values the old half-up rounding moved
+// to a neighbor and then refused. Every integer below 2^53 milliseconds
+// is exact in the float both evaluators deliver a Duration in, so these
+// counts are the ones the author wrote; the odd bound is one below the
+// limit, where every digit survives.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "Timers fire long after the boot, exactly"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The exact odd bound"; name = "postgresql-exact-odd-bound"; onBoot = 9007199254740991.ms }
+      new systemd.SystemdTimer { title = "The exact millisecond"; name = "postgresql-exact-millisecond"; onBoot = 4503599627370497.ms }
+      new systemd.SystemdTimer { title = "The exact half-even millisecond"; name = "postgresql-exact-half-even"; onBoot = 4503599627370497.0.ms }
+    }
+  }
+}

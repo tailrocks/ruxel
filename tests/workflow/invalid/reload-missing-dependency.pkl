@@ -1,0 +1,9 @@
+// expect: is not an earlier step of this stage
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local config = new File { path = "/etc/app.conf"; content = "x" }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.Service { name = "app"; reloadOnChangeOf { config } }
+} } }

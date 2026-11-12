@@ -12,6 +12,16 @@ pub(crate) use apt_request::PackageRequest;
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
+    /// Run state a check-mode task predicted but did not perform. A later
+    /// task of the same run judges against the state the run will leave
+    /// behind: the reload handler a start's change queues runs after the
+    /// start, so check must report the reload the start makes possible.
+    predicted_activity: HashMap<String, bool>,
+    /// The predicted enablement beside the predicted run state: the same
+    /// enabled service written twice is two tasks of one run, and the
+    /// second must judge against the enablement the first leaves behind
+    /// exactly as apply performs it once.
+    predicted_enabled: HashMap<String, bool>,
     candidates: HashMap<String, apt_policy::PolicyEntry>,
     /// Task environment the cached candidates were observed with.
     candidate_environment: Vec<(String, String)>,
@@ -100,25 +110,82 @@ impl SystemState {
         self.units = None;
     }
 
+    /// The unit state a task judges against: the run state an earlier
+    /// check-mode task predicted, when there is one, and the observed
+    /// state otherwise.
+    pub(crate) fn predicted_unit(&mut self, name: &str) -> Result<UnitState, String> {
+        let mut unit = self.unit(name)?;
+        if let Some(active) = self.predicted_activity.get(&unit_key(name)) {
+            unit.active = *active;
+        }
+        if let Some(enabled) = self.predicted_enabled.get(&unit_key(name)) {
+            unit.enabled = *enabled;
+        }
+        Ok(unit)
+    }
+
+    /// Records the run state a predicted change leaves behind, so the
+    /// tasks after it judge against the state the run will leave.
+    pub(crate) fn predict_activity(&mut self, name: &str, active: bool) {
+        self.predicted_activity.insert(unit_key(name), active);
+    }
+
+    /// Records the enablement a predicted change leaves behind, beside
+    /// the run state.
+    pub(crate) fn predict_enablement(&mut self, name: &str, enabled: bool) {
+        self.predicted_enabled.insert(unit_key(name), enabled);
+    }
+
+    /// A forced task reconciles only the dimension it manages: an
+    /// enablement-only task neither observes nor changes activity, so a
+    /// predicted run state survives it exactly as apply leaves it.
+    pub(crate) fn clear_activity_prediction(&mut self, name: &str) {
+        self.predicted_activity.remove(&unit_key(name));
+    }
+
+    pub(crate) fn clear_enablement_prediction(&mut self, name: &str) {
+        self.predicted_enabled.remove(&unit_key(name));
+    }
+
+    /// An opaque change made every prediction stale at once: a command or
+    /// shell task can start, stop, enable and disable any unit behind the
+    /// agent's back, so the overlays are dropped beside the snapshot.
+    pub(crate) fn clear_predictions(&mut self) {
+        self.predicted_activity.clear();
+        self.predicted_enabled.clear();
+    }
+
     fn ensure_units(&mut self) -> Result<(), String> {
         if self.units.is_some() {
             return Ok(());
         }
+        // Timer units are listed too: a timer is enabled and disabled like
+        // a service, and its enablement is only known if the unit is read.
         let units = systemctl(&[
             "list-units",
             "--all",
-            "--type=service",
+            "--type=service,timer",
             "--no-legend",
             "--plain",
         ])?;
         let files = systemctl(&[
             "list-unit-files",
-            "--type=service",
+            "--type=service,timer",
             "--no-legend",
             "--plain",
         ])?;
         self.units = Some(parse_systemd(&units, &files));
         Ok(())
+    }
+}
+
+/// The key a prediction is carried under: a bare name names its service,
+/// as `unit` resolves it against the probed map.
+fn unit_key(name: &str) -> String {
+    if name.contains('.') {
+        name.to_owned()
+    } else {
+        format!("{name}.service")
     }
 }
 

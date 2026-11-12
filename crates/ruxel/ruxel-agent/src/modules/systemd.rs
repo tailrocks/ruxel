@@ -31,10 +31,22 @@ pub(super) fn run(
 
     if let Some(unit) = name {
         if let Some(want_enabled) = enabled {
-            let is_enabled = system_state.unit(unit)?.enabled;
+            // A check-mode task judges against the enablement the run
+            // will leave behind: the same enabled service written twice
+            // is one enablement performed once, and the second task must
+            // see the first one's prediction. A forced task observes the
+            // real enablement and makes the prediction stale.
+            let is_enabled = if ctx.check_mode {
+                system_state.predicted_unit(unit)?.enabled
+            } else {
+                system_state.clear_enablement_prediction(unit);
+                system_state.unit(unit)?.enabled
+            };
             if is_enabled != want_enabled {
                 changed = true;
-                if !ctx.check_mode {
+                if ctx.check_mode {
+                    system_state.predict_enablement(unit, want_enabled);
+                } else {
                     let verb = if want_enabled { "enable" } else { "disable" };
                     let st = systemctl(&[verb, unit])?;
                     if st.1 != 0 {
@@ -46,22 +58,45 @@ pub(super) fn run(
         }
 
         if let Some(state) = state {
-            let active = system_state.unit(unit)?.active;
-            if state_needs_action(state, active)? {
+            // A check-mode task judges against the state the run will
+            // leave behind: the reload handler a start's change queues
+            // runs after the start, so the predicted start must feed the
+            // handler's answer exactly as the performed start does.
+            let unit_state = if ctx.check_mode {
+                system_state.predicted_unit(unit)?
+            } else {
+                system_state.unit(unit)?
+            };
+            if state_needs_action(state, unit_state.active)? {
                 changed = true;
-                if !ctx.check_mode {
+                if ctx.check_mode {
+                    if let Some(active) = predicted_activity(state) {
+                        system_state.predict_activity(unit, active);
+                    }
+                } else {
                     let verb = match state {
                         "started" => "start",
                         "stopped" => "stop",
                         "restarted" => "restart",
+                        "reloaded" => "reload",
                         _ => unreachable!("validated by state_needs_action"),
                     };
                     let st = systemctl(&[verb, unit])?;
                     if st.1 != 0 {
                         return Err(format!("{verb} {unit}: {}", st.2));
                     }
+                    system_state.clear_activity_prediction(unit);
                     system_state.invalidate_units();
                 }
+            } else if !ctx.check_mode {
+                // The no-action path establishes the observed state just
+                // as the action path does: the unit is what this run
+                // leaves behind, so a check-mode task's prediction of a
+                // different run state is stale, and a later check-mode
+                // task must judge against the state this task observed,
+                // not against one a prediction invented. Only the run
+                // state is the state task's to reconcile.
+                system_state.clear_activity_prediction(unit);
             }
         }
     }
@@ -77,11 +112,47 @@ pub(super) fn run(
 fn state_needs_action(state: &str, active: bool) -> Result<bool, String> {
     match state {
         "started" => Ok(!active),
-        "stopped" => Ok(active),
+        // A stopped unit is stopped, and a reload needs a running unit:
+        // `systemctl reload` on an inactive unit fails, and a stopped
+        // service reads its configuration when it starts, so there is
+        // nothing to reload and nothing to report. This is the read-only
+        // answer, unlike the restart, which always acts.
+        "stopped" | "reloaded" => Ok(active),
         "restarted" => Ok(true),
         other => Err(format!(
             "systemd: state {other:?} outside the closed surface"
         )),
+    }
+}
+
+/// The run state a predicted change leaves behind: a start and a restart
+/// leave the unit running, a stop leaves it down, and a reload changes no
+/// run state.
+fn predicted_activity(state: &str) -> Option<bool> {
+    match state {
+        "started" | "restarted" => Some(true),
+        "stopped" => Some(false),
+        _ => None,
+    }
+}
+
+/// The reconciliation a forced systemd task performs on the predictions
+/// of its own dimension, for the paths that never reach `run` — the
+/// ledger cache can satisfy the task and continue first.
+pub(crate) fn reconcile_predictions(
+    params: &Value,
+    system_state: &mut crate::system_state::SystemState,
+) {
+    let Ok(obj) = params_object(params) else {
+        return;
+    };
+    if let Some(name) = str_param(obj, "name") {
+        if obj.contains_key("state") {
+            system_state.clear_activity_prediction(name);
+        }
+        if obj.contains_key("enabled") {
+            system_state.clear_enablement_prediction(name);
+        }
     }
 }
 
@@ -104,5 +175,16 @@ mod tests {
         assert!(!super::state_needs_action("started", true).unwrap());
         assert!(super::state_needs_action("stopped", true).unwrap());
         assert!(super::state_needs_action("restarted", false).unwrap());
+    }
+
+    #[test]
+    fn a_reload_needs_a_running_unit_and_says_so_without_acting() {
+        // The read-only answer: a running unit would be reloaded, an
+        // inactive one has nothing to reload.
+        assert!(super::state_needs_action("reloaded", true).unwrap());
+        assert!(!super::state_needs_action("reloaded", false).unwrap());
+        // Every other state stays outside the closed surface.
+        assert!(super::state_needs_action("reload", true).is_err());
+        assert!(super::state_needs_action("reloaded!", true).is_err());
     }
 }

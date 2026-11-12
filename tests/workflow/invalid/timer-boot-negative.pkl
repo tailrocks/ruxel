@@ -1,0 +1,14 @@
+// expect: 'The early check': onBoot -5.s is negative; a timer fires after the boot, not before it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires before the boot"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The early check"; name = "postgresql-early-check"; service = "postgresql-early-check"; onBoot = -5.s }
+    }
+  }
+}

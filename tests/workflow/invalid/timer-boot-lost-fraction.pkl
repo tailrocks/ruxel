@@ -1,0 +1,14 @@
+// expect: onBoot 4503599627370498.ms must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+// A delay that is a fraction of a millisecond by half of one: the
+// evaluators' float reaches whole milliseconds at this magnitude and
+// 4503599627370497.5.ms arrives as the even 4503599627370498.ms, the
+// tie-break of the dropped .5. The contract is whole-millisecond, so the
+// delay is refused with the sentence the other invalid delays get,
+// rather than rounded to the millisecond next to it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The lost fraction"; name = "postgresql-lost-fraction"; onBoot = 4503599627370497.5.ms }
+} } }
