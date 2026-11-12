@@ -145,6 +145,8 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-user-groups-order.pkl",
     "valid/linux-sysctl.pkl",
     "valid/linux-user-watch.pkl",
+    "valid/linux-user-groups-empty.pkl",
+    "invalid/linux-user-groups-unset-vs-empty.pkl",
     "invalid/linux-user-shell-root.pkl",
     "invalid/linux-user-home-root.pkl",
     "invalid/linux-group-gid-zero.pkl",

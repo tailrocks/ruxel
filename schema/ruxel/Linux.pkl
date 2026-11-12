@@ -164,8 +164,12 @@ class User extends core.Step {
   home: FilePath? = null
   /// The group the account belongs to.
   group: Username? = null
-  /// The other groups the account belongs to.
-  groups: Listing<Username> = new {}
+  /// The other groups the account belongs to. Unset leaves the account's
+  /// supplementary memberships unmanaged; an explicit empty listing
+  /// (`groups = new {}`) removes every one of them, so the account keeps
+  /// none. The property is nullable, so a listing is written as an
+  /// assignment (`groups = new Listing { … }`), never as an amendment.
+  groups: Listing<Username>? = null
   /// The account's numeric id. The root account keeps uid 0: a step for
   /// `root` may not declare one.
   uid: Uid? = null

@@ -1,7 +1,10 @@
 // The groups of an account are a set: the engine reconciles supplementary
 // groups by sorting and deduplicating what it passes to usermod, so the
 // same members in another order — or spelled with a repeat — are one state
-// of one account, not two states that conflict.
+// of one account, not two states that conflict. The step that lowers is
+// the first occurrence, so its list may carry a repeat; the emitted
+// operation still carries the canonical set, or the agent would compare
+// against its own deduplicated list and report perpetual change.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
@@ -11,9 +14,9 @@ stages {
     title = "t"
     hosts = inventory.workers
     steps {
-      new linux.User { user = "app"; groups { "docker"; "wheel" } }
-      new linux.User { user = "app"; groups { "wheel"; "docker" } }
-      new linux.User { user = "app"; groups { "docker"; "docker"; "wheel" } }
+      new linux.User { user = "app"; groups = new Listing { "docker"; "docker"; "wheel" } }
+      new linux.User { user = "app"; groups = new Listing { "docker"; "wheel" } }
+      new linux.User { user = "app"; groups = new Listing { "wheel"; "docker" } }
     }
   }
 }

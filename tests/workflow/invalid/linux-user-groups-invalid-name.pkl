@@ -7,4 +7,4 @@ import "../inventory.pkl"
 // `pklr` does not check the elements of a `Listing`, so the name of a
 // group is checked in Lowering: the official Pkl refuses it with the
 // type constraint, pklr with the sentence of the settings rule.
-stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "ruxel-app"; groups { "Not A Name" } } } } }
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "ruxel-app"; groups = new Listing { "Not A Name" } } } } }

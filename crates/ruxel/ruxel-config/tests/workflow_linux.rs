@@ -53,9 +53,39 @@ fn account_groups_are_a_set_not_an_order() -> Result {
         .collect();
     assert_eq!(accounts.len(), 1, "one identity: {accounts:#?}");
     assert_eq!(accounts[0]["name"], "Manage account app");
+    // The retained occurrence carries a repeat; the operation carries the
+    // canonical set, or the agent compares against its own deduplicated
+    // list and reports perpetual change.
     assert_eq!(
         accounts[0]["operation"]["groups"],
         serde_json::json!(["docker", "wheel"])
+    );
+    Ok(())
+}
+
+/// An explicit empty supplementary-group list is a state: the operation
+/// carries `groups = []`, so the agent removes every membership. A step
+/// that states no `groups` emits no field at all and leaves memberships
+/// unmanaged.
+#[test]
+fn explicit_empty_groups_are_emitted_and_unset_ones_are_not() -> Result {
+    let config = valid("linux-user-groups-empty.pkl")?;
+    let account = |user: &str| -> Result<serde_json::Value> {
+        Ok(tasks(&config)
+            .into_iter()
+            .find(|task| task["operation"]["kind"] == "user" && task["operation"]["name"] == user)
+            .ok_or_else(|| format!("no task for {user}"))?
+            .clone())
+    };
+    assert_eq!(
+        account("app-empty")?["operation"]["groups"],
+        serde_json::json!([]),
+        "an explicit empty list must reconcile to none"
+    );
+    assert!(
+        account("app-free")?["operation"].get("groups").is_none()
+            || account("app-free")?["operation"]["groups"].is_null(),
+        "an unmanaged list must emit no groups field"
     );
     Ok(())
 }
