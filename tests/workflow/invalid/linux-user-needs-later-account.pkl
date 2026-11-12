@@ -1,0 +1,20 @@
+// expect: needs the group bob, which 'Manage account bob' (step 2) creates with its account; list that account before this one
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// On hosts with user-private groups (USERGROUPS_ENAB) the account of
+// `bob` creates the group `bob`, so it is a provider of the group the
+// first account names: `useradd -G bob alice` would run before the group
+// exists. The implicit group is the account's footprint, and the
+// file-identity model resolves it as a provider — so must this ordering.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; groups = new { "bob" } }
+      new linux.User { user = "bob" }
+    }
+  }
+}

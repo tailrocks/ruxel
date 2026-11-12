@@ -108,8 +108,14 @@ typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*"
 
 /// A kernel parameter name: dot-separated segments of letters, digits,
 /// underscores and hyphens, not starting with `-`, the way `/proc/sys`
-/// spells them (`net.ipv4.conf.br-123.forwarding`).
-typealias SysctlName = Static(matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) && !startsWith("-"))
+/// spells them (`net.ipv4.conf.br-123.forwarding`) — or slash-first
+/// notation, where the first separator is `/` and every later `/` a
+/// separator and every `.` a literal of its component
+/// (`net/ipv4/conf/enp3s0.200/forwarding`), the spelling a component
+/// with a literal dot needs. The notations never mix: a dotted name
+/// admits no slash, and a slash-first name keeps its dots inside
+/// components.
+typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) || matches(Regex(#"[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+"#))) && !startsWith("-"))
 
 /// A kernel parameter value: one line of text, with no line break in it, so
 /// one entry is one line of one file.

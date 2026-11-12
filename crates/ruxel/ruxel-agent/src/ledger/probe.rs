@@ -134,7 +134,9 @@ pub(super) fn normalized(value: &str) -> String {
 }
 
 pub(super) fn read_sysctl(name: &str) -> Option<String> {
-    let path = format!("/proc/sys/{}", name.replace('.', "/"));
+    // Slash-first names keep their separators as written: the path is
+    // the name beneath /proc/sys (see `proc_sys_path`).
+    let path = crate::modules::proc_sys_path(name);
     std::fs::read_to_string(path)
         .ok()
         .map(|s| s.trim().to_string())
