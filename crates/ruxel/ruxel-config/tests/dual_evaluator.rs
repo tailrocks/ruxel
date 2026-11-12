@@ -43,6 +43,7 @@ const EXAMPLES: &[&str] = &[
     "valid/apt-hold-non-movements.pkl",
     "valid/apt-system-upgrade.pkl",
     "valid/apt-preference.pkl",
+    "valid/apt-preference-collision.pkl",
     "valid/apt-preference-pin-forms.pkl",
     "valid/apt-preference-disjoint-selectors.pkl",
     "valid/debconf-entry.pkl",

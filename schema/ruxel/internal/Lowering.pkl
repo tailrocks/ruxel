@@ -1074,14 +1074,18 @@ function aptUpgrade(_autoremove: Boolean): engine.Apt = new engine.Apt {
 
 /// One apt preferences stanza, in the file apt reads it from. The name is
 /// the package selector with the characters apt_preferences(5) refuses in
-/// a fragment name replaced by a dash, and a hash of the selector, so two
-/// selectors never write one file. apt loads only fragments without an
-/// extension or with the `.pref` extension, so the file ends in `.pref`.
+/// a fragment name replaced by a dash, and the full SHA-256 of the
+/// selector, so two selectors never write one file: the sanitizing is not
+/// one-to-one (`+`, `:` and `*` all become a dash), so the digest alone
+/// separates two selectors that sanitize to one basename — a truncated
+/// one does not (two such selectors once shared an eight-hex-digit
+/// prefix). apt loads only fragments without an extension or with the
+/// `.pref` extension, so the file ends in `.pref`.
 function preferencePath(package: String): String =
   "/etc/apt/preferences.d/\(preferenceName(package)).pref"
 
 const function preferenceName(package: String): String =
-  "\(package.replaceAll(":", "-").replaceAll("*", "-").replaceAll("+", "-"))-\(package.sha256.substring(0, 8))"
+  "\(package.replaceAll(":", "-").replaceAll("*", "-").replaceAll("+", "-"))-\(package.sha256)"
 
 /// The stanza itself: one field per line, the way apt_preferences(5) reads
 /// it.

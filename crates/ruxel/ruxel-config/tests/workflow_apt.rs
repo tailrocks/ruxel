@@ -321,3 +321,29 @@ fn apt_preference_file_names_are_apt_compatible() -> Result {
     }
     Ok(())
 }
+
+/// Two stanzas never share a fragment file: the fragment name carries the
+/// digest of the selector, so two selectors that sanitize to one basename
+/// still write one file each (review thread PRRT_kwDOS3Fimc62bqId). The
+/// pair below once shared both the sanitized basename and an
+/// eight-hex-digit digest prefix (`7df67fd2`).
+#[test]
+fn apt_preference_file_names_do_not_collide() -> Result {
+    let config = valid("apt-preference-collision.pkl")?;
+    let all = tasks(&config);
+    let dests: Vec<&str> = all
+        .iter()
+        .filter_map(|task| task["operation"]["dest"].as_str())
+        .filter(|dest| dest.starts_with("/etc/apt/preferences.d/"))
+        .collect();
+    assert_eq!(dests.len(), 2, "{dests:?}");
+    let mut distinct: Vec<&str> = dests.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(
+        distinct.len(),
+        2,
+        "the two stanzas must not share a fragment file: {dests:?}"
+    );
+    Ok(())
+}
