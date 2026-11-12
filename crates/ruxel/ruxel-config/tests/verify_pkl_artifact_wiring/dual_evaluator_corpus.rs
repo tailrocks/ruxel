@@ -3,18 +3,17 @@
 //! check, or a PR that changes only that file classifies the mandatory
 //! `Check / dual-evaluator` job unaffected. The corpus lives in a
 //! feature-gated target the pkl-less lanes skip, so an omission there
-//! cannot catch itself: this target is an ordinary one of the same lane,
-//! and it reads the corpus source rather than running it.
+//! cannot catch itself: this target, an ordinary one of the same lane,
+//! reads the corpus source rather than running it.
 
 use super::*;
 
 /// fnmatch semantics, the classification a check's `inputs` carry: `*`
-/// matches any run of bytes, a slash included, because a pattern names a
-/// whole path and never a fragment of one; `?` matches one byte; a
-/// bracket expression matches one byte of its set, with `!` or `^` at
-/// its head negating. Every other byte matches itself, so an input
-/// written as a plain path matches that path and nothing else — the form
-/// every committed input takes.
+/// matches any run of bytes, a slash included, because a pattern names
+/// a whole path; `?` one byte; a bracket expression one byte of its
+/// set, `!` or `^` at its head negating. Every other byte matches
+/// itself, so a plain-path input matches that path and nothing else —
+/// the form every committed input takes.
 fn matches(pattern: &str, path: &str) -> bool {
     fn one(pattern: &[u8], path: &[u8]) -> bool {
         let Some((&head, rest)) = pattern.split_first() else {
@@ -72,32 +71,68 @@ fn matching_inputs<'a>(inputs: &'a [&'a str], path: &str) -> Vec<&'a str> {
         .collect()
 }
 
-/// The dual-evaluator corpus: the `EXAMPLES` array
-/// `crates/ruxel/ruxel-config/tests/dual_evaluator.rs` declares, resolved
-/// against `tests/workflow` the way that suite's own `root()` resolves
-/// them. The array is parsed structurally, element by element: a string
-/// literal is an entry, whitespace, commas and `//` comments separate
-/// them, and anything else — a named constant, a concatenation, a macro —
-/// is a loud failure, never an element the parse silently skips while
-/// the invariants above pass over the path it names. The terminator is
-/// part of that structure (`PRRT_kwDOS3Fimc62jyW4`): the array ends at
-/// the `];` the scan reaches at an element boundary, never at one a
-/// comment or a string hides, because the comment branch consumes the
-/// comment's text — a `];` inside one — long before the scan looks for
-/// a delimiter, so a comment cannot end the array early and leave the
-/// entries after it unchecked. It is the only explicit corpus list the
-/// repo keeps — the admission suites scan directories and name their
-/// files per test — so a corpus that stops being an array of literals
-/// there is a corpus this parse cannot see, and it says so rather than
-/// passing over an unread contract.
-fn examples() -> Result<Vec<String>> {
-    let path = repo().join("crates/ruxel/ruxel-config/tests/dual_evaluator.rs");
+/// The harnesses whose `EXAMPLES` arrays name the dual-evaluator
+/// corpus: the secret-language suite, and the systemd suite PR #94
+/// added. Each declares its own list in its own element shape — the
+/// plain string, the `(path, expected)` pair — and each list is half
+/// the contract: a systemd-only PR must rerun the mandatory check as
+/// surely as a secret-language one.
+const HARNESSES: &[(&str, &str)] = &[
+    (
+        "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+        "const EXAMPLES: &[&str] = &[",
+    ),
+    (
+        "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
+        "const EXAMPLES: &[(&str, bool)] = &[",
+    ),
+];
+
+/// One string literal of an `EXAMPLES` array, read from `at` — the
+/// opening quote — and past it. A corpus path needs no escape, and one
+/// the text ends before closing names nothing at all.
+fn literal(body: &[char], at: &mut usize) -> Result<String> {
+    *at += 1;
+    let mut literal = String::new();
+    loop {
+        let Some(&head) = body.get(*at) else {
+            return Err("an EXAMPLES entry carries no closing quote".into());
+        };
+        *at += 1;
+        match head {
+            '"' => break,
+            '\\' => {
+                return Err(
+                    "an EXAMPLES entry carries an escape, which a corpus path never needs".into(),
+                );
+            }
+            _ => literal.push(head),
+        }
+    }
+    Ok(literal)
+}
+
+/// One harness's `EXAMPLES` array, resolved against `tests/workflow` the
+/// way that suite's own `root()` resolves them. The array is parsed
+/// structurally, element by element: a string literal is an entry, a
+/// parenthesized pair is one too — its first string the path, the rest
+/// of the pair, the expected verdict, carrying no path — and
+/// whitespace, commas and `//` comments separate them. Anything else —
+/// a named constant, a concatenation, a macro — is a loud failure,
+/// never an element the parse silently skips while the invariants
+/// above pass over the path it names. The terminator is part of that
+/// structure (`PRRT_kwDOS3Fimc62jyW4`): the array ends at the `];` the
+/// scan reaches at an element boundary — the comment branch has eaten
+/// a comment's text, a `];` inside one included, long before — so a
+/// comment cannot end the array early and leave later entries
+/// unchecked.
+fn examples(harness: &str, declaration: &str) -> Result<Vec<String>> {
+    let path = repo().join(harness);
     let text =
         std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let declaration = "const EXAMPLES: &[&str] = &[";
     let start = text
         .find(declaration)
-        .ok_or("dual_evaluator.rs declares no EXAMPLES corpus")?;
+        .ok_or(format!("{harness} declares no EXAMPLES corpus"))?;
     let body: Vec<char> = text[start + declaration.len()..].chars().collect();
     let mut examples = Vec::new();
     let mut at = 0;
@@ -112,45 +147,39 @@ fn examples() -> Result<Vec<String>> {
             }
             ',' => at += 1,
             ']' => {
-                // Only a `]` the scan reaches between elements can close
-                // the array: inside the loop the scan always sits at an
-                // element boundary, and a `];` a comment carries never
-                // gets here. The semicolon may carry whitespace before
-                // it; a `]` that closes nothing is a loud failure, never
-                // a delimiter the parse accepts by accident.
+                // Only a `]` reached between elements can close the
+                // array, the semicolon possibly behind whitespace; a
+                // `]` that closes nothing is a loud failure.
                 let semicolon = body[at + 1..]
                     .iter()
                     .position(|head| !head.is_whitespace())
                     .map(|skip| at + 1 + skip);
-                match semicolon {
-                    Some(at_semicolon) if body[at_semicolon] == ';' => {
-                        terminated = true;
-                        break;
-                    }
-                    _ => {
-                        return Err("the EXAMPLES corpus carries a `]` that closes no array".into());
-                    }
+                if semicolon.is_none_or(|at| body[at] != ';') {
+                    return Err("the EXAMPLES corpus carries a `]` that closes no array".into());
                 }
+                terminated = true;
+                break;
             }
-            '"' => {
+            '"' => examples.push(literal(&body, &mut at)?),
+            '(' => {
                 at += 1;
-                let mut example = String::new();
-                loop {
-                    let Some(&head) = body.get(at) else {
-                        return Err("an EXAMPLES entry carries no closing quote".into());
-                    };
+                // A pair element carries its path in the first string;
+                // the rest — the expected verdict — names no file and is
+                // consumed to the closing paren the text must carry.
+                while matches!(body.get(at), Some(head) if head.is_whitespace()) {
                     at += 1;
-                    match head {
-                        '"' => break,
-                        // A corpus path needs no escape, and silently
-                        // unescaping one would name a path nobody wrote.
-                        '\\' => return Err(
-                            "an EXAMPLES entry carries an escape, which a corpus path never needs"
-                                .into(),
-                        ),
-                        _ => example.push(head),
-                    }
                 }
+                if body.get(at) != Some(&'"') {
+                    return Err("a paired EXAMPLES entry opens with no path".into());
+                }
+                let example = literal(&body, &mut at)?;
+                while at < body.len() && body[at] != ')' {
+                    at += 1;
+                }
+                if at >= body.len() {
+                    return Err("a paired EXAMPLES entry carries no closing paren".into());
+                }
+                at += 1;
                 examples.push(example);
             }
             _ => {
@@ -193,18 +222,17 @@ fn corpus_path(from: &Path, target: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// The corpus files one file reads beyond itself: the targets of its
-/// `import` and `amends` clauses that name a relative path, resolved
-/// against the file's own directory, in either of Pkl's two forms — the
-/// statement `import "path"` and the expression `import("path")`, an
-/// `amends` amending the same way. `PRRT_kwDOS3Fimc62jyWw`: the
-/// evaluator honours both forms
-/// (`crates/ruxel/ruxel-config/src/eval/confined/tests.rs` reaches a
-/// module through `import "..."` and a resource through an expression),
-/// so a file the corpus reaches through the expression form alone is a
-/// file this scan must see, or it alone skips the dual-evaluator check.
-/// `modulepath:` targets are the served schema, whose inputs are another
-/// contract.
+/// The corpus files one file reads beyond itself: the relative
+/// `import`/`amends` targets, resolved against the file's own
+/// directory, in either of Pkl's two forms — the statement
+/// `import "path"` and the expression `import("path")`, an `amends`
+/// amending the same way (`PRRT_kwDOS3Fimc62jyWw`: the evaluator
+/// honours both, `eval/confined/tests.rs` among its proofs). The
+/// expression is a value, taken wherever it stands — an assignment's
+/// right-hand side (`hosts = import("../x.pkl").workers`, the
+/// follow-up finding) as much as a line-leading clause, more than once
+/// a line — while comment text never is. `modulepath:` targets are the
+/// served schema, whose inputs are another contract.
 fn imports(file: &str) -> Result<Vec<String>> {
     let path = repo().join("tests/workflow").join(file);
     let text =
@@ -215,26 +243,40 @@ fn imports(file: &str) -> Result<Vec<String>> {
         .unwrap_or(Path::new("."));
     let mut imports = Vec::new();
     for line in text.lines() {
-        let line = line.trim_start();
-        let Some(rest) = ["import \"", "amends \"", "import(", "amends("]
-            .iter()
-            .find_map(|form| line.strip_prefix(form))
-        else {
-            continue;
-        };
-        // The statement forms have spent their opening quote in the
-        // prefix; the expression forms still carry it, possibly behind
-        // whitespace, so both reach the path the same way.
-        let rest = rest.trim_start();
-        let rest = rest.strip_prefix('"').unwrap_or(rest);
-        let (target, _) = rest
-            .split_once('"')
-            .ok_or(format!("{file}: an import carries no closing quote"))?;
-        if target.starts_with("modulepath:") {
-            continue;
+        let line = line.split("//").next().unwrap_or_default().trim_start();
+        let mut targets = Vec::new();
+        // The statement form is a clause: the line leads with it, the
+        // opening quote spent in the prefix.
+        for form in ["import \"", "amends \""] {
+            if let Some(rest) = line.strip_prefix(form) {
+                let (target, _) = rest
+                    .split_once('"')
+                    .ok_or(format!("{file}: an import carries no closing quote"))?;
+                targets.push(target.to_owned());
+            }
         }
-        if let Some(path) = corpus_path(parent, target) {
-            imports.push(format!("tests/workflow/{path}"));
+        // The expression form is a value: it is taken wherever it
+        // stands, and a line may carry more than one.
+        for form in ["import(", "amends("] {
+            let mut from = 0;
+            while let Some(at) = line[from..].find(form) {
+                from += at + form.len();
+                let Some(rest) = line[from..].trim_start().strip_prefix('"') else {
+                    continue;
+                };
+                let (target, _) = rest
+                    .split_once('"')
+                    .ok_or(format!("{file}: an import carries no closing quote"))?;
+                targets.push(target.to_owned());
+            }
+        }
+        for target in targets {
+            if target.starts_with("modulepath:") {
+                continue;
+            }
+            if let Some(path) = corpus_path(parent, &target) {
+                imports.push(format!("tests/workflow/{path}"));
+            }
         }
     }
     imports.sort();
@@ -242,56 +284,62 @@ fn imports(file: &str) -> Result<Vec<String>> {
     Ok(imports)
 }
 
-/// `PRRT_kwDOS3Fimc62ioGG`: every workflow the dual-evaluator corpus
-/// names must be an input of the `dual-evaluator` check. The corpus and
-/// the input list are maintained by hand and can drift: PR #90 added
-/// `valid/user-missing-account.pkl` to the corpus without declaring it,
-/// and a PR that changed only that file classified the mandatory
-/// `Check / dual-evaluator` job unaffected. The suite that would notice
-/// is the one being skipped, so the contract lives here, in the ordinary
-/// lane that always runs.
+/// `PRRT_kwDOS3Fimc62ioGG`: every workflow each dual-evaluator harness
+/// names must be an input of the `dual-evaluator` check — the
+/// secret-language corpus and PR #94's systemd corpus alike. The lists
+/// and the input list are maintained by hand and can drift: PR #90
+/// added `valid/user-missing-account.pkl` without declaring it, and a
+/// PR that changed only that file classified the mandatory
+/// `Check / dual-evaluator` job unaffected. The suites that would
+/// notice are the ones being skipped, so the contract lives in this
+/// ordinary, always-run lane.
 #[test]
 fn every_dual_evaluator_example_is_a_declared_input() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
-    for example in examples()? {
-        let path = format!("tests/workflow/{example}");
-        if !repo().join(&path).is_file() {
-            return Err(format!("EXAMPLES names {path}, which is not a committed file").into());
-        }
-        if matching_inputs(&inputs, &path).is_empty() {
-            return Err(format!(
-                "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
-            )
-            .into());
+    for (harness, declaration) in HARNESSES {
+        for example in examples(harness, declaration)? {
+            let path = format!("tests/workflow/{example}");
+            if !repo().join(&path).is_file() {
+                return Err(format!(
+                    "{harness}: EXAMPLES names {path}, which is not a committed file"
+                )
+                .into());
+            }
+            if matching_inputs(&inputs, &path).is_empty() {
+                return Err(format!(
+                    "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
+                )
+                .into());
+            }
         }
     }
     Ok(())
 }
 
-/// The corpus the dual-evaluator reads beyond the examples it names,
-/// derived from what the target actually opens rather than from a list
-/// kept beside it: the inventory its chain and join-separator suites copy
-/// through their `root()`, and every corpus file a listed example imports
-/// by a relative path — the only way a case reaches a file beyond itself.
-/// `PRRT_kwDOS3Fimc62jyWq`: the walk is transitive. An example that
-/// imports an aggregator — `recipes.pkl` — makes the evaluator open the
-/// aggregator's own imports too (`recipes/api-proxy.pkl`,
-/// `recipes/kubeadm-join.pkl`), so a corpus file reached only through an
-/// aggregator is still a file the harness opens, and the visited set
-/// bounds the walk: every file is parsed once, and a cycle a future
-/// import graph grows cannot loop it.
-/// `PRRT_kwDOS3Fimc62jyXrx`: nothing the suite never opens is required
-/// here. No example imports a recipe today, so `recipes.pkl` and its
-/// leaves are not demanded, though the check may still declare them for
-/// its own reasons; the day an example imports one, it becomes required,
-/// because that is the day the suite reads it.
+/// The corpus the dual-evaluator reads beyond the examples either
+/// harness names, derived from what the targets actually open: the
+/// inventory the chain and join-separator suites copy through their
+/// `root()`, and every corpus file a listed example imports by a
+/// relative path — the only way a case reaches a file beyond itself.
+/// `PRRT_kwDOS3Fimc62jyWq`: the walk is transitive — an example that
+/// imports an aggregator (`recipes.pkl`) makes the evaluator open the
+/// aggregator's own imports too, so a corpus file reached only through
+/// an aggregator is still demanded — and the visited set bounds it:
+/// every file is parsed once; a cycle cannot loop it.
+/// `PRRT_kwDOS3Fimc62jyXrx`: nothing the suite never opens is required.
+/// No example imports a recipe today, so `recipes.pkl` and its leaves
+/// are not demanded; the day an example imports one, it becomes
+/// required, because that is the day the suite reads it.
 #[test]
 fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
     let mut read = vec!["tests/workflow/inventory.pkl".to_owned()];
-    let mut frontier: Vec<String> = examples()?;
+    let mut frontier = Vec::new();
+    for (harness, declaration) in HARNESSES {
+        frontier.extend(examples(harness, declaration)?);
+    }
     let mut visited = std::collections::HashSet::new();
     while let Some(file) = frontier.pop() {
         if !visited.insert(file.clone()) {
@@ -321,10 +369,9 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     Ok(())
 }
 
-/// The matcher is fnmatch, not a formality: the contracts above hold
-/// only while a pattern means what the classification means, and a
-/// matcher that matched nothing — or everything — would vacate both
-/// while still passing.
+/// The matcher is fnmatch, not a formality: a matcher that matched
+/// nothing — or everything — would vacate the contracts above while
+/// still passing.
 #[test]
 fn the_input_matcher_is_fnmatch() {
     assert!(matches(
@@ -339,8 +386,7 @@ fn the_input_matcher_is_fnmatch() {
         "tests/workflow/valid/*.pkl",
         "tests/workflow/valid/user-missing-account.pkl"
     ));
-    // A `*` crosses a slash: a pattern names a whole path.
-    assert!(matches("tests/*", "tests/workflow/valid/tags.pkl"));
+    assert!(matches("tests/*", "tests/workflow/valid/tags.pkl")); // `*` crosses a slash
     assert!(matches("a?c", "abc"));
     assert!(!matches("a?c", "ac"));
     assert!(matches("[a-c]b", "bb"));
