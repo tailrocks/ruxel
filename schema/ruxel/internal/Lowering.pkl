@@ -365,6 +365,8 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))' has running = false, so it cannot reload on a change; remove reloadOnChangeOf or set running = true")
   else if (s is systemd.SystemdTimer && s.onCalendar == null && s.onBoot == null)
     List("'\(name(s))' has no schedule: set onCalendar or onBoot")
+  else if (s is systemd.SystemdTimer && s.onCalendar != null && (s.onCalendar.isEmpty || s.onCalendar.contains("\n")))
+    List("'\(name(s))': onCalendar must be a nonempty calendar expression on one line; a systemd timer reads one calendar expression, and a line break would write another directive into the timer file")
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootNegative(s.onBoot))
     List("'\(name(s))': onBoot \(s.onBoot) is negative; a timer fires after the boot, not before it")
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMillis(s.onBoot) == null)

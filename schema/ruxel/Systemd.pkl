@@ -94,7 +94,9 @@ class SystemdTimer extends core.Step {
   /// as a `Service` of its own, or the unit comes from a package.
   service: ServiceName? = null
   /// When the timer fires: a systemd calendar expression, such as `daily`
-  /// or `*-*-* 03:00:00`.
+  /// or `*-*-* 03:00:00`. One expression on one line: an empty expression
+  /// names no time, and a line break would write another directive into the
+  /// unit file.
   onCalendar: Static? = null
   /// How long after boot the timer fires.
   onBoot: Duration? = null
