@@ -123,21 +123,37 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes))
 
-/// At boot the sysctl files load in file-name order: a later stage that
-/// persists its value in a file sorting before an earlier stage's hands
-/// the boot value back to the earlier stage — the live value follows the
-/// stages, the boot value would not.
+/// At boot the sysctl files load in file-name order across the system
+/// directories: a later stage that persists its value in a file loading
+/// before an earlier stage's hands the boot value back to the earlier
+/// stage — the live value follows the stages, the boot value would not.
+/// The comparison is per host: stages on disjoint hosts never share a
+/// boot, so their layouts are independent.
 function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
-  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n)
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
     .flatMap((m) -> bootClash(_stages[n], _indexes[n], _stages[m], _indexes[m])))
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
-    .filter((y) -> x.name == y.name && x.value != y.value && !(x.path <= y.path))
+    .filter((y) -> x.name == y.name && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
     .map((y) -> List(x, y))))
   if (pairs.isEmpty) List()
   else let (x = pairs.first.first) let (y = pairs.first.last)
     List("stages \"\(a.title)\" and \"\(b.title)\" set the sysctl \(x.name) to different values, and their files' boot order reverses them: \(x.path) loads after \(y.path) and hands the boot value back to stage \"\(a.title)\"; name the later stage's file so it sorts last, or use one file")
+
+/// Where a sysctl file stands in the boot load order `sysctl --system`
+/// applies. The configuration files of all system directories sort
+/// together by their file names — `/etc/sysctl.d/10-x.conf` before
+/// `/usr/lib/sysctl.d/50-y.conf` before `/etc/sysctl.d/99-z.conf` — and
+/// one name resolved in several directories is applied by directory
+/// precedence, `/usr/lib` before `/run` before `/etc`, so the `/etc`
+/// copy is applied last and wins. `/etc/sysctl.conf` loads after all of
+/// them. The key spells that order: the file name first, the directory's
+/// rank behind a separator nothing in a file name carries, and the
+/// legacy file last.
+const function bootOrder(path: String): String =
+  if (path == "/etc/sysctl.conf") "\u{7f}"
+  else path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "2" else if (path.startsWith("/run/sysctl.d/")) "1" else "0")
 
 const function sysctlsOf(ix: StageIndex): List<core.Step> = ix.steps.filter((s) -> s is linux.Sysctl)
 
@@ -1278,12 +1294,14 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
   // The account and the things it declares states for: its explicit uid
   // is a managed thing of its own — two accounts with one id fail the
-  // second useradd on the duplicate — and its explicit home is a path the
-  // step creates (present) or deletes with its contents (absent with
-  // removeHome). A present account that states no primary group claims
-  // the group useradd creates with its login name (USERGROUPS_ENAB), so
-  // that implicit group is its footprint too.
-  ["user"] = (s) -> List("the account \(s.user)") + (if ((s.state == "present" || s.removeHome) && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
+  // second useradd on the duplicate — and its home is a path the step
+  // creates (present) or deletes with its contents (absent with
+  // removeHome). A present account that states no home still gets one
+  // created (`useradd -m`, the usual `/home` base), so the default home
+  // is claimed like an explicit one. A present account that states no
+  // primary group claims the group useradd creates with its login name
+  // (USERGROUPS_ENAB), so that implicit group is its footprint too.
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") else if (s.removeHome && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
   // An explicit gid is a managed thing of its own, the way a uid is.
   ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")

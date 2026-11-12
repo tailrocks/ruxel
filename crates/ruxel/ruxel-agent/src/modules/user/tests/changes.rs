@@ -177,3 +177,13 @@ fn a_created_home_takes_the_final_primary_gid() {
     assert_eq!(super::super::home_gid(Some(&name), 1500).unwrap(), gid);
     assert_eq!(super::super::home_gid(None, 1500).unwrap(), 1500);
 }
+
+#[test]
+fn a_created_account_creates_its_private_group_explicitly() {
+    // The footprint model claims the same-name group of an account that
+    // names no primary group: `useradd` must create it explicitly (`-U`),
+    // never leaning on the host's USERGROUPS_ENAB setting, or the claim
+    // is false on hosts configured the other way.
+    assert_eq!(super::super::private_group_flag(None), Some("-U"));
+    assert_eq!(super::super::private_group_flag(Some("docker")), None);
+}

@@ -1,0 +1,20 @@
+// expect: both manage /home/alice
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A present account with no declared home still gets one created
+// (`useradd -m`, the usual `/home` base), so the default home is the
+// step's managed path like an explicit one: a file at it would leave the
+// account pointing at a regular file or the file unable to replace the
+// directory.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+      new File { path = "/home/alice"; content = "not a home\n" }
+    }
+  }
+}

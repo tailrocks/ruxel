@@ -94,84 +94,25 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
     Ok(None)
 }
 
-/// Whether the agent may change the identity of the account whose host
-/// entry is `entry`: the live uid-0 account is the superuser's whatever
-/// it is named, and moving it off uid 0 — or off its primary group —
-/// strands every file it owns.
-fn identity_change_allowed(name: &str, entry: &PasswdEntry) -> Result<(), String> {
-    if entry.uid == 0 {
-        return Err(format!(
-            "user: refusing to change the identity of {name}: the superuser's account (uid 0) is the host's to keep"
-        ));
-    }
-    Ok(())
-}
-
-/// The gid counterpart: the live gid-0 group is the root group whatever
-/// it is named.
-fn group_change_allowed(name: &str, host_gid: u64) -> Result<(), String> {
-    if host_gid == 0 {
-        return Err(format!(
-            "group: refusing to change the gid of {name}: the root group (gid 0) is the host's to keep"
-        ));
-    }
-    Ok(())
-}
-
-/// Whether the agent may remove the account whose host entry is `entry`.
-/// The deletion verifies the host entry rather than trusting the workflow
-/// value: the superuser's account and a system account below UID 1000 are
-/// the host's to keep whatever the workflow states, and a declared uid
-/// must match the host's — `user = "daemon"; uid = 1000` must not remove
-/// an account whose real UID is below 1000.
-fn removal_allowed(name: &str, declared: Option<u64>, entry: &PasswdEntry) -> Result<(), String> {
-    if entry.uid == 0 {
-        return Err(format!(
-            "user: refusing to remove {name}: the superuser's account (uid 0) is the host's to keep"
-        ));
-    }
-    if entry.uid < 1000 {
-        return Err(format!(
-            "user: refusing to remove {name}: the host account is a system account (uid {}), which the host keeps",
-            entry.uid
-        ));
-    }
-    if let Some(want) = declared
-        && want != entry.uid
-    {
-        return Err(format!(
-            "user: refusing to remove {name}: the host uid {} is not the declared {want}",
-            entry.uid
-        ));
-    }
-    Ok(())
-}
-
-/// Whether the agent may remove the group of host gid `host_gid`. The
-/// root group (GID 0) is the host's to keep whatever it is named, and a
-/// declared gid must match the host's: the host entry, not the workflow
-/// value, is what deletion acts on.
-fn group_removal_allowed(name: &str, declared: Option<u64>, host_gid: u64) -> Result<(), String> {
-    if host_gid == 0 {
-        return Err(format!(
-            "group: refusing to remove {name}: the root group (gid 0) is the host's to keep"
-        ));
-    }
-    if let Some(want) = declared
-        && want != host_gid
-    {
-        return Err(format!(
-            "group: refusing to remove {name}: the host gid {host_gid} is not the declared {want}"
-        ));
-    }
-    Ok(())
-}
+mod guards;
+use guards::{
+    group_change_allowed, group_removal_allowed, identity_change_allowed, removal_allowed,
+    removal_home_allowed,
+};
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
     let mut command = std::process::Command::new(cmd);
     command.args(args);
     super::run_checked(command)?;
     Ok(())
+}
+
+/// `useradd`'s private-group switch: a step that names no primary group
+/// gets its same-name group created explicitly (`-U`), so the modeled
+/// footprint and the implicit-group provider never lean on the host's
+/// `USERGROUPS_ENAB` setting.
+fn private_group_flag(group: Option<&str>) -> Option<&'static str> {
+    if group.is_none() { Some("-U") } else { None }
 }
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -202,14 +143,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     if state == "absent" {
         // The deletion verifies the host entry, not the workflow value:
-        // see `removal_allowed`.
+        // see `removal_allowed`. A recursive removal deletes the live
+        // home whatever the workflow names, so the declared one must be
+        // it: see `removal_home_allowed`.
+        let home = str_param(obj, "home");
+        let remove = bool_param(obj, "remove", false);
         if let Some(current) = &entry {
             removal_allowed(name, uid, current)?;
+            removal_home_allowed(name, home, remove, &current.home)?;
         }
         let changed = entry.is_some();
         if changed && !ctx.check_mode {
             let mut args: Vec<&str> = Vec::new();
-            if bool_param(obj, "remove", false) {
+            if remove {
                 args.push("-r");
             }
             args.push(name);
@@ -249,6 +195,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 if let Some(g) = group {
                     args.push("-g");
                     args.push(g);
+                }
+                if let Some(flag) = private_group_flag(group) {
+                    args.push(flag);
                 }
                 let groups_s;
                 if let Some(gs) = &groups {

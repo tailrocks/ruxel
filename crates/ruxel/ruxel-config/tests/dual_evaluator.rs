@@ -187,8 +187,12 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-sysctl-hyphen.pkl",
     "valid/linux-sysctl-equals.pkl",
     "valid/linux-sysctl-slash.pkl",
+    "valid/linux-sysctl-boot-order-disjoint.pkl",
     "invalid/linux-user-shell-later.pkl",
     "invalid/linux-user-needs-later-account.pkl",
+    "invalid/linux-user-default-home-conflict.pkl",
+    "invalid/linux-sysctl-boot-order-precedence.pkl",
+    "invalid/linux-sysctl-path-not-boot-loaded.pkl",
 ];
 
 /// The official `pkl` binary.

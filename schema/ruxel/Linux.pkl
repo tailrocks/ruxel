@@ -121,6 +121,13 @@ typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*
 /// one entry is one line of one file.
 typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
 
+/// A sysctl persistence file: one the system loader reads at boot —
+/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d`, `/run/sysctl.d` or
+/// `/usr/lib/sysctl.d`, the recognized configuration files `sysctl
+/// --system` loads. A file elsewhere is written but never read again: the
+/// parameter silently reverts after reboot.
+typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|run|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
+
 class Timezone extends core.Step {
   hidden fixed kind = "timezone"
   name: TimezoneName
@@ -144,10 +151,12 @@ class Sysctl extends core.Step {
   hidden fixed kind = "sysctl"
   name: SysctlName
   value: SysctlValue
-  /// The file that holds the entry: a file path, any absolute path but `/`
-  /// itself, which is a directory — the agent reads this value and
-  /// rewrites it atomically.
-  path: FilePath = "/etc/sysctl.d/90-ruxel.conf"
+  /// The file that holds the entry: a file the system loader reads at
+  /// boot — `/etc/sysctl.conf` or a `*.conf` of the system's sysctl
+  /// directories — which the agent reads and rewrites atomically. A file
+  /// elsewhere would never be loaded again, so the parameter silently
+  /// reverts after reboot.
+  path: SysctlFile = "/etc/sysctl.d/90-ruxel.conf"
 }
 
 /// An account and the settings of it.
