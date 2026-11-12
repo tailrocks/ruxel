@@ -68,15 +68,21 @@ description = "Unit and integration tests"
 # resolution. Because MISE_LOCKFILE=0 also hides the committed checksums,
 # tools/verify-pkl-artifact hashes the installed binary against the mise.lock
 # entry for this platform and refuses a mismatch before any test executes it.
-run = "mise install pkl@0.33.0 && tools/verify-pkl-artifact && cargo nextest run --workspace --all-features --locked --no-tests=pass"
+# On macOS x86_64 it answers exit 3 (unsupported platform) — official pkl ships
+# no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64 —
+# so an Intel Mac is never told that its pkl is missing or tampered.
+run = "mise install pkl@0.33.0 || tools/verify-pkl-artifact && tools/verify-pkl-artifact && cargo nextest run --workspace --all-features --locked --no-tests=pass"
 
 [tasks."dual-evaluator"]
-description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin"
+description = "Dual-evaluator suite under the official Pkl CLI provisioned from the mise pin; the verifier refuses a binary that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
 run = [
   # Same constraints as the test task above: no config and no lockfile under the
   # generated executor, so pin the exact version instead of relying on
   # [tools]/mise.lock, then verify the artifact against the committed checksum.
-  "mise install pkl@0.33.0",
+  # A failed install is handed to the verifier, which names the platform's
+  # verdict: on macOS x86_64 upstream publishes no artifact, so the verifier
+  # answers exit 3 (unsupported platform) instead of mise's raw install error.
+  "mise install pkl@0.33.0 || tools/verify-pkl-artifact",
   "tools/verify-pkl-artifact",
   # The feature flag is what lets this task see the target at all: the suite is
   # gated behind required-features so the pkl-less rust lanes skip it, and this

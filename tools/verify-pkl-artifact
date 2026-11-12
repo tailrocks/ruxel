@@ -9,22 +9,51 @@
 # is hashed and compared against the committed checksum for this
 # platform, and a binary that does not match is refused before any
 # mandatory test executes it.
+#
+# Exit codes:
+#   0  the installed binary matches the committed checksum
+#   1  the binary is missing, or its checksum does not match the
+#      committed one
+#   3  this platform has no official pkl artifact to verify against
+#
+# Code 3 is a verdict of its own: a platform upstream does not publish
+# for is neither a missing nor a tampered binary, and saying so is the
+# only honest answer there.
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 lock="$script_dir/../mise.lock"
+
+# The refusal for a platform with no official artifact. The message
+# names the upstream fact, so the reader learns why the platform is
+# refused instead of guessing at a missing or a tampered binary.
+unsupported() {
+  echo "verify-pkl-artifact: unsupported platform $1: $2" >&2
+  exit 3
+}
 
 os=$(uname -s)
 arch=$(uname -m)
 case "$os" in
   Linux) platform=linux ;;
   Darwin) platform=macos ;;
-  *) echo "verify-pkl-artifact: unsupported operating system: $os" >&2; exit 1 ;;
+  *) unsupported "os $os" "the verifier judges Linux and macOS hosts only" ;;
 esac
 case "$arch" in
   x86_64 | amd64) platform="$platform-x64" ;;
   aarch64 | arm64) platform="$platform-arm64" ;;
-  *) echo "verify-pkl-artifact: unsupported architecture: $arch" >&2; exit 1 ;;
+  *) unsupported "arch $arch" "the verifier judges x86_64 and aarch64 hosts only" ;;
+esac
+# Upstream publishes no macOS x86_64 (Intel) pkl artifact: 0.32.2 was
+# the last release that carried one (pkl-macos-amd64), and 0.33.0 ships
+# only pkl-macos-aarch64. There is no official build to compare an
+# installed binary against, so the platform is refused before the
+# lookup: an Intel Mac must never be told that its pkl is missing or
+# tampered, because no official Intel build exists to be missing.
+case "$platform" in
+  macos-x64)
+    unsupported "$platform" "official pkl ships no macOS x86_64 artifact since 0.32.2 (0.32.2's pkl-macos-amd64 was the last); for 0.33.0 only pkl-macos-aarch64 exists"
+    ;;
 esac
 # The musl slot pins a different asset than the glibc one; only Linux can
 # be musl. A musl loader is the tell.

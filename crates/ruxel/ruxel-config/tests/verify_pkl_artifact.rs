@@ -1,6 +1,8 @@
 //! `tools/verify-pkl-artifact` at the script level: the verifier must
 //! reach the binary under every Mise data directory it names, whatever
-//! characters the path carries.
+//! characters the path carries, and it must refuse a platform upstream
+//! publishes no artifact for with an unsupported-platform result of its
+//! own.
 //!
 //! Each test runs the script itself in a child process against a fresh
 //! scratch tree, the way the dual-evaluator discovery is covered
@@ -57,19 +59,40 @@ fn fake_install(data: &Path) -> Result<PathBuf> {
 
 /// Whether the verifier reached the fake: it must refuse it on its
 /// checksum, naming the binary it hashed. A lookup that never found the
-/// binary answers "no pkl 0.33.0 install found" instead.
+/// binary answers "no pkl 0.33.0 install found" instead. The refusal
+/// carries exit 1 — the code of a missing or a mismatched binary, and
+/// the code the unsupported-platform answer must differ from.
 fn assert_reached(output: &std::process::Output, installed: &Path) -> Result {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let reached = format!("{} is SHA-256 ", installed.display());
-    if output.status.success() || !stderr.contains(&*reached) {
+    if output.status.code() != Some(1) || !stderr.contains(&*reached) {
         return Err(format!(
-            "the verifier must reach the fake at {} and refuse it on its checksum; status: {}; stderr: {stderr}",
+            "the verifier must reach the fake at {} and refuse it on its checksum with exit 1; status: {}; stderr: {stderr}",
             installed.display(),
             output.status
         )
         .into());
     }
     Ok(())
+}
+
+/// A fake `uname` in `bin` that reports a macOS `x86_64` host. The
+/// verifier asks `uname` for the operating system and the architecture
+/// and nothing else about the host reaches it, so this is how a test
+/// selects the macos-x64 platform from any host.
+fn fake_uname(bin: &Path) -> Result<PathBuf> {
+    std::fs::create_dir_all(bin)?;
+    let uname = bin.join("uname");
+    std::fs::write(
+        &uname,
+        "#!/bin/sh\ncase \"${1:-}\" in\n  -m) echo x86_64 ;;\n  *) echo Darwin ;;\nesac\n",
+    )?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&uname, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(uname)
 }
 
 /// A `MISE_DATA_DIR` that carries whitespace is one directory, not a
@@ -132,6 +155,68 @@ fn the_verifier_reaches_the_binary_under_a_home_with_whitespace() -> Result {
         .env_remove("XDG_DATA_HOME")
         .output()?;
     assert_reached(&output, &installed)?;
+    drop(std::fs::remove_dir_all(&scratch));
+    Ok(())
+}
+
+/// macOS `x86_64` has no official pkl artifact — upstream's last Intel
+/// build was 0.32.2's `pkl-macos-amd64`, and 0.33.0 ships only
+/// `pkl-macos-aarch64` — so the verifier must answer that platform
+/// with an unsupported-platform result of its own: a distinct exit
+/// code and a message naming the upstream fact.
+///
+/// The fake install is present, so a verifier that judged the platform
+/// anyway would hash it and report a checksum mismatch, and one that
+/// looked the checksum up first would report the missing checksum
+/// entry. Neither is true: there is no official build to judge it
+/// against, so the answer must name that instead.
+#[test]
+fn the_verifier_refuses_macos_x64_as_an_unsupported_platform() -> Result {
+    let scratch = scratch("macos-x64")?;
+    let bin = scratch.join("bin");
+    fake_uname(&bin)?;
+    let data = scratch.join("mise data");
+    let _installed = fake_install(&data)?;
+    let home = scratch.join("home");
+    std::fs::create_dir_all(&home)?;
+    let output = Command::new("/bin/sh")
+        .arg(verifier())
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("MISE_DATA_DIR", &data)
+        .env("HOME", &home)
+        .env_remove("XDG_DATA_HOME")
+        .output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if output.status.code() != Some(3) {
+        return Err(format!(
+            "the verifier must exit 3 (unsupported platform) on macos-x64; status: {}; stderr: {stderr}",
+            output.status
+        )
+        .into());
+    }
+    for fact in ["macos-x64", "0.32.2", "pkl-macos-aarch64"] {
+        if !stderr.contains(fact) {
+            return Err(format!(
+                "the unsupported-platform message must name {fact}; stderr: {stderr}"
+            )
+            .into());
+        }
+    }
+    for verdict in [
+        "SHA-256",
+        "refusing to run",
+        "no pkl 0.33.0 install found",
+        "carries no pkl checksum",
+        "matches the committed",
+    ] {
+        if stderr.contains(verdict) || stdout.contains(verdict) {
+            return Err(format!(
+                "macos-x64 must answer with the unsupported platform alone, never a tamper, a missing or a verified verdict ({verdict}); stdout: {stdout}; stderr: {stderr}"
+            )
+            .into());
+        }
+    }
     drop(std::fs::remove_dir_all(&scratch));
     Ok(())
 }
