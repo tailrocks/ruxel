@@ -84,10 +84,21 @@ fn run_with(
             ctx,
             &mut result,
             command,
-        )? {
-            Holds::Applied(marked) => changed |= marked,
+        ) {
+            Ok(Holds::Applied(marked)) => changed |= marked,
             // The report carries the failure; the step ends there.
-            Holds::Unverified => return Ok(result),
+            Ok(Holds::Unverified) => return Ok(result),
+            // A hold that fails after the run changed the host must not
+            // hide the change behind an error: `modules::execute` turns an
+            // Err into `changed: false`. The report keeps the change the
+            // run accumulated (true after an install) alongside the
+            // failure, like the Unverified arm above.
+            Err(error) => {
+                result["changed"] = json!(changed);
+                result["failed"] = json!(true);
+                result["msg"] = json!(error);
+                return Ok(result);
+            }
         }
     }
     result["changed"] = json!(changed);
