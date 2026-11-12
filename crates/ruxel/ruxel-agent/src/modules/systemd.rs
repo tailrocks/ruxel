@@ -76,6 +76,14 @@ pub(super) fn run(
                     system_state.clear_prediction(unit);
                     system_state.invalidate_units();
                 }
+            } else if !ctx.check_mode {
+                // The no-action path establishes the observed state just
+                // as the action path does: the unit is what this run
+                // leaves behind, so a check-mode task's prediction of a
+                // different run state is stale, and a later check-mode
+                // task must judge against the state this task observed,
+                // not against one a prediction invented.
+                system_state.clear_prediction(unit);
             }
         }
     }

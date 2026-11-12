@@ -91,6 +91,7 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     verify_timer_discovery(root)?;
     verify_stopped_reload(root)?;
     verify_predicted_start_feeds_the_reload_handler(root)?;
+    verify_forced_execution_clears_the_stale_prediction(root)?;
     Ok(())
 }
 
@@ -133,6 +134,43 @@ fn verify_predicted_start_feeds_the_reload_handler(
     assert_eq!(pending.changed, handler.changed);
     assert_eq!(pending.status, handler.status);
     assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    Ok(())
+}
+
+/// A forced execution establishes the observed state even where it acts
+/// on nothing: a check-mode `started` on an inactive unit predicts it
+/// active, and a later execute-mode `stopped` observes it already
+/// inactive and does nothing — but the stale active prediction must not
+/// survive into a later check-mode `reloaded`, which would report a
+/// reload that cannot occur.
+fn verify_forced_execution_clears_the_stale_prediction(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let stopped = json!({"name":"demo","state":"stopped"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    std::fs::write(root.join("actions"), "")?;
+    let mut shared = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut shared).status,
+        "changed"
+    );
+    // Forced execution observes the unit already inactive and acts on
+    // nothing.
+    assert_eq!(
+        dispatch_with("systemd", &stopped, false, &mut shared).status,
+        "ok"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
+    // The reload handler judges against the state the run leaves behind:
+    // an inactive unit has nothing to reload.
+    assert_eq!(
+        dispatch_with("systemd", &reloaded, true, &mut shared).status,
+        "ok"
+    );
     Ok(())
 }
 
