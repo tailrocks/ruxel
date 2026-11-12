@@ -187,3 +187,37 @@ fn a_created_account_creates_its_private_group_explicitly() {
     assert_eq!(super::super::private_group_flag(None), Some("-U"));
     assert_eq!(super::super::private_group_flag(Some("docker")), None);
 }
+
+#[test]
+fn a_declared_home_that_is_a_symlink_is_refused_never_chowned() {
+    use std::os::unix::fs::MetadataExt;
+    // A home in an attacker-writable parent that is a symlink to a
+    // directory (`/tmp/alice-home -> /etc`) would be followed by the
+    // metadata probe and by chown: the TARGET's ownership would
+    // transfer to the managed account as root. A symlink is refused and
+    // ownership changes never follow one.
+    let target = std::env::temp_dir().join(format!("ruxel-home-target-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    std::fs::create_dir(&target).unwrap();
+    let link = std::env::temp_dir().join(format!("ruxel-home-link-{}", std::process::id()));
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let meta = std::fs::metadata(&target).unwrap();
+    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
+    assert!(super::super::home_usable(link.to_str().unwrap()).is_err());
+    assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, true).is_err());
+    assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, false).is_err());
+    let after = std::fs::metadata(&target).unwrap();
+    assert_eq!(
+        after.uid(),
+        meta.uid(),
+        "the symlink target must not be chowned"
+    );
+    assert_eq!(
+        after.gid(),
+        meta.gid(),
+        "the symlink target must not be chowned"
+    );
+    std::fs::remove_file(&link).unwrap();
+    std::fs::remove_dir_all(&target).unwrap();
+}

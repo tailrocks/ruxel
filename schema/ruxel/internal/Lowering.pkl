@@ -135,7 +135,7 @@ function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>):
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
-    .filter((y) -> x.name == y.name && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
+    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
     .map((y) -> List(x, y))))
   if (pairs.isEmpty) List()
   else let (x = pairs.first.first) let (y = pairs.first.last)
@@ -646,11 +646,21 @@ const function sysctlClash(a: core.Step, b: core.Step): Boolean =
 /// one stage that ask for different values of one name would change it
 /// back and forth on every apply — and disagree at boot, where file
 /// precedence picks one — whatever files they persist in. Steps asking
-/// for the same value are fine; each persists its own entry.
+/// for the same value are fine; each persists its own entry. Names
+/// compare canonicalized: the slash-first and dotted spellings of one
+/// parameter (`net/ipv4/ip_forward`, `net.ipv4.ip_forward`) address one
+/// kernel value.
 function sysctlValues(ix: StageIndex, i: Int): List<String> =
   if (!(ix.steps[i] is linux.Sysctl)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && ix.steps[j].name == ix.steps[i].name && ix.steps[j].value != ix.steps[i].value)
+  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && ix.steps[j].value != ix.steps[i].value)
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
+
+/// One parameter's identity: the `/proc/sys` path it addresses. Slash-
+/// first notation keeps its separators as written and the dotted
+/// spelling translates its dots, so the two spellings of one parameter
+/// compare equal — and a slash-first name with a literal dot (`enp3s0.200`)
+/// keeps its identity apart from the dotted spelling of another path.
+const function sysctlKey(name: String): String = if (name.contains("/")) name else name.split(".").join("/")
 
 /// An account needs the groups it names. A same-stage group step that
 /// removes one contradicts the account whatever the order — one side ends
@@ -665,9 +675,15 @@ function groupRels(ix: StageIndex, i: Int): List<String> =
     .flatMap((j) -> groupRel(ix, i, j, n)))
   // The inverse removal dependency: groupdel refuses a group that is
   // still an account's primary group, so the account removal runs first.
-  else primaryGroup(u).flatMap((n) -> positions(ix.steps)
+  // And `userdel` removes the account's empty same-name group whatever
+  // its primary group is: a same-stage step that ensures that group must
+  // not run before the removal that deletes it again.
+  else (primaryGroup(u).flatMap((n) -> positions(ix.steps)
     .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == n && ix.steps[j].state == "absent")
-    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) removes the group \(n) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account that keeps it as its primary group; list the account removal first"))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) removes the group \(n) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account that keeps it as its primary group; list the account removal first")))
+    + (positions(ix.steps)
+    .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == u.user && ix.steps[j].state == "present")
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) ensures the group \(u.user) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account, which deletes its empty same-name group; list the account removal first"))
 
 /// The primary group of an account: the one it names, or the group
 /// useradd creates with the login name when it names none.
@@ -720,13 +736,20 @@ function homeRemovals(ix: StageIndex, i: Int): List<String> =
     let (byLater = removedInside(ix.steps[i], paths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
     if (pair.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is removed with the account's home directory, so \(pair.first.last) cannot be inside it"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is removed with the account's home directory and mail spool, so \(pair.first.last) cannot be inside it"))
 
-/// Pairs `(home, path)` where `path` is the removed home or lies inside it.
+/// Pairs `(removed, path)` where `path` is a removed home directory or
+/// mail spool, or lies inside one: `userdel -r` deletes the home
+/// directory and everything in it and the mail spool, so no step may
+/// manage a path at or inside any of them.
 const function removedInside(a: core.Step, candidates: List<String>): List<List<String>> =
-  let (h = (if (a is linux.User && a.state == "absent" && a.removeHome) a.home else null))
-  if (h == null) List()
-  else candidates.filter((p) -> p == h || p.startsWith(h + "/")).map((p) -> List(h, p))
+  if (!(a is linux.User) || a.state != "absent" || !a.removeHome) List()
+  else removedPaths(a).flatMap((h) -> candidates.filter((p) -> p == h || p.startsWith(h + "/")).map((p) -> List(h, p)))
+
+/// What a recursive account removal deletes on the host: the home
+/// directory and the mail spool `userdel -r` removes.
+const function removedPaths(u: linux.User): List<String> =
+  (if (u.home != null) List(u.home) else List()) + List("/var/mail/\(u.user)")
 
 /// A file resolves its owner and group by name: an identity a same-stage
 /// step creates comes first — a clean host resolves no name before its
@@ -1301,7 +1324,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // is claimed like an explicit one. A present account that states no
   // primary group claims the group useradd creates with its login name
   // (USERGROUPS_ENAB), so that implicit group is its footprint too.
-  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") else if (s.removeHome && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + List("/var/mail/\(s.user)") else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
   // An explicit gid is a managed thing of its own, the way a uid is.
   ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")

@@ -1,0 +1,18 @@
+// expect: both manage /var/mail/app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel -r` removes the home directory and the mail spool: a step
+// that manages a path at or inside either is deleted with the account,
+// so no check may reserve it and let it pass.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/var/mail/app"; content = "mail\n" }
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+}
