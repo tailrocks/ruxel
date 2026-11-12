@@ -162,7 +162,8 @@ class User extends core.Step {
   /// The account's home directory: a file path, any absolute path but `/`
   /// itself.
   home: FilePath? = null
-  /// The group the account belongs to.
+  /// The group the account belongs to. The root account keeps its primary
+  /// group: a step for `root` may not declare one.
   group: Username? = null
   /// The other groups the account belongs to. Unset leaves the account's
   /// supplementary memberships unmanaged; an explicit empty listing
