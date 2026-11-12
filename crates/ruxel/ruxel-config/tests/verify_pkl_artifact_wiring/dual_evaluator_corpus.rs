@@ -79,11 +79,17 @@ fn matching_inputs<'a>(inputs: &'a [&'a str], path: &str) -> Vec<&'a str> {
 /// literal is an entry, whitespace, commas and `//` comments separate
 /// them, and anything else — a named constant, a concatenation, a macro —
 /// is a loud failure, never an element the parse silently skips while
-/// the invariants above pass over the path it names. It is the only
-/// explicit corpus list the repo keeps — the admission suites scan
-/// directories and name their files per test — so a corpus that stops
-/// being an array of literals there is a corpus this parse cannot see,
-/// and it says so rather than passing over an unread contract.
+/// the invariants above pass over the path it names. The terminator is
+/// part of that structure (`PRRT_kwDOS3Fimc62jyW4`): the array ends at
+/// the `];` the scan reaches at an element boundary, never at one a
+/// comment or a string hides, because the comment branch consumes the
+/// comment's text — a `];` inside one — long before the scan looks for
+/// a delimiter, so a comment cannot end the array early and leave the
+/// entries after it unchecked. It is the only explicit corpus list the
+/// repo keeps — the admission suites scan directories and name their
+/// files per test — so a corpus that stops being an array of literals
+/// there is a corpus this parse cannot see, and it says so rather than
+/// passing over an unread contract.
 fn examples() -> Result<Vec<String>> {
     let path = repo().join("crates/ruxel/ruxel-config/tests/dual_evaluator.rs");
     let text =
@@ -92,13 +98,10 @@ fn examples() -> Result<Vec<String>> {
     let start = text
         .find(declaration)
         .ok_or("dual_evaluator.rs declares no EXAMPLES corpus")?;
-    let rest = &text[start + declaration.len()..];
-    let end = rest
-        .find("];")
-        .ok_or("the EXAMPLES corpus carries no terminator")?;
-    let body: Vec<char> = rest[..end].chars().collect();
+    let body: Vec<char> = text[start + declaration.len()..].chars().collect();
     let mut examples = Vec::new();
     let mut at = 0;
+    let mut terminated = false;
     while at < body.len() {
         match body[at] {
             head if head.is_whitespace() => at += 1,
@@ -108,6 +111,27 @@ fn examples() -> Result<Vec<String>> {
                 }
             }
             ',' => at += 1,
+            ']' => {
+                // Only a `]` the scan reaches between elements can close
+                // the array: inside the loop the scan always sits at an
+                // element boundary, and a `];` a comment carries never
+                // gets here. The semicolon may carry whitespace before
+                // it; a `]` that closes nothing is a loud failure, never
+                // a delimiter the parse accepts by accident.
+                let semicolon = body[at + 1..]
+                    .iter()
+                    .position(|head| !head.is_whitespace())
+                    .map(|skip| at + 1 + skip);
+                match semicolon {
+                    Some(at_semicolon) if body[at_semicolon] == ';' => {
+                        terminated = true;
+                        break;
+                    }
+                    _ => {
+                        return Err("the EXAMPLES corpus carries a `]` that closes no array".into());
+                    }
+                }
+            }
             '"' => {
                 at += 1;
                 let mut example = String::new();
@@ -143,6 +167,9 @@ fn examples() -> Result<Vec<String>> {
             }
         }
     }
+    if !terminated {
+        return Err("the EXAMPLES corpus carries no terminator".into());
+    }
     if examples.is_empty() {
         return Err("the EXAMPLES corpus parsed empty".into());
     }
@@ -166,30 +193,43 @@ fn corpus_path(from: &Path, target: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// The corpus files one example reads beyond itself: the targets of its
-/// `import` and `amends` lines that name a relative path, resolved
-/// against the example's own directory. `modulepath:` targets are the
-/// served schema, whose inputs are another contract.
-fn imports(example: &str) -> Result<Vec<String>> {
-    let path = repo().join("tests/workflow").join(example);
+/// The corpus files one file reads beyond itself: the targets of its
+/// `import` and `amends` clauses that name a relative path, resolved
+/// against the file's own directory, in either of Pkl's two forms — the
+/// statement `import "path"` and the expression `import("path")`, an
+/// `amends` amending the same way. `PRRT_kwDOS3Fimc62jyWw`: the
+/// evaluator honours both forms
+/// (`crates/ruxel/ruxel-config/src/eval/confined/tests.rs` reaches a
+/// module through `import "..."` and a resource through an expression),
+/// so a file the corpus reaches through the expression form alone is a
+/// file this scan must see, or it alone skips the dual-evaluator check.
+/// `modulepath:` targets are the served schema, whose inputs are another
+/// contract.
+fn imports(file: &str) -> Result<Vec<String>> {
+    let path = repo().join("tests/workflow").join(file);
     let text =
         std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let parent = Path::new(example)
+    let parent = Path::new(file)
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut imports = Vec::new();
     for line in text.lines() {
         let line = line.trim_start();
-        let Some(rest) = ["import \"", "amends \""]
+        let Some(rest) = ["import \"", "amends \"", "import(", "amends("]
             .iter()
             .find_map(|form| line.strip_prefix(form))
         else {
             continue;
         };
+        // The statement forms have spent their opening quote in the
+        // prefix; the expression forms still carry it, possibly behind
+        // whitespace, so both reach the path the same way.
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix('"').unwrap_or(rest);
         let (target, _) = rest
             .split_once('"')
-            .ok_or(format!("{example}: an import carries no closing quote"))?;
+            .ok_or(format!("{file}: an import carries no closing quote"))?;
         if target.starts_with("modulepath:") {
             continue;
         }
@@ -234,7 +274,14 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
 /// kept beside it: the inventory its chain and join-separator suites copy
 /// through their `root()`, and every corpus file a listed example imports
 /// by a relative path — the only way a case reaches a file beyond itself.
-/// `PRRT_kwDOS3Fimc62jXrx`: nothing the suite never opens is required
+/// `PRRT_kwDOS3Fimc62jyWq`: the walk is transitive. An example that
+/// imports an aggregator — `recipes.pkl` — makes the evaluator open the
+/// aggregator's own imports too (`recipes/api-proxy.pkl`,
+/// `recipes/kubeadm-join.pkl`), so a corpus file reached only through an
+/// aggregator is still a file the harness opens, and the visited set
+/// bounds the walk: every file is parsed once, and a cycle a future
+/// import graph grows cannot loop it.
+/// `PRRT_kwDOS3Fimc62jyXrx`: nothing the suite never opens is required
 /// here. No example imports a recipe today, so `recipes.pkl` and its
 /// leaves are not demanded, though the check may still declare them for
 /// its own reasons; the day an example imports one, it becomes required,
@@ -244,8 +291,22 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
     let config = committed(".velnor/config.toml")?;
     let inputs = check_inputs(&config, "dual-evaluator")?;
     let mut read = vec!["tests/workflow/inventory.pkl".to_owned()];
-    for example in examples()? {
-        read.extend(imports(&example)?);
+    let mut frontier: Vec<String> = examples()?;
+    let mut visited = std::collections::HashSet::new();
+    while let Some(file) = frontier.pop() {
+        if !visited.insert(file.clone()) {
+            continue;
+        }
+        for path in imports(&file)? {
+            if !read.contains(&path) {
+                read.push(path.clone());
+            }
+            // A corpus file the evaluator opens through this import has
+            // imports of its own, and those are read the same way.
+            if let Some(next) = path.strip_prefix("tests/workflow/") {
+                frontier.push(next.to_owned());
+            }
+        }
     }
     read.sort();
     read.dedup();
