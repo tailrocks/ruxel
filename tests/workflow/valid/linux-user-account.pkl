@@ -15,7 +15,7 @@ stages {
         shell = "/bin/zsh"
         home = "/home/ruxel-app"
         group = "ruxel-app"
-        groups { "docker" }
+        groups = new Listing { "docker" }
         uid = 1500
         system = false
         state = "present"
