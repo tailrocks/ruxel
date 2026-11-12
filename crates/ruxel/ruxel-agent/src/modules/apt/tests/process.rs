@@ -57,7 +57,7 @@ esac
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let prefix = "-y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold";
+    let prefix = "-y -q=0 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold";
     // In check and diff mode the upgrade and the autoremove are simulated
     // as one transaction (`--auto-remove`), so autoremove evaluates the
     // post-upgrade dependency graph just like apply mode.

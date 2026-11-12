@@ -31,7 +31,14 @@ fn apt_mark(args: &[&str], ctx: &ExecContext) -> CommandResult {
 
 fn apt_get(args: &[&str], ctx: &ExecContext) -> CommandResult {
     let mut cmd = std::process::Command::new("apt-get");
+    // A known output level before the summaries are parsed: a host
+    // apt.conf that sets `quiet` suppresses every summary line and a
+    // successful changing run would report `changed: false`. `quiet` is
+    // a configuration item and `-q=#` is apt-get(8)'s command-line
+    // override, so level 0 restores the summaries (and the format-30
+    // lines) beside the stable locale `LC_ALL=C` forces below.
     cmd.arg("-y")
+        .arg("-q=0")
         .arg("-o")
         .arg("Dpkg::Options::=--force-confdef")
         .arg("-o")
