@@ -63,46 +63,45 @@ description = "Unit and integration tests"
 # dual-evaluator check. pkl is a tool of the tasks that use it, never a
 # global one: a globally prepared pkl breaks `mise run` on macOS x86_64,
 # where upstream publishes no artifact, and only the tasks that execute
-# the official CLI need it at all. Each such task provisions it with its
-# own `mise install pkl@0.33.0` run step — the per-task scope — because a
-# mise task `tools` entry is invisible under the generated executor
+# the official CLI need it at all. Each such task provisions it through
+# tools/verify-pkl-artifact — the per-task scope — because a mise task
+# `tools` entry is invisible under the generated executor
 # (`mise run --skip-tools`) and outside Velnor's mise-task contract. The
-# version is repeated because task commands execute with MISE_NO_CONFIG=1
-# and MISE_LOCKFILE=0: the [tools] pin and the lockfile are invisible
-# there (and `--locked` alone fails with "locked mode requires lockfile to
-# be enabled"), so the install step re-enables both for itself
-# (MISE_NO_CONFIG=0 MISE_LOCKFILE=1) and runs `mise install --locked
-# pkl@0.33.0`: locked mode consumes the mise.lock URL and checksum for
-# the current platform and never resolves Aqua registry metadata — which
-# on an x86_64-musl host would install the glibc pkl-linux-amd64 (Aqua's
-# template has no musl override) instead of the committed Alpine asset
-# pinned by the hand-corrected `platforms.linux-x64-musl` slot. The
-# explicit X.Y.Z also avoids @latest resolution. `--locked` fails with
-# "No lockfile URL found" on a platform mise.lock carries no slot for
-# (macOS x86_64, linux-arm64-musl), and the `||` hands that verdict to
-# tools/verify-pkl-artifact, which hashes the installed binary against
-# the mise.lock entry for this platform and refuses a mismatch before any
-# test executes it; on success it prints the absolute path of the artifact
-# it hashed, which is exported as RUXEL_PKL so the dual-evaluator suite
-# executes exactly the verified binary. On macOS x86_64 it answers exit 3
-# (unsupported platform) — official pkl ships no macOS x86_64 artifact
-# since 0.32.2, and 0.33.0 has only pkl-macos-aarch64 — so an Intel Mac is
-# never told that its pkl is missing or tampered.
-run = 'MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0 || tools/verify-pkl-artifact && pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo nextest run --workspace --all-features --locked --no-tests=pass'
+# verifier, not Mise, provisions the CLI: it reads the url and checksum
+# of the `[tools.pkl."platforms.<platform>"]` slot for the host platform
+# from mise.lock, reuses an artifact already matching that checksum (its
+# cache, then a Mise install) and otherwise fetches the committed asset
+# itself. No install goes through Mise anymore: the runner's
+# `MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0`
+# step failed with "No lockfile URL found ... (--locked mode)" although
+# mise.lock carries the slot for its platform, and the task environment
+# (MISE_NO_CONFIG=1, MISE_LOCKFILE=0 re-enabled per subprocess) is not
+# one whose Mise behavior can be relied on; the lockfile-driven fetch
+# also makes the hand-corrected `platforms.linux-x64-musl` slot actually
+# reachable — a musl host gets the committed Alpine asset
+# pkl-alpine-linux-amd64, where Aqua's registry template has no musl
+# override and would install the glibc pkl-linux-amd64. On success the
+# verifier prints the absolute path of the artifact it hashed, which is
+# exported as RUXEL_PKL so the dual-evaluator suite executes exactly the
+# verified binary; a missing or mismatched artifact answers exit 1, and
+# macOS x86_64 and linux-arm64-musl answer exit 3 (unsupported platform)
+# — official pkl ships no macOS x86_64 artifact since 0.32.2 and no
+# alpine aarch64 one at all — so an Intel Mac is never told that its pkl
+# is missing or tampered.
+run = 'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo nextest run --workspace --all-features --locked --no-tests=pass'
 
 [tasks."dual-evaluator"]
-description = "Dual-evaluator suite under the official Pkl CLI provisioned by this task's own install step; the verifier refuses a binary that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
+description = "Dual-evaluator suite under the official Pkl CLI provisioned by this task's own verifier step; the verifier fetches the artifact mise.lock pins for this platform and refuses one that does not match the committed checksum, and answers macOS x86_64 with exit 3 (unsupported platform): official pkl ships no macOS x86_64 artifact since 0.32.2, and 0.33.0 has only pkl-macos-aarch64"
 run = [
-  # Same constraints as the test task above: the generated executor hides config
-  # and lockfile, so pin the exact version inline, and re-enable both for the
-  # install step so `mise install --locked pkl@0.33.0` consumes the mise.lock
-  # URL for the current platform — the x86_64-musl slot pins the Alpine asset,
-  # where Aqua registry metadata would install the glibc one — then verify the
-  # artifact against the committed checksum. A failed install is handed to the
-  # verifier, which names the platform's verdict: on macOS x86_64 upstream
-  # publishes no artifact (and mise.lock carries no slot), so the verifier
-  # answers exit 3 (unsupported platform) instead of mise's raw install error.
-  "MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0 || tools/verify-pkl-artifact",
+  # Same provisioning as the test task above: tools/verify-pkl-artifact
+  # installs pkl from the lockfile's own url and checksum for the current
+  # platform — Mise's resolver is not in the path (its --locked lookup
+  # answered "No lockfile URL found" on the runner although mise.lock
+  # carries the slot) — and the x86_64-musl slot pins the Alpine asset,
+  # where Aqua registry metadata would install the glibc one. Platforms
+  # upstream publishes no artifact for (macOS x86_64, linux-arm64-musl)
+  # answer exit 3 (unsupported platform), never a missing or tampered
+  # verdict.
   # Verification and execution share one resolver: the verifier prints the
   # absolute path of the artifact it hashed on stdout, and that exact path
   # is exported as RUXEL_PKL — the suite executes the hashed binary and

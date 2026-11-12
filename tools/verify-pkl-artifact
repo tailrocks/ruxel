@@ -1,25 +1,44 @@
 #!/bin/sh
-# Verify the pkl artifact Mise installed against the URL and checksum
-# committed in mise.lock.
+# Provision and verify the official pkl CLI against the URL and
+# checksum committed in mise.lock, and print the artifact's path.
 #
-# The task install steps consume the mise.lock URL for the current
-# platform (`mise install --locked` with config and lockfile re-enabled
-# for the install subprocess), but an install that reports "already
-# installed" never re-hashes, and a foreign binary may pre-date the
-# lock-consuming install. This gate closes that: after the install, the
-# binary is hashed and compared against the committed checksum for this
-# platform, and a binary that does not match is refused before any
-# mandatory test executes it.
+# mise.lock is the authority and Mise's resolver is not in the path.
+# This script reads the [tools.pkl."platforms.<platform>"] url and
+# checksum for the host platform, reuses an artifact that already
+# matches that checksum — its own cache first, then a Mise install —
+# and otherwise fetches the committed asset itself. The install step
+# this replaces asked Mise to do the lookup
+# (`MISE_NO_CONFIG=0 MISE_LOCKFILE=1 mise install --locked pkl@0.33.0`)
+# and the runner answered "No lockfile URL found ... (--locked mode)"
+# although mise.lock carries the slot for its platform, so no install
+# goes through Mise anymore. The hand-maintained slots stay
+# authoritative as written — including the hand-corrected musl entry,
+# which pins the alpine asset where Aqua's registry template has no
+# musl override and would install the glibc binary — because nothing
+# regenerates or reshapes them here (`mise lock` is not run: it
+# resurrects the glibc mapping for the musl slots and strips the
+# comments that say why). The artifact that is verified is the
+# artifact that is executed: stdout carries the absolute path of the
+# hashed binary and nothing else, which the task commands capture into
+# RUXEL_PKL so the suite runs exactly the verified binary.
 #
 # Exit codes:
-#   0  the installed binary matches the committed checksum
-#   1  the binary is missing, or its checksum does not match the
-#      committed one
+#   0  an artifact matching the committed checksum is at the printed path
+#   1  the artifact is missing — nothing reusable and the fetch failed —
+#      or an obtained artifact does not match the committed checksum, or
+#      mise.lock carries no url or checksum for this platform
 #   3  this platform has no official pkl artifact to verify against
 #
 # Code 3 is a verdict of its own: a platform upstream does not publish
 # for is neither a missing nor a tampered binary, and saying so is the
 # only honest answer there.
+#
+# RUXEL_PKL_CACHE_DIR overrides where fetched artifacts are kept
+# (default: $XDG_CACHE_HOME/ruxel/pkl, else $HOME/.cache/ruxel/pkl).
+# MISE_DATA_DIR / XDG_DATA_HOME / HOME name the Mise data directories
+# scanned for an install to reuse; a Mise install that does not match
+# the committed checksum is reported and passed over, never executed
+# and never a verdict.
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -80,21 +99,99 @@ case "$platform" in
     ;;
 esac
 
-want=$(awk -v key="platforms.$platform" '
-  $0 == "[tools.pkl.\"" key "\"]" { in_section = 1; next }
-  /^\[/ { in_section = 0 }
-  in_section && /^checksum = / { sub(/.*sha256:/, ""); sub(/".*/, ""); print; exit }
+# One field of the platform's lockfile slot: the quoted value of the
+# `url = "…"` or `checksum = "…"` line inside
+# [tools.pkl."platforms.<platform>"]. `url =` cannot match `url_api =`
+# and `checksum =` cannot match `checksum_source =` because the field
+# name is anchored to the line start and followed by " = ".
+lock_value() {
+  awk -v key="platforms.$platform" -v field="$1" '
+    $0 == "[tools.pkl.\"" key "\"]" { in_section = 1; next }
+    /^\[/ { in_section = 0 }
+    in_section && index($0, field " = ") == 1 {
+      sub(/^[^"]*"/, ""); sub(/".*/, ""); print; exit
+    }
+  ' "$lock"
+}
+
+checksum=$(lock_value checksum)
+checksum=${checksum#sha256:}
+url=$(lock_value url)
+if [ -z "$checksum" ] || [ -z "$url" ]; then
+  echo "verify-pkl-artifact: mise.lock carries no pkl url and checksum for $platform" >&2
+  exit 1
+fi
+want=$checksum
+
+# The locked pkl version, read from the [[tools.pkl]] entry itself so
+# Mise's install directories are scanned for the same version the
+# lockfile pins. Single brackets (the platform slots) do not reset the
+# scan; the next [[tools.…]] array header does.
+version=$(awk '
+  /^\[\[tools\.pkl\]\]/ { in_tool = 1; next }
+  /^\[\[/ { in_tool = 0 }
+  in_tool && index($0, "version = ") == 1 {
+    sub(/^[^"]*"/, ""); sub(/".*/, ""); print; exit
+  }
 ' "$lock")
-if [ -z "$want" ]; then
-  echo "verify-pkl-artifact: mise.lock carries no pkl checksum for $platform" >&2
+if [ -z "$version" ]; then
+  echo "verify-pkl-artifact: mise.lock carries no [[tools.pkl]] version" >&2
   exit 1
 fi
 
-# Where Mise keeps (or just installed) the binary: the configured data
-# directory first, then the default, mirroring the dual-evaluator
-# discovery. Each directory is one quoted positional parameter: a
-# configured path may carry whitespace, and a word-split scalar would
-# turn one valid directory into several candidates.
+if command -v sha256sum >/dev/null 2>&1; then
+  hasher="sha256sum"
+else
+  hasher="shasum -a 256"
+fi
+
+# The success verdict: stdout carries the absolute path of the artifact
+# just hashed and nothing else — verification and execution must resolve
+# to one binary, so the task commands capture this line into RUXEL_PKL
+# and the suite executes exactly the hashed artifact. The human verdict
+# goes to stderr, where diagnostics live.
+verified() {
+  case "$1" in
+    /*) absolute="$1" ;;
+    *) absolute="$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")" ;;
+  esac
+  echo "verify-pkl-artifact: $absolute matches the committed $platform checksum $want" >&2
+  echo "$absolute"
+  exit 0
+}
+
+matches() {
+  [ -f "$1" ] && [ "$($hasher < "$1" | awk '{ print $1 }')" = "$want" ]
+}
+
+# The verifier's own cache, keyed by the committed checksum: the
+# artifact is identified by what it must hash to, so a platform whose
+# slot shares an asset shares the entry, and a new pin lands in a new
+# directory instead of beside a stale binary.
+name=$(basename -- "$url")
+if [ -n "${RUXEL_PKL_CACHE_DIR:-}" ]; then
+  cache_root=$RUXEL_PKL_CACHE_DIR
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+  cache_root=$XDG_CACHE_HOME/ruxel/pkl
+elif [ -n "${HOME:-}" ]; then
+  cache_root=$HOME/.cache/ruxel/pkl
+else
+  echo "verify-pkl-artifact: no cache directory: HOME is unset and XDG_CACHE_HOME is unset; set RUXEL_PKL_CACHE_DIR" >&2
+  exit 1
+fi
+artifact=$cache_root/$want/$name
+if matches "$artifact"; then
+  verified "$artifact"
+fi
+
+# Where Mise may already keep the binary: the configured data directory
+# first, then the default. Each directory is one quoted positional
+# parameter: a configured path may carry whitespace, and a word-split
+# scalar would turn one valid directory into several candidates. An
+# install that does not hash to the committed checksum is named and
+# passed over — the fetch below still provisions the committed asset —
+# because a foreign "already installed" binary must neither run nor
+# end the check.
 set --
 if [ -n "${MISE_DATA_DIR:-}" ]; then
   set -- "$MISE_DATA_DIR"
@@ -104,39 +201,38 @@ fi
 if [ -n "${HOME:-}" ]; then
   set -- "$@" "$HOME/.local/share/mise"
 fi
-
-binary=""
 for data in "$@"; do
-  for candidate in "$data/installs/pkl/0.33.0/pkl" "$data/shims/pkl"; do
+  for candidate in "$data/installs/pkl/$version/pkl" "$data/shims/pkl"; do
     if [ -f "$candidate" ]; then
-      binary="$candidate"
-      break 2
+      if matches "$candidate"; then
+        verified "$candidate"
+      fi
+      echo "verify-pkl-artifact: $candidate does not match the committed $platform checksum; passing it over" >&2
     fi
   done
 done
-if [ -z "$binary" ]; then
-  echo "verify-pkl-artifact: no pkl 0.33.0 install found under: $*" >&2
-  exit 1
-fi
 
-if command -v sha256sum >/dev/null 2>&1; then
-  hasher="sha256sum"
-else
-  hasher="shasum -a 256"
-fi
-got=$($hasher < "$binary" | awk '{ print $1 }')
-if [ "$got" != "$want" ]; then
-  echo "verify-pkl-artifact: $binary is SHA-256 $got, not the committed $want for $platform; refusing to run it" >&2
+# Nothing reusable: fetch the committed asset itself, hash it before it
+# is ever named on stdout, and only then install it into the cache. The
+# transfer flags mirror the CI workflow's own curl discipline (bounded
+# connect and total times, retried failures, https only).
+if ! command -v curl >/dev/null 2>&1; then
+  echo "verify-pkl-artifact: curl is required to fetch the $platform artifact from $url and was not found" >&2
   exit 1
 fi
-# On success stdout carries the absolute path of the artifact just
-# hashed and nothing else: verification and execution must resolve to
-# one binary, so the dual-evaluator task captures this line into
-# RUXEL_PKL and the suite executes exactly the hashed artifact. The
-# human verdict goes to stderr, where diagnostics live.
-case "$binary" in
-  /*) absolute="$binary" ;;
-  *) absolute="$(CDPATH= cd -- "$(dirname -- "$binary")" && pwd)/$(basename -- "$binary")" ;;
-esac
-echo "verify-pkl-artifact: $absolute matches the committed $platform checksum $want" >&2
-echo "$absolute"
+mkdir -p "$(dirname -- "$artifact")"
+tmp=$cache_root/$want/.$name.download.$$
+if ! curl -fsSL --connect-timeout 15 --max-time 600 --retry 5 --retry-all-errors --retry-max-time 900 --proto '=https' --tlsv1.2 -o "$tmp" "$url"; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: cannot obtain the $platform artifact from $url; no cached artifact and no Mise install matches the committed checksum $want" >&2
+  exit 1
+fi
+got=$($hasher < "$tmp" | awk '{ print $1 }')
+if [ "$got" != "$want" ]; then
+  rm -f "$tmp"
+  echo "verify-pkl-artifact: the artifact fetched from $url is SHA-256 $got, not the committed $want for $platform; refusing to run it" >&2
+  exit 1
+fi
+chmod 755 "$tmp"
+mv -f "$tmp" "$artifact"
+verified "$artifact"
