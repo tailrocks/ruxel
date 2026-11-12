@@ -1,0 +1,10 @@
+// expect: needs the owner app, which 'Remove account app' (step 2) removes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A file cannot use an identity the same stage removes.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/etc/app.conf"; content = "x\n"; owner = "app" }
+  new linux.User { user = "app"; state = "absent"; uid = 1500 }
+} } }
