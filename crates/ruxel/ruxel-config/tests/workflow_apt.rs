@@ -292,7 +292,7 @@ fn a_held_package_is_described_as_held() -> Result {
     Ok(())
 }
 
-/// The name of a preference fragment is one apt reads: apt_preferences(5)
+/// The name of a preference fragment is one apt reads: `apt_preferences(5)`
 /// loads only fragments without an extension or with the `.pref`
 /// extension, and their names carry only alphanumeric characters, dashes,
 /// underscores and periods, so every generated fragment is one apt loads
@@ -306,10 +306,13 @@ fn apt_preference_file_names_are_apt_compatible() -> Result {
         .filter_map(|task| task["operation"]["dest"].as_str())
         .filter(|dest| dest.starts_with("/etc/apt/preferences.d/"))
         .collect();
-    assert!(!dests.is_empty());
+    assert_ne!(dests.len(), 0, "no apt preference fragment was planned");
     for dest in &dests {
         let name = dest.rsplit('/').next().unwrap_or_default();
-        assert!(name.ends_with(".pref"), "{name}");
+        assert!(
+            Path::new(name).extension().is_some_and(|ext| ext == "pref"),
+            "{name}"
+        );
         assert!(
             name.chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')),
