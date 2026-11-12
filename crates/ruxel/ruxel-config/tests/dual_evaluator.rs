@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[path = "dual_evaluator/chain.rs"]
+mod chain;
 #[path = "dual_evaluator/discovery.rs"]
 mod discovery;
 #[path = "dual_evaluator/join_separator.rs"]
@@ -40,6 +42,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
     "invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",
     "invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-chain.pkl",
     "invalid/secret-placeholder-overlapping-malformed-empty-body.pkl",
     "invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl",
     "invalid/secret-placeholder-overlapping-malformed-punctuation.pkl",

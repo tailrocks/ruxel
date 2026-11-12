@@ -1011,7 +1011,11 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// one run of words — punctuation, whitespace and line breaks included —
 /// which is an attempt without its colon: the same
 /// candidate alone is parsed and refused, so overlapped it is refused too,
-/// never left behind as literal content. A candidate body is scanned
+/// never left behind as literal content. A chained candidate — its own
+/// terminator opening yet another reserved prefix that begins a
+/// placeholder of its own — is recognized the same way: the run of three
+/// sharing their delimiters refuses every terminator in turn and leaves
+/// no middle body behind. A candidate body is scanned
 /// once: one lookahead asserts the `:`, one pass finds the terminator,
 /// never a rescan of the suffix per split — a long colon-bearing run
 /// without a terminator is linear to pass as the literal text it is, never
@@ -1022,7 +1026,7 @@ local knownPlaceholder = Regex(#"inventoryHost|vars\.ruxel_address|results\.capt
 /// the reserved words without an encoded body — is ordinary content and
 /// passes: the words beside a placeholder's delimiters carry no terminator
 /// of their own.
-const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.))"#)
+const local anyPlaceholder = Regex(#"__ruxel_rt_8d41\.([A-Za-z0-9_.]+?)__|__ruxel_secret_8d41\.((?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?=ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)))"#)
 const local secretPrefix = Regex(#"__ruxel_secret_8d41\."#)
 
 /// Text without placeholders stays a string. Run-time placeholders
