@@ -174,6 +174,8 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-twice.pkl",
     "invalid/linux-group-gid-twice.pkl",
     "invalid/linux-sysctl-values-differ.pkl",
+    "valid/linux-sysctl-hyphen.pkl",
+    "valid/linux-sysctl-equals.pkl",
 ];
 
 /// The official `pkl` binary.

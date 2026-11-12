@@ -625,6 +625,8 @@ inputs = [
   "tests/workflow/valid/edge-values.pkl",
   "tests/workflow/valid/file-mode-spellings.pkl",
   "tests/workflow/valid/linux-group.pkl",
+  "tests/workflow/valid/linux-sysctl-equals.pkl",
+  "tests/workflow/valid/linux-sysctl-hyphen.pkl",
   "tests/workflow/valid/linux-sysctl.pkl",
   "tests/workflow/valid/linux-user-account.pkl",
   "tests/workflow/valid/linux-user-groups-order.pkl",
