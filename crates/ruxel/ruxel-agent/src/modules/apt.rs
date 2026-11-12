@@ -311,6 +311,7 @@ fn apt_mark(args: &[&str], ctx: &ExecContext) -> CommandResult {
     for (k, v) in &ctx.environment {
         cmd.env(k, v);
     }
+    force_stable_locale(&mut cmd);
     let out = cmd.output().map_err(|e| format!("exec apt-mark: {e}"))?;
     Ok((
         String::from_utf8_lossy(&out.stdout).to_string(),
@@ -333,12 +334,22 @@ fn apt_get(args: &[&str], ctx: &ExecContext) -> CommandResult {
     for (k, v) in &ctx.environment {
         cmd.env(k, v);
     }
+    force_stable_locale(&mut cmd);
     let out = cmd.output().map_err(|e| format!("exec apt-get: {e}"))?;
     Ok((
         String::from_utf8_lossy(&out.stdout).to_string(),
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stderr).to_string(),
     ))
+}
+
+/// A stable locale for the apt subprocesses: `summary_changed` recognizes
+/// only the English summary strings (`upgraded,`, `newly installed`), and
+/// apt-get prints translated prose under a non-C `LANG` or `LC_MESSAGES`,
+/// so a successful localized run would report no change. Forced after the
+/// task environment, like the `apt-cache` reader of the package state.
+fn force_stable_locale(cmd: &mut std::process::Command) {
+    cmd.env("LC_ALL", "C");
 }
 
 fn summary_changed(stdout: &str) -> bool {

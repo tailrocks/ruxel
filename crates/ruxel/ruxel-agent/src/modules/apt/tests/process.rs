@@ -61,3 +61,51 @@ esac
     );
     Ok(())
 }
+
+/// The runner forces a stable locale on its apt subprocesses: `maintenance`
+/// determines `changed` from the English summary strings, and apt-get
+/// prints translated prose under a non-C `LANG` or `LC_ALL` (review thread
+/// PRRT_kwDOS3Fimc62Z486).
+#[test]
+fn production_runner_forces_a_stable_locale_on_apt_subprocesses() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var_os("RUXEL_APT_TEST_CHILD").is_some() {
+        let result = run(
+            &json!({"upgrade":"dist"}),
+            &context(false),
+            &mut SystemState::default(),
+        )?;
+        assert_eq!(result["changed"], true);
+        assert_eq!(result["failed"], false);
+        return Ok(());
+    }
+    let directory = std::env::temp_dir().join(format!("ruxel-apt-locale-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    let script = directory.join("apt-get");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+[ "$LC_ALL" = C ] || exit 9
+printf '0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.\n'
+"#,
+    )?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))?;
+    let output = std::process::Command::new(std::env::current_exe()?)
+        .args([
+            "production_runner_forces_a_stable_locale_on_apt_subprocesses",
+            "--nocapture",
+        ])
+        .env("RUXEL_APT_TEST_CHILD", "1")
+        // The session locale of the finding: apt-get would answer in it.
+        .env("LANG", "de_DE.UTF-8")
+        .env("LC_ALL", "de_DE.UTF-8")
+        .env("LC_MESSAGES", "de_DE.UTF-8")
+        .env("PATH", &directory)
+        .output()?;
+    std::fs::remove_dir_all(&directory)?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
