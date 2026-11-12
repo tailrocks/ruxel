@@ -1,0 +1,14 @@
+// expect: onCalendar must be a nonempty calendar expression on one line
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer whose calendar is only a tab"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The tabbed timer"; name = "postgresql-tabbed"; onCalendar = "\t" }
+    }
+  }
+}

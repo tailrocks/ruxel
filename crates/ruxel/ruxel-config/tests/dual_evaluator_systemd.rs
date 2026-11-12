@@ -34,6 +34,8 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/service-timer-name.pkl", false),
     ("invalid/timer-service-name.pkl", false),
     ("invalid/timer-empty-calendar.pkl", false),
+    ("invalid/timer-spaces-calendar.pkl", false),
+    ("invalid/timer-tab-calendar.pkl", false),
     ("invalid/timer-multiline-calendar.pkl", false),
     ("invalid/timer-persistent-without-calendar.pkl", false),
     ("invalid/timer-name-too-long.pkl", false),
