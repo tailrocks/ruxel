@@ -1,0 +1,18 @@
+// expect: deletes its empty same-name group
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel` removes the account's empty same-name group whatever its
+// primary group: a same-stage step that ensures that group must not run
+// before the removal that deletes it again.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "bob"; gid = 1500 }
+      new linux.User { user = "bob"; uid = 1500; state = "absent" }
+    }
+  }
+}
