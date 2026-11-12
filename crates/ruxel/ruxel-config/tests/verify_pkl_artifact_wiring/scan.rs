@@ -1,17 +1,18 @@
-//! The Pkl text scanner the corpus contract reads sources with:
-//! comment-stripping, import classification, path resolution, string
-//! literals. Kept beside `dual_evaluator_corpus.rs` — utilities, not
-//! the contract itself.
+//! The Pkl text scanner the corpus contract reads sources with. Kept
+//! beside `dual_evaluator_corpus.rs` — utilities, not the contract
+//! itself.
 //!
 //! The scanner's contract, stated once, is five rules, and the
 //! invariant's scope is exactly them:
 //!
 //! 1. An import is recognized only in code and interpolation regions —
-//!    never in literal string text (`"..."`, `"""..."""`, or a
-//!    raw `#"..."#` string) or a comment, line `//` or block
-//!    `/* ... */` — in either of Pkl's forms, the statement `import "…"`
-//!    / `amends "…"` and the expression `import("…")` / `amends("…")`,
-//!    wherever an expression stands, more than once a line.
+//!    never in literal string text (`"..."`, `"""..."""`, or a raw
+//!    `#"..."#` string) or a comment, line `//` or block `/* ... */` —
+//!    in either of Pkl's forms, the statement `import "…"` /
+//!    `amends "…"` and the expression `import("…")` / `amends("…")`
+//!    (a raw string may carry the argument), wherever an expression
+//!    stands, more than once a line, and always at an identifier
+//!    boundary: `reimport(` is a call of `reimport`, not an import.
 //! 2. `modulepath:` and every URI scheme, and every absolute path, are
 //!    excluded: nonrelative targets are never followed.
 //! 3. Only relative corpus paths under `tests/workflow` are followed,
@@ -28,177 +29,162 @@
 
 use super::super::*;
 
-/// The code of a Pkl source as a mask over it, byte for byte: the
-/// bytes its evaluator parses are kept, string-literal text and
-/// comment text become blanks (`PRRT_kwDOS3Fimc62oWc2`,
-/// `PRRT_kwDOS3Fimc62pCSD`). A `//` inside a string — the `//` of a
-/// URL — is content, not a comment; an `import(` inside a string is
-/// doc text Pkl never loads, `"..."` or a `"""` multi-line string
-/// alike; the same call inside a string's `\(...)` interpolation is
-/// code and stays. A quote that opens a string from code stays too,
-/// for the statement form ends in one. Offsets are preserved — every
-/// byte of the source answers one byte of the mask — so a form found
-/// in the mask names its target at the same offset of the source.
-/// One open string literal: `"..."`, or `"""..."""` multi-line.
-#[derive(Clone, Copy)]
-enum Delimited {
-    Single,
-    Multi,
+/// One open region of a source, innermost last.
+enum Region {
+    /// A `"…"` string, or a `"""…"""` multi-line one.
+    Str { multi: bool },
+    /// A `#"…"#` raw string; `hashes` is its opening `#` count.
+    Raw { hashes: usize },
+    /// A `\(...)` interpolation of the string beneath it — code again,
+    /// with its own nesting of parens and strings.
+    Interp { depth: usize },
 }
 
-/// The enclosing regions, innermost last: a string literal, or a
-/// `\(...)` interpolation of the string beneath it — code again,
-/// with its own nesting of parens and strings.
-enum Frame {
-    Str(Delimited),
-    Interp(usize),
+/// The code of a Pkl or Rust source as a mask over it: one mask byte
+/// per source byte, always — the byte the evaluator parses stay, the
+/// rest become blanks, newlines stay newlines. A `//` inside a string
+/// is content, not a comment; an `import(` inside a string or a
+/// comment is text Pkl never loads; the same call inside a string's
+/// `\(...)` interpolation is code and stays; a raw string ends at `"`
+/// plus its `#`s, never at a bare interior quote.
+/// A comment's extent from `at`: a `//` runs to its line's end, a
+/// `/*` to its `*/` — comment text parses nothing and keeps nothing.
+/// `None` when no comment opens at `at`.
+fn comment_end(bytes: &[u8], at: usize) -> Option<usize> {
+    if bytes[at..].starts_with(b"//") {
+        return Some(
+            bytes[at..]
+                .iter()
+                .position(|&byte| byte == b'\n')
+                .map_or(bytes.len(), |newline| at + newline),
+        );
+    }
+    if bytes[at..].starts_with(b"/*") {
+        let mut end = at + 2;
+        while end < bytes.len() && !bytes[end..].starts_with(b"*/") {
+            end += 1;
+        }
+        return Some((end + 2).min(bytes.len()));
+    }
+    None
 }
 
-/// One byte of a string literal's region: its text is blanked, an
-/// escape is consumed with its byte, `\(` opens an interpolation, and
-/// a closing quote ends the literal. The return is the bytes consumed
-/// beyond the one the caller advances.
-fn string_byte(frames: &mut Vec<Frame>, bytes: &[u8], at: usize, mask: &mut Vec<u8>) -> usize {
-    match bytes[at] {
-        b'\\' if at + 1 < bytes.len() => {
-            if bytes[at + 1] == b'(' {
-                frames.push(Frame::Interp(1));
-                mask.push(b'(');
-            } else {
-                mask.push(b' ');
-            }
-            1
-        }
-        b'\n' => {
-            mask.push(b'\n');
-            0
-        }
-        b'"' if bytes[at..].starts_with(b"\"\"\"")
-            && matches!(frames.last(), Some(Frame::Str(Delimited::Multi))) =>
-        {
-            frames.pop();
-            mask.extend_from_slice(b"\"\"\"");
-            2
-        }
-        b'"' if matches!(frames.last(), Some(Frame::Str(Delimited::Single))) => {
-            frames.pop();
-            mask.push(b'"');
-            0
-        }
-        _ => {
-            mask.push(b' ');
-            0
-        }
+/// One step through a string literal's region: an escape is consumed
+/// with its byte, `\(` opens an interpolation, a `"""` closes a
+/// multi-line string and a bare `"` an ordinary one. The return is the
+/// bytes consumed beyond the one the caller advances.
+fn string_step(regions: &mut Vec<Region>, bytes: &[u8], at: usize) -> usize {
+    let multi = matches!(regions.last(), Some(Region::Str { multi: true }));
+    if bytes[at] == b'\\' && bytes.get(at + 1) == Some(&b'(') {
+        regions.push(Region::Interp { depth: 1 });
+        return 1;
     }
-}
-
-/// A raw string's extent (`PRRT_kwDOS3Fimc62pCSD`'s class, the raw
-/// form): one or more `#` then a quote opens it, and only a quote plus
-/// as many `#` closes it. `None` when the bytes at `at` open no raw
-/// string; the whole literal is text Pkl never scans for imports.
-fn raw_string(bytes: &[u8], at: usize) -> Option<usize> {
-    let hashes = bytes[at..].iter().take_while(|&&byte| byte == b'#').count();
-    if bytes.get(at + hashes) != Some(&b'"') {
-        return None;
+    if bytes[at] == b'\\' && at + 1 < bytes.len() {
+        return 1;
     }
-    let opener = &bytes[at..at + hashes];
-    let mut end = at + hashes + 1;
-    while end < bytes.len() {
-        if bytes[end] == b'"' && bytes[end + 1..].starts_with(opener) {
-            return Some(end + 1 + hashes);
-        }
-        end += 1;
+    let closes = match (multi, bytes[at..].starts_with(b"\"\"\"")) {
+        (true, true) => 2,
+        (false, false) if bytes[at] == b'"' => 0,
+        _ => return 0,
+    };
+    if let Some(Region::Str { .. }) = regions.last() {
+        regions.pop();
     }
-    Some(bytes.len())
+    closes
 }
 
 pub(super) fn code(text: &str) -> String {
     let bytes = text.as_bytes();
-    let mut mask = Vec::with_capacity(bytes.len());
-    let mut frames: Vec<Frame> = Vec::new();
+    let mut kept = vec![false; bytes.len()];
+    let mut regions: Vec<Region> = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        let in_string = matches!(frames.last(), Some(Frame::Str(_)));
-        if in_string {
-            at += string_byte(&mut frames, bytes, at, &mut mask);
-        } else {
-            if bytes[at..].starts_with(b"//") {
-                // A comment runs to the line's end and reads nothing.
-                while at < bytes.len() && bytes[at] != b'\n' {
-                    mask.push(b' ');
+        match regions.last_mut() {
+            // Code, or code inside an interpolation: the same rules.
+            None | Some(Region::Interp { .. }) => {
+                if let Some(end) = comment_end(bytes, at) {
+                    at = end;
+                } else if let Some((hashes, end)) = raw_delimiter(bytes, at) {
+                    at = end;
+                    regions.push(Region::Raw { hashes });
+                } else if bytes[at..].starts_with(b"\"\"\"") {
+                    for flag in &mut kept[at..at + 3] {
+                        *flag = true;
+                    }
+                    at += 3;
+                    regions.push(Region::Str { multi: true });
+                } else if bytes[at] == b'"' {
+                    kept[at] = true;
+                    at += 1;
+                    regions.push(Region::Str { multi: false });
+                } else if bytes[at] == b'\\' && bytes.get(at + 1) == Some(&b'(') {
+                    at += 2;
+                    regions.push(Region::Interp { depth: 1 });
+                } else if matches!(regions.last(), Some(Region::Interp { .. }))
+                    && matches!(bytes[at], b'(' | b')')
+                {
+                    // An interpolation's parens nest; its closing paren
+                    // hands control back to the string.
+                    if let Some(Region::Interp { depth }) = regions.last_mut() {
+                        match (bytes[at], *depth) {
+                            (b'(', _) => *depth += 1,
+                            (b')', 1) => {
+                                regions.pop();
+                            }
+                            (b')', _) => *depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    kept[at] = true;
+                    at += 1;
+                } else {
+                    kept[at] = true;
                     at += 1;
                 }
-                continue;
             }
-            if let Some(end) = raw_string(bytes, at) {
-                for byte in &bytes[at..end] {
-                    mask.push(if *byte == b'\n' { b'\n' } else { b' ' });
+            Some(Region::Raw { hashes }) => {
+                // Only `"` followed by as many `#` closes a raw string.
+                let hashes = *hashes;
+                if bytes[at] == b'"'
+                    && bytes[at + 1..]
+                        .iter()
+                        .take(hashes)
+                        .all(|&byte| byte == b'#')
+                {
+                    at += 1 + hashes;
+                    regions.pop();
+                } else {
+                    at += 1;
                 }
-                at = end;
-                continue;
             }
-            if bytes[at..].starts_with(b"/*") {
-                // A block comment runs to its `*/` and reads nothing
-                // (`PRRT_kwDOS3Fimc62plX3`).
-                let close = bytes[at + 2..]
-                    .windows(2)
-                    .position(|window| window == b"*/")
-                    .map(|skip| at + 2 + skip + 2);
-                let end = close.unwrap_or(bytes.len());
-                for byte in &bytes[at..end] {
-                    mask.push(if *byte == b'\n' { b'\n' } else { b' ' });
-                }
-                at = end;
-                continue;
-            }
-            if bytes[at..].starts_with(b"\"\"\"") {
-                frames.push(Frame::Str(Delimited::Multi));
-                mask.extend_from_slice(b"\"\"\"");
-                at += 2;
-            } else {
-                match bytes[at] {
-                    b'\n' => mask.push(b'\n'),
-                    b'"' => {
-                        frames.push(Frame::Str(Delimited::Single));
-                        mask.push(b'"');
-                    }
-                    b'(' => {
-                        if let Some(Frame::Interp(depth)) = frames.last_mut() {
-                            *depth += 1;
-                        }
-                        mask.push(b'(');
-                    }
-                    b')' => {
-                        mask.push(b')');
-                        if let Some(Frame::Interp(depth)) = frames.last_mut() {
-                            *depth -= 1;
-                        }
-                        if matches!(frames.last(), Some(Frame::Interp(0))) {
-                            frames.pop();
-                        }
-                    }
-                    byte => mask.push(byte),
-                }
+            Some(Region::Str { .. }) => {
+                at += 1 + string_step(&mut regions, bytes, at);
             }
         }
-        at += 1;
     }
-    String::from_utf8_lossy(&mask).into_owned()
+    kept.iter()
+        .zip(bytes)
+        .map(|(&flag, &byte)| if flag || byte == b'\n' { byte } else { b' ' } as char)
+        .collect()
 }
 
-/// A target no relative corpus import names (`PRRT_kwDOS3Fimc62oWc8`):
-/// any URI scheme — `modulepath:` served schema, an `https:` network
-/// module an invalid case deliberately imports — or an absolute path;
-/// fed to the resolver, such a target would demand a bogus path no
-/// check can declare.
-pub(super) fn nonrelative(target: &str) -> bool {
-    let Some((scheme, _)) = target.split_once(':') else {
-        return target.starts_with('/');
-    };
-    scheme.starts_with(|head: char| head.is_ascii_alphabetic())
-        && scheme
-            .chars()
-            .all(|head| head.is_ascii_alphanumeric() || matches!(head, '+' | '-' | '.'))
+/// A raw string's opening delimiter at `at`: its `#` count and the
+/// offset just past its quote. `None` when fewer than one `#` or no
+/// quote follows.
+fn raw_delimiter(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
+    let hashes = bytes[at..].iter().take_while(|&&byte| byte == b'#').count();
+    if hashes == 0 || bytes.get(at + hashes) != Some(&b'"') {
+        return None;
+    }
+    Some((hashes, at + hashes + 1))
+}
+
+/// The offset where a source declares its corpus: the first
+/// occurrence of the declaration outside comments and string text —
+/// the mask blanks those, so a documented or retired example cannot
+/// hijack the parse.
+pub(super) fn declared_at(text: &str, declaration: &str) -> Option<usize> {
+    code(text).find(declaration)
 }
 
 /// One string literal of an `EXAMPLES` array, read from `at` — the
@@ -225,19 +211,18 @@ pub(super) fn literal(body: &[char], at: &mut usize) -> Result<String> {
     Ok(literal)
 }
 
-/// The corpus path a relative import names, or `None` when it leaves
-/// `tests/workflow` — a module outside the corpus is not a corpus file
-/// this contract covers.
-pub(super) fn corpus_path(from: &Path, target: &str) -> Option<String> {
-    let mut parts: Vec<&str> = Vec::new();
-    for piece in from.iter().chain(Path::new(target).iter()) {
-        match piece.to_str()? {
-            "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            part => parts.push(part),
-        }
-    }
-    Some(parts.join("/"))
+/// The declaration lookup ignores comments and string text: a
+/// documented or retired `EXAMPLES` cannot hijack the parse.
+#[test]
+fn the_declaration_lookup_ignores_comments_and_strings() {
+    let text = "// const EXAMPLES: &[&str] = &[\"bogus.pkl\"];\n".to_owned()
+        + "/* const EXAMPLES: &[&str] = &[\"also-bogus.pkl\"]; */\n"
+        + "const EXAMPLES: &[&str] = &[";
+    let at =
+        declared_at(&text, "const EXAMPLES: &[&str] = &[").expect("the live declaration is found");
+    assert_eq!(
+        &text[at..at + "const EXAMPLES: &[&str] = &[".len()],
+        "const EXAMPLES: &[&str] = &["
+    );
+    assert!(declared_at(&text, "also-bogus").is_none());
 }

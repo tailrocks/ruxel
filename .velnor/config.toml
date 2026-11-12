@@ -26,6 +26,7 @@ packages = ["ruxel-acceptance-xfs"]
 [[stacks.rust.inputs]]
 globs = [
   "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+  "crates/ruxel/ruxel-config/testdata/dual_evaluator_corpus_files.tsv",
   "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
   "mise.lock",
   "schema/ruxel/**/*.pkl",
@@ -337,10 +338,12 @@ inputs = [
   "crates/ruxel/ruxel-config/testdata/eval/minimal.pkl",
   "crates/ruxel/ruxel-config/testdata/eval/network.pkl",
   "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+  "crates/ruxel/ruxel-config/tests/dual_evaluator/corpus_files.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator/chain.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator/discovery.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator/join_separator.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
+  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd/corpus_files.rs",
   "crates/ruxel/ruxel-config/tests/eval.rs",
   "crates/ruxel/ruxel-config/tests/render.rs",
   "crates/ruxel/ruxel-config/tests/schema.rs",
