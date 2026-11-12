@@ -2,11 +2,12 @@
 # Verify the pkl artifact Mise installed against the URL and checksum
 # committed in mise.lock.
 #
-# The generated lanes run `mise install pkl@0.33.0` with MISE_LOCKFILE=0,
-# so the install resolves metadata remotely and never consumes the
-# checksum committed in mise.lock: an exact version string does not pin
-# artifact identity. This gate closes that: after the install, the binary
-# is hashed and compared against the committed checksum for this
+# The task install steps consume the mise.lock URL for the current
+# platform (`mise install --locked` with config and lockfile re-enabled
+# for the install subprocess), but an install that reports "already
+# installed" never re-hashes, and a foreign binary may pre-date the
+# lock-consuming install. This gate closes that: after the install, the
+# binary is hashed and compared against the committed checksum for this
 # platform, and a binary that does not match is refused before any
 # mandatory test executes it.
 #
