@@ -390,7 +390,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -645,7 +645,7 @@ function groupRels(ix: StageIndex, i: Int): List<String> =
   let (u = ix.steps[i])
   if (!(u is linux.User)) List()
   else if (u.state == "present") requiredGroups(u).flatMap((n) -> positions(ix.steps)
-    .filter((j) -> ix.steps[j] is linux.Group && ix.steps[j].name == n)
+    .filter((j) -> groupProvider(ix.steps[j], n))
     .flatMap((j) -> groupRel(ix, i, j, n)))
   // The inverse removal dependency: groupdel refuses a group that is
   // still an account's primary group, so the account removal runs first.
@@ -664,13 +664,37 @@ const function primaryGroup(u: linux.User): List<String> =
 const function requiredGroups(u: linux.User): List<String> =
   (if (u.group == null) List() else List(u.group)) + (if (u.groups == null) List() else u.groups.toList())
 
+/// Whether the step provides the group `n`: a group step that names it,
+/// or an account the host's useradd gives a group of its own name to
+/// (USERGROUPS_ENAB) — the implicit group the footprint model claims
+/// and the file-identity model resolves, here as an ordering provider:
+/// `useradd -G bob alice` runs before a later `User { user = "bob" }`
+/// has created the group it names.
+const function groupProvider(s: core.Step, n: String): Boolean =
+  (s is linux.Group && s.name == n) || (s is linux.User && s.user == n && s.group == null)
+
 function groupRel(ix: StageIndex, i: Int, j: Int, n: String): List<String> =
   let (g = ix.steps[j])
   if (g is linux.Group && g.state == "absent")
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
+  else if (g is linux.User && g.state == "absent")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
   else if (j > i)
-    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) creates; list the group before the account")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) \(if (g is linux.User) "creates with its account; list that account before this one" else "creates; list the group before the account")")
   else List()
+
+/// A declared login shell must exist where the account's task runs:
+/// `useradd` and `usermod` verify the shell path, so a same-stage `File`
+/// or `Symlink` that manages it is the step that writes it — one that
+/// comes after the account would fail an otherwise self-contained
+/// workflow at apply time, though lowering preserves source order and
+/// sees no relationship.
+function shellRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present" || u.shell == null) List()
+  else positions(ix.steps)
+    .filter((j) -> j > i && (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
+    .map((j) -> "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.

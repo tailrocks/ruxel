@@ -124,10 +124,24 @@ fn normalized(v: &str) -> String {
 }
 
 fn read_sysctl(name: &str) -> Result<String, String> {
-    let path = format!("/proc/sys/{}", name.replace('.', "/"));
+    let path = proc_sys_path(name);
     std::fs::read_to_string(&path)
         .map(|s| s.trim().to_string())
         .map_err(|e| format!("read {path}: {e}"))
+}
+
+/// The `/proc/sys` path of a kernel parameter. Dotted notation spells
+/// its separators `.`, so they translate to `/`; slash-first notation
+/// preserves its dots and slashes as written — every `/` a separator and
+/// every `.` a literal of its component (`enp3s0.200`) — so the name is
+/// the path beneath `/proc/sys`, never `enp3s0.200` looked up as
+/// `enp3s0/200`.
+pub(crate) fn proc_sys_path(name: &str) -> String {
+    if name.contains('/') {
+        format!("/proc/sys/{name}")
+    } else {
+        format!("/proc/sys/{}", name.replace('.', "/"))
+    }
 }
 
 #[cfg(test)]
@@ -197,6 +211,22 @@ mod tests {
         assert!(!path.exists());
         Ok(())
     }
+    #[test]
+    fn slash_first_names_keep_their_separators_in_the_proc_path() {
+        // Slash-first notation: every `/` is a separator and every `.`
+        // inside a component is literal, so the /proc/sys path is the
+        // name as written — `enp3s0.200` is never looked up as
+        // `enp3s0/200`. Dotted notation keeps translating its dots.
+        assert_eq!(
+            super::proc_sys_path("net/ipv4/conf/enp3s0.200/forwarding"),
+            "/proc/sys/net/ipv4/conf/enp3s0.200/forwarding"
+        );
+        assert_eq!(
+            super::proc_sys_path("net.ipv4.conf.br-123.forwarding"),
+            "/proc/sys/net/ipv4/conf/br-123/forwarding"
+        );
+    }
+
     #[test]
     fn whitespace_normalization() {
         assert_eq!(
