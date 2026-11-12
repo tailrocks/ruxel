@@ -224,6 +224,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 }
                 args.push(name);
                 run_cmd("useradd", &args)?;
+                // `useradd -m` creates the home only when it is missing:
+                // a pre-existing directory keeps whatever ownership it
+                // had, so the declared home is reconciled after creation
+                // with the account's final identity.
+                if let Some(h) = home
+                    && let Some(created) = passwd_entry(name)?
+                {
+                    ensure_home(h, created.uid, created.gid, ctx.check_mode)?;
+                }
             }
         }
         Some(current) => {

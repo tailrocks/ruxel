@@ -193,6 +193,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-default-home-conflict.pkl",
     "invalid/linux-sysctl-boot-order-precedence.pkl",
     "invalid/linux-sysctl-path-not-boot-loaded.pkl",
+    "invalid/linux-sysctl-name-alias.pkl",
+    "invalid/linux-user-remove-home-mail.pkl",
+    "invalid/linux-group-ensured-before-user-removal.pkl",
+    "invalid/linux-sysctl-name-dot-component.pkl",
 ];
 
 /// The official `pkl` binary.
