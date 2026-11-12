@@ -1,0 +1,24 @@
+// Boot order is per host: two stages on disjoint hosts may persist the
+// same parameter in files whose names sort in opposite order — no boot
+// ever loads both files on one machine, so nothing hands the value
+// back.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = new { inventory.cp1 }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-old.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = new { inventory.worker1 }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/10-new.conf" }
+    }
+  }
+}
