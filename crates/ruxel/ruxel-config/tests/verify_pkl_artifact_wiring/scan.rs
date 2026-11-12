@@ -2,6 +2,25 @@
 //! comment-stripping, import classification, path resolution, string
 //! literals. Kept beside `dual_evaluator_corpus.rs` — utilities, not
 //! the contract itself.
+//!
+//! The scanner's contract, stated once, is five rules, and the
+//! invariant's scope is exactly them:
+//!
+//! 1. An import is recognized only in code and interpolation regions —
+//!    never in literal string text (`"..."` or `"""..."""`) or a
+//!    comment — in either of Pkl's forms, the statement `import "…"`
+//!    / `amends "…"` and the expression `import("…")` / `amends("…")`,
+//!    wherever an expression stands, more than once a line.
+//! 2. `modulepath:` and every URI scheme, and every absolute path, are
+//!    excluded: nonrelative targets are never followed.
+//! 3. Only relative corpus paths under `tests/workflow` are followed,
+//!    transitively, the walk bounded by a visited set.
+//! 4. Every harness source the contract discovers — each `[[test]]`
+//!    target gated behind the `dual-evaluator` feature, and every
+//!    module file under its sibling directory — must itself be a
+//!    declared input of the `dual-evaluator` check.
+//! 5. A file outside these rules is a scope question, not a defect:
+//!    the harnesses read only what these rules name.
 
 use super::super::*;
 

@@ -4,7 +4,11 @@
 //! `Check / dual-evaluator` job unaffected. The corpus lives in a
 //! feature-gated target the pkl-less lanes skip, so an omission there
 //! cannot catch itself: this target, an ordinary one of the same lane,
-//! reads the corpus source rather than running it.
+//! reads the corpus source rather than running it. The scanner's
+//! scope is the five rules `scan.rs` states once — code-and-
+//! interpolation-only imports, nonrelative targets excluded, relative
+//! corpus paths only, harness sources declared too — and a file
+//! outside them is a scope question, not a defect.
 
 use super::*;
 
