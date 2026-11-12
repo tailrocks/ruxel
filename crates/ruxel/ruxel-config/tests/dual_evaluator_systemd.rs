@@ -40,6 +40,7 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/timer-boot-sub-millisecond.pkl", false),
     ("invalid/timer-boot-fractional-millisecond.pkl", false),
     ("invalid/timer-boot-fractional-millisecond-large.pkl", false),
+    ("invalid/timer-boot-fractional-millisecond-huge.pkl", false),
     ("invalid/timer-boot-half-nanosecond.pkl", false),
     ("invalid/timer-boot-negative.pkl", false),
     ("invalid/timer-file-inside.pkl", false),

@@ -721,21 +721,28 @@ const function onBootRefusal(t: systemd.SystemdTimer): String =
 /// the delay the author wrote and not one the conversion produced: a
 /// delay in milliseconds is a whole number of milliseconds exactly, with
 /// no tolerance at all, so `1000000000.0000005.ms` is refused rather than
-/// rounded to `1000000000.ms`. A delay in another unit is converted, and
-/// the noise a float conversion leaves — the last place of the value it
-/// was written in — is allowed, so that `1.001.s` stays the 1001
-/// milliseconds it asks for.
+/// rounded to `1000000000ms`. A delay in another unit is converted, and
+/// the conversion is checked by converting it back: the count must
+/// reproduce the value the author wrote exactly, so that `1.001.s` stays
+/// the 1001 milliseconds it asks for, and a delay whose fraction of a
+/// millisecond its own conversion cannot carry —
+/// `2000000000000.0005.s`, whose half-millisecond fraction is inside the
+/// noise of its magnitude — is refused rather than rounded to a
+/// millisecond the author never wrote.
 const function onBootMillis(d: Duration?): Int? =
   if (d == null) null
   else
     let (value = d.value.toFloat())
     let (millis = millisOf(d.unit, value))
     let (rounded = (millis + 0.5).floor)
-    if (millis < 0 || (millis - rounded).abs > millisNoise(d.unit, value)) null else rounded.toInt()
+    if (millis < 0 || roundedOf(d.unit, rounded) != value) null else rounded.toInt()
 
 /// The delay in milliseconds, counted in the unit the delay was written
 /// in. The count of a delay in milliseconds is the delay itself, so it
-/// needs no conversion and keeps every digit the author wrote.
+/// needs no conversion and keeps every digit the author wrote. The
+/// factors are whole numbers, so the conversion is exact in one
+/// direction and inexact only in the other, which the check that
+/// converts back undoes.
 const function millisOf(unit: String, value: Float): Float =
   if (unit == "ns") value / 1000000.0
   else if (unit == "us") value / 1000.0
@@ -745,13 +752,19 @@ const function millisOf(unit: String, value: Float): Float =
   else if (unit == "h") value * 3600000.0
   else value * 86400000.0
 
-/// The noise a conversion leaves in a millisecond count, in milliseconds:
-/// the last place of the value the delay was written in, twice over, so
-/// that a delay that is a whole number of milliseconds stays one. A delay
-/// written in milliseconds needs no conversion, so it has no noise: a
-/// fraction of a millisecond there is a fraction, not noise.
-const function millisNoise(unit: String, value: Float): Float =
-  if (unit == "ms") 0.0 else value.abs * millisOf(unit, 1.0) * 4.44e-16
+/// The whole-millisecond count, converted back to the unit the delay was
+/// written in: the delay the author wrote, if the count is the one they
+/// wrote. The conversion is the inverse of `millisOf`, so the two
+/// together say that the count is exactly the delay and not a millisecond
+/// next to it.
+const function roundedOf(unit: String, millis: Float): Float =
+  if (unit == "ns") millis * 1000000.0
+  else if (unit == "us") millis * 1000.0
+  else if (unit == "ms") millis
+  else if (unit == "s") millis / 1000.0
+  else if (unit == "min") millis / 60000.0
+  else if (unit == "h") millis / 3600000.0
+  else millis / 86400000.0
 
 /// Whether a boot delay is before the boot: a timer fires after it.
 const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0

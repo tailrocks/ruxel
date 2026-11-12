@@ -193,6 +193,10 @@ fn a_fractional_boot_delay_is_refused() -> Result {
             "timer-boot-fractional-millisecond-large.pkl",
             "1.0000000000000005E9.ms",
         ),
+        (
+            "timer-boot-fractional-millisecond-huge.pkl",
+            "2.0000000000000005E12.s",
+        ),
     ] {
         let path = root().join("invalid").join(name);
         let error = ruxel_config::eval_config(&path, &options())
