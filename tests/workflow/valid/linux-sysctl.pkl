@@ -1,0 +1,22 @@
+// A kernel parameter is one entry in one file: the step lowers to the
+// engine's sysctl operation alone, with the file it writes as the
+// operation's sysctl_file. Two parameters in two files are two things, so
+// one stage may set both.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "Kernel"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1" }
+      new linux.Sysctl {
+        name = "vm.nr_hugepages"
+        value = "16384"
+        path = "/etc/sysctl.d/10-postgres-hugepages.conf"
+      }
+    }
+  }
+}
