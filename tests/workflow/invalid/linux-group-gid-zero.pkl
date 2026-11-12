@@ -1,0 +1,8 @@
+// expect: gid = 0 is rejected
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Group 0 is the root group's id, the way UID 0 is the superuser's: the
+// host keeps it, so a managed group never takes it.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.Group { name = "wheel"; gid = 0 } } } }
