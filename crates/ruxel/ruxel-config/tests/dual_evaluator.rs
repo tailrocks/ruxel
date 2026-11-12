@@ -40,12 +40,14 @@ fn root() -> PathBuf {
 /// The examples both evaluators must lower the same way: the secret
 /// language's, the user step that lowers to the engine's user operation,
 /// the Linux catalogue's identity rules (an account's groups are a set)
-/// and refusals (the root ids, the root group, a sysctl's file), and the
-/// apt completions — a hold, a system upgrade, a preference and a
-/// debconf selection lower the same way under both evaluators, and the
-/// bad selector, the secret carried as static text and the hold that
-/// conflicts with a pin are refused by both, each with its own wording.
-/// Each invalid one must be refused by both.
+/// and refusals (the root ids, the root group, a sysctl's file) —
+/// including its type-constraint refusals, whose official-CLI wording a
+/// `// expect-pkl:` line names — and the apt completions: a hold, a
+/// system upgrade, a preference and a debconf selection lower the same
+/// way under both evaluators, and the bad selector, the secret carried
+/// as static text and the hold that conflicts with a pin are refused by
+/// both, each with its own wording. Each invalid one must be refused by
+/// both.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -141,12 +143,24 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
     "valid/linux-user-groups-order.pkl",
+    "valid/linux-sysctl.pkl",
+    "valid/linux-user-watch.pkl",
     "invalid/linux-user-shell-root.pkl",
     "invalid/linux-user-home-root.pkl",
     "invalid/linux-group-gid-zero.pkl",
     "invalid/linux-group-absent-root.pkl",
     "invalid/linux-sysctl-file-clash.pkl",
     "invalid/linux-file-sysctl-clash.pkl",
+    "invalid/linux-group-name.pkl",
+    "invalid/linux-login-shell-user-colon.pkl",
+    "invalid/linux-login-shell-user-nul.pkl",
+    "invalid/linux-sysctl-value-newline.pkl",
+    "invalid/linux-user-groups-invalid-name.pkl",
+    "invalid/linux-user-shell-not-absolute.pkl",
+    "invalid/linux-user-uid-out-of-range.pkl",
+    "invalid/linux-user-root-uid.pkl",
+    "invalid/linux-group-root-gid.pkl",
+    "invalid/linux-sysctl-path-root.pkl",
 ];
 
 /// The official `pkl` binary.

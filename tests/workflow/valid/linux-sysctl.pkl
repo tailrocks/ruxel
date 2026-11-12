@@ -1,6 +1,8 @@
 // A kernel parameter is one entry in one file: the step lowers to the
 // engine's sysctl operation alone, with the file it writes as the
-// operation's sysctl_file. Two parameters in two files are two things, so
+// operation's sysctl_file and live-value reconciliation enabled
+// (sysctl_set), so the kernel parameter is corrected whenever another
+// process changed it. Two parameters in two files are two things, so
 // one stage may set both.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
