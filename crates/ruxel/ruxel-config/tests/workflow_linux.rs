@@ -108,6 +108,14 @@ fn sysctl_reconciles_the_live_kernel_value() -> Result {
             serde_json::json!(true),
             "live-value reconciliation must be on: {sysctl:#}"
         );
+        // Entry-scoped: the file may hold other steps' and unmanaged
+        // entries, so applying one parameter must not reload the whole
+        // file and reset them.
+        assert_eq!(
+            sysctl["operation"]["reload"],
+            serde_json::json!(false),
+            "a whole-file reload must be off: {sysctl:#}"
+        );
     }
     Ok(())
 }
