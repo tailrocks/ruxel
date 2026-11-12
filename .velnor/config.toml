@@ -24,7 +24,17 @@ globs = [
 packages = ["ruxel-acceptance-xfs"]
 
 [[stacks.rust.inputs]]
-globs = ["mise.lock", "schema/ruxel/**/*.pkl", "tests/schema/valid.pkl", "tests/workflow/**/*.pkl", "testdata/workloads/pr66/*.pkl", "testdata/workloads/pr66/assets/template.pkl", "tools/verify-pkl-artifact"]
+globs = [
+  "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
+  "mise.lock",
+  "schema/ruxel/**/*.pkl",
+  "tests/schema/valid.pkl",
+  "tests/workflow/**/*.pkl",
+  "testdata/workloads/pr66/*.pkl",
+  "testdata/workloads/pr66/assets/template.pkl",
+  "tools/verify-pkl-artifact",
+]
 packages = ["ruxel-config"]
 
 [[checks]]
@@ -328,6 +338,7 @@ inputs = [
   "crates/ruxel/ruxel-config/tests/dual_evaluator/chain.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator/discovery.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator/join_separator.rs",
+  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
   "crates/ruxel/ruxel-config/tests/eval.rs",
   "crates/ruxel/ruxel-config/tests/render.rs",
   "crates/ruxel/ruxel-config/tests/schema.rs",
@@ -461,6 +472,8 @@ inputs = [
   "tests/workflow/invalid/silent-dependency.pkl",
   "tests/workflow/invalid/ssh-host-null-and-text.pkl",
   "tests/workflow/invalid/ssh-host-option.pkl",
+  "tests/workflow/invalid/timer-spaces-calendar.pkl",
+  "tests/workflow/invalid/timer-tab-calendar.pkl",
   "tests/workflow/invalid/timezone-option-name.pkl",
   "tests/workflow/invalid/unless-output-both.pkl",
   "tests/workflow/invalid/upgrade-with-pin.pkl",
