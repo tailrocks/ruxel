@@ -46,10 +46,22 @@ pub(super) fn run(
         }
 
         if let Some(state) = state {
-            let active = system_state.unit(unit)?.active;
-            if state_needs_action(state, active)? {
+            // A check-mode task judges against the state the run will
+            // leave behind: the reload handler a start's change queues
+            // runs after the start, so the predicted start must feed the
+            // handler's answer exactly as the performed start does.
+            let unit_state = if ctx.check_mode {
+                system_state.predicted_unit(unit)?
+            } else {
+                system_state.unit(unit)?
+            };
+            if state_needs_action(state, unit_state.active)? {
                 changed = true;
-                if !ctx.check_mode {
+                if ctx.check_mode {
+                    if let Some(active) = predicted_activity(state) {
+                        system_state.predict_activity(unit, active);
+                    }
+                } else {
                     let verb = match state {
                         "started" => "start",
                         "stopped" => "stop",
@@ -61,6 +73,7 @@ pub(super) fn run(
                     if st.1 != 0 {
                         return Err(format!("{verb} {unit}: {}", st.2));
                     }
+                    system_state.clear_prediction(unit);
                     system_state.invalidate_units();
                 }
             }
@@ -88,6 +101,17 @@ fn state_needs_action(state: &str, active: bool) -> Result<bool, String> {
         other => Err(format!(
             "systemd: state {other:?} outside the closed surface"
         )),
+    }
+}
+
+/// The run state a predicted change leaves behind: a start and a restart
+/// leave the unit running, a stop leaves it down, and a reload changes no
+/// run state.
+fn predicted_activity(state: &str) -> Option<bool> {
+    match state {
+        "started" | "restarted" => Some(true),
+        "stopped" => Some(false),
+        _ => None,
     }
 }
 

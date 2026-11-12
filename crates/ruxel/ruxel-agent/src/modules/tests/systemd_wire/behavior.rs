@@ -2,6 +2,23 @@ use super::*;
 use std::path::Path;
 
 fn dispatch(module: &str, params: &Value, check: bool) -> Outcome {
+    dispatch_with(
+        module,
+        params,
+        check,
+        &mut crate::system_state::SystemState::default(),
+    )
+}
+
+/// A dispatch against a `SystemState` shared with the dispatches beside
+/// it: the tasks of one run judge against one shared state, so a
+/// prediction one task makes is what the next task reads.
+fn dispatch_with(
+    module: &str,
+    params: &Value,
+    check: bool,
+    system_state: &mut crate::system_state::SystemState,
+) -> Outcome {
     let ctx = ExecContext {
         check_mode: check,
         diff_mode: false,
@@ -9,14 +26,7 @@ fn dispatch(module: &str, params: &Value, check: bool) -> Outcome {
         environment: vec![],
         become_user: None,
     };
-    execute(
-        module,
-        params,
-        "",
-        None,
-        &ctx,
-        &mut crate::system_state::SystemState::default(),
-    )
+    execute(module, params, "", None, &ctx, system_state)
 }
 
 pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -80,6 +90,49 @@ pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     verify_timer(root)?;
     verify_timer_discovery(root)?;
     verify_stopped_reload(root)?;
+    verify_predicted_start_feeds_the_reload_handler(root)?;
+    Ok(())
+}
+
+/// A reload-watching service that is initially inactive is started by its
+/// service task, and the change queues the reload handler, which runs
+/// after the start. Apply starts the unit and then reloads it, so check
+/// must report the pending reload beside the pending start: the handler
+/// is judged against the start the run predicts, not the still-inactive
+/// host.
+fn verify_predicted_start_feeds_the_reload_handler(
+    root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started = json!({"name":"demo","state":"started"});
+    let reloaded = json!({"name":"demo","state":"reloaded"});
+    if root.join("active").exists() {
+        std::fs::remove_file(root.join("active"))?;
+    }
+    // Apply: the start and the queued handler both act and both change.
+    std::fs::write(root.join("actions"), "")?;
+    let mut applied = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, false, &mut applied).status,
+        "changed"
+    );
+    let handler = dispatch_with("systemd", &reloaded, false, &mut applied);
+    assert_eq!(handler.status, "changed");
+    assert_eq!(
+        std::fs::read_to_string(root.join("actions"))?,
+        "start demo\nreload demo\n"
+    );
+    // Check: the same scenario reports the same changes, and acts on nothing.
+    std::fs::write(root.join("actions"), "")?;
+    std::fs::remove_file(root.join("active"))?;
+    let mut predicted = crate::system_state::SystemState::default();
+    assert_eq!(
+        dispatch_with("systemd", &started, true, &mut predicted).status,
+        "changed"
+    );
+    let pending = dispatch_with("systemd", &reloaded, true, &mut predicted);
+    assert_eq!(pending.changed, handler.changed);
+    assert_eq!(pending.status, handler.status);
+    assert_eq!(std::fs::read_to_string(root.join("actions"))?, "");
     Ok(())
 }
 

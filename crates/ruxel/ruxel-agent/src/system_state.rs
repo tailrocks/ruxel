@@ -12,6 +12,11 @@ pub(crate) use apt_request::PackageRequest;
 pub(crate) struct SystemState {
     packages: Option<HashMap<String, String>>,
     units: Option<HashMap<String, UnitState>>,
+    /// Run state a check-mode task predicted but did not perform. A later
+    /// task of the same run judges against the state the run will leave
+    /// behind: the reload handler a start's change queues runs after the
+    /// start, so check must report the reload the start makes possible.
+    predicted_activity: HashMap<String, bool>,
     candidates: HashMap<String, apt_policy::PolicyEntry>,
     /// Task environment the cached candidates were observed with.
     candidate_environment: Vec<(String, String)>,
@@ -100,6 +105,29 @@ impl SystemState {
         self.units = None;
     }
 
+    /// The unit state a task judges against: the run state an earlier
+    /// check-mode task predicted, when there is one, and the observed
+    /// state otherwise.
+    pub(crate) fn predicted_unit(&mut self, name: &str) -> Result<UnitState, String> {
+        let mut unit = self.unit(name)?;
+        if let Some(active) = self.predicted_activity.get(&unit_key(name)) {
+            unit.active = *active;
+        }
+        Ok(unit)
+    }
+
+    /// Records the run state a predicted change leaves behind, so the
+    /// tasks after it judge against the state the run will leave.
+    pub(crate) fn predict_activity(&mut self, name: &str, active: bool) {
+        self.predicted_activity.insert(unit_key(name), active);
+    }
+
+    /// A performed change makes its prediction stale: the observed state
+    /// is the truth again.
+    pub(crate) fn clear_prediction(&mut self, name: &str) {
+        self.predicted_activity.remove(&unit_key(name));
+    }
+
     fn ensure_units(&mut self) -> Result<(), String> {
         if self.units.is_some() {
             return Ok(());
@@ -121,6 +149,16 @@ impl SystemState {
         ])?;
         self.units = Some(parse_systemd(&units, &files));
         Ok(())
+    }
+}
+
+/// The key a prediction is carried under: a bare name names its service,
+/// as `unit` resolves it against the probed map.
+fn unit_key(name: &str) -> String {
+    if name.contains('.') {
+        name.to_owned()
+    } else {
+        format!("{name}.service")
     }
 }
 
