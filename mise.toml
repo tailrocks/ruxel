@@ -120,12 +120,15 @@ run = [
   # compiled against the pinned upstream revision and its tests run, so a
   # broken upstream revision or a renamed upstream API fails here instead of
   # rotting silently until the default dependency is flipped.
-  'cargo test --locked -p ruxel-config --features pklr-upstream-path',
+  # `--lib` selects the library target, where the adapter and its tests
+  # live: the runner's pinned Rust carries no rustdoc, so a bare `cargo
+  # test` would fail on the doctest step that follows the test targets.
+  'cargo test --locked -p ruxel-config --features pklr-upstream-path --lib',
 ]
 
 [tasks."upstream-pklr-path"]
 description = "Compile and test the feature-gated upstream jdx/pklr path (the preparation for jdx/pklr#419)"
-run = "cargo test --locked -p ruxel-config --features pklr-upstream-path"
+run = "cargo test --locked -p ruxel-config --features pklr-upstream-path --lib"
 
 [tasks.doctest]
 description = "Doctests (nextest does not run them)"
