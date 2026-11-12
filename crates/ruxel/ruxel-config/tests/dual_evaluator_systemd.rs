@@ -28,6 +28,7 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("valid/systemd-timer-large-delay.pkl", true),
     ("valid/systemd-timer-delay-spellings.pkl", true),
     ("valid/systemd-timer-long-name.pkl", true),
+    ("valid/systemd-timer-exact-huge-delay.pkl", true),
     ("invalid/service-both-triggers.pkl", false),
     ("invalid/service-mixed-triggers.pkl", false),
     ("invalid/reload-stopped-service.pkl", false),
@@ -45,6 +46,7 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/timer-boot-fractional-millisecond-huge.pkl", false),
     ("invalid/timer-boot-half-nanosecond.pkl", false),
     ("invalid/timer-boot-negative.pkl", false),
+    ("invalid/timer-boot-fractional-huge-integer.pkl", false),
     ("invalid/timer-file-inside.pkl", false),
     ("invalid/reload-missing-dependency.pkl", false),
 ];

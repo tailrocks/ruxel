@@ -697,16 +697,17 @@ function timerContent(t: systemd.SystemdTimer): String =
 ///
 /// The delay has been checked before the timer is lowered — `settings`
 /// refuses a delay that is not a whole number of milliseconds — so the
-/// count of milliseconds is there. The throw is the backstop that keeps a
-/// `0ms` from being written when it is not: a delay that is not a whole
-/// number of milliseconds is refused, never rounded to another delay.
+/// count of milliseconds is there. The seconds spelling is taken in
+/// integer arithmetic too, so a whole-second delay whose count of
+/// milliseconds a `Float` cannot hold keeps the second the author
+/// wrote. The throw is the backstop that keeps a `0ms` from being
+/// written when it is not: a delay that is not a whole number of
+/// milliseconds is refused, never rounded to another delay.
 const function onBootSpan(t: systemd.SystemdTimer): String =
   let (millis = onBootMillis(t.onBoot))
   if (millis == null) throw(onBootRefusal(t))
-  else
-    let (seconds = millis / 1000.0)
-    if (seconds.floor == seconds) "\(seconds.toInt())"
-    else "\(millis)ms"
+  else if (millis % 1000 == 0) "\(millis ~/ 1000)"
+  else "\(millis)ms"
 
 /// The sentence that refuses a boot delay that is not a whole number of
 /// milliseconds. One sentence for both places that refuse one, so that
@@ -717,25 +718,69 @@ const function onBootRefusal(t: systemd.SystemdTimer): String =
 /// The boot delay in whole milliseconds, when it is a whole number of them:
 /// `null` when it is a fraction of a millisecond, or negative.
 ///
-/// The count is taken in the unit the delay was written in, so that it is
-/// the delay the author wrote and not one the conversion produced: a
-/// delay in milliseconds is a whole number of milliseconds exactly, with
-/// no tolerance at all, so `1000000000.0000005.ms` is refused rather than
-/// rounded to `1000000000ms`. A delay in another unit is converted, and
-/// the conversion is checked by converting it back: the count must
-/// reproduce the value the author wrote exactly, so that `1.001.s` stays
-/// the 1001 milliseconds it asks for, and a delay whose fraction of a
-/// millisecond its own conversion cannot carry —
+/// An integer the author wrote stays an integer: its count of
+/// milliseconds is taken in whole-number arithmetic, never through a
+/// `Float` that cannot carry its digits. A value above 2^53 in its own
+/// unit — `9007199254740994.s` — keeps every digit, a converted count —
+/// `4503599627370497.s` is the whole `4503599627370497000` milliseconds
+/// — is refused where the multiplication would leave the range of an
+/// `Int`, never rounded, and an exactly integral value is never refused
+/// because a half-up rounding of its magnitude moved it to a neighbor:
+/// `4503599627370497.ms` is the millisecond it is. A delay that arrives
+/// as a `Float` is converted, and the conversion is proven by converting
+/// it back: the count must reproduce the value the author wrote exactly,
+/// so that `1.001.s` stays the 1001 milliseconds it asks for, and a
+/// delay whose fraction of a millisecond its own conversion cannot carry —
 /// `2000000000000.0005.s`, whose half-millisecond fraction is inside the
 /// noise of its magnitude — is refused rather than rounded to a
-/// millisecond the author never wrote.
+/// millisecond the author never wrote. The count is taken in the unit the
+/// delay was written in, so that it is the delay the author wrote and not
+/// one the conversion produced: a delay in milliseconds is a whole number
+/// of milliseconds exactly, with no tolerance at all, so
+/// `1000000000.0000005.ms` is refused rather than rounded to
+/// `1000000000ms`. Both neighbors of the delay are tried — floor and
+/// ceil — where the old arithmetic added a `0.5` and took the floor: at
+/// a magnitude where the half is below the `Float`'s own resolution that
+/// addition rounds upward and would refuse an exactly integral value
+/// (`4503599627370497.0.ms` grows a `.5`, and the `.5` rounds up).
 const function onBootMillis(d: Duration?): Int? =
   if (d == null) null
+  else if (d.value is Int) exactMillis(d.value, d.unit)
   else
     let (value = d.value.toFloat())
     let (millis = millisOf(d.unit, value))
-    let (rounded = (millis + 0.5).floor)
-    if (millis < 0 || roundedOf(d.unit, rounded) != value) null else rounded.toInt()
+    if (millis < 0 || millis >= 9223372036854775808.0) null
+    else
+      let (floor = millis.floor)
+      if (roundedOf(d.unit, floor) == value) floor.toInt()
+      else
+        let (ceil = millis.ceil)
+        if (roundedOf(d.unit, ceil) == value) ceil.toInt()
+        else null
+
+/// The whole-millisecond count of a delay whose value is an integer,
+/// taken in integer arithmetic: the author's digits never meet a `Float`.
+/// A delay in a unit finer than the millisecond divides into whole
+/// milliseconds exactly or is refused — `9007199254740993.ns` carries a
+/// fraction of a millisecond — and a delay in a coarser unit is
+/// multiplied, and refused where the count would leave the range of an
+/// `Int`.
+const function exactMillis(value: Int, unit: String): Int? =
+  if (value < 0) null
+  else if (unit == "ms") value
+  else if (unit == "ns") (if (value % 1000000 == 0) value ~/ 1000000 else null)
+  else if (unit == "us") (if (value % 1000 == 0) value ~/ 1000 else null)
+  else if (unit == "s") scaledMillis(value, 1000)
+  else if (unit == "min") scaledMillis(value, 60000)
+  else if (unit == "h") scaledMillis(value, 3600000)
+  else scaledMillis(value, 86400000)
+
+/// The count of an integer delay in a unit coarser than the millisecond:
+/// the multiplication is refused where it would leave the range of an
+/// `Int`, because a wrapped or rounded overflow is a delay the author
+/// never wrote.
+const function scaledMillis(value: Int, factor: Int): Int? =
+  if (value > 9223372036854775807 ~/ factor) null else value * factor
 
 /// The delay in milliseconds, counted in the unit the delay was written
 /// in. The count of a delay in milliseconds is the delay itself, so it

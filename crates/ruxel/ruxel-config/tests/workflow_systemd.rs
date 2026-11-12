@@ -197,6 +197,10 @@ fn a_fractional_boot_delay_is_refused() -> Result {
             "timer-boot-fractional-millisecond-huge.pkl",
             "2.0000000000000005E12.s",
         ),
+        (
+            "timer-boot-fractional-huge-integer.pkl",
+            "9007199254740992.ns",
+        ),
     ] {
         let path = root().join("invalid").join(name);
         let error = ruxel_config::eval_config(&path, &options())
@@ -278,6 +282,31 @@ fn two_spellings_of_one_delay_are_one_timer() -> Result {
     assert!(content.contains("OnBootSec=1001ms"), "{content}");
     Ok(())
 }
+
+/// A boot delay of whole milliseconds keeps every digit the author wrote
+/// at every magnitude: integer arithmetic for an integer delay, and no
+/// half-up rounding that refuses an exactly integral value.
+#[test]
+fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
+    let config = valid("systemd-timer-exact-huge-delay.pkl")?;
+    let all = tasks(&config);
+    for (unit, on_boot) in [
+        ("exact-millisecond", "OnBootSec=4503599627370497ms"),
+        ("exact-half-even", "OnBootSec=4503599627370497ms"),
+        ("exact-huge-second", "OnBootSec=9007199254740994"),
+        ("exact-converted", "OnBootSec=4503599627370497"),
+    ] {
+        let dest = format!("/etc/systemd/system/postgresql-{unit}.timer");
+        let content = all
+            .iter()
+            .find(|task| task["operation"]["dest"] == dest)
+            .and_then(|task| task["operation"]["content"].as_str())
+            .ok_or_else(|| format!("no timer file {dest}"))?;
+        assert!(content.contains(on_boot), "{dest}: {content}");
+    }
+    Ok(())
+}
+
 
 /// The timer's result carries the change of both of its tasks: the unit
 /// file and the enablement. A step that watches the timer must see the

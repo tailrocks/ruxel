@@ -1,0 +1,20 @@
+// expect: onBoot 9007199254740992.ns must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+// A whole-nanosecond delay above 2^53 whose count of milliseconds is
+// fractional: the integer path divides exactly or refuses, and this one
+// has a fraction of a millisecond to carry. The expect line reads the
+// value both evaluators emit: a `Duration` is a number in its unit, and
+// both evaluators round the literal `9007199254740993.ns` at parse, so
+// the message names the value they both hold.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer fires a fraction of a millisecond, spelled in whole nanoseconds"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The integer check"; name = "postgresql-integer-check"; onBoot = 9007199254740993.ns }
+    }
+  }
+}
