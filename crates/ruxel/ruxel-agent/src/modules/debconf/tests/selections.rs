@@ -12,8 +12,9 @@ fn an_unchanged_tab_separated_answer_is_not_written_again() -> Result<(), String
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -29,8 +30,9 @@ fn a_value_with_spaces_is_read_as_it_is() -> Result<(), String> {
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www data"}),
         &context(false),
-        &mut || Ok("nginx\tnginx/nginx-user\tstring\twww data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -46,13 +48,14 @@ fn the_comments_of_the_tool_are_not_answers() -> Result<(), String> {
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || {
+        &mut |_| {
             Ok(
                 "# Choices: www-data, nginx\nnginx\tnginx/nginx-user\tstring\twww-data\n"
                     .to_owned(),
             )
         },
-        &mut |selection| {
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -68,8 +71,9 @@ fn a_line_that_is_not_tab_separated_is_not_an_answer() -> Result<(), String> {
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || Ok("nginx nginx/nginx-user string www-data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx nginx/nginx-user string www-data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },

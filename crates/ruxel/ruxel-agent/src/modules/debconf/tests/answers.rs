@@ -1,5 +1,3 @@
-//! What the module does with the answer it reads and the answer it writes.
-
 use super::*;
 
 #[test]
@@ -8,8 +6,9 @@ fn a_different_answer_is_written_and_reported_as_a_change() -> Result<(), String
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || Ok(String::new()),
-        &mut |selection| {
+        &mut |_| Ok(String::new()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -26,8 +25,9 @@ fn the_same_answer_is_not_written_again() -> Result<(), String> {
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -43,8 +43,9 @@ fn check_mode_writes_nothing_and_reports_the_pending_change() -> Result<(), Stri
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(true),
-        &mut || Ok(String::new()),
-        &mut |selection| {
+        &mut |_| Ok(String::new()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -61,8 +62,9 @@ fn the_answer_reaches_the_host_on_the_standard_input_only() -> Result<(), String
     let result = run_with(
         &json!({"package": "postfix", "question": "postfix/mailname", "type": "password", "value": secret}),
         &context(false),
-        &mut || Ok(String::new()),
-        &mut |selection| {
+        &mut |_| Ok(String::new()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -86,8 +88,9 @@ fn an_answer_with_a_line_break_is_refused() {
     let error = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "a\nb"}),
         &context(false),
-        &mut || Ok(String::new()),
-        &mut |_| Ok(()),
+        &mut |_| Ok(String::new()),
+        &mut |_, _, _| Ok(None),
+        &mut |_, _| Ok(()),
     )
     .expect_err("refused");
     assert!(error.contains("one line"), "{error}");
@@ -104,8 +107,9 @@ fn a_missing_field_is_refused() {
         let error = run_with(
             &params,
             &context(false),
-            &mut || Ok(String::new()),
-            &mut |_| Ok(()),
+            &mut |_| Ok(String::new()),
+            &mut |_, _, _| Ok(None),
+            &mut |_, _| Ok(()),
         )
         .expect_err("refused");
         assert!(error.starts_with("debconf: "), "{error}");
@@ -118,8 +122,9 @@ fn the_type_of_the_question_is_compared_with_the_type_of_the_answer() -> Result<
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "select", "value": "www-data"}),
         &context(false),
-        &mut || Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },
@@ -135,8 +140,9 @@ fn the_same_type_and_the_same_value_are_no_change() -> Result<(), String> {
     let result = run_with(
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
         &context(false),
-        &mut || Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
-        &mut |selection| {
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
+        &mut |_, _, _| Ok(None),
+        &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())
         },

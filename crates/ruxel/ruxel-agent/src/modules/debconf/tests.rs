@@ -11,4 +11,5 @@ fn context(check_mode: bool) -> ExecContext {
 }
 
 mod answers;
+mod fallback;
 mod selections;
