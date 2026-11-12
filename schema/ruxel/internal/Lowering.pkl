@@ -120,8 +120,9 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + preferenceOverlapAcrossStages(_stages, _indexes)
     + preferencePlanningAcrossStages(_stages, _indexes)
     + indexPlanningAcrossStages(_stages, _indexes)
-    + repositoryPlanningAcrossStages(_stages, _indexes
+    + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes))
+
 /// At boot the sysctl files load in file-name order: a later stage that
 /// persists its value in a file sorting before an earlier stage's hands
 /// the boot value back to the earlier stage — the live value follows the
