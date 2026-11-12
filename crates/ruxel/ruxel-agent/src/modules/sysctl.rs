@@ -87,7 +87,10 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
             && trimmed.split('=').next().is_some_and(|k| k.trim() == name);
         if is_entry {
             found = true;
-            let existing = trimmed.split('=').nth(1).unwrap_or("").trim();
+            // The entry's delimiter is the FIRST equals sign: a value may
+            // carry equals signs of its own (a core_pattern command's
+            // --option=value), which a split at every one would truncate.
+            let existing = trimmed.split_once('=').map_or("", |x| x.1).trim();
             if normalized(existing) == normalized(value) {
                 out_lines.push(line.to_string());
             } else {
@@ -212,6 +215,27 @@ mod tests {
         assert_eq!(
             super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
             ("net.test = 1  2\n".into(), false)
+        );
+    }
+
+    #[test]
+    fn an_equals_sign_in_the_value_is_not_a_delimiter() {
+        // A `kernel.core_pattern` command carries `--option=value`: the
+        // entry's delimiter is the FIRST equals sign, so comparing the
+        // entry keeps the value's own equals signs whole. Splitting at
+        // every equals sign truncated the value and made every apply see
+        // the unchanged line as drift.
+        let value = "|/usr/lib/systemd/systemd-coredump --option=value";
+        assert_eq!(
+            super::rewrite_file(
+                "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n",
+                "kernel.core_pattern",
+                value,
+            ),
+            (
+                "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n".into(),
+                false
+            )
         );
     }
 
