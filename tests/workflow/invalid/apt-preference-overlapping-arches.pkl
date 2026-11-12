@@ -1,0 +1,13 @@
+// expect: 'Pin bash' (step 1) and 'Pin bash amd64' (step 2) pin overlapping package selectors (bash and bash:amd64); apt applies every matching stanza and the highest priority decides, so keep one selector or put the second in a later stage
+// An unarchived selector covers the package on every architecture, so a
+// second stanza naming one architecture of the same package pins the
+// same package twice and silently disagrees on its priority. One
+// selector per package per stage.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new debian.AptPreference { title = "Pin bash"; package = "bash"; pin = "version 5.2"; priority = 100 }
+  new debian.AptPreference { title = "Pin bash amd64"; package = "bash:amd64"; pin = "version 5.1"; priority = 200 }
+} } }

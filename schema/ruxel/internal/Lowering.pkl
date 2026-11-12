@@ -333,7 +333,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -514,6 +514,38 @@ const function versionClash(p: debian.AptPackages, a: String, q: debian.AptPacka
       || versionOf(b) != null && p.latest)
 
 const function versionOf(n: String): String? = if (n.contains("=")) n.split("=").last else null
+
+/// Two preference stanzas whose selectors can name one package declare
+/// two states for it: apt_preferences(5) applies every matching stanza,
+/// so the higher priority would decide silently. A second stanza for one
+/// and the same selector is the `conflicts` pass's business; here the
+/// selectors differ and only overlap.
+function preferenceConflicts(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is debian.AptPreference)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is debian.AptPreference && ix.steps[j].package != ix.steps[i].package && selectorsOverlap(ix.steps[j].package, ix.steps[i].package))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) pin overlapping package selectors (\(ix.steps[j].package) and \(ix.steps[i].package)); apt applies every matching stanza and the highest priority decides, so keep one selector or put the second in a later stage")
+
+/// Whether two package selectors can name one package: an unarchived
+/// selector covers the package on every architecture, so the
+/// architectures must not clash, and the names must overlap.
+const function selectorsOverlap(a: String, b: String): Boolean =
+  (archOf(a) == null || archOf(b) == null || archOf(a) == archOf(b)) && nameOverlap(a, b)
+
+/// The names of two selectors overlap when either one's trailing glob
+/// (BB §13 knows no other) matches the other's name, or when both spell
+/// one name. Every glob match is a prefix match, so no regex support of
+/// either evaluator is needed.
+const function nameOverlap(a: String, b: String): Boolean =
+  let (x = baseOf(a))
+  let (y = baseOf(b))
+  (if (a.endsWith("*") && b.endsWith("*")) x.startsWith(y) || y.startsWith(x)
+  else if (a.endsWith("*")) y.startsWith(x)
+  else if (b.endsWith("*")) x.startsWith(y)
+  else x == y)
+
+/// The package name of a selector: without its trailing glob and without
+/// its architecture (`ba*` is `ba`, `bash:amd64` is `bash`).
+const function baseOf(s: String): String = packageName(if (s.endsWith("*")) s.substring(0, s.length - 1) else s)
 
 const function paths(s: core.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
 
