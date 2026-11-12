@@ -300,7 +300,7 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
         .ok_or("evaluated")?
         .to_string();
     assert!(
-        error.contains("onBoot cannot be proven at this magnitude"),
+        error.contains("must be a whole number of milliseconds"),
         "{error}"
     );
     Ok(())

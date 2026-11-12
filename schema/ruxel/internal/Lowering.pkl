@@ -374,7 +374,7 @@ function settings(s: core.Step): List<String> =
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootTooLong(s.onBoot))
     List(onBootTooLongRefusal(s))
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootUntrusted(s.onBoot))
-    List(onBootUntrustedRefusal(s))
+    List(onBootRefusal(s))
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMicros(s.onBoot) == null)
     List(onBootRefusal(s))
   else if (s is systemd.SystemdTimer && s.service == null && s.name.length > 247)
@@ -720,7 +720,7 @@ function timerContent(t: systemd.SystemdTimer): String =
 const function onBootSpan(t: systemd.SystemdTimer): String =
   let (micros = onBootMicros(t.onBoot))
   if (onBootTooLong(t.onBoot)) throw(onBootTooLongRefusal(t))
-  else if (onBootUntrusted(t.onBoot)) throw(onBootUntrustedRefusal(t))
+  else if (onBootUntrusted(t.onBoot)) throw(onBootRefusal(t))
   else if (micros == null) throw(onBootRefusal(t))
   else if (micros % 1000000 == 0) "\(micros ~/ 1000000)"
   else "\(micros ~/ 1000)ms"
@@ -791,15 +791,19 @@ const function onBootTooLong(d: Duration): Boolean =
   microsOf(d.unit, d.value.toFloat()) >= maxExactMillis.toFloat() * 1000.0
 
 /// Whether the delay is inside the neighborhood a silently lost `.5`
-/// leaves behind: at or beyond `maxFractionalMillis` the fraction cannot
-/// survive the evaluators' `Float`, so a value still carrying one never
-/// carried it honestly, and an even millisecond count may be the
-/// rounding of an odd one's `.5` (the tie-break is to even). Only an odd
-/// whole-millisecond count is provably the authored integer there.
+/// leaves behind: at or beyond `maxFractionalMillis` a `.5` cannot
+/// survive the evaluators' `Float` and rounds into an even millisecond
+/// count, so an even count there may be an odd author value with its
+/// `.5` lost and refused with the sentence the other invalid delays get,
+/// rather than rounded to the millisecond next to it. Only an odd
+/// whole-millisecond count is provably the authored integer there. A
+/// value that still carries a fraction needs no rule of its own: the
+/// whole-millisecond rule refuses it wherever it appears.
 const function onBootUntrusted(d: Duration): Boolean =
   let (micros = microsOf(d.unit, d.value.toFloat()))
   micros >= maxFractionalMillis.toFloat() * 1000.0
-    && (d.value is Float || microsOf(d.unit, d.value.toFloat()) / 1000.0 == (microsOf(d.unit, d.value.toFloat()) / 1000.0).floor && micros.toInt() / 1000 % 2 == 0)
+    && micros / 1000.0 == (micros / 1000.0).floor
+    && micros.toInt() / 1000 % 2 == 0
 
 /// The sentence that refuses a boot delay this schema cannot hold
 /// exactly. It names the bound and deliberately not the delay: the
@@ -808,12 +812,6 @@ const function onBootUntrusted(d: Duration): Boolean =
 /// one, so the refusal reads the same wherever it is found.
 const function onBootTooLongRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote"
-
-/// The sentence that refuses a boot delay that cannot be proven to be
-/// the delay the author wrote. Like the others, one sentence for both
-/// places that refuse one.
-const function onBootUntrustedRefusal(t: systemd.SystemdTimer): String =
-  "'\(label(t))': onBoot cannot be proven at this magnitude: at or beyond \(maxFractionalMillis)ms a .5 fraction is silently lost and may round into an even millisecond count, so the delay is refused rather than misfired"
 
 /// The whole-microsecond count of a delay whose value is an integer in
 /// its own unit, taken in whole-number arithmetic and still a whole
