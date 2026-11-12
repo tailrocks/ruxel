@@ -427,7 +427,7 @@ function settings(s: core.Step): List<String> =
   // `pklr` does not check the elements of a `Listing`, so the names of the
   // groups of an account are checked here: each one must be a user or group
   // name, with no NUL and no run-time value in it.
-  else if (s is linux.User && !badAccountNames(s.group, s.groups.toList()).isEmpty)
+  else if (s is linux.User && !badAccountNames(s.group, s.groups).isEmpty)
     List("'\(name(s))': \"\(badAccountNames(s.group, s.groups.toList()).first)\" is not a user or group name")
   // The superuser's id is never a managed account's id, and an account
   // below UID 1000 is a system account the host keeps: it is never removed.
@@ -460,9 +460,10 @@ const local selector = Regex(#"([a-z0-9][a-z0-9+.-]+)(:([a-z0-9][a-z0-9-]*))?(=(
 
 /// The names of an account that are not user or group names: the group the
 /// account belongs to, and the other groups it belongs to. `pklr` does not
-/// check the elements of a `Listing`, so they are checked here.
-const local function badAccountNames(group: String?, groups: List<String>): List<String> =
-  ((if (group == null) List() else List(group)) + groups)
+/// check the elements of a `Listing`, so they are checked here; a step
+/// that states no supplementary groups has none to check.
+const local function badAccountNames(group: String?, groups: Listing<String>?): List<String> =
+  ((if (group == null) List() else List(group)) + (if (groups == null) List() else groups.toList()))
     .filter((n) -> !isAccountName(n))
 
 /// Whether a string is a user or group name: the passwd spelling of one,
@@ -1091,8 +1092,10 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["timezone"] = (s) -> s.name
   // The groups are a set — the engine sorts and deduplicates what it
   // reconciles — so their fingerprint is the canonical set, not the order
-  // the author wrote them in.
-  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
+  // the author wrote them in. Unset groups are a state of their own: the
+  // memberships are unmanaged, unlike an explicit empty set, which
+  // removes every one of them.
+  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
@@ -1520,7 +1523,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   // `linux.User` lowers to the engine's user operation alone: the operation
   // creates a missing account and changes the settings of an existing one,
   // so no pre-check reads /etc/passwd before it.
-  ["user"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, s.groups.toList(), s.uid, s.system, s.state, s.removeHome), null, null))
+  ["user"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, if (s.groups == null) null else keyOrder.set(s.groups.toList()), s.uid, s.system, s.state, s.removeHome), null, null))
   ["group"] = (s, m) -> List(task(m, group(s.name, s.gid, s.state), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["sysctl"] = (s, m) -> List(task(m, sysctl(s.name, s.value, s.path), null, null))
@@ -1864,12 +1867,17 @@ function timezone(_name: String): engine.Timezone = new engine.Timezone { name =
 /// The engine's user operation: the account and every setting the step
 /// manages. The flags it offers beyond these (`append`, `comment`,
 /// `create_home`) are not exposed: create-home follows the engine default.
-function user(_name: String, _shell: String?, _home: String?, _group: String?, _groups: List<String>, _uid: Int?, _system: Boolean, _state: "present"|"absent", _removeHome: Boolean): engine.User = new engine.User {
+/// The supplementary groups are the canonical set the fingerprint takes,
+/// and the operation carries them whenever the step states them — an
+/// explicit empty list is `groups = []`, which removes every membership;
+/// a step that states no groups omits the field and leaves memberships
+/// unmanaged.
+function user(_name: String, _shell: String?, _home: String?, _group: String?, _groups: List<String>?, _uid: Int?, _system: Boolean, _state: "present"|"absent", _removeHome: Boolean): engine.User = new engine.User {
   name = _name
   when (_shell != null) { shell = _shell }
   when (_home != null) { home = _home }
   when (_group != null) { group = _group }
-  when (!_groups.isEmpty) { groups = new Listing { for (g in _groups) { g } } }
+  when (_groups != null) { groups = new Listing { for (g in (_groups ?? List())) { g } } }
   when (_uid != null) { uid = _uid }
   system = _system
   state = _state
