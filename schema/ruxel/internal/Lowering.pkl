@@ -438,6 +438,11 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': uid = 0 is rejected: the superuser's id is not for a managed account")
   else if (s is linux.User && s.user == "root" && s.uid != null)
     List("'\(name(s))': uid = \(s.uid) is rejected for root: the superuser's account keeps uid 0, and a change would strand every file it owns")
+  // The superuser keeps its primary group too: a declared group on the
+  // root account runs `usermod -g`, moving the superuser's primary group
+  // away from the root group (gid 0) whatever the group is named.
+  else if (s is linux.User && s.user == "root" && s.group != null)
+    List("'\(name(s))': group = \(s.group) is rejected for root: the superuser keeps its primary group, the root group (gid 0)")
   else if (s is linux.User && s.state == "absent" && (s.user == "root" || s.uid == null || s.uid < 1000))
     List("'\(name(s))': state = \"absent\" is rejected for root and for an account below UID 1000; state the account's uid (1000 or more) to remove it")
   // The root group's id is never a managed group's id, and the root group
