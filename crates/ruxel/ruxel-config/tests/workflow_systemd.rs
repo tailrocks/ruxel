@@ -356,6 +356,16 @@ fn a_timer_reports_the_change_of_its_file_and_its_enablement() -> Result {
             ]
         })
     );
+    // The reload the rewritten file needs: asked whenever the file
+    // changed, and ordered after the file write.
+    assert_eq!(
+        enable["operation"]["daemon_reload"],
+        serde_json::json!({"kind": "ref", "path": ["results", format!("{register}_unit"), "changed"]})
+    );
+    assert!(
+        all.iter().position(|t| *t == *file) < all.iter().position(|t| *t == *enable),
+        "the reload must run after the file write"
+    );
     Ok(())
 }
 
@@ -377,5 +387,14 @@ fn a_timer_basename_may_be_249_characters() -> Result {
     // The unit name systemd reads is the basename with its suffix, and it
     // fits systemd's own limit of 255 characters.
     assert_eq!(basename.len() + ".timer".len(), 255);
+    // The same basename naming no service is refused.
+    let implicit = root()
+        .join("invalid")
+        .join("timer-long-name-implicit-service.pkl");
+    let error = ruxel_config::eval_config(&implicit, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    assert!(error.contains("at most 247 characters"), "{error}");
     Ok(())
 }

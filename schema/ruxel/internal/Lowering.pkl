@@ -375,6 +375,8 @@ function settings(s: core.Step): List<String> =
     List(onBootTooLongRefusal(s))
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMillis(s.onBoot) == null)
     List(onBootRefusal(s))
+  else if (s is systemd.SystemdTimer && s.service == null && s.name.length > 247)
+    List("'\(name(s))': a timer name of \(s.name.length) characters without a service of its own would name the \(s.name.length + 8)-character unit \(timerTarget(s)), past systemd's 255; a timer name without a service may be at most 247 characters")
   else if (s is debian.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
     List(if (s.suite.endsWith("/")) "'\(name(s))': a flat repository (suite ending in /) takes no components" else "'\(name(s))': suite \(s.suite) needs components, such as \"main\"")
   else if (s is core.Action && s.changes is core.UnlessOutput && (s.changes.stdoutContains == null) == (s.changes.stderrContains == null))
@@ -915,7 +917,7 @@ class Meta {
 function metaOf(ix: StageIndex, i: Int, _tags: List<String>): Meta =
   let (_name = name(ix.steps[i]))
   let (_notify = dependents(ix, i).filter((j) -> ix.steps[j] is systemd.Service).map((j) -> handlerName(ix.steps[j])).toSet().toList())
-  let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is core.Action) || ix.steps[i] is core.Capture) ix.results[i] else null)
+  let (_register = if (dependents(ix, i).any((j) -> ix.steps[j] is core.Action) || ix.steps[i] is core.Capture || ix.steps[i] is systemd.SystemdTimer) ix.results[i] else null)
   new Meta { name = _name; tags = _tags; notify = _notify; register = _register; watching = ix.deps[i].map((j) -> ix.results[j]); environment = envOf(ix.steps[i]); noLog = secretStep(ix.steps[i]) }
 
 /// Positions of the steps that react to step `i` or read its output. They
@@ -1004,7 +1006,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
-  ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), service(timerUnit(s.name), s.enabled, null), null, timerChanged(m)))
+  ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))

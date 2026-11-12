@@ -40,6 +40,7 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/timer-multiline-calendar.pkl", false),
     ("invalid/timer-persistent-without-calendar.pkl", false),
     ("invalid/timer-name-too-long.pkl", false),
+    ("invalid/timer-long-name-implicit-service.pkl", false),
     ("invalid/timer-boot-sub-millisecond.pkl", false),
     ("invalid/timer-boot-fractional-millisecond.pkl", false),
     ("invalid/timer-boot-fractional-millisecond-large.pkl", false),

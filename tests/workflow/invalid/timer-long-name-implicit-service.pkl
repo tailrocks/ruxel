@@ -1,0 +1,12 @@
+// expect: a timer name without a service may be at most 247 characters
+// A timer basename of 249 characters naming no service: the service of
+// the same name would be a 257-character unit name, past systemd's own
+// limit, and the timer is refused rather than lowered to a unit systemd
+// will not read.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The implicit service"; name = "taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; onCalendar = "daily" }
+} } }
