@@ -315,3 +315,27 @@ fn a_timer_reports_the_change_of_its_file_and_its_enablement() -> Result {
     );
     Ok(())
 }
+
+/// A timer basename may be 249 characters: the `.timer` suffix is six
+/// characters, so the unit name systemd reads is 255 characters, which is
+/// systemd's own limit. The bound that names it is the one the suffix
+/// leaves, not the one the service name carries.
+#[test]
+fn a_timer_basename_may_be_249_characters() -> Result {
+    let config = valid("systemd-timer-long-name.pkl")?;
+    let all = tasks(&config);
+    // The basename the corpus case writes: a `t` and 248 `a`s.
+    let basename: String = "t".to_owned() + &"a".repeat(248);
+    assert_eq!(basename.len(), 249);
+    // The unit file the timer owns carries the basename the author wrote.
+    let dest = format!("/etc/systemd/system/{basename}.timer");
+    let timer = all
+        .iter()
+        .find(|task| task["operation"]["dest"] == dest)
+        .ok_or("no timer file")?;
+    assert_eq!(timer["operation"]["dest"], dest);
+    // The unit name systemd reads is the basename with its suffix, and it
+    // fits systemd's own limit of 255 characters.
+    assert_eq!(basename.len() + ".timer".len(), 255);
+    Ok(())
+}

@@ -37,12 +37,12 @@ typealias ServiceName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|
 
 /// A systemd timer unit: `postgresql-multixact-monitor`, the name of the
 /// `.timer` unit it manages. Canonical unit name characters only, at most
-/// 247 of them, and no `.`: a timer is named by its own name, and the
+/// 249 of them, and no `.`: a timer is named by its own name, and the
 /// `.timer` unit is that name with the suffix, so a timer is never a
 /// service (`Service` names `.service` units only). The limit leaves room
 /// for the suffix, so the unit name systemd reads fits its own limit of
 /// 255 characters.
-typealias TimerName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && !contains(".") && length <= 247 && !startsWith("@") && !endsWith("@"))
+typealias TimerName = Name(length <= 255 && matches(Regex(#"([A-Za-z0-9:_.@-]|\\x[0-9a-f]{2})+"#)) && !contains(".") && length <= 249 && !startsWith("@") && !endsWith("@"))
 
 /// A systemd service.
 class Service extends core.Step {
