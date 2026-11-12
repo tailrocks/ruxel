@@ -37,8 +37,11 @@ fn upgrade_and_autoremove_both_run_and_aggregate_changes() -> Result<(), String>
     Ok(())
 }
 
+/// A failed maintenance action stops the run and is reported in the
+/// result: the change the run accumulated stays visible beside the
+/// failure instead of being hidden behind an error.
 #[test]
-fn maintenance_failures_stop_execution_and_report_the_action() {
+fn maintenance_failures_stop_execution_and_report_the_action() -> Result<(), String> {
     for check in [false, true] {
         for fail_action in ["dist-upgrade", "autoremove"] {
             let mut calls = Vec::new();
@@ -51,15 +54,19 @@ fn maintenance_failures_stop_execution_and_report_the_action() {
                     "fixture refusal".into(),
                 ))
             };
-            let error = run_with(
+            let result = run_with(
                 &json!({"upgrade":"dist","autoremove":true}),
                 &context(check),
                 &mut SystemState::default(),
                 &mut command,
-            )
-            .err()
-            .unwrap_or_default();
-            assert!(error.contains(fail_action) && error.contains("fixture refusal"));
+            )?;
+            assert_eq!(result["failed"], true);
+            assert_eq!(result["changed"], false);
+            let message = result["msg"].as_str().unwrap_or_default();
+            assert!(
+                message.contains(fail_action) && message.contains("fixture refusal"),
+                "{message}"
+            );
             assert_eq!(
                 calls,
                 if fail_action == "dist-upgrade" {
@@ -70,6 +77,7 @@ fn maintenance_failures_stop_execution_and_report_the_action() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]

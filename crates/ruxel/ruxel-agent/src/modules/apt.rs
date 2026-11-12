@@ -40,10 +40,16 @@ fn run_with(
             "dist" => "dist-upgrade",
             other => return Err(format!("apt: upgrade={other:?} outside the closed surface")),
         };
-        changed |= maintenance(action, true, ctx, system_state, &mut result, command)?;
+        match maintenance(action, true, ctx, system_state, &mut result, command) {
+            Ok(more) => changed |= more,
+            Err(error) => return Ok(failed(&mut result, changed, error)),
+        }
     }
     if autoremove {
-        changed |= maintenance("autoremove", false, ctx, system_state, &mut result, command)?;
+        match maintenance("autoremove", false, ctx, system_state, &mut result, command) {
+            Ok(more) => changed |= more,
+            Err(error) => return Ok(failed(&mut result, changed, error)),
+        }
         result["diff"] = json!({});
     }
     // The holds are read before anything runs: a package that is already
@@ -93,17 +99,23 @@ fn run_with(
             // Err into `changed: false`. The report keeps the change the
             // run accumulated (true after an install) alongside the
             // failure, like the Unverified arm above.
-            Err(error) => {
-                result["changed"] = json!(changed);
-                result["failed"] = json!(true);
-                result["msg"] = json!(error);
-                return Ok(result);
-            }
+            Err(error) => return Ok(failed(&mut result, changed, error)),
         }
     }
     result["changed"] = json!(changed);
     result["failed"] = json!(false);
     Ok(result)
+}
+
+/// The result of a failure that stops the run after the host may already
+/// have changed: the change the run accumulated stays in the report
+/// alongside the failure and its message, because `modules::execute`
+/// would turn an Err into `changed: false` and hide that change.
+fn failed(result: &mut Value, changed: bool, error: String) -> Value {
+    result["changed"] = json!(changed);
+    result["failed"] = json!(true);
+    result["msg"] = json!(error);
+    std::mem::take(result)
 }
 
 /// The packages an apt step asks for, and the checks that must hold before

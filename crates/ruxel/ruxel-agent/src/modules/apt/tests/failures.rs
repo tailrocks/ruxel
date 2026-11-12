@@ -59,3 +59,34 @@ fn a_holding_failure_after_a_changing_install_reports_the_install_change() -> Re
     }
     Ok(())
 }
+
+/// A whole-system upgrade that changed the host is not hidden when the
+/// autoremove after it fails: the result keeps the upgrade's change
+/// alongside the failure.
+#[test]
+fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -> Result<(), String> {
+    for check in [false, true] {
+        let mut calls = Vec::new();
+        let mut command = |args: &[&str], _: &ExecContext| {
+            let action = args.last().copied().unwrap_or_default();
+            calls.push(action.to_string());
+            Ok((
+                summary(action != "autoremove"),
+                i32::from(action == "autoremove"),
+                "autoremove refused".into(),
+            ))
+        };
+        let result = run_with(
+            &json!({"upgrade": "dist", "autoremove": true}),
+            &context(check),
+            &mut SystemState::default(),
+            &mut command,
+        )
+        .map_err(|error| format!("{calls:?}: the run hid the upgrade behind {error:?}"))?;
+        assert_eq!(result["changed"], true, "{calls:?}");
+        assert_eq!(result["failed"], true, "{calls:?}");
+        let message = result["msg"].as_str().unwrap_or_default();
+        assert!(message.contains("autoremove") && message.contains("refused"), "{message}");
+    }
+    Ok(())
+}
