@@ -95,6 +95,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/apt-index-before-system-upgrade-later-stage.pkl",
     "invalid/engine-apt-hold-latest.pkl",
     "invalid/engine-debconf-package-glob.pkl",
+    "invalid/engine-debconf-value-multiline.pkl",
     "invalid/engine-debconf-question-space.pkl",
     "invalid/apt-repository-before-install.pkl",
     "invalid/apt-repository-before-install-later-stage.pkl",

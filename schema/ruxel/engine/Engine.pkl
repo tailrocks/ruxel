@@ -55,6 +55,12 @@ typealias Username = String(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")))
 /// treat a numeric key as a UID, so such a name could select a different account.
 typealias BecomeUser = Username(!matches(Regex("^[0-9]+$")))
 typealias Text = String|Expr
+/// One line of text: a line break would write a second selection on the
+/// standard input of `debconf-set-selections` — the copy of
+/// `Debian.pkl`'s `OneLine`, widened with the engine's runtime
+/// expressions (pklr cannot share typealiases across modules, so keep
+/// the copies in sync).
+typealias OneLine = String(!contains("\n") && !contains("\r"))|Expr
 /// The debconf owner of a selection: an exact Debian package name — the
 /// copy of `Debian.pkl`'s `DebconfPackage`, widened with the engine's
 /// runtime expressions (pklr cannot share typealiases across modules, so
@@ -161,7 +167,7 @@ class Debconf {
   package: DebconfPackage
   question: QuestionName
   type: ("string"|"boolean"|"select"|"multiselect"|"password"|"note")
-  value: Text
+  value: OneLine
 }
 
 class AptRepository {

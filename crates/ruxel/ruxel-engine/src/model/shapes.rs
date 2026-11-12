@@ -93,6 +93,12 @@ fn engine_surface(kind: &str, params: &Map<String, Value>) -> Result<()> {
                 "a debconf selection names its package exactly"
             );
         }
+        if let Some(value) = params.get("value").and_then(Value::as_str) {
+            ensure!(
+                !value.contains('\n') && !value.contains('\r'),
+                "a debconf answer must be one line"
+            );
+        }
         if let Some(question) = params.get("question").and_then(Value::as_str) {
             ensure!(
                 !question.is_empty()
