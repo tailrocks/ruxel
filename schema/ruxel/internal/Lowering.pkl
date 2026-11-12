@@ -371,7 +371,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), groupRels(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -602,6 +602,16 @@ function sysctlFiles(ix: StageIndex, i: Int): List<String> =
 
 const function sysctlClash(a: core.Step, b: core.Step): Boolean =
   a is linux.Sysctl && !(b is linux.Sysctl) && paths(b).contains(a.path)
+
+/// The kernel holds one live value for one parameter: two sysctl steps of
+/// one stage that ask for different values of one name would change it
+/// back and forth on every apply — and disagree at boot, where file
+/// precedence picks one — whatever files they persist in. Steps asking
+/// for the same value are fine; each persists its own entry.
+function sysctlValues(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is linux.Sysctl)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && ix.steps[j].name == ix.steps[i].name && ix.steps[j].value != ix.steps[i].value)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
 
 /// An account needs the groups it names. A same-stage group step that
 /// removes one contradicts the account whatever the order — one side ends
@@ -1164,8 +1174,13 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
-  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present" && s.home != null) List(s.home) else List())
-  ["group"] = (s) -> List("the group \(s.name)")
+  // The account and the things it declares states for: its explicit uid
+  // is a managed thing of its own — two accounts with one id fail the
+  // second useradd on the duplicate — and its explicit home is a path the
+  // step creates.
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present" && s.home != null) List(s.home) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)"))
+  // An explicit gid is a managed thing of its own, the way a uid is.
+  ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
