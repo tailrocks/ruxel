@@ -1,0 +1,14 @@
+// expect: only a calendar timer catches up
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A persistent timer with no calendar"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The boot-only timer"; name = "postgresql-boot-only"; onBoot = 5.min; persistent = true }
+    }
+  }
+}

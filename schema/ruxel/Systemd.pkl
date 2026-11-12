@@ -101,6 +101,8 @@ class SystemdTimer extends core.Step {
   /// How long after boot the timer fires.
   onBoot: Duration? = null
   /// Whether the timer fires for a run it missed while the machine was off.
+  /// Only a calendar timer catches up: systemd remembers the last calendar
+  /// run, not the last boot.
   persistent: Boolean = false
   /// Enabled at boot.
   enabled: Boolean = true
