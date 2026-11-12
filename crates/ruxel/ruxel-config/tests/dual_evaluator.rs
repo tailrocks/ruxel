@@ -140,7 +140,6 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
     "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
-
     "valid/linux-user-groups-order.pkl",
     "invalid/linux-user-shell-root.pkl",
     "invalid/linux-user-home-root.pkl",
@@ -148,7 +147,6 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-group-absent-root.pkl",
     "invalid/linux-sysctl-file-clash.pkl",
     "invalid/linux-file-sysctl-clash.pkl",
-
 ];
 
 /// The official `pkl` binary.
