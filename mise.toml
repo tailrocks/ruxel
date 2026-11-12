@@ -53,15 +53,16 @@ run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warn
 
 [tasks.test]
 description = "Unit and integration tests"
-# One chained command, not an array: the generated lane binds exactly one command
-# to the "Unit and integration tests" step, so provisioning split into its own
-# array item would never run in CI (the dual-evaluator check job is the only
-# consumer that executes every array item). The mandatory dual-evaluator suite
-# (crates/ruxel/ruxel-config/tests/dual_evaluator.rs) needs the official Pkl CLI,
-# which Velnor's closed pinned-tool set does not cover, so the lane's own command
-# installs it into the default data dir ($HOME/.local/share/mise/installs/pkl/*/pkl)
-# and verifies it: the version is repeated because Velnor executes
-# task commands with MISE_NO_CONFIG=1 and MISE_LOCKFILE=0: the [tools] pin and the
+# Local task only: the generated "Unit and integration tests" lane does not
+# execute this task — Velnor's rust adapter synthesizes its own nextest command
+# from the stack config, so nothing here runs in CI. The chain provisions the
+# official Pkl CLI for the mandatory dual-evaluator suite
+# (crates/ruxel/ruxel-config/tests/dual_evaluator.rs), which Velnor's closed
+# pinned-tool set cannot express; the suite is gated behind ruxel-config's
+# `dual-evaluator` feature (--all-features here enables it) so the pkl-less
+# lanes skip it instead of failing, and CI runs it in the dedicated
+# dual-evaluator check. The version is repeated because task commands execute
+# with MISE_NO_CONFIG=1 and MISE_LOCKFILE=0: the [tools] pin and the
 # lockfile setting are invisible there, and `--locked` fails with "locked mode
 # requires lockfile to be enabled"; the explicit X.Y.Z also avoids @latest
 # resolution. Because MISE_LOCKFILE=0 also hides the committed checksums,
@@ -77,7 +78,10 @@ run = [
   # [tools]/mise.lock, then verify the artifact against the committed checksum.
   "mise install pkl@0.33.0",
   "tools/verify-pkl-artifact",
-  "cargo test --locked -p ruxel-config --test dual_evaluator",
+  # The feature flag is what lets this task see the target at all: the suite is
+  # gated behind required-features so the pkl-less rust lanes skip it, and this
+  # task is CI's mandatory runner for it.
+  "cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator",
 ]
 
 [tasks.doctest]
