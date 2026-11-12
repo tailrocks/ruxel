@@ -352,3 +352,49 @@ fn a_question_the_value_reader_cannot_find_is_written_again() -> Result<(), Stri
     );
     Ok(())
 }
+
+/// A resolved selector carries the grammar the Engine surface admits as
+/// literals: the `package question type value` line shifts its fields
+/// when a selector embeds whitespace, so the setter could target a
+/// different question while the command exits successfully. The runtime
+/// refuses the resolved value, expressions included.
+#[test]
+fn a_resolved_selector_with_whitespace_is_refused() -> Result<(), String> {
+    for (package, question) in [("a b", "nginx/user"), ("nginx", "a b"), ("nginx", "a\tb")] {
+        let mut written = Vec::new();
+        let Err(error) = run_with(
+            &json!({"package": package, "question": question, "type": "string", "value": "x"}),
+            &context(false),
+            &mut |_| Ok(String::new()),
+            &mut |_, _, _| Ok(None),
+            &mut |selection, _| {
+                written.push(selection.to_owned());
+                Ok(())
+            },
+        ) else {
+            return Err(format!(
+                "{package:?}/{question:?}: the whitespace selector was admitted"
+            ));
+        };
+        assert!(error.contains("debconf:"), "{error}");
+        assert!(written.is_empty(), "{package:?}/{question:?}: {written:?}");
+    }
+    Ok(())
+}
+
+/// A resolved package must be an exact package name: a glob names no
+/// owner and the answer would never reach the question it names.
+#[test]
+fn a_resolved_package_that_is_not_a_name_is_refused() -> Result<(), String> {
+    let Err(error) = run_with(
+        &json!({"package": "nginx*", "question": "nginx/user", "type": "string", "value": "x"}),
+        &context(false),
+        &mut |_| Ok(String::new()),
+        &mut |_, _, _| Ok(None),
+        &mut |_, _| Ok(()),
+    ) else {
+        return Err("the glob package was admitted".into());
+    };
+    assert!(error.contains("exact package name"), "{error}");
+    Ok(())
+}

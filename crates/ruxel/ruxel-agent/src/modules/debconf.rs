@@ -84,8 +84,26 @@ fn run_with(
             "debconf: a boolean answer is \"true\" or \"false\", not {value:?}"
         ));
     }
-    if package.contains('\n') || question.contains('\n') {
-        return Err("debconf: the package and the question must be one line".into());
+    // The resolved selectors carry the grammar the Engine surface admits
+    // as literals: an exact package name, and a question without
+    // whitespace. The line is `package question type value`, so a space
+    // or tab in either selector shifts the fields `debconf-set-selections`
+    // parses and the selection may be ignored while the command exits
+    // successfully. A resolved expression bypasses every literal check,
+    // so the grammar is enforced here, at runtime.
+    if !is_exact_package(package) {
+        return Err(format!(
+            "debconf: the package must be an exact package name, not {package:?}"
+        ));
+    }
+    if question.is_empty()
+        || question
+            .chars()
+            .any(|c| matches!(c, ' ' | '\t' | '\n' | '\x0B' | '\x0C' | '\r'))
+    {
+        return Err(format!(
+            "debconf: the question must be one whitespace-free token, not {question:?}"
+        ));
     }
     let reading = read_host(selections, ask, package, question, ctx)?;
     let changed = match &reading {
@@ -362,3 +380,20 @@ fn map_ask_exec(error: &std::io::Error) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The exact Debian package name a debconf owner carries — the mirror of
+/// the Engine surface's `DebconfPackage`: one or more of `a-z0-9+.-`,
+/// starting with `a-z0-9`.
+fn is_exact_package(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && {
+            let rest = chars.count();
+            rest >= 1
+                && name.chars().skip(1).all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '+' | '.' | '-')
+                })
+        }
+}
