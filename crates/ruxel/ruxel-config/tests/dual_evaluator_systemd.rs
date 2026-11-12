@@ -66,42 +66,45 @@ fn options() -> ruxel_config::EvalOptions {
     }
 }
 
-/// The official evaluator. `RUXEL_PKL` names it; otherwise it is looked up
-/// in `PATH` and in the usual places a mise install leaves it.
+/// The official `pkl` binary.
+///
+/// `RUXEL_PKL` is the whole resolution: the absolute path `tools/verify-pkl-artifact` hashed
+/// against the committed checksum and printed, which the mise `dual-evaluator` task exports to
+/// this suite. There is no fallback to look the binary up on the `PATH` or in the places an
+/// operator's tools live: verification and execution must resolve to one binary, so a `pkl` the
+/// verifier never hashed may never run, and where no verified path is supplied the suite fails
+/// loudly instead of picking one of its own. A named binary that does not run is a loud failure
+/// too: the check is mandatory, and a skipped check would pass every regression the corpus was
+/// added to cover.
 fn pkl() -> Result<PathBuf> {
-    if let Ok(path) = std::env::var("RUXEL_PKL") {
-        let path = PathBuf::from(path);
-        if !path.is_file() {
-            return Err(format!("RUXEL_PKL names no file: {}", path.display()).into());
-        }
-        return Ok(path);
+    let Some(path) = std::env::var_os("RUXEL_PKL") else {
+        return Err(
+            "no verified official pkl was supplied: RUXEL_PKL must name the artifact that \
+             tools/verify-pkl-artifact hashed and printed; the dual-evaluator check is \
+             mandatory and executes exactly the verified binary, never one a PATH lookup \
+             happens to find"
+                .into(),
+        );
+    };
+    let path = PathBuf::from(path);
+    if runs(&path) {
+        Ok(path)
+    } else {
+        Err(format!(
+            "RUXEL_PKL points at {}, which is not a working official pkl",
+            path.display()
+        )
+        .into())
     }
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(path) = std::env::var_os("PATH") {
-        for directory in std::env::split_paths(&path) {
-            candidates.push(directory.join("pkl"));
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let installs = PathBuf::from(home).join(".local/share/mise/installs/pkl");
-        if let Ok(entries) = std::fs::read_dir(installs) {
-            for entry in entries.flatten() {
-                candidates.push(entry.path().join("pkl"));
-            }
-        }
-    }
-    candidates.push(PathBuf::from("/opt/homebrew/bin/pkl"));
-    candidates.push(PathBuf::from("/usr/local/bin/pkl"));
-    for candidate in &candidates {
-        if candidate.is_file() {
-            return Ok(candidate.clone());
-        }
-    }
-    Err(format!(
-        "the official `pkl` evaluator is missing: install it or point RUXEL_PKL at it \
-         (looked in {candidates:?})"
-    )
-    .into())
+}
+
+/// Whether the binary answers `--version`: the probe that separates the
+/// official CLI from an arbitrary file of the same name.
+fn runs(candidate: &Path) -> bool {
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 /// The served modules, written where the `pkl` CLI reads them.
@@ -112,12 +115,21 @@ impl Modules {
         // The two tests run in parallel, and the clock may hand two threads
         // the same nanosecond: a shared directory would then be removed by
         // one test while the other still reads it. A counter gives every
-        // directory of this process its own.
+        // directory of this process its own, and the wall-clock nanoseconds
+        // keep a directory left behind by a killed run from colliding with a
+        // later process that happens to reuse this pid: `create_dir` refuses
+        // an existing directory, so a leftover would fail the run it was
+        // left in instead of failing some later run.
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or_default();
         let path = std::env::temp_dir().join(format!(
-            "ruxel-dual-evaluator-{}-{}",
+            "ruxel-dual-evaluator-{}-{}-{}",
             std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            nanos
         ));
         std::fs::create_dir(&path)?;
         for (module, text) in ruxel_config::schema::exported_modules() {
