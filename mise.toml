@@ -113,7 +113,22 @@ run = [
   # task is CI's mandatory runner for both harness targets.
   'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator',
   'pkl_verified=$(tools/verify-pkl-artifact) && RUXEL_PKL="$pkl_verified" cargo test --locked -p ruxel-config --features dual-evaluator --test dual_evaluator_systemd',
+  # The feature-gated upstream path (jdx/pklr preparation, jdx/pklr#419) is
+  # a non-default feature, so no other CI lane compiles it: the generated
+  # rust lanes pass no feature flag. This command is the mandatory CI runner
+  # for it — the adapter in crates/ruxel/ruxel-config/src/upstream_pklr.rs is
+  # compiled against the pinned upstream revision and its tests run, so a
+  # broken upstream revision or a renamed upstream API fails here instead of
+  # rotting silently until the default dependency is flipped.
+  # `--lib` selects the library target, where the adapter and its tests
+  # live: the runner's pinned Rust carries no rustdoc, so a bare `cargo
+  # test` would fail on the doctest step that follows the test targets.
+  'cargo test --locked -p ruxel-config --features pklr-upstream-path --lib',
 ]
+
+[tasks."upstream-pklr-path"]
+description = "Compile and test the feature-gated upstream jdx/pklr path (the preparation for jdx/pklr#419)"
+run = "cargo test --locked -p ruxel-config --features pklr-upstream-path --lib"
 
 [tasks.doctest]
 description = "Doctests (nextest does not run them)"
