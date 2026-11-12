@@ -22,14 +22,27 @@ enum ReadError {
 
 /// What the host answered for one question.
 enum Reading {
-    /// The answer the database holds: the type of the question and the
-    /// value, as `debconf-get-selections` prints them.
-    Full(Answer),
-    /// The value alone: `debconf-communicate` answers the value; the type
-    /// is the one of the template, so the comparison sees the value only.
-    Value(String),
+    /// The answer the database holds: the type of the question, the
+    /// value, as `debconf-get-selections` prints them, and whether the
+    /// question is marked seen.
+    Full(Answer, bool),
+    /// The value alone and the seen flag: `debconf-communicate` answers
+    /// both; the type is the one of the template, so the comparison sees
+    /// the value only.
+    Value(Reply),
     /// The host holds no answer for the question.
     Absent,
+}
+
+/// What `debconf-communicate` answers for one question: its value and
+/// whether the database marks it seen. `debconf-set-selections` marks the
+/// questions it writes seen, so an unseen question must be written again
+/// even when the answer matches — the next package configuration would
+/// otherwise prompt or pick a frontend default.
+#[derive(Debug)]
+struct Reply {
+    value: String,
+    seen: bool,
 }
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -46,7 +59,7 @@ fn run_with(
     params: &Value,
     ctx: &ExecContext,
     selections: &mut impl FnMut(&ExecContext) -> Result<String, ReadError>,
-    ask: &mut impl FnMut(&str, &str, &ExecContext) -> Result<Option<String>, String>,
+    ask: &mut impl FnMut(&str, &str, &ExecContext) -> Result<Option<Reply>, String>,
     set: &mut impl FnMut(&str, &ExecContext) -> Result<(), String>,
 ) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -74,8 +87,8 @@ fn run_with(
     }
     let reading = read_host(selections, ask, package, question, ctx)?;
     let changed = match &reading {
-        Reading::Full(answer) => answer.kind != kind || answer.value != value,
-        Reading::Value(current) => current != value,
+        Reading::Full(answer, seen) => answer.kind != kind || answer.value != value || !seen,
+        Reading::Value(reply) => reply.value != value || !reply.seen,
         Reading::Absent => true,
     };
     if changed && !ctx.check_mode {
@@ -89,15 +102,27 @@ fn run_with(
 /// `debconf-communicate` (base `debconf`) is installed.
 fn read_host(
     selections: &mut impl FnMut(&ExecContext) -> Result<String, ReadError>,
-    ask: &mut impl FnMut(&str, &str, &ExecContext) -> Result<Option<String>, String>,
+    ask: &mut impl FnMut(&str, &str, &ExecContext) -> Result<Option<Reply>, String>,
     package: &str,
     question: &str,
     ctx: &ExecContext,
 ) -> Result<Reading, String> {
     match selections(ctx) {
-        Ok(text) => Ok(answer_of(&text, package, question).map_or(Reading::Absent, Reading::Full)),
+        Ok(text) => match answer_of(&text, package, question) {
+            Some(answer) => {
+                // The database reader prints the answer but not the seen
+                // flag; the fallback reader is asked for it, and a
+                // question it cannot describe counts as seen.
+                let seen = match ask(package, question, ctx) {
+                    Ok(Some(reply)) => reply.seen,
+                    _ => true,
+                };
+                Ok(Reading::Full(answer, seen))
+            }
+            None => Ok(Reading::Absent),
+        },
         Err(ReadError::MissingTool) => Ok(match ask(package, question, ctx)? {
-            Some(value) => Reading::Value(value),
+            Some(reply) => Reading::Value(reply),
             None => Reading::Absent,
         }),
         Err(ReadError::Failed(message)) => Err(message),
@@ -159,14 +184,15 @@ fn current_selections_named(program: &str, ctx: &ExecContext) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// The value the host holds for one question, as `debconf-communicate`
-/// answers it: `GET question` answers `0 value`, and a question the
+/// The value and the seen flag the host holds for one question, as
+/// `debconf-communicate` answers them: `GET question` answers `0 value`,
+/// `GETSEEN question` answers `0 true` or `0 false`, and a question the
 /// database does not know answers with a nonzero code.
 fn communicate_value(
     _package: &str,
     question: &str,
     ctx: &ExecContext,
-) -> Result<Option<String>, String> {
+) -> Result<Option<Reply>, String> {
     let mut child = debconf_command("debconf-communicate", ctx)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -175,17 +201,33 @@ fn communicate_value(
         .map_err(|error| map_ask_exec(&error))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin
-            .write_all(format!("GET {question}\n").as_bytes())
+            .write_all(format!("GET {question}\nGETSEEN {question}\n").as_bytes())
             .map_err(|error| format!("write debconf-communicate command: {error}"))?;
     }
     let output = child
         .wait_with_output()
         .map_err(|error| map_ask_exec(&error))?;
-    communicate_reply(
-        &String::from_utf8_lossy(&output.stdout),
-        &String::from_utf8_lossy(&output.stderr),
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut lines = stdout.lines();
+    let value = communicate_reply(
+        lines.next().unwrap_or_default(),
+        &stderr,
+        output.status.success(),
+    )?;
+    // The seen flag serves the comparison alone: a `GETSEEN` that answers
+    // nothing counts as seen, so a read that half worked never invents a
+    // change.
+    let seen = communicate_reply(
+        lines.next().unwrap_or_default(),
+        &stderr,
         output.status.success(),
     )
+    .ok()
+    .flatten()
+    .as_deref()
+        != Some("false");
+    Ok(value.map(|value| Reply { value, seen }))
 }
 
 /// What `debconf-communicate` answered: its protocol reply, not its exit

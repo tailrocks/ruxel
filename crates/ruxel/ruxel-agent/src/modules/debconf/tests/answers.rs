@@ -208,3 +208,54 @@ fn no_protocol_reply_and_a_failure_stay_a_failure() {
     assert!(communicate_reply("", "boom\n", false).is_err());
     assert!(communicate_reply("surprise\n", "", true).is_err());
 }
+
+/// Marking the question seen is part of `debconf-set-selections`' effect:
+/// an administrator resetting the `seen` flag must bring the task back,
+/// or the next package configuration prompts or picks a frontend default
+/// even though the answer matches.
+#[test]
+fn an_unseen_answer_is_written_again_to_mark_it_seen() -> Result<(), String> {
+    let mut written = Vec::new();
+    let result = run_with(
+        &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "string", "value": "www-data"}),
+        &context(false),
+        &mut |_| Ok("nginx\tnginx/nginx-user\tstring\twww-data\n".to_owned()),
+        &mut |_, _, _| {
+            Ok(Some(Reply {
+                value: "www-data".to_owned(),
+                seen: false,
+            }))
+        },
+        &mut |selection, _| {
+            written.push(selection.to_owned());
+            Ok(())
+        },
+    )?;
+    assert_eq!(result["changed"], true);
+    assert_eq!(written, ["nginx nginx/nginx-user string www-data\n"]);
+    Ok(())
+}
+
+/// The fallback comparison reconciles the flag along with the value.
+#[test]
+fn an_unseen_answer_the_fallback_reads_is_written_again() -> Result<(), String> {
+    let mut written = Vec::new();
+    let result = run_with(
+        &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "select", "value": "www-data"}),
+        &context(false),
+        &mut |_| Err(ReadError::MissingTool),
+        &mut |_, _, _| {
+            Ok(Some(Reply {
+                value: "www-data".to_owned(),
+                seen: false,
+            }))
+        },
+        &mut |selection, _| {
+            written.push(selection.to_owned());
+            Ok(())
+        },
+    )?;
+    assert_eq!(result["changed"], true);
+    assert_eq!(written, ["nginx nginx/nginx-user select www-data\n"]);
+    Ok(())
+}

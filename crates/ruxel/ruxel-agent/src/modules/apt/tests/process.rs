@@ -29,7 +29,7 @@ fn production_runner_executes_upgrade_and_autoremove() -> Result<(), Box<dyn std
 printf '%s\n' "$*" >> "$RUXEL_APT_TEST_LOG"
 for action do :; done
 case "$action" in
-dist-upgrade) printf '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n';;
+dist-upgrade) printf '0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.\n';;
 autoremove) printf '0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.\n';;
 *) exit 8;;
 esac
@@ -53,10 +53,13 @@ esac
         String::from_utf8_lossy(&output.stderr)
     );
     let prefix = "-y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold";
+    // In check and diff mode the upgrade and the autoremove are simulated
+    // as one transaction (`--auto-remove`), so autoremove evaluates the
+    // post-upgrade dependency graph just like apply mode.
     assert_eq!(
         calls,
         format!(
-            "{prefix} dist-upgrade\n{prefix} autoremove\n{prefix} -s dist-upgrade\n{prefix} -s autoremove\n"
+            "{prefix} dist-upgrade\n{prefix} autoremove\n{prefix} -s --auto-remove dist-upgrade\n"
         )
     );
     Ok(())

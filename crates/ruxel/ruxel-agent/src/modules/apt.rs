@@ -40,13 +40,31 @@ fn run_with(
             "dist" => "dist-upgrade",
             other => return Err(format!("apt: upgrade={other:?} outside the closed surface")),
         };
-        match maintenance(action, true, ctx, system_state, &mut result, command) {
+        // In check and diff mode the upgrade and the autoremove are
+        // simulated as one transaction (`--auto-remove`): a separate
+        // `-s autoremove` after a simulated upgrade would evaluate the
+        // pre-upgrade dependency graph — the simulation changes nothing —
+        // while apply mode runs the autoremove after the real upgrade.
+        // Check and apply must agree on the removals.
+        let combined = autoremove && ctx.check_mode;
+        match maintenance(
+            action,
+            if combined { &["--auto-remove"] } else { &[] },
+            true,
+            ctx,
+            system_state,
+            &mut result,
+            command,
+        ) {
             Ok(more) => changed |= more,
             Err(error) => return Ok(failed(&mut result, changed, &error)),
         }
+        if combined {
+            result["diff"] = json!({});
+        }
     }
-    if autoremove {
-        match maintenance("autoremove", false, ctx, system_state, &mut result, command) {
+    if autoremove && !(upgrade.is_some() && ctx.check_mode) {
+        match maintenance("autoremove", &[], false, ctx, system_state, &mut result, command) {
             Ok(more) => changed |= more,
             Err(error) => return Ok(failed(&mut result, changed, &error)),
         }
@@ -62,6 +80,7 @@ fn run_with(
     if !requests.is_empty() {
         match install(
             &requests,
+            holds.as_deref().unwrap_or_default(),
             state,
             obj,
             ctx,
@@ -210,17 +229,20 @@ fn package_names(obj: &Map<String, Value>) -> Result<Vec<String>, String> {
 
 fn maintenance(
     action: &str,
+    extra: &[&str],
     with_msg: bool,
     ctx: &ExecContext,
     system_state: &mut SystemState,
     result: &mut Value,
     command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
 ) -> Result<bool, String> {
-    let args = if ctx.check_mode {
-        vec!["-s", action]
+    let mut args = if ctx.check_mode {
+        vec!["-s"]
     } else {
-        vec![action]
+        vec![]
     };
+    args.extend_from_slice(extra);
+    args.push(action);
     let (stdout, rc, stderr) = command(&args, ctx)?;
     if rc != 0 {
         let simulation = if ctx.check_mode { " -s" } else { "" };
@@ -242,6 +264,7 @@ enum Installed {
 
 fn install(
     requests: &[PackageRequest],
+    held: &[PackageRequest],
     state: &str,
     obj: &Map<String, Value>,
     ctx: &ExecContext,
@@ -259,19 +282,45 @@ fn install(
         if bool_param(obj, "force", false) {
             args.push("--allow-downgrades");
         }
-        if bool_param(obj, "hold", false) {
-            // A `hold` step whose pin changed must move the package the
-            // host already holds, and apt refuses that without this
-            // relaxation. The hold survives the move, so the marks are
-            // not run again. A plain install keeps apt's refusal: a plan
-            // could not know of the hold.
-            args.push("--allow-change-held-packages");
+        // A `hold` step whose pin changed must move the packages the host
+        // already holds. Only the requested holds are lifted for this
+        // transaction and restored right after; every other held package
+        // keeps apt's refusal to move it. The transaction-wide
+        // `--allow-change-held-packages` is not used: apt documents it as
+        // a dangerous force-yes that lets the run change any held
+        // package, even one the workflow never requested.
+        let native = system_state.native_architecture().map(str::to_owned);
+        let lifted: Vec<String> = if bool_param(obj, "hold", false) {
+            requests
+                .iter()
+                .filter(|request| held.iter().any(|entry| request.covered_by(entry, native.as_deref())))
+                .map(PackageRequest::selector)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if !lifted.is_empty() {
+            let mut marks = vec!["unhold"];
+            marks.extend(lifted.iter().map(String::as_str));
+            let (_, rc, stderr) = command(&marks, ctx)?;
+            if rc != 0 {
+                return Err(format!("apt-mark unhold failed: {stderr}"));
+            }
         }
         args.extend(plan.transaction.iter().map(String::as_str));
         let (stdout, rc, stderr) = command(&args, ctx)?;
         system_state.invalidate_packages();
+        // The holds are restored whatever the transaction answered: the
+        // host held the packages before the step, so the step leaves them
+        // held — or reports the mark that could not be restored.
+        let restored = restore_holds(&lifted, command, ctx);
         if rc != 0 {
             return Err(format!("apt install failed: {stderr}"));
+        }
+        if let Err(error) = restored {
+            return Ok(Installed::Unverified(format!(
+                "apt install succeeded but the hold could not be restored: {error}"
+            )));
         }
         fill_exec_fields(result, &stdout, &stderr, false);
         match system_state.plan_packages(requests, latest, &ctx.environment) {
@@ -292,12 +341,31 @@ fn install(
     Ok(Installed::Changed)
 }
 
+/// Puts back the holds the transaction lifted, so the host keeps the
+/// state the step promised.
+fn restore_holds(
+    lifted: &[String],
+    command: &mut impl FnMut(&[&str], &ExecContext) -> CommandResult,
+    ctx: &ExecContext,
+) -> Result<(), String> {
+    if lifted.is_empty() {
+        return Ok(());
+    }
+    let mut marks = vec!["hold"];
+    marks.extend(lifted.iter().map(String::as_str));
+    let (_, rc, stderr) = command(&marks, ctx)?;
+    if rc != 0 {
+        return Err(format!("apt-mark hold failed: {stderr}"));
+    }
+    Ok(())
+}
+
 /// apt-get and apt-mark share one command: the arguments name the
-/// operation, so `showhold` and `hold` run apt-mark and every other
-/// argument runs apt-get.
+/// operation, so `showhold`, `hold` and `unhold` run apt-mark and every
+/// other argument runs apt-get.
 fn apt_command(args: &[&str], ctx: &ExecContext) -> CommandResult {
     match args.first() {
-        Some(&"showhold" | &"hold") => apt_mark(args, ctx),
+        Some(&"showhold" | &"hold" | &"unhold") => apt_mark(args, ctx),
         _ => apt_get(args, ctx),
     }
 }

@@ -15,7 +15,7 @@ fn a_missing_reader_falls_back_to_the_value_of_the_question() -> Result<(), Stri
         &mut |_| Err(ReadError::MissingTool),
         &mut |package, question, _| {
             asked.push(format!("{package} {question}"));
-            Ok(Some("www-data".to_owned()))
+            Ok(Some(Reply { value: "www-data".to_owned(), seen: true }))
         },
         &mut |selection, _| {
             written.push(selection.to_owned());
@@ -38,7 +38,7 @@ fn the_fallback_writes_a_value_that_differs() -> Result<(), String> {
         &json!({"package": "nginx", "question": "nginx/nginx-user", "type": "select", "value": "www-data"}),
         &context(false),
         &mut |_| Err(ReadError::MissingTool),
-        &mut |_, _, _| Ok(Some("nginx".to_owned())),
+        &mut |_, _, _| Ok(Some(Reply { value: "nginx".to_owned(), seen: true })),
         &mut |selection, _| {
             written.push(selection.to_owned());
             Ok(())

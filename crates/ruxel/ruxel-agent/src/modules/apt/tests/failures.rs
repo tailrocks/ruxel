@@ -69,11 +69,13 @@ fn a_holding_failure_after_a_changing_install_reports_the_install_change() -> Re
 
 /// A whole-system upgrade that changed the host is not hidden when the
 /// autoremove after it fails: the result keeps the upgrade's change
-/// alongside the failure.
+/// alongside the failure. (Check and diff simulate the two operations as
+/// one transaction, so the separate autoremove — and this failure — is
+/// an apply-time shape.)
 #[test]
 fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -> Result<(), String>
 {
-    for check in [false, true] {
+    {
         let mut calls = Vec::new();
         let mut command = |args: &[&str], _: &ExecContext| {
             let action = args.last().copied().unwrap_or_default();
@@ -86,7 +88,7 @@ fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -
         };
         let result = run_with(
             &json!({"upgrade": "dist", "autoremove": true}),
-            &context(check),
+            &context(false),
             &mut SystemState::default(),
             &mut command,
         )

@@ -9,7 +9,10 @@ fn upgrade_and_autoremove_both_run_and_aggregate_changes() -> Result<(), String>
                 let mut command = |args: &[&str], ctx: &ExecContext| {
                     assert_eq!(ctx.environment, [("FIXTURE".into(), "value".into())]);
                     calls.push(args.iter().map(ToString::to_string).collect::<Vec<_>>());
-                    let changed = if args.last() == Some(&"dist-upgrade") {
+                    let changed = if args.contains(&"--auto-remove") {
+                        // The combined simulation speaks for both parts.
+                        upgrade_changed || removed
+                    } else if args.last() == Some(&"dist-upgrade") {
                         upgrade_changed
                     } else {
                         removed
@@ -22,15 +25,24 @@ fn upgrade_and_autoremove_both_run_and_aggregate_changes() -> Result<(), String>
                     &mut SystemState::default(),
                     &mut command,
                 )?;
+                // In check and diff mode the two operations are simulated
+                // as one transaction: a separate `-s autoremove` would
+                // evaluate the pre-upgrade dependency graph while apply
+                // evaluates the post-upgrade one.
                 let expected = if check {
-                    vec![vec!["-s", "dist-upgrade"], vec!["-s", "autoremove"]]
+                    vec![vec!["-s", "--auto-remove", "dist-upgrade"]]
                 } else {
                     vec![vec!["dist-upgrade"], vec!["autoremove"]]
                 };
                 assert_eq!(calls, expected);
                 assert_eq!(result["changed"], upgrade_changed || removed);
                 assert_eq!(result["failed"], false);
-                assert_eq!(result["stdout"], summary(removed).trim_end());
+                let expected_stdout = if check {
+                    summary(upgrade_changed || removed)
+                } else {
+                    summary(removed)
+                };
+                assert_eq!(result["stdout"], expected_stdout.trim_end());
             }
         }
     }
@@ -44,6 +56,12 @@ fn upgrade_and_autoremove_both_run_and_aggregate_changes() -> Result<(), String>
 fn maintenance_failures_stop_execution_and_report_the_action() -> Result<(), String> {
     for check in [false, true] {
         for fail_action in ["dist-upgrade", "autoremove"] {
+            if check && fail_action == "autoremove" {
+                // Check and diff simulate the upgrade and the autoremove
+                // as one transaction: there is no separate autoremove to
+                // fail.
+                continue;
+            }
             let mut calls = Vec::new();
             let mut command = |args: &[&str], _: &ExecContext| {
                 let action = args.last().copied().unwrap_or_default();
