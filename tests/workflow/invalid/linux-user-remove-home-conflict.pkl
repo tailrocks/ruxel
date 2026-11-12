@@ -1,0 +1,11 @@
+// expect: is removed with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A removal with removeHome deletes the home directory and everything in
+// it, so no step may manage a path inside it.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { path = "/home/app/keep.txt"; content = "mine\n" }
+  new linux.User { user = "app"; home = "/home/app"; state = "absent"; uid = 1500; removeHome = true }
+} } }
