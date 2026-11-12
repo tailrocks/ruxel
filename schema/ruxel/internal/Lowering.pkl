@@ -1042,6 +1042,16 @@ const local reservedPrefix = Regex(#"__ruxel_rt_8d41\.|__ruxel_secret_8d41\."#)
 /// whole placeholder is that placeholder's opening delimiter, never the
 /// match's accounting.
 const local standaloneCandidate = Regex(#"^__(?:ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?=(?:(?!__)[\s\S])*?:)(?:(?!__)[\s\S])*?|(?:(?!__)[\s\S])*?)__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?=ruxel_rt_8d41\.[A-Za-z0-9_.]+__|ruxel_secret_8d41\.(?:(?!__)[\s\S])*?__(?!ruxel_rt_8d41\.|ruxel_secret_8d41\.)))"#)
+/// The reserved words beside a placeholder's delimiters: a prefix a
+/// terminator opened is the word's own text — never a candidate of its
+/// own — only where the words continue into another reserved word or run
+/// beside another placeholder's delimiters, the `__` that a following word
+/// completes into a full reserved prefix. Absence of a complete candidate
+/// is never evidence of that: a prefix that starts an unterminated
+/// candidate — an encoded-body attempt that trails off with no terminator
+/// of its own — alone fails the prefix count, and overlapped it counts as
+/// never covered, never left behind as literal content.
+const local wordBearing = Regex(#"^__(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.)(?:ruxel_rt_8d41\.|ruxel_secret_8d41\.|[\s\S]*__)"#)
 
 /// Text without placeholders stays a string. Run-time placeholders
 /// (`currentHost`, `Capture.stdout()`) become engine references, secret
@@ -1092,19 +1102,24 @@ function segmentsOf(text: String): List<Segment> =
   // The prefix count is overlap-aware: a placeholder's own reserved
   // prefixes are accounted for — its opening, and the terminator that
   // following literal text completes into another full prefix, which is
-  // the word's own text and never a second secret. A prefix the
-  // terminator opened is never covered when the words complete it into a
-  // whole candidate of its own — the same rule the terminator lookahead
-  // carries — and a prefix a run-time body swallowed whole is never
-  // covered either: both are a placeholder's opening delimiter, not the
-  // match's accounting. Only a prefix that starts outside every
-  // placeholder's own delimiters is a secret reference of its own that
-  // never matched, and refuses the text as malformed.
+  // the word's own text and never a second secret: the reserved words
+  // beside a placeholder's delimiters, carrying no terminator of their
+  // own. A prefix the terminator opened is never covered when the words
+  // complete it into a whole candidate of their own — the same rule the
+  // terminator lookahead carries — and never when they begin a candidate
+  // that trails off unterminated: absence of a complete candidate is not
+  // evidence that the prefix belongs to the match. A prefix a run-time
+  // body swallowed whole is never covered either: both are a
+  // placeholder's opening delimiter, not the match's accounting. Only a
+  // prefix that starts outside every placeholder's own delimiters is a
+  // secret reference of its own that never matched, and refuses the text
+  // as malformed.
   let (stray = reservedPrefix.findMatchesIn(text).filter((p) ->
     matches.filter((m) ->
       m.start == p.start
         || (m.end - 2 <= p.start && p.start < m.end
-          && standaloneCandidate.findMatchesIn(text.substring(codePointOffset(text, p.start), text.length)).isEmpty)).isEmpty).length)
+          && standaloneCandidate.findMatchesIn(text.substring(codePointOffset(text, p.start), text.length)).isEmpty
+          && wordBearing.findMatchesIn(text.substring(codePointOffset(text, p.start), text.length)).length > 0)).isEmpty).length)
   let (badSecret = all.filter((s) -> s.secret != null && ((s.secret ?? "").isEmpty || (s.secret ?? "").contains("_"))))
   let (strange = all.filter((s) -> s.runtime != null && !(s.runtime ?? "").matches(knownPlaceholder)))
   if (stray > 0 || !badSecret.isEmpty) throw(malformed)
