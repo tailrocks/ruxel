@@ -284,10 +284,16 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
             .ok_or_else(|| format!("no timer file {dest}"))?;
         assert!(content.contains(on_boot), "{dest}: {content}");
     }
-    // A half millisecond survives the evaluators exactly and is kept;
-    // the .5 the evaluators silently lose is refused as unprovable.
-    let half = valid("systemd-timer-fractional-delay.pkl")?;
-    assert!(serde_json::to_string(&half)?.contains("OnBootSec=1000.5ms"));
+    // A half millisecond is refused: the contract is whole-millisecond.
+    let half = root().join("invalid/systemd-timer-fractional-delay.pkl");
+    let error = ruxel_config::eval_config(&half, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    assert!(
+        error.contains("must be a whole number of milliseconds"),
+        "{error}"
+    );
     let lost = root().join("invalid").join("timer-boot-lost-fraction.pkl");
     let error = ruxel_config::eval_config(&lost, &options())
         .err()

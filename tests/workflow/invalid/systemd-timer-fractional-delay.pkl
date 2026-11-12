@@ -1,0 +1,12 @@
+// expect: 'The half millisecond': onBoot 1000.5.ms must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds
+// A boot delay of half a millisecond: the contract is whole-millisecond,
+// so a fraction of one is refused even when both evaluators carry it
+// exactly — 1000.5 is representable and still not a whole number of
+// milliseconds a timer may be given.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The half millisecond"; name = "postgresql-half-millisecond"; onBoot = 1000.5.ms }
+} } }
