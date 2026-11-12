@@ -569,10 +569,14 @@ function nested(ix: StageIndex, i: Int): List<String> =
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
 
-/// Paths a step writes as a regular file or a link. A timer writes its
-/// unit file, which is a regular file like any other.
+/// Paths a step writes as a regular file or a link: its whole-file
+/// subjects, and a sysctl's entry file — the entries are its subjects,
+/// but the file it writes is a regular file of its own. A timer writes
+/// its unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
-  if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
+  if (s is linux.Sysctl) List(s.path)
+  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s)
+  else List()
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -584,17 +588,20 @@ const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
 
 /// A sysctl step manages the entries of the file at its `path`, never the
-/// file itself, so a `File`, `Directory`, `Symlink` or `GitCheckout` at that
-/// path declares a second state for the same file: whichever ran later
-/// would clobber the other. Two sysctl steps may share a file — each
-/// manages its own entry, and their subjects are their names in it.
+/// file itself, so any other step that manages the same path declares a
+/// second state for the same file: whichever ran later would clobber the
+/// other. The predicate is the step's path subjects, not a list of kinds:
+/// a file, a directory, a link, a checkout, an apt repository's source or
+/// keyring, a validate candidate — anything that names the path. Two
+/// sysctl steps may share a file — each manages its own entry, and their
+/// subjects are their names in it.
 function sysctlFiles(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> sysctlClash(ix.steps[j], ix.steps[i]) || sysctlClash(ix.steps[i], ix.steps[j]))
     .map((j) -> let (p = if (ix.steps[j] is linux.Sysctl) ix.steps[j].path else ix.steps[i].path)
       "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage the file \(p): a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the other step to another stage")
 
 const function sysctlClash(a: core.Step, b: core.Step): Boolean =
-  a is linux.Sysctl && List("file", "directory", "symlink", "gitCheckout").contains(b.kind) && subjectsOf(b).contains(a.path)
+  a is linux.Sysctl && !(b is linux.Sysctl) && paths(b).contains(a.path)
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
@@ -968,7 +975,10 @@ const function nameOverlap(a: String, b: String): Boolean =
 /// its architecture (`ba*` is `ba`, `bash:amd64` is `bash`).
 const function baseOf(s: String): String = packageName(if (s.endsWith("*")) s.substring(0, s.length - 1) else s)
 
-const function paths(s: core.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
+/// The paths a step manages as file-system things: its path-bearing
+/// subjects, and a sysctl's entry file.
+const function paths(s: core.Step): List<String> =
+  subjectsOf(s).filter((x) -> x.startsWith("/")) + (if (s is linux.Sysctl) List(s.path) else List())
 
 /// Pairs `(file, path)` where `path` lies beneath `file`.
 const function inside(files: List<String>, candidates: List<String>): List<List<String>> =
@@ -1128,7 +1138,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
-  ["user"] = (s) -> List("the account \(s.user)")
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present" && s.home != null) List(s.home) else List())
   ["group"] = (s) -> List("the group \(s.name)")
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")

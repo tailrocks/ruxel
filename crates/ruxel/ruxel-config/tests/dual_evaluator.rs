@@ -164,6 +164,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-root-group.pkl",
     "invalid/linux-group-root-gid.pkl",
     "invalid/linux-sysctl-path-root.pkl",
+    "invalid/linux-sysctl-clash-apt-repository.pkl",
+    "invalid/linux-file-above-sysctl.pkl",
+    "invalid/linux-directory-sysctl-clash.pkl",
+    "invalid/linux-user-home-conflict.pkl",
 ];
 
 /// The official `pkl` binary.

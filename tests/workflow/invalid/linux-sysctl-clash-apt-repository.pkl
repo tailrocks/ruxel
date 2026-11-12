@@ -1,0 +1,21 @@
+// expect: both manage the file /etc/apt/sources.list.d/docker.sources
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+local key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n"
+
+// A sysctl's entry file may be no other step's file: an apt repository
+// owns the source file it writes, so a sysctl at that path would clobber
+// it or be clobbered.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new debian.AptRepository { name = "docker"; url = "https://download.docker.com/linux/ubuntu"; suite = "stable"; components { "main" }; signingKey = key }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/apt/sources.list.d/docker.sources" }
+    }
+  }
+}
