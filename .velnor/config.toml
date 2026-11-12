@@ -556,6 +556,7 @@ inputs = [
   "tests/workflow/valid/systemd-timer-long-name.pkl",
   "tests/workflow/valid/systemd-timer.pkl",
   "tests/workflow/valid/tags.pkl",
+  "tests/workflow/valid/user-missing-account.pkl",
   "tests/workflow/valid/watch-chain.pkl",
 ]
 tools = ["rust"]
