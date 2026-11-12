@@ -187,7 +187,9 @@ class User extends core.Step {
   system: Boolean = false
   /// Whether the account is there (`present`) or gone (`absent`).
   state: Presence = "present"
-  /// Whether removing the account removes its home directory too.
+  /// Whether removing the account removes its home directory too
+  /// (`userdel -r`). The step then states the home: the directory and
+  /// everything in it goes, so no step may manage a path inside it.
   removeHome: Boolean = false
 }
 
