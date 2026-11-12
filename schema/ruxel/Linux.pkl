@@ -124,7 +124,10 @@ class Timezone extends core.Step {
 /// The step manages one entry in the file at `path` and applies it live.
 /// Its identity is the name and the path, so two stages (or one stage with
 /// two files) may set the same name in different files; two different values
-/// for one name in one file and stage conflict.
+/// for one name in one file and stage conflict. The file itself is not the
+/// step's to own: a `File`, `Directory`, `Symlink` or `GitCheckout` at that
+/// path conflicts with it, while any number of sysctl steps may share a
+/// file, each entry its own.
 class Sysctl extends core.Step {
   hidden fixed kind = "sysctl"
   name: SysctlName
