@@ -28,6 +28,21 @@ pub(super) fn run(
     params: &Value,
     source: Option<&[u8]>,
     ctx: &ExecContext,
+    system_state: &mut crate::system_state::SystemState,
+) -> Result<Value, String> {
+    run_in(params, source, ctx, system_state, Path::new("/etc/apt"))
+}
+
+/// `apt_root` names the directory whose `preferences.d/` and source files
+/// decide the candidate policy apt applies: a write that lands under one
+/// must reach the agent's package state. The host's is `/etc/apt`; a test
+/// points a fixture root here.
+pub(super) fn run_in(
+    params: &Value,
+    source: Option<&[u8]>,
+    ctx: &ExecContext,
+    system_state: &mut crate::system_state::SystemState,
+    apt_root: &Path,
 ) -> Result<Value, String> {
     let obj = params_object(params)?;
     let dest = str_param(obj, "dest").ok_or("copy: dest required")?;
@@ -100,6 +115,12 @@ pub(super) fn run(
                 Some(default_file_mode(&status))
             };
             write_atomic_with(p, content, creation_mode, (ownership.uid, ownership.gid))?;
+            if changes_apt_policy(apt_root, p) {
+                // The write decides which version apt would choose, so
+                // the cached candidates go and the next plan re-reads
+                // them.
+                system_state.invalidate_candidates();
+            }
         }
         if applies_attrs {
             apply_attrs_with(p, obj, &ownership, &mut changed, ctx.check_mode)?;
@@ -111,6 +132,16 @@ pub(super) fn run(
 
 fn copy_needs_write(exists: bool, same: bool, force: bool) -> bool {
     !exists || (force && !same)
+}
+
+/// Whether a write to `dest` changes the candidate policy apt applies:
+/// preference stanzas and apt sources live under the apt root's
+/// `preferences.d/` and `sources.list.d/`, and in the legacy
+/// `sources.list`.
+fn changes_apt_policy(apt_root: &Path, dest: &Path) -> bool {
+    dest.starts_with(apt_root.join("preferences.d"))
+        || dest.starts_with(apt_root.join("sources.list.d"))
+        || dest == apt_root.join("sources.list")
 }
 
 #[cfg(test)]
@@ -155,6 +186,7 @@ mod tests {
             }),
             None,
             &ctx,
+            &mut crate::system_state::SystemState::default(),
         )
         .unwrap_err();
         assert!(error.contains("not found"), "{error}");
@@ -234,6 +266,7 @@ mod tests {
             }),
             None,
             &ctx,
+            &mut crate::system_state::SystemState::default(),
         )
         .unwrap();
         let after = super::super::OWNERSHIP_RESOLUTIONS.with(std::cell::Cell::get);

@@ -58,9 +58,22 @@ impl SystemState {
         }
     }
 
+    /// Reads the package candidates from a replacement `apt-cache`
+    /// executable instead of the host's.
+    #[cfg(test)]
+    pub(crate) fn with_apt_cache(mut self, program: std::path::PathBuf) -> Self {
+        self.apt_cache = Some(program);
+        self
+    }
+
     #[cfg(test)]
     pub(crate) fn test_packages_invalidated(&self) -> bool {
         self.packages.is_none() && self.candidates.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_candidates_invalidated(&self) -> bool {
+        self.candidates.is_empty()
     }
 
     #[cfg(test)]
