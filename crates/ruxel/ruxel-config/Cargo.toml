@@ -19,6 +19,17 @@ path = "src/bin/check_deny_inputs.rs"
 # its CI job) passes the feature to cargo test, and the local test task
 # provisions the CLI and runs with --all-features.
 dual-evaluator = []
+# The confined Pkl pipeline (the ModuleSource host-module layer, in-memory
+# `modulepath:` schema serving, source-based JSON eval, and the resource
+# capability split) needs capability families that upstream jdx/pklr does
+# not have yet — tracked as jdx/pklr#419; see also the closed-unmerged
+# ModuleSource proposal jdx/pklr#370. The feature compiles that pipeline
+# exactly as it compiles on main, where the pin names the fork
+# donbeave/pklr; it cannot be enabled while the pin names upstream. It
+# exists so the switch keeps the pipeline's code visible and reviewable
+# behind one gate instead of deleting it; it dissolves (every `cfg` goes)
+# the day #419's gaps land upstream.
+pklr-fork-capabilities = []
 
 [[test]]
 name = "dual_evaluator"
@@ -29,7 +40,13 @@ blake3.workspace = true
 ruxel-guard = { path = "../ruxel-guard", version = "0.1.0" }
 rustix.workspace = true
 
-pklr = { git = "https://github.com/donbeave/pklr", rev = "9843caeb1f56499896c78057fd2560e468978ab1", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+# SUP-028: the pin moved from the fork donbeave/pklr @ 9843caeb to upstream
+# jdx/pklr. Upstream main 77828272 has all the fork's merged fixes (modulepath:
+# imports d0b0a05/#415 + 5dda5f4/#417, set_max_depth 36cd9b1/#414, the
+# parity fixes bb79214/#413 and friends) but NONE of the four open capability
+# families tracked by jdx/pklr#419 — so this build evaluates nothing until
+# they land (see the `pklr-fork-capabilities` feature and eval.rs).
+pklr = { git = "https://github.com/jdx/pklr", rev = "77828272d37b3e51f45582a75e345a0ae0b963a0", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.2.1"

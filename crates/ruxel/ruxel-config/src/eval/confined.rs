@@ -6,11 +6,14 @@
 //! symlinks (including one swapped in while evaluation runs) cannot reach a
 //! file outside the roots.
 
-use pklr::{Error, EvalCapabilities, Result};
+#[cfg(feature = "pklr-fork-capabilities")]
+use pklr::EvalCapabilities;
+use pklr::{Error, Result};
 use rustix::fs::{Mode, OFlags};
+#[cfg(feature = "pklr-fork-capabilities")]
+use std::io::Read as _;
 use std::{
     fs::File,
-    io::Read,
     path::{Component, Path, PathBuf},
 };
 
@@ -186,7 +189,14 @@ impl Confined {
         let (root, relative) = self.locate(path)?;
         Ok(root.path.join(relative))
     }
+}
 
+/// Reads beneath the roots, for the gated `Resources` capability host
+/// and `Modules` source layer only: upstream jdx/pklr has no
+/// resource-hook split yet (jdx/pklr#419), so nothing ungated consumes
+/// these.
+#[cfg(feature = "pklr-fork-capabilities")]
+impl Confined {
     /// Open `path` beneath its root without following any symlink. `None`
     /// when it does not exist.
     pub(super) fn open(&self, path: &Path) -> Result<Option<File>> {
@@ -275,10 +285,26 @@ fn normalize(path: &Path) -> PathBuf {
     normal
 }
 
+#[cfg_attr(
+    not(feature = "pklr-fork-capabilities"),
+    allow(
+        dead_code,
+        reason = "consumed by the pklr-fork-capability pipeline; see jdx/pklr#419"
+    )
+)]
+#[cfg(feature = "pklr-fork-capabilities")]
 fn not_found(path: &Path) -> Error {
     Error::Io(path.into(), std::io::ErrorKind::NotFound.into())
 }
 
+#[cfg_attr(
+    not(feature = "pklr-fork-capabilities"),
+    allow(
+        dead_code,
+        reason = "consumed by the pklr-fork-capability pipeline; see jdx/pklr#419"
+    )
+)]
+#[cfg(feature = "pklr-fork-capabilities")]
 fn refused(what: &str) -> Error {
     Error::Eval(format!(
         "{what} is not available while evaluating Ruxel configuration"
@@ -287,8 +313,18 @@ fn refused(what: &str) -> Error {
 
 /// Host IO for configuration evaluation: confined file reads, no
 /// environment, no network, no writes.
+///
+/// Gated behind `pklr-fork-capabilities`: this impl compiles against
+/// upstream jdx/pklr (it overrides only the shared hooks), but upstream
+/// routes module loads through the *same* hooks and its `expand_glob` is
+/// native-only — so without the fork's `resource_*` split
+/// (`resource_path_exists`/`resource_read_bytes`/`resource_glob`, fork #8)
+/// and `GlobAccess`/`expand_glob_with`, the imports-allowed-resources-denied
+/// policy this host exists to state cannot be expressed (jdx/pklr#419).
+#[cfg(feature = "pklr-fork-capabilities")]
 pub(super) struct Resources(pub(super) std::sync::Arc<Confined>);
 
+#[cfg(feature = "pklr-fork-capabilities")]
 impl EvalCapabilities for Resources {
     fn read_to_string(&mut self, path: &Path) -> Result<String> {
         String::from_utf8(self.read_bytes(path)?).map_err(|_| {

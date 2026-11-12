@@ -1,7 +1,10 @@
 use crate::ConfigError;
-use confined::{Confined, Resources, Root};
+#[cfg(feature = "pklr-fork-capabilities")]
+use confined::Resources;
+use confined::{Confined, Root};
+#[cfg(feature = "pklr-fork-capabilities")]
+use std::collections::BTreeMap;
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -51,6 +54,28 @@ fn evaluate(
     })
 }
 
+/// Evaluate a module through the confined pipeline. Imports and `file:`
+/// resources must lie beneath `options.root_dir` or a module path directory,
+/// and may not pass through a symlink; see [`EvalOptions`].
+///
+/// This is the intended end state of the upstream switch. It compiles only
+/// with the `pklr-fork-capabilities` feature, because upstream jdx/pklr
+/// does not have the four capability families it needs (jdx/pklr#419):
+///
+/// * `pklr::ModuleSource` + `Evaluator::set_module_source` +
+///   `eval_source_json_blocking` — the confined host-module layer
+///   (jdx/pklr#370's scope, closed unmerged);
+/// * `Evaluator::add_module_path_source` / `add_module_path_directory` —
+///   the compiled-in schema served from memory as module-path entries;
+/// * a `modulepath:` resource target — `set_allowed_resources` upstream
+///   accepts the scheme but its `Target` enum cannot resolve it;
+/// * the `resource_*` capability hooks — upstream routes module loads and
+///   resource reads through the same hooks, so the imports-versus-resources
+///   policy split is inexpressible.
+///
+/// Every `cfg` in this crate that names the feature dissolves the day
+/// #419's gaps land upstream; the pin then stays and this doc block goes.
+#[cfg(feature = "pklr-fork-capabilities")]
 fn evaluate_here(
     path: &Path,
     files: Arc<Confined>,
@@ -76,6 +101,31 @@ fn evaluate_here(
     evaluator.set_module_source(modules);
     evaluator.set_base_path(path.parent().unwrap_or(Path::new("/")));
     evaluator.eval_source_json_blocking(&source, path)
+}
+
+/// The loud refusal every evaluation meets while the pin names upstream
+/// `jdx/pklr` without #419's capability families.
+///
+/// Upstream exposes no way to evaluate through a host capability set at
+/// all: `Evaluator::eval_file_json_blocking` and `eval_file_text_blocking`
+/// are crate-private, and `EvaluatorBuilder` constructs only the native
+/// capabilities. The confined pipeline therefore cannot run, and an
+/// unconfinined fallback must not: this build refuses to evaluate rather
+/// than read outside the pinned roots. Delete this function together with
+/// the feature when #419 lands.
+#[cfg(not(feature = "pklr-fork-capabilities"))]
+fn evaluate_here(
+    path: &Path,
+    _files: Arc<Confined>,
+    _module_path: &[PathBuf],
+) -> pklr::Result<serde_json::Value> {
+    Err(pklr::Error::Eval(format!(
+        "confined Pkl evaluation is unavailable in this build: the pklr pin names \
+         upstream jdx/pklr, which does not yet provide the capability families \
+         this evaluator needs (jdx/pklr#419); refusing to evaluate `{}` \
+         unconfinined",
+        path.display()
+    )))
 }
 
 /// Evaluate a module. Imports and `file:` resources must lie beneath
@@ -138,5 +188,11 @@ pub fn eval_config(root: &Path, options: &EvalOptions) -> Result<serde_json::Val
     Ok(value)
 }
 
-#[cfg(test)]
+// The inventory test walks the module AST through the fork's
+// `Module::module_references()`; upstream jdx/pklr has no such walk yet
+// (jdx/pklr#419), so the test module is gated with the confined pipeline.
+// `minimal_evaluates` needs the pipeline too — the upstream-pinned build
+// refuses every evaluation loudly (see `evaluate_here`) — but it compiles
+// either way; only the AST test cannot.
+#[cfg(all(test, feature = "pklr-fork-capabilities"))]
 mod tests;

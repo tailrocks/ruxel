@@ -107,6 +107,11 @@ fn missing_root_module_is_an_error() {
     assert!(eval(Path::new("/nonexistent/main.pkl"), &EvalOptions::default()).is_err());
 }
 
+// `roots` asserts the confined-read surface (`Confined::read`), which is
+// gated behind the pipeline's feature until jdx/pklr#419 lands; the other
+// suites exercise the public `eval` and compile either way (they fail
+// loudly on this branch while the pin names upstream).
+#[cfg(feature = "pklr-fork-capabilities")]
 mod roots;
 #[cfg(unix)]
 mod symlinks;

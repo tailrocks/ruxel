@@ -1,13 +1,14 @@
 use super::confined::{Confined, Root};
 use crate::ConfigError;
-use pklr::{Error, ModuleSource, Result};
+use pklr::Error;
+#[cfg(feature = "pklr-fork-capabilities")]
+use pklr::{ModuleSource, Result};
 use rustix::fs::{Mode, OFlags};
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+#[cfg(feature = "pklr-fork-capabilities")]
+use std::collections::BTreeMap;
+#[cfg(feature = "pklr-fork-capabilities")]
+use std::path::PathBuf;
+use std::{fs::File, path::Path, sync::Arc};
 
 /// A template module directory selected once and retained by descriptor.
 #[derive(Debug)]
@@ -70,11 +71,20 @@ impl TemplateRoot {
 }
 
 /// Module imports beneath the confined roots.
+///
+/// Gated behind `pklr-fork-capabilities`: the whole layer is the host
+/// module source the fork's `pklr::ModuleSource` trait defines
+/// (`identity`/`exists`/`read`/`glob`), which upstream jdx/pklr does not
+/// have — proposal jdx/pklr#370 was closed unmerged and its successor is
+/// tracked by jdx/pklr#419. It compiles exactly as on main; every gate in
+/// this file dissolves when the trait lands upstream.
+#[cfg(feature = "pklr-fork-capabilities")]
 pub(super) struct Modules {
     files: Arc<Confined>,
     sources: BTreeMap<PathBuf, String>,
 }
 
+#[cfg(feature = "pklr-fork-capabilities")]
 impl Modules {
     pub(super) fn new(files: Arc<Confined>) -> Self {
         Self {
@@ -110,6 +120,7 @@ impl Modules {
     }
 }
 
+#[cfg(feature = "pklr-fork-capabilities")]
 fn builtin(uri: &str) -> bool {
     uri.strip_prefix("pkl:").is_some_and(|name| {
         !name.is_empty()
@@ -119,6 +130,7 @@ fn builtin(uri: &str) -> bool {
     })
 }
 
+#[cfg(feature = "pklr-fork-capabilities")]
 impl ModuleSource for Modules {
     fn identity(&mut self, path: &Path) -> Result<PathBuf> {
         if path.to_str().is_some_and(builtin) {
@@ -158,5 +170,5 @@ impl ModuleSource for Modules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pklr-fork-capabilities"))]
 mod tests;
