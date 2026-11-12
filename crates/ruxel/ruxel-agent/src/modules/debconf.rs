@@ -190,12 +190,18 @@ fn communicate_value(
 
 /// One selection, written to the standard input of `debconf-set-selections`.
 fn set_selection(selection: &str, ctx: &ExecContext) -> Result<(), String> {
-    let mut child = debconf_command("debconf-set-selections", ctx)
+    set_selection_named("debconf-set-selections", selection, ctx)
+}
+
+/// One selection, written to the standard input of `program`; `program`
+/// names the writer in every failure.
+fn set_selection_named(program: &str, selection: &str, ctx: &ExecContext) -> Result<(), String> {
+    let mut child = debconf_command(program, ctx)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|error| format!("exec debconf-set-selections: {error}"))?;
+        .map_err(|error| format!("exec {program}: {error}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(selection.as_bytes())
@@ -203,19 +209,26 @@ fn set_selection(selection: &str, ctx: &ExecContext) -> Result<(), String> {
     }
     let output = child
         .wait_with_output()
-        .map_err(|error| format!("exec debconf-set-selections: {error}"))?;
+        .map_err(|error| format!("exec {program}: {error}"))?;
     if !output.status.success() {
         return Err(format!(
-            "debconf-set-selections failed: {}",
+            "{program} failed: {}",
             String::from_utf8_lossy(&output.stderr).trim_end()
         ));
     }
     Ok(())
 }
 
-/// A `debconf-*` command.
-fn debconf_command(program: &str, _ctx: &ExecContext) -> std::process::Command {
-    std::process::Command::new(program)
+/// A `debconf-*` command, under the task environment: `DEBCONF_DB_OVERRIDE`
+/// and `DEBCONF_DB_FALLBACK` steer which database the tools touch, and a
+/// command that ignored the environment would silently answer and write
+/// the default one.
+fn debconf_command(program: &str, ctx: &ExecContext) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    for (key, value) in &ctx.environment {
+        command.env(key, value);
+    }
+    command
 }
 
 fn map_reader_exec(program: &str, error: &std::io::Error) -> ReadError {
