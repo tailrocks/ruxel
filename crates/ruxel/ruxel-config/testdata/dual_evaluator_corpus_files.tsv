@@ -2,8 +2,9 @@
 # one section per harness (a line naming the harness, then its files).
 # The wiring invariant (verify_pkl_artifact_wiring) demands every
 # listed file be a declared input of the dual-evaluator check; each
-# harness verifies its own section against what it actually touches,
-# so the file cannot drift from the runtime truth.
+# harness verifies its own section against what it actually touches
+# (tests/dual_evaluator{,_systemd}/corpus_files.rs), so the file cannot
+# drift from the runtime truth.
 dual_evaluator
   tests/workflow/invalid/apt-hold-conflicting-latest.pkl
   tests/workflow/invalid/apt-hold-conflicting-pin.pkl
