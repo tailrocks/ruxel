@@ -11,6 +11,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[path = "dual_evaluator/discovery.rs"]
+mod discovery;
+#[path = "dual_evaluator/join_separator.rs"]
+mod join_separator;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn root() -> PathBuf {
@@ -39,6 +44,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl",
     "invalid/secret-placeholder-overlapping-malformed-punctuation.pkl",
     "invalid/secret-placeholder-overlapping-malformed-punctuation-tagless.pkl",
+    "invalid/secret-placeholder-overlapping-malformed-whitespace.pkl",
 ];
 
 /// The official `pkl` binary.
@@ -292,109 +298,5 @@ fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
             example.starts_with("valid/"),
         )?;
     }
-    Ok(())
-}
-
-/// A `join` separator of a million characters is a seven-digit length
-/// prefix: the encoder writes it, so the decoder must read it. The
-/// workflow is generated, because a million characters do not belong in a
-/// committed file.
-///
-/// The secret is an environment value, not file content: the content of a
-/// file is scanned for placeholders, and pklr's regular expressions do not
-/// walk a million characters.
-#[test]
-fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
-    let pkl = pkl()?;
-    let modules = modules()?;
-    let directory = std::env::temp_dir().join(format!(
-        "ruxel-dual-evaluator-long-{}-{}",
-        std::process::id(),
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&directory)?;
-    std::fs::copy(
-        root().join("inventory.pkl"),
-        directory.join("inventory.pkl"),
-    )?;
-    let separator = "x".repeat(1_000_000);
-    let workflow = format!(
-        "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
-         import \"modulepath:/ruxel/Core.pkl\" as core\n\
-         import \"inventory.pkl\"\n\
-         \n\
-         stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
-         \x20 new Command {{\n\
-         \x20   run {{ \"/bin/true\" }}\n\
-         \x20   environment {{ [\"BIG\"] = core.fnox(\"APP_SECRET\").join(\"{separator}\", core.fnox(\"APP_SECRET_TWO\")) }}\n\
-         \x20 }}\n\
-         }} }} }}\n"
-    );
-    let path = directory.join("long-separator.pkl");
-    std::fs::write(&path, workflow)?;
-    compare(
-        "long-separator.pkl",
-        &path,
-        &directory,
-        &pkl,
-        &modules,
-        true,
-    )?;
-    drop(std::fs::remove_dir_all(&directory));
-    Ok(())
-}
-
-/// Prints the `pkl` this process discovers: the probe the discovery test runs in a child process, where its environment cannot race the tests above.
-#[test]
-fn the_discovery_probe_reports_the_pkl_it_found() -> Result {
-    println!("{}", pkl()?.display());
-    Ok(())
-}
-
-/// The discovery must find the binary Mise just installed: a redirected `MISE_DATA_DIR` (or `XDG_DATA_HOME`) is where `mise install pkl@0.33.0` puts it; a lookup that scans only `$HOME` fails with "not installed".
-#[test]
-fn the_discovery_finds_the_binary_mise_just_installed() -> Result {
-    let scratch = std::env::temp_dir().join(format!(
-        "ruxel-pkl-discovery-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos()
-    ));
-    let (data, home) = (scratch.join("mise-data"), scratch.join("home"));
-    let installed = data.join("installs/pkl/0.33.0/pkl");
-    std::fs::create_dir_all(
-        installed
-            .parent()
-            .ok_or("the fake install path has no parent")?,
-    )?;
-    std::fs::create_dir_all(&home)?;
-    std::fs::write(&installed, "#!/bin/sh\necho 'pkl 0.33.0'\n")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o755))?;
-    }
-    let output = Command::new(std::env::current_exe()?)
-        .args([
-            "the_discovery_probe_reports_the_pkl_it_found",
-            "--exact",
-            "--nocapture",
-        ])
-        .env("MISE_DATA_DIR", &data)
-        .env("HOME", &home)
-        .env("PATH", "/usr/bin:/bin")
-        .env_remove("XDG_DATA_HOME")
-        .env_remove("RUXEL_PKL")
-        .output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success() && stdout.contains(&*installed.display().to_string()),
-        "the probe must find the binary Mise just installed at {}; status: {}; stdout: {stdout}; stderr: {}",
-        installed.display(),
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    drop(std::fs::remove_dir_all(&scratch));
     Ok(())
 }
