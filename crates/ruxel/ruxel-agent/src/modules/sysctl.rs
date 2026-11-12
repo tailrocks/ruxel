@@ -6,6 +6,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let name = str_param(obj, "name").ok_or("sysctl: name required")?;
     if name.is_empty()
         || name.starts_with('-')
+        || name
+            .split('/')
+            .any(|component| component == "." || component == "..")
         || !name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_./:-".contains(&b))
