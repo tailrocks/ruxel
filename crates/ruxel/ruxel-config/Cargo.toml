@@ -21,6 +21,16 @@ path = "src/bin/check_deny_inputs.rs"
 # provisions the CLI and runs with --all-features.
 dual-evaluator = []
 
+# Prepares the switch from the `donbeave/pklr` fork to upstream `jdx/pklr`
+# without changing any behaviour: the fork stays the default dependency and
+# the default build does not even compile the upstream crate. The feature
+# turns on `src/upstream_pklr.rs`, which documents the capability families
+# upstream still lacks and exercises the parts of the upstream API that exist
+# today (glob expansion, `modulepath:` module search and a source evaluation
+# through `EvalCapabilities`). The flip of the default dependency stays
+# blocked on jdx/pklr#419.
+pklr-upstream-path = ["dep:pklr-upstream"]
+
 [[test]]
 name = "dual_evaluator"
 required-features = ["dual-evaluator"]
@@ -35,6 +45,12 @@ ruxel-guard = { path = "../ruxel-guard", version = "0.1.0" }
 rustix.workspace = true
 
 pklr = { git = "https://github.com/donbeave/pklr", rev = "9843caeb1f56499896c78057fd2560e468978ab1", version = "=5.2.3", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"] }
+
+# Upstream `jdx/pklr` under an alias, so both crates coexist in the lockfile
+# and the switch can be prepared without moving the default dependency. The
+# same crate name from two sources is fine; the alias keeps the two apart.
+# Optional: the default build never compiles it.
+pklr-upstream = { package = "pklr", version = "5.2.3", git = "https://github.com/jdx/pklr", rev = "77828272d37b3e51f45582a75e345a0ae0b963a0", default-features = false, features = ["eval-core", "native-io", "miette-diagnostics"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.2.1"
