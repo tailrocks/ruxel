@@ -28,6 +28,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
     let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    preflight_persistence(file, !ctx.check_mode)?;
 
     let mut changed = false;
 
@@ -80,6 +81,40 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
     }
     Ok(json!({"changed": changed, "failed": false}))
+}
+
+/// The persistence target can be published before the live value is
+/// touched: `sysctl -w` succeeds first, and a publish failure after it
+/// would leave the kernel changed with no persistent entry behind it —
+/// the task reports failure with the live value already set. A missing
+/// directory or a non-file at the path is refused up front; where the
+/// apply may run, a probe of the directory catches a read-only file
+/// system the same way.
+pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), String> {
+    let path = std::path::Path::new(file);
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => {
+            return Err(format!(
+                "sysctl: cannot persist {file}: the path is not a regular file"
+            ));
+        }
+        Err(_) => {}
+    }
+    let dir = path
+        .parent()
+        .filter(|parent| parent.is_dir())
+        .ok_or_else(|| format!("sysctl: cannot persist {file}: its directory does not exist"))?;
+    if probe {
+        let probe = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)
+            .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+        let _ = std::fs::remove_file(&probe);
+    }
+    Ok(())
 }
 
 fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
@@ -211,6 +246,31 @@ mod tests {
         assert!(!path.exists());
         Ok(())
     }
+    #[test]
+    fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_write() {
+        // `sysctl -w` would succeed first and the later publish fail,
+        // leaving the kernel changed with no persistent entry behind it:
+        // the target is validated before the live value is touched, so
+        // the refusal names the persistence file, not the live read.
+        let path = std::env::temp_dir().join(format!(
+            "ruxel-sysctl-missing-parent-{}/x.conf",
+            std::process::id()
+        ));
+        let ctx = super::ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let error = super::run(
+            &json!({"name":"ruxel.missing.key", "value":"1", "sysctl_file":path, "sysctl_set":true, "reload":false}),
+            &ctx,
+        )
+        .expect_err("an unpublishable persistence target must be refused");
+        assert!(error.contains("persist"), "{error}");
+    }
+
     #[test]
     fn slash_first_names_keep_their_separators_in_the_proc_path() {
         // Slash-first notation: every `/` is a separator and every `.`

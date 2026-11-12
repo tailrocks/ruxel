@@ -180,6 +180,13 @@ typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*
 /// one entry is one line of one file.
 typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
 
+/// A sysctl persistence file: one the system loader reads at boot —
+/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d`, `/run/sysctl.d` or
+/// `/usr/lib/sysctl.d`, the recognized configuration files `sysctl
+/// --system` loads. A file elsewhere is written but never read again: the
+/// parameter silently reverts after reboot.
+typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|run|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
+
 // ── Hosts and stages ────────────────────────────────────────────────────────
 
 /// A machine that stages run on.
