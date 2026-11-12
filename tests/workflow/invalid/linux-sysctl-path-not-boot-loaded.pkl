@@ -1,0 +1,20 @@
+// expect-pkl: Type constraint `matches(Regex(#"(/etc/sysctl
+// expect-pklr: expected SysctlFile
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A sysctl entry file the system loader never reads is written but the
+// parameter silently reverts after reboot: `sysctl --system` loads the
+// recognized `.conf` files of `/etc/sysctl.d`, `/run/sysctl.d` and
+// `/usr/lib/sysctl.d` plus `/etc/sysctl.conf`, so the persistence path
+// is one of those.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/tmp/ruxel.conf" }
+    }
+  }
+}
