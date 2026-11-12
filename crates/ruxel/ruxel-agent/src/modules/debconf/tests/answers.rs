@@ -151,3 +151,60 @@ fn the_same_type_and_the_same_value_are_no_change() -> Result<(), String> {
     assert!(written.is_empty(), "{written:?}");
     Ok(())
 }
+
+#[test]
+fn a_boolean_answer_is_true_or_false_and_nothing_else() {
+    for value in ["yes", "banana", "True", ""] {
+        let error = run_with(
+            &json!({"package": "nginx", "question": "nginx/enable", "type": "boolean", "value": value}),
+            &context(false),
+            &mut |_| Ok(String::new()),
+            &mut |_, _, _| Ok(None),
+            &mut |_, _| Ok(()),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("\"true\"") && error.contains("\"false\""),
+            "{value:?}: {error}"
+        );
+    }
+    // The canonical spellings pass: debconf frontends read them as the
+    // boolean they name.
+    for value in ["true", "false"] {
+        run_with(
+            &json!({"package": "nginx", "question": "nginx/enable", "type": "boolean", "value": value}),
+            &context(false),
+            &mut |_| Ok(String::new()),
+            &mut |_, _, _| Ok(None),
+            &mut |_, _| Ok(()),
+        )
+        .unwrap_or_else(|error| panic!("{value:?}: {error}"));
+    }
+}
+
+/// The protocol reply of `debconf-communicate` decides, not its exit
+/// status: the tool exits with the code of the last reply, so a question
+/// the database does not know answers `10 ...` and exits 10. A first-time
+/// preseed must see that as "no answer" and proceed to
+/// `debconf-set-selections`, not fail.
+#[test]
+fn a_missing_question_reply_is_no_answer_even_when_the_tool_exits_with_it() {
+    assert_eq!(
+        communicate_reply("10 nginx/nginx-user doesn't exist\n", "", false),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_zero_reply_answers_the_value_whatever_the_exit_status() {
+    assert_eq!(
+        communicate_reply("0 www-data\n", "", false),
+        Ok(Some("www-data".to_owned()))
+    );
+}
+
+#[test]
+fn no_protocol_reply_and_a_failure_stay_a_failure() {
+    assert!(communicate_reply("", "boom\n", false).is_err());
+    assert!(communicate_reply("surprise\n", "", true).is_err());
+}

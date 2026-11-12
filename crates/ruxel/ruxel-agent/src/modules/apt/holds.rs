@@ -80,8 +80,19 @@ fn apply_holds(
         return Err(format!("apt-mark hold failed: {stderr}"));
     }
     // The marks are only as good as the state the host reports: the holds
-    // are read back, and a package the host does not list is not held.
-    let after = read_showhold(command, ctx)?;
+    // are read back, and a package the host does not list is not held. A
+    // read-back that fails cannot unmake the mark the host already took:
+    // the change is kept and the failure names the unverified holds.
+    let after = match read_showhold(command, ctx) {
+        Ok(after) => after,
+        Err(error) => {
+            return Ok((
+                true,
+                held,
+                Some(format!("apt-mark hold applied but the holds could not be read back: {error}")),
+            ));
+        }
+    };
     let not_held: Vec<String> = requests
         .iter()
         .filter(|request| !after.iter().any(|entry| request.covered_by(entry, native)))

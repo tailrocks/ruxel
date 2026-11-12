@@ -101,3 +101,42 @@ fn an_autoremove_failure_after_a_changing_upgrade_reports_the_upgrade_change() -
     }
     Ok(())
 }
+
+/// A hold that took effect is not hidden when the read-back afterwards
+/// fails: the package was installed and unheld, `apt-mark hold` marked it,
+/// and the host changed. The result reports the change alongside the
+/// failure — distinct from the installation case above, where the change
+/// preceded the marks.
+#[test]
+fn a_read_back_failure_after_a_successful_hold_reports_the_change() -> Result<(), String> {
+    let database = Arc::new(Mutex::new(status(&[("pkg", "1")])));
+    let mut state = SystemState::with_dpkg_status(database.clone());
+    let mut showholds = 0;
+    let mut command = |args: &[&str], _: &ExecContext| match args {
+        ["showhold"] => {
+            showholds += 1;
+            Ok((
+                String::new(),
+                i32::from(showholds > 1),
+                "read-back refused".into(),
+            ))
+        }
+        ["hold", ..] => Ok((String::new(), 0, String::new())),
+        other => Err(format!("unexpected apt call {other:?}")),
+    };
+    let result = run_with(
+        &json!({"name": "pkg", "hold": true}),
+        &context(false),
+        &mut state,
+        &mut command,
+    )
+    .map_err(|error| format!("the run hid the hold behind {error:?}"))?;
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["failed"], true);
+    let message = result["msg"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("read back") && message.contains("refused"),
+        "{message}"
+    );
+    Ok(())
+}

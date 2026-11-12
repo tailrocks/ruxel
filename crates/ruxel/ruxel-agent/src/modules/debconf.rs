@@ -60,6 +60,15 @@ fn run_with(
                 .into(),
         );
     }
+    if kind == "boolean" && value != "true" && value != "false" {
+        // Debconf frontends read a boolean answer as the canonical `true`
+        // and `false`; anything else — `yes`, a typo — is accepted by the
+        // setter but means nothing, so the package would observe the wrong
+        // answer while the task claims convergence.
+        return Err(format!(
+            "debconf: a boolean answer is \"true\" or \"false\", not {value:?}"
+        ));
+    }
     if package.contains('\n') || question.contains('\n') {
         return Err("debconf: the package and the question must be one line".into());
     }
@@ -172,20 +181,34 @@ fn communicate_value(
     let output = child
         .wait_with_output()
         .map_err(|error| map_ask_exec(&error))?;
-    if !output.status.success() {
+    communicate_reply(
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+        output.status.success(),
+    )
+}
+
+/// What `debconf-communicate` answered: its protocol reply, not its exit
+/// status, decides. The tool exits with the code of the last reply, so a
+/// question the database does not know answers `10 ... doesn't exist` and
+/// exits 10; treating that as a crash would fail a first-time preseed that
+/// must simply proceed to `debconf-set-selections`.
+fn communicate_reply(stdout: &str, stderr: &str, status_success: bool) -> Result<Option<String>, String> {
+    let reply = stdout.lines().next().unwrap_or_default();
+    let (code, text) = reply.split_once(' ').unwrap_or((reply, ""));
+    if !code.is_empty() && code.chars().all(|c| c.is_ascii_digit()) {
+        return match code {
+            "0" => Ok(Some(text.to_owned())),
+            _ => Ok(None),
+        };
+    }
+    if !status_success {
         return Err(format!(
             "debconf-communicate failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim_end()
+            stderr.trim_end()
         ));
     }
-    let reply = String::from_utf8_lossy(&output.stdout);
-    let reply = reply.lines().next().unwrap_or_default();
-    let (code, text) = reply.split_once(' ').unwrap_or((reply, ""));
-    match code {
-        "0" => Ok(Some(text.to_owned())),
-        _ if code.chars().all(|c| c.is_ascii_digit()) => Ok(None),
-        _ => Err(format!("debconf-communicate: unexpected reply {reply:?}")),
-    }
+    Err(format!("debconf-communicate: unexpected reply {reply:?}"))
 }
 
 /// One selection, written to the standard input of `debconf-set-selections`.
