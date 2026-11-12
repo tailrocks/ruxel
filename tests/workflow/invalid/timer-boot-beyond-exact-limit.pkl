@@ -1,0 +1,15 @@
+// expect: onBoot is beyond the 9007199254740991ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote
+// An authored literal at the limit: `9007199254740993.ms` arrives from
+// both evaluators already rounded to `9007199254740992.ms` — a Duration
+// is a number in its unit held in a float — and no schema arithmetic can
+// recover the lost digit, so the whole neighborhood is refused rather
+// than emitted a millisecond early. The expect line is the same for
+// every over-limit delay: the refusal names the bound, never the rounded
+// value the evaluators delivered.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The rounded bound"; name = "postgresql-beyond-exact-limit"; onBoot = 9007199254740993.ms }
+} } }

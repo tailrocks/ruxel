@@ -41,10 +41,7 @@ fn tasks(config: &serde_json::Value) -> Vec<&serde_json::Value> {
         .collect()
 }
 
-/// A service that takes reload triggers lowers to a reload handler of its
-/// own, beside the restart handler of a service that takes restart triggers:
-/// the handler kinds are distinct, and the watched step notifies the handler
-/// of its own service.
+/// A reload-watching service lowers to a handler of its own.
 #[test]
 fn a_reload_service_lowers_to_a_reload_handler() -> Result {
     let config = valid("service-reload.pkl")?;
@@ -92,9 +89,7 @@ fn a_reload_service_lowers_to_a_reload_handler() -> Result {
     Ok(())
 }
 
-/// A timer lowers to its own unit file and to the enablement of the
-/// `.timer` unit: the file carries the schedule, and the enablement is the
-/// unit's own state.
+/// A timer lowers to its unit file and to its enablement.
 #[test]
 fn a_timer_lowers_to_its_unit_file_and_its_enablement() -> Result {
     let config = valid("systemd-timer.pkl")?;
@@ -133,9 +128,7 @@ fn a_timer_lowers_to_its_unit_file_and_its_enablement() -> Result {
     Ok(())
 }
 
-/// A timer names the service it starts: the unit file carries the `Unit=`
-/// line systemd activates when the timer fires. A timer without one would
-/// fire and start nothing.
+/// A timer names the service it starts in the unit file.
 #[test]
 fn a_timer_names_the_service_it_starts() -> Result {
     let config = valid("systemd-timer.pkl")?;
@@ -156,10 +149,7 @@ fn a_timer_names_the_service_it_starts() -> Result {
     Ok(())
 }
 
-/// A timer that names no service starts the service of its own name, as
-/// systemd does: the unit file carries the `Unit=` line of that service,
-/// so `postgresql-maintenance.timer` starts
-/// `postgresql-maintenance.service`.
+/// A timer without a service starts the service of its own name.
 #[test]
 fn a_timer_without_a_service_starts_the_service_of_its_own_name() -> Result {
     let config = valid("systemd-timer-default-service.pkl")?;
@@ -180,10 +170,7 @@ fn a_timer_without_a_service_starts_the_service_of_its_own_name() -> Result {
     Ok(())
 }
 
-/// A delay that is a fraction of a millisecond is refused, not rounded: a
-/// rounded delay fires the timer at a time the author did not ask for.
-/// The delay is a fraction of a millisecond by half a nanosecond, which
-/// the old tolerance of a nanosecond rounded away.
+/// A fractional millisecond is refused, not rounded.
 #[test]
 fn a_fractional_boot_delay_is_refused() -> Result {
     for (name, delay) in [
@@ -216,9 +203,7 @@ fn a_fractional_boot_delay_is_refused() -> Result {
     Ok(())
 }
 
-/// The boot delay keeps its precision: a delay of half a second is half a
-/// second, not zero — a truncated delay would fire the timer at the boot
-/// itself.
+/// A delay keeps its precision: half a second is not zero.
 #[test]
 fn a_timer_keeps_the_precision_of_its_boot_delay() -> Result {
     let config = valid("systemd-timer.pkl")?;
@@ -239,11 +224,7 @@ fn a_timer_keeps_the_precision_of_its_boot_delay() -> Result {
     Ok(())
 }
 
-/// A large delay is kept as it is written: a delay of a whole number of
-/// milliseconds is a whole number of milliseconds at every magnitude, and
-/// a delay that is a fraction of one is refused at every magnitude too.
-/// The old tolerance grew with the delay, so a delay of a million
-/// seconds lost half a nanosecond to it.
+/// A large delay is kept as written; one past the exact limit is refused.
 #[test]
 fn a_large_boot_delay_keeps_its_milliseconds() -> Result {
     let config = valid("systemd-timer-large-delay.pkl")?;
@@ -256,13 +237,31 @@ fn a_large_boot_delay_keeps_its_milliseconds() -> Result {
     // A million seconds is a whole number of seconds, so systemd reads it
     // in seconds; the delay keeps every millisecond it was written with.
     assert!(content.contains("OnBootSec=1000000"), "{content}");
+    // Every delay at or beyond the exact limit is refused with one sentence.
+    for name in [
+        "beyond-exact-limit",
+        "beyond-exact-limit-seconds",
+        "beyond-exact-limit-huge",
+        "beyond-systemd-span",
+    ] {
+        let error = ruxel_config::eval_config(
+            &root()
+                .join("invalid")
+                .join(format!("timer-boot-{name}.pkl")),
+            &options(),
+        )
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+        assert!(
+            error.contains("onBoot is beyond the 9007199254740991ms"),
+            "{name}: {error}"
+        );
+    }
     Ok(())
 }
 
-/// Two spellings of one delay are one timer: the delay is fingerprinted
-/// by the whole milliseconds it is, so `1.001.s` and `1001.ms` are one
-/// schedule and one step, and not two steps that manage the same unit
-/// file with different settings.
+/// Two spellings of one delay are one timer.
 #[test]
 fn two_spellings_of_one_delay_are_one_timer() -> Result {
     let config = valid("systemd-timer-delay-spellings.pkl")?;
@@ -283,9 +282,7 @@ fn two_spellings_of_one_delay_are_one_timer() -> Result {
     Ok(())
 }
 
-/// A boot delay of whole milliseconds keeps every digit the author wrote
-/// at every magnitude: integer arithmetic for an integer delay, and no
-/// half-up rounding that refuses an exactly integral value.
+/// A whole-millisecond delay keeps every digit at every magnitude.
 #[test]
 fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
     let config = valid("systemd-timer-exact-huge-delay.pkl")?;
@@ -293,8 +290,7 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
     for (unit, on_boot) in [
         ("exact-millisecond", "OnBootSec=4503599627370497ms"),
         ("exact-half-even", "OnBootSec=4503599627370497ms"),
-        ("exact-huge-second", "OnBootSec=9007199254740994"),
-        ("exact-converted", "OnBootSec=4503599627370497"),
+        ("exact-odd-bound", "OnBootSec=9007199254740991ms"),
     ] {
         let dest = format!("/etc/systemd/system/postgresql-{unit}.timer");
         let content = all
@@ -307,9 +303,7 @@ fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
     Ok(())
 }
 
-/// A timer owns its enablement link — the `[Install]` section its unit
-/// file carries is what `systemctl enable` reads — so a `Symlink` that
-/// declares a second state for it is refused.
+/// A timer owns its enablement link.
 #[test]
 fn a_timer_refuses_a_second_state_for_its_enablement_link() -> Result {
     let path = root()
@@ -326,9 +320,7 @@ fn a_timer_refuses_a_second_state_for_its_enablement_link() -> Result {
     Ok(())
 }
 
-/// The timer's result carries the change of both of its tasks: the unit
-/// file and the enablement. A step that watches the timer must see the
-/// enablement drift, even when the file did not change.
+/// The timer's result carries the change of both of its tasks.
 #[test]
 fn a_timer_reports_the_change_of_its_file_and_its_enablement() -> Result {
     let config = valid("systemd-timer.pkl")?;
@@ -367,10 +359,7 @@ fn a_timer_reports_the_change_of_its_file_and_its_enablement() -> Result {
     Ok(())
 }
 
-/// A timer basename may be 249 characters: the `.timer` suffix is six
-/// characters, so the unit name systemd reads is 255 characters, which is
-/// systemd's own limit. The bound that names it is the one the suffix
-/// leaves, not the one the service name carries.
+/// A timer basename may be 249 characters beside the suffix.
 #[test]
 fn a_timer_basename_may_be_249_characters() -> Result {
     let config = valid("systemd-timer-long-name.pkl")?;

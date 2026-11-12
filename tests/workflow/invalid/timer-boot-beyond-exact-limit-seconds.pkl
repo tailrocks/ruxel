@@ -1,0 +1,13 @@
+// expect: onBoot is beyond the 9007199254740991ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote
+// A delay beyond every bound this schema and systemd carry: 20000000000
+// seconds is past the 9007199254740991ms the evaluators can hold exactly
+// and past the 18446744073709551ms systemd's microsecond span can
+// encode. The exactness bound binds, and refuses it before the timer is
+// written.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new systemd.SystemdTimer { title = "The endless delay"; name = "postgresql-beyond-exact-limit-seconds"; onBoot = 20000000000000.s }
+} } }
