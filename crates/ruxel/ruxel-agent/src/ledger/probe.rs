@@ -65,11 +65,20 @@ pub(super) fn probe_for(
             let name = s("name")?;
             let file = s("sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
             let value = sysctl_file_value(file, name)?;
-            let mut probes = vec![Probe::SysctlKV {
-                file: file.to_string(),
-                name: name.to_string(),
-                value,
-            }];
+            // The boot surface decides the value the host comes up with:
+            // a file added or changed after the task ran moves the boot
+            // value the task never judged, so the cached result must not
+            // be served. A surface that cannot be read leaves the task
+            // uncached.
+            let fingerprint = crate::modules::boot_fingerprint()?;
+            let mut probes = vec![
+                Probe::SysctlKV {
+                    file: file.to_string(),
+                    name: name.to_string(),
+                    value,
+                },
+                Probe::SysctlBoot { fingerprint },
+            ];
             if bool_value(params.get("sysctl_set"), false) {
                 probes.push(Probe::SysctlLive {
                     name: name.to_string(),

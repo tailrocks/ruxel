@@ -321,6 +321,7 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
+        let managed = ledger.managed_sysctl_entries();
         let outcome = modules::execute(
             &task.module,
             &params,
@@ -328,6 +329,7 @@ fn execute_task(
             iteration.source_content.as_deref(),
             &ctx,
             system_state,
+            &managed,
         );
         if !task_check_mode && !task.no_log {
             ledger.record_with_state(
