@@ -200,12 +200,15 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-sysctl-path-run.pkl",
     "invalid/linux-user-private-group-as-supplementary.pkl",
     "invalid/linux-user-shell-not-executable.pkl",
+    "invalid/linux-user-shell-group-exec-only.pkl",
     "invalid/linux-user-uid-across-stages.pkl",
+    "invalid/linux-user-uid-reuse-partial-hosts.pkl",
     "invalid/linux-group-gid-across-stages.pkl",
     "valid/linux-user-uid-reused-after-removal.pkl",
     "valid/linux-sysctl-name-alias-same-value.pkl",
     "valid/linux-sysctl-boot-order-later-stage.pkl",
     "invalid/linux-user-shell-owner-execute-only.pkl",
+    "valid/linux-user-uid-reuse-split-removals.pkl",
 ];
 
 /// The official `pkl` binary.
