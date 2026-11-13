@@ -61,6 +61,71 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-package-glob.pkl
   tests/workflow/invalid/engine-debconf-question-space.pkl
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
+  tests/workflow/invalid/linux-directory-sysctl-clash.pkl
+  tests/workflow/invalid/linux-file-above-sysctl.pkl
+  tests/workflow/invalid/linux-file-owner-later.pkl
+  tests/workflow/invalid/linux-file-owner-removed-earlier-stage.pkl
+  tests/workflow/invalid/linux-file-owner-removed.pkl
+  tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
+  tests/workflow/invalid/linux-file-sysctl-clash.pkl
+  tests/workflow/invalid/linux-group-absent-after-user.pkl
+  tests/workflow/invalid/linux-group-absent-root.pkl
+  tests/workflow/invalid/linux-group-ensured-before-user-removal.pkl
+  tests/workflow/invalid/linux-group-gid-across-stages.pkl
+  tests/workflow/invalid/linux-group-gid-twice.pkl
+  tests/workflow/invalid/linux-group-gid-zero.pkl
+  tests/workflow/invalid/linux-group-name.pkl
+  tests/workflow/invalid/linux-group-removed-first.pkl
+  tests/workflow/invalid/linux-group-root-gid.pkl
+  tests/workflow/invalid/linux-login-shell-user-colon.pkl
+  tests/workflow/invalid/linux-login-shell-user-nul.pkl
+  tests/workflow/invalid/linux-sysctl-boot-order-legacy.pkl
+  tests/workflow/invalid/linux-sysctl-boot-order-precedence.pkl
+  tests/workflow/invalid/linux-sysctl-clash-apt-repository.pkl
+  tests/workflow/invalid/linux-sysctl-file-clash.pkl
+  tests/workflow/invalid/linux-sysctl-file-later-stage.pkl
+  tests/workflow/invalid/linux-sysctl-name-alias.pkl
+  tests/workflow/invalid/linux-sysctl-name-dot-component.pkl
+  tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl
+  tests/workflow/invalid/linux-sysctl-path-root.pkl
+  tests/workflow/invalid/linux-sysctl-path-run.pkl
+  tests/workflow/invalid/linux-sysctl-stage-order.pkl
+  tests/workflow/invalid/linux-sysctl-value-newline.pkl
+  tests/workflow/invalid/linux-sysctl-values-differ.pkl
+  tests/workflow/invalid/linux-user-default-home-conflict.pkl
+  tests/workflow/invalid/linux-user-group-absent.pkl
+  tests/workflow/invalid/linux-user-groups-invalid-name.pkl
+  tests/workflow/invalid/linux-user-groups-unset-vs-empty.pkl
+  tests/workflow/invalid/linux-user-home-conflict.pkl
+  tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
+  tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-home-root.pkl
+  tests/workflow/invalid/linux-user-implicit-group-clash.pkl
+  tests/workflow/invalid/linux-user-mail-spool-location.pkl
+  tests/workflow/invalid/linux-user-mail-spool.pkl
+  tests/workflow/invalid/linux-user-needs-later-account.pkl
+  tests/workflow/invalid/linux-user-needs-later-group.pkl
+  tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
+  tests/workflow/invalid/linux-user-remove-home-conflict.pkl
+  tests/workflow/invalid/linux-user-remove-home-mail.pkl
+  tests/workflow/invalid/linux-user-remove-home-no-home.pkl
+  tests/workflow/invalid/linux-user-root-group.pkl
+  tests/workflow/invalid/linux-user-root-uid.pkl
+  tests/workflow/invalid/linux-user-shell-group-exec-only.pkl
+  tests/workflow/invalid/linux-user-shell-is-default-home.pkl
+  tests/workflow/invalid/linux-user-shell-is-home.pkl
+  tests/workflow/invalid/linux-user-shell-later.pkl
+  tests/workflow/invalid/linux-user-shell-link-target-not-executable.pkl
+  tests/workflow/invalid/linux-user-shell-not-absolute.pkl
+  tests/workflow/invalid/linux-user-shell-not-executable.pkl
+  tests/workflow/invalid/linux-user-shell-owner-execute-only.pkl
+  tests/workflow/invalid/linux-user-shell-root.pkl
+  tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
+  tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-out-of-range.pkl
+  tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
+  tests/workflow/invalid/linux-user-uid-reuse-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-uid-twice.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
   tests/workflow/invalid/secret-op-reference-dotted-selector.pkl
   tests/workflow/invalid/secret-placeholder-orphaned-runtime.pkl
@@ -96,6 +161,22 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
+  tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
+  tests/workflow/valid/linux-sysctl-equals.pkl
+  tests/workflow/valid/linux-sysctl-hyphen.pkl
+  tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
+  tests/workflow/valid/linux-sysctl-slash.pkl
+  tests/workflow/valid/linux-sysctl.pkl
+  tests/workflow/valid/linux-user-absent-fields-inactive.pkl
+  tests/workflow/valid/linux-user-groups-empty.pkl
+  tests/workflow/valid/linux-user-groups-order.pkl
+  tests/workflow/valid/linux-user-home-removed-recreated.pkl
+  tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl
+  tests/workflow/valid/linux-user-remove-home-inactive.pkl
+  tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl
+  tests/workflow/valid/linux-user-uid-reused-after-removal.pkl
+  tests/workflow/valid/linux-user-watch.pkl
   tests/workflow/valid/read-resource.pkl
   tests/workflow/valid/secret-literal-prefix.pkl
   tests/workflow/valid/secret-op-reference-dotted.pkl

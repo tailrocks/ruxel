@@ -266,6 +266,11 @@ fn execute_task(
         } else {
             serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
         };
+        // The plan has encountered this task whatever the run does with
+        // it: a cache hit, a check-mode run and a run that records
+        // nothing are encounters too, and the plan's end expires only
+        // the records it never saw.
+        ledger.encounter(&iteration.ledger_key);
         let params = match parsed.and_then(|params| {
             modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
             Ok(params)

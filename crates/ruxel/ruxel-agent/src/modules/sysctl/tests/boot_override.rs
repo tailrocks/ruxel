@@ -285,3 +285,102 @@ fn a_managed_file_that_drifted_is_an_unmanaged_override() {
         Some(("/etc/sysctl.d/99-new.conf".to_string(), "2".to_string()))
     );
 }
+
+#[test]
+fn a_record_the_plan_never_encountered_expires() {
+    // The workflow managed the key in a later-loading file once and
+    // then dropped that task: its record is history, not a declared
+    // managed value, so the leftover assignment is an unmanaged boot
+    // override again and the next task writing the key is refused —
+    // while the record stood, the run passed `preflight_override` and
+    // reported success although reboot restored the stale value.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-expire-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&dir));
+    std::fs::create_dir_all(&dir).expect("operation succeeds");
+    let old = dir.join("99-old.conf");
+    std::fs::write(&old, b"net.ipv4.ip_forward=0\n").expect("operation succeeds");
+    let kept = dir.join("kept.txt");
+    std::fs::write(&kept, b"kept\n").expect("operation succeeds");
+    let mut ledger = crate::ledger::Ledger::load(&dir);
+    ledger.record(
+        "dropped-task",
+        "sysctl",
+        &serde_json::json!({
+            "name": "net.ipv4.ip_forward",
+            "value": "0",
+            "sysctl_file": old.to_string_lossy(),
+        }),
+        "ok",
+        &serde_json::json!({"changed": true}),
+    );
+    ledger.flush();
+    // The next plan runs another task and ends without the dropped one.
+    ledger.record(
+        "kept-task",
+        "file",
+        &serde_json::json!({"path": kept}),
+        "ok",
+        &serde_json::json!({"changed": true}),
+    );
+    ledger.flush();
+    let managed = ledger.managed_sysctl_entries();
+    assert_eq!(managed, Vec::<(String, String, String)>::new());
+    let host = vec![(
+        "/etc/sysctl.d/99-old.conf".to_string(),
+        b"net.ipv4.ip_forward=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/10-new.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &managed,
+        ),
+        Some(("/etc/sysctl.d/99-old.conf".to_string(), "0".to_string())),
+        "the leftover assignment is an unmanaged override again"
+    );
+    drop(std::fs::remove_dir_all(&dir));
+}
+
+#[test]
+fn a_declared_value_of_the_previous_plan_carries_the_next_transition() {
+    // The other side of the expiry: the agent learns of one task per
+    // plan message (the engine renders the plan task by task), so the
+    // earlier stage's run consults the later stage's declaration from
+    // the previous apply's record before the plan has delivered the
+    // later stage's task again — and the record the current plan
+    // encounters is the plan's own and survives its end.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-carry-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&dir));
+    std::fs::create_dir_all(&dir).expect("operation succeeds");
+    let file = dir.join("99-new.conf");
+    std::fs::write(&file, b"net.ipv4.ip_forward=0\n").expect("operation succeeds");
+    let params = serde_json::json!({
+        "name": "net.ipv4.ip_forward",
+        "value": "0",
+        "sysctl_file": file.to_string_lossy(),
+    });
+    let entry = (
+        file.to_string_lossy().into_owned(),
+        "net.ipv4.ip_forward".to_string(),
+        "0".to_string(),
+    );
+    let mut ledger = crate::ledger::Ledger::load(&dir);
+    ledger.record(
+        "later-stage",
+        "sysctl",
+        &params,
+        "ok",
+        &serde_json::json!({"changed": true}),
+    );
+    ledger.flush();
+    // The next plan starts with the earlier stage's task and reads the
+    // managed values before the later stage's task has run again.
+    assert_eq!(ledger.managed_sysctl_entries(), vec![entry.clone()]);
+    // The plan's encounter of the task carries the record across its end.
+    ledger.encounter("later-stage");
+    ledger.flush();
+    assert_eq!(ledger.managed_sysctl_entries(), vec![entry]);
+    drop(std::fs::remove_dir_all(&dir));
+}

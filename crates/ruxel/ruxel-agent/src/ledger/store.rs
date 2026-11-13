@@ -1,4 +1,5 @@
 use super::{Ledger, Path};
+use std::collections::HashSet;
 use std::io::{Read, Write};
 
 impl Ledger {
@@ -22,11 +23,23 @@ impl Ledger {
             path,
             host_key,
             records,
+            encountered: HashSet::new(),
             dirty: false,
         }
     }
 
-    pub(crate) fn flush(&self) {
+    /// The plan has ended: every record it never encountered is history
+    /// — a task a previous plan ran and this one does not — and expires
+    /// before what the plan still owns is persisted. A run that
+    /// encounters nothing expires nothing: with no task of its own it is
+    /// no plan's verdict on what this workflow manages.
+    pub(crate) fn flush(&mut self) {
+        if !self.encountered.is_empty() {
+            let before = self.records.len();
+            self.records.retain(|key, _| self.encountered.contains(key));
+            self.dirty |= self.records.len() != before;
+            self.encountered.clear();
+        }
         if !self.dirty {
             return;
         }
