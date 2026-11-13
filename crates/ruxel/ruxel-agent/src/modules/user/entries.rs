@@ -50,16 +50,11 @@ pub(super) fn passwd_entry_from(passwd: &str, name: &str) -> Result<Option<Passw
     Ok(None)
 }
 
-/// The account that holds `uid` on the host: the passwd database's
-/// entry with that number, apart from `name` itself — the account's
-/// own number is no collision with itself. `useradd -u` and
-/// `usermod -u` refuse a number another account holds, so the request
-/// is checked against the live database before anything runs.
-pub(super) fn uid_holder(uid: u64, name: &str) -> Result<Option<String>, String> {
-    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    Ok(uid_holder_from(&passwd, uid, name))
-}
-
+/// The account that holds `uid` in the passwd content, apart from
+/// `name` itself: the account's own number is no collision with
+/// itself. `useradd -u` and `usermod -u` refuse a number another
+/// account holds, so the request is checked against the live database
+/// before anything runs.
 pub(super) fn uid_holder_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
@@ -70,14 +65,9 @@ pub(super) fn uid_holder_from(passwd: &str, uid: u64, name: &str) -> Option<Stri
     None
 }
 
-/// The group that holds `gid` on the host: the group database's entry
-/// with that number, apart from `name` itself. `groupadd -g` and
-/// `groupmod -g` refuse a number another group holds.
-pub(super) fn gid_holder(gid: u64, name: &str) -> Result<Option<String>, String> {
-    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    Ok(gid_holder_from(&groups, gid, name))
-}
-
+/// The group that holds `gid` in the group content, apart from `name`
+/// itself. `groupadd -g` and `groupmod -g` refuse a number another
+/// group holds.
 pub(super) fn gid_holder_from(groups: &str, gid: u64, name: &str) -> Option<String> {
     for line in groups.lines() {
         let f: Vec<&str> = line.split(':').collect();
