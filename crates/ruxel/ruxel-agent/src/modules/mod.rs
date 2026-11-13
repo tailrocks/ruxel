@@ -264,14 +264,25 @@ fn bool_param(obj: &Map<String, Value>, key: &str, default: bool) -> bool {
     }
 }
 
-fn resolve_uid(owner: &str) -> Result<u32, String> {
+fn resolve_uid(owner: &str) -> Result<Option<u32>, String> {
     #[cfg(test)]
     count_ownership_resolution();
     if let Ok(uid) = owner.parse::<u32>() {
-        return Ok(uid);
+        return Ok(Some(uid));
     }
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    resolve_uid_from(&passwd, owner)
+    match resolve_uid_from(&passwd, owner) {
+        Ok(uid) => Ok(Some(uid)),
+        // A name the plan's own earlier steps create does not resolve
+        // in check mode: the record carries it (the requested uid where
+        // the step declared one), and only a name no task of the plan
+        // provides is refused the way apply refuses it.
+        Err(_) => match user::planned_user(owner) {
+            Some(user::Requested::Number(uid)) => Ok(Some(uid)),
+            Some(user::Requested::Unnumbered) => Ok(None),
+            None => Err(format!("user {owner:?} not found")),
+        },
+    }
 }
 
 /// The requested ownership of a file, resolved to ids.
@@ -287,8 +298,14 @@ pub(super) struct Ownership {
 /// cannot fail or mis-apply a publication that already succeeded.
 pub(super) fn resolve_ownership(obj: &Map<String, Value>) -> Result<Ownership, String> {
     Ok(Ownership {
-        uid: str_param(obj, "owner").map(resolve_uid).transpose()?,
-        gid: str_param(obj, "group").map(resolve_gid).transpose()?,
+        uid: str_param(obj, "owner")
+            .map(resolve_uid)
+            .transpose()?
+            .flatten(),
+        gid: str_param(obj, "group")
+            .map(resolve_gid)
+            .transpose()?
+            .flatten(),
     })
 }
 
@@ -318,14 +335,22 @@ fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
     Err(format!("user {owner:?} not found"))
 }
 
-fn resolve_gid(group: &str) -> Result<u32, String> {
+fn resolve_gid(group: &str) -> Result<Option<u32>, String> {
     #[cfg(test)]
     count_ownership_resolution();
     if let Ok(gid) = group.parse::<u32>() {
-        return Ok(gid);
+        return Ok(Some(gid));
     }
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    resolve_gid_from(&groups, group)
+    match resolve_gid_from(&groups, group) {
+        Ok(gid) => Ok(Some(gid)),
+        // The same for a group the plan's own earlier steps create.
+        Err(_) => match user::planned_group(group) {
+            Some(user::Requested::Number(gid)) => Ok(Some(gid)),
+            Some(user::Requested::Unnumbered) => Ok(None),
+            None => Err(format!("group {group:?} not found")),
+        },
+    }
 }
 
 fn resolve_gid_from(groups: &str, group: &str) -> Result<u32, String> {

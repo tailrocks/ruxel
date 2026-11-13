@@ -1,0 +1,26 @@
+// expect: the number is not repaired in the files the identity owns
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+
+// The renumbering's history is per host: Alice is 1001 on host a, a
+// disjoint host-b stage declares her as 2000, and the host-a file she
+// owns keeps the number the account carried there — so the later host-a
+// renumbering to 2000 leaves the file numerically owned by 1001, and
+// host b's declaration must not stand in for the one the file lives on.
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "host-a-initial"; hosts { a }; steps {
+    new linux.User { user = "alice"; uid = 1001 }
+  } }
+  new Stage { title = "host-b"; hosts { b }; steps {
+    new linux.User { user = "alice"; uid = 2000 }
+  } }
+  new Stage { title = "host-a-file"; hosts { a }; steps {
+    new File { path = "/srv/alice.conf"; owner = "alice"; content = "keep\n" }
+  } }
+  new Stage { title = "host-a-renumber"; hosts { a }; steps {
+    new linux.User { user = "alice"; uid = 2000 }
+  } }
+}

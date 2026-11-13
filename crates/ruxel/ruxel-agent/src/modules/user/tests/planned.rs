@@ -87,3 +87,60 @@ fn check_mode_refuses_a_missing_group_no_step_provides() {
         .expect_err("check mode must refuse a missing group no task provides");
     assert!(error.contains("not found"), "{error}");
 }
+
+#[test]
+fn a_file_owned_by_an_identity_the_plan_creates_resolves_in_check_mode() {
+    // Check mode runs no `useradd` and no `groupadd`, so the passwd and
+    // group files still lack the identities an earlier step of the plan
+    // creates. A later file that names them resolves its ownership
+    // through the plan's record — the requested ids where the steps
+    // declared them — and plans the change instead of failing with
+    // `user/group not found`: the identical apply creates the identity
+    // first and succeeds.
+    let group = format!("ruxel-planned-owner-group-{}", std::process::id());
+    let account = format!("ruxel-planned-owner-user-{}", std::process::id());
+    assert!(
+        group_entry(&group).unwrap().is_none(),
+        "the planned group must not exist on the host"
+    );
+    assert!(
+        passwd_entry(&account).unwrap().is_none(),
+        "the planned account must not exist on the host"
+    );
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    super::super::group(&json!({"name": group, "gid": 42424}), &check)
+        .expect("the earlier group step must plan");
+    run(
+        &json!({"name": account, "uid": 42424, "group": group}),
+        &check,
+    )
+    .expect("the earlier account step must plan");
+    let dir = std::env::temp_dir().join(format!("ruxel-plan-owned-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("target");
+    std::fs::write(&path, b"keep").unwrap();
+    let owned = crate::modules::file::run(
+        &json!({"path": path.to_str().unwrap(), "owner": account, "group": group}),
+        &check,
+    )
+    .expect("a file owned by the plan's own identities must plan");
+    assert_eq!(owned.get("changed"), Some(&json!(true)), "{owned}");
+    // The requested ids are modeled: the pending change compares
+    // against the numbers the apply will create.
+    // A name no task of the plan provides is refused the way apply
+    // refuses it: a dry run must not report a change that cannot
+    // succeed.
+    let error = crate::modules::file::run(
+        &json!({"path": path.to_str().unwrap(), "owner": format!("ruxel-planned-owner-nobody-{}", std::process::id())}),
+        &check,
+    )
+    .expect_err("an identity no step provides must be refused");
+    assert!(error.contains("not found"), "{error}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

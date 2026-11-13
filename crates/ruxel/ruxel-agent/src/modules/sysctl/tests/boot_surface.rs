@@ -93,16 +93,116 @@ fn the_boot_fingerprint_moves_with_the_boot_files() {
     // task never judged.
     let scratch = Scratch::new("fingerprint");
     let first = scratch.file("etc", "90-ruxel.conf", "net.ipv4.ip_forward=1\n");
-    let files = vec![first.to_string_lossy().into_owned()];
+    let files = vec![first.clone()];
     let before = boot::fingerprint_of(&files).expect("fingerprint");
     let second = scratch.file("etc", "99-other.conf", "net.ipv4.ip_forward=0\n");
-    let after = boot::fingerprint_of(&[files[0].clone(), second.to_string_lossy().into_owned()])
-        .expect("fingerprint");
+    let after = boot::fingerprint_of(&[files[0].clone(), second]).expect("fingerprint");
     assert_ne!(before, after, "a new boot file moves the surface");
     let changed = scratch.file("etc", "90-ruxel.conf", "net.ipv4.ip_forward=0\n");
     assert_ne!(
         before,
-        boot::fingerprint_of(&[changed.to_string_lossy().into_owned()]).expect("fingerprint"),
+        boot::fingerprint_of(&[changed]).expect("fingerprint"),
         "a changed boot file moves the surface"
+    );
+}
+
+// APFS refuses a file name that is not text, so the surface is
+// provable only where procps reads it: the Linux lane runs this, and
+// the code keeps the raw name bytes on every platform.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_whose_name_is_not_text_is_in_the_boot_surface() {
+    use std::os::unix::ffi::OsStringExt;
+    // A `*.conf` basename need not be valid UTF-8 and procps reads it
+    // all the same — `sysctl --dry-run --system` prints its assignment
+    // — so such a file weighs on the surface like any other. Dropping
+    // it would hide both the override it makes and the move it gives
+    // the fingerprint, while a cached task keeps reporting success.
+    let scratch = Scratch::new("nontext");
+    let dir = scratch.dir("etc");
+    let mut name = std::ffi::OsString::from_vec(b"\xffbad".to_vec());
+    name.push(".conf");
+    let path = dir.join(&name);
+    std::fs::write(&path, "net.ipv4.ip_forward=0\n").expect("operation succeeds");
+    let text = dir.to_str().expect("the scratch path is text").to_owned();
+    let dirs = [(text.as_str(), 4u8)];
+    let files = boot::system_files_in(&dirs);
+    assert!(files.contains(&path), "{files:?}");
+    // and the fingerprint over that surface is not the empty one
+    let without = boot::fingerprint_of(&[]).expect("an empty surface fingerprints");
+    let with = boot::fingerprint_of(&files).expect("the surface fingerprints");
+    assert_ne!(without, with, "the file must weigh on the fingerprint");
+}
+
+#[test]
+fn a_later_file_keeps_only_its_final_assignment() {
+    // procps applies a file's lines in order and the last assignment
+    // wins: a later file that assigns `=0` and then `=1` hands boot the
+    // value `1`, so a task managing `1` must not be refused for the
+    // intermediate value the file itself overrides again.
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.ipv4.ip_forward=0\nnet.ipv4.ip_forward=1\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    // A final differing assignment still hands the boot value away.
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.ipv4.ip_forward=1\nnet.ipv4.ip_forward=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &[],
+        ),
+        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
+    );
+}
+
+#[test]
+fn a_wildcard_stays_within_its_path_component() {
+    // procps expands a wildcard one segment at a time: `net.*` covers
+    // one component, so `net.*.rp_filter` assigns no
+    // `net.ipv4.conf.all.rp_filter`, while `net.ipv4.conf.*.rp_filter`
+    // expands to the interface keys and assigns them.
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.*.rp_filter=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
     );
 }

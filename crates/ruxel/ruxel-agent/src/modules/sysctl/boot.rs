@@ -7,6 +7,9 @@
 //! `/etc/sysctl.conf` after all of them.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 
 use super::{normalized, sysctl_key};
 
@@ -27,16 +30,19 @@ const LEGACY: &str = "/etc/sysctl.conf";
 
 /// Every file `sysctl --system` reads on this host: the `*.conf` files
 /// of the recognized system directories and `/etc/sysctl.conf`.
-pub(super) fn system_files() -> Vec<String> {
+pub(super) fn system_files() -> Vec<PathBuf> {
     system_files_in(&DIRS)
 }
 
 /// The boot files of `dirs`: one copy per name, from the
 /// highest-precedence directory that holds it. procps loads a name
 /// once (`PreloadSystem`), so a shadowed copy never reaches the kernel
-/// and must not weigh on the boot value.
-pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<String> {
-    let mut by_name: BTreeMap<String, String> = BTreeMap::new();
+/// and must not weigh on the boot value. A `*.conf` basename need not
+/// be valid UTF-8 and procps reads it all the same, so the names are
+/// compared as their raw bytes: a file whose name is not text is a
+/// boot file like any other and must weigh on the analysis.
+pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
+    let mut by_name: BTreeMap<Vec<u8>, PathBuf> = BTreeMap::new();
     for (dir, _) in dirs {
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
@@ -46,16 +52,14 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<String> {
             if !path.is_file() || path.extension().is_none_or(|ext| ext != "conf") {
                 continue;
             }
-            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            let Some(name) = path.file_name() else {
                 continue;
             };
-            by_name
-                .entry(name.to_owned())
-                .or_insert_with(|| path.to_string_lossy().into_owned());
+            by_name.entry(name.as_bytes().to_vec()).or_insert(path);
         }
     }
-    let mut files: Vec<String> = by_name.into_values().collect();
-    files.push(LEGACY.to_owned());
+    let mut files: Vec<PathBuf> = by_name.into_values().collect();
+    files.push(PathBuf::from(LEGACY));
     files
 }
 
@@ -95,14 +99,21 @@ pub(super) fn shadow_candidates(file: &str) -> Vec<String> {
 /// hold a byte sequence that is not text, and dropping such a file
 /// would hide the assignments it makes. A file that cannot be read at
 /// all is refused — its assignments are unknown, and an unreadable
-/// boot file can restore any value.
+/// boot file can restore any value. The paths are kept as their raw
+/// name bytes: the read follows them exactly, while the analysis keys
+/// on the lossy spelling only to name the file in an answer.
 pub(super) fn host_files() -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut host = Vec::new();
     for path in system_files() {
         match std::fs::read(&path) {
-            Ok(content) => host.push((path, content)),
+            Ok(content) => host.push((path.to_string_lossy().into_owned(), content)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("cannot read the boot file {path}: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "cannot read the boot file {}: {error}",
+                    path.display()
+                ));
+            }
         }
     }
     Ok(host)
@@ -161,12 +172,16 @@ fn loads_after(file: &str, candidate: &str) -> bool {
 }
 
 /// The values `content` assigns the key to that differ from `value`.
-/// Every matching line weighs — an alias spelling is the same entry,
-/// a leading `-` is procps's ignore-failure marker (the assignment
-/// still happens), and a wildcard key assigns every key it expands to.
+/// The file's effective value is its last matching assignment — procps
+/// applies the lines in order and the final one wins — so intermediate
+/// assignments of another value are overridden by the file itself and
+/// only a final differing value hands the boot value away. An alias
+/// spelling is the same entry, a leading `-` is procps's
+/// ignore-failure marker (the assignment happens either way), and a
+/// wildcard key assigns every key it expands to.
 fn assigns_other(content: &[u8], key: &str, value: &str) -> Vec<String> {
     let want = normalized(value);
-    let mut found = Vec::new();
+    let mut last: Option<String> = None;
     for line in content.split(|byte| *byte == b'\n') {
         let line = trim(line);
         if line.is_empty() || line[0] == b'#' {
@@ -183,12 +198,14 @@ fn assigns_other(content: &[u8], key: &str, value: &str) -> Vec<String> {
         if !key_matches(&assigned, key) {
             continue;
         }
-        let other = normalized(&String::from_utf8_lossy(trim(&line[equals + 1..])));
-        if other != want {
-            found.push(other);
-        }
+        last = Some(normalized(&String::from_utf8_lossy(trim(
+            &line[equals + 1..],
+        ))));
     }
-    found
+    match last {
+        Some(other) if other != want => vec![other],
+        _ => Vec::new(),
+    }
 }
 
 /// The ASCII whitespace trimmed off both ends of a line.
@@ -219,10 +236,26 @@ fn key_matches(candidate: &str, key: &str) -> bool {
 }
 
 /// A wildcard key against the managed key: `*` stands for any run of
-/// characters and `?` for one. The match is deliberately wide — a
-/// wildcard that could expand to the managed key assigns it — so a
-/// later file that restores another value is never missed.
+/// characters and `?` for one, both within a single path component —
+/// procps expands a pattern one segment at a time (`net.*.rp_filter`
+/// assigns no `net.ipv4.conf.all.rp_filter`), so the match stops at
+/// canonical-key `/` separators. The match is deliberately wide within
+/// a component — a wildcard that could expand to the managed key
+/// assigns it — so a later file that restores another value is never
+/// missed.
 fn glob_matches(pattern: &str, key: &str) -> bool {
+    let pattern: Vec<&str> = pattern.split('/').collect();
+    let key: Vec<&str> = key.split('/').collect();
+    pattern.len() == key.len()
+        && pattern
+            .iter()
+            .zip(key)
+            .all(|(part, name)| segment_matches(part, name))
+}
+
+/// One wildcard segment against one path component: `*` any run of
+/// characters inside the component, `?` any single one.
+fn segment_matches(pattern: &str, key: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let key: Vec<char> = key.chars().collect();
     let (mut at, mut index) = (0, 0);
@@ -257,8 +290,10 @@ pub(crate) fn boot_fingerprint() -> Option<String> {
     fingerprint_of(&system_files())
 }
 
-/// The fingerprint of the boot files `files` names.
-pub(super) fn fingerprint_of(files: &[String]) -> Option<String> {
+/// The fingerprint of the boot files `files` names: their raw name
+/// bytes and contents, so a file whose name is not text moves the
+/// fingerprint like any other.
+pub(super) fn fingerprint_of(files: &[PathBuf]) -> Option<String> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     for path in files {
@@ -267,7 +302,7 @@ pub(super) fn fingerprint_of(files: &[String]) -> Option<String> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => return None,
         };
-        hasher.update(path.as_bytes());
+        hasher.update(OsStr::new(path).as_bytes());
         hasher.update([0u8]);
         hasher.update(&content);
         hasher.update([0u8]);
