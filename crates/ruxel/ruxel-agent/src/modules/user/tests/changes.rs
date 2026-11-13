@@ -117,6 +117,21 @@ fn a_declared_shell_must_exist_and_be_executable() {
         "an other-executable shell must be accepted"
     );
     std::fs::remove_file(&probe).unwrap();
+    // A shell the account itself cannot execute: mode 0750 is
+    // executable for the file's owner and group only, and Unix picks
+    // the permission class by the caller's identity — a root-owned
+    // 0750 shell leaves the account unable to log in while the apply
+    // reports success, so only the other-execute bit counts.
+    let group_only = std::env::temp_dir().join(format!("ruxel-shell-group-{}", std::process::id()));
+    std::fs::write(&group_only, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&group_only, std::fs::Permissions::from_mode(0o750)).unwrap();
+    let error = run(
+        &json!({"name":"ruxel-synthetic-user", "shell":group_only.to_str().unwrap()}),
+        &ctx,
+    )
+    .expect_err("a shell without the other-execute bit must be refused");
+    assert!(error.contains("shell"), "{error}");
+    std::fs::remove_file(&group_only).unwrap();
     assert!(
         run(
             &json!({"name":"ruxel-synthetic-user", "shell":"/bin/sh"}),
@@ -195,8 +210,24 @@ fn a_created_home_takes_the_final_primary_gid() {
             }
         })
         .expect("a non-root group on the host");
-    assert_eq!(super::super::home_gid(Some(&name), 1500).unwrap(), gid);
-    assert_eq!(super::super::home_gid(None, 1500).unwrap(), 1500);
+    assert_eq!(
+        super::super::home_gid(Some(&name), 1500, false).unwrap(),
+        Some(gid)
+    );
+    assert_eq!(
+        super::super::home_gid(None, 1500, false).unwrap(),
+        Some(1500)
+    );
+    // Check mode must not require the live gid of a group that does not
+    // exist yet — an earlier same-stage step creates it — and apply
+    // still fails where the group is missing.
+    let missing = format!("ruxel-missing-group-{}", std::process::id());
+    assert!(group_entry(&missing).unwrap().is_none());
+    assert_eq!(
+        super::super::home_gid(Some(&missing), 1500, true).unwrap(),
+        None
+    );
+    assert!(super::super::home_gid(Some(&missing), 1500, false).is_err());
 }
 
 #[test]
