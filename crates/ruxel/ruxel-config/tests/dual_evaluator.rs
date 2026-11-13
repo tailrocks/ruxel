@@ -226,6 +226,14 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-shell-is-default-home.pkl",
     "invalid/linux-sysctl-boot-order-legacy.pkl",
     "valid/linux-user-removal-keeps-non-primary-group.pkl",
+    "invalid/linux-sysctl-file-owned-earlier-stage.pkl",
+    "invalid/linux-user-home-vs-file.pkl",
+    "invalid/linux-group-removed-while-primary.pkl",
+    "invalid/linux-user-shell-symlink-chain.pkl",
+    "valid/linux-user-absent-home-inactive.pkl",
+    "valid/linux-user-home-recreated-by-account.pkl",
+    "invalid/linux-user-home-renumbered-group.pkl",
+    "invalid/linux-user-uid-renumbered-disjoint-hosts.pkl",
 ];
 
 /// The official `pkl` binary.
