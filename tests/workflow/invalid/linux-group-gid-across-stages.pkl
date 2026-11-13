@@ -1,0 +1,26 @@
+// expect: claim the gid 1500 for different groups
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One host keeps one group per gid: stage 1 leaves `devs` present on gid
+// 1500, so stage 2's `groupadd -g 1500` for `ops` fails on the taken
+// number. Explicit gid footprints participate only in a stage's local
+// conflict check, so the numbers are tracked across stages: a number is
+// reused only after a proven removal of its holder.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "devs"; gid = 1500 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "ops"; gid = 1500 }
+    }
+  }
+}
