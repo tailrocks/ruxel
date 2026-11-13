@@ -15,6 +15,13 @@
 
 use super::*;
 
+/// The source mask both this contract and the harness discovery read
+/// sources with; one scanner for the whole lane, so a rule that holds
+/// for the contract's own parse holds for the discovery that follows
+/// the corpus's path attributes.
+#[path = "../support/pkl_mask.rs"]
+mod mask;
+
 /// The fnmatch matcher the input classification means; a utility kept
 /// beside this module so the contract itself stays small.
 #[path = "fnmatch.rs"]

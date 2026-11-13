@@ -14,11 +14,10 @@ use super::super::*;
 
 /// The source mask, shared with the gated harnesses: one scanner for
 /// both lanes, so a rule that holds for the contract's own parse
-/// holds for the manifest the harnesses verify.
-#[path = "../support/pkl_mask.rs"]
-mod mask;
-
-use mask::code;
+/// holds for the manifest the harnesses verify. The mask is declared
+/// by the contract's own module, so both this scanner and the harness
+/// discovery read sources through one instance of it.
+use super::mask::code;
 
 /// The offset where a source declares its corpus: the first
 /// occurrence of the declaration outside comments and string text —

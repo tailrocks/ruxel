@@ -5,6 +5,7 @@
 //! — utilities, not the contract itself.
 
 use super::super::*;
+use super::mask::code;
 use super::scan::declared_at;
 
 /// The dual-evaluator harness targets, derived from the `[[test]]`
@@ -92,6 +93,55 @@ fn sources_under(stem: &str, frontier: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// The `#[path = "…"]` attributes a source declares, located through
+/// the mask and read from the source: the attribute itself is code, so
+/// the mask shows where it stands, and the literal is read from the
+/// source at that offset — the mask blanks a string's text, so the
+/// literal lives only in the source. A commented-out or documented
+/// attribute is text the mask blanks, so it names no file and the
+/// discovery does not follow it: a raw substring scan would read
+/// `retired.rs` out of a comment and demand a file that was never
+/// compiled.
+fn path_attributes(text: &str) -> Result<Vec<String>> {
+    let mask = code(text);
+    let bytes = text.as_bytes();
+    let mut literals = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = mask[from..].find("#[path") {
+        let token = from + offset;
+        from = token + "#[path".len();
+        // The attribute's name ends at the token: `#[pathwise]` names no
+        // path attribute.
+        if bytes
+            .get(from)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            continue;
+        }
+        let mut at = from;
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at) != Some(&b'=') {
+            return Err("a #[path] attribute carries no `=`".into());
+        }
+        at += 1;
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at) != Some(&b'"') {
+            return Err("a #[path] attribute carries no string literal".into());
+        }
+        let start = at + 1;
+        let Some(end) = text[start..].find('"') else {
+            return Err("a #[path] attribute carries no closing quote".into());
+        };
+        literals.push(text[start..start + end].to_owned());
+        from = start + end;
+    }
+    Ok(literals)
+}
+
 /// The source files of the dual-evaluator harnesses — every gated
 /// target and every module file under its sibling directory, at any
 /// depth (`PRRT_kwDOS3Fimc62pCSO`): a harness module is itself a file
@@ -115,12 +165,7 @@ pub(super) fn harness_sources() -> Result<Vec<String>> {
         let path = repo().join(&source);
         let text = std::fs::read_to_string(&path)
             .map_err(|error| format!("{}: {error}", path.display()))?;
-        for rest in text.split("#[path = \"").skip(1) {
-            let Some((literal, _)) = rest.split_once('"') else {
-                return Err(
-                    format!("{source}: a #[path] attribute carries no closing quote").into(),
-                );
-            };
+        for literal in path_attributes(&text)? {
             let directory = source
                 .rsplit_once('/')
                 .map(|(head, _)| head)
@@ -130,7 +175,7 @@ pub(super) fn harness_sources() -> Result<Vec<String>> {
             let mut parts: Vec<&str> = Vec::new();
             for piece in Path::new(directory)
                 .iter()
-                .chain(Path::new(literal).iter())
+                .chain(Path::new(&literal).iter())
                 .map(|piece| piece.to_str())
             {
                 let Some(piece) = piece else {
@@ -262,4 +307,22 @@ pub(super) fn task_runs_every_harness(harnesses: &[(String, String)]) -> Result<
         }
     }
     Ok(())
+}
+
+/// The path attributes are located through the mask: a retired or
+/// documented attribute is text the mask blanks, so it names no file
+/// and the discovery does not follow it. A raw substring scan would
+/// read `retired.rs` out of the comment and demand a file that was
+/// never compiled.
+#[test]
+fn the_path_attribute_lookup_ignores_comments_and_strings() {
+    let text = concat!(
+        "// #[path = \"retired.rs\"]\n",
+        "/* #[path = \"also-retired.rs\"] */\n",
+        "#[path = \"live.rs\"]\n",
+    );
+    assert_eq!(
+        path_attributes(text).expect("the live attribute carries its literal"),
+        ["live.rs".to_owned()]
+    );
 }

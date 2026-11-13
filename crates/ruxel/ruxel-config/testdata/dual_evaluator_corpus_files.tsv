@@ -83,6 +83,7 @@ dual_evaluator
   tests/workflow/invalid/secret-placeholder-overlapping-unterminated.pkl
   tests/workflow/invalid/secret-unterminated-placeholder.pkl
   tests/workflow/inventory.pkl
+  tests/workflow/resources/motd.txt
   tests/workflow/valid/apt-hold-equal-version.pkl
   tests/workflow/valid/apt-hold-move-in-later-stage.pkl
   tests/workflow/valid/apt-hold-non-movements.pkl
@@ -95,6 +96,7 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/read-resource.pkl
   tests/workflow/valid/secret-literal-prefix.pkl
   tests/workflow/valid/secret-op-reference-dotted.pkl
   tests/workflow/valid/secret-placeholder-shared-terminator.pkl

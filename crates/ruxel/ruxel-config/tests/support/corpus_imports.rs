@@ -9,6 +9,12 @@
 //! manifest — here, transitive, from the source of every file already
 //! on the list, bounded by a visited set.
 //!
+//! The forms the evaluator opens a file with are all of them: the
+//! import spellings, the two module clauses (`amends` and `extends`)
+//! and the resource a module reads with `read("…")`. A form left out
+//! is a file the run opens and the manifest never names, so a change
+//! limited to it classifies the mandatory check unaffected.
+//!
 //! The scan runs on the shared source mask (`pkl_mask.rs`), the same
 //! one the wiring contract reads with: a form counts only in code and
 //! interpolation regions, never in string text or a comment, and the
@@ -24,14 +30,14 @@ mod mask;
 
 use mask::code;
 
-/// Grow `files` with the relative import closure of every corpus file
+/// Grow `files` with the relative closure of every corpus file
 /// already on it: each file under `tests/workflow` is read once, its
-/// relative `import`/`amends` targets resolved against its own
-/// directory, and those files walked the same way. A target outside
-/// the corpus — a URI scheme, an absolute path, a `..` that leaves
-/// `tests/workflow` — names no corpus file and is not followed; a file
-/// on the list that cannot be read is a loud failure, never a list
-/// quietly short of what the run opens.
+/// relative `import`/`amends`/`extends`/`read` targets resolved
+/// against its own directory, and those files walked the same way. A
+/// target outside the corpus — a URI scheme, an absolute path, a `..`
+/// that leaves `tests/workflow` — names no corpus file and is not
+/// followed; a file on the list that cannot be read is a loud failure,
+/// never a list quietly short of what the run opens.
 pub(super) fn expand(files: &mut Vec<String>) -> Result<()> {
     let mut visited: HashSet<String> = HashSet::new();
     let mut frontier: Vec<String> = files.clone();
@@ -66,17 +72,27 @@ pub(super) fn expand(files: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// The relative targets one source names: `import` and `amends` in
-/// both of Pkl's forms, the statement `import "…"` and the expression
-/// `import("…")`, wherever an expression stands and more than once a
-/// line. The mask decides where the token is code — `reimport(` is a
-/// call of `reimport`, an import inside string text or a comment is
-/// text Pkl never loads — and the argument is then read from the
+/// The relative targets one source names: the forms the evaluator
+/// opens a file with. `import` and `amends` come in both of Pkl's
+/// forms, the statement `import "…"` and the expression `import("…")`,
+/// wherever an expression stands and more than once a line; `extends`
+/// is the third module clause; and `read("…")` opens the resource a
+/// module reads. The mask decides where the token is code — `reimport(`
+/// is a call of `reimport`, an import inside string text or a comment
+/// is text Pkl never loads — and the argument is then read from the
 /// source at the offset the mask named.
 fn imports(text: &str, name: &str) -> Result<Vec<String>> {
     let mask = code(text);
     let mut targets = Vec::new();
-    for form in ["import", "amends"] {
+    // `read` is a function, not a keyword: only the call opens a file,
+    // so its parenthesis is required — a name that merely reads like
+    // one (`read: String`, `as read`) opens nothing.
+    for (form, call) in [
+        ("import", false),
+        ("amends", false),
+        ("extends", false),
+        ("read", true),
+    ] {
         let mut from = 0;
         while let Some(offset) = mask[from..].find(form) {
             let token = from + offset;
@@ -84,7 +100,7 @@ fn imports(text: &str, name: &str) -> Result<Vec<String>> {
             if !bounded(&mask, token, form.len()) {
                 continue;
             }
-            if let Some(target) = argument(text, from, name)? {
+            if let Some(target) = argument(text, from, name, call)? {
                 targets.push(target);
             }
         }
@@ -93,12 +109,14 @@ fn imports(text: &str, name: &str) -> Result<Vec<String>> {
 }
 
 /// An identifier boundary on both sides of the token: no `reimport(`
-/// and no `imports` of a name that merely starts with the word.
+/// and no `imports` of a name that merely starts with the word. A
+/// member access is no form either: `config.read(` is a property of
+/// the configuration, not the resource reader.
 fn bounded(mask: &str, token: usize, form: usize) -> bool {
     let bytes = mask.as_bytes();
     let before = token == 0 || {
         let byte = bytes[token - 1];
-        !(byte.is_ascii_alphanumeric() || byte == b'_')
+        !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.')
     };
     let after = match bytes.get(token + form) {
         Some(byte) => !(byte.is_ascii_alphanumeric() || *byte == b'_'),
@@ -110,21 +128,31 @@ fn bounded(mask: &str, token: usize, form: usize) -> bool {
 /// The string literal the form carries, read from the source at `at`:
 /// the argument sits behind whitespace, a comment or one paren (the
 /// expression form), and anything else means this occurrence carries
-/// no file — `import` spoken as a bare word names nothing to open.
+/// no file — `import` spoken as a bare word names nothing to open. A
+/// call form (`read("…")`) needs its paren, or it is no call at all.
 /// Ordinary, multi-line and raw strings all name a path; an escape or
 /// an interpolation inside one would name a path nobody wrote, so
 /// they fail loudly instead.
-fn argument(text: &str, at: usize, name: &str) -> Result<Option<String>> {
+fn argument(text: &str, at: usize, name: &str, call: bool) -> Result<Option<String>> {
     let bytes = text.as_bytes();
     let mut at = trivia(bytes, at);
+    // A nullable read (`read?("…")`) opens the file too, when it is
+    // there at all.
+    if bytes.get(at) == Some(&b'?') {
+        at = trivia(bytes, at + 1);
+    }
     if bytes.get(at) == Some(&b'(') {
         at = trivia(bytes, at + 1);
+    } else if call {
+        // A call form without its parenthesis is no call: it opens no
+        // file, and the next string in the source is nobody's target.
+        return Ok(None);
     }
     match bytes.get(at) {
         Some(b'"') if bytes[at..].starts_with(b"\"\"\"") => {
             let start = at + 3;
             let end = text[start..].find("\"\"\"").ok_or(format!(
-                "{name}: a multi-line import argument carries no closing quote"
+                "{name}: a multi-line file argument carries no closing quote"
             ))?;
             Ok(named(&text[start..start + end]))
         }
@@ -136,14 +164,14 @@ fn argument(text: &str, at: usize, name: &str) -> Result<Option<String>> {
                     b'"' => return Ok(named(&text[start..end])),
                     b'\\' => {
                         return Err(format!(
-                            "{name}: an import argument carries an escape, which a corpus path never needs"
+                            "{name}: a file argument carries an escape, which a corpus path never needs"
                         )
                         .into());
                     }
                     _ => end += 1,
                 }
             }
-            Err(format!("{name}: an import argument carries no closing quote").into())
+            Err(format!("{name}: a file argument carries no closing quote").into())
         }
         Some(b'#') => {
             let hashes = bytes[at..].iter().take_while(|&&byte| byte == b'#').count();
@@ -166,9 +194,7 @@ fn argument(text: &str, at: usize, name: &str) -> Result<Option<String>> {
             })
             .next();
             let Some(end) = closing else {
-                return Err(
-                    format!("{name}: a raw import argument carries no closing quote").into(),
-                );
+                return Err(format!("{name}: a raw file argument carries no closing quote").into());
             };
             Ok(named(&text[start..end]))
         }
@@ -243,4 +269,39 @@ fn trivia(bytes: &[u8], mut at: usize) -> usize {
             return at;
         }
     }
+}
+
+/// The forms the evaluator opens a file with are all of them: the
+/// import spellings, the two module clauses and the resource a module
+/// reads. A form left out of the walk is a file the run opens and the
+/// manifest never names, so a change limited to it classifies the
+/// mandatory check unaffected.
+#[test]
+fn the_forms_are_the_ones_the_evaluator_opens() {
+    let text = concat!(
+        "amends \"base.pkl\"\n",
+        "extends \"other.pkl\"\n",
+        "value = read(\"notes.txt\").text\n",
+    );
+    assert_eq!(
+        imports(text, "case.pkl").expect("the forms carry their targets"),
+        ["base.pkl", "other.pkl", "notes.txt"]
+    );
+}
+
+/// A form in text opens nothing: a commented-out read, a read inside a
+/// string and a name that merely reads like one are no file the
+/// evaluator opens.
+#[test]
+fn only_a_call_opens_a_file() {
+    let text = concat!(
+        "// read(\"commented.txt\")\n",
+        "value = \"read(\\\"text.txt\\\")\"\n",
+        "read: String\n",
+        "value = config.read(\"member.txt\")\n",
+    );
+    assert_eq!(
+        imports(text, "case.pkl").expect("the text carries no target"),
+        Vec::<String>::new()
+    );
 }
