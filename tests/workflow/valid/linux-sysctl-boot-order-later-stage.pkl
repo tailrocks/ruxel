@@ -1,0 +1,24 @@
+// The later stage's file sorts last: the live value follows the stages
+// and the boot value comes from the file that loads last, so nothing
+// hands the value back. (The reversed layout is refused — see
+// linux-sysctl-boot-order-precedence.)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-old.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/99-new.conf" }
+    }
+  }
+}
