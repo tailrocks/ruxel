@@ -24,6 +24,7 @@ fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_writ
     let error = super::super::run(
         &json!({"name":"ruxel.missing.key", "value":"1", "sysctl_file":path, "sysctl_set":true, "reload":false}),
         &ctx,
+        &[],
     )
     .expect_err("an unpublishable persistence target must be refused");
     assert!(error.contains("persist"), "{error}");
@@ -57,6 +58,7 @@ fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
     super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
+        &[],
     )
     .expect("an idempotent no-op must not probe publishability");
     // Replacement needed: the probe runs and its refusal is loud, before
@@ -65,6 +67,7 @@ fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
     let error = super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
+        &[],
     )
     .expect_err("a needed replacement must prove the target publishable");
     assert!(error.contains("persist"), "{error}");
@@ -84,25 +87,26 @@ fn a_shadowed_persistence_file_is_refused() {
     // directory: the same name in a higher directory shadows the managed
     // file at boot, so the entry would revert.
     assert_eq!(
-        super::super::shadow_candidates("/usr/lib/sysctl.d/50-ruxel.conf"),
+        super::super::boot::shadow_candidates("/usr/lib/sysctl.d/50-ruxel.conf"),
         vec![
             "/etc/sysctl.d/50-ruxel.conf".to_string(),
-            "/run/sysctl.d/50-ruxel.conf".to_string()
+            "/run/sysctl.d/50-ruxel.conf".to_string(),
+            "/usr/local/lib/sysctl.d/50-ruxel.conf".to_string()
         ]
     );
     assert_eq!(
-        super::super::shadow_candidates("/run/sysctl.d/50-ruxel.conf"),
+        super::super::boot::shadow_candidates("/run/sysctl.d/50-ruxel.conf"),
         vec!["/etc/sysctl.d/50-ruxel.conf".to_string()]
     );
     // The highest-precedence directory is never shadowed, and a path
     // outside the system directories is out of the boot surface entirely
     // (the type refuses it before the agent runs).
     assert_eq!(
-        super::super::shadow_candidates("/etc/sysctl.d/50-ruxel.conf"),
+        super::super::boot::shadow_candidates("/etc/sysctl.d/50-ruxel.conf"),
         Vec::<String>::new()
     );
     assert_eq!(
-        super::super::shadow_candidates("/etc/sysctl.conf"),
+        super::super::boot::shadow_candidates("/etc/sysctl.conf"),
         Vec::<String>::new()
     );
 }
@@ -125,6 +129,7 @@ fn a_refused_live_value_leaves_the_persistence_file_untouched() {
     let result = super::super::run(
         &json!({"name":"ruxel.missing.key", "value":"2", "sysctl_file":path, "sysctl_set":true, "reload":false}),
         &ctx,
+        &[],
     );
     assert!(result.is_err(), "{result:?}");
     assert_eq!(

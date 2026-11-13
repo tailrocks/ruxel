@@ -41,6 +41,13 @@ enum Probe {
         name: String,
         value: String,
     },
+    /// The effective boot surface: the files `sysctl --system` reads and
+    /// what they assign. It decides the value the host comes up with, so
+    /// a surface that moved after the task ran must not be served from
+    /// the cache.
+    SysctlBoot {
+        fingerprint: String,
+    },
 }
 
 impl Probe {
@@ -78,6 +85,9 @@ impl Probe {
             }
             Probe::SysctlLive { name, value } => {
                 read_sysctl(name).is_some_and(|current| normalized(&current) == normalized(value))
+            }
+            Probe::SysctlBoot { fingerprint } => {
+                crate::modules::boot_fingerprint().as_deref() == Some(fingerprint.as_str())
             }
         }
     }
@@ -201,6 +211,27 @@ impl Ledger {
             },
         );
         self.dirty = true;
+    }
+
+    /// The sysctl entries ruxel manages on this host: every file a
+    /// successful sysctl task wrote, with the key and the value ruxel
+    /// declared there. A later-loading file among them holds a declared
+    /// managed value, not an unmanaged boot override.
+    pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
+        let mut entries: Vec<(String, String, String)> = self
+            .records
+            .values()
+            .flat_map(|record| record.probes.iter())
+            .filter_map(|probe| match probe {
+                Probe::SysctlKV { file, name, value } => {
+                    Some((file.clone(), name.clone(), value.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        entries.sort();
+        entries.dedup();
+        entries
     }
 
     fn storage_key(&self, controller_key: &str) -> Option<String> {

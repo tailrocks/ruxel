@@ -118,6 +118,37 @@ fn sysctl_probes_weigh_every_alias_spelling() {
 }
 
 #[test]
+fn the_sysctl_cache_weighs_the_boot_surface() {
+    // The boot surface decides the value the host comes up with: an
+    // unmanaged file added or changed after the task ran moves the boot
+    // value the task never judged, so the cached result must not be
+    // served. The surface is one of the probes, and the probe compares
+    // against the surface of the moment.
+    let dir = Scratch::new("sysctl-boot-surface");
+    let file = dir.file("sysctl.conf", b"net.test = 1\n");
+    let params = json!({"name": "net.test", "value": "1", "sysctl_file": file});
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.record("key", "sysctl", &params, "ok", &json!({"changed": true}));
+    assert!(ledger.cached_ok("key").is_some());
+
+    let stale = Probe::SysctlBoot {
+        fingerprint: "a surface that never was".to_string(),
+    };
+    assert!(
+        !stale.verify(&mut crate::system_state::SystemState::default()),
+        "a boot surface that moved must miss the cache"
+    );
+    let current = crate::modules::boot_fingerprint().expect("fingerprint");
+    let fresh = Probe::SysctlBoot {
+        fingerprint: current.clone(),
+    };
+    assert!(
+        fresh.verify(&mut crate::system_state::SystemState::default()),
+        "the surface of the moment is the one the probe weighs"
+    );
+}
+
+#[test]
 fn old_schema_ledger_loads_empty() {
     let dir = Scratch::new("old-schema");
     let file = dir.file("target", b"stable");
