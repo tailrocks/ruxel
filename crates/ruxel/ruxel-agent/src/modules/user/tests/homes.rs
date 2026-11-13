@@ -75,3 +75,86 @@ fn the_claimed_default_home_is_refused_before_the_account_changes() {
     assert!(error.contains("home"), "{error}");
     std::fs::remove_file(&probe).unwrap();
 }
+
+#[test]
+fn an_existing_account_is_not_judged_by_an_unclaimed_default_home() {
+    // The claimed default `/home/<name>` is the creation's path to
+    // point the new account at. An account that already exists and
+    // states no home is pointed nowhere new — its live home may be
+    // `/srv/alice` — so the untouched default is not this step's to
+    // validate, while a declared home is.
+    assert!(
+        super::super::manages_home(false, false),
+        "the creation manages the claimed default home"
+    );
+    assert!(
+        super::super::manages_home(true, true),
+        "a declared home is managed for an existing account too"
+    );
+    assert!(
+        !super::super::manages_home(true, false),
+        "an existing account's unclaimed default home is not this step's to validate"
+    );
+}
+
+#[test]
+fn the_declared_home_of_an_existing_account_is_still_validated() {
+    // The other half of the rule: a declared home moves the existing
+    // account's field, so the step manages the path and validates it
+    // before `usermod` moves the field — a regular file there is
+    // refused.
+    let host = std::fs::read_to_string("/etc/passwd").unwrap();
+    let name = host
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 7 && f[2].parse::<u64>().is_ok_and(|uid| uid != 0))
+                .then(|| f[0].to_string())
+        })
+        .expect("a non-root account on the host");
+    let probe = std::env::temp_dir().join(format!("ruxel-declared-home-{}", std::process::id()));
+    std::fs::write(&probe, b"not a home").unwrap();
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let error = run(
+        &json!({"name": name, "home": probe.to_str().unwrap()}),
+        &ctx,
+    )
+    .expect_err("a declared home that is a regular file must be refused");
+    assert!(error.contains("home"), "{error}");
+    std::fs::remove_file(&probe).unwrap();
+}
+
+#[test]
+fn the_home_walk_stays_on_the_directories_it_opened() {
+    // The check-then-use window of the path-based mutation: the walk
+    // opens the parent, the attacker renames the ordinary directory
+    // aside and plants a symlink in its place, and the mutation still
+    // lands on the inode the walk opened — never through the
+    // replacement to an attacker-selected target.
+    let base = std::env::temp_dir().join(format!("ruxel-walk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let real = base.join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let target = base.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let home = real.join("home");
+    let opened = super::super::home::open_chain(&real, home.to_str().unwrap(), false).unwrap();
+    std::fs::rename(&real, base.join("real-moved")).unwrap();
+    std::os::unix::fs::symlink(&target, &real).unwrap();
+    rustix::fs::mkdirat(&opened, "home", rustix::fs::Mode::from_raw_mode(0o777)).unwrap();
+    assert!(
+        base.join("real-moved/home").is_dir(),
+        "the mutation must land on the directory the walk opened"
+    );
+    assert!(
+        !target.join("home").exists(),
+        "never through the replacement the attacker planted"
+    );
+    std::fs::remove_dir_all(&base).unwrap();
+}
