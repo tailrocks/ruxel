@@ -67,8 +67,13 @@ pub(super) fn harnesses() -> Result<Vec<(String, String)>> {
 
 /// The Rust sources under one directory, at any depth
 /// (`PRRT_kwDOS3Fimc62plX_l`): a `mod foo;` backed by `foo/mod.rs`
-/// nests, and every nested harness source is a harness source.
-fn sources_under(stem: &str, sources: &mut Vec<String>) -> Result<()> {
+/// nests, and every nested harness source is a harness source. The
+/// files join the frontier rather than the finished list: only the
+/// frontier is read for a `#[path = "..."]` of its own, and a module
+/// found here may carry one pointing outside its directory — the
+/// external module Cargo compiles for it must be a declared input
+/// too.
+fn sources_under(stem: &str, frontier: &mut Vec<String>) -> Result<()> {
     let directory = repo().join(stem);
     if !directory.is_dir() {
         return Ok(());
@@ -79,9 +84,9 @@ fn sources_under(stem: &str, sources: &mut Vec<String>) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if entry.path().is_dir() {
-            sources_under(&format!("{stem}/{name}"), sources)?;
+            sources_under(&format!("{stem}/{name}"), frontier)?;
         } else if entry.path().extension().is_some_and(|ext| ext == "rs") {
-            sources.push(format!("{stem}/{name}"));
+            frontier.push(format!("{stem}/{name}"));
         }
     }
     Ok(())
@@ -104,7 +109,7 @@ pub(super) fn harness_sources() -> Result<Vec<String>> {
             continue;
         }
         sources.push(source.clone());
-        sources_under(source.trim_end_matches(".rs"), &mut sources)?;
+        sources_under(source.trim_end_matches(".rs"), &mut frontier)?;
         // A `#[path = "..."]`-attributed module may point anywhere; the
         // harness reads it, so the contract follows it there.
         let path = repo().join(&source);
