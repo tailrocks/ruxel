@@ -181,8 +181,12 @@ class User extends core.Step {
   /// The account's login shell: a file path, any absolute path but `/`
   /// itself, which is a directory. The shell must exist on the host; a site
   /// that manages login access says in its runbook that root account and
-  /// key changes run only through its gated apply path.
-  shell: FilePath? = null
+  /// key changes run only through its gated apply path. The shell is
+  /// never the account's home: the home is a directory the account's
+  /// task creates and uses, while the shell is a regular executable file
+  /// `shell_allowed` verifies — including the claimed home `/home/<user>`
+  /// of an account that states none — so one path cannot stand for both.
+  shell: FilePath?(this == null || state != "present" || this != (home ?? "/home/\(user)")) = null
   /// The account's home directory: a file path, any absolute path but `/`
   /// itself. An explicit home of a present account is a path the step
   /// manages — the agent creates the directory — so no other step may own
