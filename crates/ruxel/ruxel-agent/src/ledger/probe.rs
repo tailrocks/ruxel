@@ -144,6 +144,14 @@ pub(super) fn read_sysctl(name: &str) -> Option<String> {
 
 pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     let content = std::fs::read_to_string(file).ok()?;
+    // Entry keys compare canonicalized: the slash-first and dotted
+    // spellings of one parameter (`net/ipv4/ip_forward`,
+    // `net.ipv4.ip_forward`) address one `/proc/sys` entry, so every
+    // alias line in the file weighs on the probe — pinning only the raw
+    // spelling the task requested lets an alias that drifted to another
+    // value pass every probe, and boot processes the alias and restores
+    // its value.
+    let key = crate::modules::sysctl_key(name);
     let mut value = None;
     for line in content.lines() {
         let t = line.trim();
@@ -151,7 +159,7 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
             continue;
         }
         if let Some((k, v)) = t.split_once('=')
-            && k.trim() == name
+            && crate::modules::sysctl_key(k.trim()) == key
         {
             if value.is_some() {
                 return None;

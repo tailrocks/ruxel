@@ -69,6 +69,55 @@ fn sysctl_cache_misses_for_later_duplicate_assignments() {
 }
 
 #[test]
+fn sysctl_alias_drift_misses_the_cache() {
+    // One parameter's identity is its /proc/sys path: the slash-first
+    // and dotted spellings (`net/ipv4/ip_forward`,
+    // `net.ipv4.ip_forward`) are one entry. The probe must weigh every
+    // alias line in the file — pinning only the raw spelling the task
+    // requested lets an alias that drifted to another value pass every
+    // probe, the task is skipped, and boot processes the alias and
+    // reverts the parameter.
+    let dir = Scratch::new("sysctl-alias-drift");
+    let file = dir.file("sysctl.conf", b"net.ipv4.ip_forward=1\n");
+    let params = json!({"name": "net.ipv4.ip_forward", "value": "1", "sysctl_file": file});
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.record("key", "sysctl", &params, "ok", &json!({"changed": true}));
+    assert!(ledger.cached_ok("key").is_some());
+
+    std::fs::write(&file, b"net.ipv4.ip_forward=1\nnet/ipv4/ip_forward=0\n")
+        .expect("operation succeeds");
+    assert!(ledger.cached_ok("key").is_none());
+}
+
+#[test]
+fn sysctl_probes_weigh_every_alias_spelling() {
+    // An alias at another value leaves no single value to pin (the
+    // later alias restores its own at boot), and the alias spelling
+    // alone is the same entry: the probe records the task's value
+    // against it instead of matching nothing.
+    let dir = Scratch::new("sysctl-alias-probe");
+    let file = dir.file(
+        "sysctl.conf",
+        b"net.ipv4.ip_forward=1\nnet/ipv4/ip_forward=0\n",
+    );
+    assert_eq!(
+        sysctl_file_value(
+            file.to_str().expect("operation succeeds"),
+            "net.ipv4.ip_forward"
+        ),
+        None
+    );
+    let alias_only = dir.file("alias.conf", b"net/ipv4/ip_forward=1\n");
+    assert_eq!(
+        sysctl_file_value(
+            alias_only.to_str().expect("operation succeeds"),
+            "net.ipv4.ip_forward"
+        ),
+        Some("1".to_string())
+    );
+}
+
+#[test]
 fn old_schema_ledger_loads_empty() {
     let dir = Scratch::new("old-schema");
     let file = dir.file("target", b"stable");

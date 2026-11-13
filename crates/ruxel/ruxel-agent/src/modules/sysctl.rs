@@ -32,6 +32,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let reload = bool_param(obj, "reload", true);
     let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
     preflight_shadow(file)?;
+    preflight_override(file, name, &value)?;
 
     let mut changed = false;
 
@@ -165,11 +166,6 @@ fn shadowing(file: &str) -> Option<String> {
 /// The paths that would shadow `file` at boot, highest precedence first:
 /// the file's base name in the system directories that outrank its own.
 fn shadow_candidates(file: &str) -> Vec<String> {
-    const DIRS: [(&str, u8); 3] = [
-        ("/etc/sysctl.d/", 2),
-        ("/run/sysctl.d/", 1),
-        ("/usr/lib/sysctl.d/", 0),
-    ];
     let Some((dir, base)) = file.rsplit_once('/') else {
         return Vec::new();
     };
@@ -181,6 +177,115 @@ fn shadow_candidates(file: &str) -> Vec<String> {
         .filter(|(_, higher)| higher > rank)
         .map(|(d, _)| format!("{d}{base}"))
         .collect()
+}
+
+/// The recognized system directories, by precedence: the higher rank
+/// wins a file name shared between them.
+const DIRS: [(&str, u8); 3] = [
+    ("/etc/sysctl.d/", 2),
+    ("/run/sysctl.d/", 1),
+    ("/usr/lib/sysctl.d/", 0),
+];
+
+/// A persistence entry overridden later at boot is refused whatever the
+/// file holds: the system files load together by their base names and
+/// `/etc/sysctl.conf` after all of them, so a later-loading file that
+/// assigns the managed key hands the boot value away from the managed
+/// entry — the parameter reverts after reboot even when this apply
+/// writes nothing, just like a same-name shadow. Keys compare
+/// canonicalized (the slash-first and dotted spellings are one entry),
+/// and an assignment to the same value hands boot the managed value —
+/// it is not an override.
+fn preflight_override(file: &str, name: &str, value: &str) -> Result<(), String> {
+    let host: Vec<(String, String)> = system_files()
+        .into_iter()
+        .filter_map(|path| {
+            std::fs::read_to_string(&path)
+                .ok()
+                .map(|content| (path, content))
+        })
+        .collect();
+    match boot_override(file, name, value, &host) {
+        Some((later, other)) => Err(format!(
+            "sysctl: cannot persist {file}: {later} assigns {name}={other} and loads after it at boot, so reboot restores {other} instead of the managed value"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The later-loading host file that assigns `name` to a value of its
+/// own, if any: its path and the value. The host contents come from
+/// outside so the boot surface is provable without a system of its own.
+fn boot_override(
+    file: &str,
+    name: &str,
+    value: &str,
+    host: &[(String, String)],
+) -> Option<(String, String)> {
+    let key = sysctl_key(name);
+    host.iter()
+        .filter(|(path, _)| loads_after(file, path))
+        .find_map(|(path, content)| {
+            assigns_other(content, &key, value).map(|other| (path.clone(), other))
+        })
+}
+
+/// Whether `candidate` loads after `file` at boot: the system files
+/// sort together by their base names, and `/etc/sysctl.conf` loads
+/// after all of them. One base name loads once, from its
+/// highest-precedence directory (see `shadow_candidates`), so a
+/// same-named copy is never a later load.
+fn loads_after(file: &str, candidate: &str) -> bool {
+    if candidate == file || file == "/etc/sysctl.conf" {
+        return false;
+    }
+    if candidate == "/etc/sysctl.conf" {
+        return true;
+    }
+    match (file.rsplit_once('/'), candidate.rsplit_once('/')) {
+        (Some((_, mine)), Some((_, theirs))) => theirs > mine,
+        _ => false,
+    }
+}
+
+/// The value `content` assigns the key to that differs from `value`, if
+/// any. Every matching line weighs — an alias spelling is the same
+/// entry (`sysctl_key`), and a file whose lines disagree about the key
+/// is no more trustworthy at boot than one the probe refuses to pin.
+fn assigns_other(content: &str, key: &str, value: &str) -> Option<String> {
+    let want = normalized(value);
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = t.split_once('=')
+            && sysctl_key(k.trim()) == key
+            && normalized(v) != want
+        {
+            return Some(normalized(v));
+        }
+    }
+    None
+}
+
+/// Every file `sysctl --system` reads on this host: the `*.conf` files
+/// of the recognized system directories and `/etc/sysctl.conf`.
+fn system_files() -> Vec<String> {
+    let mut files = Vec::new();
+    for (dir, _) in DIRS {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            files.extend(
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| path.extension().is_some_and(|e| e == "conf") && path.is_file())
+                    .map(|path| path.to_string_lossy().into_owned()),
+            );
+        }
+    }
+    files.push("/etc/sysctl.conf".to_string());
+    files
 }
 
 fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
@@ -253,7 +358,7 @@ pub(crate) fn proc_sys_path(name: &str) -> String {
 /// spellings of one parameter compare equal — and a slash-first name
 /// with a literal dot (`enp3s0.200`) keeps its identity apart from the
 /// dotted spelling of another path.
-fn sysctl_key(name: &str) -> String {
+pub(crate) fn sysctl_key(name: &str) -> String {
     if name.contains('/') {
         name.to_string()
     } else {

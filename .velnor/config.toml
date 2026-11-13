@@ -652,6 +652,8 @@ inputs = [
   "tests/workflow/valid/linux-sysctl-slash.pkl",
   "tests/workflow/valid/linux-sysctl.pkl",
   "tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl",
+  "tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl",
+  "tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl",
   "tests/workflow/valid/linux-user-account.pkl",
   "tests/workflow/valid/linux-user-groups-order.pkl",
   "tests/workflow/valid/linux-user-groups-empty.pkl",

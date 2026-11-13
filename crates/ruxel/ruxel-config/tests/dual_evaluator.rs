@@ -203,6 +203,8 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-across-stages.pkl",
     "invalid/linux-group-gid-across-stages.pkl",
     "valid/linux-user-uid-reused-after-removal.pkl",
+    "valid/linux-sysctl-name-alias-same-value.pkl",
+    "valid/linux-sysctl-boot-order-later-stage.pkl",
 ];
 
 /// The official `pkl` binary.
