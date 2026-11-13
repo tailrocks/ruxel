@@ -24,13 +24,21 @@ fn the_resolution_probe_reports_the_pkl_it_resolved() -> Result {
 /// between: `installed`, where `mise install pkl@0.33.0` puts the
 /// artifact the verifier hashes, and `tampered`, a different working
 /// `pkl` earlier on `PATH`.
+///
+/// The name carries a sequence number alongside the pid: the tests below
+/// run in parallel within one process, and a name of pid and timestamp
+/// alone collided when two of them asked for a scratch tree within one
+/// clock tick — sharing one tree, whose cleanup the first finisher ran
+/// under the other's still-running child probe.
 fn scratch() -> Result<(PathBuf, PathBuf, PathBuf)> {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let scratch = std::env::temp_dir().join(format!(
-        "ruxel-pkl-resolution-{}-{}",
+        "ruxel-pkl-resolution-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos()
+            .as_nanos(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
     let installed = scratch.join("mise-data/installs/pkl/0.33.0/pkl");
     let tampered = scratch.join("bin/pkl");

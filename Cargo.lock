@@ -1173,7 +1173,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "pklr"
 version = "5.2.3"
-source = "git+https://github.com/jdx/pklr?rev=77828272d37b3e51f45582a75e345a0ae0b963a0#77828272d37b3e51f45582a75e345a0ae0b963a0"
+source = "git+https://github.com/donbeave/pklr?rev=9843caeb1f56499896c78057fd2560e468978ab1#9843caeb1f56499896c78057fd2560e468978ab1"
 dependencies = [
  "fancy-regex",
  "indexmap",
@@ -1191,7 +1191,7 @@ dependencies = [
 [[package]]
 name = "pklr"
 version = "5.2.3"
-source = "git+https://github.com/donbeave/pklr?rev=9843caeb1f56499896c78057fd2560e468978ab1#9843caeb1f56499896c78057fd2560e468978ab1"
+source = "git+https://github.com/jdx/pklr?rev=d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9#d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9"
 dependencies = [
  "fancy-regex",
  "indexmap",
@@ -1599,8 +1599,8 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "libc",
- "pklr 5.2.3 (git+https://github.com/jdx/pklr?rev=77828272d37b3e51f45582a75e345a0ae0b963a0)",
  "pklr 5.2.3 (git+https://github.com/donbeave/pklr?rev=9843caeb1f56499896c78057fd2560e468978ab1)",
+ "pklr 5.2.3 (git+https://github.com/jdx/pklr?rev=d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9)",
  "rustix 1.1.6",
  "ruxel-guard",
  "serde",
