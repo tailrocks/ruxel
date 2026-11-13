@@ -11,4 +11,6 @@ serves: `Core.pkl`, which it extends, and the layer modules beside it
   from Pkl, `// expect-pklr: <text>` gives pklr's text, which ruxel uses.
 
 `inventory.pkl` uses documentation addresses only (RFC 5737). `recipes/` holds
-two example recipes that several cases share.
+two example recipes that several cases share. `resources/` holds the files
+a workflow reads with `read("…")`: no import reaches them, so a walk that
+follows imports alone would never name them.

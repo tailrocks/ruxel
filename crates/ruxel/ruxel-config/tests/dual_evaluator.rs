@@ -21,6 +21,12 @@ mod discovery;
 #[path = "dual_evaluator/join_separator.rs"]
 mod join_separator;
 
+#[path = "dual_evaluator/retired_path.rs"]
+mod retired_path;
+
+#[path = "dual_evaluator/corpus_files.rs"]
+mod corpus_files;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn root() -> PathBuf {
@@ -43,6 +49,7 @@ fn root() -> PathBuf {
 /// The user step that lowers to the engine's user operation is here too.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
+    "valid/read-resource.pkl",
     "valid/secret-op-reference-dotted.pkl",
     "valid/secret-literal-prefix.pkl",
     "invalid/secret-op-reference-dotted-selector.pkl",

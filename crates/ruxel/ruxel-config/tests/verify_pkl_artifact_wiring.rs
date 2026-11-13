@@ -15,6 +15,12 @@
 //! Thread `PRRT_kwDOS3Fimc62bkh9`: the ruxel-config test lane must rerun
 //! when `tools/verify-pkl-artifact` changes, because the lane's
 //! `verify_pkl_artifact` suite executes that script.
+//! Thread `PRRT_kwDOS3Fimc62ioGG`: every workflow the dual-evaluator
+//! corpus names must be an input of the `dual-evaluator` check. The
+//! corpus lives in a feature-gated target the pkl-less lanes skip, so an
+//! omission there cannot catch itself: this file is an ordinary target
+//! of the same lane, and it reads the corpus source rather than running
+//! it.
 
 use std::path::{Path, PathBuf};
 
@@ -77,6 +83,14 @@ fn check_inputs<'a>(config: &'a DocumentMut, id: &str) -> Result<Vec<&'a str>> {
     }
     Err(format!(".velnor/config.toml has no {id} check").into())
 }
+
+/// The dual-evaluator corpus contract: every file that target reads must
+/// be a declared input of its check. The suite that would notice an
+/// omission is the one being skipped, so the contract lives in this
+/// lane's ordinary target instead — in
+/// `verify_pkl_artifact_wiring/dual_evaluator_corpus.rs`.
+#[path = "verify_pkl_artifact_wiring/dual_evaluator_corpus.rs"]
+mod dual_evaluator_corpus;
 
 /// `PRRT_kwDOS3Fimc62bLfg`: a musl slot must pin the alpine asset — the
 /// glibc binary cannot start on a musl host, and a checksum that passes

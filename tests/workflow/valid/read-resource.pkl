@@ -1,0 +1,14 @@
+// A workflow whose file step reads a resource beside the module: the
+// evaluator opens that file, so it is a file the corpus reads. No
+// import reaches it — only the `read` call does — so a walk that
+// follows imports alone would never name it, and a change limited to
+// it would classify the mandatory check unaffected.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "Motd"; hosts = inventory.workers; steps {
+  new File {
+    path = "/etc/motd"
+    content = read("../resources/motd.txt").text
+  }
+} } }
