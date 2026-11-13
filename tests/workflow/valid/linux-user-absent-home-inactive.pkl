@@ -1,0 +1,18 @@
+// Two declarations of one absent account that differ only in the home
+// are the same state: the removal path ignores the home unless
+// `removeHome` is true, so both declarations remove the account
+// exactly the same way.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; state = "absent"; home = "/srv/app" }
+      new linux.User { user = "app"; uid = 1500; state = "absent"; home = "/home/app" }
+    }
+  }
+}

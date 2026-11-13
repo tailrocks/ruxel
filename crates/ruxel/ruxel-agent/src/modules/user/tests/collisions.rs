@@ -165,7 +165,7 @@ fn an_account_the_plan_removed_holds_no_number() {
         super::super::guards::uid_holder_in_use_from(passwd, 4242, "bob"),
         Some("ruxel-freed-account".to_string())
     );
-    super::super::guards::note_removed_account("ruxel-freed-account");
+    super::super::entries::note_removed_account("ruxel-freed-account");
     assert_eq!(
         super::super::guards::uid_holder_in_use_from(passwd, 4242, "bob"),
         None,

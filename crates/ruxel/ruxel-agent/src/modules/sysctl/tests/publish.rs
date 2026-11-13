@@ -139,3 +139,41 @@ fn a_refused_live_value_leaves_the_persistence_file_untouched() {
     );
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_declared_same_name_shadow_is_not_an_unmanaged_shadow() {
+    // A deliberate transition of the key to the higher-precedence file
+    // — the same name in `/etc/sysctl.d` after `/usr/lib/sysctl.d` —
+    // leaves the shadow's entry a declared managed value of the
+    // workflow's own, so the earlier stage's task runs again instead of
+    // being refused for the file the later stage declares.
+    let managed = vec![(
+        "/etc/sysctl.d/50-ruxel.conf".to_string(),
+        "net.ipv4.ip_forward".to_string(),
+        "1".to_string(),
+    )];
+    assert!(super::super::declared_shadow(
+        "/etc/sysctl.d/50-ruxel.conf",
+        "net.ipv4.ip_forward",
+        &managed,
+    ));
+    // The alias spelling of the key is the same entry.
+    assert!(super::super::declared_shadow(
+        "/etc/sysctl.d/50-ruxel.conf",
+        "net/ipv4/ip_forward",
+        &managed,
+    ));
+    // A shadow that declares the key for nothing the plan manages is
+    // an unmanaged shadow again, and a managed file that declares only
+    // another key does not carry this entry.
+    assert!(!super::super::declared_shadow(
+        "/etc/sysctl.d/50-ruxel.conf",
+        "net.ipv4.ip_forward",
+        &[],
+    ));
+    assert!(!super::super::declared_shadow(
+        "/etc/sysctl.d/50-ruxel.conf",
+        "net.test",
+        &managed,
+    ));
+}

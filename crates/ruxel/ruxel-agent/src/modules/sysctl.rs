@@ -39,7 +39,7 @@ pub(super) fn run(
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
     let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
-    preflight_shadow(file)?;
+    preflight_shadow(file, name, managed)?;
     preflight_override(file, name, &value, managed)?;
 
     let mut changed = false;
@@ -146,13 +146,37 @@ pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), Strin
 /// one file name once, from the highest-precedence directory, so the boot
 /// value comes from the shadow and the managed entry is ignored — the
 /// parameter reverts after reboot even when this apply writes nothing.
-fn preflight_shadow(file: &str) -> Result<(), String> {
+/// The exception is a shadow the workflow itself declares: a deliberate
+/// transition of the key to the higher-precedence file — the same name in
+/// `/etc/sysctl.d` after `/usr/lib/sysctl.d` — leaves the shadow's entry a
+/// declared managed value, and the earlier stage's task must be able to
+/// run again.
+fn preflight_shadow(
+    file: &str,
+    name: &str,
+    managed: &[(String, String, String)],
+) -> Result<(), String> {
     if let Some(shadow) = boot::shadowing(file) {
+        if declared_shadow(&shadow, name, managed) {
+            return Ok(());
+        }
         return Err(format!(
             "sysctl: cannot persist {file}: {shadow} shadows it at boot; sysctl(8) applies one file name once, from the highest-precedence directory, so the entry would revert after reboot"
         ));
     }
     Ok(())
+}
+
+/// Whether the shadowing file carries the managed key as a declared
+/// managed value of its own: the workflow's own later-stage file, not
+/// an unmanaged shadow. The value need not be this task's — the later
+/// stage's declared value is a transition the boot order settles — but
+/// the file must declare the key, or the shadow's assignment of it is
+/// an unmanaged boot value again.
+fn declared_shadow(shadow: &str, name: &str, managed: &[(String, String, String)]) -> bool {
+    managed.iter().any(|(file, managed_name, _)| {
+        file == shadow && sysctl_key(managed_name) == sysctl_key(name)
+    })
 }
 
 /// A persistence entry overridden later at boot is refused whatever the

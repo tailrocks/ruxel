@@ -127,7 +127,8 @@ pub(super) fn uid_holder_in_use(uid: u64, name: &str) -> Result<Option<String>, 
 
 /// The passwd counterpart of [`uid_holder_in_use`], over canned content.
 pub(super) fn uid_holder_in_use_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
-    super::entries::uid_holder_from(passwd, uid, name).filter(|account| !account_removed(account))
+    super::entries::uid_holder_from(passwd, uid, name)
+        .filter(|account| !super::entries::account_removed(account))
 }
 
 /// The group that holds `gid` on the host and that the plan has not
@@ -141,7 +142,8 @@ pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, 
 
 /// The group counterpart of [`uid_holder_in_use`], over canned content.
 pub(super) fn gid_holder_in_use_from(groups: &str, gid: u64, name: &str) -> Option<String> {
-    super::entries::gid_holder_from(groups, gid, name).filter(|group| !group_removed(group))
+    super::entries::gid_holder_from(groups, gid, name)
+        .filter(|group| !super::entries::group_removed(group))
 }
 
 /// Whether the plan provides the named group: the host's group database
@@ -158,7 +160,7 @@ pub(super) fn group_provided(group: &str, check_mode: bool) -> Result<(), String
     if super::group_entry(group)?.is_some() {
         return Ok(());
     }
-    if check_mode && planned::holds(group) {
+    if check_mode && super::entries::planned_group(group).is_some() {
         return Ok(());
     }
     Err(format!("group {group:?} not found"))
@@ -222,104 +224,6 @@ pub(super) fn removal_primary_group_allowed(
     }
 }
 
-/// The groups a plan has declared present so far: the check-mode
-/// counterpart of the host's group database. Apply reads the host — an
-/// earlier `Group` step has already run by the time its consumer does —
-/// while check mode runs nothing, so the record of what the plan's own
-/// earlier tasks would have created is what `planned_gid` resolves
-/// against. A group no task provides is refused in check mode exactly
-/// as apply refuses it: a dry run must not report a change that cannot
-/// succeed.
-mod planned {
-    use std::cell::RefCell;
-    use std::collections::BTreeSet;
-
-    thread_local! {
-        static GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-        static REMOVED_ACCOUNTS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-        static REMOVED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-    }
-
-    pub(super) fn note(name: &str) {
-        GROUPS.with(|groups| {
-            groups.borrow_mut().insert(name.to_string());
-        });
-    }
-
-    pub(super) fn forget(name: &str) {
-        GROUPS.with(|groups| {
-            groups.borrow_mut().remove(name);
-        });
-    }
-
-    pub(super) fn holds(name: &str) -> bool {
-        GROUPS.with(|groups| groups.borrow().contains(name))
-    }
-
-    /// The plan's record of an account it has removed: the number the
-    /// account held is free for whatever the plan claims next, although
-    /// the host's database still lists it while check mode runs.
-    pub(super) fn note_removed_account(name: &str) {
-        REMOVED_ACCOUNTS.with(|accounts| {
-            accounts.borrow_mut().insert(name.to_string());
-        });
-    }
-
-    pub(super) fn account_removed(name: &str) -> bool {
-        REMOVED_ACCOUNTS.with(|accounts| accounts.borrow().contains(name))
-    }
-
-    /// The plan's record of a group it has removed: the number the
-    /// group held is free for whatever the plan claims next.
-    pub(super) fn note_removed_group(name: &str) {
-        REMOVED_GROUPS.with(|groups| {
-            groups.borrow_mut().insert(name.to_string());
-        });
-    }
-
-    pub(super) fn group_removed(name: &str) -> bool {
-        REMOVED_GROUPS.with(|groups| groups.borrow().contains(name))
-    }
-}
-
-/// Whether the plan has declared the group present: the record an
-/// earlier `Group` step — or an account that brings its private group
-/// with it — leaves for whatever resolves the group next.
-pub(super) fn note_planned_group(name: &str) {
-    planned::note(name);
-}
-
-/// The record's counterpart when the plan removes the group.
-pub(super) fn forget_planned_group(name: &str) {
-    planned::forget(name);
-}
-
-/// The plan's record of the account it has removed: the number the
-/// account held is free for whatever the plan claims next. Check mode
-/// runs no `userdel`, so the host's database still lists the account
-/// while the plan knows it is gone.
-pub(super) fn note_removed_account(name: &str) {
-    planned::note_removed_account(name);
-}
-
-/// Whether the plan has removed the account: a holder the plan took
-/// away holds no number, so it is no collision.
-pub(super) fn account_removed(name: &str) -> bool {
-    planned::account_removed(name)
-}
-
-/// The plan's record of the group it has removed: the number the group
-/// held is free for whatever the plan claims next.
-pub(super) fn note_removed_group(name: &str) {
-    planned::note_removed_group(name);
-}
-
-/// Whether the plan has removed the group: a holder the plan took away
-/// holds no number, so it is no collision.
-pub(super) fn group_removed(name: &str) -> bool {
-    planned::group_removed(name)
-}
-
 /// Whether the account's claimed private group is missing on the host:
 /// a step that names no primary group claims the same-name group — the
 /// footprint model reserves it and the lowering's group ordering
@@ -350,7 +254,7 @@ pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, 
         Some((_, gid)) => u32::try_from(gid)
             .map(Some)
             .map_err(|_| format!("group {group:?} gid {gid} does not fit")),
-        None if check_mode && planned::holds(group) => Ok(None),
+        None if check_mode && super::entries::planned_group(group).is_some() => Ok(None),
         None => Err(format!("group {group:?} not found")),
     }
 }

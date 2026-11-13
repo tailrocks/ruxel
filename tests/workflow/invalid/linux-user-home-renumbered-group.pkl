@@ -1,0 +1,18 @@
+// expect: the number is not repaired in the files the identity owns
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The home is a file the primary group owns like any other: `groupmod
+// -g` renumbers the group but leaves the directory at its old gid, so
+// the home created under the old number must be reconciled after the
+// renumbering.
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 1501 }
+    new linux.User { user = "alice"; uid = 1500; group = "staff"; home = "/home/alice" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 2000 }
+  } }
+}

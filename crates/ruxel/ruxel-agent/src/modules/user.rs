@@ -12,7 +12,11 @@ use shell::shell_allowed;
 mod entries;
 mod home;
 mod shell;
-use entries::{PasswdEntry, group_entry, groups_need_update, passwd_entry, supplementary_groups};
+use entries::{
+    PasswdEntry, forget_planned_group, forget_planned_user, group_entry, groups_need_update,
+    note_planned_group, note_planned_user, note_removed_account, note_removed_group, passwd_entry,
+    supplementary_groups,
+};
 #[cfg(test)]
 use entries::{
     gid_holder_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
@@ -108,9 +112,10 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     // The plan's record of this group: a present group is what a later
     // step resolves against in check mode (`planned_gid`), an absent
     // one is gone from it the way `groupdel` would take it from the
-    // host.
+    // host. The record carries the requested gid where the step
+    // declared one.
     if state == "present" {
-        note_planned_group(name);
+        note_planned_group(name, gid.and_then(|want| u32::try_from(want).ok()));
     } else {
         forget_planned_group(name);
     }
@@ -118,10 +123,10 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 }
 
 mod guards;
+pub(super) use entries::{Requested, planned_group, planned_user};
 use guards::{
-    forget_planned_group, gid_holder_in_use, group_change_allowed, group_provided,
-    group_removal_allowed, identity_change_allowed, note_planned_group, note_removed_account,
-    note_removed_group, planned_gid, primary_group_holder, primary_group_name,
+    gid_holder_in_use, group_change_allowed, group_provided, group_removal_allowed,
+    identity_change_allowed, planned_gid, primary_group_holder, primary_group_name,
     private_group_missing, removal_allowed, removal_home_allowed, removal_primary_group_allowed,
     uid_holder_in_use,
 };
@@ -188,6 +193,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // The removal takes the account's empty same-name group with
         // it, so the plan's record goes the way of the host's.
         forget_planned_group(name);
+        forget_planned_user(name);
         if changed {
             // The removal frees the number for whatever the plan claims
             // next: check mode runs no `userdel`, so the host's
@@ -460,8 +466,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // host's), the existing-account branch reconciles it above —
         // so the plan's record holds it for whatever resolves the
         // group next.
-        note_planned_group(name);
+        note_planned_group(name, None);
     }
+    // The plan's record of the account: what a later file's ownership
+    // resolves against in check mode, which runs no `useradd` and would
+    // otherwise refuse the name the plan is about to create.
+    note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
 }
 
