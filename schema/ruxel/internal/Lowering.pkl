@@ -790,19 +790,22 @@ function shellRels(ix: StageIndex, i: Int): List<String> =
 function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   let (s = ix.steps[j])
   (if (s is core.File && !executableMode(s.mode))
-    List("'\(name(s))' (\(where(ix.placed[j]))) manages the shell \(u.shell) of '\(name(u))' (\(where(ix.placed[i]))) at mode \(s.mode), which does not make it executable; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
+    List("'\(name(s))' (\(where(ix.placed[j]))) manages the shell \(u.shell) of '\(name(u))' (\(where(ix.placed[i]))) at mode \(s.mode), which does not make it executable for the account; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
   else List())
   + (if (j > i)
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(s))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
   else List())
 
-/// Whether a file mode makes the file executable: any execute bit — the
-/// same test the account's task passes the shell file through at apply
+/// Whether a file mode makes the file executable for the account that
+/// does not own it: the other-execute bit. Unix selects the permission
+/// class by the caller's identity, so an owner- or group-execute bit
+/// serves only the file's owner or group — the managed account runs as
+/// `other` unless it owns the file, which the lowering cannot know of
+/// a file another step writes. The conservative class is the same test
+/// the account's task passes the shell file through at apply
 /// (`shell_allowed`).
 const function executableMode(mode: String): Boolean =
-  List("1", "3", "5", "7").contains(mode.substring(mode.length - 3, mode.length - 2))
-    || List("1", "3", "5", "7").contains(mode.substring(mode.length - 2, mode.length - 1))
-    || List("1", "3", "5", "7").contains(mode.substring(mode.length - 1, mode.length))
+  List("1", "3", "5", "7").contains(mode.substring(mode.length - 1, mode.length))
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.

@@ -205,6 +205,7 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-user-uid-reused-after-removal.pkl",
     "valid/linux-sysctl-name-alias-same-value.pkl",
     "valid/linux-sysctl-boot-order-later-stage.pkl",
+    "invalid/linux-user-shell-owner-execute-only.pkl",
 ];
 
 /// The official `pkl` binary.

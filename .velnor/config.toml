@@ -503,6 +503,7 @@ inputs = [
   "tests/workflow/invalid/linux-user-shell-later.pkl",
   "tests/workflow/invalid/linux-user-shell-not-absolute.pkl",
   "tests/workflow/invalid/linux-user-shell-not-executable.pkl",
+  "tests/workflow/invalid/linux-user-shell-owner-execute-only.pkl",
   "tests/workflow/invalid/linux-sysctl-boot-order-precedence.pkl",
   "tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl",
   "tests/workflow/invalid/linux-sysctl-path-run.pkl",
