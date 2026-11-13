@@ -9,18 +9,19 @@ use super::{ExecContext, bool_param, params_object, str_param};
 use home::{claimed_home, ensure_home, home_gid, home_usable};
 use shell::shell_allowed;
 
+mod entries;
 mod home;
 mod shell;
+use entries::{
+    PasswdEntry, gid_holder, group_entry, groups_need_update, passwd_entry, supplementary_groups,
+    uid_holder,
+};
+#[cfg(test)]
+use entries::{
+    gid_holder_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
+    uid_holder_from,
+};
 use serde_json::{Value, json};
-
-#[derive(Default)]
-struct PasswdEntry {
-    uid: u64,
-    gid: u64,
-    comment: String,
-    home: String,
-    shell: String,
-}
 
 pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
@@ -41,12 +42,30 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                     && current_gid != want
                 {
                     group_change_allowed(name, current_gid)?;
+                    // The number must be free on the host:
+                    // `groupmod -g` refuses a number another group
+                    // holds, so the plan must say so before the
+                    // change, in check mode as much as in apply.
+                    if let Some(holder) = gid_holder(want, name)? {
+                        return Err(format!(
+                            "group: refusing to change the gid of {name} to {want}: the group {holder} holds that number"
+                        ));
+                    }
                     changed = true;
                     if !ctx.check_mode {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
                     }
                 }
             } else {
+                // The number must be free on the host: `groupadd -g`
+                // refuses a number another group holds.
+                if let Some(want) = gid
+                    && let Some(holder) = gid_holder(want, name)?
+                {
+                    return Err(format!(
+                        "group: refusing to create {name} with gid {want}: the group {holder} holds that number"
+                    ));
+                }
                 changed = true;
                 if !ctx.check_mode {
                     let gid_s;
@@ -72,32 +91,22 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
         }
         other => return Err(format!("group: state {other:?} outside the closed surface")),
     }
-    Ok(json!({"changed": changed, "failed": false, "name": name}))
-}
-
-fn group_entry(name: &str) -> Result<Option<(String, u64)>, String> {
-    let content = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    group_entry_from(&content, name)
-}
-
-fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, String> {
-    for line in content.lines() {
-        let mut f = line.split(':');
-        if f.next() == Some(name) {
-            let gid = f
-                .nth(1)
-                .and_then(|g| g.parse().ok())
-                .ok_or("malformed group line")?;
-            return Ok(Some((name.to_string(), gid)));
-        }
+    // The plan's record of this group: a present group is what a later
+    // step resolves against in check mode (`planned_gid`), an absent
+    // one is gone from it the way `groupdel` would take it from the
+    // host.
+    if state == "present" {
+        note_planned_group(name);
+    } else {
+        forget_planned_group(name);
     }
-    Ok(None)
+    Ok(json!({"changed": changed, "failed": false, "name": name}))
 }
 
 mod guards;
 use guards::{
-    group_change_allowed, group_removal_allowed, identity_change_allowed, planned_gid,
-    primary_group_name, private_group_flag, private_group_missing, removal_allowed,
+    forget_planned_group, group_change_allowed, group_removal_allowed, identity_change_allowed,
+    note_planned_group, planned_gid, primary_group_name, private_group_missing, removal_allowed,
     removal_home_allowed, removal_primary_group_allowed,
 };
 
@@ -160,6 +169,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             args.push(name);
             run_cmd("userdel", &args)?;
         }
+        // The removal takes the account's empty same-name group with
+        // it, so the plan's record goes the way of the host's.
+        forget_planned_group(name);
         return Ok(json!({"changed": changed, "failed": false, "name": name, "state": "absent"}));
     }
 
@@ -176,14 +188,34 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // The claimed default home is the step's managed path like a
     // declared one — `useradd -m` creates it, `usermod -d` points the
     // account at it — so a regular file or a symlink at it is refused
-    // before the account is touched, declared or not.
-    home_usable(&claimed_home(home, name))?;
+    // before the account is touched. It is the step's to judge only
+    // where the step manages it: the creation points the new account
+    // at the claimed path, and a declared home moves the existing
+    // account's field. An existing account that states no home is
+    // pointed nowhere new — its untouched `/home/<name>` is not this
+    // step's to validate — while a declared home is validated for it
+    // exactly like the claimed one, before `usermod` moves the field.
+    if manages_home(entry.is_some(), home.is_some()) {
+        home_usable(&claimed_home(home, name))?;
+    }
 
     let mut changed = false;
 
     match entry {
         None => {
             changed = true;
+            // The number must be free on the host: `useradd -u`
+            // refuses a number another account holds, so the plan
+            // must say so before the creation, in check mode as much
+            // as in apply — the dry run may not report a change that
+            // cannot succeed.
+            if let Some(u) = uid
+                && let Some(holder) = uid_holder(u, name)?
+            {
+                return Err(format!(
+                    "user: refusing to create {name} with uid {u}: the account {holder} holds that number"
+                ));
+            }
             if !ctx.check_mode {
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
@@ -195,12 +227,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     args.push("-u");
                     args.push(&uid_s);
                 }
-                if let Some(g) = group {
-                    args.push("-g");
-                    args.push(g);
-                }
-                if let Some(flag) = private_group_flag(group) {
-                    args.push(flag);
+                // The primary group: the declared one, the host's
+                // same-name group — `useradd -U` refuses to create a
+                // group that exists, so the existing group is selected
+                // with `-g` the way `useradd(8)` documents — or the
+                // group's own creation with `-U`.
+                for arg in primary_group_args(group, group_entry(name)?.is_some().then_some(name)) {
+                    args.push(arg);
                 }
                 let groups_s;
                 if let Some(gs) = &groups {
@@ -246,32 +279,35 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
         Some(current) => {
-            // The step's footprint claims the account's private group
-            // whenever it names no primary group, and the lowering's
-            // group ordering advertises it as provided: an existing
-            // account reconciles that claim — `useradd -U` only covers
-            // the creation branch, and a dependent operation naming the
-            // group would fail to resolve it.
-            if private_group_missing(group, group_entry(name)?.is_some()) {
-                changed = true;
-                if !ctx.check_mode {
-                    run_cmd("groupadd", &[name])?;
-                }
-            }
+            // Every guard of the change runs while the change is still
+            // only a plan: the account's identity, the number it would
+            // take and the group it would join are verified before
+            // anything runs, so a refused change leaves the host as it
+            // was — the private group the step claims included.
+            let mut identity_change = false;
             let uid_s;
             let mut args: Vec<&str> = Vec::new();
             if let Some(u) = uid
                 && u != current.uid
             {
-                identity_change_allowed(name, &current)?;
+                identity_change = true;
+                // The number must be free on the host: `usermod -u`
+                // refuses a number another account holds, so the plan
+                // must say so before the change, in check mode as much
+                // as in apply.
+                if let Some(holder) = uid_holder(u, name)? {
+                    return Err(format!(
+                        "user: refusing to change the uid of {name} to {u}: the account {holder} holds that number"
+                    ));
+                }
                 uid_s = u.to_string();
                 args.push("-u");
                 args.push(&uid_s);
             }
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
-                    // The group is not on the host yet: an earlier
-                    // same-stage `Group` step creates it and check mode
+                    // The group is not on the host yet but an earlier
+                    // task of the plan declares it present: check mode
                     // runs no `groupadd`, so the plan reports the
                     // primary-group move without the new group's live
                     // gid. Apply resolves it after that step ran, and
@@ -283,7 +319,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     }
                     Some(want_gid) => {
                         if u64::from(want_gid) != current.gid {
-                            identity_change_allowed(name, &current)?;
+                            identity_change = true;
                             args.push("-g");
                             args.push(g);
                         }
@@ -320,11 +356,35 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push("-c");
                 args.push(c);
             }
-            if !args.is_empty() {
-                changed = true;
-                if !ctx.check_mode {
-                    args.push(name);
-                    run_cmd("usermod", &args)?;
+            // The step's footprint claims the account's private group
+            // whenever it names no primary group, and the lowering's
+            // group ordering advertises it as provided: an existing
+            // account reconciles that claim — `useradd -U` only covers
+            // the creation branch, and a dependent operation naming the
+            // group would fail to resolve it. The group is created
+            // before the account's own change — `usermod -G` resolves
+            // the supplementary list against the host, and the list may
+            // name the group — and after every guard, so a refused
+            // change never leaves the group it would have created
+            // behind.
+            let mutations = existing_account_mutations(
+                name,
+                &current,
+                identity_change,
+                private_group_missing(group, group_entry(name)?.is_some()),
+                &args,
+            )?;
+            changed |= !mutations.is_empty();
+            if !ctx.check_mode {
+                for mutation in mutations {
+                    match mutation {
+                        Mutation::GroupAdd(group) => run_cmd("groupadd", &[&group])?,
+                        Mutation::UserMod(mut args) => {
+                            args.push(name.to_string());
+                            let arguments: Vec<&str> = args.iter().map(String::as_str).collect();
+                            run_cmd("usermod", &arguments)?;
+                        }
+                    }
                 }
             }
             // The declared home is managed as a directory too: usermod -d
@@ -344,51 +404,82 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
     }
 
+    if group.is_none() {
+        // A step that names no primary group claims its same-name
+        // group — the creation brings it with `-U` (or reuses the
+        // host's), the existing-account branch reconciles it above —
+        // so the plan's record holds it for whatever resolves the
+        // group next.
+        note_planned_group(name);
+    }
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
 }
 
-fn passwd_entry(name: &str) -> Result<Option<PasswdEntry>, String> {
-    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    passwd_entry_from(&passwd, name)
+/// The mutations the existing-account branch runs, in the order they
+/// must run.
+#[derive(Debug, PartialEq, Eq)]
+enum Mutation {
+    /// The private group the step claims, created before the account's
+    /// own change: `usermod -G` resolves the supplementary list against
+    /// the host, and the list may name the group.
+    GroupAdd(String),
+    /// The account's own change.
+    UserMod(Vec<String>),
 }
 
-fn passwd_entry_from(passwd: &str, name: &str) -> Result<Option<PasswdEntry>, String> {
-    for line in passwd.lines() {
-        let f: Vec<&str> = line.split(':').collect();
-        if f.first() == Some(&name) && f.len() >= 7 {
-            return Ok(Some(PasswdEntry {
-                uid: f[2].parse().map_err(|_| "bad uid")?,
-                gid: f[3].parse().map_err(|_| "bad gid")?,
-                comment: f[4].to_string(),
-                home: f[5].to_string(),
-                shell: f[6].to_string(),
-            }));
-        }
+/// The mutations an existing account's change runs. The identity
+/// guard runs here, before the first of them: a refused change plans
+/// no mutation at all, so the host keeps the private group the step
+/// would have created, exactly as it kept it before the refusal.
+fn existing_account_mutations(
+    name: &str,
+    current: &PasswdEntry,
+    identity_change: bool,
+    group_missing: bool,
+    usermod: &[&str],
+) -> Result<Vec<Mutation>, String> {
+    if identity_change {
+        // The live uid-0 account is the superuser's whatever it is
+        // named: moving it off uid 0 — or off its primary group —
+        // strands every file it owns.
+        identity_change_allowed(name, current)?;
     }
-    Ok(None)
-}
-
-fn supplementary_groups(name: &str) -> Result<Vec<String>, String> {
-    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    Ok(supplementary_groups_from(&groups, name))
-}
-
-fn supplementary_groups_from(groups: &str, name: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in groups.lines() {
-        let f: Vec<&str> = line.split(':').collect();
-        if f.len() >= 4 && f[3].split(',').any(|m| m == name) {
-            out.push(f[0].to_string());
-        }
+    let mut mutations = Vec::new();
+    if group_missing {
+        mutations.push(Mutation::GroupAdd(name.to_string()));
     }
-    out
+    if !usermod.is_empty() {
+        mutations.push(Mutation::UserMod(
+            usermod
+                .iter()
+                .map(|argument| (*argument).to_string())
+                .collect(),
+        ));
+    }
+    Ok(mutations)
 }
 
-fn groups_need_update(current: &[String], want: &[String], append: bool) -> bool {
-    let missing = want.iter().any(|group| !current.contains(group));
-    (append && missing)
-        || (!append
-            && (current.len() != want.len() || want.iter().any(|group| !current.contains(group))))
+/// The switches that give a created account its primary group: the
+/// declared group with `-g`, the host's same-name group with `-g` as
+/// well — `useradd -U` refuses to create a group that exists (exit 9)
+/// and would fail the account creation, so the existing group is
+/// selected the way `useradd(8)` documents — and the group's own
+/// creation with `-U` where the host has none.
+fn primary_group_args<'a>(group: Option<&'a str>, same_name: Option<&'a str>) -> Vec<&'a str> {
+    match (group, same_name) {
+        (Some(group), _) => vec!["-g", group],
+        (None, Some(name)) => vec!["-g", name],
+        (None, None) => vec!["-U"],
+    }
+}
+
+/// Whether the step manages the claimed home of the account: the
+/// creation points the new account at it, and a declared home moves
+/// the existing account's field — an existing account that states no
+/// home is pointed nowhere new, so its untouched `/home/<name>` is
+/// not this step's to validate.
+fn manages_home(account_exists: bool, home_declared: bool) -> bool {
+    !account_exists || home_declared
 }
 
 #[cfg(test)]

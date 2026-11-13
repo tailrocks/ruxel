@@ -88,7 +88,11 @@ fn a_declared_shell_must_exist_and_be_executable() {
     )
     .expect_err("a missing shell must be refused before the account is touched");
     assert!(error.contains("shell"), "{error}");
-    let probe = std::env::temp_dir().join(format!("ruxel-shell-probe-{}", std::process::id()));
+    // `/tmp` rather than the private per-user temp directory: every
+    // account must be able to search the shell's directory to reach
+    // it (`shell_allowed`), and a 0700 temp directory is not one.
+    let probe =
+        std::path::Path::new("/tmp").join(format!("ruxel-shell-probe-{}", std::process::id()));
     std::fs::write(&probe, b"#!/bin/sh\n").unwrap();
     let error = run(
         &json!({"name":"ruxel-synthetic-user", "shell":probe.to_str().unwrap()}),
@@ -122,7 +126,8 @@ fn a_declared_shell_must_exist_and_be_executable() {
     // the permission class by the caller's identity — a root-owned
     // 0750 shell leaves the account unable to log in while the apply
     // reports success, so only the other-execute bit counts.
-    let group_only = std::env::temp_dir().join(format!("ruxel-shell-group-{}", std::process::id()));
+    let group_only =
+        std::path::Path::new("/tmp").join(format!("ruxel-shell-group-{}", std::process::id()));
     std::fs::write(&group_only, b"#!/bin/sh\n").unwrap();
     std::fs::set_permissions(&group_only, std::fs::Permissions::from_mode(0o750)).unwrap();
     let error = run(
@@ -218,11 +223,22 @@ fn a_created_home_takes_the_final_primary_gid() {
         super::super::home_gid(None, 1500, false).unwrap(),
         Some(1500)
     );
-    // Check mode must not require the live gid of a group that does not
-    // exist yet — an earlier same-stage step creates it — and apply
-    // still fails where the group is missing.
+    // Check mode must not require the live gid of a group that no task
+    // of the plan provides — the refusal below is the one apply
+    // makes — and the record an earlier `Group` step leaves is what
+    // lets the plan report the pending repair; apply still fails
+    // where the group is missing.
     let missing = format!("ruxel-missing-group-{}", std::process::id());
     assert!(group_entry(&missing).unwrap().is_none());
+    assert!(super::super::home_gid(Some(&missing), 1500, true).is_err());
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    group(&json!({"name": missing}), &check).unwrap();
     assert_eq!(
         super::super::home_gid(Some(&missing), 1500, true).unwrap(),
         None
@@ -235,9 +251,31 @@ fn a_created_account_creates_its_private_group_explicitly() {
     // The footprint model claims the same-name group of an account that
     // names no primary group: `useradd` must create it explicitly (`-U`),
     // never leaning on the host's USERGROUPS_ENAB setting, or the claim
-    // is false on hosts configured the other way.
-    assert_eq!(super::super::private_group_flag(None), Some("-U"));
-    assert_eq!(super::super::private_group_flag(Some("docker")), None);
+    // is false on hosts configured the other way — while a group the
+    // host already has is selected with `-g` instead (`-U` refuses to
+    // create a group that exists), pinned by the creation test.
+    let name = format!("ruxel-private-group-{}", std::process::id());
+    assert!(group_entry(&name).unwrap().is_none());
+    assert!(passwd_entry(&name).unwrap().is_none());
+    let apply = ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let outcome = run(&json!({"name": name, "create_home": false}), &apply);
+    if let Err(error) = &outcome
+        && error.contains("useradd ")
+    {
+        // A host that ran it refuses with the command line in hand:
+        // the switch is the evidence. A host with no `useradd` at all
+        // fails at the spawn, without a command line to read the
+        // switch from, and a privileged host that ran it for real
+        // succeeded — only the explicit switch could have created the
+        // group with it.
+        assert!(error.contains("-U"), "{error}");
+    }
 }
 
 #[test]
