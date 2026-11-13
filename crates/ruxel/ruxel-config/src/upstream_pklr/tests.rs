@@ -14,6 +14,10 @@ fn scratch(name: &str) -> PathBuf {
     directory
 }
 
+/// The landed-capability case lives in its own file: `tests.rs` is the
+/// unit-suite index and the S7 budget keeps it under 150 lines.
+mod landed;
+
 #[test]
 fn upstream_expands_globs() -> Result<(), Box<dyn std::error::Error>> {
     let expanded = expand_glob(&manifest_dir(), "*.toml")?;

@@ -26,7 +26,7 @@
 //!
 //! ```text
 //! git clone https://github.com/jdx/pklr pklr
-//! git -C pklr show 77828272d37b3e51f45582a75e345a0ae0b963a0:src/eval/setup.rs \
+//! git -C pklr show d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9:src/eval/setup.rs \
 //!   | grep -n 'pub fn set_module_path'
 //! ```
 //!
@@ -34,20 +34,25 @@
 //! revision:
 //!
 //! ```text
-//! git -C pklr grep -n 'ModuleSource' 77828272d37b3e51f45582a75e345a0ae0b963a0 -- src/
+//! git -C pklr grep -n 'ModuleSource' d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9 -- src/
 //! ```
 //!
 //! The counts this module records are the ones that command produces:
-//! `ModuleSource` 0 hits, `add_module_path_source` 0 hits,
-//! `add_module_path_directory` 0 hits, `GlobAccess` 0 hits,
-//! `expand_glob_with` 0 hits, `Target::ModulePath` 0 hits,
-//! `eval_source_json_blocking` 0 hits. Upstream has no `src/module_source.rs`
-//! and no `src/eval/module_path.rs` file either.
+//! `ModuleSource` 0 hits, `set_module_source` 0 hits,
+//! `add_module_path_source` 0 hits, `add_module_path_directory` 0 hits,
+//! `Target::ModulePath` 0 hits, `eval_source_json_blocking` 0 hits. Upstream
+//! has no `src/module_source.rs` and no `src/eval/module_path.rs` file
+//! either. `GlobAccess` and `expand_glob_with`, zero at `77828272`, are no
+//! longer absent: they landed with the #419 fixes this revision carries.
 //!
-//! # The four capability families upstream lacks
+//! # What landed upstream, and what still blocks the flip
 //!
-//! Those zero counts are why flipping the default dependency today fails to
-//! compile (see `crates/ruxel/ruxel-config/src/eval.rs` and
+//! jdx/pklr#419's fixes landed on upstream main as three commits —
+//! [`UPSTREAM_LANDED`] names them — carrying gap 3's read side
+//! (`modulepath:` resources resolve), the `resource_*` capability hooks and
+//! capability-backed globs. Four families Ruxel calls are still absent,
+//! which is why flipping the default dependency today fails to compile (see
+//! `crates/ruxel/ruxel-config/src/eval.rs` and
 //! `crates/ruxel/ruxel-config/src/eval/templates.rs`). [`CAPABILITY_GAPS`]
 //! names each family, the upstream location that carries the surrounding
 //! code today, the grep result that shows the family itself is absent, and
@@ -67,14 +72,14 @@
 //!   runs under; and
 //! - upstream's evaluator reads the module and its imports through those
 //!   capabilities and searches the module path directories
-//!   (`src/eval/setup.rs:186`).
+//!   (`src/eval/setup.rs:208`).
 //!
 //! [`expand_glob`] calls upstream's own glob expansion
-//! (`src/eval/glob.rs:24`, re-exported at `src/eval.rs:57`).
+//! (`src/eval/glob.rs:34`, re-exported at `src/eval.rs:59`).
 //!
 //! # What the lane cannot exercise today
 //!
-//! The four capability families upstream still lacks keep the rest of Ruxel's
+//! The capability families upstream still lacks keep the rest of Ruxel's
 //! evaluation path out of reach, and the lane says so instead of pretending
 //! otherwise:
 //!
@@ -84,12 +89,15 @@
 //!   instead of through Ruxel's `ModuleSource`, whose import validation
 //!   (module globs and ancestor searches are refused) is fork-bound.
 //! - **In-memory module path entries.** Upstream's `set_module_path`
-//!   (`src/eval/setup.rs:186`) takes directories only, so the schema Ruxel
+//!   (`src/eval/setup.rs:208`) takes directories only, so the schema Ruxel
 //!   compiles into the module path cannot be served from memory.
-//! - **`modulepath:` resources.** Upstream resolves a `modulepath:` URI to a
-//!   module file (`src/eval/loading.rs:22`), never to a resource.
+//! - **The `modulepath:` resource target.** #420 made a `modulepath:` URI
+//!   resolve for `read` (`src/eval/resource.rs:150`), but it resolves as
+//!   `Target::File`: `enum Target` (`src/eval/resource.rs:323`) has no
+//!   `ModulePath` variant and is not public, so a capability host cannot
+//!   tell the module path namespace from an ordinary file.
 //! - **The rendered output.** Upstream's JSON entry point is `pub(crate)`
-//!   (`src/eval/output.rs:742`), so the lane sees the module value, not the
+//!   (`src/eval/output.rs:766`), so the lane sees the module value, not the
 //!   rendered `output.value`.
 //!
 //! The flip of the default dependency therefore stays blocked on
@@ -102,7 +110,25 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// The upstream revision the `pklr-upstream` alias pins.
-pub const UPSTREAM_REV: &str = "77828272d37b3e51f45582a75e345a0ae0b963a0";
+pub const UPSTREAM_REV: &str = "d7d0156a1fc2b4d30cf17eea54741c8c7e88dab9";
+
+/// The upstream commits carrying the jdx/pklr#419 fixes this revision
+/// relies on: #420 `modulepath:` resources, #421 `resource_*` capability
+/// hooks, #423 `GlobAccess` capability-backed globs.
+pub const UPSTREAM_LANDED: &[(&str, &str)] = &[
+    (
+        "fbd404aab5228cd66a7491e88da518b6614ebb4b",
+        "feat(eval): read modulepath: resources from the module path (#420)",
+    ),
+    (
+        "f88394d04ea764512115e8849518c6146edd3081",
+        "feat(eval): resource-specific capability hooks (#421)",
+    ),
+    (
+        "4df2e0e0fb7e1c40079406dec019a86874a53fd9",
+        "feat(eval): GlobAccess for globs over a host-provided file system (#423)",
+    ),
+];
 
 /// A capability family Ruxel needs and upstream `jdx/pklr` does not expose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,11 +152,13 @@ pub struct CapabilityGap {
 ///
 /// Every `location` is a file and line of upstream at [`UPSTREAM_REV`], and
 /// every `absent` is the hit count of the corresponding grep over upstream's
-/// whole `src/` tree at that revision.
+/// whole `src/` tree at that revision. The glob and resource hooks that used
+/// to head this table landed upstream with [`UPSTREAM_LANDED`] and are no
+/// longer gaps.
 pub const CAPABILITY_GAPS: &[CapabilityGap] = &[
     CapabilityGap {
         family: "public evaluation through custom capabilities",
-        location: "src/eval/output.rs:742",
+        location: "src/eval/output.rs:766",
         absent: "0 hits for `eval_source_json_blocking`",
         upstream: "`pub(crate) fn eval_file_json_blocking` is not callable by \
                    an embedder, and upstream has no public JSON entry point \
@@ -141,7 +169,7 @@ pub const CAPABILITY_GAPS: &[CapabilityGap] = &[
     },
     CapabilityGap {
         family: "module path sources",
-        location: "src/eval/setup.rs:186",
+        location: "src/eval/setup.rs:208",
         absent: "0 hits for `add_module_path_source`, 0 hits for \
                  `add_module_path_directory`",
         upstream: "`pub fn set_module_path(dirs: Vec<PathBuf>)` takes \
@@ -155,7 +183,7 @@ pub const CAPABILITY_GAPS: &[CapabilityGap] = &[
     },
     CapabilityGap {
         family: "module sources",
-        location: "src/capabilities.rs:35",
+        location: "src/capabilities.rs:38",
         absent: "0 hits for `ModuleSource`",
         upstream: "`pub trait EvalCapabilities` is the only IO seam and it \
                    is path-based; upstream has no `src/module_source.rs` file",
@@ -163,23 +191,14 @@ pub const CAPABILITY_GAPS: &[CapabilityGap] = &[
                    Ruxel's confined roots instead of through host paths",
     },
     CapabilityGap {
-        family: "glob and resource hooks",
-        location: "src/capabilities.rs:138",
-        absent: "0 hits for `GlobAccess`, 0 hits for `expand_glob_with`",
-        upstream: "`fn glob(&mut self, base: &Path, pattern: &str)` is the \
-                   only glob hook and it is part of `EvalCapabilities`; \
-                   there is no separate glob gate and no per-resource hook",
-        required: "the glob and resource hooks that let Ruxel refuse globs \
-                   and confine `file:` resources to its roots",
-    },
-    CapabilityGap {
         family: "module path resources",
-        location: "src/eval/resource.rs:148",
+        location: "src/eval/resource.rs:323",
         absent: "0 hits for `Target::ModulePath`",
-        upstream: "`fn check_resource_allowed` matches URI prefixes only, and \
-                   `enum Target` (`src/eval/resource.rs:310`) has no \
-                   `ModulePath` variant, so a `modulepath:` URI never names \
-                   a resource",
+        upstream: "#420 resolves a `modulepath:` URI for `read` \
+                   (`src/eval/resource.rs:150`), but as `Target::File`; \
+                   `enum Target` (`src/eval/resource.rs:323`) has no \
+                   `ModulePath` variant and is private, so a capability host \
+                   cannot tell the module path namespace from an ordinary file",
         required: "a `Target::ModulePath` variant, so `modulepath:` \
                    resources can be read from the module path namespace",
     },
@@ -188,7 +207,7 @@ pub const CAPABILITY_GAPS: &[CapabilityGap] = &[
 /// Expand a glob with upstream's own implementation.
 ///
 /// This is the upstream counterpart of the fork's glob handling
-/// (`src/eval/glob.rs:24` upstream, re-exported at `src/eval.rs:57`).
+/// (`src/eval/glob.rs:34` upstream, re-exported at `src/eval.rs:59`).
 ///
 /// # Errors
 /// Returns an error when the pattern is malformed or the base directory
@@ -331,7 +350,7 @@ impl EvaluationPolicy for pklr_upstream::Evaluator {
 ///   capabilities, so a read outside the roots is refused by Ruxel's own
 ///   code.
 ///
-/// The four capability families upstream still lacks keep the rest of the
+/// The capability families upstream still lacks keep the rest of the
 /// path out of reach: there is no `ModuleSource`, so upstream's evaluator
 /// reads the module itself (through the confined capabilities) instead of
 /// through Ruxel's module source, whose import validation is fork-bound; the
