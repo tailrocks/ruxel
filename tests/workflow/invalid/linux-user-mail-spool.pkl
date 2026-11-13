@@ -1,0 +1,19 @@
+// expect: both manage /var/mail/app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `useradd` creates the mail spool of the account it creates on a host
+// configured with CREATE_MAIL_SPOOL=yes, so the spool is a path the
+// account declares a state for: a step that manages it declares a second
+// state for the same path, and whichever runs later wins.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/var/mail/app"; mode = "0755" }
+      new linux.User { user = "app"; uid = 1500 }
+    }
+  }
+}
