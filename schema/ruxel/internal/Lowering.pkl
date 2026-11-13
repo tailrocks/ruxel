@@ -171,9 +171,23 @@ const function sharedHosts(a: core.Stage, b: core.Stage): List<core.Host> =
 const function stageRunsOn(s: core.Stage, h: core.Host): Boolean =
   s.hosts.toList().any((x) -> sameConnection(x, h))
 
+/// Whether a stage removes the claimant with the number the claim
+/// holds: the removal declares its id (an account removal states its
+/// uid), and a declaration that names another number frees nothing —
+/// the runtime verifies the declared id against the live entry and
+/// refuses such a removal, so the later claim would never get its turn.
+/// A group removal that states no gid frees by name: the runtime
+/// verifies only the id it is given.
+/// Whether a stage removes the claimant with the number the claim
+/// holds: an account removal states its uid, and a declaration that
+/// names another number frees nothing — the runtime verifies the
+/// declared id against the live entry and refuses such a removal, so
+/// the later claim would never get its turn. A group removal that
+/// states no gid frees by name: the runtime verifies only the id it
+/// is given.
 function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
-  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name)
-  else ix.steps.any((s) -> s is linux.Group && s.state == "absent" && s.name == c.name)
+  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number)
+  else ix.steps.any((s) -> s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == c.number))
 
 function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
   "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(c.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) and '\(d.name)' (\(d.spot)); one host keeps one identity per number, so remove '\(c.name)' before reusing its \(c.kind), or give '\(d.name)' another one"
