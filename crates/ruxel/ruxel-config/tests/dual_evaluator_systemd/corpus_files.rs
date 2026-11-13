@@ -3,11 +3,20 @@
 
 use super::*;
 
+/// The relative-import closure of the corpus: the files an example or
+/// fixture opens beyond itself, so a helper reached only through an
+/// import is on the manifest the wiring invariant reads.
+#[path = "../support/corpus_imports.rs"]
+mod corpus_imports;
+
 /// The corpus files this harness touches at runtime, as a value the
 /// wiring contract can read: every example it names (each opened by
-/// `root().join(name)`), and every fixture a harness source opens by a
-/// literal `root().join(...)`. A `root().join` whose argument is not a
-/// string literal is a loud failure here, not a silently unlisted file.
+/// `root().join(name)`), every fixture a harness source opens by a
+/// literal `root().join(...)`, and every file those open by a
+/// relative import, transitively, because the evaluator reads those
+/// too and a change to one alone must not classify the check
+/// unaffected. A `root().join` whose argument is not a string literal
+/// is a loud failure here, not a silently unlisted file.
 /// The `Result` stays: the sources are `include_str!`ed today, so the
 /// unhappy path looks unreachable to the lint, but a future fixture
 /// spelled without a literal must keep failing loudly.
@@ -27,6 +36,7 @@ fn touched() -> Result<Vec<String>> {
             files.push(format!("tests/workflow/{literal}"));
         }
     }
+    corpus_imports::expand(&mut files)?;
     files.sort();
     files.dedup();
     Ok(files)

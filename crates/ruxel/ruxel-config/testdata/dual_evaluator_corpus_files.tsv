@@ -128,6 +128,7 @@ dual_evaluator_systemd
   tests/workflow/invalid/timer-service-name.pkl
   tests/workflow/invalid/timer-spaces-calendar.pkl
   tests/workflow/invalid/timer-tab-calendar.pkl
+  tests/workflow/inventory.pkl
   tests/workflow/valid/service-reload.pkl
   tests/workflow/valid/systemd-timer-default-service.pkl
   tests/workflow/valid/systemd-timer-delay-spellings.pkl
