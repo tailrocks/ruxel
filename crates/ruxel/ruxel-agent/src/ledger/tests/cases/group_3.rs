@@ -149,6 +149,24 @@ fn the_sysctl_cache_weighs_the_boot_surface() {
 }
 
 #[test]
+fn the_sysctl_probe_reads_a_dash_prefixed_assignment() {
+    // procps reads a leading '-' as the ignore-failure marker: the
+    // assignment still happens, so the line is the entry. A probe that
+    // missed it would pin no value for the file, and a file that holds
+    // the marked assignment beside the plain one would restore the
+    // marked value at boot.
+    let dir = Scratch::new("sysctl-dash-probe");
+    let file = dir.file("sysctl.conf", b"-net.ipv4.ip_forward=1\n");
+    assert_eq!(
+        sysctl_file_value(
+            file.to_str().expect("operation succeeds"),
+            "net.ipv4.ip_forward"
+        ),
+        Some("1".to_string())
+    );
+}
+
+#[test]
 fn old_schema_ledger_loads_empty() {
     let dir = Scratch::new("old-schema");
     let file = dir.file("target", b"stable");

@@ -67,6 +67,26 @@ fn an_alias_spelling_is_the_same_entry() {
 }
 
 #[test]
+fn a_dash_prefixed_entry_is_the_same_entry() {
+    // procps reads a leading '-' as the ignore-failure marker: the
+    // assignment still happens, so the line is the entry itself. A
+    // rewrite that did not see it would leave the marked assignment in
+    // the file and append a second assignment of the same key beside
+    // it — the file then holds two values for one parameter, and the
+    // boot value is whichever line comes last.
+    assert_eq!(
+        super::super::rewrite_file("-net.ipv4.ip_forward = 0\n", "net.ipv4.ip_forward", "1"),
+        ("-net.ipv4.ip_forward=1\n".into(), true)
+    );
+    // The marker belongs to the line, so it survives the rewrite: the
+    // host's "ignore errors" intent is not dropped.
+    assert_eq!(
+        super::super::rewrite_file("-net.ipv4.ip_forward=1\n", "net.ipv4.ip_forward", "1"),
+        ("-net.ipv4.ip_forward=1\n".into(), false)
+    );
+}
+
+#[test]
 fn an_equals_sign_in_the_value_is_not_a_delimiter() {
     // A `kernel.core_pattern` command carries `--option=value`: the
     // entry's delimiter is the FIRST equals sign, so comparing the

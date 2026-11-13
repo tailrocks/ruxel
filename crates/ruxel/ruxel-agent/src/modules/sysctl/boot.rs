@@ -178,7 +178,7 @@ fn assigns_other(content: &[u8], key: &str, value: &str) -> Vec<String> {
         let assigned = trim(&line[..equals]);
         // procps reads a leading '-' as the ignore-failure marker: the
         // assignment happens either way.
-        let assigned = assigned.strip_prefix(b"-").unwrap_or(assigned);
+        let assigned = trim(assigned.strip_prefix(b"-").unwrap_or(assigned));
         let assigned = String::from_utf8_lossy(assigned).into_owned();
         if !key_matches(&assigned, key) {
             continue;

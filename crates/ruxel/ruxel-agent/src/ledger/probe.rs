@@ -159,7 +159,8 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     // alias line in the file weighs on the probe — pinning only the raw
     // spelling the task requested lets an alias that drifted to another
     // value pass every probe, and boot processes the alias and restores
-    // its value.
+    // its value. A leading '-' is procps's ignore-failure marker: the
+    // marked line assigns the entry all the same, so it weighs too.
     let key = crate::modules::sysctl_key(name);
     let mut value = None;
     for line in content.lines() {
@@ -168,7 +169,7 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
             continue;
         }
         if let Some((k, v)) = t.split_once('=')
-            && crate::modules::sysctl_key(k.trim()) == key
+            && crate::modules::entry_key(k) == key
         {
             if value.is_some() {
                 return None;
