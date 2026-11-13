@@ -1,0 +1,34 @@
+// expect: claim the uid 1001 for different accounts
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The middle stage declares another uid for `alice` than the one stage
+// one claimed, so it frees nothing: the runtime verifies a removal's
+// declared uid against the live entry and refuses this one (the host
+// still holds 1001), which would stop the workflow before stage three
+// ever runs `useradd -u 1001` for `bob`. The freeing predicate must
+// match the removal's declared number to the claim, not only the name.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1002; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1001 }
+    }
+  }
+}
