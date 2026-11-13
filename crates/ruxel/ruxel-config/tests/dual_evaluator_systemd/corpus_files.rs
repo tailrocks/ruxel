@@ -3,11 +3,23 @@
 
 use super::*;
 
+/// The source mask the corpus walk and the fixture scan read sources
+/// with: one scanner for the lane, so a rule that holds for one holds
+/// for the other.
+#[path = "../support/pkl_mask.rs"]
+mod mask;
+
 /// The relative-import closure of the corpus: the files an example or
 /// fixture opens beyond itself, so a helper reached only through an
 /// import is on the manifest the wiring invariant reads.
 #[path = "../support/corpus_imports.rs"]
 mod corpus_imports;
+
+/// The fixtures a harness source opens directly: the `root().join("…")`
+/// literals the source really spells, read through the shared mask, so
+/// a commented-out join names no file.
+#[path = "../support/harness_fixtures.rs"]
+mod harness_fixtures;
 
 /// The corpus files this harness touches at runtime, as a value the
 /// wiring contract can read: every example it names (each opened by
@@ -16,23 +28,14 @@ mod corpus_imports;
 /// relative import, transitively, because the evaluator reads those
 /// too and a change to one alone must not classify the check
 /// unaffected. A `root().join` whose argument is not a string literal
-/// is a loud failure here, not a silently unlisted file.
-/// The `Result` stays: the sources are `include_str!`ed today, so the
-/// unhappy path looks unreachable to the lint, but a future fixture
-/// spelled without a literal must keep failing loudly.
+/// opens no file the manifest can name, so it names no fixture here.
 fn touched() -> Result<Vec<String>> {
     let mut files: Vec<String> = EXAMPLES
         .iter()
         .map(|(example, _)| format!("tests/workflow/{example}"))
         .collect();
     for source in [include_str!("../dual_evaluator_systemd.rs")] {
-        for rest in source.split("root().join(\"").skip(1) {
-            let Some((literal, _)) = rest.split_once('"') else {
-                return Err(
-                    "a harness root().join carries no string literal; name the fixture in touched()"
-                        .into(),
-                );
-            };
+        for literal in harness_fixtures::fixtures(source)? {
             files.push(format!("tests/workflow/{literal}"));
         }
     }

@@ -13,7 +13,11 @@
 //!    parens and strings, so an import one carries stays visible.
 //! 4. A raw string ends at a `"` plus as many `#`s as it opened with,
 //!    never at a bare interior quote.
-//! 5. The output is byte-aligned with the input: one byte out per byte
+//! 5. A raw string's interpolation is code again: `\#(` for a
+//!    one-hash delimiter, `\##(` for a two-hash one — as many `#`s as
+//!    the string opened with — and the code inside it is code, so an
+//!    import it carries stays visible.
+//! 6. The output is byte-aligned with the input: one byte out per byte
 //!    in, newlines kept, every other blanked byte a space.
 
 /// One open region of a source, innermost last.
@@ -129,20 +133,8 @@ pub(super) fn code(text: &str) -> String {
                     at += 1;
                 }
             }
-            Some(Region::Raw { hashes }) => {
-                // Only `"` followed by as many `#` closes a raw string.
-                let hashes = *hashes;
-                if bytes[at] == b'"'
-                    && bytes[at + 1..]
-                        .iter()
-                        .take(hashes)
-                        .all(|&byte| byte == b'#')
-                {
-                    at += 1 + hashes;
-                    regions.pop();
-                } else {
-                    at += 1;
-                }
+            Some(Region::Raw { .. }) => {
+                at = raw_step(&mut regions, bytes, at, &mut kept);
             }
             Some(Region::Str { .. }) => {
                 at += 1 + string_step(&mut regions, bytes, at);
@@ -171,6 +163,55 @@ pub(super) fn code(text: &str) -> String {
     masked
 }
 
+/// One step through a raw string's region: only a `"` followed by as
+/// many `#`s as the string opened with closes it, and an
+/// interpolation — a `\` plus as many `#`s and a `(` — opens code
+/// again, the code inside it kept; any other byte is the string's own
+/// text. The return is the offset the caller continues at.
+fn raw_step(regions: &mut Vec<Region>, bytes: &[u8], at: usize, kept: &mut [bool]) -> usize {
+    let Some(Region::Raw { hashes }) = regions.last() else {
+        return at + 1;
+    };
+    let hashes = *hashes;
+    if bytes[at] == b'"'
+        && bytes[at + 1..]
+            .iter()
+            .take(hashes)
+            .all(|&byte| byte == b'#')
+    {
+        regions.pop();
+        return at + 1 + hashes;
+    }
+    if let Some(paren) = raw_interpolation(bytes, at, hashes) {
+        kept[at..=paren].fill(true);
+        regions.push(Region::Interp { depth: 1 });
+        return paren + 1;
+    }
+    at + 1
+}
+
+/// A raw string's interpolation at `at`: the `\` plus as many `#`s as
+/// the string opened with, followed by the interpolation's `(`. The
+/// offset of that `(` is the return — the code inside the
+/// interpolation is code again. `None` when the source carries no
+/// interpolation there: a `\` with fewer `#`s than the delimiter, or
+/// with no `(` behind them, is literal text of the raw string.
+fn raw_interpolation(bytes: &[u8], at: usize, hashes: usize) -> Option<usize> {
+    if bytes.get(at) != Some(&b'\\') {
+        return None;
+    }
+    let hashes_at = at + 1;
+    if !bytes
+        .get(hashes_at..hashes_at + hashes)?
+        .iter()
+        .all(|&byte| byte == b'#')
+    {
+        return None;
+    }
+    let paren = hashes_at + hashes;
+    (bytes.get(paren) == Some(&b'(')).then_some(paren)
+}
+
 /// A raw string's opening delimiter at `at`: its `#` count and the
 /// offset just past its quote. `None` when fewer than one `#` or no
 /// quote follows.
@@ -180,4 +221,29 @@ fn raw_delimiter(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
         return None;
     }
     Some((hashes, at + hashes + 1))
+}
+
+/// A raw string's interpolation is code again: the evaluator opens the
+/// file an import inside it names, so the mask must show that import —
+/// `\#(` for a one-hash delimiter, `\##(` for a two-hash one. The
+/// literal text around it stays blanked: a raw string's own bytes are
+/// text Pkl never parses.
+#[test]
+fn a_raw_string_interpolation_is_code_again() {
+    let text = "value = #\"\\#(import(\"../helper.pkl\").value)\"#\n";
+    let mask = code(text);
+    assert!(
+        mask.contains("import("),
+        "the interpolation's code must stay visible; the mask was {mask:?}"
+    );
+    assert!(
+        !mask.contains("helper.pkl"),
+        "the literal's own text must stay blanked; the mask was {mask:?}"
+    );
+    let two = "value = ##\"\\##(import(\"../helper.pkl\").value)\"##\n";
+    let mask = code(two);
+    assert!(
+        mask.contains("import("),
+        "a two-hash raw string's interpolation is code as well; the mask was {mask:?}"
+    );
 }

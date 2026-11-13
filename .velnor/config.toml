@@ -356,6 +356,8 @@ inputs = [
   "crates/ruxel/ruxel-config/tests/schema_layers.rs",
   "crates/ruxel/ruxel-config/tests/single_schema.rs",
   "crates/ruxel/ruxel-config/tests/support/corpus_imports.rs",
+  "crates/ruxel/ruxel-config/tests/support/corpus_imports/tests.rs",
+  "crates/ruxel/ruxel-config/tests/support/harness_fixtures.rs",
   "crates/ruxel/ruxel-config/tests/support/pkl_mask.rs",
   "crates/ruxel/ruxel-config/tests/workflow.rs",
   "crates/ruxel/ruxel-config/tests/workflow_copy.rs",
