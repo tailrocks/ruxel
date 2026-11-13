@@ -100,3 +100,37 @@ fn a_recursive_removal_verifies_the_declared_home_against_the_live_entry() {
     // Without removeHome nothing is deleted, so any declared home is fine.
     assert!(removal_home_allowed("app", Some("/srv/app"), false, &app.home).is_ok());
 }
+
+#[test]
+fn a_removal_declares_the_live_primary_group() {
+    // The lowering derives the removal's ordering from the declared
+    // primary group — the private-group default for an account that
+    // names none — which holds only where the declaration matches the
+    // live entry. An account originally created with another primary
+    // group makes the default wrong: the removal refuses and asks for
+    // the real group to be stated, before `userdel` mutates anything.
+    assert!(removal_primary_group_allowed("alice", None, Some("alice")).is_ok());
+    assert!(removal_primary_group_allowed("alice", Some("staff"), Some("staff")).is_ok());
+    let error = removal_primary_group_allowed("alice", None, Some("staff"))
+        .expect_err("a live primary group the declaration does not name must be refused");
+    assert!(error.contains("primary group"), "{error}");
+    // An unresolved gid carries no name to contradict the declaration.
+    assert!(removal_primary_group_allowed("alice", None, None).is_ok());
+}
+
+#[test]
+fn group_names_resolve_by_gid() {
+    let content = "root:x:0:\ndaemon:x:1:\nstaff:x:50:\n";
+    assert_eq!(
+        super::super::guards::group_name_of_gid_from(content, 50),
+        Some("staff".to_string())
+    );
+    assert_eq!(
+        super::super::guards::group_name_of_gid_from(content, 0),
+        Some("root".to_string())
+    );
+    assert_eq!(
+        super::super::guards::group_name_of_gid_from(content, 9999),
+        None
+    );
+}

@@ -121,7 +121,56 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + preferencePlanningAcrossStages(_stages, _indexes)
     + indexPlanningAcrossStages(_stages, _indexes)
     + repositoryPlanningAcrossStages(_stages, _indexes)
-    + sysctlBootOrder(_stages, _indexes))
+    + sysctlBootOrder(_stages, _indexes)
+    + identityNumbersAcrossStages(_stages, _indexes))
+
+/// An explicit uid or gid is a persistent identity of one host: two
+/// stages that assign one number to different names are refused — the
+/// first account (or group) is still present, so the second `useradd -u`
+/// (or `groupadd -g`) fails on the taken number. The comparison is per
+/// host pair: stages on disjoint hosts never share identities. A number
+/// is reused only after a proven removal of its holder: a step removing
+/// the account (for a gid claim, the group) in a stage between the two
+/// claims.
+function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
+  claims.flatMap((c) -> claims
+    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.number == c.number && d.name != c.name && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> !numberFreed(_stages, _indexes, c, d))
+    .map((d) -> numberClash(_stages[c.stage], c, _stages[d.stage], d)))
+
+/// The explicit identity numbers a stage's steps claim: the uid of a
+/// created account, the gid of a created group. A removal claims nothing
+/// — it frees its holder's number instead.
+function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
+  positions(ix.steps).flatMap((i) ->
+    let (s = ix.steps[i])
+    if (s is linux.User && s.state == "present" && s.uid != null) List(new IdClaim { number = s.uid; name = s.user; kind = "uid"; stage = m; spot = where(ix.placed[i]) })
+    else if (s is linux.Group && s.state == "present" && s.gid != null) List(new IdClaim { number = s.gid; name = s.name; kind = "gid"; stage = m; spot = where(ix.placed[i]) })
+    else List())
+
+/// Whether the earlier claimant's identity is proven removed before the
+/// later claim: a step removing the account (for a gid claim, the group)
+/// in a stage between the two claims, on hosts shared with both.
+function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
+  positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+    .any((k) -> hostsOverlap(_stages[c.stage], _stages[k]) && hostsOverlap(_stages[k], _stages[d.stage]) && removedNumber(_indexes[k], c))
+
+function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
+  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name)
+  else ix.steps.any((s) -> s is linux.Group && s.state == "absent" && s.name == c.name)
+
+function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
+  "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(c.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) and '\(d.name)' (\(d.spot)); one host keeps one identity per number, so remove '\(c.name)' before reusing its \(c.kind), or give '\(d.name)' another one"
+
+/// An explicit identity number one stage's step claims.
+class IdClaim {
+  number: Int
+  name: String
+  kind: String
+  stage: Int
+  spot: String
+}
 
 /// At boot the sysctl files load in file-name order across the system
 /// directories: a later stage that persists its value in a file loading
@@ -464,6 +513,13 @@ function settings(s: core.Step): List<String> =
   // name, with no NUL and no run-time value in it.
   else if (s is linux.User && !badAccountNames(s.group, s.groups).isEmpty)
     List("'\(name(s))': \"\(badAccountNames(s.group, s.groups.toList()).first)\" is not a user or group name")
+  // The private group of an account is created with it (`useradd -U`),
+  // after `useradd` has resolved the supplementary list: an account whose
+  // group is its private one cannot list its own name among its
+  // supplementary groups, for `useradd -U -G alice alice` resolves
+  // `alice` for -G before the private group exists and fails (rc 6).
+  else if (s is linux.User && s.group == null && s.groups != null && s.groups.toList().contains(s.user))
+    List("'\(name(s))' names itself as a supplementary group: its private group \(s.user) is created with the account, after the supplementary list is resolved, so useradd -U -G \(s.user) \(s.user) fails; drop \(s.user) from the groups, or declare a primary group and provide the group \(s.user) separately")
   // The superuser's id is never a managed account's id, and an account
   // below UID 1000 is a system account the host keeps: it is never removed.
   // Removing an account therefore states its id, and the id is 1000 or more.
@@ -720,13 +776,33 @@ function groupRel(ix: StageIndex, i: Int, j: Int, n: String): List<String> =
 /// or `Symlink` that manages it is the step that writes it — one that
 /// comes after the account would fail an otherwise self-contained
 /// workflow at apply time, though lowering preserves source order and
-/// sees no relationship.
+/// sees no relationship. And a managed `File` supplies the shell only
+/// where its mode makes it executable: the file task deterministically
+/// creates what the mode says, and the account's task rejects a
+/// non-executable shell in `shell_allowed`, whatever the order.
 function shellRels(ix: StageIndex, i: Int): List<String> =
   let (u = ix.steps[i])
   if (!(u is linux.User) || u.state != "present" || u.shell == null) List()
   else positions(ix.steps)
-    .filter((j) -> j > i && (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
-    .map((j) -> "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
+    .filter((j) -> (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
+    .flatMap((j) -> shellRel(ix, u, i, j))
+
+function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
+  let (s = ix.steps[j])
+  (if (s is core.File && !executableMode(s.mode))
+    List("'\(name(s))' (\(where(ix.placed[j]))) manages the shell \(u.shell) of '\(name(u))' (\(where(ix.placed[i]))) at mode \(s.mode), which does not make it executable; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
+  else List())
+  + (if (j > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(s))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
+  else List())
+
+/// Whether a file mode makes the file executable: any execute bit — the
+/// same test the account's task passes the shell file through at apply
+/// (`shell_allowed`).
+const function executableMode(mode: String): Boolean =
+  List("1", "3", "5", "7").contains(mode.substring(mode.length - 3, mode.length - 2))
+    || List("1", "3", "5", "7").contains(mode.substring(mode.length - 2, mode.length - 1))
+    || List("1", "3", "5", "7").contains(mode.substring(mode.length - 1, mode.length))
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.

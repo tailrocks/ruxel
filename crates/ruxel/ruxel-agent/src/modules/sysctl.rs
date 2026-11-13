@@ -31,7 +31,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
     let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
-    preflight_persistence(file, !ctx.check_mode)?;
+    preflight_shadow(file)?;
 
     let mut changed = false;
 
@@ -40,6 +40,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(format!("sysctl: cannot read {file}: {error}")),
     };
+
+    // The rewrite is computed first and the publishability probe runs
+    // only where the file needs replacement: the probe is a write of its
+    // own, and an idempotent no-op — the file already holds the entry, or
+    // a drifted live value is corrected with the persistent state already
+    // right — must not fail on a target that is never published to. Where
+    // replacement IS required the target is still proved publishable
+    // before the live value is touched (see `preflight_persistence`).
+    let (content, file_changed) = rewrite_file(&current, name, &value);
+    changed |= file_changed;
+    if file_changed {
+        preflight_persistence(file, !ctx.check_mode)?;
+    }
 
     // The live value is reconciled before the file is published: a key the
     // kernel rejects must not leave a new invalid assignment behind in
@@ -64,8 +77,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
     }
 
-    let (content, file_changed) = rewrite_file(&current, name, &value);
-    changed |= file_changed;
     if file_changed && !ctx.check_mode {
         write_atomic(std::path::Path::new(file), content.as_bytes())?;
     }
@@ -92,7 +103,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 /// the task reports failure with the live value already set. A missing
 /// directory or a non-file at the path is refused up front; where the
 /// apply may run, a probe of the directory catches a read-only file
-/// system the same way.
+/// system the same way. The probe is a write of its own, so this runs
+/// only where the file needs replacement: an idempotent no-op must not
+/// fail on a target that is never published to.
 pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), String> {
     let path = std::path::Path::new(file);
     match std::fs::symlink_metadata(path) {
@@ -120,14 +133,72 @@ pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), Strin
     Ok(())
 }
 
+/// A shadowed name is refused whatever the file holds: sysctl(8) applies
+/// one file name once, from the highest-precedence directory, so the boot
+/// value comes from the shadow and the managed entry is ignored — the
+/// parameter reverts after reboot even when this apply writes nothing.
+fn preflight_shadow(file: &str) -> Result<(), String> {
+    if let Some(shadow) = shadowing(file) {
+        return Err(format!(
+            "sysctl: cannot persist {file}: {shadow} shadows it at boot; sysctl(8) applies one file name once, from the highest-precedence directory, so the entry would revert after reboot"
+        ));
+    }
+    Ok(())
+}
+
+/// The same-named file in a higher-precedence system directory that
+/// shadows the persistence target at boot. `sysctl --system` applies one
+/// file name once: after a name is loaded from a directory, the same name
+/// in the later directories is ignored, and the directories load by
+/// precedence — `/usr/lib/sysctl.d` before `/run/sysctl.d` before
+/// `/etc/sysctl.d` — so a managed file in a lower-precedence directory is
+/// silently skipped where a same-named file exists in a higher one, and
+/// the parameter reverts after reboot. Only files inside the recognized
+/// system directories are shadowed: `/etc/sysctl.conf` loads after all of
+/// them and is never skipped.
+fn shadowing(file: &str) -> Option<String> {
+    shadow_candidates(file)
+        .into_iter()
+        .find(|candidate| std::path::Path::new(candidate).exists())
+}
+
+/// The paths that would shadow `file` at boot, highest precedence first:
+/// the file's base name in the system directories that outrank its own.
+fn shadow_candidates(file: &str) -> Vec<String> {
+    const DIRS: [(&str, u8); 3] = [
+        ("/etc/sysctl.d/", 2),
+        ("/run/sysctl.d/", 1),
+        ("/usr/lib/sysctl.d/", 0),
+    ];
+    let Some((dir, base)) = file.rsplit_once('/') else {
+        return Vec::new();
+    };
+    let dir = format!("{dir}/");
+    let Some((_, rank)) = DIRS.iter().find(|(d, _)| *d == dir) else {
+        return Vec::new();
+    };
+    DIRS.iter()
+        .filter(|(_, higher)| higher > rank)
+        .map(|(d, _)| format!("{d}{base}"))
+        .collect()
+}
+
 fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
     let mut found = false;
     let mut changed = false;
     let mut out_lines = Vec::new();
     for line in current.lines() {
         let trimmed = line.trim();
+        // Entry keys compare canonicalized: the slash-first and dotted
+        // spellings of one parameter (`net/ipv4/ip_forward`,
+        // `net.ipv4.ip_forward`) address one `/proc/sys` entry, so the
+        // alias line is the same entry — matching raw strings would
+        // update only one spelling and let boot process the other.
         let is_entry = !trimmed.starts_with('#')
-            && trimmed.split('=').next().is_some_and(|k| k.trim() == name);
+            && trimmed
+                .split('=')
+                .next()
+                .is_some_and(|k| sysctl_key(k.trim()) == sysctl_key(name));
         if is_entry {
             found = true;
             // The entry's delimiter is the FIRST equals sign: a value may
@@ -175,206 +246,20 @@ fn read_sysctl(name: &str) -> Result<String, String> {
 /// the path beneath `/proc/sys`, never `enp3s0.200` looked up as
 /// `enp3s0/200`.
 pub(crate) fn proc_sys_path(name: &str) -> String {
+    format!("/proc/sys/{}", sysctl_key(name))
+}
+
+/// One parameter's identity: the `/proc/sys` path it addresses. The two
+/// spellings of one parameter compare equal — and a slash-first name
+/// with a literal dot (`enp3s0.200`) keeps its identity apart from the
+/// dotted spelling of another path.
+fn sysctl_key(name: &str) -> String {
     if name.contains('/') {
-        format!("/proc/sys/{name}")
+        name.to_string()
     } else {
-        format!("/proc/sys/{}", name.replace('.', "/"))
+        name.replace('.', "/")
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-    #[test]
-    fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
-        let path =
-            std::env::temp_dir().join(format!("ruxel-sysctl-invalid-{}", std::process::id()));
-        std::fs::write(&path, "\nnet.test=1\n")?;
-        let ctx = super::ExecContext {
-            check_mode: false,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        for name in ["", "-bad", "net key", "net.key=bad"] {
-            assert!(
-                super::run(
-                    &json!({"name":name,"value":"2","sysctl_file":path,"reload":false}),
-                    &ctx
-                )
-                .is_err()
-            );
-            assert_eq!(std::fs::read_to_string(&path)?, "\nnet.test=1\n");
-        }
-        std::fs::remove_file(path)?;
-        Ok(())
-    }
-    #[test]
-    fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()> {
-        let path = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));
-        std::fs::write(&path, [0xff, 0xfe])?;
-        for check_mode in [true, false] {
-            let ctx = super::ExecContext {
-                check_mode,
-                diff_mode: false,
-                no_log: false,
-                environment: vec![],
-                become_user: None,
-            };
-            assert!(super::run(&json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}), &ctx).is_err());
-            assert_eq!(std::fs::read(&path)?, [0xff, 0xfe]);
-        }
-        std::fs::remove_file(path)?;
-        Ok(())
-    }
-
-    #[test]
-    fn missing_file_is_planned_for_creation() -> std::io::Result<()> {
-        let path =
-            std::env::temp_dir().join(format!("ruxel-sysctl-missing-{}", std::process::id()));
-        let ctx = super::ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        let result = super::run(
-            &json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}),
-            &ctx,
-        )
-        .map_err(std::io::Error::other)?;
-        assert_eq!(result["changed"], true);
-        assert!(!path.exists());
-        Ok(())
-    }
-    #[test]
-    fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_write() {
-        // `sysctl -w` would succeed first and the later publish fail,
-        // leaving the kernel changed with no persistent entry behind it:
-        // the target is validated before the live value is touched, so
-        // the refusal names the persistence file, not the live read.
-        let path = std::env::temp_dir().join(format!(
-            "ruxel-sysctl-missing-parent-{}/x.conf",
-            std::process::id()
-        ));
-        let ctx = super::ExecContext {
-            check_mode: false,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        let error = super::run(
-            &json!({"name":"ruxel.missing.key", "value":"1", "sysctl_file":path, "sysctl_set":true, "reload":false}),
-            &ctx,
-        )
-        .expect_err("an unpublishable persistence target must be refused");
-        assert!(error.contains("persist"), "{error}");
-    }
-
-    #[test]
-    fn slash_first_names_keep_their_separators_in_the_proc_path() {
-        // Slash-first notation: every `/` is a separator and every `.`
-        // inside a component is literal, so the /proc/sys path is the
-        // name as written — `enp3s0.200` is never looked up as
-        // `enp3s0/200`. Dotted notation keeps translating its dots.
-        assert_eq!(
-            super::proc_sys_path("net/ipv4/conf/enp3s0.200/forwarding"),
-            "/proc/sys/net/ipv4/conf/enp3s0.200/forwarding"
-        );
-        assert_eq!(
-            super::proc_sys_path("net.ipv4.conf.br-123.forwarding"),
-            "/proc/sys/net/ipv4/conf/br-123/forwarding"
-        );
-    }
-
-    #[test]
-    fn whitespace_normalization() {
-        assert_eq!(
-            super::normalized("1024\t65535"),
-            super::normalized("1024 65535")
-        );
-        assert_eq!(super::normalized(" 1 "), "1");
-    }
-
-    #[test]
-    fn rewrites_existing_key_or_appends_missing_key() {
-        let current = "# keep\nnet.test = old\n";
-        assert_eq!(
-            super::rewrite_file(current, "net.test", "new"),
-            ("# keep\nnet.test=new\n".into(), true)
-        );
-        assert_eq!(
-            super::rewrite_file("# keep\n", "net.test", "new"),
-            ("# keep\nnet.test=new\n".into(), true)
-        );
-        assert_eq!(
-            super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
-            ("net.test = 1  2\n".into(), false)
-        );
-    }
-
-    #[test]
-    fn a_refused_live_value_leaves_the_persistence_file_untouched() {
-        let path = std::env::temp_dir().join(format!("ruxel-sysctl-order-{}", std::process::id()));
-        std::fs::write(&path, "net.test=1\n").unwrap();
-        let ctx = super::ExecContext {
-            check_mode: false,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        // The key is absent from this host's kernel (and from any /proc on
-        // a non-Linux test host): the live write is refused, and the
-        // refusal must not leave a new invalid assignment behind in the
-        // persistence file.
-        let result = super::run(
-            &json!({"name":"ruxel.missing.key", "value":"2", "sysctl_file":path, "sysctl_set":true, "reload":false}),
-            &ctx,
-        );
-        assert!(result.is_err(), "{result:?}");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "net.test=1\n",
-            "a failed live reconciliation must not publish the entry"
-        );
-        std::fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn an_equals_sign_in_the_value_is_not_a_delimiter() {
-        // A `kernel.core_pattern` command carries `--option=value`: the
-        // entry's delimiter is the FIRST equals sign, so comparing the
-        // entry keeps the value's own equals signs whole. Splitting at
-        // every equals sign truncated the value and made every apply see
-        // the unchanged line as drift.
-        let value = "|/usr/lib/systemd/systemd-coredump --option=value";
-        assert_eq!(
-            super::rewrite_file(
-                "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n",
-                "kernel.core_pattern",
-                value,
-            ),
-            (
-                "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n".into(),
-                false
-            )
-        );
-    }
-
-    #[test]
-    fn rejects_newline_in_name_or_value_before_io() {
-        let ctx = super::ExecContext {
-            check_mode: true,
-            diff_mode: false,
-            no_log: false,
-            environment: vec![],
-            become_user: None,
-        };
-        assert!(super::run(&json!({"name": "safe\ninjected", "value": "1"}), &ctx).is_err());
-        assert!(super::run(&json!({"name": "safe", "value": "1\rinjected"}), &ctx).is_err());
-    }
-}
+mod tests;

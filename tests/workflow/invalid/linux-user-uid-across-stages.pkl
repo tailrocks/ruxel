@@ -1,0 +1,26 @@
+// expect: claim the uid 1001 for different accounts
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One host keeps one account per uid: stage 1 leaves `alice` present on
+// uid 1001, so stage 2's `useradd -u 1001` for `bob` fails on the taken
+// number. Explicit uid footprints participate only in a stage's local
+// conflict check, so the numbers are tracked across stages: a number is
+// reused only after a proven removal of its holder.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1001 }
+    }
+  }
+}

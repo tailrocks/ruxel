@@ -102,3 +102,42 @@ pub(super) fn removal_home_allowed(
     }
     Ok(())
 }
+
+/// The name of the account's live primary group, resolved through the
+/// group database: the passwd entry carries the gid only.
+pub(super) fn primary_group_name(gid: u64) -> Result<Option<String>, String> {
+    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    Ok(group_name_of_gid_from(&groups, gid))
+}
+
+pub(super) fn group_name_of_gid_from(groups: &str, gid: u64) -> Option<String> {
+    for line in groups.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 3 && f[2].parse::<u64>() == Ok(gid) {
+            return Some(f[0].to_string());
+        }
+    }
+    None
+}
+
+/// Whether the removal's declared primary group is the live one. The
+/// lowering derives the removal's ordering from the declared primary
+/// group — a `Group` removal that would strand it must list the account
+/// removal first — which only holds where the declaration matches the
+/// host: an account originally created with another primary group makes
+/// the private-group default wrong, so the removal refuses and asks for
+/// the real group to be stated, before `userdel` mutates anything.
+pub(super) fn removal_primary_group_allowed(
+    name: &str,
+    declared: Option<&str>,
+    live: Option<&str>,
+) -> Result<(), String> {
+    let want = declared.unwrap_or(name);
+    match live {
+        Some(actual) if actual == want => Ok(()),
+        Some(actual) => Err(format!(
+            "user: refusing to remove {name}: the live primary group {actual} is not the declared {want}; state the account's primary group (group = \"{actual}\") to remove it"
+        )),
+        None => Ok(()),
+    }
+}
