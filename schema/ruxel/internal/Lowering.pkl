@@ -122,7 +122,9 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + indexPlanningAcrossStages(_stages, _indexes)
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes)
-    + identityNumbersAcrossStages(_stages, _indexes))
+    + identityNumbersAcrossStages(_stages, _indexes)
+    + fileIdentitiesAcrossStages(_stages, _indexes)
+    + homeRemovalsAcrossStages(_stages, _indexes))
 
 /// An explicit uid or gid is a persistent identity of one host: two
 /// stages that assign one number to different names are refused — the
@@ -824,6 +826,21 @@ function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   + (if (j > i)
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(s))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
   else List())
+  + shellTargetRels(ix, u, i, j)
+
+/// A managed shell that is a link is only as good as its target: the
+/// account's task follows the link and reads the target's metadata, so a
+/// target that a later step creates leaves the link dangling when the
+/// account runs and the task refuses the shell. A target no step manages
+/// is the host's own, which the workflow cannot know.
+function shellTargetRels(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
+  let (s = ix.steps[j])
+  if (s is core.Symlink)
+    let (target = s.target)
+      positions(ix.steps)
+        .filter((k) -> k != j && k > i && paths(ix.steps[k]).contains(target))
+        .map((k) -> "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
+  else List()
 
 /// Whether a file mode makes the file executable for the account that
 /// does not own it: the other-execute bit. Unix selects the permission
@@ -859,6 +876,47 @@ const function removedInside(a: core.Step, candidates: List<String>): List<List<
 const function removedPaths(u: linux.User): List<String> =
   (if (u.home != null) List(u.home) else List()) + List("/var/mail/\(u.user)")
 
+/// The homes a stage's removals delete: the home of every account the
+/// stage removes with its directory.
+const function removedHomes(ix: StageIndex): List<String> =
+  ix.steps.flatMap((s) -> if (s is linux.User && s.state == "absent" && s.removeHome && s.home != null) List(s.home) else List())
+
+/// The directory a path lives in: the path without its last segment.
+const function parentOf(p: String): String =
+  if (p.lastIndexOf("/") <= 0) "/" else p.substring(0, p.lastIndexOf("/"))
+
+/// The directory `d` is the one the path `p` needs: it lies at or below
+/// the removed home `h` and at or above the parent of `p`.
+const function covers(h: String, p: String, d: String): Boolean =
+  (d == h || d.startsWith(h + "/")) && (parentOf(p) == d || parentOf(p).startsWith(d + "/"))
+
+/// A removal with `removeHome` deletes the home directory of an earlier
+/// stage, so a later stage that manages a path inside it writes into a
+/// directory that is gone: the file task cannot open its parent. The
+/// comparison is per host pair — stages on disjoint hosts never share a
+/// home — and a step that declares the directory again lifts the
+/// refusal: the directory task creates the parents it needs.
+function homeRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((n) -> removedHomeRels(_stages, _indexes, n, m)))
+
+/// The paths a later stage manages inside a home an earlier stage
+/// removed, and the refusal for the ones no step recreates.
+function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  removedHomes(_indexes[n]).flatMap((h) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (inside = paths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    if (inside.isEmpty) List()
+    else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
+    else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
+
+/// The home is there again before the later step: a step between the
+/// removal and it declares a directory that covers the path's parent.
+const function recreatesHome(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, h: String, p: String): Boolean =
+  positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
+    positions(_indexes[k].steps).any((j) ->
+      let (s = _indexes[k].steps[j])
+      (k < m || j < i) && s is core.Directory && covers(h, p, s.path)))
+
 /// A file resolves its owner and group by name: an identity a same-stage
 /// step creates comes first — a clean host resolves no name before its
 /// account or group exists — and an identity the same stage removes
@@ -887,6 +945,40 @@ function identityRel(ix: StageIndex, i: Int, j: Int, p: List<String>): List<Stri
   else if (j > i)
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the \(p[1]) \(p[0]), which '\(name(g))' (\(where(ix.placed[j]))) creates; list the \(if (g is linux.User) "account" else "group") before the file")
   else List()
+
+/// A file resolves its owner and group by name on the host, and the
+/// name is gone when an earlier stage removed the identity and no stage
+/// since put it back: the file task then cannot resolve it. The
+/// comparison is per host pair — stages on disjoint hosts never share an
+/// identity — and the removal counts only for the hosts it runs on.
+function fileIdentitiesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (f = _indexes[m].steps[i])
+    if (f is core.File)
+      ownerNeeds(f).flatMap((p) -> removedIdentityRels(_stages, _indexes, m, i, p))
+    else List()))
+
+/// The refusal for a file whose identity an earlier stage removed.
+function removedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+    .filter((n) -> identityAbsent(_indexes[n], p)
+      && sharedHosts(_stages[n], _stages[m]).any((h) -> !recreatesIdentity(_stages, _indexes, n, m, p, h)))
+    .map((n) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[n].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
+
+/// Whether the stage declares the identity `p` — the account or the group
+/// of that name — absent.
+const function identityAbsent(ix: StageIndex, p: List<String>): Boolean =
+  ix.steps.any((s) -> providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "absent")
+
+/// Whether the stage declares the identity `p` present.
+const function identityPresent(ix: StageIndex, p: List<String>): Boolean =
+  ix.steps.any((s) -> providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "present")
+
+/// The identity is there again before the later stage: a stage between
+/// the removal and the file declares it present, on the same host.
+const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, p: List<String>, h: core.Host): Boolean =
+  positions(_indexes).filter((k) -> k > n && k <= m)
+    .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
@@ -1395,7 +1487,11 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // the author wrote them in. Unset groups are a state of their own: the
   // memberships are unmanaged, unlike an explicit empty set, which
   // removes every one of them.
-  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, "\(s.removeHome)"))
+  // `removeHome` is a field of the absent account alone: the runtime
+  // reads it only when it removes one, so two present declarations of
+  // one account are the same state whatever it says — a field that
+  // cannot affect the state does not belong to its fingerprint.
+  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
@@ -1432,7 +1528,12 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // is claimed like an explicit one. A present account that states no
   // primary group claims the group useradd creates with its login name
   // (USERGROUPS_ENAB), so that implicit group is its footprint too.
-  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + List("/var/mail/\(s.user)") else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
+  // The mail spool is the account's as well: `useradd` creates
+  // `/var/mail/<user>` on a host configured with `CREATE_MAIL_SPOOL=yes`,
+  // so a step that manages that path declares a second state for it —
+  // whichever runs later wins, and the other fails. The spool is
+  // claimed like the removed one, whose path the removal deletes.
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") + List("/var/mail/\(s.user)") else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + List("/var/mail/\(s.user)") else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
   // An explicit gid is a managed thing of its own, the way a uid is.
   ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")
