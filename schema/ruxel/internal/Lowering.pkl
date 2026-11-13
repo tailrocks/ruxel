@@ -151,10 +151,25 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
 
 /// Whether the earlier claimant's identity is proven removed before the
 /// later claim: a step removing the account (for a gid claim, the group)
-/// in a stage between the two claims, on hosts shared with both.
+/// in a stage between the two claims — on every host both claimant
+/// stages run on. The number is freed per machine: a removal covering
+/// only one of the shared hosts leaves the original holder present on
+/// the others, where the later `useradd -u` (or `groupadd -g`) still
+/// fails, so the proof covers the whole intersection and may be spread
+/// over several removal stages, each covering one of its hosts.
 function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
-  positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-    .any((k) -> hostsOverlap(_stages[c.stage], _stages[k]) && hostsOverlap(_stages[k], _stages[d.stage]) && removedNumber(_indexes[k], c))
+  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+    positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+      .any((k) -> stageRunsOn(_stages[k], h) && removedNumber(_indexes[k], c)))
+
+/// The hosts both stages run on: one machine when they connect alike —
+/// the same identity `hostsOverlap` compares stages by.
+const function sharedHosts(a: core.Stage, b: core.Stage): List<core.Host> =
+  a.hosts.toList().filter((x) -> b.hosts.toList().any((y) -> sameConnection(x, y)))
+
+/// Whether the stage runs on the machine `h`, by connection.
+const function stageRunsOn(s: core.Stage, h: core.Host): Boolean =
+  s.hosts.toList().any((x) -> sameConnection(x, h))
 
 function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
   if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name)

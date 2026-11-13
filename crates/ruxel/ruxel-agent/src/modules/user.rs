@@ -6,7 +6,7 @@
 
 use super::{ExecContext, bool_param, params_object, str_param};
 
-use home::{ensure_home, home_gid, home_usable};
+use home::{claimed_home, ensure_home, home_gid, home_usable};
 use shell::shell_allowed;
 
 mod home;
@@ -96,8 +96,9 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
 
 mod guards;
 use guards::{
-    group_change_allowed, group_removal_allowed, identity_change_allowed, primary_group_name,
-    removal_allowed, removal_home_allowed, removal_primary_group_allowed,
+    group_change_allowed, group_removal_allowed, identity_change_allowed, planned_gid,
+    primary_group_name, private_group_flag, private_group_missing, removal_allowed,
+    removal_home_allowed, removal_primary_group_allowed,
 };
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -105,35 +106,6 @@ pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
     command.args(args);
     super::run_checked(command)?;
     Ok(())
-}
-
-/// `useradd`'s private-group switch: a step that names no primary group
-/// gets its same-name group created explicitly (`-U`), so the modeled
-/// footprint and the implicit-group provider never lean on the host's
-/// `USERGROUPS_ENAB` setting.
-fn private_group_flag(group: Option<&str>) -> Option<&'static str> {
-    if group.is_none() { Some("-U") } else { None }
-}
-
-/// The home `useradd` creates for an account: the declared one, or the
-/// `/home/<name>` the lowering's footprint reserves. The base directory
-/// is host configuration (`useradd -D`), so the creation passes the home
-/// explicitly: `useradd -m` without `-d` would put it wherever the
-/// host's configured base points, and a same-stage file at the reserved
-/// path would collide with account creation.
-fn claimed_home(home: Option<&str>, name: &str) -> String {
-    home.map_or_else(|| format!("/home/{name}"), str::to_string)
-}
-
-/// Whether the account's claimed private group is missing on the host:
-/// a step that names no primary group claims the same-name group — the
-/// footprint model reserves it and the lowering's group ordering
-/// advertises it as provided — and `useradd -U` reconciles that claim
-/// only where the account is created. An existing account reconciles it
-/// too, or a dependent `useradd -G alice bob` fails to resolve the group
-/// where the account predates the workflow.
-fn private_group_missing(group: Option<&str>, group_exists: bool) -> bool {
-    group.is_none() && !group_exists
 }
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -201,17 +173,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     let comment = str_param(obj, "comment");
     let system = bool_param(obj, "system", false);
-    home.map(home_usable).transpose()?;
+    // The claimed default home is the step's managed path like a
+    // declared one — `useradd -m` creates it, `usermod -d` points the
+    // account at it — so a regular file or a symlink at it is refused
+    // before the account is touched, declared or not.
+    home_usable(&claimed_home(home, name))?;
 
     let mut changed = false;
 
     match entry {
         None => {
             changed = true;
-            let claimed = claimed_home(home, name);
-            // Validated before `useradd`: a refused apply leaves the
-            // host as it was, and `-m` would create through a symlink.
-            home_usable(&claimed)?;
             if !ctx.check_mode {
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
@@ -254,14 +226,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 }
                 args.push(name);
                 run_cmd("useradd", &args)?;
-                // `useradd -m` creates the claimed home only when it
-                // is missing: a pre-existing directory keeps whatever
-                // ownership it had, so the claimed home — the declared
-                // one or the `/home/<name>` the lowering's footprint
-                // reserves — is reconciled after creation with the
-                // account's final identity.
-                if let Some(created) = passwd_entry(name)? {
-                    ensure_home(&claimed, created.uid, created.gid, ctx.check_mode)?;
+                // `useradd -m` creates the claimed path only when it is
+                // missing: a pre-existing directory keeps whatever
+                // ownership it had, so the claimed home — declared or
+                // the footprint's default — is reconciled after
+                // creation with the account's final identity.
+                if let Some(created) = passwd_entry(name)?
+                    && (home.is_some() || create_home)
+                {
+                    ensure_home(
+                        &claimed_home(home, name),
+                        created.uid,
+                        created.gid,
+                        ctx.check_mode,
+                    )?;
                 }
             }
         }
@@ -289,11 +267,25 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push(&uid_s);
             }
             if let Some(g) = group {
-                let want_gid = super::resolve_gid(g)?;
-                if u64::from(want_gid) != current.gid {
-                    identity_change_allowed(name, &current)?;
-                    args.push("-g");
-                    args.push(g);
+                match planned_gid(g, ctx.check_mode)? {
+                    // The group is not on the host yet: an earlier
+                    // same-stage `Group` step creates it and check mode
+                    // runs no `groupadd`, so the plan reports the
+                    // primary-group move without the new group's live
+                    // gid. Apply resolves it after that step ran, and
+                    // every live-entry guard applies there — a check
+                    // mode mutation, so there is nothing to guard yet.
+                    None => {
+                        args.push("-g");
+                        args.push(g);
+                    }
+                    Some(want_gid) => {
+                        if u64::from(want_gid) != current.gid {
+                            identity_change_allowed(name, &current)?;
+                            args.push("-g");
+                            args.push(g);
+                        }
+                    }
                 }
             }
             let groups_s;
@@ -337,13 +329,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // moves the passwd field only, so a missing directory is
             // reconciled here — an account whose home field already
             // matches still gets its directory.
-            if let Some(h) = home {
-                changed |= ensure_home(
-                    h,
-                    uid.unwrap_or(current.uid),
-                    home_gid(group, current.gid)?,
-                    ctx.check_mode,
-                )?;
+            // `None` is check mode's answer for a group that is not on
+            // the host yet: its gid decides the directory's owner, and
+            // the primary-group change the plan already reports covers
+            // the repair, so nothing is compared against a gid that
+            // does not exist.
+            if let Some(h) = home
+                && let Some(gid) = home_gid(group, current.gid, ctx.check_mode)?
+            {
+                changed |= ensure_home(h, uid.unwrap_or(current.uid), gid, ctx.check_mode)?;
             }
         }
     }

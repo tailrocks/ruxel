@@ -141,3 +141,41 @@ pub(super) fn removal_primary_group_allowed(
         None => Ok(()),
     }
 }
+
+/// `useradd`'s private-group switch: a step that names no primary group
+/// gets its same-name group created explicitly (`-U`), so the modeled
+/// footprint and the implicit-group provider never lean on the host's
+/// `USERGROUPS_ENAB` setting.
+pub(super) fn private_group_flag(group: Option<&str>) -> Option<&'static str> {
+    if group.is_none() { Some("-U") } else { None }
+}
+
+/// Whether the account's claimed private group is missing on the host:
+/// a step that names no primary group claims the same-name group — the
+/// footprint model reserves it and the lowering's group ordering
+/// advertises it as provided — and `useradd -U` reconciles that claim
+/// only where the account is created. An existing account reconciles it
+/// too, or a dependent `useradd -G alice bob` fails to resolve the group
+/// where the account predates the workflow.
+pub(super) fn private_group_missing(group: Option<&str>, group_exists: bool) -> bool {
+    group.is_none() && !group_exists
+}
+
+/// The requested primary group's gid: the live one where the group
+/// exists, and `None` in check mode where it does not exist yet — an
+/// earlier same-stage `Group` step creates it and check mode runs no
+/// `groupadd`, so planning the account change must not require the new
+/// group's live GID. Apply mode, which runs that step first, still
+/// resolves it and fails where it cannot, before anything mutates.
+pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, String> {
+    if let Ok(gid) = group.parse::<u32>() {
+        return Ok(Some(gid));
+    }
+    match super::group_entry(group)? {
+        Some((_, gid)) => u32::try_from(gid)
+            .map(Some)
+            .map_err(|_| format!("group {group:?} gid {gid} does not fit")),
+        None if check_mode => Ok(None),
+        None => Err(format!("group {group:?} not found")),
+    }
+}
