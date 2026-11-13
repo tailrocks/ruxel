@@ -123,6 +123,8 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes)
     + sysctlOwnersAcrossStages(_stages, _indexes)
+    + primaryGroupsAcrossStages(_stages, _indexes)
+    + homeTypesAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
@@ -224,11 +226,17 @@ function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>):
 /// value still follows the stages. The direction is the point: a
 /// whole-file write before the sysctl leaves the entry in place (the
 /// sysctl adds its entry to whatever file is there), while one after it
-/// removes the entry again. The comparison is per host: stages on
-/// disjoint hosts never share a file system.
+/// removes the entry again — and only a write that leaves a regular
+/// file behind is safe before it: a `Directory`, a `Symlink` or a
+/// checkout cannot serve as the persistence file at all, and the sysctl
+/// task deterministically fails on it wherever it stands. The
+/// comparison is per host: stages on disjoint hosts never share a file
+/// system.
 function sysctlOwnersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
-    .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])))
+    .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
+      + unusableEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
+      + unusableEntries(_stages[m], _indexes[m], _stages[n], _indexes[n])))
 
 /// The refusals for the entries a later stage's whole-file writes
 /// overwrite.
@@ -236,6 +244,15 @@ function overwrittenEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: St
   sysctlsOf(ia).flatMap((x) -> positions(ib.steps)
     .filter((j) -> !(ib.steps[j] is linux.Sysctl) && paths(ib.steps[j]).contains(x.path))
     .map((j) -> "'\(name(x))' of stage \"\(a.title)\" keeps its entry in the file \(x.path), and '\(name(ib.steps[j]))' of stage \"\(b.title)\" writes the whole file after it, which removes the entry again; a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the whole-file step into a stage before it"))
+
+/// The refusals for a sysctl whose persistence path an owner of the
+/// other stage leaves as anything but a regular file: the entry joins a
+/// file, so a directory, a link or a checkout at the path makes the
+/// sysctl task fail wherever the owner stands in the order.
+function unusableEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  sysctlsOf(ib).flatMap((x) -> positions(ia.steps)
+    .filter((j) -> !(ia.steps[j] is linux.Sysctl) && (ia.steps[j] is core.Directory || ia.steps[j] is core.Symlink || ia.steps[j] is linux.GitCheckout) && paths(ia.steps[j]).contains(x.path))
+    .map((j) -> "'\(name(ia.steps[j]))' of stage \"\(a.title)\" leaves \(x.path) as \(if (ia.steps[j] is core.Symlink) "a link" else if (ia.steps[j] is core.Directory) "a directory" else "a checkout"), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
@@ -864,16 +881,26 @@ function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
 /// target that a later step creates leaves the link dangling when the
 /// account runs and the task refuses the shell, and a target that is not
 /// executable for the account is refused the way the shell file itself
-/// is. A target no step manages is the host's own, which the workflow
-/// cannot know.
+/// is. The walk is the kernel's, not the first hop's: a target that is
+/// itself a managed link leads to its own target, and every hop's step
+/// is judged — the runtime follows the chain to its end before it reads
+/// the file there. A target no step manages is the host's own, which
+/// the workflow cannot know.
 function shellTargetRels(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   let (s = ix.steps[j])
-  if (s is core.Symlink)
-    let (target = s.target)
-      positions(ix.steps)
-        .filter((k) -> k != j && paths(ix.steps[k]).contains(target))
-        .flatMap((k) -> shellTargetRel(ix, u, i, k, target))
+  if (s is core.Symlink) shellLinkRels(ix, u, i, s.target, List(u.shell))
   else List()
+
+/// The refusals for one hop of a managed shell chain and everything
+/// behind it: the hop's target step must precede the account and carry
+/// an executable file where it names one, and a managed link target
+/// leads the chain on. `seen` stops a cycle of managed links.
+function shellLinkRels(ix: StageIndex, u: linux.User, i: Int, target: String, seen: List<String>): List<String> =
+  if (seen.contains(target)) List()
+  else positions(ix.steps)
+    .filter((k) -> paths(ix.steps[k]).contains(target))
+    .flatMap((k) -> shellTargetRel(ix, u, i, k, target)
+      + (if (ix.steps[k] is core.Symlink) shellLinkRels(ix, u, i, ix.steps[k].target, seen + List(target)) else List()))
 
 /// The refusals for a managed target of a managed shell link: the
 /// account's task follows the link and reads the file it names, so the
@@ -965,26 +992,34 @@ function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
     else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
 
 /// The home is there again before the later step: a step between the
-/// removal and it declares a directory that covers the path's parent.
+/// removal and it declares a directory that covers the path's parent —
+/// or an account whose managed home does: the user operation creates
+/// the home of a new account (`useradd -m`) and reconciles the declared
+/// one of an existing account (`ensure_home`), so a present `User` step
+/// whose home covers the path restores the directory the removal took.
 const function recreatesHome(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, h: String, p: String): Boolean =
   sharedHosts(_stages[n], _stages[m]).every((host) ->
     positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
       stageRunsOn(_stages[k], host) && positions(_indexes[k].steps).any((j) ->
         let (s = _indexes[k].steps[j])
-        (k < m || j < i) && s is core.Directory && covers(h, p, s.path))))
+        (k < m || j < i) && ((s is core.Directory && covers(h, p, s.path))
+          || (s is linux.User && s.state == "present" && covers(h, p, if (s.home != null) s.home else "/home/\(s.user)"))))))
 
 /// A file's named owner keeps its number: `usermod -u` renumbers the
 /// account but does not repair the files it owns, so a file an earlier
 /// stage wrote keeps the old number and no longer has the owner it
-/// declares. The same holds for the group a later stage renumbers. The
-/// comparison is per host pair — stages on disjoint hosts never share an
-/// identity — and the number is compared with the one the last stage
-/// before the renumbering declared.
+/// declares. The same holds for the group a later stage renumbers — and
+/// for a managed home, which `groupmod -g` leaves at its old gid — and
+/// the comparison is per host pair, stages on disjoint hosts never
+/// share an identity. The number is compared with the one the last
+/// stage before the renumbering declared on each shared host.
 function renumberedIdentities(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (f = _indexes[m].steps[i])
     if (f is core.File)
       ownerNeeds(f).flatMap((p) -> renumberedIdentityRels(_stages, _indexes, m, i, p))
+    else if (f is linux.User && f.state == "present")
+      primaryGroup(f).map((g) -> List(g, "group")).flatMap((p) -> renumberedIdentityRels(_stages, _indexes, m, i, p))
     else List()))
 
 /// The refusals for a file whose owner or group a later stage
@@ -994,13 +1029,15 @@ function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageI
     .flatMap((k) -> renumberedIdentityRel(_stages, _indexes, m, i, k, p))
 
 /// The refusal for one renumbering: the number the later stage declares
-/// is not the one the identity carried, so the file keeps the old one.
+/// is not the one the identity carried on a host both stages share, so
+/// the file keeps the old one there. The history is host-scoped: a
+/// declaration on a disjoint host is another machine's identity and
+/// must not stand in for the one the file lives on.
 function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
   let (after = identityNumberAt(_indexes[k], p))
   if (after == null) List()
-  else let (before = identityNumberBefore(_indexes, k, p))
-    if (before == after) List()
-    else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int && identityNumberBeforeOn(_stages, _indexes, k, p, h) != after)) List()
+  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
 
 /// The step of the stage that declares the identity `p` with a number.
 function identityNumberStepAt(ix: StageIndex, p: List<String>): Int =
@@ -1013,10 +1050,10 @@ function identityNumberAt(ix: StageIndex, p: List<String>): Int? =
   let (hits = positions(ix.steps).filter((j) -> numbersIdentity(ix.steps[j], p)))
   if (hits.isEmpty) null else identityNumber(ix.steps[hits.first], p)
 
-/// The number the identity `p` carried before the stage `k`: the number
-/// the last stage before it declares.
-function identityNumberBefore(_indexes: List<StageIndex>, k: Int, p: List<String>): Int? =
-  let (declaring = positions(_indexes).filter((n) -> n < k && identityNumberAt(_indexes[n], p) != null))
+/// The number the identity `p` carried on host `h` before the stage
+/// `k`: the number the last stage before it that runs on `h` declares.
+function identityNumberBeforeOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Int? =
+  let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && identityNumberAt(_indexes[n], p) != null))
   if (declaring.isEmpty) null else identityNumberAt(_indexes[declaring.last], p)
 
 /// Whether the step declares the identity `p` with a number.
@@ -1092,6 +1129,62 @@ const function identityPresent(ix: StageIndex, p: List<String>): Boolean =
 const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, p: List<String>, h: core.Host): Boolean =
   positions(_indexes).filter((k) -> k > n && k <= m)
     .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
+
+/// A group an account keeps as its primary group cannot go while the
+/// account is there: `groupdel` refuses a group a passwd entry still
+/// uses, so the account must be removed or moved to another group
+/// first. The stage-local ordering sees only its own stage; across
+/// stages an earlier overlapping-host stage can leave the account on
+/// the group a later stage removes, and the apply then fails after the
+/// earlier stages have already mutated the host. An intervening account
+/// task that removes the account or moves it to another group takes it
+/// off the group, and the refusal goes with it.
+function primaryGroupsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (g = _indexes[m].steps[i])
+    if (g is linux.Group && g.state == "absent")
+      positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+        .flatMap((n) -> heldPrimaryGroups(_stages, _indexes, n, m, i, g.name)
+          .map((a) -> "stage \"\(_stages[n].title)\" leaves the account \(a) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"))
+    else List()))
+
+/// The accounts an earlier stage leaves keeping `group` as their
+/// primary group on a host the removal runs on, where no intervening
+/// account task takes them off it before the removal.
+function heldPrimaryGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<String> =
+  positions(_indexes[n].steps).flatMap((j) ->
+    let (u = _indexes[n].steps[j])
+    if (!(u is linux.User) || u.state != "present" || !primaryGroup(u).contains(group)) List()
+    else if (sharedHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && stageRunsOn(_stages[k], h)
+      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesPrimary(_indexes[k].steps[j2], u.user, group))))) List(u.user)
+    else List())
+
+/// Whether the step takes the account off the group: it removes the
+/// account, or declares it present on another primary group.
+const function leavesPrimary(s: core.Step, account: String, group: String): Boolean =
+  s is linux.User && s.user == account && (s.state == "absent" || !primaryGroup(s).contains(group))
+
+/// A managed home is a directory: a whole-file owner at exactly the
+/// same path in another stage is a type conflict whichever side runs
+/// first — the user task leaves a directory where the file task writes
+/// a file, and `home_usable` refuses a regular file or a link as the
+/// home — so the two declarations can never both hold and splitting
+/// them across stages helps nothing. The comparison is per host pair:
+/// stages on disjoint hosts never share a home.
+function homeTypesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> homeTypeClash(_stages, _indexes, n, m) + homeTypeClash(_stages, _indexes, m, n)))
+
+/// The refusals for the managed homes of stage `n` whose path stage
+/// `m` manages as a whole file or a link.
+function homeTypeClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  positions(_indexes[n].steps).flatMap((i) ->
+    let (u = _indexes[n].steps[i])
+    if (!(u is linux.User) || u.state != "present") List()
+    else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+      positions(_indexes[m].steps)
+        .filter((j) -> (_indexes[m].steps[j] is core.File || _indexes[m].steps[j] is core.Symlink) && paths(_indexes[m].steps[j]).contains(h))
+        .map((j) -> "'\(name(_indexes[m].steps[j]))' of stage \"\(_stages[m].title)\" manages \(h) as \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a whole file"), and '\(name(u))' of stage \"\(_stages[n].title)\" manages it as the account's home directory; one path cannot be both a directory and \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a file") whatever the order the stages run in, so give the home or the file another path"))
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
@@ -1603,8 +1696,11 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // `removeHome` is a field of the absent account alone: the runtime
   // reads it only when it removes one, so two present declarations of
   // one account are the same state whatever it says — a field that
-  // cannot affect the state does not belong to its fingerprint.
-  ["user"] = (s) -> fields(List(s.user, if (s.state == "present") optional(s.shell) else "-", optional(s.home), optional(s.group), if (s.state == "present") (if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList()))) else "-", if (s.uid == null) "-" else "\(s.uid)", if (s.state == "present") "\(s.system)" else "-", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
+  // cannot affect the state does not belong to its fingerprint. The
+  // home is the same: the removal path ignores it unless `removeHome`
+  // is true, so an absent account's home is active only for a
+  // recursive removal.
+  ["user"] = (s) -> fields(List(s.user, if (s.state == "present") optional(s.shell) else "-", if (s.state == "present" || s.removeHome) optional(s.home) else "-", optional(s.group), if (s.state == "present") (if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList()))) else "-", if (s.uid == null) "-" else "\(s.uid)", if (s.state == "present") "\(s.system)" else "-", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))

@@ -1,0 +1,16 @@
+// expect: one path cannot be both a directory and a file
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A managed home is a directory and a File at exactly the same path is
+// not: whichever stage runs first, one of the two tasks fails on the
+// type the other leaves, so the declarations can never both hold.
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; home = "/home/alice" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new File { path = "/home/alice"; content = "not a directory\n" }
+  } }
+}

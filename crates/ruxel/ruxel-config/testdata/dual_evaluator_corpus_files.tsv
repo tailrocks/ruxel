@@ -76,6 +76,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
   tests/workflow/invalid/linux-group-removed-first.pkl
+  tests/workflow/invalid/linux-group-removed-while-primary.pkl
   tests/workflow/invalid/linux-group-root-gid.pkl
   tests/workflow/invalid/linux-login-shell-user-colon.pkl
   tests/workflow/invalid/linux-login-shell-user-nul.pkl
@@ -84,6 +85,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-clash-apt-repository.pkl
   tests/workflow/invalid/linux-sysctl-file-clash.pkl
   tests/workflow/invalid/linux-sysctl-file-later-stage.pkl
+  tests/workflow/invalid/linux-sysctl-file-owned-earlier-stage.pkl
   tests/workflow/invalid/linux-sysctl-name-alias.pkl
   tests/workflow/invalid/linux-sysctl-name-dot-component.pkl
   tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl
@@ -99,7 +101,9 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-conflict.pkl
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
+  tests/workflow/invalid/linux-user-home-vs-file.pkl
   tests/workflow/invalid/linux-user-implicit-group-clash.pkl
   tests/workflow/invalid/linux-user-mail-spool-location.pkl
   tests/workflow/invalid/linux-user-mail-spool.pkl
@@ -120,10 +124,12 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-not-executable.pkl
   tests/workflow/invalid/linux-user-shell-owner-execute-only.pkl
   tests/workflow/invalid/linux-user-shell-root.pkl
+  tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
+  tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl
   tests/workflow/invalid/linux-user-uid-reuse-partial-hosts.pkl
   tests/workflow/invalid/linux-user-uid-twice.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
@@ -169,8 +175,10 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-slash.pkl
   tests/workflow/valid/linux-sysctl.pkl
   tests/workflow/valid/linux-user-absent-fields-inactive.pkl
+  tests/workflow/valid/linux-user-absent-home-inactive.pkl
   tests/workflow/valid/linux-user-groups-empty.pkl
   tests/workflow/valid/linux-user-groups-order.pkl
+  tests/workflow/valid/linux-user-home-recreated-by-account.pkl
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl
   tests/workflow/valid/linux-user-remove-home-inactive.pkl
