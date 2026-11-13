@@ -192,12 +192,15 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
         // spellings of one parameter (`net/ipv4/ip_forward`,
         // `net.ipv4.ip_forward`) address one `/proc/sys` entry, so the
         // alias line is the same entry — matching raw strings would
-        // update only one spelling and let boot process the other.
+        // update only one spelling and let boot process the other. A
+        // leading '-' is procps's ignore-failure marker: it is not part
+        // of the key, and the marked line assigns the entry all the
+        // same.
         let is_entry = !trimmed.starts_with('#')
             && trimmed
                 .split('=')
                 .next()
-                .is_some_and(|k| sysctl_key(k.trim()) == sysctl_key(name));
+                .is_some_and(|k| entry_key(k) == sysctl_key(name));
         if is_entry {
             found = true;
             // The entry's delimiter is the FIRST equals sign: a value may
@@ -208,7 +211,9 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
                 out_lines.push(line.to_string());
             } else {
                 changed = true;
-                out_lines.push(format!("{name}={value}"));
+                // The marker belongs to the line: the host's "ignore
+                // the error" intent survives the rewrite.
+                out_lines.push(format!("{}{name}={value}", marker(trimmed)));
             }
         } else {
             out_lines.push(line.to_string());
@@ -229,6 +234,16 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
 
 pub(super) fn normalized(v: &str) -> String {
     v.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The ignore-failure marker of an assignment line: procps reads a
+/// leading '-' as "ignore the error", and the assignment still happens.
+fn marker(line: &str) -> &'static str {
+    if line.trim_start().starts_with('-') {
+        "-"
+    } else {
+        ""
+    }
 }
 
 fn read_sysctl(name: &str) -> Result<String, String> {
@@ -258,6 +273,15 @@ pub(crate) fn sysctl_key(name: &str) -> String {
     } else {
         name.replace('.', "/")
     }
+}
+
+/// The canonical key of an assignment in a file: the `/proc/sys` path
+/// it addresses. A leading '-' is procps's ignore-failure marker, not
+/// part of the key — the marked line assigns the entry all the same,
+/// so the marker is stripped before the key is compared.
+pub(crate) fn entry_key(text: &str) -> String {
+    let text = text.trim();
+    sysctl_key(text.strip_prefix('-').unwrap_or(text).trim())
 }
 
 #[cfg(test)]

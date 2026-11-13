@@ -207,6 +207,61 @@ fn a_declared_managed_file_is_not_an_unmanaged_override() {
 }
 
 #[test]
+fn the_cross_stage_transition_stays_idempotent() {
+    // The later stage's file is a declared managed value: the earlier
+    // stage runs again without being refused for the assignment the
+    // later stage declares. The agent learns of one task per plan
+    // message (the engine renders the plan task by task), so the later
+    // stage's declaration reaches the agent only after the earlier
+    // stage ran — the ledger's history is what carries the managed
+    // value here, and a fix that derives the exception from the plan
+    // alone has to keep this outcome.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-stage-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&dir));
+    std::fs::create_dir_all(&dir).expect("operation succeeds");
+    let file = dir.join("99-new.conf");
+    std::fs::write(&file, b"net.ipv4.ip_forward=0\n").expect("operation succeeds");
+    let params = serde_json::json!({
+        "name": "net.ipv4.ip_forward",
+        "value": "0",
+        "sysctl_file": file.to_string_lossy(),
+    });
+    let mut ledger = crate::ledger::Ledger::load(&dir);
+    ledger.record(
+        "later-stage",
+        "sysctl",
+        &params,
+        "ok",
+        &serde_json::json!({"changed": true}),
+    );
+    let managed = ledger.managed_sysctl_entries();
+    assert_eq!(
+        managed,
+        vec![(
+            file.to_string_lossy().into_owned(),
+            "net.ipv4.ip_forward".to_string(),
+            "0".to_string()
+        )]
+    );
+    let host = vec![(
+        file.to_string_lossy().into_owned(),
+        b"net.ipv4.ip_forward=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/10-old.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &managed,
+        ),
+        None,
+        "the later stage's declared value is not an unmanaged override"
+    );
+    drop(std::fs::remove_dir_all(&dir));
+}
+
+#[test]
 fn a_managed_file_that_drifted_is_an_unmanaged_override() {
     // The declared value is the one ruxel manages there: a file that
     // drifted to another value carries an unmanaged assignment again.
