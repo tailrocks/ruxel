@@ -102,7 +102,7 @@ impl Outcome {
 }
 
 pub(crate) use copy::validate_source;
-pub(crate) use sysctl::{boot_fingerprint, proc_sys_path, sysctl_key};
+pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key};
 
 pub(crate) fn execute(
     module: &str,
