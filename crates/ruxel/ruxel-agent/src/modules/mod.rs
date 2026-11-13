@@ -102,7 +102,7 @@ impl Outcome {
 }
 
 pub(crate) use copy::validate_source;
-pub(crate) use sysctl::{proc_sys_path, sysctl_key};
+pub(crate) use sysctl::{boot_fingerprint, proc_sys_path, sysctl_key};
 
 pub(crate) fn execute(
     module: &str,
@@ -111,6 +111,7 @@ pub(crate) fn execute(
     source: Option<&[u8]>,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
+    managed: &[(String, String, String)],
 ) -> Outcome {
     if ctx.become_user.is_some()
         && !matches!(
@@ -147,7 +148,7 @@ pub(crate) fn execute(
         "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx, system_state),
         "blockinfile" => blockinfile::run(params, ctx),
-        "sysctl" => sysctl::run(params, ctx),
+        "sysctl" => sysctl::run(params, ctx, managed),
         "group" => user::group(params, ctx),
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
