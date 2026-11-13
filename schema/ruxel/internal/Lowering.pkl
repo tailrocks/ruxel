@@ -124,6 +124,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + sysctlBootOrder(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
+    + renumberedIdentities(_stages, _indexes)
     + homeRemovalsAcrossStages(_stages, _indexes))
 
 /// An explicit uid or gid is a persistent identity of one host: two
@@ -831,16 +832,31 @@ function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
 /// A managed shell that is a link is only as good as its target: the
 /// account's task follows the link and reads the target's metadata, so a
 /// target that a later step creates leaves the link dangling when the
-/// account runs and the task refuses the shell. A target no step manages
-/// is the host's own, which the workflow cannot know.
+/// account runs and the task refuses the shell, and a target that is not
+/// executable for the account is refused the way the shell file itself
+/// is. A target no step manages is the host's own, which the workflow
+/// cannot know.
 function shellTargetRels(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   let (s = ix.steps[j])
   if (s is core.Symlink)
     let (target = s.target)
       positions(ix.steps)
-        .filter((k) -> k != j && k > i && paths(ix.steps[k]).contains(target))
-        .map((k) -> "'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
+        .filter((k) -> k != j && paths(ix.steps[k]).contains(target))
+        .flatMap((k) -> shellTargetRel(ix, u, i, k, target))
   else List()
+
+/// The refusals for a managed target of a managed shell link: the
+/// account's task follows the link and reads the file it names, so the
+/// target must be executable for the account and must be there when the
+/// account's task runs.
+function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: String): List<String> =
+  let (t = ix.steps[k])
+  (if (t is core.File && !executableMode(t.mode))
+    List("'\(name(t))' (\(where(ix.placed[k]))) manages the target \(t.path) of the shell \(u.shell) of '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) at mode \(t.mode), which does not make it executable for the account; useradd and usermod follow the shell's link and read the file it names, so a managed shell target carries an executable mode")
+  else List())
+  + (if (k > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
+  else List())
 
 /// Whether a file mode makes the file executable for the account that
 /// does not own it: the other-execute bit. Unix selects the permission
@@ -874,7 +890,16 @@ const function removedInside(a: core.Step, candidates: List<String>): List<List<
 /// What a recursive account removal deletes on the host: the home
 /// directory and the mail spool `userdel -r` removes.
 const function removedPaths(u: linux.User): List<String> =
-  (if (u.home != null) List(u.home) else List()) + List("/var/mail/\(u.user)")
+  (if (u.home != null) List(u.home) else List()) + mailSpools(u.user)
+
+/// The mail spool an account has: `useradd` writes it in the host's
+/// mail directory, the `MAIL_DIR` setting of `/etc/default/useradd`,
+/// and `userdel -r` removes it again. The setting is the host's own,
+/// which the workflow cannot read, so the account claims the spool at
+/// every conventional mail directory: `/var/mail`, the Debian one, and
+/// `/var/spool/mail`, the one the older systems use.
+const function mailSpools(name: String): List<String> =
+  List("/var/mail/\(name)", "/var/spool/mail/\(name)")
 
 /// The homes a stage's removals delete: the home of every account the
 /// stage removes with its directory.
@@ -912,10 +937,68 @@ function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
 /// The home is there again before the later step: a step between the
 /// removal and it declares a directory that covers the path's parent.
 const function recreatesHome(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, h: String, p: String): Boolean =
-  positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
-    positions(_indexes[k].steps).any((j) ->
-      let (s = _indexes[k].steps[j])
-      (k < m || j < i) && s is core.Directory && covers(h, p, s.path)))
+  sharedHosts(_stages[n], _stages[m]).every((host) ->
+    positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
+      stageRunsOn(_stages[k], host) && positions(_indexes[k].steps).any((j) ->
+        let (s = _indexes[k].steps[j])
+        (k < m || j < i) && s is core.Directory && covers(h, p, s.path))))
+
+/// A file's named owner keeps its number: `usermod -u` renumbers the
+/// account but does not repair the files it owns, so a file an earlier
+/// stage wrote keeps the old number and no longer has the owner it
+/// declares. The same holds for the group a later stage renumbers. The
+/// comparison is per host pair — stages on disjoint hosts never share an
+/// identity — and the number is compared with the one the last stage
+/// before the renumbering declared.
+function renumberedIdentities(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (f = _indexes[m].steps[i])
+    if (f is core.File)
+      ownerNeeds(f).flatMap((p) -> renumberedIdentityRels(_stages, _indexes, m, i, p))
+    else List()))
+
+/// The refusals for a file whose owner or group a later stage
+/// renumbers.
+function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
+    .flatMap((k) -> renumberedIdentityRel(_stages, _indexes, m, i, k, p))
+
+/// The refusal for one renumbering: the number the later stage declares
+/// is not the one the identity carried, so the file keeps the old one.
+function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
+  let (after = identityNumberAt(_indexes[k], p))
+  if (after == null) List()
+  else let (before = identityNumberBefore(_indexes, k, p))
+    if (before == after) List()
+    else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+
+/// The step of the stage that declares the identity `p` with a number.
+function identityNumberStepAt(ix: StageIndex, p: List<String>): Int =
+  let (hits = positions(ix.steps).filter((j) -> numbersIdentity(ix.steps[j], p)))
+  if (hits.isEmpty) 0 else hits.first
+
+/// The number the stage declares for the identity `p`: the uid of the
+/// account, the gid of the group.
+function identityNumberAt(ix: StageIndex, p: List<String>): Int? =
+  let (hits = positions(ix.steps).filter((j) -> numbersIdentity(ix.steps[j], p)))
+  if (hits.isEmpty) null else identityNumber(ix.steps[hits.first], p)
+
+/// The number the identity `p` carried before the stage `k`: the number
+/// the last stage before it declares.
+function identityNumberBefore(_indexes: List<StageIndex>, k: Int, p: List<String>): Int? =
+  let (declaring = positions(_indexes).filter((n) -> n < k && identityNumberAt(_indexes[n], p) != null))
+  if (declaring.isEmpty) null else identityNumberAt(_indexes[declaring.last], p)
+
+/// Whether the step declares the identity `p` with a number.
+const function numbersIdentity(s: core.Step, p: List<String>): Boolean =
+  (p[1] == "owner" && s is linux.User && s.user == p[0] && s.state == "present" && s.uid != null)
+    || (p[1] == "group" && s is linux.Group && s.name == p[0] && s.state == "present" && s.gid != null)
+
+/// The number the step declares for the identity `p`.
+const function identityNumber(s: core.Step, p: List<String>): Int? =
+  if (p[1] == "owner" && s is linux.User && s.user == p[0] && s.state == "present") s.uid
+  else if (p[1] == "group" && s is linux.Group && s.name == p[0] && s.state == "present") s.gid
+  else null
 
 /// A file resolves its owner and group by name: an identity a same-stage
 /// step creates comes first — a clean host resolves no name before its
@@ -1491,7 +1574,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // reads it only when it removes one, so two present declarations of
   // one account are the same state whatever it says — a field that
   // cannot affect the state does not belong to its fingerprint.
-  ["user"] = (s) -> fields(List(s.user, optional(s.shell), optional(s.home), optional(s.group), if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList())), if (s.uid == null) "-" else "\(s.uid)", "\(s.system)", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
+  ["user"] = (s) -> fields(List(s.user, if (s.state == "present") optional(s.shell) else "-", optional(s.home), optional(s.group), if (s.state == "present") (if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList()))) else "-", if (s.uid == null) "-" else "\(s.uid)", if (s.state == "present") "\(s.system)" else "-", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
   ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
@@ -1533,7 +1616,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // so a step that manages that path declares a second state for it —
   // whichever runs later wins, and the other fails. The spool is
   // claimed like the removed one, whose path the removal deletes.
-  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") + List("/var/mail/\(s.user)") else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + List("/var/mail/\(s.user)") else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") + mailSpools(s.user) else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + mailSpools(s.user) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
   // An explicit gid is a managed thing of its own, the way a uid is.
   ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")
