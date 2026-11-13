@@ -1,0 +1,1 @@
+greeting = read("modulepath:/res.txt").text
