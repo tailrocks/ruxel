@@ -5,6 +5,7 @@
 use super::*;
 
 mod changes;
+mod collisions;
 mod creation;
 mod homes;
 mod parsing;

@@ -63,11 +63,16 @@ pub(super) fn removal_allowed(
 /// Whether the agent may remove the group of host gid `host_gid`. The
 /// root group (GID 0) is the host's to keep whatever it is named, and a
 /// declared gid must match the host's: the host entry, not the workflow
-/// value, is what deletion acts on.
+/// value, is what deletion acts on. A group a live account holds as its
+/// primary group is the account's to keep: `groupdel` refuses to delete
+/// a primary group without `--force`, which this removal does not pass,
+/// so the refusal comes before the utility runs — in check mode as much
+/// as in apply.
 pub(super) fn group_removal_allowed(
     name: &str,
     declared: Option<u64>,
     host_gid: u64,
+    primary_holder: Option<&str>,
 ) -> Result<(), String> {
     if host_gid == 0 {
         return Err(format!(
@@ -81,7 +86,82 @@ pub(super) fn group_removal_allowed(
             "group: refusing to remove {name}: the host gid {host_gid} is not the declared {want}"
         ));
     }
+    if let Some(holder) = primary_holder {
+        return Err(format!(
+            "group: refusing to remove {name}: the account {holder} has it as its primary group, and groupdel needs --force to remove it"
+        ));
+    }
     Ok(())
+}
+
+/// The live account that holds `gid` as its primary group: the passwd
+/// database's entry with that number in its group field. The account is
+/// the group's to keep — `groupdel` refuses to delete a primary group
+/// without `--force` — so the removal reads it before it runs.
+pub(super) fn primary_group_holder(gid: u64) -> Result<Option<String>, String> {
+    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    Ok(primary_group_holder_from(&passwd, gid))
+}
+
+/// The passwd counterpart of [`primary_group_holder`], over canned
+/// content.
+pub(super) fn primary_group_holder_from(passwd: &str, gid: u64) -> Option<String> {
+    for line in passwd.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 4 && f[3].parse::<u64>() == Ok(gid) {
+            return Some(f[0].to_string());
+        }
+    }
+    None
+}
+
+/// The account that holds `uid` on the host and that the plan has not
+/// removed: `useradd -u` and `usermod -u` refuse a number another
+/// account holds, so the request is checked against the live database —
+/// but a number the plan's own earlier removal frees is no collision,
+/// because that removal really takes the account away.
+pub(super) fn uid_holder_in_use(uid: u64, name: &str) -> Result<Option<String>, String> {
+    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    Ok(uid_holder_in_use_from(&passwd, uid, name))
+}
+
+/// The passwd counterpart of [`uid_holder_in_use`], over canned content.
+pub(super) fn uid_holder_in_use_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
+    super::entries::uid_holder_from(passwd, uid, name).filter(|account| !account_removed(account))
+}
+
+/// The group that holds `gid` on the host and that the plan has not
+/// removed: `groupadd -g` and `groupmod -g` refuse a number another
+/// group holds, and a group the plan's own earlier removal frees is no
+/// collision.
+pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, String> {
+    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    Ok(gid_holder_in_use_from(&groups, gid, name))
+}
+
+/// The group counterpart of [`uid_holder_in_use`], over canned content.
+pub(super) fn gid_holder_in_use_from(groups: &str, gid: u64, name: &str) -> Option<String> {
+    super::entries::gid_holder_from(groups, gid, name).filter(|group| !group_removed(group))
+}
+
+/// Whether the plan provides the named group: the host's group database
+/// has it, it is a number the host may take as it is, or an earlier task
+/// of the plan declares it present — check mode runs no `groupadd`, so
+/// the plan's own record is what a later step resolves against. A group
+/// no task provides is refused here the way apply refuses it: the
+/// identical apply deterministically fails with `group ... not found`,
+/// and the dry run must report that instead of a valid planned change.
+pub(super) fn group_provided(group: &str, check_mode: bool) -> Result<(), String> {
+    if group.parse::<u32>().is_ok() {
+        return Ok(());
+    }
+    if super::group_entry(group)?.is_some() {
+        return Ok(());
+    }
+    if check_mode && planned::holds(group) {
+        return Ok(());
+    }
+    Err(format!("group {group:?} not found"))
 }
 
 /// `userdel -r` deletes the account's live home and mail spool whatever
@@ -156,6 +236,8 @@ mod planned {
 
     thread_local! {
         static GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+        static REMOVED_ACCOUNTS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+        static REMOVED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     }
 
     pub(super) fn note(name: &str) {
@@ -173,6 +255,31 @@ mod planned {
     pub(super) fn holds(name: &str) -> bool {
         GROUPS.with(|groups| groups.borrow().contains(name))
     }
+
+    /// The plan's record of an account it has removed: the number the
+    /// account held is free for whatever the plan claims next, although
+    /// the host's database still lists it while check mode runs.
+    pub(super) fn note_removed_account(name: &str) {
+        REMOVED_ACCOUNTS.with(|accounts| {
+            accounts.borrow_mut().insert(name.to_string());
+        });
+    }
+
+    pub(super) fn account_removed(name: &str) -> bool {
+        REMOVED_ACCOUNTS.with(|accounts| accounts.borrow().contains(name))
+    }
+
+    /// The plan's record of a group it has removed: the number the
+    /// group held is free for whatever the plan claims next.
+    pub(super) fn note_removed_group(name: &str) {
+        REMOVED_GROUPS.with(|groups| {
+            groups.borrow_mut().insert(name.to_string());
+        });
+    }
+
+    pub(super) fn group_removed(name: &str) -> bool {
+        REMOVED_GROUPS.with(|groups| groups.borrow().contains(name))
+    }
 }
 
 /// Whether the plan has declared the group present: the record an
@@ -185,6 +292,32 @@ pub(super) fn note_planned_group(name: &str) {
 /// The record's counterpart when the plan removes the group.
 pub(super) fn forget_planned_group(name: &str) {
     planned::forget(name);
+}
+
+/// The plan's record of the account it has removed: the number the
+/// account held is free for whatever the plan claims next. Check mode
+/// runs no `userdel`, so the host's database still lists the account
+/// while the plan knows it is gone.
+pub(super) fn note_removed_account(name: &str) {
+    planned::note_removed_account(name);
+}
+
+/// Whether the plan has removed the account: a holder the plan took
+/// away holds no number, so it is no collision.
+pub(super) fn account_removed(name: &str) -> bool {
+    planned::account_removed(name)
+}
+
+/// The plan's record of the group it has removed: the number the group
+/// held is free for whatever the plan claims next.
+pub(super) fn note_removed_group(name: &str) {
+    planned::note_removed_group(name);
+}
+
+/// Whether the plan has removed the group: a holder the plan took away
+/// holds no number, so it is no collision.
+pub(super) fn group_removed(name: &str) -> bool {
+    planned::group_removed(name)
 }
 
 /// Whether the account's claimed private group is missing on the host:

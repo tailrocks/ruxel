@@ -36,13 +36,19 @@ fn groups_reject_scalars_and_non_string_entries() {
             .is_err()
         );
     }
-    assert!(
-        run(
-            &json!({"name":"ruxel-synthetic-user", "groups":["wheel", "docker"]}),
-            &ctx
-        )
-        .is_ok()
-    );
+    // The named groups must resolve for the plan to report a creation,
+    // so the names are the host's own: what this test is about is the
+    // parameter's shape, not the group's existence.
+    let host = std::fs::read_to_string("/etc/group").unwrap();
+    let live: Vec<String> = host
+        .lines()
+        .filter_map(|line| line.split(':').next().map(str::to_string))
+        .filter(|name| !name.is_empty() && !name.starts_with('#'))
+        .filter(|name| group_entry(name).is_ok_and(|entry| entry.is_some()))
+        .take(2)
+        .collect();
+    assert!(live.len() == 2, "the host must have two groups");
+    assert!(run(&json!({"name":"ruxel-synthetic-user", "groups":live}), &ctx).is_ok());
 }
 
 #[test]

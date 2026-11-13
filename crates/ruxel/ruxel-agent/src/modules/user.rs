@@ -12,10 +12,7 @@ use shell::shell_allowed;
 mod entries;
 mod home;
 mod shell;
-use entries::{
-    PasswdEntry, gid_holder, group_entry, groups_need_update, passwd_entry, supplementary_groups,
-    uid_holder,
-};
+use entries::{PasswdEntry, group_entry, groups_need_update, passwd_entry, supplementary_groups};
 #[cfg(test)]
 use entries::{
     gid_holder_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
@@ -45,8 +42,10 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                     // The number must be free on the host:
                     // `groupmod -g` refuses a number another group
                     // holds, so the plan must say so before the
-                    // change, in check mode as much as in apply.
-                    if let Some(holder) = gid_holder(want, name)? {
+                    // change, in check mode as much as in apply. A
+                    // group the plan's own earlier removal freed holds
+                    // no number, so it is no collision.
+                    if let Some(holder) = gid_holder_in_use(want, name)? {
                         return Err(format!(
                             "group: refusing to change the gid of {name} to {want}: the group {holder} holds that number"
                         ));
@@ -58,9 +57,11 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                 }
             } else {
                 // The number must be free on the host: `groupadd -g`
-                // refuses a number another group holds.
+                // refuses a number another group holds. A group the
+                // plan's own earlier removal freed holds no number, so
+                // it is no collision.
                 if let Some(want) = gid
-                    && let Some(holder) = gid_holder(want, name)?
+                    && let Some(holder) = gid_holder_in_use(want, name)?
                 {
                     return Err(format!(
                         "group: refusing to create {name} with gid {want}: the group {holder} holds that number"
@@ -82,11 +83,24 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
         }
         "absent" => {
             if let Some((_, current_gid)) = entry {
-                group_removal_allowed(name, gid, current_gid)?;
+                // A group a live account holds as its primary group is
+                // the account's to keep: `groupdel` refuses to delete
+                // one without `--force`, so the refusal comes before
+                // the utility runs, in check mode as much as in apply.
+                group_removal_allowed(
+                    name,
+                    gid,
+                    current_gid,
+                    primary_group_holder(current_gid)?.as_deref(),
+                )?;
                 changed = true;
                 if !ctx.check_mode {
                     run_cmd("groupdel", &[name])?;
                 }
+                // The removal frees the number for whatever the plan
+                // claims next, although the host's database still lists
+                // the group while check mode runs.
+                note_removed_group(name);
             }
         }
         other => return Err(format!("group: state {other:?} outside the closed surface")),
@@ -105,9 +119,11 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 
 mod guards;
 use guards::{
-    forget_planned_group, group_change_allowed, group_removal_allowed, identity_change_allowed,
-    note_planned_group, planned_gid, primary_group_name, private_group_missing, removal_allowed,
-    removal_home_allowed, removal_primary_group_allowed,
+    forget_planned_group, gid_holder_in_use, group_change_allowed, group_provided,
+    group_removal_allowed, identity_change_allowed, note_planned_group, note_removed_account,
+    note_removed_group, planned_gid, primary_group_holder, primary_group_name,
+    private_group_missing, removal_allowed, removal_home_allowed, removal_primary_group_allowed,
+    uid_holder_in_use,
 };
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -172,6 +188,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // The removal takes the account's empty same-name group with
         // it, so the plan's record goes the way of the host's.
         forget_planned_group(name);
+        if changed {
+            // The removal frees the number for whatever the plan claims
+            // next: check mode runs no `userdel`, so the host's
+            // database still lists the account while the plan knows it
+            // is gone.
+            note_removed_account(name);
+        }
         return Ok(json!({"changed": changed, "failed": false, "name": name, "state": "absent"}));
     }
 
@@ -204,13 +227,30 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     match entry {
         None => {
             changed = true;
+            // The named groups must exist: `useradd` refuses an
+            // unresolved `-g` or `-G` name, so the plan must resolve
+            // every declared group through the live and planned group
+            // state before it reports a creation, in check mode as much
+            // as in apply — the dry run may not report a change that
+            // cannot succeed.
+            if let Some(g) = group {
+                group_provided(g, ctx.check_mode)
+                    .map_err(|error| format!("user: refusing to create {name}: {error}"))?;
+            }
+            if let Some(gs) = &groups {
+                for g in gs {
+                    group_provided(g, ctx.check_mode)
+                        .map_err(|error| format!("user: refusing to create {name}: {error}"))?;
+                }
+            }
             // The number must be free on the host: `useradd -u`
             // refuses a number another account holds, so the plan
             // must say so before the creation, in check mode as much
             // as in apply — the dry run may not report a change that
-            // cannot succeed.
+            // cannot succeed. An account the plan's own earlier
+            // removal freed holds no number, so it is no collision.
             if let Some(u) = uid
-                && let Some(holder) = uid_holder(u, name)?
+                && let Some(holder) = uid_holder_in_use(u, name)?
             {
                 return Err(format!(
                     "user: refusing to create {name} with uid {u}: the account {holder} holds that number"
@@ -294,8 +334,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 // The number must be free on the host: `usermod -u`
                 // refuses a number another account holds, so the plan
                 // must say so before the change, in check mode as much
-                // as in apply.
-                if let Some(holder) = uid_holder(u, name)? {
+                // as in apply. An account the plan's own earlier
+                // removal freed holds no number, so it is no collision.
+                if let Some(holder) = uid_holder_in_use(u, name)? {
                     return Err(format!(
                         "user: refusing to change the uid of {name} to {u}: the account {holder} holds that number"
                     ));
@@ -330,6 +371,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             if let Some(gs) = &groups {
                 let current_groups = supplementary_groups(name)?;
                 if groups_need_update(&current_groups, gs, append) {
+                    // The named groups must exist: `usermod -G`
+                    // resolves the list against the host and fails on
+                    // an unresolved name, so the plan must resolve
+                    // every declared group before it reports the
+                    // change.
+                    for g in gs {
+                        group_provided(g, ctx.check_mode)
+                            .map_err(|error| format!("user: refusing to change {name}: {error}"))?;
+                    }
                     groups_s = gs.join(",");
                     if append {
                         args.push("-a");
