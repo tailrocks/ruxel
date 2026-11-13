@@ -71,6 +71,7 @@ fn a_declared_home_directory_is_reconciled() {
 
 #[test]
 fn a_declared_shell_must_exist_and_be_executable() {
+    use std::os::unix::fs::PermissionsExt;
     let ctx = ExecContext {
         check_mode: true,
         diff_mode: false,
@@ -95,6 +96,26 @@ fn a_declared_shell_must_exist_and_be_executable() {
     )
     .expect_err("a non-executable shell must be refused");
     assert!(error.contains("shell"), "{error}");
+    // The owner-execute bit serves only the file's owner: at mode 0100
+    // the account still cannot run the shell — Unix selects the
+    // permission class by the caller's identity — so the conservative
+    // other-execute bit is the one that admits it.
+    std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o100)).unwrap();
+    let error = run(
+        &json!({"name":"ruxel-synthetic-user", "shell":probe.to_str().unwrap()}),
+        &ctx,
+    )
+    .expect_err("an owner-execute-only shell must be refused");
+    assert!(error.contains("shell"), "{error}");
+    std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o001)).unwrap();
+    assert!(
+        run(
+            &json!({"name":"ruxel-synthetic-user", "shell":probe.to_str().unwrap()}),
+            &ctx
+        )
+        .is_ok(),
+        "an other-executable shell must be accepted"
+    );
     std::fs::remove_file(&probe).unwrap();
     assert!(
         run(
@@ -265,7 +286,11 @@ fn the_creation_passes_the_claimed_home_explicitly() {
     // The lowering's footprint reserves `/home/<name>` where the step
     // names no home, and `useradd` must put the account there: the host's
     // configured base directory (`useradd -D`) is not the modeled one,
-    // so the home is passed explicitly, declared or not.
+    // so the home is passed explicitly, declared or not. And the same
+    // claimed path is the one creation reconciles: `useradd -m` leaves a
+    // pre-existing directory's ownership untouched, so `ensure_home`
+    // runs against it whether the step declared the home or the
+    // footprint's default is the claim.
     assert_eq!(super::super::claimed_home(None, "alice"), "/home/alice");
     assert_eq!(
         super::super::claimed_home(Some("/srv/alice"), "alice"),
