@@ -27,6 +27,7 @@ fn commands_that_run_invalidate_package_and_unit_snapshots() {
             None,
             &context(false),
             &mut state,
+            &[],
         );
         assert_ne!(outcome.status, "skipped", "{module} {params}");
         assert!(state.test_packages_invalidated(), "{module} {params}");
@@ -41,7 +42,15 @@ fn check_mode_commands_keep_the_snapshots() {
         ("shell", json!({}), "true"),
     ] {
         let mut state = SystemState::with_test_units();
-        let _skipped = super::execute(module, &params, free_form, None, &context(true), &mut state);
+        let _skipped = super::execute(
+            module,
+            &params,
+            free_form,
+            None,
+            &context(true),
+            &mut state,
+            &[],
+        );
         assert!(!state.test_packages_invalidated(), "{module}");
         assert!(!state.test_units_invalidated(), "{module}");
     }
@@ -57,6 +66,7 @@ fn modules_that_cannot_change_packages_or_units_keep_the_snapshots() {
         None,
         &context(false),
         &mut state,
+        &[],
     );
     assert!(!state.test_packages_invalidated());
     assert!(!state.test_units_invalidated());
