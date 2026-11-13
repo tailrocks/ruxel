@@ -1,0 +1,19 @@
+// expect: names itself as a supplementary group
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The private group of an account is created with it (`useradd -U`),
+// after `useradd` has resolved the supplementary list: `useradd -U -G
+// alice alice` resolves `alice` for `-G` before the private group exists
+// and fails (rc 6), so an account whose group is its private one cannot
+// list its own name among its supplementary groups.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; groups = new Listing { "alice" } }
+    }
+  }
+}

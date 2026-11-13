@@ -197,6 +197,12 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-remove-home-mail.pkl",
     "invalid/linux-group-ensured-before-user-removal.pkl",
     "invalid/linux-sysctl-name-dot-component.pkl",
+    "invalid/linux-sysctl-path-run.pkl",
+    "invalid/linux-user-private-group-as-supplementary.pkl",
+    "invalid/linux-user-shell-not-executable.pkl",
+    "invalid/linux-user-uid-across-stages.pkl",
+    "invalid/linux-group-gid-across-stages.pkl",
+    "valid/linux-user-uid-reused-after-removal.pkl",
 ];
 
 /// The official `pkl` binary.

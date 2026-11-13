@@ -221,3 +221,67 @@ fn a_declared_home_that_is_a_symlink_is_refused_never_chowned() {
     std::fs::remove_file(&link).unwrap();
     std::fs::remove_dir_all(&target).unwrap();
 }
+
+#[test]
+fn a_home_lookup_error_beyond_not_found_is_refused_before_the_account_changes() {
+    // `/srv/file/alice` where `/srv/file` is a regular file: the lookup
+    // fails `NotADirectory` on an ancestor — not a missing home. Taking
+    // the catch-all for usable would let `usermod -d` move the passwd
+    // field before `ensure_home` reports the filesystem error, leaving a
+    // partially applied account after failure: only `NotFound` is
+    // usable, and every other lookup error propagates before any
+    // mutation.
+    let dir = std::env::temp_dir().join(format!("ruxel-home-notdir-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("f");
+    std::fs::write(&file, b"").unwrap();
+    let nested = dir.join("f/alice");
+    let error = super::super::home_usable(nested.to_str().unwrap())
+        .expect_err("NotADirectory must not be usable");
+    assert!(error.contains("home"), "{error}");
+    // The same path through the operation is refused before the account
+    // is touched, in both modes.
+    for check_mode in [true, false] {
+        let ctx = ExecContext {
+            check_mode,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        };
+        let error = run(
+            &json!({"name":"ruxel-synthetic-user", "home":nested.to_str().unwrap()}),
+            &ctx,
+        )
+        .expect_err("a home under a regular file must be refused before the account changes");
+        assert!(error.contains("home"), "{error}");
+    }
+    std::fs::remove_file(&file).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}
+
+#[test]
+fn the_creation_passes_the_claimed_home_explicitly() {
+    // The lowering's footprint reserves `/home/<name>` where the step
+    // names no home, and `useradd` must put the account there: the host's
+    // configured base directory (`useradd -D`) is not the modeled one,
+    // so the home is passed explicitly, declared or not.
+    assert_eq!(super::super::claimed_home(None, "alice"), "/home/alice");
+    assert_eq!(
+        super::super::claimed_home(Some("/srv/alice"), "alice"),
+        "/srv/alice"
+    );
+}
+
+#[test]
+fn an_existing_account_reconciles_its_claimed_private_group() {
+    // A step that names no primary group claims the account's same-name
+    // group — the footprint reserves it and the lowering's ordering
+    // advertises it as provided — so an existing account creates it when
+    // missing (`useradd -U` covers only the creation branch): a
+    // dependent operation naming the group would otherwise fail to
+    // resolve it.
+    assert!(super::super::private_group_missing(None, false));
+    assert!(!super::super::private_group_missing(None, true));
+    assert!(!super::super::private_group_missing(Some("staff"), false));
+}

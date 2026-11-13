@@ -8,13 +8,18 @@ use std::os::unix::fs::MetadataExt;
 /// file, so the path is validated before any mutation — a refused apply
 /// must leave the account as it was. A symlink is refused whatever it
 /// targets: a home in an attacker-writable parent must never be
-/// followed to a directory the account does not own.
+/// followed to a directory the account does not own. Only a missing path
+/// is usable: any other lookup error — an ancestor that is a regular
+/// file (`NotADirectory`), a permission refusal — propagates before any
+/// mutation, for `usermod -d` would otherwise move the passwd field
+/// first and leave a partially applied account behind.
 pub(super) fn home_usable(home: &str) -> Result<(), String> {
     match std::fs::symlink_metadata(home) {
         Ok(meta) if meta.is_symlink() => Err(format!("user: home {home} exists and is a symlink")),
         Ok(meta) if meta.is_dir() => Ok(()),
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
-        Err(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("user: home {home}: {error}")),
     }
 }
 

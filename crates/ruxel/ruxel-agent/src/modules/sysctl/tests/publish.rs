@@ -1,0 +1,136 @@
+//! The publish side: the target is proved publishable before the live
+//! value is touched — but the probe runs only where the file needs
+//! replacement — and a boot-shadowed file is refused outright.
+
+use serde_json::json;
+
+#[test]
+fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_write() {
+    // `sysctl -w` would succeed first and the later publish fail,
+    // leaving the kernel changed with no persistent entry behind it:
+    // the target is validated before the live value is touched, so
+    // the refusal names the persistence file, not the live read.
+    let path = std::env::temp_dir().join(format!(
+        "ruxel-sysctl-missing-parent-{}/x.conf",
+        std::process::id()
+    ));
+    let ctx = super::super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let error = super::super::run(
+        &json!({"name":"ruxel.missing.key", "value":"1", "sysctl_file":path, "sysctl_set":true, "reload":false}),
+        &ctx,
+    )
+    .expect_err("an unpublishable persistence target must be refused");
+    assert!(error.contains("persist"), "{error}");
+}
+
+#[test]
+fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
+    // The probe is a write of its own (`.ruxel-sysctl-preflight-<pid>` in
+    // the file's directory): an idempotent no-op on a target that is
+    // never published to must not fail it — the file already holds the
+    // entry, so nothing is written even where the directory refuses
+    // writes. Where the file DOES need replacement the probe still runs
+    // before anything is published.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-probe-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.conf");
+    // A directory where the probe file would go: `create_new` fails on it
+    // whatever the user may write, so the probe is loud.
+    let blocker = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
+    std::fs::create_dir_all(&blocker).unwrap();
+    let ctx = super::super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    // No replacement needed: the apply succeeds despite the probe being
+    // impossible.
+    std::fs::write(&path, "net.test=1\n").unwrap();
+    super::super::run(
+        &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
+        &ctx,
+    )
+    .expect("an idempotent no-op must not probe publishability");
+    // Replacement needed: the probe runs and its refusal is loud, before
+    // anything is published.
+    std::fs::write(&path, "net.test=2\n").unwrap();
+    let error = super::super::run(
+        &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
+        &ctx,
+    )
+    .expect_err("a needed replacement must prove the target publishable");
+    assert!(error.contains("persist"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "net.test=2\n",
+        "a refused publish must leave the file untouched"
+    );
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_dir(&blocker).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+}
+
+#[test]
+fn a_shadowed_persistence_file_is_refused() {
+    // sysctl(8) applies one file name once, from the highest-precedence
+    // directory: the same name in a higher directory shadows the managed
+    // file at boot, so the entry would revert.
+    assert_eq!(
+        super::super::shadow_candidates("/usr/lib/sysctl.d/50-ruxel.conf"),
+        vec![
+            "/etc/sysctl.d/50-ruxel.conf".to_string(),
+            "/run/sysctl.d/50-ruxel.conf".to_string()
+        ]
+    );
+    assert_eq!(
+        super::super::shadow_candidates("/run/sysctl.d/50-ruxel.conf"),
+        vec!["/etc/sysctl.d/50-ruxel.conf".to_string()]
+    );
+    // The highest-precedence directory is never shadowed, and a path
+    // outside the system directories is out of the boot surface entirely
+    // (the type refuses it before the agent runs).
+    assert_eq!(
+        super::super::shadow_candidates("/etc/sysctl.d/50-ruxel.conf"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        super::super::shadow_candidates("/etc/sysctl.conf"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_refused_live_value_leaves_the_persistence_file_untouched() {
+    let path = std::env::temp_dir().join(format!("ruxel-sysctl-order-{}", std::process::id()));
+    std::fs::write(&path, "net.test=1\n").unwrap();
+    let ctx = super::super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    // The key is absent from this host's kernel (and from any /proc on
+    // a non-Linux test host): the live write is refused, and the
+    // refusal must not leave a new invalid assignment behind in the
+    // persistence file.
+    let result = super::super::run(
+        &json!({"name":"ruxel.missing.key", "value":"2", "sysctl_file":path, "sysctl_set":true, "reload":false}),
+        &ctx,
+    );
+    assert!(result.is_err(), "{result:?}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "net.test=1\n",
+        "a failed live reconciliation must not publish the entry"
+    );
+    std::fs::remove_file(path).unwrap();
+}
