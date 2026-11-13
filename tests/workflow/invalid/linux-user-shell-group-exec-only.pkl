@@ -1,0 +1,21 @@
+// expect: which does not make it executable
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The managed shell file at mode 0750 is executable for its owner and
+// its group only: the account logs in as itself, and Unix picks the
+// permission class by the caller's identity, so a root-owned 0750 shell
+// leaves the account unable to execute it. Lowering and the account's
+// task both require the other-execute bit — the one class that applies
+// whatever the file's owner and group are.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/esh"; content = "#!/bin/sh\n"; mode = "0750" }
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}
