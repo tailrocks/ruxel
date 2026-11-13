@@ -221,6 +221,11 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-sysctl-boot-order-later-stage.pkl",
     "invalid/linux-user-shell-owner-execute-only.pkl",
     "valid/linux-user-uid-reuse-split-removals.pkl",
+    "invalid/linux-sysctl-file-later-stage.pkl",
+    "invalid/linux-user-shell-is-home.pkl",
+    "invalid/linux-user-shell-is-default-home.pkl",
+    "invalid/linux-sysctl-boot-order-legacy.pkl",
+    "valid/linux-user-removal-keeps-non-primary-group.pkl",
 ];
 
 /// The official `pkl` binary.

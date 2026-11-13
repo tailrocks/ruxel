@@ -122,6 +122,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + indexPlanningAcrossStages(_stages, _indexes)
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes)
+    + sysctlOwnersAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
@@ -214,6 +215,28 @@ function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>):
   positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
     .flatMap((m) -> bootClash(_stages[n], _indexes[n], _stages[m], _indexes[m])))
 
+/// A sysctl step manages the entries of its persistence file, never the
+/// file itself, so a later overlapping-host stage that writes the same
+/// path whole — a `File`, a `Symlink`, a checkout, an apt repository's
+/// source — replaces the file wholesale and removes the entry the
+/// earlier stage persists there: every apply re-clobbers it and the next
+/// boot loads the rewritten file without the parameter, though the live
+/// value still follows the stages. The direction is the point: a
+/// whole-file write before the sysctl leaves the entry in place (the
+/// sysctl adds its entry to whatever file is there), while one after it
+/// removes the entry again. The comparison is per host: stages on
+/// disjoint hosts never share a file system.
+function sysctlOwnersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])))
+
+/// The refusals for the entries a later stage's whole-file writes
+/// overwrite.
+function overwrittenEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  sysctlsOf(ia).flatMap((x) -> positions(ib.steps)
+    .filter((j) -> !(ib.steps[j] is linux.Sysctl) && paths(ib.steps[j]).contains(x.path))
+    .map((j) -> "'\(name(x))' of stage \"\(a.title)\" keeps its entry in the file \(x.path), and '\(name(ib.steps[j]))' of stage \"\(b.title)\" writes the whole file after it, which removes the entry again; a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the whole-file step into a stage before it"))
+
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
     .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
@@ -229,12 +252,14 @@ function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex)
 /// one name resolved in several directories is applied by directory
 /// precedence, `/usr/lib` before `/run` before `/etc`, so the `/etc`
 /// copy is applied last and wins. `/etc/sysctl.conf` loads after all of
-/// them. The key spells that order: the file name first, the directory's
-/// rank behind a separator nothing in a file name carries, and the
-/// legacy file last.
+/// them. The key spells that order: an explicit rank first — the legacy
+/// file above every directory file, whatever name a valid file name
+/// carries (any character but `/` and NUL, so no character stands for
+/// the rank) — then the file name, the directory's rank behind a
+/// separator nothing in a file name carries.
 const function bootOrder(path: String): String =
-  if (path == "/etc/sysctl.conf") "\u{7f}"
-  else path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "2" else if (path.startsWith("/run/sysctl.d/")) "1" else "0")
+  if (path == "/etc/sysctl.conf") "1\u{0}"
+  else "0\u{0}" + path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "2" else if (path.startsWith("/run/sysctl.d/")) "1" else "0")
 
 const function sysctlsOf(ix: StageIndex): List<core.Step> = ix.steps.filter((s) -> s is linux.Sysctl)
 
@@ -763,13 +788,18 @@ function groupRels(ix: StageIndex, i: Int): List<String> =
     .flatMap((j) -> groupRel(ix, i, j, n)))
   // The inverse removal dependency: groupdel refuses a group that is
   // still an account's primary group, so the account removal runs first.
-  // And `userdel` removes the account's empty same-name group whatever
-  // its primary group is: a same-stage step that ensures that group must
-  // not run before the removal that deletes it again.
+  // And `userdel` removes the account's empty same-name group where that
+  // group is the account's primary group: a same-stage step that ensures
+  // that group must not run before the removal that deletes it again.
+  // A removal that declares another primary group leaves the same-name
+  // group behind — `userdel` reports "group alice not removed because it
+  // is not the primary group of user alice" — so the restriction is
+  // exactly the removals whose declared primary group is the same-name
+  // one.
   else (primaryGroup(u).flatMap((n) -> positions(ix.steps)
     .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == n && ix.steps[j].state == "absent")
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) removes the group \(n) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account that keeps it as its primary group; list the account removal first")))
-    + (positions(ix.steps)
+    + (if (!primaryGroup(u).contains(u.user)) List() else positions(ix.steps)
     .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == u.user && ix.steps[j].state == "present")
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) ensures the group \(u.user) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account, which deletes its empty same-name group; list the account removal first"))
 

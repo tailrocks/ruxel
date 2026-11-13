@@ -1,0 +1,22 @@
+// `userdel` removes the account's same-name group only where that group
+// is the account's primary group: an account that declares the primary
+// group `staff` leaves the group `alice` behind — the isolated run
+// reports "group alice not removed because it is not the primary group
+// of user alice" — so the earlier same-stage Group step's state
+// survives the removal and this ordered workflow is valid. The
+// same-name primary (or claimed) case is refused — see
+// linux-group-ensured-before-user-removal.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "alice" }
+      new linux.User { user = "alice"; uid = 1500; group = "staff"; state = "absent" }
+    }
+  }
+}

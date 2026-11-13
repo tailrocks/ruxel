@@ -1,0 +1,19 @@
+// expect-pkl: Type constraint `this == null || state != "present" || this != (home ?? "/home/\(user)")` violated.
+// expect-pklr: property 'shell' expected FilePath?(... ), got String
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The home is a directory the account's task creates and uses; the
+// shell must be a regular executable file the account's task verifies.
+// One path cannot be both, so every possible host state fails one of
+// the two verifications even though the schema admits the declaration.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; shell = "/home/alice"; home = "/home/alice" }
+    }
+  }
+}

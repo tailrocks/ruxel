@@ -1,0 +1,20 @@
+// expect-pkl: Type constraint `this == null || state != "present" || this != (home ?? "/home/\(user)")` violated.
+// expect-pklr: property 'shell' expected FilePath?(... ), got String
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The implicit combination: a present account that states no home still
+// gets one created (`useradd -m`, the usual `/home` base), so
+// `/home/alice` is the claimed home like an explicit one — and a shell
+// at that very path must be both the home directory and a regular
+// executable file.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; shell = "/home/alice" }
+    }
+  }
+}
