@@ -122,11 +122,14 @@ typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*
 typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
 
 /// A sysctl persistence file: one the system loader reads at boot —
-/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d`, `/run/sysctl.d` or
+/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
 /// `/usr/lib/sysctl.d`, the recognized configuration files `sysctl
-/// --system` loads. A file elsewhere is written but never read again: the
-/// parameter silently reverts after reboot.
-typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|run|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
+/// --system` loads. `/run/sysctl.d` is recognized too, but `/run` is
+/// volatile runtime state (tmpfs), normally cleared at reboot, so a file
+/// written there is gone before the next boot's sysctl loading — it is
+/// not a persistence path. A file elsewhere is written but never read
+/// again: the parameter silently reverts after reboot.
+typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
 
 class Timezone extends core.Step {
   hidden fixed kind = "timezone"
@@ -152,10 +155,12 @@ class Sysctl extends core.Step {
   name: SysctlName
   value: SysctlValue
   /// The file that holds the entry: a file the system loader reads at
-  /// boot — `/etc/sysctl.conf` or a `*.conf` of the system's sysctl
-  /// directories — which the agent reads and rewrites atomically. A file
-  /// elsewhere would never be loaded again, so the parameter silently
-  /// reverts after reboot.
+  /// boot — `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
+  /// `/usr/lib/sysctl.d`, which the agent reads and rewrites atomically.
+  /// `/run/sysctl.d` is out: `/run` is volatile runtime state (tmpfs), so
+  /// the entry would be gone before the next boot's sysctl loading. A
+  /// file elsewhere would never be loaded again either, so the parameter
+  /// silently reverts after reboot.
   path: SysctlFile = "/etc/sysctl.d/90-ruxel.conf"
 }
 

@@ -96,8 +96,8 @@ fn group_entry_from(content: &str, name: &str) -> Result<Option<(String, u64)>, 
 
 mod guards;
 use guards::{
-    group_change_allowed, group_removal_allowed, identity_change_allowed, removal_allowed,
-    removal_home_allowed,
+    group_change_allowed, group_removal_allowed, identity_change_allowed, primary_group_name,
+    removal_allowed, removal_home_allowed, removal_primary_group_allowed,
 };
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -113,6 +113,27 @@ pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
 /// `USERGROUPS_ENAB` setting.
 fn private_group_flag(group: Option<&str>) -> Option<&'static str> {
     if group.is_none() { Some("-U") } else { None }
+}
+
+/// The home `useradd` creates for an account: the declared one, or the
+/// `/home/<name>` the lowering's footprint reserves. The base directory
+/// is host configuration (`useradd -D`), so the creation passes the home
+/// explicitly: `useradd -m` without `-d` would put it wherever the
+/// host's configured base points, and a same-stage file at the reserved
+/// path would collide with account creation.
+fn claimed_home(home: Option<&str>, name: &str) -> String {
+    home.map_or_else(|| format!("/home/{name}"), str::to_string)
+}
+
+/// Whether the account's claimed private group is missing on the host:
+/// a step that names no primary group claims the same-name group — the
+/// footprint model reserves it and the lowering's group ordering
+/// advertises it as provided — and `useradd -U` reconciles that claim
+/// only where the account is created. An existing account reconciles it
+/// too, or a dependent `useradd -G alice bob` fails to resolve the group
+/// where the account predates the workflow.
+fn private_group_missing(group: Option<&str>, group_exists: bool) -> bool {
+    group.is_none() && !group_exists
 }
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -145,12 +166,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // The deletion verifies the host entry, not the workflow value:
         // see `removal_allowed`. A recursive removal deletes the live
         // home whatever the workflow names, so the declared one must be
-        // it: see `removal_home_allowed`.
+        // it: see `removal_home_allowed`. And the removal's primary
+        // group must be the live one: see `removal_primary_group_allowed`.
         let home = str_param(obj, "home");
         let remove = bool_param(obj, "remove", false);
         if let Some(current) = &entry {
             removal_allowed(name, uid, current)?;
             removal_home_allowed(name, home, remove, &current.home)?;
+            removal_primary_group_allowed(
+                name,
+                str_param(obj, "group"),
+                primary_group_name(current.gid)?.as_deref(),
+            )?;
         }
         let changed = entry.is_some();
         if changed && !ctx.check_mode {
@@ -205,10 +232,9 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     args.push("-G");
                     args.push(&groups_s);
                 }
-                if let Some(h) = home {
-                    args.push("-d");
-                    args.push(h);
-                }
+                let home_s = claimed_home(home, name);
+                args.push("-d");
+                args.push(&home_s);
                 if create_home {
                     args.push("-m");
                 } else {
@@ -236,6 +262,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
         Some(current) => {
+            // The step's footprint claims the account's private group
+            // whenever it names no primary group, and the lowering's
+            // group ordering advertises it as provided: an existing
+            // account reconciles that claim — `useradd -U` only covers
+            // the creation branch, and a dependent operation naming the
+            // group would fail to resolve it.
+            if private_group_missing(group, group_entry(name)?.is_some()) {
+                changed = true;
+                if !ctx.check_mode {
+                    run_cmd("groupadd", &[name])?;
+                }
+            }
             let uid_s;
             let mut args: Vec<&str> = Vec::new();
             if let Some(u) = uid
