@@ -208,6 +208,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     match entry {
         None => {
             changed = true;
+            let claimed = claimed_home(home, name);
+            // Validated before `useradd`: a refused apply leaves the
+            // host as it was, and `-m` would create through a symlink.
+            home_usable(&claimed)?;
             if !ctx.check_mode {
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
@@ -250,14 +254,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 }
                 args.push(name);
                 run_cmd("useradd", &args)?;
-                // `useradd -m` creates the home only when it is missing:
-                // a pre-existing directory keeps whatever ownership it
-                // had, so the declared home is reconciled after creation
-                // with the account's final identity.
-                if let Some(h) = home
-                    && let Some(created) = passwd_entry(name)?
-                {
-                    ensure_home(h, created.uid, created.gid, ctx.check_mode)?;
+                // `useradd -m` creates the claimed home only when it
+                // is missing: a pre-existing directory keeps whatever
+                // ownership it had, so the claimed home — the declared
+                // one or the `/home/<name>` the lowering's footprint
+                // reserves — is reconciled after creation with the
+                // account's final identity.
+                if let Some(created) = passwd_entry(name)? {
+                    ensure_home(&claimed, created.uid, created.gid, ctx.check_mode)?;
                 }
             }
         }
