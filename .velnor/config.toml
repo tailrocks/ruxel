@@ -515,6 +515,7 @@ inputs = [
   "tests/workflow/invalid/linux-user-uid-twice.pkl",
   "tests/workflow/invalid/linux-user-uid-across-stages.pkl",
   "tests/workflow/invalid/linux-user-uid-reuse-partial-hosts.pkl",
+  "tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl",
   "tests/workflow/invalid/linux-user-uid-zero.pkl",
   "tests/workflow/invalid/localhost-host.pkl",
   "tests/workflow/invalid/missing-dependency.pkl",

@@ -226,13 +226,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 }
                 args.push(name);
                 run_cmd("useradd", &args)?;
-                // `useradd -m` creates the claimed path only when it is
-                // missing: a pre-existing directory keeps whatever
+                // `useradd -m` creates the claimed path only when it
+                // is missing: a pre-existing directory keeps whatever
                 // ownership it had, so the claimed home — declared or
                 // the footprint's default — is reconciled after
-                // creation with the account's final identity.
+                // creation with the account's final identity. `-M` asks
+                // for no home at all, so nothing is created or
+                // repaired against an explicit no-create-home.
                 if let Some(created) = passwd_entry(name)?
-                    && (home.is_some() || create_home)
+                    && create_home
                 {
                     ensure_home(
                         &claimed_home(home, name),
