@@ -25,6 +25,18 @@ packages = ["ruxel-acceptance-xfs"]
 
 [[stacks.rust.inputs]]
 globs = [
+  "crates/ruxel/ruxel-agent/src/modules/user.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/entries.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/guards.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/tests.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/tests/collisions.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/tests/reconciliation.rs",
+  "crates/ruxel/ruxel-agent/src/modules/user/tests/removal.rs",
+]
+packages = ["ruxel-agent"]
+
+[[stacks.rust.inputs]]
+globs = [
   "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
   "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
   "mise.lock",
