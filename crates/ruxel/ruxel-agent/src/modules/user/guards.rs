@@ -142,12 +142,49 @@ pub(super) fn removal_primary_group_allowed(
     }
 }
 
-/// `useradd`'s private-group switch: a step that names no primary group
-/// gets its same-name group created explicitly (`-U`), so the modeled
-/// footprint and the implicit-group provider never lean on the host's
-/// `USERGROUPS_ENAB` setting.
-pub(super) fn private_group_flag(group: Option<&str>) -> Option<&'static str> {
-    if group.is_none() { Some("-U") } else { None }
+/// The groups a plan has declared present so far: the check-mode
+/// counterpart of the host's group database. Apply reads the host — an
+/// earlier `Group` step has already run by the time its consumer does —
+/// while check mode runs nothing, so the record of what the plan's own
+/// earlier tasks would have created is what `planned_gid` resolves
+/// against. A group no task provides is refused in check mode exactly
+/// as apply refuses it: a dry run must not report a change that cannot
+/// succeed.
+mod planned {
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+
+    thread_local! {
+        static GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    }
+
+    pub(super) fn note(name: &str) {
+        GROUPS.with(|groups| {
+            groups.borrow_mut().insert(name.to_string());
+        });
+    }
+
+    pub(super) fn forget(name: &str) {
+        GROUPS.with(|groups| {
+            groups.borrow_mut().remove(name);
+        });
+    }
+
+    pub(super) fn holds(name: &str) -> bool {
+        GROUPS.with(|groups| groups.borrow().contains(name))
+    }
+}
+
+/// Whether the plan has declared the group present: the record an
+/// earlier `Group` step — or an account that brings its private group
+/// with it — leaves for whatever resolves the group next.
+pub(super) fn note_planned_group(name: &str) {
+    planned::note(name);
+}
+
+/// The record's counterpart when the plan removes the group.
+pub(super) fn forget_planned_group(name: &str) {
+    planned::forget(name);
 }
 
 /// Whether the account's claimed private group is missing on the host:
@@ -162,11 +199,16 @@ pub(super) fn private_group_missing(group: Option<&str>, group_exists: bool) -> 
 }
 
 /// The requested primary group's gid: the live one where the group
-/// exists, and `None` in check mode where it does not exist yet — an
+/// exists, and `None` in check mode where the host does not have it
+/// yet but an earlier task of the plan declares it present — an
 /// earlier same-stage `Group` step creates it and check mode runs no
 /// `groupadd`, so planning the account change must not require the new
-/// group's live GID. Apply mode, which runs that step first, still
-/// resolves it and fails where it cannot, before anything mutates.
+/// group's live GID. A group no task of the plan provides is refused
+/// here the way apply refuses it: the identical apply deterministically
+/// fails with `group ... not found`, and the dry run must report that
+/// instead of a valid planned change. Apply mode, which runs the
+/// providing step first, still resolves from the host and fails where
+/// it cannot, before anything mutates.
 pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, String> {
     if let Ok(gid) = group.parse::<u32>() {
         return Ok(Some(gid));
@@ -175,7 +217,7 @@ pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, 
         Some((_, gid)) => u32::try_from(gid)
             .map(Some)
             .map_err(|_| format!("group {group:?} gid {gid} does not fit")),
-        None if check_mode => Ok(None),
+        None if check_mode && planned::holds(group) => Ok(None),
         None => Err(format!("group {group:?} not found")),
     }
 }
