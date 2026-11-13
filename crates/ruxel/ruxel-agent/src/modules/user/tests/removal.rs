@@ -73,9 +73,13 @@ fn a_system_account_is_never_removed_whatever_the_workflow_states() {
     assert!(removal_allowed("app", Some(1500), &app).is_ok());
     assert!(removal_allowed("app", Some(1000), &app).is_err());
     assert!(removal_allowed("app", None, &app).is_ok());
-    assert!(group_removal_allowed("app", Some(1500), 1500).is_ok());
-    assert!(group_removal_allowed("app", Some(1000), 1500).is_err());
-    assert!(group_removal_allowed("wheel", None, 0).is_err());
+    assert!(group_removal_allowed("app", Some(1500), 1500, None).is_ok());
+    assert!(group_removal_allowed("app", Some(1000), 1500, None).is_err());
+    assert!(group_removal_allowed("wheel", None, 0, None).is_err());
+    // A group a live account holds as its primary group is the
+    // account's to keep: `groupdel` refuses to delete one without
+    // `--force`, which this removal does not pass.
+    assert!(group_removal_allowed("app", Some(1500), 1500, Some("alice")).is_err());
 }
 
 #[test]
