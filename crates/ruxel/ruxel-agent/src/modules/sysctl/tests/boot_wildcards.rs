@@ -54,6 +54,29 @@ fn a_wildcard_key_that_covers_another_key_is_not_this_entry() {
 }
 
 #[test]
+fn a_pending_named_assignment_beside_another_key_excludes_the_wildcard() {
+    // The managed file exists and names another key: the entry under
+    // management is still the assignment by name that `rewrite_file`
+    // is about to write, and the file's own other assignments say
+    // nothing about it — procps keeps the key a setting names outright
+    // out of the expansion of a pattern, so the later
+    // `net.ipv4.conf.*.rp_filter` never reaches
+    // `net.ipv4.conf.all.rp_filter` and hands no boot value away.
+    assert_eq!(
+        override_of(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &[
+                ("/etc/sysctl.d/90-ruxel.conf", "net.ipv4.ip_forward=1\n"),
+                ("/etc/sysctl.conf", "net.ipv4.conf.*.rp_filter=0\n"),
+            ],
+        ),
+        None
+    );
+}
+
+#[test]
 fn a_pending_named_assignment_in_an_existing_file_excludes_the_wildcard() {
     // The managed file exists but holds no line for the managed key
     // yet: the entry under management is an assignment by name that
