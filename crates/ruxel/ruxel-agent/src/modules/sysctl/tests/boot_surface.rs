@@ -176,10 +176,12 @@ fn a_wildcard_stays_within_its_path_component() {
     // procps expands a wildcard one segment at a time: `net.*` covers
     // one component, so `net.*.rp_filter` assigns no
     // `net.ipv4.conf.all.rp_filter`, while `net.ipv4.conf.*.rp_filter`
-    // expands to the interface keys and assigns them. The managed
-    // file's content names another key outright, so the managed key is
-    // one the sequence never assigns by name and the wildcard reaches
-    // it.
+    // expands to the interface keys and would assign them — except the
+    // managed key the entry under management names outright: the file
+    // holds no line for it yet, and `rewrite_file` is about to add the
+    // assignment by name that procps keeps out of the pattern's
+    // expansion. A key the sequence names nowhere is still the
+    // pattern's (see `boot_wildcards`).
     let host = vec![
         (
             "/etc/sysctl.d/90-ruxel.conf".to_string(),
@@ -218,7 +220,7 @@ fn a_wildcard_stays_within_its_path_component() {
             &host,
             &[],
         ),
-        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
+        None
     );
 }
 
@@ -332,9 +334,12 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
         ),
         None
     );
-    // A key that was never assigned by name is still reported as
-    // overridden by the wildcard: `eth0` is one the pattern expands to
-    // and no file of the sequence names outright.
+    // The key under management is named outright by the entry the task
+    // writes — the file carries no line for it yet and `rewrite_file`
+    // is about to add the assignment — so the pattern never reaches it
+    // whatever other keys the file names. A key the sequence names
+    // nowhere and manages nothing is still the pattern's, and the
+    // non-wildcard assignment of another value is still an override.
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/90-ruxel.conf",
@@ -343,6 +348,6 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
             &host,
             &[],
         ),
-        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
+        None
     );
 }

@@ -225,6 +225,10 @@ class IdDraw {
   spot: String
   low: Int
   high: Int
+  /// The account's declared uid — the number the runtime verifies an
+  /// account removal's declaration against — or `null` where the
+  /// account draws its uid too (or the drawing step is a group).
+  uid: Int?
 }
 
 /// The explicit claims an earlier stage's automatic allocations stand
@@ -258,36 +262,48 @@ function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
   positions(ix.steps).flatMap((i) ->
     let (s = ix.steps[i])
     if (s is linux.User && s.state == "present")
-      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, where(ix.placed[i]))) else List())
-      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, where(ix.placed[i]))) else List())
-    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, where(ix.placed[i])))
+      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, where(ix.placed[i]), null)) else List())
+      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, where(ix.placed[i]), s.uid)) else List())
+    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, where(ix.placed[i]), null))
     else List())
 
 /// One automatic allocation: the name that draws, the kind of number,
-/// and the range the host's allocator draws it from.
-function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String): IdDraw =
-  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000 }
+/// and the range the host's allocator draws it from. The account's
+/// declared uid rides along: the number the runtime verifies an
+/// account removal's declaration against.
+function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String, _uid: Int?): IdDraw =
+  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid }
 
 /// Whether the drawing identity is proven gone before the later claim:
 /// the account — for a gid draw, the group or the account whose private
 /// group it is — is removed in a stage between the two, on every host
-/// both claimant stages share. The removal states the id the runtime
-/// verifies against the live entry, so it frees exactly the number the
-/// draw took; a declaration that names another number fails the run
-/// before the later claim gets its turn, whatever the schema reads
-/// into it. `userdel` deletes the empty same-name group with the
-/// account, so the account removal frees a private-group draw too.
+/// both claimant stages share, with a removal the runtime can prove
+/// will succeed for the draw (see `removedDraw`): a removal that fails
+/// its live-entry verification frees nothing, and the later claim
+/// would collide on the number the draw still holds.
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
   sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes[k], c)))
+      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes[k], c, d)))
 
-/// Whether a stage removes the identity that drew the number: the
-/// account for a uid draw, and for a gid draw the group or the account
-/// whose private group the drawn group is.
-const function removedDraw(ix: StageIndex, c: IdDraw): Boolean =
-  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name)
-  else ix.steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name) || (s is linux.User && s.state == "absent" && s.user == c.name))
+/// Whether a stage removes the identity that drew the number with a
+/// removal the runtime can prove will succeed for the draw. The removal
+/// states the id the runtime verifies against the live entry, so a
+/// declaration that names another number fails the run rather than
+/// freeing the draw — the same match `removedNumber` demands of the
+/// claim — and an automatic system account is never freed at all: its
+/// drawn number is below 1000, where `userdel` refuses to remove the
+/// account and `groupdel` refuses the private group it still holds as
+/// its primary one. A group removal that states no gid frees by name:
+/// the runtime verifies only the id it is given. `userdel` deletes the
+/// empty same-name group with the account, so an account removal frees
+/// a private-group draw where the account's uid is the declared one the
+/// removal verifies.
+const function removedDraw(ix: StageIndex, c: IdDraw, d: IdClaim): Boolean =
+  if (c.low < 1000) false
+  else if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
+  else ix.steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid))
 
 function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
   "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically, and the host's allocator can hand it \(d.number), which '\(d.name)' (\(d.spot)) claims explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
@@ -1041,10 +1057,25 @@ function homeRemovals(ix: StageIndex, i: Int): List<String> =
 /// Pairs `(removed, path)` where `path` is a removed home directory or
 /// mail spool, or lies inside one: `userdel -r` deletes the home
 /// directory and everything in it and the mail spool, so no step may
-/// manage a path at or inside any of them.
+/// manage a path at or inside any of them. The spool lives in the
+/// host's mail directory — the `MAIL_DIR` setting of
+/// `/etc/default/useradd`, wherever the host points it — so a path that
+/// carries the account's name in any directory can be the spool the
+/// removal deletes: reserving only the conventional directories would
+/// let a managed `/srv/mail/alice` pass and be deleted on a host
+/// configured there.
 const function removedInside(a: core.Step, candidates: List<String>): List<List<String>> =
   if (!(a is linux.User) || a.state != "absent" || !a.removeHome) List()
-  else removedPaths(a).flatMap((h) -> candidates.filter((p) -> p == h || p.startsWith(h + "/")).map((p) -> List(h, p)))
+  else let (reserved = removedPaths(a))
+    reserved.flatMap((h) -> candidates.filter((p) -> p == h || p.startsWith(h + "/")).map((p) -> List(h, p)))
+      + candidates.filter((p) -> isMailSpool(a.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/"))).map((p) -> List("the mail spool of \(a.user)", p))
+
+/// Whether `path` is an account's mail spool or lies inside it: the
+/// spool is `<MAIL_DIR>/<name>` for the host's configured mail
+/// directory, which the workflow cannot read, so any path that carries
+/// the account's name is its spool candidate.
+const function isMailSpool(name: String, path: String): Boolean =
+  path.substring(1, path.length).split("/").contains(name)
 
 /// What a recursive account removal deletes on the host: the home
 /// directory and the mail spool `userdel -r` removes.
@@ -1056,7 +1087,9 @@ const function removedPaths(u: linux.User): List<String> =
 /// and `userdel -r` removes it again. The setting is the host's own,
 /// which the workflow cannot read, so the account claims the spool at
 /// every conventional mail directory: `/var/mail`, the Debian one, and
-/// `/var/spool/mail`, the one the older systems use.
+/// `/var/spool/mail`, the one the older systems use. A removal claims
+/// it at every directory of the host — see `removedInside` — because
+/// the configured path can be any of them.
 const function mailSpools(name: String): List<String> =
   List("/var/mail/\(name)", "/var/spool/mail/\(name)")
 
@@ -1207,7 +1240,8 @@ function fileIdentitiesAcrossStages(_stages: List<core.Stage>, _indexes: List<St
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (f = _indexes[m].steps[i])
     if (f is core.File)
-      ownerNeeds(f).flatMap((p) -> removedIdentityRels(_stages, _indexes, m, i, p))
+      ownerNeeds(f).flatMap((p) -> removedIdentityRels(_stages, _indexes, m, i, p)
+        + removedIdentityRelsLater(_stages, _indexes, m, i, p))
     else List()))
 
 /// The refusal for a file whose identity an earlier stage removed.
@@ -1216,6 +1250,44 @@ function removedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageInde
     .filter((n) -> identityAbsent(_indexes[n], p)
       && sharedHosts(_stages[n], _stages[m]).any((h) -> !recreatesIdentity(_stages, _indexes, n, m, p, h)))
     .map((n) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[n].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
+
+/// The refusal for a file whose identity a LATER stage removes: the name
+/// resolves while the stages run, but the removal leaves the file owned
+/// by the identity's now-unmapped number and the next apply's file task
+/// fails resolving the name before it can reach the later removal. The
+/// exception is a recreation after the removal that preserves the
+/// identity number — the name maps again at the end of the run, so the
+/// file's numeric owner keeps resolving to it.
+function removedIdentityRelsLater(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
+    .filter((k) -> identityAbsent(_indexes[k], p)
+      && sharedHosts(_stages[m], _stages[k]).any((h) -> !restoresIdentity(_stages, _indexes, k, p, h)))
+    .map((k) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[k].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
+
+/// The identity is there again at the end of the run, with the number
+/// the file's owner carries: a stage after the removal declares it
+/// present again, and the recreation states the number the removal
+/// took away — the number the identity carried before it (the last
+/// declaration, or the removal's own verified one) — so the file's
+/// numeric ownership still maps to the name. A recreation that states
+/// no number draws another one and preserves nothing.
+function restoresIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Boolean =
+  let (before = identityNumberBeforeOn(_stages, _indexes, k, p, h) ?? removedNumberAt(_indexes[k], p))
+  before != null && positions(_indexes).filter((k2) -> k2 > k && stageRunsOn(_stages[k2], h))
+    .any((k2) -> identityPresent(_indexes[k2], p) && identityNumberAt(_indexes[k2], p) == before)
+
+/// The number the removal proves the identity carried: the runtime
+/// verifies a removal's declared id against the live entry, so where no
+/// earlier stage states the number, the removal's own declaration is
+/// the identity's. A group removal that states no gid proves no number,
+/// and an account removal takes its private group by name only.
+function removedNumberAt(ix: StageIndex, p: List<String>): Int? =
+  let (hits = positions(ix.steps).filter((j) -> providerOf(ix.steps[j], p) && (ix.steps[j] is linux.User || ix.steps[j] is linux.Group) && ix.steps[j].state == "absent"))
+  if (hits.isEmpty) null
+  else let (s = ix.steps[hits.first])
+    if (p[1] == "owner" && s is linux.User) s.uid
+    else if (p[1] == "group" && s is linux.Group) s.gid
+    else null
 
 /// Whether the stage declares the identity `p` — the account or the group
 /// of that name — absent.

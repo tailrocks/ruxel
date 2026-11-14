@@ -117,13 +117,16 @@ pub(super) fn run(
 /// the task reports failure with the live value already set. A missing
 /// directory or a non-file at the path is refused up front; where the
 /// apply may run, a probe of the directory catches a read-only file
-/// system the same way. The probe is a write of its own, so this runs
-/// only where the file needs replacement: an idempotent no-op must not
-/// fail on a target that is never published to.
+/// system the same way, and a rehearsal of the target's replacement
+/// catches the target that cannot be renamed over. The probe is a write
+/// of its own, so this runs only where the file needs replacement: an
+/// idempotent no-op must not fail on a target that is never published
+/// to.
 pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), String> {
     let path = std::path::Path::new(file);
+    let mut target = false;
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => {}
+        Ok(meta) if meta.is_file() => target = true,
         Ok(_) => {
             return Err(format!(
                 "sysctl: cannot persist {file}: the path is not a regular file"
@@ -143,6 +146,22 @@ pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), Strin
             .open(&probe)
             .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
         let _ = std::fs::remove_file(&probe);
+        // The target's own replacement is the publish's actual
+        // operation: an immutable file or a read-only bind-mounted file
+        // rejects the atomic rename (`EPERM`, `EBUSY`) although the
+        // directory accepts sibling writes. Rehearse that replacement
+        // now — before `sysctl -w` changes the live value with no
+        // persistent entry behind it — and put the file back where the
+        // rehearsal cannot finish.
+        if target {
+            let aside = dir.join(format!(".ruxel-sysctl-rehearse-{}", std::process::id()));
+            std::fs::rename(path, &aside)
+                .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+            if let Err(error) = std::fs::rename(&aside, path) {
+                let _ = std::fs::rename(&aside, path);
+                return Err(format!("sysctl: cannot persist {file}: {error}"));
+            }
+        }
     }
     Ok(())
 }
