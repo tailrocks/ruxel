@@ -138,3 +138,92 @@ fn group_names_resolve_by_gid() {
         None
     );
 }
+
+#[test]
+fn a_removal_resolves_against_the_plan_s_account_state() {
+    // An earlier task of the plan creates an initially missing account
+    // and a later removal takes it away: check mode runs no `useradd`,
+    // so the passwd file does not list the account — but the removal
+    // must report itself, not the no-op of a name the unchanged file
+    // never had: apply runs `userdel` on the account the plan made.
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let name = format!("ruxel-planned-removal-{}", std::process::id());
+    run(&json!({"name": name, "create_home": false}), &ctx)
+        .expect("the earlier creation must plan");
+    let removal = run(&json!({"name": name, "state": "absent", "uid": 1500}), &ctx)
+        .expect("the removal of the plan's own account must plan");
+    assert_eq!(
+        removal.get("changed"),
+        Some(&json!(true)),
+        "the planned account is a removal to report: {removal}"
+    );
+    // The same for a group the plan created.
+    let group_name = format!("ruxel-planned-group-removal-{}", std::process::id());
+    super::super::group(&json!({"name": group_name}), &ctx)
+        .expect("the earlier group creation must plan");
+    let removed = super::super::group(&json!({"name": group_name, "state": "absent"}), &ctx)
+        .expect("the removal of the plan's own group must plan");
+    assert_eq!(
+        removed.get("changed"),
+        Some(&json!(true)),
+        "the planned group is a removal to report: {removed}"
+    );
+}
+
+#[test]
+fn a_removal_verifies_the_uid_against_the_planned_number() {
+    // An earlier task renumbers an existing account from its live uid
+    // to a planned one and a later removal declares a number: check
+    // mode runs no `usermod`, so the passwd file still holds the stale
+    // uid — verifying the declaration against it would refuse a
+    // removal the apply performs after the renumbering.
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    let (name, live, gid) = passwd
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 7 && f[2].parse::<u64>().is_ok_and(|uid| uid > 0)).then(|| {
+                (
+                    f[0].to_string(),
+                    f[2].parse::<u64>().unwrap(),
+                    f[3].parse::<u64>().unwrap(),
+                )
+            })
+        })
+        .expect("a non-root account on the host");
+    let primary = super::super::guards::group_name_of_gid_from(&groups, gid);
+    let planned = u32::try_from(live + 100_000).expect("the planned uid fits");
+    run(&json!({"name": name, "uid": planned}), &ctx).expect("the earlier renumbering must plan");
+    // The stale live uid must not stand in for the planned one: a
+    // declaration naming it contradicts what the apply verifies
+    // against and is refused.
+    let error = run(
+        &json!({"name": name, "state": "absent", "uid": live, "group": primary}),
+        &ctx,
+    )
+    .expect_err("a declaration naming the stale uid must be refused");
+    assert!(error.contains("refusing to remove"), "{error}");
+    // The planned number is the one the removal's declaration is
+    // verified against: the apply runs `usermod -u` first and `userdel`
+    // then sees the renumbered entry.
+    let removal = run(
+        &json!({"name": name, "state": "absent", "uid": planned, "group": primary}),
+        &ctx,
+    )
+    .expect("the removal must verify its declaration against the planned uid");
+    assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
+}
