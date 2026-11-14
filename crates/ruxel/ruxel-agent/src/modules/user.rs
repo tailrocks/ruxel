@@ -401,6 +401,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push(&uid_s);
             }
             let same_name = group_entry(name)?;
+            // The same-name group's number is the plan's own: the
+            // host's, or the number an earlier task of the plan states
+            // (`planned_gid`) — the live entry is stale in check mode,
+            // which runs no `groupmod`, and a renumbered group leaves
+            // the account's gid field pointing at a number no group
+            // holds any more, so the account is off the group the step
+            // claims either way. A group the plan creates without a
+            // number (the allocator draws it) is not the group the
+            // account holds, so the move is planned there too.
+            let same_name_gid = if group.is_none() {
+                planned_gid(name, ctx.check_mode).unwrap_or_default()
+            } else {
+                None
+            };
             // The step's footprint claims the account's private group
             // whenever it names no primary group — the same-name group
             // — and the schema models that group as the account's
@@ -414,9 +428,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // not move it either.
             let implicit_group_move = group.is_none()
                 && current.uid != 0
-                && same_name
-                    .as_ref()
-                    .is_none_or(|(_, gid)| *gid != current.gid);
+                && same_name_gid.is_none_or(|gid| u64::from(gid) != current.gid);
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
