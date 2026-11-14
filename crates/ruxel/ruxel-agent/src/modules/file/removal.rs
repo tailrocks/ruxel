@@ -34,7 +34,12 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
             path.display()
         ));
     }
-    let (parent, name) = open_parent(path)?;
+    let (parent, name) = match open_parent(path) {
+        Ok(opened) => opened,
+        // A missing ancestor means the target is not there either.
+        Err(OpenError::Missing) => return Ok(false),
+        Err(OpenError::Other(error)) => return Err(error),
+    };
     // A bind mount aliases the directory it is mounted from: the
     // directory that holds the target has a system root's own identity,
     // and the path says nothing about it.
@@ -179,18 +184,31 @@ fn remove_tree(dir: &OwnedFd) -> Result<(), String> {
 /// it. The walk follows the first component, which is where the system's
 /// own layout lives (`/var` -> `/private/var`, `/bin` -> `/usr/bin`), and
 /// no symlink below it.
-pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), String> {
-    let name = path
-        .file_name()
-        .ok_or_else(|| format!("file: {} does not name an entry", path.display()))?;
-    let name = CString::new(name.as_bytes())
-        .map_err(|_| format!("file: {} names an entry with a zero byte", path.display()))?;
+/// The reason a walk to the parent of a path failed.
+#[derive(Debug)]
+pub(super) enum OpenError {
+    /// A component of the path is not there.
+    Missing,
+    /// The walk failed for any other reason.
+    Other(String),
+}
+
+pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), OpenError> {
+    let name = path.file_name().ok_or_else(|| {
+        OpenError::Other(format!("file: {} does not name an entry", path.display()))
+    })?;
+    let name = CString::new(name.as_bytes()).map_err(|_| {
+        OpenError::Other(format!(
+            "file: {} names an entry with a zero byte",
+            path.display()
+        ))
+    })?;
     let mut current = if path.is_absolute() {
         open("/", directory_flags(), Mode::empty())
     } else {
         open(".", directory_flags(), Mode::empty())
     }
-    .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
+    .map_err(|error| OpenError::Other(format!("file: cannot read {}: {error}", path.display())))?;
     let parts: Vec<_> = path
         .components()
         .filter(|part| {
@@ -209,13 +227,25 @@ pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), String> {
             Component::ParentDir => std::ffi::OsStr::new(".."),
             _ => continue,
         };
+        // The first component may be the system's own alias (`/var` ->
+        // `/private/var`, `/bin` -> `/usr/bin`): it is followed only when
+        // it points at a directory of the same name, so a link that
+        // points somewhere else (`/scratch` -> `/`) is refused.
         let flags = if index == 0 {
-            directory_flags()
+            if is_alias(&current, part) {
+                directory_flags()
+            } else {
+                directory_flags() | OFlags::NOFOLLOW
+            }
         } else {
             directory_flags() | OFlags::NOFOLLOW
         };
-        current = openat(&current, part, flags, Mode::empty())
-            .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
+        current = openat(&current, part, flags, Mode::empty()).map_err(|error| {
+            if error == rustix::io::Errno::NOENT {
+                return OpenError::Missing;
+            }
+            OpenError::Other(format!("file: cannot read {}: {error}", path.display()))
+        })?;
     }
     Ok((current, name))
 }
@@ -326,6 +356,21 @@ fn crosses_symlink(path: &Path) -> bool {
         }
     }
     false
+}
+
+/// Whether a name is the system's own alias for a directory of the same
+/// name: the link points at a directory whose own name is the name of the
+/// link (`/var` -> `/private/var`, `/bin` -> `/usr/bin`).
+pub(super) fn is_alias(dir: &impl std::os::fd::AsFd, name: &std::ffi::OsStr) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(target) = rustix::fs::readlinkat(dir, name, Vec::new()) else {
+        return false;
+    };
+    let target = Path::new(std::ffi::OsStr::from_bytes(target.as_bytes()));
+    match target.file_name() {
+        Some(last) => last == name,
+        None => false,
+    }
 }
 
 /// Whether a path is a symlink.

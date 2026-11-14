@@ -144,3 +144,31 @@ fn a_commented_line_carries_no_key() {
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn a_comment_with_bytes_that_are_not_text_is_carried_through() {
+    let root = scratch("bytes-not-text");
+    let meta = std::fs::metadata(&root).unwrap();
+    let ssh = root.join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    // The comment holds a byte that is not text: the removal reads the
+    // file as bytes, so the key behind it goes and the comment stays.
+    let mut before =
+        b"# a comment with a byte \xff that is not text\nssh-ed25519 AAAAC3Nzadrop\n".to_vec();
+    before[30] = 0xff;
+    std::fs::write(ssh.join("authorized_keys"), &before).unwrap();
+    let changed = remove_key(
+        &root,
+        meta.uid(),
+        meta.gid(),
+        "ssh-ed25519 AAAAC3Nzadrop",
+        false,
+    )
+    .unwrap();
+    assert!(changed);
+    let left = std::fs::read(ssh.join("authorized_keys")).unwrap();
+    let mut wanted = b"# a comment with a byte \xff that is not text\n".to_vec();
+    wanted[30] = 0xff;
+    assert_eq!(left, wanted);
+    std::fs::remove_dir_all(&root).unwrap();
+}

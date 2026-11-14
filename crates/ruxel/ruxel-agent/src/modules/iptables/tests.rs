@@ -71,7 +71,7 @@ fn stub(dir: &std::path::Path, present: bool) -> (String, std::path::PathBuf, st
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\necho \"$@\" >> '{log}'\ncase \"$1\" in\n  -C) if [ -f '{marker}' ]; then exit 0; else echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1; fi;;\n  -D) rm -f '{marker}'; exit 0;;\n  -A) touch '{marker}'; exit 0;;\nesac\nexit 0\n",
+            "#!/bin/sh\necho \"$@\" >> '{log}'\ncase \"$1\" in\n  -S) if [ -f '{marker}' ]; then echo \"-P $2 ACCEPT\"; echo \"-A $2 -p tcp -j DROP\"; fi; exit 0;;\n  -C) if [ -f '{marker}' ]; then exit 0; else echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1; fi;;\n  -D) rm -f '{marker}'; exit 0;;\n  -A) touch '{marker}'; exit 0;;\nesac\nexit 0\n",
             log = log.display(),
             marker = marker.display()
         ),

@@ -5,8 +5,9 @@
 //! written back unchanged.
 
 use super::{
-    File, FlockOperation, Mode, Path, dir_flags, ensure_attached, flock, key_material, open,
-    open_ssh, publish_checked, read_authorized_keys_with_identity,
+    File, FlockOperation, Mode, Path, dir_flags, ensure_attached, flock, key_material,
+    key_material_bytes, open, open_ssh, publish_checked, read_authorized_keys_with_identity,
+    split_lines,
 };
 
 #[cfg(test)]
@@ -26,6 +27,7 @@ pub(super) fn remove_key(
     check_mode: bool,
 ) -> Result<bool, String> {
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
+    let want_material = (want_material.0.into_bytes(), want_material.1.into_bytes());
     let home_file = File::from(open(home, dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
     flock(&home_file, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
     // Never create `.ssh` for a removal: a missing directory holds no key.
@@ -45,7 +47,7 @@ pub(super) fn remove_key(
         hook(&home.join(".ssh").join("authorized_keys"));
     }
     let lines = split_lines(&current);
-    let kept: Vec<&str> = lines
+    let kept: Vec<&[u8]> = lines
         .iter()
         .copied()
         .filter(|line| !carries_key(line, &want_material))
@@ -61,7 +63,7 @@ pub(super) fn remove_key(
         // written: a replacement in between would leave the key in the
         // file the user sees.
         ensure_attached(&home_file, &dir)?;
-        publish_checked(&dir, kept.concat().as_bytes(), uid, gid, identity)?;
+        publish_checked(&dir, &kept.concat(), uid, gid, identity)?;
         // And once more before the removal is reported: the write must
         // have landed in the directory that is still `.ssh`.
         ensure_attached(&home_file, &dir)?;
@@ -69,28 +71,11 @@ pub(super) fn remove_key(
     Ok(true)
 }
 
-/// The lines of the file, each with the terminator it had: a retained
-/// line is written back byte for byte, and a file without a final newline
-/// stays without one.
-fn split_lines(content: &str) -> Vec<&str> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    for (index, byte) in content.bytes().enumerate() {
-        if byte == b'\n' {
-            lines.push(&content[start..=index]);
-            start = index + 1;
-        }
-    }
-    if start < content.len() {
-        lines.push(&content[start..]);
-    }
-    lines
-}
-
 /// Whether a line of the file carries the key.
-fn carries_key(line: &str, want: &(String, String)) -> bool {
-    let text = line.trim_end_matches('\n').trim_end_matches('\r');
-    key_material(text).is_some_and(|material| material == *want)
+fn carries_key(line: &[u8], want: &(Vec<u8>, Vec<u8>)) -> bool {
+    let text = line.strip_suffix(b"\n").unwrap_or(line);
+    let text = text.strip_suffix(b"\r").unwrap_or(text);
+    key_material_bytes(text).is_some_and(|material| material == *want)
 }
 
 /// A test hook, run once the removal has read the file and before it

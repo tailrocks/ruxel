@@ -53,7 +53,7 @@ fn run_with(
             check.extend(spec.iter().map(String::as_str));
             probe(binary, &check)?
         } else {
-            delete_copies(binary, chain, &spec, MAX_DELETIONS)? > 0
+            delete_matching(binary, chain, &spec, MAX_DELETIONS)? > 0
         };
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
@@ -69,30 +69,77 @@ fn run_with(
     Ok(json!({"changed": changed, "failed": false, "chain": chain}))
 }
 
-/// Deletes every copy of the rule, and reports how many were deleted.
+/// Deletes every rule of the chain that matches the declared match, and
+/// reports how many were deleted.
 ///
-/// `iptables -D` takes one matching rule at a time, so a chain that holds
-/// several copies of the same rule is emptied copy by copy: one deletion
-/// would leave the others active. The number of deletions is bounded, so a
-/// chain that keeps the rule cannot keep the removal looping forever, and
-/// the bound is read before a deletion, so the removal never fails after
-/// the last copy is gone.
-fn delete_copies(binary: &str, chain: &str, spec: &[String], limit: u32) -> Result<u32, String> {
-    let mut check: Vec<&str> = vec!["-C", chain];
-    check.extend(spec.iter().map(String::as_str));
+/// The chain and the match are the rule's identity, so a rule that
+/// matches the same way is the rule that goes, whatever its jump: the
+/// rules of the chain are listed, and the ones that match are deleted by
+/// their number, the last one first, so the numbers of the rules that are
+/// left do not move.
+fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Result<u32, String> {
+    let rules = list_chain(binary, chain)?;
+    let declared: Vec<&str> = spec.iter().map(String::as_str).collect();
+    let wanted = match_pairs(&declared);
+    let mut numbers: Vec<u32> = Vec::new();
+    for (index, rule) in rules.iter().enumerate() {
+        let Some(args) = rule_arguments(rule, chain) else {
+            continue;
+        };
+        if match_pairs(&args) == wanted {
+            numbers.push(u32::try_from(index).unwrap_or(u32::MAX) + 1);
+        }
+    }
+    numbers.reverse();
     let mut deletions = 0;
-    while probe(binary, &check)? {
+    for number in numbers {
         if deletions >= limit {
             return Err(format!(
                 "{binary}: the rule is still there after {limit} deletions"
             ));
         }
-        let mut remove: Vec<&str> = vec!["-D", chain];
-        remove.extend(spec.iter().map(String::as_str));
-        exec_rule(binary, &remove)?;
+        exec_rule(binary, &["-D", chain, &number.to_string()])?;
         deletions += 1;
     }
     Ok(deletions)
+}
+
+/// The rules of the chain, as the firewall lists them.
+fn list_chain(binary: &str, chain: &str) -> Result<Vec<String>, String> {
+    let mut command = std::process::Command::new(binary);
+    command.args(["-S", chain]);
+    let out = super::run_checked(command)?;
+    let listing = String::from_utf8_lossy(&out.stdout).to_string();
+    Ok(listing
+        .lines()
+        .filter(|line| line.starts_with(&format!("-A {chain} ")))
+        .map(std::string::ToString::to_string)
+        .collect())
+}
+
+/// The arguments of a listed rule, without the chain it belongs to.
+fn rule_arguments<'a>(rule: &'a str, chain: &str) -> Option<Vec<&'a str>> {
+    let rest = rule.strip_prefix(&format!("-A {chain} "))?;
+    Some(rest.split_whitespace().collect())
+}
+
+/// The pairs of the match: the protocol, the destination and the outgoing
+/// interface. The jump and the comment are not part of the match.
+fn match_pairs(args: &[&str]) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index];
+        if matches!(flag, "-p" | "-d" | "-o") && args.get(index + 1).is_some() {
+            let value = args[index + 1];
+            pairs.push((flag.to_string(), value.to_string()));
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    pairs.sort();
+    pairs
 }
 
 fn rule_spec(obj: &serde_json::Map<String, Value>) -> Vec<String> {

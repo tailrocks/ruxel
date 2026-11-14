@@ -58,7 +58,7 @@ impl FileIdentity {
 /// Reads the `authorized_keys` file and the identity it had.
 pub(super) fn read_authorized_keys_with_identity(
     dir: &File,
-) -> Result<(String, Option<FileIdentity>), String> {
+) -> Result<(Vec<u8>, Option<FileIdentity>), String> {
     let fd = match openat(
         dir,
         "authorized_keys",
@@ -66,7 +66,7 @@ pub(super) fn read_authorized_keys_with_identity(
         Mode::empty(),
     ) {
         Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => return Ok((String::new(), None)),
+        Err(rustix::io::Errno::NOENT) => return Ok((Vec::new(), None)),
         Err(e) => return Err(format!("authorized_key: cannot open authorized_keys: {e}")),
     };
     let mut file = File::from(fd);
@@ -75,8 +75,8 @@ pub(super) fn read_authorized_keys_with_identity(
         return Err("authorized_key: authorized_keys is not a file".into());
     }
     let identity = FileIdentity::of(&meta);
-    let mut content = String::new();
-    file.read_to_string(&mut content)
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)
         .map_err(|e| format!("authorized_key: cannot read authorized_keys: {e}"))?;
     Ok((content, Some(identity)))
 }

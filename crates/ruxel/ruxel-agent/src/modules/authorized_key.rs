@@ -43,6 +43,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Result<bool, String> {
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
+    let want_material = (want_material.0.into_bytes(), want_material.1.into_bytes());
     let home = File::from(open(home, dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
     // Lock before inspecting .ssh so concurrent first-time creation is serialized too.
     flock(&home, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
@@ -53,24 +54,24 @@ fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Resul
     }
     let (current, identity) = match &ssh {
         Some(dir) => read_authorized_keys_with_identity(dir)?,
-        None => (String::new(), None),
+        None => (Vec::new(), None),
     };
-    let present = current
-        .lines()
-        .filter_map(key_material)
-        .any(|m| m == want_material);
+    let present = split_lines(&current)
+        .into_iter()
+        .filter_map(key_material_bytes)
+        .any(|material| material == want_material);
     let changed = !present;
     if changed && !check_mode {
         let mut next = current;
-        if !next.is_empty() && !next.ends_with('\n') {
-            next.push('\n');
+        if !next.is_empty() && !next.ends_with(b"\n") {
+            next.push(b'\n');
         }
-        next.push_str(key.trim_end());
-        next.push('\n');
+        next.extend_from_slice(key.trim_end().as_bytes());
+        next.push(b'\n');
         ensure_attached(&home, ssh.as_ref().ok_or("authorized_key: missing .ssh")?)?;
         publish_checked(
             ssh.as_ref().ok_or("authorized_key: missing .ssh")?,
-            next.as_bytes(),
+            &next,
             uid,
             gid,
             identity,
@@ -149,8 +150,34 @@ fn ensure_attached(home: &File, dir: &File) -> Result<(), String> {
 }
 
 #[cfg(test)]
-fn read_authorized_keys(dir: &File) -> Result<String, String> {
+fn read_authorized_keys(dir: &File) -> Result<Vec<u8>, String> {
     read_authorized_keys_with_identity(dir).map(|(content, _)| content)
+}
+
+/// The lines of the file, each with the terminator it had: a retained
+/// line is written back byte for byte, and a file without a final newline
+/// stays without one.
+fn split_lines(content: &[u8]) -> Vec<&[u8]> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for (index, byte) in content.iter().enumerate() {
+        if *byte == b'\n' {
+            lines.push(&content[start..=index]);
+            start = index + 1;
+        }
+    }
+    if start < content.len() {
+        lines.push(&content[start..]);
+    }
+    lines
+}
+
+/// The key type and the material of a line, read as bytes: a comment may
+/// hold bytes that are not text, and sshd ignores the comment anyway.
+fn key_material_bytes(line: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let prefix: Vec<u8> = line.iter().copied().take_while(u8::is_ascii).collect();
+    let text = String::from_utf8(prefix).ok()?;
+    key_material(&text).map(|(kind, material)| (kind.into_bytes(), material.into_bytes()))
 }
 
 /// The key type and the material of a line of `authorized_keys`.
@@ -219,10 +246,12 @@ fn key_fields(line: &str) -> Vec<String> {
 
 /// Whether a field names a key type.
 fn is_key_type(field: &str) -> bool {
+    // The names of the key types the format lists. `rsa-sha2-256` and
+    // `rsa-sha2-512` are signature algorithms, not key types: a key of
+    // that name is not a key at all.
     field.starts_with("ssh-")
         || field.starts_with("ecdsa-")
         || field.starts_with("sk-")
-        || field.starts_with("rsa-sha2-")
         || field.starts_with("xmss")
 }
 

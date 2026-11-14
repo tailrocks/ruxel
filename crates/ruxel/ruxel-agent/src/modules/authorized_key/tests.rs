@@ -33,8 +33,10 @@ fn refuses_symlinks_and_invalid_content() {
     symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
     assert!(read_authorized_keys(&ssh).is_err());
     std::fs::remove_file(root.join(".ssh/authorized_keys")).unwrap();
+    // A comment may hold bytes that are not text: the file is read as
+    // bytes, so such a file is read and not refused.
     std::fs::write(root.join(".ssh/authorized_keys"), [0xff]).unwrap();
-    assert!(read_authorized_keys(&ssh).is_err());
+    assert_eq!(read_authorized_keys(&ssh).unwrap(), vec![0xff]);
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "untouched");
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -81,7 +83,7 @@ fn file_swap_cannot_write_through_symlink() {
     let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
         .unwrap()
         .unwrap();
-    assert_eq!(read_authorized_keys(&ssh).unwrap(), "");
+    assert_eq!(read_authorized_keys(&ssh).unwrap(), Vec::<u8>::new());
     let victim = root.join("victim");
     std::fs::write(&victim, "untouched").unwrap();
     symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();

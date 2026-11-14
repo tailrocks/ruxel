@@ -227,3 +227,52 @@ fn a_directory_that_is_another_name_for_a_root_is_refused() {
         (7, 12)
     ));
 }
+
+#[test]
+fn a_removal_of_a_path_below_a_missing_ancestor_is_no_change() {
+    let base = scratch("missing-ancestor");
+    // The ancestor is not there, so the target is not there either: the
+    // removal is no change, not a failure.
+    let params = json!({"path": base.join("missing/child"), "state": "absent"});
+    assert_eq!(run(&params, &context()).unwrap()["changed"], false);
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_does_not_follow_a_symlinked_first_component() {
+    let base = scratch("first-component");
+    // The first component is a link to the filesystem root: the walk
+    // follows a first component only when it is the system's own alias
+    // for a directory of the same name, so this one is refused.
+    let link = base.join("root");
+    std::os::unix::fs::symlink("/", &link).unwrap();
+    let params = json!({"path": link.join("etc"), "state": "absent", "recurse": true});
+    let error = run(&params, &context()).unwrap_err();
+    assert!(
+        error.contains("file: refusing") || error.contains("file: cannot"),
+        "{error}"
+    );
+    assert!(std::path::Path::new("/etc").exists());
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_first_component_is_followed_only_when_it_is_the_system_s_own_alias() {
+    let base = scratch("alias");
+    let private = base.join("private");
+    std::fs::create_dir_all(private.join("var")).unwrap();
+    // The system's own alias points at a directory of the same name.
+    std::os::unix::fs::symlink(private.join("var"), base.join("var")).unwrap();
+    let held = std::fs::File::open(&base).unwrap();
+    assert!(super::super::removal::is_alias(
+        &held,
+        std::ffi::OsStr::new("var")
+    ));
+    // A link that points somewhere else is not an alias.
+    std::os::unix::fs::symlink("/", base.join("scratch")).unwrap();
+    assert!(!super::super::removal::is_alias(
+        &held,
+        std::ffi::OsStr::new("scratch")
+    ));
+    std::fs::remove_dir_all(&base).unwrap();
+}
