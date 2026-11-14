@@ -7,7 +7,7 @@
 //! descriptor. A directory that is replaced in between is therefore never
 //! reached, and the path is never resolved a second time.
 
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, open, openat, statat, unlinkat};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, statat, unlinkat};
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
@@ -103,8 +103,10 @@ pub(super) fn refuse_bound_root(
     path: &Path,
     roots: &[&str],
 ) -> Result<(), String> {
-    let held = fstat(parent).map_err(|error| error.to_string())?;
-    let held = (u64::from(held.st_dev.cast_unsigned()), held.st_ino);
+    let held = std::fs::File::from(parent.try_clone().map_err(|error| error.to_string())?)
+        .metadata()
+        .map_err(|error| error.to_string())?;
+    let held = (held.dev(), held.ino());
     let written = path.parent().map(std::path::Path::to_path_buf);
     for root in roots.iter().copied() {
         let Ok(root_meta) = std::fs::metadata(root) else {
@@ -154,7 +156,9 @@ fn names_the_same(one: &Path, other: &Path) -> bool {
 /// is left to the caller: every entry is taken away through the
 /// descriptor, so a name that is replaced in between is never followed.
 fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
-    let held = fstat(dir).map_err(|error| error.to_string())?;
+    let held = std::fs::File::from(dir.try_clone().map_err(|error| error.to_string())?)
+        .metadata()
+        .map_err(|error| error.to_string())?;
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -164,15 +168,6 @@ fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
         }
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
-        if super::floor::is_mount_point(held.st_dev, meta.st_dev) {
-            // The entry is on another device: it is a mount point, and
-            // the tree below it belongs to somewhere else.
-            return Err(format!(
-                "file: refusing to remove {}: it holds the mount point {}",
-                path.display(),
-                name.to_string_lossy()
-            ));
-        }
         if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
             let child = openat(
                 dir,
@@ -181,6 +176,18 @@ fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
                 Mode::empty(),
             )
             .map_err(|error| error.to_string())?;
+            let entry = std::fs::File::from(child.try_clone().map_err(|error| error.to_string())?)
+                .metadata()
+                .map_err(|error| error.to_string())?;
+            if super::floor::is_mount_point(held.dev(), entry.dev()) {
+                // The entry is on another device: it is a mount point,
+                // and the tree below it belongs to somewhere else.
+                return Err(format!(
+                    "file: refusing to remove {}: it holds the mount point {}",
+                    path.display(),
+                    name.to_string_lossy()
+                ));
+            }
             remove_tree(&child, path)?;
             unlinkat(dir, name, AtFlags::REMOVEDIR).map_err(|error| error.to_string())?;
         } else {

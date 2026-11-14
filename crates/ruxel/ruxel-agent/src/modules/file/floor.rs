@@ -123,7 +123,7 @@ pub(super) fn is_alias(dir: &impl std::os::fd::AsFd, name: &std::ffi::OsStr) -> 
 
 /// Whether an entry of a tree is a mount point: it is on another device,
 /// so the tree below it belongs to somewhere else.
-pub(super) fn is_mount_point(parent: i32, entry: i32) -> bool {
+pub(super) fn is_mount_point(parent: u64, entry: u64) -> bool {
     parent != entry
 }
 
