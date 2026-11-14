@@ -6,7 +6,12 @@ use serde_json::json;
 
 #[test]
 fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
-    let path = std::env::temp_dir().join(format!("ruxel-sysctl-invalid-{}", std::process::id()));
+    // The file lives in a directory of its own: the preflight's own
+    // temporary names are pid-scoped, so two tasks that share a
+    // directory would clobber each other's probe and rehearsal.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-invalid-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("x.conf");
     std::fs::write(&path, "\nnet.test=1\n")?;
     let ctx = super::super::ExecContext {
         check_mode: false,
@@ -26,7 +31,7 @@ fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
         );
         assert_eq!(std::fs::read_to_string(&path)?, "\nnet.test=1\n");
     }
-    std::fs::remove_file(path)?;
+    std::fs::remove_dir_all(dir)?;
     Ok(())
 }
 #[test]
@@ -36,7 +41,9 @@ fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()
     // entry in such a file, so the task reconciles the managed entry
     // and the unrelated bytes survive the publish byte-for-byte — the
     // text-only read that refused the whole file is gone.
-    let path = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("x.conf");
     std::fs::write(&path, [0xff, 0xfe])?;
     for check_mode in [true, false] {
         let ctx = super::super::ExecContext {
@@ -67,7 +74,7 @@ fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()
             );
         }
     }
-    std::fs::remove_file(path)?;
+    std::fs::remove_dir_all(dir)?;
     Ok(())
 }
 

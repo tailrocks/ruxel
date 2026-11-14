@@ -2,6 +2,8 @@
 //! value is touched — but the probe runs only where the file needs
 //! replacement — and a boot-shadowed file is refused outright.
 
+use std::os::unix::fs::MetadataExt;
+
 use serde_json::json;
 
 #[test]
@@ -113,7 +115,12 @@ fn a_shadowed_persistence_file_is_refused() {
 
 #[test]
 fn a_refused_live_value_leaves_the_persistence_file_untouched() {
-    let path = std::env::temp_dir().join(format!("ruxel-sysctl-order-{}", std::process::id()));
+    // The file lives in a directory of its own: the preflight's own
+    // temporary names are pid-scoped, so two tasks that share a
+    // directory would clobber each other's probe and rehearsal.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-order-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.conf");
     std::fs::write(&path, "net.test=1\n").unwrap();
     let ctx = super::super::ExecContext {
         check_mode: false,
@@ -137,7 +144,7 @@ fn a_refused_live_value_leaves_the_persistence_file_untouched() {
         "net.test=1\n",
         "a failed live reconciliation must not publish the entry"
     );
-    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -286,5 +293,43 @@ fn a_target_that_cannot_be_replaced_is_refused_before_the_live_write() {
     );
     unlock_target(&path);
     std::fs::remove_file(&path).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_publish_rehearsal_leaves_the_target_where_it_was() {
+    // The preflight proves the publish by replacing the target once —
+    // the target is renamed aside and back — so the target's own inode
+    // must come back: the host's file is not left renamed away, its
+    // content survives, and no probe file is left behind.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-rehearse-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.conf");
+    std::fs::write(&path, "net.test=2\n").unwrap();
+    let before = std::fs::metadata(&path).unwrap();
+    super::super::preflight_persistence(path.to_str().unwrap(), true)
+        .expect("a replaceable target must pass the rehearsal");
+    let after = std::fs::metadata(&path).unwrap();
+    assert_eq!(
+        before.ino(),
+        after.ino(),
+        "the rehearsal must put the target's own inode back"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "net.test=2\n",
+        "the rehearsal must leave the target's content alone"
+    );
+    let mut left: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        vec!["x.conf".to_string()],
+        "the rehearsal must leave no probe file behind: {left:?}"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
