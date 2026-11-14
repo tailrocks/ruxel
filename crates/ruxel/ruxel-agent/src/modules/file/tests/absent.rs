@@ -199,3 +199,31 @@ fn a_removal_of_a_tree_takes_everything_under_it() {
     assert!(base.exists());
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn a_directory_that_is_another_name_for_a_root_is_refused() {
+    // A bind mount keeps the identity of the directory it is mounted
+    // from, so the path says nothing about where the removal lands: the
+    // same directory under another name is refused.
+    assert!(super::super::removal::aliases_root(
+        std::path::Path::new("/scratch/root"),
+        (7, 11),
+        std::path::Path::new("/"),
+        (7, 11)
+    ));
+    // The root under its own name is the root the plan may name a path
+    // below.
+    assert!(!super::super::removal::aliases_root(
+        std::path::Path::new("/etc"),
+        (7, 11),
+        std::path::Path::new("/etc"),
+        (7, 11)
+    ));
+    // Another directory is another directory.
+    assert!(!super::super::removal::aliases_root(
+        std::path::Path::new("/scratch/root"),
+        (7, 11),
+        std::path::Path::new("/"),
+        (7, 12)
+    ));
+}
