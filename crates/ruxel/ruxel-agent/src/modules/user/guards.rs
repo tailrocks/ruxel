@@ -97,18 +97,24 @@ pub(super) fn group_removal_allowed(
 /// The live account that holds `gid` as its primary group: the passwd
 /// database's entry with that number in its group field. The account is
 /// the group's to keep — `groupdel` refuses to delete a primary group
-/// without `--force` — so the removal reads it before it runs.
+/// without `--force` — so the removal reads it before it runs. An
+/// account the plan has already removed holds no group: check mode
+/// runs no `userdel`, so the passwd file still lists the account while
+/// the apply has already taken it away — the scan skips it and keeps
+/// looking for a remaining holder.
 pub(super) fn primary_group_holder(gid: u64) -> Result<Option<String>, String> {
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     Ok(primary_group_holder_from(&passwd, gid))
 }
 
 /// The passwd counterpart of [`primary_group_holder`], over canned
-/// content.
+/// content. The accounts the plan has removed are no holders, so the
+/// scan skips them and keeps looking for one that remains.
 pub(super) fn primary_group_holder_from(passwd: &str, gid: u64) -> Option<String> {
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
-        if f.len() >= 4 && f[3].parse::<u64>() == Ok(gid) {
+        if f.len() >= 4 && f[3].parse::<u64>() == Ok(gid) && !super::entries::account_removed(f[0])
+        {
             return Some(f[0].to_string());
         }
     }
