@@ -10,7 +10,7 @@
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, statat, unlinkat};
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
@@ -173,45 +173,52 @@ fn names_the_same(one: &Path, other: &Path) -> bool {
 /// is a tree that belongs to somewhere else, and a removal does not take
 /// it.
 pub(super) fn mount_points() -> Vec<PathBuf> {
-    let Ok(listing) = std::fs::read_to_string("/proc/self/mountinfo") else {
+    let Ok(listing) = std::fs::read("/proc/self/mountinfo") else {
         return Vec::new();
     };
-    listing
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split(' ');
-            let _id = fields.next()?;
-            let _parent = fields.next()?;
-            let _device = fields.next()?;
-            let _root = fields.next()?;
-            let point = fields.next()?;
-            Some(PathBuf::from(unescape_mount_path(point)))
-        })
-        .collect()
-}
-
-/// The mount path as the kernel writes it: the characters that need it
-/// are written as octal escapes.
-pub(super) fn unescape_mount_path(path: &str) -> String {
-    let mut out = String::new();
-    let mut characters = path.chars();
-    while let Some(character) = characters.next() {
-        if character != '\\' {
-            out.push(character);
-            continue;
-        }
-        let mut octal = String::new();
-        for _ in 0..3 {
-            match characters.next() {
-                Some(character) => octal.push(character),
+    let mut points = Vec::new();
+    for line in listing.split(|byte| *byte == b'\n') {
+        // The mount point is the fifth field of the line.
+        let mut fields = line.split(|byte| *byte == b' ');
+        let mut point = None;
+        for _ in 0..5 {
+            match fields.next() {
+                Some(field) => point = Some(field),
                 None => break,
             }
         }
+        let Some(point) = point else {
+            continue;
+        };
+        points.push(PathBuf::from(std::ffi::OsString::from_vec(
+            unescape_mount_bytes(point),
+        )));
+    }
+    points
+}
+
+/// The mount path as the kernel writes it: the characters that need it
+/// are written as octal escapes. The path is read as bytes, because a
+/// mount point may hold a name that is not text.
+pub(super) fn unescape_mount_bytes(path: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < path.len() {
+        if path[index] != b'\\' {
+            out.push(path[index]);
+            index += 1;
+            continue;
+        }
+        let mut octal = String::new();
+        for byte in path.iter().skip(index + 1).take(3) {
+            octal.push(char::from(*byte));
+        }
         if let Ok(byte) = u8::from_str_radix(&octal, 8) {
-            out.push(char::from(byte));
+            out.push(byte);
+            index += 4;
         } else {
-            out.push('\\');
-            out.push_str(&octal);
+            out.push(b'\\');
+            index += 1;
         }
     }
     out
