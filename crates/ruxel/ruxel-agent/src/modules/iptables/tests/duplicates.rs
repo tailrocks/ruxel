@@ -119,3 +119,28 @@ fn a_rule_with_another_matcher_is_not_the_declared_match() {
     assert_eq!(left, "-p tcp --dport 22 -j ACCEPT\n", "{left}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_quoted_comment_is_one_argument() {
+    let dir = scratch("quoted-comment");
+    // The listing quotes a value with whitespace in it, the way
+    // `iptables-save` prints it.
+    let (binary, file) = listing_stub(
+        &dir,
+        &["-p tcp -d 10.0.0.1/32 -m comment --comment \"allow web\" -j DROP"],
+    );
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.1", "comment":"allow web",
+        "jump":"DROP", "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}

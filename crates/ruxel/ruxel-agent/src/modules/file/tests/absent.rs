@@ -305,3 +305,15 @@ fn a_system_link_is_a_system_root() {
         assert!(error.contains("system root"), "{root}: {error}");
     }
 }
+
+#[test]
+fn a_relative_path_is_anchored_before_the_floor_holds_it() {
+    let base = scratch("relative");
+    // The removal anchors a relative path at the working directory of the
+    // agent, and the floor holds the anchored path: the working directory
+    // here is the scratch space, so the path is not a root.
+    let params = json!({"path": "etc", "state": "absent", "recurse": true});
+    let result = run(&params, &context());
+    assert!(result.is_ok(), "the anchored path is not a root");
+    std::fs::remove_dir_all(&base).unwrap();
+}

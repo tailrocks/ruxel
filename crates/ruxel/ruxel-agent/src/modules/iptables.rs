@@ -79,7 +79,7 @@ fn run_with(
 /// left do not move.
 fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Result<u32, String> {
     let rules = list_chain(binary, chain)?;
-    let declared: Vec<&str> = spec.iter().map(String::as_str).collect();
+    let declared: Vec<String> = spec.to_vec();
     let wanted = match_pairs(&declared);
     let mut numbers: Vec<u32> = Vec::new();
     for (index, rule) in rules.iter().enumerate() {
@@ -107,7 +107,7 @@ fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Re
 /// The numbers of the rules of the chain that match the declared match.
 fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<u32>, String> {
     let rules = list_chain(binary, chain)?;
-    let declared: Vec<&str> = spec.iter().map(String::as_str).collect();
+    let declared: Vec<String> = spec.to_vec();
     let wanted = match_pairs(&declared);
     let mut numbers = Vec::new();
     for (index, rule) in rules.iter().enumerate() {
@@ -119,6 +119,18 @@ fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<u32>
         }
     }
     Ok(numbers)
+}
+
+/// The destination in the form the firewall prints it: a host without a
+/// prefix carries its full mask.
+fn full_mask(destination: &str) -> String {
+    if destination.contains('/') {
+        return destination.to_string();
+    }
+    if destination.contains(':') {
+        return format!("{destination}/128");
+    }
+    format!("{destination}/32")
 }
 
 /// The rules of the chain, as the firewall lists them.
@@ -134,36 +146,74 @@ fn list_chain(binary: &str, chain: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// The arguments of a listed rule, without the chain it belongs to.
-fn rule_arguments<'a>(rule: &'a str, chain: &str) -> Option<Vec<&'a str>> {
+/// The arguments of a listed rule, without the chain it belongs to. The
+/// listing is in the form of `iptables-save`, so a value with whitespace
+/// in it is quoted and stays one argument.
+fn rule_arguments(rule: &str, chain: &str) -> Option<Vec<String>> {
     let rest = rule.strip_prefix(&format!("-A {chain} "))?;
-    Some(rest.split_whitespace().collect())
+    Some(split_arguments(rest))
+}
+
+/// The arguments of a command line, with the quoted values kept whole.
+fn split_arguments(line: &str) -> Vec<String> {
+    let mut arguments = Vec::new();
+    let mut argument = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for character in line.chars() {
+        match character {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            character if character.is_whitespace() && !quoted => {
+                if started {
+                    arguments.push(std::mem::take(&mut argument));
+                    started = false;
+                }
+            }
+            character => {
+                argument.push(character);
+                started = true;
+            }
+        }
+    }
+    if started {
+        arguments.push(argument);
+    }
+    arguments
 }
 
 /// The match of a rule: every option but the jump and the comment, which
 /// are not part of the match. An option the rule carries and the declared
 /// match does not is a different match, so a rule with `--dport 22` is not
 /// the rule that declares only a protocol.
-fn match_pairs(args: &[&str]) -> Vec<(String, String)> {
+fn match_pairs(args: &[String]) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let mut index = 0;
     while index < args.len() {
-        let flag = args[index];
+        let flag = &args[index];
         let value = args.get(index + 1);
-        if matches!(flag, "-j" | "--jump" | "--comment") {
+        if matches!(flag.as_str(), "-j" | "--jump" | "--comment") {
             // The jump and the comment are not part of the match.
             index += 2;
             continue;
         }
-        if flag == "-m" && value == Some(&"comment") {
+        if flag == "-m" && value.map(String::as_str) == Some("comment") {
             // The comment carries its own options.
             index += 4;
             continue;
         }
         if let Some(value) = value {
-            // `-p all` is the default the listing leaves out.
-            if flag != "-p" || *value != "all" {
-                pairs.push((flag.to_string(), value.to_string()));
+            // `-p all` is the default the listing leaves out, and a host
+            // without a prefix carries its full mask in the listing.
+            if flag != "-p" || value != "all" {
+                let value = if flag == "-d" {
+                    full_mask(value)
+                } else {
+                    value.clone()
+                };
+                pairs.push((flag.clone(), value));
             }
             index += 2;
             continue;

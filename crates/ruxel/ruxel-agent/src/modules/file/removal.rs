@@ -21,6 +21,15 @@ use std::path::{Component, Path};
 /// In check mode nothing is removed: the checks a removal makes are the
 /// ones the run itself makes, so both answer the same.
 pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<bool, String> {
+    // The removal works on the absolute path: a relative path is anchored
+    // at the working directory of the agent, and the floor has to hold the
+    // path that is anchored there.
+    let working = std::env::current_dir().map_err(|error| error.to_string())?;
+    let path = &if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        working.join(path)
+    };
     // A removal never takes a system root, however the path reaches it.
     super::floor::refuse_system_root(path)?;
     // A removal walks no dot segments: `..` would name a directory the
