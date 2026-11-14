@@ -1,0 +1,12 @@
+// The account step lowers under the `user` kind: its result name and the
+// references a dependent carries are spelled `user_<hex>`, so no generated
+// name keeps the `loginShell` model this migration replaced. A command
+// that reacts to an account reads `results.user_….changed`.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+local account = new linux.User { user = "ruxel-app"; uid = 1500 }
+local verify = new Command { title = "Verify the account"; run { "true" }; onChangeOf { account } }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { account; verify } } }

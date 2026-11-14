@@ -1,0 +1,353 @@
+//! The boot surface: the system directories procps reads, the one copy
+//! of a name it loads, and the fingerprint of the surface the ledger
+//! weighs on its cached results.
+
+use std::path::PathBuf;
+
+use super::super::boot;
+
+/// A scratch directory that removes itself.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-sysctl-boot-{}-{name}", std::process::id()));
+        drop(std::fs::remove_dir_all(&path));
+        std::fs::create_dir_all(&path).expect("operation succeeds");
+        Self(path)
+    }
+
+    fn dir(&self, name: &str) -> PathBuf {
+        let path = self.0.join(name);
+        std::fs::create_dir_all(&path).expect("operation succeeds");
+        path
+    }
+
+    fn file(&self, dir: &str, name: &str, content: &str) -> PathBuf {
+        let path = self.0.join(dir).join(name);
+        std::fs::create_dir_all(self.0.join(dir)).expect("operation succeeds");
+        std::fs::write(&path, content).expect("operation succeeds");
+        path
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        drop(std::fs::remove_dir_all(&self.0));
+    }
+}
+
+#[test]
+fn every_procps_system_directory_is_read() {
+    // procps reads five directories and the legacy file
+    // (`sysctl.conf(5)`): a file in `/usr/local/lib/sysctl.d` or
+    // `/lib/sysctl.d` assigns a key at boot like any other.
+    let dirs: Vec<&str> = boot::DIRS.iter().map(|(dir, _)| *dir).collect();
+    assert_eq!(
+        dirs,
+        vec![
+            "/etc/sysctl.d/",
+            "/run/sysctl.d/",
+            "/usr/local/lib/sysctl.d/",
+            "/usr/lib/sysctl.d/",
+            "/lib/sysctl.d/",
+        ]
+    );
+}
+
+#[test]
+fn a_shadowed_copy_of_a_name_is_not_part_of_the_boot_surface() {
+    // procps loads one file per name, from the highest-precedence
+    // directory that holds it: the shadowed copy never reaches the
+    // kernel and must not weigh on the boot value.
+    let scratch = Scratch::new("shadowed");
+    let etc = scratch.dir("etc");
+    let usr = scratch.dir("usr");
+    scratch.file("etc", "99-vendor.conf", "net.ipv4.ip_forward=1\n");
+    scratch.file("usr", "99-vendor.conf", "net.ipv4.ip_forward=0\n");
+    let dirs: [(&str, u8); 2] = [
+        (etc.to_str().expect("path is text"), 1),
+        (usr.to_str().expect("path is text"), 0),
+    ];
+    let files = boot::system_files_in(&dirs);
+    assert_eq!(files.len(), 2, "one copy of the name, and the legacy file");
+    assert!(
+        files
+            .iter()
+            .any(|file| file.starts_with(etc.to_str().expect("path is text"))),
+        "the highest-precedence copy is the loaded one: {files:?}"
+    );
+    assert!(
+        !files
+            .iter()
+            .any(|file| file.starts_with(usr.to_str().expect("path is text"))),
+        "the shadowed copy is not loaded: {files:?}"
+    );
+}
+
+#[test]
+fn the_boot_fingerprint_moves_with_the_boot_files() {
+    // The fingerprint is what the ledger weighs on its cached result: a
+    // file added or changed after the task ran moves the boot value the
+    // task never judged.
+    let scratch = Scratch::new("fingerprint");
+    let first = scratch.file("etc", "90-ruxel.conf", "net.ipv4.ip_forward=1\n");
+    let files = vec![first.clone()];
+    let before = boot::fingerprint_of(&files).expect("fingerprint");
+    let second = scratch.file("etc", "99-other.conf", "net.ipv4.ip_forward=0\n");
+    let after = boot::fingerprint_of(&[files[0].clone(), second]).expect("fingerprint");
+    assert_ne!(before, after, "a new boot file moves the surface");
+    let changed = scratch.file("etc", "90-ruxel.conf", "net.ipv4.ip_forward=0\n");
+    assert_ne!(
+        before,
+        boot::fingerprint_of(&[changed]).expect("fingerprint"),
+        "a changed boot file moves the surface"
+    );
+}
+
+// APFS refuses a file name that is not text, so the surface is
+// provable only where procps reads it: the Linux lane runs this, and
+// the code keeps the raw name bytes on every platform.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_whose_name_is_not_text_is_in_the_boot_surface() {
+    use std::os::unix::ffi::OsStringExt;
+    // A `*.conf` basename need not be valid UTF-8 and procps reads it
+    // all the same — `sysctl --dry-run --system` prints its assignment
+    // — so such a file weighs on the surface like any other. Dropping
+    // it would hide both the override it makes and the move it gives
+    // the fingerprint, while a cached task keeps reporting success.
+    let scratch = Scratch::new("nontext");
+    let dir = scratch.dir("etc");
+    let mut name = std::ffi::OsString::from_vec(b"\xffbad".to_vec());
+    name.push(".conf");
+    let path = dir.join(&name);
+    std::fs::write(&path, "net.ipv4.ip_forward=0\n").expect("operation succeeds");
+    let text = dir.to_str().expect("the scratch path is text").to_owned();
+    let dirs = [(text.as_str(), 4u8)];
+    let files = boot::system_files_in(&dirs);
+    assert!(files.contains(&path), "{files:?}");
+    // and the fingerprint over that surface is not the empty one
+    let without = boot::fingerprint_of(&[]).expect("an empty surface fingerprints");
+    let with = boot::fingerprint_of(&files).expect("the surface fingerprints");
+    assert_ne!(without, with, "the file must weigh on the fingerprint");
+}
+
+#[test]
+fn a_later_file_keeps_only_its_final_assignment() {
+    // procps applies a file's lines in order and the last assignment
+    // wins: a later file that assigns `=0` and then `=1` hands boot the
+    // value `1`, so a task managing `1` must not be refused for the
+    // intermediate value the file itself overrides again.
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.ipv4.ip_forward=0\nnet.ipv4.ip_forward=1\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    // A final differing assignment still hands the boot value away.
+    let host = vec![(
+        "/etc/sysctl.conf".to_string(),
+        b"net.ipv4.ip_forward=1\nnet.ipv4.ip_forward=0\n".to_vec(),
+    )];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &host,
+            &[],
+        ),
+        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
+    );
+}
+
+#[test]
+fn a_wildcard_stays_within_its_path_component() {
+    // procps expands a wildcard one segment at a time: `net.*` covers
+    // one component, so `net.*.rp_filter` assigns no
+    // `net.ipv4.conf.all.rp_filter`, while `net.ipv4.conf.*.rp_filter`
+    // expands to the interface keys and would assign them — except the
+    // managed key the entry under management names outright: the file
+    // holds no line for it yet, and `rewrite_file` is about to add the
+    // assignment by name that procps keeps out of the pattern's
+    // expansion. A key the sequence names nowhere is still the
+    // pattern's (see `boot_wildcards`).
+    let host = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.ip_forward=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    let host = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.ip_forward=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
+    // sysctl.d(5) documents the same-name higher-precedence symlink to
+    // `/dev/null` as the way to disable a vendor file: the mask holds
+    // the name, the lower-precedence copy never loads, and its
+    // assignments must not weigh on the boot value — while `is_file`,
+    // following the link to the character device, answers false and
+    // used to drop the name entirely.
+    let scratch = Scratch::new("masked");
+    let etc = scratch.dir("etc");
+    let usr = scratch.dir("usr");
+    let mask = etc.join("99-vendor.conf");
+    std::os::unix::fs::symlink("/dev/null", &mask).expect("the mask links to /dev/null");
+    let vendor = scratch.file("usr", "99-vendor.conf", "net.ipv4.ip_forward=1\n");
+    let dirs: [(&str, u8); 2] = [
+        (etc.to_str().expect("path is text"), 1),
+        (usr.to_str().expect("path is text"), 0),
+    ];
+    let files = boot::system_files_in(&dirs);
+    assert!(
+        files.iter().any(|file| file == &mask),
+        "the mask holds the name: {files:?}"
+    );
+    assert!(
+        !files
+            .iter()
+            .any(|file| file.starts_with(usr.to_str().expect("path is text"))),
+        "the masked vendor copy must not load: {files:?}"
+    );
+    // The assignments behind the mask do not weigh on the boot value:
+    // the vendor file's value never hands it away.
+    let host: Vec<(String, Vec<u8>)> = files
+        .iter()
+        .map(|file| {
+            (
+                file.to_string_lossy().into_owned(),
+                std::fs::read(file).unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        boot::boot_override(
+            "/lib/sysctl.d/50-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "0",
+            &host,
+            &[]
+        ),
+        None,
+        "the masked assignment must not override the managed value"
+    );
+    // The mask is part of the boot surface: its appearance moves the
+    // fingerprint the ledger weighs on its cached results.
+    let masked = boot::fingerprint_of(&files).expect("fingerprint");
+    std::fs::remove_file(&mask).expect("the mask is removable");
+    let files = boot::system_files_in(&dirs);
+    assert!(
+        files.iter().any(|file| file == &vendor),
+        "without the mask the vendor copy loads: {files:?}"
+    );
+    assert_ne!(
+        masked,
+        boot::fingerprint_of(&files).expect("fingerprint"),
+        "the mask must move the boot surface"
+    );
+}
+
+#[test]
+fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
+    // The managed file assigns `net.ipv4.conf.all.rp_filter=1` by name
+    // and a later `/etc/sysctl.conf` holds `net.ipv4.conf.*.rp_filter=0`:
+    // procps keeps the keys a setting names outright out of the
+    // expansion of a pattern, so the wildcard never reaches `all` and
+    // the managed entry keeps the boot value.
+    let host: Vec<(String, Vec<u8>)> = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.conf.all.rp_filter=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    // The managed file's own entry is a named assignment wherever the
+    // file carries no content yet: the entry the task writes stands for
+    // it, so the wildcard hands the boot value away from no key of it.
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &[(
+                "/etc/sysctl.conf".to_string(),
+                b"net.ipv4.conf.*.rp_filter=0\n".to_vec()
+            )],
+            &[],
+        ),
+        None
+    );
+    // The key under management is named outright by the entry the task
+    // writes — the file carries no line for it yet and `rewrite_file`
+    // is about to add the assignment — so the pattern never reaches it
+    // whatever other keys the file names. A key the sequence names
+    // nowhere and manages nothing is still the pattern's, and the
+    // non-wildcard assignment of another value is still an override.
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.eth0.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+}

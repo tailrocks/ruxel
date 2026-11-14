@@ -1,0 +1,26 @@
+// expect: their files' boot order reverses them
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// At boot `sysctl --system` applies the configuration files by their
+// file names across the system directories, not by directory-first
+// absolute paths: `/usr/lib/sysctl.d/10-new.conf` loads before
+// `/etc/sysctl.d/99-old.conf`, so the boot value returns to the earlier
+// stage's though its file writes the earlier absolute path.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-old.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/usr/lib/sysctl.d/10-new.conf" }
+    }
+  }
+}

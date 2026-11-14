@@ -1,0 +1,21 @@
+// expect: which does not make it executable for the account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Unix selects the permission class by the caller's identity: a
+// root-owned shell at mode 0100 carries an execute bit that serves
+// only its owner, so the account still cannot run it and login fails
+// while the apply reports success. The lowering and the account's
+// runtime check both require the other-execute bit — the class every
+// account that does not own the file runs as.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/esh"; content = "#!/bin/sh\n"; mode = "0100" }
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}

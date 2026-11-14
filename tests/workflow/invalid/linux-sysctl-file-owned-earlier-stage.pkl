@@ -1,0 +1,16 @@
+// expect: the persistence file must be a regular file
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A whole-file owner before the sysctl is only safe where it leaves a
+// regular file behind: a directory at the path cannot serve as the
+// persistence file, and the sysctl task deterministically fails on it.
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new Directory { path = "/etc/sysctl.d/80-tuning.conf" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "vm.swappiness"; value = "10"; path = "/etc/sysctl.d/80-tuning.conf" }
+  } }
+}

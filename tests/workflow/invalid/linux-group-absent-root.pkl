@@ -1,0 +1,9 @@
+// expect: state = "absent" is rejected for the root group
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Removing the root group would strand every file the superuser owns: the
+// account side refuses to remove root, and the group side refuses to
+// remove the superuser's primary group.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.Group { name = "root"; state = "absent" } } } }

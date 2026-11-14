@@ -1,0 +1,25 @@
+// expect: claim the uid 1001 for different accounts
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The uid 1001 changes hands on one machine only: stage "a" removes
+// `alice` on 127.0.0.1 alone, and on 127.0.0.2 the original holder is
+// still present, so stage "ab2"'s `useradd -u 1001` for `bob` fails
+// there. A removal frees the number on the hosts it runs on — the proof
+// must cover every host both claimant stages share, not merely overlap
+// each pair, or one surviving holder would free the number globally.
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "ab"; hosts { a; b }; steps {
+    new linux.User { user = "alice"; uid = 1001 }
+  } }
+  new Stage { title = "a"; hosts { a }; steps {
+    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+  } }
+  new Stage { title = "ab2"; hosts { a; b }; steps {
+    new linux.User { user = "bob"; uid = 1001 }
+  } }
+}

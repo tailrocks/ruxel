@@ -217,16 +217,22 @@ mod tests {
         for content in ["rendered", "rendered\n", "rendered\n\n"] {
             let params = serde_json::json!({"dest": path, "content": content});
             ctx.check_mode = true;
-            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            assert!(
+                super::super::execute("template", &params, "", None, &ctx, &mut state, &[]).changed
+            );
             ctx.check_mode = false;
-            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            assert!(
+                super::super::execute("template", &params, "", None, &ctx, &mut state, &[]).changed
+            );
             assert_eq!(std::fs::read(&path).unwrap(), content.as_bytes());
             assert!(
-                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+                !super::super::execute("template", &params, "", None, &ctx, &mut state, &[])
+                    .changed
             );
             ctx.check_mode = true;
             assert!(
-                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+                !super::super::execute("template", &params, "", None, &ctx, &mut state, &[])
+                    .changed
             );
         }
         std::fs::remove_dir_all(dir).unwrap();

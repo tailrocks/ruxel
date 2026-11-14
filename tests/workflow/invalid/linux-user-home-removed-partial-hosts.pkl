@@ -1,0 +1,36 @@
+// expect: which stage "s1" removes with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel -r` deletes the home directory on every host the removal
+// runs on. The directory is declared again on one machine only, so on
+// the other the home is still gone when the later stage writes into it:
+// the proof of the recreation must cover every host the two stages
+// share, not merely overlap each pair.
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts { a; b }
+    steps {
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s1b"
+    hosts { a }
+    steps {
+      new Directory { path = "/home/app"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts { a; b }
+    steps {
+      new File { path = "/home/app/.config"; content = "x\n" }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+// expect: manages the target /opt/esh-real of the shell /opt/esh
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account's task follows the shell's link and reads the file it
+// names, so a managed target that is not executable for the account is
+// refused the way a non-executable shell file is — the order of the
+// steps does not matter, the link resolves to the target either way.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/esh-real"; content = "#!/bin/sh\n"; mode = "0644" }
+      new Symlink { path = "/opt/esh"; target = "/opt/esh-real" }
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}

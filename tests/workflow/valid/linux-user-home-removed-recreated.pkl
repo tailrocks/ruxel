@@ -1,0 +1,31 @@
+// The home of a removed account is declared again on every host the
+// removal and the later stage share, so the later step finds the
+// directory it writes into: the removal deletes the home, the
+// declaration creates it again, and the file lands in it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s1b"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/app"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/app/.config"; content = "x\n" }
+    }
+  }
+}

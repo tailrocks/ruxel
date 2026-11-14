@@ -1,0 +1,20 @@
+// A sysctl value is one line of text, equals signs included: a
+// kernel.core_pattern command such as `|/usr/lib/systemd/systemd-coredump
+// --option=value` is a valid value, and the entry's delimiter is the
+// first equals sign only.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl {
+        name = "kernel.core_pattern"
+        value = "|/usr/lib/systemd/systemd-coredump --option=value"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+// expect: removes the group app before 'Remove account app'
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// groupdel refuses a group that is still an account's primary group, so
+// the account removal runs first.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.Group { name = "app"; state = "absent" }
+  new linux.User { user = "app"; state = "absent"; uid = 1500 }
+} } }

@@ -1,0 +1,21 @@
+// expect: list the account before that step
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account's task is what creates the missing home (`useradd -m`):
+// a same-stage step that publishes beneath the claimed home before the
+// account runs fails on the absent parent at apply — check mode
+// reports both tasks pending because the copy writes nothing — and
+// reversing the two steps succeeds. A file inside a managed home
+// follows the account that creates the directory.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/alice/config/app.conf"; content = "keep\n" }
+      new linux.User { user = "alice" }
+    }
+  }
+}

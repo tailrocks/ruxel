@@ -1,5 +1,5 @@
-/// Linux system steps: the timezone, an account and its login shell, and a
-/// Git working tree pinned to one commit.
+/// Linux system steps: the timezone, accounts and groups, a kernel
+/// parameter, and a Git working tree pinned to one commit.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Linux.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
@@ -39,6 +39,20 @@ typealias FilePath = AbsolutePath(this != "/")
 
 /// A user or group name: a `Name` without the passwd and group delimiters.
 typealias Account = Name(!contains(":") && !contains("\n"))
+
+/// A user or group name: a lower-case name of at most 32 characters, the
+/// way the passwd and group files spell one. A name starts with a letter
+/// or an underscore and continues with letters, digits, `_` or `-`.
+typealias Username = Static(matches(Regex("[a-z_][a-z0-9_-]{0,31}")))
+
+/// A numeric user id: 0 to 60000.
+typealias Uid = Int(isBetween(0, 60000))
+
+/// A numeric group id: 0 to 60000.
+typealias Gid = Int(isBetween(0, 60000))
+
+/// Whether a thing is there or not.
+typealias Presence = "present"|"absent"
 
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
@@ -92,21 +106,134 @@ const local function isIpv4(s: String): Boolean =
 /// or `..` components.
 typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*")))
 
+/// A kernel parameter name: dot-separated segments of letters, digits,
+/// underscores and hyphens, not starting with `-`, the way `/proc/sys`
+/// spells them (`net.ipv4.conf.br-123.forwarding`) — or slash-first
+/// notation, where the first separator is `/` and every later `/` a
+/// separator and every `.` a literal of its component
+/// (`net/ipv4/conf/enp3s0.200/forwarding`), the spelling a component
+/// with a literal dot needs. The notations never mix: a dotted name
+/// admits no slash, and a slash-first name keeps its dots inside
+/// components.
+typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) || matches(Regex(#"[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+"#))) && !startsWith("-") && !split("/").any((segment) -> segment == "." || segment == ".."))
+
+/// A kernel parameter value: one line of text, with no line break in it, so
+/// one entry is one line of one file.
+typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
+
+/// A sysctl persistence file: one the system loader reads at boot —
+/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
+/// `/usr/lib/sysctl.d`, the recognized configuration files `sysctl
+/// --system` loads. `/run/sysctl.d` is recognized too, but `/run` is
+/// volatile runtime state (tmpfs), normally cleared at reboot, so a file
+/// written there is gone before the next boot's sysctl loading — it is
+/// not a persistence path. A file elsewhere is written but never read
+/// again: the parameter silently reverts after reboot.
+typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
+
 class Timezone extends core.Step {
   hidden fixed kind = "timezone"
   name: TimezoneName
 }
 
-/// An account and its login shell.
+/// A kernel parameter, set in a sysctl file and applied live.
 ///
-/// CAT.03 renamed `LoginShell` to `User`: the new name says that the step
-/// manages the account, and `User` is to create a missing account. The
-/// step lowers to the engine's user operation alone, which creates the
-/// account when it is missing and sets the login shell of an existing one.
+/// The step manages one entry in the file at `path` and applies it live:
+/// every apply reconciles the live kernel value too, so a parameter
+/// another process changed is corrected.
+///
+/// Its identity is the name and the path, so two stages (or one stage with
+/// two files) may set the same name in different files, each entry its
+/// own; two different values for one name in one stage conflict — the
+/// kernel holds one live value. The file itself is not the
+/// step's to own: any other step that manages that path — a `File`, a
+/// `Directory`, a `Symlink`, a `GitCheckout`, an apt repository's source
+/// file — conflicts with it, while any number of sysctl steps may share a
+/// file, each entry its own.
+class Sysctl extends core.Step {
+  hidden fixed kind = "sysctl"
+  name: SysctlName
+  value: SysctlValue
+  /// The file that holds the entry: a file the system loader reads at
+  /// boot — `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
+  /// `/usr/lib/sysctl.d`, which the agent reads and rewrites atomically.
+  /// `/run/sysctl.d` is out: `/run` is volatile runtime state (tmpfs), so
+  /// the entry would be gone before the next boot's sysctl loading. A
+  /// file elsewhere would never be loaded again either, so the parameter
+  /// silently reverts after reboot.
+  path: SysctlFile = "/etc/sysctl.d/90-ruxel.conf"
+}
+
+/// An account and the settings of it.
+///
+/// The step manages one account: it creates the account when it is missing
+/// and changes the settings of an existing one. There is no `create = false`
+/// field: a step that must not create an account states the account
+/// earlier in the same stage, or keeps the existence probe as a `Capture`.
+///
+/// Its identity is the whole account, so two steps that manage one account
+/// with different settings conflict: a stage declares one state for each
+/// thing it manages.
 class User extends core.Step {
-  hidden fixed kind = "loginShell"
-  user: Account
-  shell: FilePath
+  hidden fixed kind = "user"
+  /// The account's name.
+  user: Username
+  /// The account's login shell: a file path, any absolute path but `/`
+  /// itself, which is a directory. The shell must exist on the host; a site
+  /// that manages login access says in its runbook that root account and
+  /// key changes run only through its gated apply path. The shell is
+  /// never the account's home: the home is a directory the account's
+  /// task creates and uses, while the shell is a regular executable file
+  /// `shell_allowed` verifies — including the claimed home `/home/<user>`
+  /// of an account that states none — so one path cannot stand for both.
+  shell: FilePath?(this == null || state != "present" || this != (home ?? "/home/\(user)")) = null
+  /// The account's home directory: a file path, any absolute path but `/`
+  /// itself. An explicit home of a present account is a path the step
+  /// manages — the agent creates the directory — so no other step may own
+  /// it.
+  home: FilePath? = null
+  /// The group the account belongs to. The root account keeps its primary
+  /// group: a step for `root` may not declare one. A present account that
+  /// states none gets the group `useradd` creates with its login name
+  /// (USERGROUPS_ENAB), and a same-stage `Group` of that name conflicts
+  /// with the account — state the group explicitly to manage it.
+  group: Username? = null
+  /// The other groups the account belongs to. Unset leaves the account's
+  /// supplementary memberships unmanaged; an explicit empty listing
+  /// (`groups = new {}`) removes every one of them, so the account keeps
+  /// none. The property is nullable, so a listing is written as an
+  /// assignment (`groups = new Listing { … }`), never as an amendment.
+  groups: Listing<Username>? = null
+  /// The account's numeric id. The root account keeps uid 0: a step for
+  /// `root` may not declare one.
+  uid: Uid? = null
+  /// Whether a created account is a system account (`useradd --system`).
+  /// Creation only: the flag shapes an account that does not exist yet —
+  /// `useradd --help` defines `--system` as "create a system account" —
+  /// and a step for an existing account leaves its kind alone.
+  system: Boolean = false
+  /// Whether the account is there (`present`) or gone (`absent`).
+  state: Presence = "present"
+  /// Whether removing the account removes its home directory too
+  /// (`userdel -r`). The step then states the home: the directory and
+  /// everything in it goes, so no step may manage a path inside it.
+  removeHome: Boolean = false
+}
+
+/// A group.
+///
+/// The step manages one group: it creates the group when it is missing and
+/// changes the id of an existing one. Its identity is the group, so two
+/// steps that manage one group with different ids conflict.
+class Group extends core.Step {
+  hidden fixed kind = "group"
+  /// The group's name.
+  name: Username
+  /// The group's numeric id. The root group keeps gid 0: a step for `root`
+  /// may not declare one.
+  gid: Gid? = null
+  /// Whether the group is there (`present`) or gone (`absent`).
+  state: Presence = "present"
 }
 
 /// A Git working tree pinned to one commit. Another step may manage a path

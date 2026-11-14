@@ -1,0 +1,18 @@
+// An explicit empty supplementary-group list is a state of its own: the
+// account keeps no supplementary groups and the operation carries
+// `groups = []`, while a step that states no `groups` at all leaves the
+// memberships unmanaged and emits no `groups` field.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app-empty"; groups = new Listing {} }
+      new linux.User { user = "app-free" }
+    }
+  }
+}

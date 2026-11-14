@@ -1,0 +1,26 @@
+// Two declarations of one absent account that differ only in the fields
+// the removal branch never reads — the shell, the supplementary groups
+// and the system flag — are the same state: the runtime returns from
+// the removal branch before it reads them, so both declarations remove
+// the account exactly the same way.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User {
+        user = "app"
+        uid = 1500
+        state = "absent"
+        shell = "/bin/sh"
+        groups = new Listing { "docker" }
+        system = true
+      }
+      new linux.User { user = "app"; uid = 1500; state = "absent" }
+    }
+  }
+}

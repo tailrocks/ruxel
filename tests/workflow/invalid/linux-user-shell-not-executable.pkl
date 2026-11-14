@@ -1,0 +1,21 @@
+// expect: which does not make it executable
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The file task deterministically creates what its mode says: a managed
+// shell at mode 0644 is a non-executable file, and the account's task
+// rejects it in `shell_allowed` at apply time. The producer listed first
+// still leaves this statically impossible workflow admitted before the
+// fix, so lowering requires an executable mode where a managed `File`
+// supplies a login shell.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/esh"; content = "#!/bin/sh\n"; mode = "0644" }
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}

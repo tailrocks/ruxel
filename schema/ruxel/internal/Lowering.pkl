@@ -84,8 +84,10 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["debconfEntry"] = (s) -> s is debian.DebconfEntry
   ["aptRepository"] = (s) -> s is debian.AptRepository
   ["timezone"] = (s) -> s is linux.Timezone
-  ["loginShell"] = (s) -> s is linux.User
+  ["user"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
+  ["sysctl"] = (s) -> s is linux.Sysctl
+  ["group"] = (s) -> s is linux.Group
 }
 
 /// Whether the step's class is the served class of its kind, or a subclass
@@ -118,7 +120,266 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + preferenceOverlapAcrossStages(_stages, _indexes)
     + preferencePlanningAcrossStages(_stages, _indexes)
     + indexPlanningAcrossStages(_stages, _indexes)
-    + repositoryPlanningAcrossStages(_stages, _indexes))
+    + repositoryPlanningAcrossStages(_stages, _indexes)
+    + sysctlBootOrder(_stages, _indexes)
+    + sysctlOwnersAcrossStages(_stages, _indexes)
+    + groupRemovalsAcrossStages(_stages, _indexes)
+    + homeTypesAcrossStages(_stages, _indexes)
+    + identityNumbersAcrossStages(_stages, _indexes)
+    + automaticNumbersAcrossStages(_stages, _indexes)
+    + fileIdentitiesAcrossStages(_stages, _indexes)
+    + renumberedIdentities(_stages, _indexes)
+    + homeRemovalsAcrossStages(_stages, _indexes))
+
+/// An explicit uid or gid is a persistent identity of one host: two
+/// stages that assign one number to different names are refused — the
+/// first account (or group) is still present, so the second `useradd -u`
+/// (or `groupadd -g`) fails on the taken number. The comparison is per
+/// host pair: stages on disjoint hosts never share identities. A number
+/// is reused only after a proven removal of its holder: a step removing
+/// the account (for a gid claim, the group) in a stage between the two
+/// claims.
+function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
+  claims.flatMap((c) -> claims
+    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.number == c.number && d.name != c.name && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> !numberFreed(_stages, _indexes, c, d))
+    .map((d) -> numberClash(_stages[c.stage], c, _stages[d.stage], d)))
+
+/// The explicit identity numbers a stage's steps claim: the uid of a
+/// created account, the gid of a created group. A removal claims nothing
+/// — it frees its holder's number instead.
+function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
+  positions(ix.steps).flatMap((i) ->
+    let (s = ix.steps[i])
+    if (s is linux.User && s.state == "present" && s.uid != null) List(new IdClaim { number = s.uid; name = s.user; kind = "uid"; stage = m; spot = where(ix.placed[i]) })
+    else if (s is linux.Group && s.state == "present" && s.gid != null) List(new IdClaim { number = s.gid; name = s.name; kind = "gid"; stage = m; spot = where(ix.placed[i]) })
+    else List())
+
+/// Whether the earlier claimant's identity is proven removed before the
+/// later claim: a step removing the account (for a gid claim, the group)
+/// in a stage between the two claims — on every host both claimant
+/// stages run on. The number is freed per machine: a removal covering
+/// only one of the shared hosts leaves the original holder present on
+/// the others, where the later `useradd -u` (or `groupadd -g`) still
+/// fails, so the proof covers the whole intersection and may be spread
+/// over several removal stages, each covering one of its hosts.
+function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
+  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+    positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+      .any((k) -> stageRunsOn(_stages[k], h) && removedNumber(_indexes[k], c)))
+
+/// The hosts both stages run on: one machine when they connect alike —
+/// the same identity `hostsOverlap` compares stages by.
+const function sharedHosts(a: core.Stage, b: core.Stage): List<core.Host> =
+  a.hosts.toList().filter((x) -> b.hosts.toList().any((y) -> sameConnection(x, y)))
+
+/// Whether the stage runs on the machine `h`, by connection.
+const function stageRunsOn(s: core.Stage, h: core.Host): Boolean =
+  s.hosts.toList().any((x) -> sameConnection(x, h))
+
+/// Whether a stage removes the claimant with the number the claim
+/// holds: the removal declares its id (an account removal states its
+/// uid), and a declaration that names another number frees nothing —
+/// the runtime verifies the declared id against the live entry and
+/// refuses such a removal, so the later claim would never get its turn.
+/// A group removal that states no gid frees by name: the runtime
+/// verifies only the id it is given.
+/// Whether a stage removes the claimant with the number the claim
+/// holds: an account removal states its uid, and a declaration that
+/// names another number frees nothing — the runtime verifies the
+/// declared id against the live entry and refuses such a removal, so
+/// the later claim would never get its turn. A group removal that
+/// states no gid frees by name: the runtime verifies only the id it
+/// is given.
+function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
+  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number)
+  else ix.steps.any((s) -> s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == c.number))
+
+function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
+  "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(c.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) and '\(d.name)' (\(d.spot)); one host keeps one identity per number, so remove '\(c.name)' before reusing its \(c.kind), or give '\(d.name)' another one"
+
+/// An explicit identity number one stage's step claims.
+class IdClaim {
+  number: Int
+  name: String
+  kind: String
+  stage: Int
+  spot: String
+}
+
+/// An identity number an earlier stage allocates automatically: a
+/// present account or group that states no id lets the host's allocator
+/// draw one — `useradd alice` takes the first free number at UID_MIN
+/// (1000 on a clean default host), and `groupadd` and the private group
+/// draw the same way — so a later `useradd -u` (or `groupadd -g`) may
+/// claim exactly the number the draw took. The draw is no one number
+/// the schema can name: the host's free list decides, so every number
+/// of the allocator's range is the drawing account's until a proven
+/// removal frees it, and the range holds against a later explicit
+/// claim the way an explicit claim holds its own number.
+class IdDraw {
+  name: String
+  kind: String
+  stage: Int
+  spot: String
+  low: Int
+  high: Int
+  /// The account's declared uid — the number the runtime verifies an
+  /// account removal's declaration against — or `null` where the
+  /// account draws its uid too (or the drawing step is a group).
+  uid: Int?
+}
+
+/// The explicit claims an earlier stage's automatic allocations stand
+/// in the way of: a present account or group without a declared number
+/// reserves the allocator's range on every host the two stages share,
+/// and a later explicit claim of a number inside it is refused until a
+/// proven removal of the drawing identity frees the range. A claim of
+/// the same name is the same identity redeclared — no second allocation
+/// happens for it — and a number outside the range is the allocator's
+/// never to hand out. The direction is the one the allocator runs in:
+/// a draw after an explicit claim is safe, for the claim has already
+/// taken its number and the draw skips it.
+function automaticNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  let (draws = positions(_indexes).flatMap((m) -> drawsOf(_indexes[m], m)))
+  let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
+  draws.flatMap((c) -> claims
+    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> !drawFreed(_stages, _indexes, c, d))
+    .map((d) -> numberDraw(_stages[c.stage], c, _stages[d.stage], d)))
+
+/// The numbers a stage's steps allocate automatically: the uid of a
+/// present account that states none, the gid of a present group that
+/// states none, and the gid of the private group a present account
+/// gets when it names no primary group (USERGROUPS_ENAB) — useradd
+/// creates that group beside the account and draws its number the same
+/// way. The range is the clean default host's: UID_MIN..UID_MAX
+/// (1000..60000) for a regular account, SYS_UID_MIN..SYS_UID_MAX
+/// (1..999) for a system one (`useradd --system`), the same split for
+/// the groups.
+function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
+  positions(ix.steps).flatMap((i) ->
+    let (s = ix.steps[i])
+    if (s is linux.User && s.state == "present")
+      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, where(ix.placed[i]), null)) else List())
+      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, where(ix.placed[i]), s.uid)) else List())
+    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, where(ix.placed[i]), null))
+    else List())
+
+/// One automatic allocation: the name that draws, the kind of number,
+/// and the range the host's allocator draws it from. The account's
+/// declared uid rides along: the number the runtime verifies an
+/// account removal's declaration against.
+function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String, _uid: Int?): IdDraw =
+  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid }
+
+/// Whether the drawing identity is proven gone before the later claim:
+/// the account — for a gid draw, the group or the account whose private
+/// group it is — is removed in a stage between the two, on every host
+/// both claimant stages share, with a removal the runtime can prove
+/// will succeed for the draw (see `removedDraw`): a removal that fails
+/// its live-entry verification frees nothing, and the later claim
+/// would collide on the number the draw still holds.
+function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
+  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+    positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes[k], c, d)))
+
+/// Whether a stage removes the identity that drew the number with a
+/// removal the runtime can prove will succeed for the draw. The removal
+/// states the id the runtime verifies against the live entry, so a
+/// declaration that names another number fails the run rather than
+/// freeing the draw — the same match `removedNumber` demands of the
+/// claim — and an automatic system account is never freed at all: its
+/// drawn number is below 1000, where `userdel` refuses to remove the
+/// account and `groupdel` refuses the private group it still holds as
+/// its primary one. A group removal that states no gid frees by name:
+/// the runtime verifies only the id it is given. `userdel` deletes the
+/// empty same-name group with the account, so an account removal frees
+/// a private-group draw where the account's uid is the declared one the
+/// removal verifies.
+const function removedDraw(ix: StageIndex, c: IdDraw, d: IdClaim): Boolean =
+  if (c.low < 1000) false
+  else if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
+  else ix.steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid))
+
+function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
+  "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically, and the host's allocator can hand it \(d.number), which '\(d.name)' (\(d.spot)) claims explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
+
+/// At boot the sysctl files load in file-name order across the system
+/// directories: a later stage that persists its value in a file loading
+/// before an earlier stage's hands the boot value back to the earlier
+/// stage — the live value follows the stages, the boot value would not.
+/// The comparison is per host: stages on disjoint hosts never share a
+/// boot, so their layouts are independent.
+function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> bootClash(_stages[n], _indexes[n], _stages[m], _indexes[m])))
+
+/// A sysctl step manages the entries of its persistence file, never the
+/// file itself, so a later overlapping-host stage that writes the same
+/// path whole — a `File`, a `Symlink`, a checkout, an apt repository's
+/// source — replaces the file wholesale and removes the entry the
+/// earlier stage persists there: every apply re-clobbers it and the next
+/// boot loads the rewritten file without the parameter, though the live
+/// value still follows the stages. The direction is the point: a
+/// whole-file write before the sysctl leaves the entry in place (the
+/// sysctl adds its entry to whatever file is there), while one after it
+/// removes the entry again — and only a write that leaves a regular
+/// file behind is safe before it: a `Directory`, a `Symlink` or a
+/// checkout cannot serve as the persistence file at all, and the sysctl
+/// task deterministically fails on it wherever it stands. The
+/// comparison is per host: stages on disjoint hosts never share a file
+/// system.
+function sysctlOwnersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
+      + unusableEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
+      + unusableEntries(_stages[m], _indexes[m], _stages[n], _indexes[n])))
+
+/// The refusals for the entries a later stage's whole-file writes
+/// overwrite.
+function overwrittenEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  sysctlsOf(ia).flatMap((x) -> positions(ib.steps)
+    .filter((j) -> !(ib.steps[j] is linux.Sysctl) && paths(ib.steps[j]).contains(x.path))
+    .map((j) -> "'\(name(x))' of stage \"\(a.title)\" keeps its entry in the file \(x.path), and '\(name(ib.steps[j]))' of stage \"\(b.title)\" writes the whole file after it, which removes the entry again; a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the whole-file step into a stage before it"))
+
+/// The refusals for a sysctl whose persistence path an owner of the
+/// other stage leaves as anything but a regular file: the entry joins a
+/// file, so a directory, a link or a checkout at the path makes the
+/// sysctl task fail wherever the owner stands in the order.
+function unusableEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  sysctlsOf(ib).flatMap((x) -> positions(ia.steps)
+    .filter((j) -> !(ia.steps[j] is linux.Sysctl) && (ia.steps[j] is core.Directory || ia.steps[j] is core.Symlink || ia.steps[j] is linux.GitCheckout) && paths(ia.steps[j]).contains(x.path))
+    .map((j) -> "'\(name(ia.steps[j]))' of stage \"\(a.title)\" leaves \(x.path) as \(if (ia.steps[j] is core.Symlink) "a link" else if (ia.steps[j] is core.Directory) "a directory" else "a checkout"), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
+
+function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
+    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
+    .map((y) -> List(x, y))))
+  if (pairs.isEmpty) List()
+  else let (x = pairs.first.first) let (y = pairs.first.last)
+    List("stages \"\(a.title)\" and \"\(b.title)\" set the sysctl \(x.name) to different values, and their files' boot order reverses them: \(x.path) loads after \(y.path) and hands the boot value back to stage \"\(a.title)\"; name the later stage's file so it sorts last, or use one file")
+
+/// Where a sysctl file stands in the boot load order `sysctl --system`
+/// applies. The configuration files of all system directories sort
+/// together by their file names — `/etc/sysctl.d/10-x.conf` before
+/// `/usr/lib/sysctl.d/50-y.conf` before `/etc/sysctl.d/99-z.conf` — and
+/// one name resolved in several directories is applied by directory
+/// precedence, `/usr/lib` before `/run` before `/etc`, so the `/etc`
+/// copy is applied last and wins. `/etc/sysctl.conf` loads after all of
+/// them. The key spells that order: an explicit rank first — the legacy
+/// file above every directory file, whatever name a valid file name
+/// carries (any character but `/` and NUL, so no character stands for
+/// the rank) — then the file name, the directory's rank behind a
+/// separator nothing in a file name carries.
+const function bootOrder(path: String): String =
+  if (path == "/etc/sysctl.conf") "1\u{0}"
+  else "0\u{0}" + path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "2" else if (path.startsWith("/run/sysctl.d/")) "1" else "0")
+
+const function sysctlsOf(ix: StageIndex): List<core.Step> = ix.steps.filter((s) -> s is linux.Sysctl)
 
 function orFail(_indexes: List<StageIndex>, _problems: List<String>): List<StageIndex> =
   if (_problems.isEmpty) _indexes.map((ix) -> withMetas(ix)) else throw(_problems.first)
@@ -369,7 +630,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -422,11 +683,71 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': a password's answer is a secret (debian.secretAnswer(…)), never static text; a literal password would be committed to the workflow and printed in the clear")
   else if (s is debian.DebconfEntry && s.type == "boolean" && !(s.value is debian.SecretAnswer) && s.value != "true" && s.value != "false")
     List("'\(name(s))': a boolean answer is \"true\" or \"false\", not \"\(s.value)\"; debconf frontends read those two strings alone")
+  // `pklr` does not check the elements of a `Listing`, so the names of the
+  // groups of an account are checked here: each one must be a user or group
+  // name, with no NUL and no run-time value in it.
+  else if (s is linux.User && !badAccountNames(s.group, s.groups).isEmpty)
+    List("'\(name(s))': \"\(badAccountNames(s.group, s.groups.toList()).first)\" is not a user or group name")
+  // The private group of an account is created with it (`useradd -U`),
+  // after `useradd` has resolved the supplementary list: an account whose
+  // group is its private one cannot list its own name among its
+  // supplementary groups, for `useradd -U -G alice alice` resolves
+  // `alice` for -G before the private group exists and fails (rc 6).
+  else if (s is linux.User && s.group == null && s.groups != null && s.groups.toList().contains(s.user))
+    List("'\(name(s))' names itself as a supplementary group: its private group \(s.user) is created with the account, after the supplementary list is resolved, so useradd -U -G \(s.user) \(s.user) fails; drop \(s.user) from the groups, or declare a primary group and provide the group \(s.user) separately")
+  // The superuser's id is never a managed account's id, and an account
+  // below UID 1000 is a system account the host keeps: it is never removed.
+  // Removing an account therefore states its id, and the id is 1000 or more.
+  // The root account itself keeps uid 0: changing it would disconnect the
+  // root name from UID 0 and strand every file the superuser owns.
+  else if (s is linux.User && s.uid != null && s.uid == 0)
+    List("'\(name(s))': uid = 0 is rejected: the superuser's id is not for a managed account")
+  else if (s is linux.User && s.user == "root" && s.uid != null)
+    List("'\(name(s))': uid = \(s.uid) is rejected for root: the superuser's account keeps uid 0, and a change would strand every file it owns")
+  // The superuser keeps its primary group too: a declared group on the
+  // root account runs `usermod -g`, moving the superuser's primary group
+  // away from the root group (gid 0) whatever the group is named.
+  else if (s is linux.User && s.user == "root" && s.group != null)
+    List("'\(name(s))': group = \(s.group) is rejected for root: the superuser keeps its primary group, the root group (gid 0)")
+  else if (s is linux.User && s.state == "absent" && (s.user == "root" || s.uid == null || s.uid < 1000))
+    List("'\(name(s))': state = \"absent\" is rejected for root and for an account below UID 1000; state the account's uid (1000 or more) to remove it")
+  // userdel -r removes the home directory and mail spool, so a destructive
+  // removal states which directory it takes with it.
+  else if (s is linux.User && s.state == "absent" && s.removeHome && s.home == null)
+    List("'\(name(s))': removeHome is rejected without home: removing a home directory states which one it is")
+  // The root group's id is never a managed group's id, and the root group
+  // itself is never removed: the account side refuses the superuser's id
+  // and removal, and the group side refuses the superuser's primary group
+  // the same way, for groupdel root strands every file root owns. The root
+  // group itself keeps gid 0: changing it would detach every file owned by
+  // numeric GID 0 from the root group.
+  else if (s is linux.Group && s.gid != null && s.gid == 0)
+    List("'\(name(s))': gid = 0 is rejected: the root group's id is not for a managed group")
+  else if (s is linux.Group && s.name == "root" && s.gid != null)
+    List("'\(name(s))': gid = \(s.gid) is rejected for root: the root group keeps gid 0, and a change would strand every file it owns")
+  else if (s is linux.Group && s.state == "absent" && s.name == "root")
+    List("'\(name(s))': state = \"absent\" is rejected for the root group: the superuser's primary group is the host's to keep")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
 /// never run fails before the run starts.
 const local selector = Regex(#"([a-z0-9][a-z0-9+.-]+)(:([a-z0-9][a-z0-9-]*))?(=(([1-9][0-9]*:)?[0-9][A-Za-z0-9.+~-]*))?"#)
+
+/// The names of an account that are not user or group names: the group the
+/// account belongs to, and the other groups it belongs to. `pklr` does not
+/// check the elements of a `Listing`, so they are checked here; a step
+/// that states no supplementary groups has none to check.
+const local function badAccountNames(group: String?, groups: Listing<String>?): List<String> =
+  ((if (group == null) List() else List(group)) + (if (groups == null) List() else groups.toList()))
+    .filter((n) -> !isAccountName(n))
+
+/// Whether a string is a user or group name: the passwd spelling of one,
+/// with no NUL and no run-time value in it.
+const local function isAccountName(n: String): Boolean =
+  n.matches(Regex("[a-z_][a-z0-9_-]{0,31}"))
+    && !n.contains("\u{0}")
+    && !n.contains("__ruxel_rt_8d41.")
+    && !n.contains("__ruxel_secret_8d41.")
 
 const function packageProblems(names: List<String>): List<String> =
   let (bad = names.filter((n) -> !n.matches(selector) || pseudoArch(n)))
@@ -518,10 +839,14 @@ function nested(ix: StageIndex, i: Int): List<String> =
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
 
-/// Paths a step writes as a regular file or a link. A timer writes its
-/// unit file, which is a regular file like any other.
+/// Paths a step writes as a regular file or a link: its whole-file
+/// subjects, and a sysctl's entry file — the entries are its subjects,
+/// but the file it writes is a regular file of its own. A timer writes
+/// its unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
-  if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
+  if (s is linux.Sysctl) List(s.path)
+  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s)
+  else List()
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -531,6 +856,586 @@ function keyringModes(ix: StageIndex, i: Int): List<String> =
 
 const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
+
+/// A sysctl step manages the entries of the file at its `path`, never the
+/// file itself, so any other step that manages the same path declares a
+/// second state for the same file: whichever ran later would clobber the
+/// other. The predicate is the step's path subjects, not a list of kinds:
+/// a file, a directory, a link, a checkout, an apt repository's source or
+/// keyring, a validate candidate — anything that names the path. Two
+/// sysctl steps may share a file — each manages its own entry, and their
+/// subjects are their names in it.
+function sysctlFiles(ix: StageIndex, i: Int): List<String> =
+  earlier(i).filter((j) -> sysctlClash(ix.steps[j], ix.steps[i]) || sysctlClash(ix.steps[i], ix.steps[j]))
+    .map((j) -> let (p = if (ix.steps[j] is linux.Sysctl) ix.steps[j].path else ix.steps[i].path)
+      "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage the file \(p): a Sysctl manages the entries of the file, not the file itself, so give the sysctl its own path or move the other step to another stage")
+
+const function sysctlClash(a: core.Step, b: core.Step): Boolean =
+  a is linux.Sysctl && !(b is linux.Sysctl) && paths(b).contains(a.path)
+
+/// The kernel holds one live value for one parameter: two sysctl steps of
+/// one stage that ask for different values of one name would change it
+/// back and forth on every apply — and disagree at boot, where file
+/// precedence picks one — whatever files they persist in. Steps asking
+/// for the same value are fine; each persists its own entry. Names
+/// compare canonicalized: the slash-first and dotted spellings of one
+/// parameter (`net/ipv4/ip_forward`, `net.ipv4.ip_forward`) address one
+/// kernel value.
+function sysctlValues(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is linux.Sysctl)) List()
+  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && ix.steps[j].value != ix.steps[i].value)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
+
+/// One parameter's identity: the `/proc/sys` path it addresses. Slash-
+/// first notation keeps its separators as written and the dotted
+/// spelling translates its dots, so the two spellings of one parameter
+/// compare equal — and a slash-first name with a literal dot (`enp3s0.200`)
+/// keeps its identity apart from the dotted spelling of another path.
+const function sysctlKey(name: String): String = if (name.contains("/")) name else name.split(".").join("/")
+
+/// An account needs the groups it names. A same-stage group step that
+/// removes one contradicts the account whatever the order — one side ends
+/// the stage needing a group the other removed — and one that creates it
+/// must come first: the tasks run where the author wrote them, so a clean
+/// host would run useradd -g before groupadd.
+function groupRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User)) List()
+  else if (u.state == "present") requiredGroups(u).flatMap((n) -> positions(ix.steps)
+    .filter((j) -> groupProvider(ix.steps[j], n))
+    .flatMap((j) -> groupRel(ix, i, j, n)))
+  // The inverse removal dependency: groupdel refuses a group that is
+  // still an account's primary group, so the account removal runs first.
+  // And `userdel` removes the account's empty same-name group where that
+  // group is the account's primary group: a same-stage step that ensures
+  // that group must not run before the removal that deletes it again.
+  // A removal that declares another primary group leaves the same-name
+  // group behind — `userdel` reports "group alice not removed because it
+  // is not the primary group of user alice" — so the restriction is
+  // exactly the removals whose declared primary group is the same-name
+  // one.
+  else (primaryGroup(u).flatMap((n) -> positions(ix.steps)
+    .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == n && ix.steps[j].state == "absent")
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) removes the group \(n) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account that keeps it as its primary group; list the account removal first")))
+    + (if (!primaryGroup(u).contains(u.user)) List() else positions(ix.steps)
+    .filter((j) -> j < i && ix.steps[j] is linux.Group && ix.steps[j].name == u.user && ix.steps[j].state == "present")
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) ensures the group \(u.user) before '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) removes the account, which deletes its empty same-name group; list the account removal first"))
+
+/// The primary group of an account: the one it names, or the group
+/// useradd creates with the login name when it names none.
+const function primaryGroup(u: linux.User): List<String> =
+  if (u.group != null) List(u.group) else List(u.user)
+
+/// The groups a present account needs: its primary group and its
+/// supplementary ones. A step that states no supplementary groups names
+/// none.
+const function requiredGroups(u: linux.User): List<String> =
+  (if (u.group == null) List() else List(u.group)) + (if (u.groups == null) List() else u.groups.toList())
+
+/// Whether the step provides the group `n`: a group step that names it,
+/// or an account the host's useradd gives a group of its own name to
+/// (USERGROUPS_ENAB) — the implicit group the footprint model claims
+/// and the file-identity model resolves, here as an ordering provider:
+/// `useradd -G bob alice` runs before a later `User { user = "bob" }`
+/// has created the group it names.
+const function groupProvider(s: core.Step, n: String): Boolean =
+  (s is linux.Group && s.name == n) || (s is linux.User && s.user == n && s.group == null)
+
+function groupRel(ix: StageIndex, i: Int, j: Int, n: String): List<String> =
+  let (g = ix.steps[j])
+  if (g is linux.Group && g.state == "absent")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
+  else if (g is linux.User && g.state == "absent")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
+  else if (j > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the group \(n), which '\(name(g))' (\(where(ix.placed[j]))) \(if (g is linux.User) "creates with its account; list that account before this one" else "creates; list the group before the account")")
+  else List()
+
+/// A declared login shell must exist where the account's task runs:
+/// `useradd` and `usermod` verify the shell path, so a same-stage `File`
+/// or `Symlink` that manages it is the step that writes it — one that
+/// comes after the account would fail an otherwise self-contained
+/// workflow at apply time, though lowering preserves source order and
+/// sees no relationship. And a managed `File` supplies the shell only
+/// where its mode makes it executable: the file task deterministically
+/// creates what the mode says, and the account's task rejects a
+/// non-executable shell in `shell_allowed`, whatever the order.
+function shellRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present" || u.shell == null) List()
+  else positions(ix.steps)
+    .filter((j) -> (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
+    .flatMap((j) -> shellRel(ix, u, i, j))
+
+function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
+  let (s = ix.steps[j])
+  (if (s is core.File && !executableMode(s.mode))
+    List("'\(name(s))' (\(where(ix.placed[j]))) manages the shell \(u.shell) of '\(name(u))' (\(where(ix.placed[i]))) at mode \(s.mode), which does not make it executable for the account; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
+  else List())
+  + (if (j > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(s))' (\(where(ix.placed[j]))) manages; list the shell's step before the account")
+  else List())
+  + shellTargetRels(ix, u, i, j)
+
+/// A managed shell that is a link is only as good as its target: the
+/// account's task follows the link and reads the target's metadata, so a
+/// target that a later step creates leaves the link dangling when the
+/// account runs and the task refuses the shell, and a target that is not
+/// executable for the account is refused the way the shell file itself
+/// is. The walk is the kernel's, not the first hop's: a target that is
+/// itself a managed link leads to its own target, and every hop's step
+/// is judged — the runtime follows the chain to its end before it reads
+/// the file there. A target no step manages is the host's own, which
+/// the workflow cannot know.
+function shellTargetRels(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
+  let (s = ix.steps[j])
+  if (s is core.Symlink) shellLinkRels(ix, u, i, s.target, List(u.shell))
+  else List()
+
+/// The refusals for one hop of a managed shell chain and everything
+/// behind it: the hop's target step must precede the account and carry
+/// an executable file where it names one, and a managed link target
+/// leads the chain on. `seen` stops a cycle of managed links.
+function shellLinkRels(ix: StageIndex, u: linux.User, i: Int, target: String, seen: List<String>): List<String> =
+  if (seen.contains(target)) List()
+  else positions(ix.steps)
+    .filter((k) -> paths(ix.steps[k]).contains(target))
+    .flatMap((k) -> shellTargetRel(ix, u, i, k, target)
+      + (if (ix.steps[k] is core.Symlink) shellLinkRels(ix, u, i, ix.steps[k].target, seen + List(target)) else List()))
+
+/// The refusals for a managed target of a managed shell link: the
+/// account's task follows the link and reads the file it names, so the
+/// target must be executable for the account and must be there when the
+/// account's task runs.
+function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: String): List<String> =
+  let (t = ix.steps[k])
+  (if (t is core.File && !executableMode(t.mode))
+    List("'\(name(t))' (\(where(ix.placed[k]))) manages the target \(t.path) of the shell \(u.shell) of '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) at mode \(t.mode), which does not make it executable for the account; useradd and usermod follow the shell's link and read the file it names, so a managed shell target carries an executable mode")
+  else List())
+  + (if (k > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
+  else List())
+
+/// Whether a file mode makes the file executable for the account that
+/// does not own it: the other-execute bit. Unix selects the permission
+/// class by the caller's identity, so an owner- or group-execute bit
+/// serves only the file's owner or group — the managed account runs as
+/// `other` unless it owns the file, which the lowering cannot know of
+/// a file another step writes. The conservative class is the same test
+/// the account's task passes the shell file through at apply
+/// (`shell_allowed`).
+const function executableMode(mode: String): Boolean =
+  List("1", "3", "5", "7").contains(mode.substring(mode.length - 1, mode.length))
+
+/// A step that publishes inside an account's claimed home runs after
+/// the account's task creates the directory: `useradd -m` makes the
+/// missing home, so a same-stage step beneath it that comes first
+/// fails on the absent parent at apply — check mode reports both tasks
+/// pending because the copy writes nothing — and reversing the two
+/// succeeds. The home itself is the account's subject already (a step
+/// at that path conflicts with it); this is the order of the things
+/// inside it, the provider-order check the shell and group ones are.
+///
+/// A directory is the exception: the directory operation creates every
+/// missing parent of its path, so it provides the home it publishes
+/// inside — `useradd -m` accepts the directory that is already there
+/// (it warns that it copies no skeleton file into it) and the
+/// account's task reconciles its ownership afterwards. The rule is the
+/// publishers' one: a file, a link or a capture writes into the parent
+/// and needs it to be there.
+function homeRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present") List()
+  else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+    earlier(i).flatMap((j) ->
+      let (inside = paths(ix.steps[j]).filter((p) -> p.startsWith(h + "/")))
+      if (inside.isEmpty || providesHome(ix.steps[j])) List()
+      else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages \(inside.first) inside the home \(h) of '\(name(u))' (\(where(ix.placed[i]))) before the account's task creates the directory; useradd -m creates the missing home, so list the account before that step"))
+
+/// The step provides the home it publishes inside: the directory
+/// operation creates every missing parent of its path, so the home is
+/// there before the account's task runs — the account's task finds the
+/// directory that is already there and reconciles its ownership.
+const function providesHome(s: core.Step): Boolean =
+  s is core.Directory
+
+/// A removal with `removeHome` deletes the home directory and everything
+/// in it (`userdel -r`), so no step may manage a path at or inside it.
+function homeRemovals(ix: StageIndex, i: Int): List<String> =
+  earlier(i).flatMap((j) ->
+    let (byEarlier = removedInside(ix.steps[j], paths(ix.steps[i])))
+    let (byLater = removedInside(ix.steps[i], paths(ix.steps[j])))
+    let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
+    if (pair.isEmpty) List()
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is removed with the account's home directory and mail spool, so \(pair.first.last) cannot be inside it"))
+
+/// Pairs `(removed, path)` where `path` is a removed home directory or
+/// mail spool, or lies inside one: `userdel -r` deletes the home
+/// directory and everything in it and the mail spool, so no step may
+/// manage a path at or inside any of them. The spool lives in the
+/// host's mail directory — the `MAIL_DIR` setting of
+/// `/etc/default/useradd`, wherever the host points it — so a path that
+/// carries the account's name in any directory can be the spool the
+/// removal deletes: reserving only the conventional directories would
+/// let a managed `/srv/mail/alice` pass and be deleted on a host
+/// configured there.
+const function removedInside(a: core.Step, candidates: List<String>): List<List<String>> =
+  if (!(a is linux.User) || a.state != "absent" || !a.removeHome) List()
+  else let (reserved = removedPaths(a))
+    reserved.flatMap((h) -> candidates.filter((p) -> p == h || p.startsWith(h + "/")).map((p) -> List(h, p)))
+      + candidates.filter((p) -> isMailSpool(a.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/"))).map((p) -> List("the mail spool of \(a.user)", p))
+
+/// Whether `path` is an account's mail spool or lies inside it: the
+/// spool is `<MAIL_DIR>/<name>` for the host's configured mail
+/// directory, which the workflow cannot read, so any path that carries
+/// the account's name is its spool candidate.
+const function isMailSpool(name: String, path: String): Boolean =
+  path.substring(1, path.length).split("/").contains(name)
+
+/// What a recursive account removal deletes on the host: the home
+/// directory and the mail spool `userdel -r` removes.
+const function removedPaths(u: linux.User): List<String> =
+  (if (u.home != null) List(u.home) else List()) + mailSpools(u.user)
+
+/// The mail spool an account has: `useradd` writes it in the host's
+/// mail directory, the `MAIL_DIR` setting of `/etc/default/useradd`,
+/// and `userdel -r` removes it again. The setting is the host's own,
+/// which the workflow cannot read, so the account claims the spool at
+/// every conventional mail directory: `/var/mail`, the Debian one, and
+/// `/var/spool/mail`, the one the older systems use. A removal claims
+/// it at every directory of the host — see `removedInside` — because
+/// the configured path can be any of them.
+const function mailSpools(name: String): List<String> =
+  List("/var/mail/\(name)", "/var/spool/mail/\(name)")
+
+/// The homes a stage's removals delete: the home of every account the
+/// stage removes with its directory.
+const function removedHomes(ix: StageIndex): List<String> =
+  ix.steps.flatMap((s) -> if (s is linux.User && s.state == "absent" && s.removeHome && s.home != null) List(s.home) else List())
+
+/// The directory a path lives in: the path without its last segment.
+const function parentOf(p: String): String =
+  if (p.lastIndexOf("/") <= 0) "/" else p.substring(0, p.lastIndexOf("/"))
+
+/// The directory `d` is the one the path `p` needs: it lies at or below
+/// the removed home `h` and at or above the parent of `p`.
+const function covers(h: String, p: String, d: String): Boolean =
+  (d == h || d.startsWith(h + "/")) && (parentOf(p) == d || parentOf(p).startsWith(d + "/"))
+
+/// A removal with `removeHome` deletes the home directory of an earlier
+/// stage, so a later stage that manages a path inside it writes into a
+/// directory that is gone: the file task cannot open its parent. The
+/// comparison is per host pair — stages on disjoint hosts never share a
+/// home — and a step that declares the directory again lifts the
+/// refusal: the directory task creates the parents it needs. The other
+/// direction is the same rule seen from the removal's side: the paths
+/// an earlier stage manages inside the home a later stage removes with
+/// the account do not survive the run either.
+function homeRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((n) -> removedHomeRels(_stages, _indexes, n, m) + removedPathRels(_stages, _indexes, n, m)))
+
+/// The paths a later stage manages inside a home an earlier stage
+/// removed, and the refusal for the ones no step recreates.
+function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  removedHomes(_indexes[n]).flatMap((h) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (inside = paths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    if (inside.isEmpty) List()
+    else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
+    else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
+
+/// The paths an earlier stage manages inside a home a later stage
+/// removes with the account: `userdel -r` deletes the home directory
+/// and everything in it, and the mail spool with them, so the path does
+/// not survive the run — the removal takes the earlier stage's file
+/// with it, although both stages report success. The comparison is per
+/// host pair, as the other direction's is.
+function removedPathRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  positions(_indexes[m].steps).flatMap((j) ->
+    let (s = _indexes[m].steps[j])
+    if (!(s is linux.User) || s.state != "absent" || !s.removeHome) List()
+    else (if (s.home == null) List() else List(s.home))
+      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, "home directory", "deletes the directory and everything in it"))
+      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, "mail spool", "removes the spool and everything in it")))
+
+/// The paths an earlier stage manages inside the directory a later
+/// stage's removal takes with it, and the refusal for them.
+function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, what: String, how: String): List<String> =
+  positions(_indexes[n].steps).flatMap((i) ->
+    let (inside = paths(_indexes[n].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    if (inside.isEmpty) List()
+    else List("'\(name(_indexes[n].steps[i]))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
+
+/// The home is there again before the later step: a step between the
+/// removal and it declares a directory that covers the path's parent —
+/// or an account whose managed home does: the user operation creates
+/// the home of a new account (`useradd -m`) and reconciles the declared
+/// one of an existing account (`ensure_home`), so a present `User` step
+/// whose home covers the path restores the directory the removal took.
+const function recreatesHome(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, h: String, p: String): Boolean =
+  sharedHosts(_stages[n], _stages[m]).every((host) ->
+    positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
+      stageRunsOn(_stages[k], host) && positions(_indexes[k].steps).any((j) ->
+        let (s = _indexes[k].steps[j])
+        (k < m || j < i) && ((s is core.Directory && covers(h, p, s.path))
+          || (s is linux.User && s.state == "present" && covers(h, p, if (s.home != null) s.home else "/home/\(s.user)"))))))
+
+/// A file's named owner keeps its number: `usermod -u` renumbers the
+/// account but does not repair the files it owns, so a file an earlier
+/// stage wrote keeps the old number and no longer has the owner it
+/// declares. The same holds for the group a later stage renumbers — and
+/// for a managed home, which `groupmod -g` leaves at its old gid — and
+/// the comparison is per host pair, stages on disjoint hosts never
+/// share an identity. The number is compared with the one the last
+/// stage before the renumbering declared on each shared host.
+function renumberedIdentities(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (f = _indexes[m].steps[i])
+    if (f is core.File)
+      ownerNeeds(f).flatMap((p) -> renumberedIdentityRels(_stages, _indexes, m, i, p))
+    else if (f is linux.User && f.state == "present")
+      primaryGroup(f).map((g) -> List(g, "group")).flatMap((p) -> renumberedIdentityRels(_stages, _indexes, m, i, p))
+    else List()))
+
+/// The refusals for a file whose owner or group a later stage
+/// renumbers.
+function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
+    .flatMap((k) -> renumberedIdentityRel(_stages, _indexes, m, i, k, p))
+
+/// The refusal for one renumbering: the number the later stage declares
+/// is not the one the identity carried on a host both stages share, so
+/// the file keeps the old one there. The history is host-scoped: a
+/// declaration on a disjoint host is another machine's identity and
+/// must not stand in for the one the file lives on.
+function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
+  let (after = identityNumberAt(_indexes[k], p))
+  if (after == null) List()
+  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int && identityNumberBeforeOn(_stages, _indexes, k, p, h) != after)) List()
+  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+
+/// The step of the stage that declares the identity `p` with a number.
+function identityNumberStepAt(ix: StageIndex, p: List<String>): Int =
+  let (hits = positions(ix.steps).filter((j) -> numbersIdentity(ix.steps[j], p)))
+  if (hits.isEmpty) 0 else hits.first
+
+/// The number the stage declares for the identity `p`: the uid of the
+/// account, the gid of the group.
+function identityNumberAt(ix: StageIndex, p: List<String>): Int? =
+  let (hits = positions(ix.steps).filter((j) -> numbersIdentity(ix.steps[j], p)))
+  if (hits.isEmpty) null else identityNumber(ix.steps[hits.first], p)
+
+/// The number the identity `p` carried on host `h` before the stage
+/// `k`: the number the last stage before it that runs on `h` declares.
+function identityNumberBeforeOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Int? =
+  let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && identityNumberAt(_indexes[n], p) != null))
+  if (declaring.isEmpty) null else identityNumberAt(_indexes[declaring.last], p)
+
+/// Whether the step declares the identity `p` with a number.
+const function numbersIdentity(s: core.Step, p: List<String>): Boolean =
+  (p[1] == "owner" && s is linux.User && s.user == p[0] && s.state == "present" && s.uid != null)
+    || (p[1] == "group" && s is linux.Group && s.name == p[0] && s.state == "present" && s.gid != null)
+
+/// The number the step declares for the identity `p`.
+const function identityNumber(s: core.Step, p: List<String>): Int? =
+  if (p[1] == "owner" && s is linux.User && s.user == p[0] && s.state == "present") s.uid
+  else if (p[1] == "group" && s is linux.Group && s.name == p[0] && s.state == "present") s.gid
+  else null
+
+/// A file resolves its owner and group by name: an identity a same-stage
+/// step creates comes first — a clean host resolves no name before its
+/// account or group exists — and an identity the same stage removes
+/// cannot serve: the file would fail or keep unmapped numeric ownership.
+function fileIdentities(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is core.File)) List()
+  else ownerNeeds(ix.steps[i]).flatMap((p) -> positions(ix.steps)
+    .filter((j) -> providerOf(ix.steps[j], p))
+    .flatMap((j) -> identityRel(ix, i, j, p)))
+
+/// The identities a file names: its owner (a user name) and its group.
+const function ownerNeeds(f: core.File): List<List<String>> =
+  (if (f.owner == null) List() else List(List(f.owner, "owner")))
+    + (if (f.group == null) List() else List(List(f.group, "group")))
+
+/// Whether the step provides the named identity: an account for an owner,
+/// a group for a group — or the group useradd creates with the login name.
+const function providerOf(s: core.Step, p: List<String>): Boolean =
+  (p[1] == "owner" && s is linux.User && s.user == p[0])
+    || (p[1] == "group" && ((s is linux.Group && s.name == p[0]) || (s is linux.User && s.user == p[0] && s.group == null)))
+
+function identityRel(ix: StageIndex, i: Int, j: Int, p: List<String>): List<String> =
+  let (g = ix.steps[j])
+  if ((g is linux.User || g is linux.Group) && g.state == "absent")
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the \(p[1]) \(p[0]), which '\(name(g))' (\(where(ix.placed[j]))) removes: a file cannot use a removed identity, so declare it present or drop it from the file")
+  else if (j > i)
+    List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) needs the \(p[1]) \(p[0]), which '\(name(g))' (\(where(ix.placed[j]))) creates; list the \(if (g is linux.User) "account" else "group") before the file")
+  else List()
+
+/// A file resolves its owner and group by name on the host, and the
+/// name is gone when an earlier stage removed the identity and no stage
+/// since put it back: the file task then cannot resolve it. The
+/// comparison is per host pair — stages on disjoint hosts never share an
+/// identity — and the removal counts only for the hosts it runs on.
+function fileIdentitiesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (f = _indexes[m].steps[i])
+    if (f is core.File)
+      ownerNeeds(f).flatMap((p) -> removedIdentityRels(_stages, _indexes, m, i, p)
+        + removedIdentityRelsLater(_stages, _indexes, m, i, p))
+    else List()))
+
+/// The refusal for a file whose identity an earlier stage removed.
+function removedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+    .filter((n) -> identityAbsent(_indexes[n], p)
+      && sharedHosts(_stages[n], _stages[m]).any((h) -> !recreatesIdentity(_stages, _indexes, n, m, p, h)))
+    .map((n) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[n].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
+
+/// The refusal for a file whose identity a LATER stage removes: the name
+/// resolves while the stages run, but the removal leaves the file owned
+/// by the identity's now-unmapped number and the next apply's file task
+/// fails resolving the name before it can reach the later removal. The
+/// exception is a recreation after the removal that preserves the
+/// identity number — the name maps again at the end of the run, so the
+/// file's numeric owner keeps resolving to it.
+function removedIdentityRelsLater(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
+  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
+    .filter((k) -> identityAbsent(_indexes[k], p)
+      && sharedHosts(_stages[m], _stages[k]).any((h) -> !restoresIdentity(_stages, _indexes, k, p, h)))
+    .map((k) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[k].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
+
+/// The identity is there again at the end of the run, with the number
+/// the file's owner carries: a stage after the removal declares it
+/// present again, and the recreation states the number the removal
+/// took away — the number the identity carried before it (the last
+/// declaration, or the removal's own verified one) — so the file's
+/// numeric ownership still maps to the name. A recreation that states
+/// no number draws another one and preserves nothing.
+function restoresIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Boolean =
+  let (before = identityNumberBeforeOn(_stages, _indexes, k, p, h) ?? removedNumberAt(_indexes[k], p))
+  before != null && positions(_indexes).filter((k2) -> k2 > k && stageRunsOn(_stages[k2], h))
+    .any((k2) -> identityPresent(_indexes[k2], p) && identityNumberAt(_indexes[k2], p) == before)
+
+/// The number the removal proves the identity carried: the runtime
+/// verifies a removal's declared id against the live entry, so where no
+/// earlier stage states the number, the removal's own declaration is
+/// the identity's. A group removal that states no gid proves no number,
+/// and an account removal takes its private group by name only.
+function removedNumberAt(ix: StageIndex, p: List<String>): Int? =
+  let (hits = positions(ix.steps).filter((j) -> providerOf(ix.steps[j], p) && (ix.steps[j] is linux.User || ix.steps[j] is linux.Group) && ix.steps[j].state == "absent"))
+  if (hits.isEmpty) null
+  else let (s = ix.steps[hits.first])
+    if (p[1] == "owner" && s is linux.User) s.uid
+    else if (p[1] == "group" && s is linux.Group) s.gid
+    else null
+
+/// Whether the stage declares the identity `p` — the account or the group
+/// of that name — absent.
+const function identityAbsent(ix: StageIndex, p: List<String>): Boolean =
+  ix.steps.any((s) -> providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "absent")
+
+/// Whether the stage declares the identity `p` present.
+const function identityPresent(ix: StageIndex, p: List<String>): Boolean =
+  ix.steps.any((s) -> providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "present")
+
+/// The identity is there again before the later stage: a stage between
+/// the removal and the file declares it present, on the same host.
+const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, p: List<String>, h: core.Host): Boolean =
+  positions(_indexes).filter((k) -> k > n && k <= m)
+    .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
+
+/// A group an account keeps cannot go while the account is there: as
+/// the account's primary group `groupdel` refuses it — a passwd entry
+/// still uses it — and as a supplementary membership `groupdel`
+/// succeeds and erases the membership, so the account's declared state
+/// does not hold at the end of the run. Either way the account must
+/// be removed or taken off the group first. The stage-local ordering
+/// sees only its own stage; across stages an earlier overlapping-host
+/// stage can leave the account on the group a later stage removes, and
+/// the apply then fails after the earlier stages have already mutated
+/// the host. An intervening account task that removes the account or
+/// takes it off the group lifts the refusal.
+function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (g = _indexes[m].steps[i])
+    if (g is linux.Group && g.state == "absent")
+      positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+        .flatMap((n) -> heldGroups(_stages, _indexes, n, m, i, g.name)
+          .map((a) -> if (a.last == "primary")
+            "stage \"\(_stages[n].title)\" leaves the account \(a.first) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"
+            else
+            "stage \"\(_stages[n].title)\" leaves the account \(a.first) in the group \(g.name), and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel succeeds but erases the account's membership in it, so remove the account or take it off the group first"))
+    else List()))
+
+/// The accounts an earlier stage leaves keeping `group` on a host the
+/// removal runs on, where no intervening account task takes them off
+/// it before the removal. The pair names the account and how it keeps
+/// the group: `primary` or `supplementary`.
+function heldGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<List<String>> =
+  positions(_indexes[n].steps).flatMap((j) ->
+    let (u = _indexes[n].steps[j])
+    if (!(u is linux.User) || u.state != "present" || !keepsGroup(u, group)) List()
+    else if (sharedHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && stageRunsOn(_stages[k], h)
+      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesGroup(_indexes[k].steps[j2], u, group))))) List(List(u.user, if (primaryGroup(u).contains(group)) "primary" else "supplementary"))
+    else List())
+
+/// The groups an account keeps: the primary one — the group it names
+/// or the one useradd creates with its login name — and the
+/// supplementary memberships it names. A listing that is unset names
+/// no supplementary group: the memberships are unmanaged then.
+const function keepsGroup(u: linux.User, group: String): Boolean =
+  primaryGroup(u).contains(group) || keepsSupplementary(u, group)
+
+/// The supplementary memberships an account names: the ones its
+/// listing carries. A listing that is unset names none.
+const function keepsSupplementary(u: linux.User, group: String): Boolean =
+  u.groups != null && u.groups.toList().contains(group)
+
+/// Whether the step takes the account off the group it keeps: it
+/// removes the account, or declares it present without the group — on
+/// another primary group when the account keeps it as its primary one,
+/// and without the membership in an explicit supplementary listing when
+/// it keeps it as a supplementary one.
+const function leavesGroup(s: core.Step, u: linux.User, group: String): Boolean =
+  s is linux.User && s.user == u.user && (s.state == "absent"
+    || (if (primaryGroup(u).contains(group)) leavesPrimary(s, u.user, group) else leavesSupplementary(s, u.user, group)))
+
+/// Whether the step takes the account off the group as its primary
+/// one: it removes the account, or declares it present on another
+/// primary group and names no supplementary membership of it — an
+/// account that keeps the group as a supplementary one still has it.
+const function leavesPrimary(s: core.Step, account: String, group: String): Boolean =
+  s is linux.User && s.user == account && (s.state == "absent" || (!primaryGroup(s).contains(group) && !keepsSupplementary(s, group)))
+
+/// Whether the step takes the account off the group as a supplementary
+/// membership: it declares the account present with a listing that
+/// names no such group. A listing that is unset leaves the
+/// supplementary memberships unmanaged, so the account keeps the one it
+/// has.
+const function leavesSupplementary(s: core.Step, account: String, group: String): Boolean =
+  s is linux.User && s.user == account && !primaryGroup(s).contains(group) && s.groups != null && !s.groups.toList().contains(group)
+
+/// A managed home is a directory: a whole-file owner at exactly the
+/// same path in another stage is a type conflict whichever side runs
+/// first — the user task leaves a directory where the file task writes
+/// a file, and `home_usable` refuses a regular file or a link as the
+/// home — so the two declarations can never both hold and splitting
+/// them across stages helps nothing. The comparison is per host pair:
+/// stages on disjoint hosts never share a home.
+function homeTypesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> homeTypeClash(_stages, _indexes, n, m) + homeTypeClash(_stages, _indexes, m, n)))
+
+/// The refusals for the managed homes of stage `n` whose path stage
+/// `m` manages as a whole file or a link.
+function homeTypeClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  positions(_indexes[n].steps).flatMap((i) ->
+    let (u = _indexes[n].steps[i])
+    if (!(u is linux.User) || u.state != "present") List()
+    else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+      positions(_indexes[m].steps)
+        .filter((j) -> (_indexes[m].steps[j] is core.File || _indexes[m].steps[j] is core.Symlink) && paths(_indexes[m].steps[j]).contains(h))
+        .map((j) -> "'\(name(_indexes[m].steps[j]))' of stage \"\(_stages[m].title)\" manages \(h) as \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a whole file"), and '\(name(u))' of stage \"\(_stages[n].title)\" manages it as the account's home directory; one path cannot be both a directory and \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a file") whatever the order the stages run in, so give the home or the file another path"))
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
@@ -904,7 +1809,10 @@ const function nameOverlap(a: String, b: String): Boolean =
 /// its architecture (`ba*` is `ba`, `bash:amd64` is `bash`).
 const function baseOf(s: String): String = packageName(if (s.endsWith("*")) s.substring(0, s.length - 1) else s)
 
-const function paths(s: core.Step): List<String> = subjectsOf(s).filter((x) -> x.startsWith("/"))
+/// The paths a step manages as file-system things: its path-bearing
+/// subjects, and a sysctl's entry file.
+const function paths(s: core.Step): List<String> =
+  subjectsOf(s).filter((x) -> x.startsWith("/")) + (if (s is linux.Sysctl) List(s.path) else List())
 
 /// Pairs `(file, path)` where `path` lies beneath `file`.
 const function inside(files: List<String>, candidates: List<String>): List<List<String>> =
@@ -993,6 +1901,16 @@ class KeyOrder {
   function canonical(keys: List<String>): List<String> =
     keys.fold(List(), (sorted, key) -> this.insert(key, sorted))
 
+  /// The entries as one canonical set: sorted, with a repeat dropped. The
+  /// groups of an account are a set — the engine sorts and deduplicates the
+  /// supplementary groups it reconciles — so the same members in another
+  /// order, or spelled with a repeat, are one state, not two.
+  function set(entries: List<String>): List<String> =
+    this.unique(this.canonical(entries))
+
+  function unique(sorted: List<String>): List<String> =
+    positions(sorted).filter((i) -> i == 0 || sorted[i] != sorted[i - 1]).map((i) -> sorted[i])
+
   function insert(key: String, sorted: List<String>): List<String> =
     if (sorted.isEmpty || key <= sorted.first)
       List(key) + sorted
@@ -1021,8 +1939,22 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> fields(List(s.package, s.question, s.type, valueIdentity(s.value)))
   ["aptRepository"] = (s) -> fields(List(s.name, s.url, s.suite, fields(s.components.toList()), s.signingKey, fields(s.architectures.toList())))
   ["timezone"] = (s) -> s.name
-  ["loginShell"] = (s) -> fields(List(s.user, s.shell))
+  // The groups are a set — the engine sorts and deduplicates what it
+  // reconciles — so their fingerprint is the canonical set, not the order
+  // the author wrote them in. Unset groups are a state of their own: the
+  // memberships are unmanaged, unlike an explicit empty set, which
+  // removes every one of them.
+  // `removeHome` is a field of the absent account alone: the runtime
+  // reads it only when it removes one, so two present declarations of
+  // one account are the same state whatever it says — a field that
+  // cannot affect the state does not belong to its fingerprint. The
+  // home is the same: the removal path ignores it unless `removeHome`
+  // is true, so an absent account's home is active only for a
+  // recursive removal.
+  ["user"] = (s) -> fields(List(s.user, if (s.state == "present") optional(s.shell) else "-", if (s.state == "present" || s.removeHome) optional(s.home) else "-", optional(s.group), if (s.state == "present") (if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList()))) else "-", if (s.uid == null) "-" else "\(s.uid)", if (s.state == "present") "\(s.system)" else "-", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
+  ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
+  ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -1043,10 +1975,27 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
+  ["sysctl"] = (s) -> List("the sysctl \(s.name) in \(s.path)")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
-  ["loginShell"] = (s) -> List("the login shell of \(s.user)")
+  // The account and the things it declares states for: its explicit uid
+  // is a managed thing of its own — two accounts with one id fail the
+  // second useradd on the duplicate — and its home is a path the step
+  // creates (present) or deletes with its contents (absent with
+  // removeHome). A present account that states no home still gets one
+  // created (`useradd -m`, the usual `/home` base), so the default home
+  // is claimed like an explicit one. A present account that states no
+  // primary group claims the group useradd creates with its login name
+  // (USERGROUPS_ENAB), so that implicit group is its footprint too.
+  // The mail spool is the account's as well: `useradd` creates
+  // `/var/mail/<user>` on a host configured with `CREATE_MAIL_SPOOL=yes`,
+  // so a step that manages that path declares a second state for it —
+  // whichever runs later wins, and the other fails. The spool is
+  // claimed like the removed one, whose path the removal deletes.
+  ["user"] = (s) -> List("the account \(s.user)") + (if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") + mailSpools(s.user) else if (s.removeHome) (if (s.home != null) List(s.home) else List()) + mailSpools(s.user) else List()) + (if (s.uid == null) List() else List("uid \(s.uid)")) + (if (s.state == "present" && s.group == null) List("the group \(s.user)") else List())
+  // An explicit gid is a managed thing of its own, the way a uid is.
+  ["group"] = (s) -> List("the group \(s.name)") + (if (s.gid == null) List() else List("gid \(s.gid)"))
   ["timezone"] = (_) -> List("the timezone")
   ["fetchSecret"] = (s) -> List("the fnox key \(s.fnoxKey)")
   ["packages"] = (_) -> List()
@@ -1393,8 +2342,10 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["debconfEntry"] = (s) -> "Set \(s.question) for \(s.package)"
   ["aptRepository"] = (s) -> "Configure \(s.name) apt repository"
   ["timezone"] = (s) -> "Set timezone to \(s.name)"
-  ["loginShell"] = (s) -> "Set \(s.user) login shell to \(s.shell)"
+  ["user"] = (s) -> (if (s.state == "absent") "Remove account " else "Manage account ") + s.user
+  ["group"] = (s) -> (if (s.state == "absent") "Remove group " else "Manage group ") + s.name
   ["gitCheckout"] = (s) -> "Check out \(s.repository) into \(s.path)"
+  ["sysctl"] = (s) -> "Set sysctl \(s.name) to \(s.value) in \(s.path)"
   ["service"] = (s) -> (if (s.running) "Start " else "Stop ") + s.name + (if (s.enabled) ", enabled at boot" else ", disabled at boot")
   ["systemdTimer"] = (s) -> "Manage timer " + s.name + (if (s.onCalendar == null) "" else " on \(s.onCalendar)")
   ["command"] = (s) -> "Run " + s.run.join(" ")
@@ -1441,10 +2392,12 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["aptRepository"] = (s, m) -> List(task(keyringMeta(s, m), keyring(s), null, null), task(m, sourcesFile(s), null, null))
   ["timezone"] = (s, m) -> List(task(m, timezone(s.name), null, null))
   // `linux.User` lowers to the engine's user operation alone: the operation
-  // creates a missing account and sets the shell of an existing one, so no
-  // pre-check reads /etc/passwd before it.
-  ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
+  // creates a missing account and changes the settings of an existing one,
+  // so no pre-check reads /etc/passwd before it.
+  ["user"] = (s, m) -> List(task(m, user(s.user, s.shell, s.home, s.group, if (s.groups == null) null else keyOrder.set(s.groups.toList()), s.uid, s.system, s.state, s.removeHome), null, null))
+  ["group"] = (s, m) -> List(task(m, group(s.name, s.gid, s.state), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
+  ["sysctl"] = (s, m) -> List(task(m, sysctl(s.name, s.value, s.path), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -1782,8 +2735,44 @@ function debconfValue(v: Any): engine.Expr =
 const function valueIdentity(v: Any): String =
   if (v is debian.SecretAnswer) fields(List("secret", v.parts)) else fields(List("static", v.toString()))
 function timezone(_name: String): engine.Timezone = new engine.Timezone { name = _name }
-function user(_name: String, _shell: String): engine.User = new engine.User { name = _name; shell = _shell }
+/// The engine's user operation: the account and every setting the step
+/// manages. The flags it offers beyond these (`append`, `comment`,
+/// `create_home`) are not exposed: create-home follows the engine default.
+/// `system` is creation-only — it shapes an account the operation
+/// creates, never an existing one (`useradd --system`).
+/// The supplementary groups are the canonical set the fingerprint takes,
+/// and the operation carries them whenever the step states them — an
+/// explicit empty list is `groups = []`, which removes every membership;
+/// a step that states no groups omits the field and leaves memberships
+/// unmanaged.
+function user(_name: String, _shell: String?, _home: String?, _group: String?, _groups: List<String>?, _uid: Int?, _system: Boolean, _state: "present"|"absent", _removeHome: Boolean): engine.User = new engine.User {
+  name = _name
+  when (_shell != null) { shell = _shell }
+  when (_home != null) { home = _home }
+  when (_group != null) { group = _group }
+  when (_groups != null) { groups = new Listing { for (g in (_groups ?? List())) { g } } }
+  when (_uid != null) { uid = _uid }
+  system = _system
+  state = _state
+  remove = _removeHome
+}
+/// The engine's group operation: the group, its id and whether it is there.
+function group(_name: String, _gid: Int?, _state: "present"|"absent"): engine.SystemGroup = new engine.SystemGroup {
+  name = _name
+  when (_gid != null) { gid = _gid }
+  state = _state
+}
 function git(_repo: String, _dest: String, _version: String): engine.Git = new engine.Git { repo = _repo; dest = _dest; version = _version }
+/// The engine's sysctl operation: the parameter, its value, and the file
+/// that holds the entry. The engine writes the entry and applies the file,
+/// and `sysctl_set` turns on live-value reconciliation: every apply reads
+/// the live kernel value and corrects it when it drifted, so a parameter
+/// another process changed is never left stale. `reload` is off: the file
+/// may hold other steps' and unmanaged entries, and a whole-file
+/// `sysctl -p` would reset every one of them — the managed key is applied
+/// live by `sysctl_set` alone. The flags it offers beyond this are not
+/// exposed.
+function sysctl(_name: String, _value: String, _path: String): engine.Sysctl = new engine.Sysctl { name = _name; value = _value; sysctl_file = _path; sysctl_set = true; reload = false; state = "present" }
 function service(_name: String, _enabled: Boolean?, _state: String?): engine.Service = new engine.Service { name = _name; enabled = _enabled; state = _state }
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.

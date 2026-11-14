@@ -1,0 +1,19 @@
+// expect: both manage /home/app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An explicit home of a present account is a path the step manages: the
+// agent runs useradd -d <home> -m, which creates the directory. A File
+// at that path declares a second state for it — whichever ran later
+// would clobber the other.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/app"; content = "not a directory\n" }
+      new linux.User { user = "app"; home = "/home/app" }
+    }
+  }
+}

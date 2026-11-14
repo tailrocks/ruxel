@@ -1,0 +1,18 @@
+// Two declarations of one present account that differ only in removeHome
+// are the same state: the runtime reads the flag only when it removes an
+// account, so both declarations reconcile the account the same way — a
+// field that cannot affect the state is no part of its fingerprint.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; removeHome = false }
+      new linux.User { user = "app"; uid = 1500; removeHome = true }
+    }
+  }
+}

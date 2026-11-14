@@ -1,0 +1,18 @@
+// expect: groupdel refuses a group an account keeps as its primary one
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An earlier stage leaves the account keeping `staff` as its primary
+// group and a later stage removes the group: `groupdel` refuses a
+// group a passwd entry still uses, so the apply fails after the
+// earlier stages have already mutated the host.
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 1501 }
+    new linux.User { user = "alice"; uid = 1500; group = "staff" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; state = "absent"; gid = 1501 }
+  } }
+}

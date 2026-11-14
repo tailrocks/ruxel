@@ -186,7 +186,7 @@ fn edge_values_lower_with_their_guards() -> Result {
     );
     // The user step lowers to the engine's user operation alone: no
     // pre-check reads /etc/passwd before it.
-    let user = named("Set root login shell to /bin/zsh")?;
+    let user = named("Manage account root")?;
     assert_eq!(all[user]["operation"]["kind"], "user");
     assert_eq!(all[user]["operation"]["name"], "root");
     assert_eq!(all[user]["operation"]["shell"], "/bin/zsh");
@@ -276,7 +276,7 @@ fn a_missing_account_lowers_to_the_user_operation() -> Result {
     let all = tasks(&config);
     assert_eq!(all.len(), 1, "{all:#?}");
     let user = &all[0];
-    assert_eq!(user["name"], "Set ruxel-app login shell to /bin/zsh");
+    assert_eq!(user["name"], "Manage account ruxel-app");
     assert_eq!(user["operation"]["kind"], "user");
     assert_eq!(user["operation"]["name"], "ruxel-app");
     assert_eq!(user["operation"]["shell"], "/bin/zsh");

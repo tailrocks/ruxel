@@ -1,0 +1,25 @@
+// expect: userdel -r deletes the directory and everything in it, so the path does not survive the run
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel -r` deletes the home directory of the account it removes and
+// everything in it: an earlier stage that manages a path inside that
+// home loses it at the removal, and the run ends with the path the
+// first stage declared gone — although both stages report success.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/alice/config"; content = "keep\n" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+    }
+  }
+}

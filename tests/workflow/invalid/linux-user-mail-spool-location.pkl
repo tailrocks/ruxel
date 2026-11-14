@@ -1,0 +1,19 @@
+// expect: both manage /var/spool/mail/app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The mail spool is written in the host's mail directory, the MAIL_DIR
+// setting of /etc/default/useradd: a host configured with
+// /var/spool/mail writes the spool there, and a step that manages that
+// path declares a second state for it.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/var/spool/mail/app"; mode = "0755" }
+      new linux.User { user = "app"; uid = 1500 }
+    }
+  }
+}

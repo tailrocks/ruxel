@@ -1,0 +1,28 @@
+// The uid 1001 changes hands with proof on every machine both claims
+// run on: stage "one" removes `alice` on 127.0.0.1, stage "two" removes
+// it on 127.0.0.2, and together the removal stages cover the whole
+// intersection the later claim shares with the earlier one — so stage
+// "three"'s `useradd -u 1001` for `bob` succeeds on both hosts. One
+// removal stage per shared host is enough; the proof is per host, not
+// per pair of stages.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "ab"; hosts { a; b }; steps {
+    new linux.User { user = "alice"; uid = 1001 }
+  } }
+  new Stage { title = "one"; hosts { a }; steps {
+    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+  } }
+  new Stage { title = "two"; hosts { b }; steps {
+    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+  } }
+  new Stage { title = "ab2"; hosts { a; b }; steps {
+    new linux.User { user = "bob"; uid = 1001 }
+  } }
+}

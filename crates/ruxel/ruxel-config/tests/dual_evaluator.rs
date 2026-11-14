@@ -9,13 +9,14 @@
 //! `dual-evaluator` task exported, so verification and execution share one
 //! resolution.
 
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "dual_evaluator/chain.rs"]
 mod chain;
+#[path = "dual_evaluator/compare.rs"]
+mod compare;
 #[path = "dual_evaluator/discovery.rs"]
 mod discovery;
 #[path = "dual_evaluator/join_separator.rs"]
@@ -27,6 +28,8 @@ mod retired_path;
 #[path = "dual_evaluator/corpus_files.rs"]
 mod corpus_files;
 
+use compare::*;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn root() -> PathBuf {
@@ -37,16 +40,17 @@ fn root() -> PathBuf {
     .to_path_buf()
 }
 
-/// The examples of the secret language: each must evaluate the same way
-/// under both evaluators, and each invalid one must be refused by both.
-///
-/// The apt completions are here too: a hold, a system upgrade, a
-/// preference and a debconf selection lower the same way under both
-/// evaluators, and the bad selector, the secret carried as static text
-/// and the hold that conflicts with a pin are refused by both, each with
-/// its own wording.
-///
-/// The user step that lowers to the engine's user operation is here too.
+/// The examples both evaluators must lower the same way: the secret
+/// language's, the user step that lowers to the engine's user operation,
+/// the Linux catalogue's identity rules (an account's groups are a set)
+/// and refusals (the root ids, the root group, a sysctl's file) —
+/// including its type-constraint refusals, whose official-CLI wording a
+/// `// expect-pkl:` line names — and the apt completions: a hold, a
+/// system upgrade, a preference and a debconf selection lower the same
+/// way under both evaluators, and the bad selector, the secret carried
+/// as static text and the hold that conflicts with a pin are refused by
+/// both, each with its own wording. Each invalid one must be refused by
+/// both.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -141,6 +145,105 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
     "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
+    "valid/linux-user-groups-order.pkl",
+    "valid/linux-sysctl.pkl",
+    "valid/linux-user-watch.pkl",
+    "valid/linux-user-groups-empty.pkl",
+    "invalid/linux-user-groups-unset-vs-empty.pkl",
+    "invalid/linux-user-shell-root.pkl",
+    "invalid/linux-user-home-root.pkl",
+    "invalid/linux-group-gid-zero.pkl",
+    "invalid/linux-group-absent-root.pkl",
+    "invalid/linux-sysctl-file-clash.pkl",
+    "invalid/linux-file-sysctl-clash.pkl",
+    "invalid/linux-group-name.pkl",
+    "invalid/linux-login-shell-user-colon.pkl",
+    "invalid/linux-login-shell-user-nul.pkl",
+    "invalid/linux-sysctl-value-newline.pkl",
+    "invalid/linux-user-groups-invalid-name.pkl",
+    "invalid/linux-user-shell-not-absolute.pkl",
+    "invalid/linux-user-uid-out-of-range.pkl",
+    "invalid/linux-user-root-uid.pkl",
+    "invalid/linux-user-root-group.pkl",
+    "invalid/linux-group-root-gid.pkl",
+    "invalid/linux-sysctl-path-root.pkl",
+    "invalid/linux-sysctl-clash-apt-repository.pkl",
+    "invalid/linux-file-above-sysctl.pkl",
+    "invalid/linux-directory-sysctl-clash.pkl",
+    "invalid/linux-user-home-conflict.pkl",
+    "invalid/linux-user-group-absent.pkl",
+    "invalid/linux-group-absent-after-user.pkl",
+    "invalid/linux-user-needs-later-group.pkl",
+    "invalid/linux-user-uid-twice.pkl",
+    "invalid/linux-group-gid-twice.pkl",
+    "invalid/linux-sysctl-values-differ.pkl",
+    "invalid/linux-user-implicit-group-clash.pkl",
+    "invalid/linux-user-remove-home-no-home.pkl",
+    "invalid/linux-user-remove-home-conflict.pkl",
+    "invalid/linux-group-removed-first.pkl",
+    "invalid/linux-file-owner-later.pkl",
+    "invalid/linux-file-owner-removed.pkl",
+    "invalid/linux-file-owner-removed-earlier-stage.pkl",
+    "invalid/linux-sysctl-stage-order.pkl",
+    "valid/linux-sysctl-hyphen.pkl",
+    "valid/linux-sysctl-equals.pkl",
+    "valid/linux-sysctl-slash.pkl",
+    "valid/linux-sysctl-boot-order-disjoint.pkl",
+    "invalid/linux-user-shell-later.pkl",
+    "invalid/linux-user-shell-symlink-target-later.pkl",
+    "invalid/linux-user-needs-later-account.pkl",
+    "invalid/linux-user-default-home-conflict.pkl",
+    "invalid/linux-sysctl-boot-order-precedence.pkl",
+    "invalid/linux-sysctl-path-not-boot-loaded.pkl",
+    "invalid/linux-sysctl-name-alias.pkl",
+    "invalid/linux-user-remove-home-mail.pkl",
+    "invalid/linux-user-mail-spool.pkl",
+    "valid/linux-user-remove-home-inactive.pkl",
+    "invalid/linux-user-home-removed-earlier-stage.pkl",
+    "invalid/linux-user-shell-link-target-not-executable.pkl",
+    "invalid/linux-user-home-removed-partial-hosts.pkl",
+    "invalid/linux-file-owner-renumbered-across-stages.pkl",
+    "invalid/linux-user-mail-spool-location.pkl",
+    "valid/linux-user-absent-fields-inactive.pkl",
+    "valid/linux-user-home-removed-recreated.pkl",
+    "invalid/linux-group-ensured-before-user-removal.pkl",
+    "invalid/linux-sysctl-name-dot-component.pkl",
+    "invalid/linux-sysctl-path-run.pkl",
+    "invalid/linux-user-private-group-as-supplementary.pkl",
+    "invalid/linux-user-shell-not-executable.pkl",
+    "invalid/linux-user-shell-group-exec-only.pkl",
+    "invalid/linux-user-uid-across-stages.pkl",
+    "invalid/linux-user-uid-reuse-partial-hosts.pkl",
+    "invalid/linux-user-uid-removal-number-mismatch.pkl",
+    "invalid/linux-group-gid-across-stages.pkl",
+    "valid/linux-user-uid-reused-after-removal.pkl",
+    "valid/linux-sysctl-name-alias-same-value.pkl",
+    "valid/linux-sysctl-boot-order-later-stage.pkl",
+    "invalid/linux-user-shell-owner-execute-only.pkl",
+    "valid/linux-user-uid-reuse-split-removals.pkl",
+    "invalid/linux-sysctl-file-later-stage.pkl",
+    "invalid/linux-user-shell-is-home.pkl",
+    "invalid/linux-user-shell-is-default-home.pkl",
+    "invalid/linux-sysctl-boot-order-legacy.pkl",
+    "valid/linux-user-removal-keeps-non-primary-group.pkl",
+    "invalid/linux-sysctl-file-owned-earlier-stage.pkl",
+    "invalid/linux-user-home-vs-file.pkl",
+    "invalid/linux-group-removed-while-primary.pkl",
+    "invalid/linux-group-removed-while-supplementary.pkl",
+    "invalid/linux-user-home-removed-later-stage.pkl",
+    "valid/linux-user-home-directory-before-account.pkl",
+    "invalid/linux-user-shell-symlink-chain.pkl",
+    "valid/linux-user-absent-home-inactive.pkl",
+    "valid/linux-user-home-recreated-by-account.pkl",
+    "invalid/linux-user-home-renumbered-group.pkl",
+    "invalid/linux-user-uid-renumbered-disjoint-hosts.pkl",
+    "invalid/linux-user-uid-auto-allocation.pkl",
+    "invalid/linux-group-gid-auto-allocation.pkl",
+    "invalid/linux-user-home-file-before-account.pkl",
+    "invalid/linux-user-uid-auto-removal-number-mismatch.pkl",
+    "invalid/linux-user-uid-auto-system-draw.pkl",
+    "invalid/linux-file-owner-removed-later-stage.pkl",
+    "invalid/linux-user-remove-home-mail-elsewhere.pkl",
 ];
 
 /// The official `pkl` binary.
@@ -196,158 +299,6 @@ fn modules() -> Result<PathBuf> {
     std::fs::create_dir_all(&directory)?;
     ruxel_config::schema::export(&directory)?;
     Ok(directory)
-}
-
-/// What an evaluator answered: the value it lowered to, or the error it
-/// refused the file with.
-struct Answer {
-    value: Option<Value>,
-    error: Option<String>,
-}
-
-impl Answer {
-    fn failed(&self) -> bool {
-        self.value.is_none()
-    }
-}
-
-/// The evaluation under pklr, which the engine uses.
-fn under_pklr(path: &Path, root_dir: &Path) -> Answer {
-    let options = ruxel_config::EvalOptions {
-        root_dir: Some(root_dir.to_path_buf()),
-        ..ruxel_config::EvalOptions::default()
-    };
-    match ruxel_config::eval(path, &options) {
-        Ok(value) => Answer {
-            value: Some(value),
-            error: None,
-        },
-        Err(error) => Answer {
-            value: None,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
-/// The evaluation under the official CLI.
-fn under_pkl(pkl: &Path, modules: &Path, path: &Path, root_dir: &Path) -> Answer {
-    let output = Command::new(pkl)
-        .args(["eval", "--format", "json"])
-        .arg("--module-path")
-        .arg(modules)
-        .arg("--root-dir")
-        .arg(root_dir)
-        .arg(path)
-        .output();
-    let Ok(output) = output else {
-        return Answer {
-            value: None,
-            error: Some("the official pkl could not run".to_owned()),
-        };
-    };
-    if output.status.success() {
-        match serde_json::from_slice::<Value>(&output.stdout) {
-            Ok(value) => Answer {
-                value: Some(value),
-                error: None,
-            },
-            Err(error) => Answer {
-                value: None,
-                error: Some(error.to_string()),
-            },
-        }
-    } else {
-        Answer {
-            value: None,
-            error: Some(String::from_utf8_lossy(&output.stderr).into_owned()),
-        }
-    }
-}
-
-/// The value without the fingerprints: the served modules carry a nonce,
-/// the exported ones the hash alone, so the two evaluators never agree on
-/// them.
-fn without_fingerprints(value: &Value) -> Value {
-    let mut value = value.clone();
-    if let Some(object) = value.as_object_mut() {
-        object.remove("schemaFingerprint");
-        object.remove("languageFingerprint");
-    }
-    value
-}
-
-/// The text the error must contain: `// expect-pklr:` when pklr's wording
-/// differs from Pkl's, otherwise `// expect: `.
-fn expected(source: &str) -> Option<&str> {
-    let line = |prefix: &str| source.lines().find_map(|line| line.strip_prefix(prefix));
-    line("// expect-pklr: ").or_else(|| line("// expect: "))
-}
-
-/// The text the official CLI's error must contain.
-fn expected_official(source: &str) -> Option<&str> {
-    source
-        .lines()
-        .find_map(|line| line.strip_prefix("// expect-pkl: "))
-}
-
-/// One example: the two evaluators must agree on it, and it must be the
-/// outcome the corpus says it is.
-fn compare(
-    name: &str,
-    path: &Path,
-    root_dir: &Path,
-    pkl: &Path,
-    modules: &Path,
-    succeeds: bool,
-) -> Result {
-    let source = std::fs::read_to_string(path)?;
-    let under_pklr = under_pklr(path, root_dir);
-    let under_official = under_pkl(pkl, modules, path, root_dir);
-    if under_pklr.failed() != under_official.failed() {
-        return Err(format!(
-            "{name}: pklr failed: {}, the official pkl failed: {}",
-            under_pklr.error.unwrap_or_default(),
-            under_official.error.unwrap_or_default()
-        )
-        .into());
-    }
-    if succeeds && under_pklr.failed() {
-        return Err(format!(
-            "{name}: pklr refused it: {}",
-            under_pklr.error.unwrap_or_default()
-        )
-        .into());
-    }
-    // The inverse: an invalid example must fail under both evaluators, so
-    // an example both accept identically can no longer silently pass.
-    if !succeeds && !under_pklr.failed() {
-        return Err(format!(
-            "{name}: an invalid example must fail under both evaluators; \
-             pklr and the official pkl both accepted it"
-        )
-        .into());
-    }
-    if under_pklr.failed() {
-        let error = under_pklr.error.unwrap_or_default();
-        let official = under_official.error.unwrap_or_default();
-        if let Some(expected) = expected(&source)
-            && !error.contains(expected)
-        {
-            return Err(format!("{name}: pklr refused it with {error:?}").into());
-        }
-        if let Some(expected) = expected_official(&source)
-            && !official.contains(expected)
-        {
-            return Err(format!("{name}: the official pkl refused it with {official:?}").into());
-        }
-        return Ok(());
-    }
-    let value = without_fingerprints(&under_pklr.value.unwrap_or_default());
-    let official = without_fingerprints(&under_official.value.unwrap_or_default());
-    if value != official {
-        return Err(format!("{name}: the two evaluators lowered it differently").into());
-    }
-    Ok(())
 }
 
 /// The examples of the secret language evaluate the same way under both

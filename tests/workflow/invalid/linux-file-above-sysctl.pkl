@@ -1,0 +1,18 @@
+// expect: /etc/sysctl.d is a file, so /etc/sysctl.d/x.conf cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A sysctl writes its entry file, so the path is its footprint like any
+// file step's: a regular file at /etc/sysctl.d leaves no room for the
+// sysctl's file inside it.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d"; content = "net.ipv4.ip_forward = 1\n" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/x.conf" }
+    }
+  }
+}

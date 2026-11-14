@@ -30,6 +30,7 @@ fn in_process_modules_refuse_become_before_reading_or_writing() {
                 None,
                 &ctx,
                 &mut crate::system_state::SystemState::default(),
+                &[],
             );
             assert_eq!(result.status, "failed");
             assert!(!result.changed);
@@ -70,6 +71,7 @@ fn command_and_shell_refuse_path_options_with_become_before_check_or_execution()
                         None,
                         &ctx,
                         &mut crate::system_state::SystemState::default(),
+                        &[],
                     );
                     assert_eq!(result.status, "failed", "{module} {option} {path}");
                     assert!(!result.changed);
@@ -144,6 +146,7 @@ fn command_rejects_free_form_even_with_argv() {
         None,
         &ctx,
         &mut crate::system_state::SystemState::default(),
+        &[],
     );
     assert_eq!(result.status, "failed");
 }

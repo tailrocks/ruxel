@@ -1,0 +1,16 @@
+// expect: their files' boot order reverses them
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// At boot the sysctl files load in file-name order: a later stage that
+// persists its value in a file sorting before an earlier stage's hands
+// the boot value back to the earlier stage.
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-old.conf" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/10-new.conf" }
+  } }
+}

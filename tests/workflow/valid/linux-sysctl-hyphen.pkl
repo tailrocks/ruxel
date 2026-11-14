@@ -1,0 +1,16 @@
+// A per-interface parameter names a hyphenated /proc/sys segment: the
+// catalogue grammar is the key surface the operation supports, so
+// net.ipv4.conf.br-123.* is a name like any other.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.conf.br-123.forwarding"; value = "1" }
+    }
+  }
+}

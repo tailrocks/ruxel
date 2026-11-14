@@ -3,7 +3,7 @@ mod store;
 
 use probe::{file_attrs, file_fingerprint, normalized, probe_for, read_sysctl, sysctl_file_value};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -40,6 +40,13 @@ enum Probe {
     SysctlLive {
         name: String,
         value: String,
+    },
+    /// The effective boot surface: the files `sysctl --system` reads and
+    /// what they assign. It decides the value the host comes up with, so
+    /// a surface that moved after the task ran must not be served from
+    /// the cache.
+    SysctlBoot {
+        fingerprint: String,
     },
 }
 
@@ -79,6 +86,9 @@ impl Probe {
             Probe::SysctlLive { name, value } => {
                 read_sysctl(name).is_some_and(|current| normalized(&current) == normalized(value))
             }
+            Probe::SysctlBoot { fingerprint } => {
+                crate::modules::boot_fingerprint().as_deref() == Some(fingerprint.as_str())
+            }
         }
     }
 }
@@ -95,6 +105,12 @@ pub(crate) struct Ledger {
     path: PathBuf,
     host_key: Option<[u8; 32]>,
     records: HashMap<String, Record>,
+    /// The storage keys the current plan has encountered. A task the
+    /// plan runs marks its record here whatever the run does with it — a
+    /// cache hit, a check-mode run and a run that records nothing are
+    /// encounters too — so the plan's end can tell the records that are
+    /// the plan's from the history of tasks it does not run anymore.
+    encountered: HashSet<String>,
     dirty: bool,
 }
 
@@ -191,6 +207,7 @@ impl Ledger {
         let Some(key) = self.storage_key(key) else {
             return;
         };
+        self.encountered.insert(key.clone());
         self.records.insert(
             key,
             Record {
@@ -201,6 +218,42 @@ impl Ledger {
             },
         );
         self.dirty = true;
+    }
+
+    /// The current plan has encountered this task: its record — a
+    /// previous apply's as much as this run's — belongs to the plan and
+    /// survives its end.
+    pub(crate) fn encounter(&mut self, controller_key: &str) {
+        if controller_key.is_empty() {
+            return;
+        }
+        if let Some(key) = self.storage_key(controller_key) {
+            self.encountered.insert(key);
+        }
+    }
+
+    /// The sysctl entries ruxel manages on this host: every file a
+    /// successful sysctl task wrote, with the key and the value ruxel
+    /// declared there. A later-loading file among them holds a declared
+    /// managed value, not an unmanaged boot override. The records are
+    /// the current plan's to report: the plan's end expires every record
+    /// it never encountered (see `flush`), so a task a previous plan ran
+    /// and this one dropped leaves no declaration behind.
+    pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
+        let mut entries: Vec<(String, String, String)> = self
+            .records
+            .values()
+            .flat_map(|record| record.probes.iter())
+            .filter_map(|probe| match probe {
+                Probe::SysctlKV { file, name, value } => {
+                    Some((file.clone(), name.clone(), value.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        entries.sort();
+        entries.dedup();
+        entries
     }
 
     fn storage_key(&self, controller_key: &str) -> Option<String> {

@@ -1,0 +1,18 @@
+// expect: ask for different values of the sysctl net.ipv4.ip_forward (1 and 0)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The kernel holds one live value for one parameter: different values for
+// one name in one stage would change it back and forth on every apply,
+// whatever files they persist in.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/10-backup.conf" }
+    }
+  }
+}

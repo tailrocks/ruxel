@@ -1,0 +1,21 @@
+// expect: the mail spool of app
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The mail spool lives in the host's mail directory, the MAIL_DIR
+// setting of /etc/default/useradd: configured outside the conventional
+// directories, the spool is written at a path this workflow manages,
+// and `userdel -r` deletes it with the account while reporting both
+// tasks successful. The setting is the host's own, so any path that
+// carries the account's name is the spool's candidate.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/mail/app"; content = "mail\n" }
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+}

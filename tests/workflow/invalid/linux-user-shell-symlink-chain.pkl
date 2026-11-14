@@ -1,0 +1,20 @@
+// expect: whose target
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account's task follows the whole chain the shell leads through,
+// not the first link's target: the second link's target is created
+// after the account, so the chain dangles when the account runs.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Symlink { path = "/usr/local/bin/mysh"; target = "/opt/link" }
+      new Symlink { path = "/opt/link"; target = "/opt/real" }
+      new linux.User { user = "app"; shell = "/usr/local/bin/mysh" }
+      new File { path = "/opt/real"; mode = "0755"; content = "#!/bin/sh\n" }
+    }
+  }
+}

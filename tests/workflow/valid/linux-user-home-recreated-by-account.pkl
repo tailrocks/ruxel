@@ -1,0 +1,20 @@
+// The home is there again before the later step: the intervening
+// account recreates Alice with that declared home — the user operation
+// runs `useradd -m` and `ensure_home` — so the directory the first
+// stage removed with the account is restored before the later stage
+// manages a path inside it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; state = "absent"; home = "/home/alice"; removeHome = true }
+  } }
+  new Stage { title = "recreate"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; home = "/home/alice" }
+  } }
+  new Stage { title = "configure"; hosts = inventory.workers; steps {
+    new File { path = "/home/alice/config"; content = "keep\n" }
+  } }
+}

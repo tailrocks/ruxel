@@ -1,0 +1,9 @@
+// expect: state = "absent" is rejected for root and for an account below UID 1000
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A system account below UID 1000 is kept by the host: the rule refuses
+// the removal of any account whose id is not stated, because the id may
+// be a system one.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "daemon"; state = "absent" } } } }

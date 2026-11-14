@@ -1,0 +1,10 @@
+// expect: removeHome is rejected without home
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// userdel -r removes the home directory and mail spool: a destructive
+// removal states which directory it takes with it.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.User { user = "app"; state = "absent"; uid = 1500; removeHome = true }
+} } }

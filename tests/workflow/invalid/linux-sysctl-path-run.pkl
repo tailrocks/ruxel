@@ -1,0 +1,20 @@
+// expect-pkl: Type constraint `matches(Regex(#"(/etc/sysctl
+// expect-pklr: expected SysctlFile
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `/run` is volatile runtime state (tmpfs), normally cleared at reboot:
+// a persistence file under `/run/sysctl.d` is gone before the next
+// boot's sysctl loading and the parameter silently reverts, so the
+// persistent paths are `/etc/sysctl.conf` and the `*.conf` files of
+// `/etc/sysctl.d` and `/usr/lib/sysctl.d`.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/run/sysctl.d/90-ruxel.conf" }
+    }
+  }
+}

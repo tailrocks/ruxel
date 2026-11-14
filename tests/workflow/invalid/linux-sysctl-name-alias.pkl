@@ -1,0 +1,18 @@
+// expect: ask for different values of the sysctl
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The slash-first and dotted spellings of one parameter address one
+// kernel value: two spellings of the name with different values would
+// change the one live value back and forth on every apply.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net/ipv4/ip_forward"; value = "0"; path = "/etc/sysctl.d/10-b.conf" }
+    }
+  }
+}
