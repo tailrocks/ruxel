@@ -1,0 +1,36 @@
+// expect: takes its gid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The private group of an account is created with it (`useradd -U`) and
+// draws a number of its own. `userdel` takes that group with the
+// account only where it is empty: another account that keeps a
+// membership in it leaves the group behind, and its number stays taken.
+// So the removal of the account frees nothing, and a later explicit
+// claim of the drawn number collides with the group that survived.
+stages {
+  new Stage {
+    title = "setup"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "ops"; gid = 2000 }
+      new linux.User { user = "alice"; uid = 1500 }
+      new linux.User { user = "bob"; group = "ops"; groups = new Listing { "alice" } }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "staff"; gid = 1000 }
+    }
+  }
+}
