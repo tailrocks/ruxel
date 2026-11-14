@@ -1,0 +1,27 @@
+// expect: takes its gid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A group created without gid lets the host's allocator draw one —
+// `groupadd shared` takes the first free number at GID_MIN — exactly
+// like an account without uid, and the private group useradd creates
+// beside an account that names no primary group draws the same way.
+// The draw reserves its range, so a later stage's `groupadd -g 1000`
+// can claim the drawn number and fails on it.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "shared" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "team"; gid = 1000 }
+    }
+  }
+}
