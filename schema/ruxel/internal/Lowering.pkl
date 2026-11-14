@@ -355,10 +355,17 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 /// The kept step of a merge. Two preferences that share the identity —
 /// the package plus the pin (BB §3.7) — are one step, but their priorities
 /// must then agree: the priority is not part of the identity, so a mismatch
-/// would silently collapse the two stanzas into one and drop a priority.
+/// would silently collapse the two stanzas into one and drop a priority. Two
+/// removals of one path are one removal for the same reason: the recursion
+/// is how deep the removal goes, not which path it takes away, so a mismatch
+/// would silently collapse the two removals into one and keep the shallower
+/// one — and that removal fails on the directory the author asked to take
+/// with everything in it.
 function sameStanza(q: Placed, p: Placed): Placed =
   if (q.step is debian.AptPreference && p.step is debian.AptPreference && q.step.priority != p.step.priority)
     throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) pin \(q.step.package) with \(q.step.pin) at different priorities (\(q.step.priority) and \(p.step.priority)); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage")
+  else if (q.step is core.Absent && p.step is core.Absent && q.step.recursive != p.step.recursive)
+    throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) remove \(q.step.path) with different recursion (\(q.step.recursive) and \(p.step.recursive)); two removals of one path are one removal, so keep one recursion or put the second in a later stage")
   else q
 
 /// A step that manages a thing merges with an exact repeat. Package steps,
@@ -1073,7 +1080,11 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
   ["absent"] = (s) -> List(s.path)
-  ["iptablesRule"] = (s) -> List("the iptables rule \(s.chain) \(iptablesMatch(s))")
+  // The rule sets are separate: `iptables` and `ip6tables` hold their own
+  // rules, so the version is part of the thing a rule manages. The same
+  // rule for both versions is two rules, and a stage declares them side by
+  // side.
+  ["iptablesRule"] = (s) -> List("the \(s.ipVersion) iptables rule \(s.chain) \(iptablesMatch(s))")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))

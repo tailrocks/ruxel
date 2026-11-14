@@ -44,7 +44,8 @@ pub(super) fn validate(kind: &str, params: &Map<String, Value>, deferred: bool) 
                 "destination",
                 "out_interface",
                 "jump",
-                "comment"
+                "comment",
+                "state"
             ]
             .iter()
             .all(|key| !present(key)),

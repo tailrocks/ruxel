@@ -287,7 +287,10 @@ class Firewall {
   ip_version: ("ipv4"|"ipv6"|Expr)? = null
   jump: Text? = null
   out_interface: Text? = null
-  policy: Text?(this == null || protocol == null && destination == null && out_interface == null && jump == null && comment == null) = null
+  // A chain policy is not a rule: the agent's policy branch never looks at
+  // the state, so a policy with a state would apply the policy where the
+  // author asked for a removal. The policy takes no rule field at all.
+  policy: Text?(this == null || (!(state is Expr) && state == null && protocol == null && destination == null && out_interface == null && jump == null && comment == null)) = null
   protocol: Text? = null
   state: ("present"|"absent"|Expr)? = null
 }
