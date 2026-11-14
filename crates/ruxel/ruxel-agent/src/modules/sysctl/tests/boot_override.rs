@@ -128,10 +128,14 @@ fn a_dash_prefixed_assignment_is_the_same_entry() {
 }
 
 #[test]
-fn a_wildcard_key_assigns_the_managed_key() {
-    // A wildcard key expands to every key it covers, so a later file
-    // that assigns `net.ipv4.conf.*.rp_filter` assigns the managed
-    // concrete key `net.ipv4.conf.all.rp_filter` too.
+fn a_wildcard_reaches_no_key_the_managed_file_assigns_by_name() {
+    // procps keeps the keys a setting names outright out of the
+    // expansion of a pattern: the managed file's own entry is an
+    // assignment by name, so a later `net.ipv4.conf.*.rp_filter` never
+    // reaches `net.ipv4.conf.all.rp_filter` and hands no boot value
+    // away from it — while a key the sequence never names is still
+    // reported (see `boot_surface`'s
+    // `an_explicit_assignment_is_excluded_from_a_later_wildcard`).
     assert_eq!(
         override_of(
             "/etc/sysctl.d/90-ruxel.conf",
@@ -139,7 +143,7 @@ fn a_wildcard_key_assigns_the_managed_key() {
             "1",
             &[("/etc/sysctl.conf", "net.ipv4.conf.*.rp_filter=0\n")],
         ),
-        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
+        None
     );
 }
 

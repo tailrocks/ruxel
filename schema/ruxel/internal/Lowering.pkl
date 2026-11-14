@@ -126,6 +126,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + primaryGroupsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
+    + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
     + homeRemovalsAcrossStages(_stages, _indexes))
@@ -206,6 +207,90 @@ class IdClaim {
   stage: Int
   spot: String
 }
+
+/// An identity number an earlier stage allocates automatically: a
+/// present account or group that states no id lets the host's allocator
+/// draw one — `useradd alice` takes the first free number at UID_MIN
+/// (1000 on a clean default host), and `groupadd` and the private group
+/// draw the same way — so a later `useradd -u` (or `groupadd -g`) may
+/// claim exactly the number the draw took. The draw is no one number
+/// the schema can name: the host's free list decides, so every number
+/// of the allocator's range is the drawing account's until a proven
+/// removal frees it, and the range holds against a later explicit
+/// claim the way an explicit claim holds its own number.
+class IdDraw {
+  name: String
+  kind: String
+  stage: Int
+  spot: String
+  low: Int
+  high: Int
+}
+
+/// The explicit claims an earlier stage's automatic allocations stand
+/// in the way of: a present account or group without a declared number
+/// reserves the allocator's range on every host the two stages share,
+/// and a later explicit claim of a number inside it is refused until a
+/// proven removal of the drawing identity frees the range. A claim of
+/// the same name is the same identity redeclared — no second allocation
+/// happens for it — and a number outside the range is the allocator's
+/// never to hand out. The direction is the one the allocator runs in:
+/// a draw after an explicit claim is safe, for the claim has already
+/// taken its number and the draw skips it.
+function automaticNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  let (draws = positions(_indexes).flatMap((m) -> drawsOf(_indexes[m], m)))
+  let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
+  draws.flatMap((c) -> claims
+    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> !drawFreed(_stages, _indexes, c, d))
+    .map((d) -> numberDraw(_stages[c.stage], c, _stages[d.stage], d)))
+
+/// The numbers a stage's steps allocate automatically: the uid of a
+/// present account that states none, the gid of a present group that
+/// states none, and the gid of the private group a present account
+/// gets when it names no primary group (USERGROUPS_ENAB) — useradd
+/// creates that group beside the account and draws its number the same
+/// way. The range is the clean default host's: UID_MIN..UID_MAX
+/// (1000..60000) for a regular account, SYS_UID_MIN..SYS_UID_MAX
+/// (1..999) for a system one (`useradd --system`), the same split for
+/// the groups.
+function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
+  positions(ix.steps).flatMap((i) ->
+    let (s = ix.steps[i])
+    if (s is linux.User && s.state == "present")
+      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, where(ix.placed[i]))) else List())
+      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, where(ix.placed[i]))) else List())
+    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, where(ix.placed[i])))
+    else List())
+
+/// One automatic allocation: the name that draws, the kind of number,
+/// and the range the host's allocator draws it from.
+function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String): IdDraw =
+  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000 }
+
+/// Whether the drawing identity is proven gone before the later claim:
+/// the account — for a gid draw, the group or the account whose private
+/// group it is — is removed in a stage between the two, on every host
+/// both claimant stages share. The removal states the id the runtime
+/// verifies against the live entry, so it frees exactly the number the
+/// draw took; a declaration that names another number fails the run
+/// before the later claim gets its turn, whatever the schema reads
+/// into it. `userdel` deletes the empty same-name group with the
+/// account, so the account removal frees a private-group draw too.
+function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
+  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+    positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes[k], c)))
+
+/// Whether a stage removes the identity that drew the number: the
+/// account for a uid draw, and for a gid draw the group or the account
+/// whose private group the drawn group is.
+const function removedDraw(ix: StageIndex, c: IdDraw): Boolean =
+  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name)
+  else ix.steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name) || (s is linux.User && s.state == "absent" && s.user == c.name))
+
+function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
+  "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically, and the host's allocator can hand it \(d.number), which '\(d.name)' (\(d.spot)) claims explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
 
 /// At boot the sysctl files load in file-name order across the system
 /// directories: a later stage that persists its value in a file loading
@@ -529,7 +614,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -925,6 +1010,23 @@ function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: S
 /// (`shell_allowed`).
 const function executableMode(mode: String): Boolean =
   List("1", "3", "5", "7").contains(mode.substring(mode.length - 1, mode.length))
+
+/// A step that publishes inside an account's claimed home runs after
+/// the account's task creates the directory: `useradd -m` makes the
+/// missing home, so a same-stage step beneath it that comes first
+/// fails on the absent parent at apply — check mode reports both tasks
+/// pending because the copy writes nothing — and reversing the two
+/// succeeds. The home itself is the account's subject already (a step
+/// at that path conflicts with it); this is the order of the things
+/// inside it, the provider-order check the shell and group ones are.
+function homeRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present") List()
+  else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+    earlier(i).flatMap((j) ->
+      let (inside = paths(ix.steps[j]).filter((p) -> p.startsWith(h + "/")))
+      if (inside.isEmpty) List()
+      else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages \(inside.first) inside the home \(h) of '\(name(u))' (\(where(ix.placed[i]))) before the account's task creates the directory; useradd -m creates the missing home, so list the account before that step"))
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.

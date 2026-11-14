@@ -72,6 +72,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-absent-root.pkl
   tests/workflow/invalid/linux-group-ensured-before-user-removal.pkl
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
+  tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
@@ -99,6 +100,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-groups-invalid-name.pkl
   tests/workflow/invalid/linux-user-groups-unset-vs-empty.pkl
   tests/workflow/invalid/linux-user-home-conflict.pkl
+  tests/workflow/invalid/linux-user-home-file-before-account.pkl
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
@@ -127,6 +129,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl

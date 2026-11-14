@@ -176,11 +176,20 @@ fn a_wildcard_stays_within_its_path_component() {
     // procps expands a wildcard one segment at a time: `net.*` covers
     // one component, so `net.*.rp_filter` assigns no
     // `net.ipv4.conf.all.rp_filter`, while `net.ipv4.conf.*.rp_filter`
-    // expands to the interface keys and assigns them.
-    let host = vec![(
-        "/etc/sysctl.conf".to_string(),
-        b"net.*.rp_filter=0\n".to_vec(),
-    )];
+    // expands to the interface keys and assigns them. The managed
+    // file's content names another key outright, so the managed key is
+    // one the sequence never assigns by name and the wildcard reaches
+    // it.
+    let host = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.ip_forward=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/90-ruxel.conf",
@@ -191,10 +200,16 @@ fn a_wildcard_stays_within_its_path_component() {
         ),
         None
     );
-    let host = vec![(
-        "/etc/sysctl.conf".to_string(),
-        b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
-    )];
+    let host = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.ip_forward=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/90-ruxel.conf",
@@ -271,5 +286,63 @@ fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
         masked,
         boot::fingerprint_of(&files).expect("fingerprint"),
         "the mask must move the boot surface"
+    );
+}
+
+#[test]
+fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
+    // The managed file assigns `net.ipv4.conf.all.rp_filter=1` by name
+    // and a later `/etc/sysctl.conf` holds `net.ipv4.conf.*.rp_filter=0`:
+    // procps keeps the keys a setting names outright out of the
+    // expansion of a pattern, so the wildcard never reaches `all` and
+    // the managed entry keeps the boot value.
+    let host: Vec<(String, Vec<u8>)> = vec![
+        (
+            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            b"net.ipv4.conf.all.rp_filter=1\n".to_vec(),
+        ),
+        (
+            "/etc/sysctl.conf".to_string(),
+            b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
+        ),
+    ];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        None
+    );
+    // The managed file's own entry is a named assignment wherever the
+    // file carries no content yet: the entry the task writes stands for
+    // it, so the wildcard hands the boot value away from no key of it.
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &[(
+                "/etc/sysctl.conf".to_string(),
+                b"net.ipv4.conf.*.rp_filter=0\n".to_vec()
+            )],
+            &[],
+        ),
+        None
+    );
+    // A key that was never assigned by name is still reported as
+    // overridden by the wildcard: `eth0` is one the pattern expands to
+    // and no file of the sequence names outright.
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.eth0.rp_filter",
+            "1",
+            &host,
+            &[],
+        ),
+        Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
     );
 }

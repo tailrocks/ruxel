@@ -234,6 +234,9 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-user-home-recreated-by-account.pkl",
     "invalid/linux-user-home-renumbered-group.pkl",
     "invalid/linux-user-uid-renumbered-disjoint-hosts.pkl",
+    "invalid/linux-user-uid-auto-allocation.pkl",
+    "invalid/linux-group-gid-auto-allocation.pkl",
+    "invalid/linux-user-home-file-before-account.pkl",
 ];
 
 /// The official `pkl` binary.
