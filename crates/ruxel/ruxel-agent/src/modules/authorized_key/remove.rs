@@ -109,6 +109,12 @@ mod tests {
     use super::{BEFORE_PUBLISH, remove_key};
     use std::os::unix::fs::MetadataExt;
 
+    /// The armed hook is process-wide, so the tests that arm it take
+    /// turns: without this, one test's arming overwrites the other's
+    /// before its removal runs, the swap never happens and the test
+    /// fails against the very race it pins down.
+    static ARMING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn scratch(tag: &str) -> std::path::PathBuf {
         let root = std::env::temp_dir().join(format!("ruxel-authkey-remove-{tag}"));
         let _ = std::fs::remove_dir_all(&root);
@@ -262,6 +268,9 @@ mod tests {
 
     #[test]
     fn a_replaced_ssh_directory_is_noticeable_when_the_key_is_absent() {
+        let _arming = ARMING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = scratch("detached-absent");
         let meta = std::fs::metadata(&root).unwrap();
         let ssh = root.join(".ssh");
@@ -298,6 +307,9 @@ mod tests {
 
     #[test]
     fn a_replaced_ssh_directory_stops_the_removal() {
+        let _arming = ARMING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = scratch("detached");
         let meta = std::fs::metadata(&root).unwrap();
         let ssh = root.join(".ssh");

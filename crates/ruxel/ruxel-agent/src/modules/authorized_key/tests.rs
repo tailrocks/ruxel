@@ -1,3 +1,6 @@
+#[path = "tests/comments.rs"]
+mod comments;
+
 use super::*;
 use std::os::unix::fs::{PermissionsExt, symlink};
 
@@ -10,18 +13,6 @@ fn material_ignores_comment() {
     assert_eq!(
         key_material("from=\"10.0.0.1\" ssh-ed25519 AAAAC3Nza comment").unwrap(),
         ("ssh-ed25519".into(), "AAAAC3Nza".into())
-    );
-}
-
-#[test]
-fn a_comment_line_carries_no_key() {
-    // sshd ignores a blank line and a comment: neither holds a key, even
-    // when the comment names one.
-    assert_eq!(key_material("# disabled ssh-ed25519 AAAAC3Nza"), None);
-    assert_eq!(key_material("   "), None);
-    assert_eq!(
-        key_material("ssh-ed25519 AAAAC3Nza"),
-        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
     );
 }
 

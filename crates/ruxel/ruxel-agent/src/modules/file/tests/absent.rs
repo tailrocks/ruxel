@@ -66,6 +66,38 @@ fn check_mode_refuses_a_removal_of_a_nonempty_directory() {
 }
 
 #[test]
+fn a_removal_of_a_link_to_a_path_below_a_system_root_takes_the_link() {
+    let base = scratch("floor-link-below");
+    // The finding names both: a link to a system root, *or to a path
+    // below one*, is a link, and taking the link takes nothing.
+    std::os::unix::fs::symlink("/etc/hosts", base.join("old-hosts")).unwrap();
+    let params = json!({"path": base.join("old-hosts"), "state": "absent"});
+    assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+    assert!(base.join("old-hosts").symlink_metadata().is_err());
+    assert!(std::path::Path::new("/etc/hosts").exists());
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_reports_a_path_it_cannot_stat() {
+    let base = scratch("stat-error");
+    let file = base.join("file");
+    std::fs::write(&file, b"content").unwrap();
+    // A target below a regular file fails the read with something that
+    // is not a missing path: the removal cannot establish the requested
+    // state and must report the failure rather than answer for an
+    // absence it never observed.
+    let error = run(
+        &json!({"path": file.join("sub"), "state": "absent"}),
+        &context(),
+    )
+    .unwrap_err();
+    assert!(error.contains("cannot read"), "{error}");
+    assert!(error.contains("os error"), "{error}");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
 fn a_removal_of_an_empty_directory_takes_it() {
     let base = scratch("empty");
     let dir = base.join("empty");
