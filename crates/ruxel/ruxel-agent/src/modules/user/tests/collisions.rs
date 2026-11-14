@@ -290,3 +290,38 @@ fn a_renumbered_account_frees_its_number_for_a_later_claim() {
     .expect("the number the plan renumbered away must be available for the later account");
     assert_eq!(claimed.get("changed"), Some(&json!(true)), "{claimed}");
 }
+
+#[test]
+fn a_renumbering_survives_a_later_step_that_states_no_number() {
+    // The plan's record of an identity keeps the number an earlier
+    // step gave it: a present step that states no number renumbers
+    // nothing, so the record must not fall back to "no number" and
+    // make the holder of the freed number a collision again. The
+    // holder scan reads the plan's own record, so a number the plan
+    // freed stays free across a later step that changes something
+    // else about the account.
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let (name, live) = passwd
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 7
+                && f[2].parse::<u64>().is_ok_and(|uid| uid != 0)
+                && !f[0].starts_with(['+', '#', '-']))
+            .then(|| (f[0].to_string(), f[2].parse::<u64>().unwrap()))
+        })
+        .expect("a non-root account on the host");
+    let moved = u32::try_from(live + 100_000).expect("the planned uid fits");
+    let ctx = check_context();
+    run(&json!({"name": name, "uid": moved}), &ctx).expect("the earlier renumbering must plan");
+    // A later step for the same account states no number: it renumbers
+    // nothing, so the plan's record keeps the number.
+    run(&json!({"name": name, "shell": "/bin/sh"}), &ctx).expect("the later step must plan");
+    // The number the plan freed is still free for the later account.
+    let claimed = run(
+        &json!({"name": format!("ruxel-claiming-account-{}", std::process::id()), "uid": live}),
+        &ctx,
+    )
+    .expect("the number the plan renumbered away must still be available for the later account");
+    assert_eq!(claimed.get("changed"), Some(&json!(true)), "{claimed}");
+}
