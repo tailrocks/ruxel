@@ -65,6 +65,7 @@ dual_evaluator
   tests/workflow/invalid/linux-file-above-sysctl.pkl
   tests/workflow/invalid/linux-file-owner-later.pkl
   tests/workflow/invalid/linux-file-owner-removed-earlier-stage.pkl
+  tests/workflow/invalid/linux-file-owner-removed-later-stage.pkl
   tests/workflow/invalid/linux-file-owner-removed.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
   tests/workflow/invalid/linux-file-sysctl-clash.pkl
@@ -130,6 +131,8 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
+  tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
+  tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl

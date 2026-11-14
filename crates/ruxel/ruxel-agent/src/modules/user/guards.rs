@@ -122,10 +122,12 @@ pub(super) fn primary_group_holder_from(passwd: &str, gid: u64) -> Option<String
 }
 
 /// The account that holds `uid` on the host and that the plan has not
-/// removed: `useradd -u` and `usermod -u` refuse a number another
+/// freed: `useradd -u` and `usermod -u` refuse a number another
 /// account holds, so the request is checked against the live database —
-/// but a number the plan's own earlier removal frees is no collision,
-/// because that removal really takes the account away.
+/// but a number the plan's own earlier steps free is no collision:
+/// a removal really takes the account away, and an earlier renumbering
+/// (`usermod -u`) sets the account's new number and frees the old one
+/// before the later claim gets its turn.
 pub(super) fn uid_holder_in_use(uid: u64, name: &str) -> Result<Option<String>, String> {
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     Ok(uid_holder_in_use_from(&passwd, uid, name))
@@ -134,13 +136,13 @@ pub(super) fn uid_holder_in_use(uid: u64, name: &str) -> Result<Option<String>, 
 /// The passwd counterpart of [`uid_holder_in_use`], over canned content.
 pub(super) fn uid_holder_in_use_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
     super::entries::uid_holder_from(passwd, uid, name)
-        .filter(|account| !super::entries::account_removed(account))
+        .filter(|account| !super::entries::account_freed(account, uid))
 }
 
 /// The group that holds `gid` on the host and that the plan has not
-/// removed: `groupadd -g` and `groupmod -g` refuse a number another
-/// group holds, and a group the plan's own earlier removal frees is no
-/// collision.
+/// freed: `groupadd -g` and `groupmod -g` refuse a number another
+/// group holds, and a group the plan's own earlier steps free — by
+/// removal or by renumbering — is no collision.
 pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, String> {
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
     Ok(gid_holder_in_use_from(&groups, gid, name))
@@ -149,7 +151,7 @@ pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, 
 /// The group counterpart of [`uid_holder_in_use`], over canned content.
 pub(super) fn gid_holder_in_use_from(groups: &str, gid: u64, name: &str) -> Option<String> {
     super::entries::gid_holder_from(groups, gid, name)
-        .filter(|group| !super::entries::group_removed(group))
+        .filter(|group| !super::entries::group_freed(group, gid))
 }
 
 /// Whether the plan provides the named group: the host's group database
