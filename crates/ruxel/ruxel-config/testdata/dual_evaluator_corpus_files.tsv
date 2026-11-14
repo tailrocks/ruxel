@@ -73,6 +73,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-absent-root.pkl
   tests/workflow/invalid/linux-group-ensured-before-user-removal.pkl
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
+  tests/workflow/invalid/linux-group-gid-auto-allocation-private-group-member.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
@@ -133,6 +134,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
@@ -176,6 +178,7 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
   tests/workflow/valid/linux-sysctl-equals.pkl
