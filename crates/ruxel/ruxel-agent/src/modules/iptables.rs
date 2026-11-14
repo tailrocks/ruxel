@@ -49,9 +49,9 @@ fn run_with(
         // holds several copies of the same rule is emptied copy by copy:
         // one deletion would leave the others active.
         let changed = if ctx.check_mode {
-            let mut check: Vec<&str> = vec!["-C", chain];
-            check.extend(spec.iter().map(String::as_str));
-            probe(binary, &check)?
+            // Check mode asks the same question the removal asks: is there
+            // a rule of the chain that matches the declared match?
+            !matching_rules(binary, chain, &spec)?.is_empty()
         } else {
             delete_matching(binary, chain, &spec, MAX_DELETIONS)? > 0
         };
@@ -104,6 +104,23 @@ fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Re
     Ok(deletions)
 }
 
+/// The numbers of the rules of the chain that match the declared match.
+fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<u32>, String> {
+    let rules = list_chain(binary, chain)?;
+    let declared: Vec<&str> = spec.iter().map(String::as_str).collect();
+    let wanted = match_pairs(&declared);
+    let mut numbers = Vec::new();
+    for (index, rule) in rules.iter().enumerate() {
+        let Some(args) = rule_arguments(rule, chain) else {
+            continue;
+        };
+        if match_pairs(&args) == wanted {
+            numbers.push(u32::try_from(index).unwrap_or(u32::MAX) + 1);
+        }
+    }
+    Ok(numbers)
+}
+
 /// The rules of the chain, as the firewall lists them.
 fn list_chain(binary: &str, chain: &str) -> Result<Vec<String>, String> {
     let mut command = std::process::Command::new(binary);
@@ -132,7 +149,10 @@ fn match_pairs(args: &[&str]) -> Vec<(String, String)> {
         let flag = args[index];
         if matches!(flag, "-p" | "-d" | "-o") && args.get(index + 1).is_some() {
             let value = args[index + 1];
-            pairs.push((flag.to_string(), value.to_string()));
+            // `-p all` is the default the listing leaves out.
+            if flag != "-p" || value != "all" {
+                pairs.push((flag.to_string(), value.to_string()));
+            }
             index += 2;
             continue;
         }

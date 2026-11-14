@@ -85,7 +85,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 pub(super) fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String> {
-    publish_checked(dir, content, uid, gid, None)
+    publish_inner(dir, content, uid, gid, false, None)
 }
 
 /// Publishes the file, and refuses when the `authorized_keys` it was
@@ -96,6 +96,19 @@ pub(super) fn publish_checked(
     content: &[u8],
     uid: u32,
     gid: u32,
+    expected: Option<FileIdentity>,
+) -> Result<(), String> {
+    publish_inner(dir, content, uid, gid, true, expected)
+}
+
+/// Publishes the file, and checks the file it was written from when the
+/// caller holds its identity.
+fn publish_inner(
+    dir: &File,
+    content: &[u8],
+    uid: u32,
+    gid: u32,
+    check: bool,
     expected: Option<FileIdentity>,
 ) -> Result<(), String> {
     // A private directory protects the staging name from substitution by the
@@ -147,9 +160,12 @@ pub(super) fn publish_checked(
                 // The file that was read is checked right before the
                 // rename: a writer that came in between would lose its
                 // edit to this write.
-                if let Some(expected) = expected {
+                if check {
                     let current = FileIdentity::of_entry(dir)?;
-                    if current != Some(expected) {
+                    if current != expected {
+                        // The file that was read is not the one that is
+                        // there now: a writer that came in between would
+                        // lose its edit to this write.
                         return Err(
                             "authorized_key: authorized_keys changed during operation".into()
                         );

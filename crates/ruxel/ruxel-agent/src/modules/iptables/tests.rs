@@ -134,7 +134,9 @@ fn check_mode_absent_mutates_nothing() {
     assert!(marker.exists(), "the rule is still there");
     let calls = std::fs::read_to_string(&log).unwrap_or_default();
     let added = calls.len() - before.len();
-    assert!(calls[before.len()..].contains("-C INPUT"), "{calls}");
+    // Check mode asks the same question the removal asks: is there a rule
+    // of the chain that matches? It lists and it deletes nothing.
+    assert!(calls[before.len()..].contains("-S INPUT"), "{calls}");
     assert!(!calls[before.len()..].contains("-D"), "{calls}");
     assert!(!calls[before.len()..].contains("-A"), "{calls}");
     assert!(added > 0);

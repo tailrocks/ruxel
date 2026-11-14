@@ -172,3 +172,28 @@ fn a_comment_with_bytes_that_are_not_text_is_carried_through() {
     assert_eq!(left, wanted);
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn a_key_behind_an_option_with_text_that_is_not_text_is_removed() {
+    let root = scratch("option-not-text");
+    let meta = std::fs::metadata(&root).unwrap();
+    let ssh = root.join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    // The option holds text that is not text, and the key is behind it.
+    let before = "command=\"echo caf\u{e9}\" ssh-ed25519 AAAAC3Nzadrop\n";
+    std::fs::write(ssh.join("authorized_keys"), before).unwrap();
+    let changed = remove_key(
+        &root,
+        meta.uid(),
+        meta.gid(),
+        "ssh-ed25519 AAAAC3Nzadrop",
+        false,
+    )
+    .unwrap();
+    assert!(changed, "the key behind the option is removed");
+    assert_eq!(
+        std::fs::read_to_string(ssh.join("authorized_keys")).unwrap(),
+        ""
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}

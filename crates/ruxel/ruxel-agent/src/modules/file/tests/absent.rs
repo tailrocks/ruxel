@@ -284,3 +284,24 @@ fn a_mount_point_in_a_tree_is_not_crossed() {
     assert!(super::super::floor::is_mount_point(1, 2));
     assert!(!super::super::floor::is_mount_point(1, 1));
 }
+
+#[test]
+fn a_root_in_another_spelling_is_a_root() {
+    // `//etc` names the same root as `/etc`, and the removal refuses it.
+    let mut check = context();
+    check.check_mode = true;
+    let error = run(&json!({"path": "//etc", "state": "absent"}), &check).unwrap_err();
+    assert!(error.contains("system root"), "{error}");
+}
+
+#[test]
+fn a_system_link_is_a_system_root() {
+    // The system's own links into the merged tree are the system's own
+    // names: a removal that takes one breaks the host.
+    for root in ["/bin", "/sbin", "/lib", "/lib64"] {
+        let mut check = context();
+        check.check_mode = true;
+        let error = run(&json!({"path": root, "state": "absent"}), &check).unwrap_err();
+        assert!(error.contains("system root"), "{root}: {error}");
+    }
+}

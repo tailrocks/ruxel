@@ -175,9 +175,70 @@ fn split_lines(content: &[u8]) -> Vec<&[u8]> {
 /// The key type and the material of a line, read as bytes: a comment may
 /// hold bytes that are not text, and sshd ignores the comment anyway.
 fn key_material_bytes(line: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    let prefix: Vec<u8> = line.iter().copied().take_while(u8::is_ascii).collect();
-    let text = String::from_utf8(prefix).ok()?;
-    key_material(&text).map(|(kind, material)| (kind.into_bytes(), material.into_bytes()))
+    let text = match line.iter().position(|byte| !byte.is_ascii_whitespace()) {
+        Some(start) => &line[start..],
+        None => &[],
+    };
+    if text.is_empty() || text.starts_with(b"#") {
+        // sshd ignores a blank line and a comment: neither carries a key.
+        return None;
+    }
+    let fields = key_fields_bytes(text);
+    for (index, field) in fields.iter().enumerate() {
+        if !is_key_type_bytes(field) {
+            continue;
+        }
+        let Some(material) = fields.get(index + 1) else {
+            continue;
+        };
+        return Some((field.clone(), material.clone()));
+    }
+    None
+}
+
+/// The fields of a line of `authorized_keys`, as bytes: a quoted value
+/// stays in one field, and a value that is not text does not end the line.
+fn key_fields_bytes(line: &[u8]) -> Vec<Vec<u8>> {
+    let mut fields = Vec::new();
+    let mut field = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut started = false;
+    for byte in line {
+        if escaped {
+            field.push(*byte);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            byte if byte.is_ascii_whitespace() && !quoted => {
+                if started {
+                    fields.push(std::mem::take(&mut field));
+                    started = false;
+                }
+            }
+            byte => {
+                field.push(*byte);
+                started = true;
+            }
+        }
+    }
+    if started {
+        fields.push(field);
+    }
+    fields
+}
+
+/// Whether a field names a key type.
+fn is_key_type_bytes(field: &[u8]) -> bool {
+    const TYPES: [&[u8]; 4] = [b"ssh-", b"ecdsa-", b"sk-", b"xmss-"];
+    TYPES.iter().any(|prefix| field.starts_with(prefix))
 }
 
 /// The key type and the material of a line of `authorized_keys`.

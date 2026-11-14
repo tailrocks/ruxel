@@ -76,3 +76,24 @@ fn the_deletion_bound_is_read_before_the_next_deletion() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn check_mode_asks_the_same_question_the_removal_answers() {
+    let dir = scratch("check-mode");
+    // The rule of the chain matches the declared match and has another
+    // jump: check mode says there is a change, like the removal does.
+    let (binary, _file) = listing_stub(&dir, &["-p tcp -d 10.0.0.0/8 -j ACCEPT"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.0/8", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(true),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    std::fs::remove_dir_all(dir).unwrap();
+}
