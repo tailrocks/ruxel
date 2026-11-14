@@ -7,6 +7,7 @@ use super::*;
 mod changes;
 mod collisions;
 mod creation;
+mod guards;
 mod homes;
 mod parsing;
 mod planned;
