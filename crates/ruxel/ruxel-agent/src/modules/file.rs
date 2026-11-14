@@ -12,6 +12,7 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::path::Component;
 use std::path::Path;
 
+mod floor;
 mod removal;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
