@@ -1,0 +1,21 @@
+// The directory operation creates every missing parent of its path, so
+// a directory beneath the claimed home provides the home itself:
+// `useradd -m` accepts the directory that is already there — it warns
+// that it copies no skeleton file into it — and the account's task
+// reconciles the ownership of the home afterwards. A file inside the
+// home needs the parent to be there, so it follows the account that
+// creates the directory — see linux-user-home-file-before-account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/alice/.config"; mode = "0755" }
+      new linux.User { user = "alice" }
+    }
+  }
+}

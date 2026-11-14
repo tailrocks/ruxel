@@ -79,6 +79,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-name.pkl
   tests/workflow/invalid/linux-group-removed-first.pkl
   tests/workflow/invalid/linux-group-removed-while-primary.pkl
+  tests/workflow/invalid/linux-group-removed-while-supplementary.pkl
   tests/workflow/invalid/linux-group-root-gid.pkl
   tests/workflow/invalid/linux-login-shell-user-colon.pkl
   tests/workflow/invalid/linux-login-shell-user-nul.pkl
@@ -103,6 +104,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-conflict.pkl
   tests/workflow/invalid/linux-user-home-file-before-account.pkl
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
+  tests/workflow/invalid/linux-user-home-removed-later-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
@@ -185,6 +187,7 @@ dual_evaluator
   tests/workflow/valid/linux-user-absent-home-inactive.pkl
   tests/workflow/valid/linux-user-groups-empty.pkl
   tests/workflow/valid/linux-user-groups-order.pkl
+  tests/workflow/valid/linux-user-home-directory-before-account.pkl
   tests/workflow/valid/linux-user-home-recreated-by-account.pkl
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl

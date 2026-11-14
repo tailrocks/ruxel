@@ -123,7 +123,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes)
     + sysctlOwnersAcrossStages(_stages, _indexes)
-    + primaryGroupsAcrossStages(_stages, _indexes)
+    + groupRemovalsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
@@ -1035,14 +1035,29 @@ const function executableMode(mode: String): Boolean =
 /// succeeds. The home itself is the account's subject already (a step
 /// at that path conflicts with it); this is the order of the things
 /// inside it, the provider-order check the shell and group ones are.
+///
+/// A directory is the exception: the directory operation creates every
+/// missing parent of its path, so it provides the home it publishes
+/// inside — `useradd -m` accepts the directory that is already there
+/// (it warns that it copies no skeleton file into it) and the
+/// account's task reconciles its ownership afterwards. The rule is the
+/// publishers' one: a file, a link or a capture writes into the parent
+/// and needs it to be there.
 function homeRels(ix: StageIndex, i: Int): List<String> =
   let (u = ix.steps[i])
   if (!(u is linux.User) || u.state != "present") List()
   else let (h = if (u.home != null) u.home else "/home/\(u.user)")
     earlier(i).flatMap((j) ->
       let (inside = paths(ix.steps[j]).filter((p) -> p.startsWith(h + "/")))
-      if (inside.isEmpty) List()
+      if (inside.isEmpty || providesHome(ix.steps[j])) List()
       else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages \(inside.first) inside the home \(h) of '\(name(u))' (\(where(ix.placed[i]))) before the account's task creates the directory; useradd -m creates the missing home, so list the account before that step"))
+
+/// The step provides the home it publishes inside: the directory
+/// operation creates every missing parent of its path, so the home is
+/// there before the account's task runs — the account's task finds the
+/// directory that is already there and reconciles its ownership.
+const function providesHome(s: core.Step): Boolean =
+  s is core.Directory
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.
@@ -1112,10 +1127,13 @@ const function covers(h: String, p: String, d: String): Boolean =
 /// directory that is gone: the file task cannot open its parent. The
 /// comparison is per host pair — stages on disjoint hosts never share a
 /// home — and a step that declares the directory again lifts the
-/// refusal: the directory task creates the parents it needs.
+/// refusal: the directory task creates the parents it needs. The other
+/// direction is the same rule seen from the removal's side: the paths
+/// an earlier stage manages inside the home a later stage removes with
+/// the account do not survive the run either.
 function homeRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
-    .flatMap((n) -> removedHomeRels(_stages, _indexes, n, m)))
+    .flatMap((n) -> removedHomeRels(_stages, _indexes, n, m) + removedPathRels(_stages, _indexes, n, m)))
 
 /// The paths a later stage manages inside a home an earlier stage
 /// removed, and the refusal for the ones no step recreates.
@@ -1125,6 +1143,28 @@ function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
     if (inside.isEmpty) List()
     else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
     else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
+
+/// The paths an earlier stage manages inside a home a later stage
+/// removes with the account: `userdel -r` deletes the home directory
+/// and everything in it, and the mail spool with them, so the path does
+/// not survive the run — the removal takes the earlier stage's file
+/// with it, although both stages report success. The comparison is per
+/// host pair, as the other direction's is.
+function removedPathRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  positions(_indexes[m].steps).flatMap((j) ->
+    let (s = _indexes[m].steps[j])
+    if (!(s is linux.User) || s.state != "absent" || !s.removeHome) List()
+    else (if (s.home == null) List() else List(s.home))
+      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, "home directory", "deletes the directory and everything in it"))
+      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, "mail spool", "removes the spool and everything in it")))
+
+/// The paths an earlier stage manages inside the directory a later
+/// stage's removal takes with it, and the refusal for them.
+function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, what: String, how: String): List<String> =
+  positions(_indexes[n].steps).flatMap((i) ->
+    let (inside = paths(_indexes[n].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    if (inside.isEmpty) List()
+    else List("'\(name(_indexes[n].steps[i]))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
 
 /// The home is there again before the later step: a step between the
 /// removal and it declares a directory that covers the path's parent —
@@ -1304,39 +1344,76 @@ const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<Stage
   positions(_indexes).filter((k) -> k > n && k <= m)
     .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
 
-/// A group an account keeps as its primary group cannot go while the
-/// account is there: `groupdel` refuses a group a passwd entry still
-/// uses, so the account must be removed or moved to another group
-/// first. The stage-local ordering sees only its own stage; across
-/// stages an earlier overlapping-host stage can leave the account on
-/// the group a later stage removes, and the apply then fails after the
-/// earlier stages have already mutated the host. An intervening account
-/// task that removes the account or moves it to another group takes it
-/// off the group, and the refusal goes with it.
-function primaryGroupsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+/// A group an account keeps cannot go while the account is there: as
+/// the account's primary group `groupdel` refuses it — a passwd entry
+/// still uses it — and as a supplementary membership `groupdel`
+/// succeeds and erases the membership, so the account's declared state
+/// does not hold at the end of the run. Either way the account must
+/// be removed or taken off the group first. The stage-local ordering
+/// sees only its own stage; across stages an earlier overlapping-host
+/// stage can leave the account on the group a later stage removes, and
+/// the apply then fails after the earlier stages have already mutated
+/// the host. An intervening account task that removes the account or
+/// takes it off the group lifts the refusal.
+function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (g = _indexes[m].steps[i])
     if (g is linux.Group && g.state == "absent")
       positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
-        .flatMap((n) -> heldPrimaryGroups(_stages, _indexes, n, m, i, g.name)
-          .map((a) -> "stage \"\(_stages[n].title)\" leaves the account \(a) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"))
+        .flatMap((n) -> heldGroups(_stages, _indexes, n, m, i, g.name)
+          .map((a) -> if (a.last == "primary")
+            "stage \"\(_stages[n].title)\" leaves the account \(a.first) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"
+            else
+            "stage \"\(_stages[n].title)\" leaves the account \(a.first) in the group \(g.name), and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel succeeds but erases the account's membership in it, so remove the account or take it off the group first"))
     else List()))
 
-/// The accounts an earlier stage leaves keeping `group` as their
-/// primary group on a host the removal runs on, where no intervening
-/// account task takes them off it before the removal.
-function heldPrimaryGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<String> =
+/// The accounts an earlier stage leaves keeping `group` on a host the
+/// removal runs on, where no intervening account task takes them off
+/// it before the removal. The pair names the account and how it keeps
+/// the group: `primary` or `supplementary`.
+function heldGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<List<String>> =
   positions(_indexes[n].steps).flatMap((j) ->
     let (u = _indexes[n].steps[j])
-    if (!(u is linux.User) || u.state != "present" || !primaryGroup(u).contains(group)) List()
+    if (!(u is linux.User) || u.state != "present" || !keepsGroup(u, group)) List()
     else if (sharedHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && stageRunsOn(_stages[k], h)
-      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesPrimary(_indexes[k].steps[j2], u.user, group))))) List(u.user)
+      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesGroup(_indexes[k].steps[j2], u, group))))) List(List(u.user, if (primaryGroup(u).contains(group)) "primary" else "supplementary"))
     else List())
 
-/// Whether the step takes the account off the group: it removes the
-/// account, or declares it present on another primary group.
+/// The groups an account keeps: the primary one — the group it names
+/// or the one useradd creates with its login name — and the
+/// supplementary memberships it names. A listing that is unset names
+/// no supplementary group: the memberships are unmanaged then.
+const function keepsGroup(u: linux.User, group: String): Boolean =
+  primaryGroup(u).contains(group) || keepsSupplementary(u, group)
+
+/// The supplementary memberships an account names: the ones its
+/// listing carries. A listing that is unset names none.
+const function keepsSupplementary(u: linux.User, group: String): Boolean =
+  u.groups != null && u.groups.toList().contains(group)
+
+/// Whether the step takes the account off the group it keeps: it
+/// removes the account, or declares it present without the group — on
+/// another primary group when the account keeps it as its primary one,
+/// and without the membership in an explicit supplementary listing when
+/// it keeps it as a supplementary one.
+const function leavesGroup(s: core.Step, u: linux.User, group: String): Boolean =
+  s is linux.User && s.user == u.user && (s.state == "absent"
+    || (if (primaryGroup(u).contains(group)) leavesPrimary(s, u.user, group) else leavesSupplementary(s, u.user, group)))
+
+/// Whether the step takes the account off the group as its primary
+/// one: it removes the account, or declares it present on another
+/// primary group and names no supplementary membership of it — an
+/// account that keeps the group as a supplementary one still has it.
 const function leavesPrimary(s: core.Step, account: String, group: String): Boolean =
-  s is linux.User && s.user == account && (s.state == "absent" || !primaryGroup(s).contains(group))
+  s is linux.User && s.user == account && (s.state == "absent" || (!primaryGroup(s).contains(group) && !keepsSupplementary(s, group)))
+
+/// Whether the step takes the account off the group as a supplementary
+/// membership: it declares the account present with a listing that
+/// names no such group. A listing that is unset leaves the
+/// supplementary memberships unmanaged, so the account keeps the one it
+/// has.
+const function leavesSupplementary(s: core.Step, account: String, group: String): Boolean =
+  s is linux.User && s.user == account && !primaryGroup(s).contains(group) && s.groups != null && !s.groups.toList().contains(group)
 
 /// A managed home is a directory: a whole-file owner at exactly the
 /// same path in another stage is a type conflict whichever side runs
