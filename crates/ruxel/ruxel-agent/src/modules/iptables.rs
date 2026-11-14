@@ -140,17 +140,29 @@ fn rule_arguments<'a>(rule: &'a str, chain: &str) -> Option<Vec<&'a str>> {
     Some(rest.split_whitespace().collect())
 }
 
-/// The pairs of the match: the protocol, the destination and the outgoing
-/// interface. The jump and the comment are not part of the match.
+/// The match of a rule: every option but the jump and the comment, which
+/// are not part of the match. An option the rule carries and the declared
+/// match does not is a different match, so a rule with `--dport 22` is not
+/// the rule that declares only a protocol.
 fn match_pairs(args: &[&str]) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let mut index = 0;
     while index < args.len() {
         let flag = args[index];
-        if matches!(flag, "-p" | "-d" | "-o") && args.get(index + 1).is_some() {
-            let value = args[index + 1];
+        let value = args.get(index + 1);
+        if matches!(flag, "-j" | "--jump" | "--comment") {
+            // The jump and the comment are not part of the match.
+            index += 2;
+            continue;
+        }
+        if flag == "-m" && value == Some(&"comment") {
+            // The comment carries its own options.
+            index += 4;
+            continue;
+        }
+        if let Some(value) = value {
             // `-p all` is the default the listing leaves out.
-            if flag != "-p" || value != "all" {
+            if flag != "-p" || *value != "all" {
                 pairs.push((flag.to_string(), value.to_string()));
             }
             index += 2;
