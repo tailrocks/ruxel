@@ -206,3 +206,70 @@ fn a_wildcard_stays_within_its_path_component() {
         Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
     );
 }
+
+#[test]
+fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
+    // sysctl.d(5) documents the same-name higher-precedence symlink to
+    // `/dev/null` as the way to disable a vendor file: the mask holds
+    // the name, the lower-precedence copy never loads, and its
+    // assignments must not weigh on the boot value — while `is_file`,
+    // following the link to the character device, answers false and
+    // used to drop the name entirely.
+    let scratch = Scratch::new("masked");
+    let etc = scratch.dir("etc");
+    let usr = scratch.dir("usr");
+    let mask = etc.join("99-vendor.conf");
+    std::os::unix::fs::symlink("/dev/null", &mask).expect("the mask links to /dev/null");
+    let vendor = scratch.file("usr", "99-vendor.conf", "net.ipv4.ip_forward=1\n");
+    let dirs: [(&str, u8); 2] = [
+        (etc.to_str().expect("path is text"), 1),
+        (usr.to_str().expect("path is text"), 0),
+    ];
+    let files = boot::system_files_in(&dirs);
+    assert!(
+        files.iter().any(|file| file == &mask),
+        "the mask holds the name: {files:?}"
+    );
+    assert!(
+        !files
+            .iter()
+            .any(|file| file.starts_with(usr.to_str().expect("path is text"))),
+        "the masked vendor copy must not load: {files:?}"
+    );
+    // The assignments behind the mask do not weigh on the boot value:
+    // the vendor file's value never hands it away.
+    let host: Vec<(String, Vec<u8>)> = files
+        .iter()
+        .map(|file| {
+            (
+                file.to_string_lossy().into_owned(),
+                std::fs::read(file).unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        boot::boot_override(
+            "/lib/sysctl.d/50-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "0",
+            &host,
+            &[]
+        ),
+        None,
+        "the masked assignment must not override the managed value"
+    );
+    // The mask is part of the boot surface: its appearance moves the
+    // fingerprint the ledger weighs on its cached results.
+    let masked = boot::fingerprint_of(&files).expect("fingerprint");
+    std::fs::remove_file(&mask).expect("the mask is removable");
+    let files = boot::system_files_in(&dirs);
+    assert!(
+        files.iter().any(|file| file == &vendor),
+        "without the mask the vendor copy loads: {files:?}"
+    );
+    assert_ne!(
+        masked,
+        boot::fingerprint_of(&files).expect("fingerprint"),
+        "the mask must move the boot surface"
+    );
+}
