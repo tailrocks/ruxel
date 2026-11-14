@@ -1,3 +1,5 @@
+#[path = "tests/duplicates.rs"]
+mod duplicates;
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
 

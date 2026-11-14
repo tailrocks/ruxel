@@ -6,6 +6,11 @@
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
 
+/// How many copies of one rule a removal deletes before it gives up: the
+/// rule must go, but a chain that keeps the rule must not keep the
+/// removal looping forever.
+const MAX_DELETIONS: u32 = 1024;
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let chain = str_param(obj, "chain").ok_or("iptables: chain required")?;
@@ -35,21 +40,39 @@ fn run_with(
     }
 
     let spec = rule_spec(obj);
-    let mut check: Vec<&str> = vec!["-C", chain];
-    check.extend(spec.iter().map(String::as_str));
-    let present = probe(binary, &check)?;
     let state = str_param(obj, "state").unwrap_or("present");
     if state == "absent" {
         // A removal deletes the rule and reports no change when the rule is
         // not there. Check mode only probes: it never deletes.
-        let changed = present;
-        if changed && !ctx.check_mode {
-            let mut remove: Vec<&str> = vec!["-D", chain];
-            remove.extend(spec.iter().map(String::as_str));
-            exec_rule(binary, &remove)?;
+        //
+        // `iptables -D` takes one matching rule at a time, so a chain that
+        // holds several copies of the same rule is emptied copy by copy:
+        // one deletion would leave the others active.
+        let mut check: Vec<&str> = vec!["-C", chain];
+        check.extend(spec.iter().map(String::as_str));
+        let mut changed = false;
+        if ctx.check_mode {
+            changed = probe(binary, &check)?;
+        } else {
+            let mut deletions = 0;
+            while probe(binary, &check)? {
+                let mut remove: Vec<&str> = vec!["-D", chain];
+                remove.extend(spec.iter().map(String::as_str));
+                exec_rule(binary, &remove)?;
+                changed = true;
+                deletions += 1;
+                if deletions > MAX_DELETIONS {
+                    return Err(format!(
+                        "{binary}: the rule is still there after {MAX_DELETIONS} deletions"
+                    ));
+                }
+            }
         }
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
+    let mut check: Vec<&str> = vec!["-C", chain];
+    check.extend(spec.iter().map(String::as_str));
+    let present = probe(binary, &check)?;
     let changed = !present;
     if changed && !ctx.check_mode {
         let mut append: Vec<&str> = vec!["-A", chain];

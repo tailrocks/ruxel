@@ -221,16 +221,72 @@ fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String>
     Err("authorized_key: cannot reserve staging directory".into())
 }
 
+/// The key type and the material of a line of `authorized_keys`.
+///
+/// A line may carry options before the key, and an option's value may be
+/// quoted and hold spaces (`command="echo hi"`), so the line is split into
+/// fields that keep a quoted value whole. The key type is the first field
+/// that names one, and the material is the field after it.
 fn key_material(line: &str) -> Option<(String, String)> {
-    let mut parts = line.split_whitespace();
-    let first = parts.next()?;
-    let (ktype, material) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
-        (first, parts.next()?)
-    } else {
-        let t = parts.next()?;
-        (t, parts.next()?)
-    };
-    Some((ktype.to_string(), material.to_string()))
+    let fields = key_fields(line);
+    for (index, field) in fields.iter().enumerate() {
+        if !is_key_type(field) {
+            continue;
+        }
+        let Some(material) = fields.get(index + 1) else {
+            continue;
+        };
+        return Some((field.clone(), material.clone()));
+    }
+    None
+}
+
+/// The fields of a line of `authorized_keys`: a quoted value stays in one
+/// field and loses its quotes.
+fn key_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut started = false;
+    for character in line.chars() {
+        if escaped {
+            field.push(character);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match character {
+            '\\' if quoted => escaped = true,
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            character if character.is_whitespace() && !quoted => {
+                if started {
+                    fields.push(std::mem::take(&mut field));
+                    started = false;
+                }
+            }
+            character => {
+                field.push(character);
+                started = true;
+            }
+        }
+    }
+    if started {
+        fields.push(field);
+    }
+    fields
+}
+
+/// Whether a field names a key type.
+fn is_key_type(field: &str) -> bool {
+    field.starts_with("ssh-")
+        || field.starts_with("ecdsa-")
+        || field.starts_with("sk-")
+        || field.starts_with("rsa-sha2-")
+        || field.starts_with("xmss")
 }
 
 fn home_of(user: &str) -> Result<String, String> {
