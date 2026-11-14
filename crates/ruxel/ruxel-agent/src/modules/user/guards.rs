@@ -240,14 +240,25 @@ pub(super) fn private_group_missing(group: Option<&str>, group_exists: bool) -> 
 /// yet but an earlier task of the plan declares it present — an
 /// earlier same-stage `Group` step creates it and check mode runs no
 /// `groupadd`, so planning the account change must not require the new
-/// group's live GID. A group no task of the plan provides is refused
+/// group's live GID. In check mode the plan's explicitly requested
+/// number also wins over the unchanged live entry: an earlier `Group`
+/// step renumbers an existing group (`groupmod -g`) and check mode
+/// runs nothing, so the live database still holds the old number while
+/// the apply moves the group first — the primary-group change and the
+/// home repair must be planned against the number the apply ends up
+/// with, not the stale one. Apply mode, which runs the providing step
+/// first, resolves from the host and fails where it cannot, before
+/// anything mutates. A group no task of the plan provides is refused
 /// here the way apply refuses it: the identical apply deterministically
 /// fails with `group ... not found`, and the dry run must report that
-/// instead of a valid planned change. Apply mode, which runs the
-/// providing step first, still resolves from the host and fails where
-/// it cannot, before anything mutates.
+/// instead of a valid planned change.
 pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, String> {
     if let Ok(gid) = group.parse::<u32>() {
+        return Ok(Some(gid));
+    }
+    if check_mode
+        && let Some(super::entries::Requested::Number(gid)) = super::entries::planned_group(group)
+    {
         return Ok(Some(gid));
     }
     match super::group_entry(group)? {

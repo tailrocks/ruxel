@@ -177,3 +177,39 @@ fn a_declared_same_name_shadow_is_not_an_unmanaged_shadow() {
         &managed,
     ));
 }
+
+#[test]
+fn a_managed_file_with_an_invalid_utf8_byte_is_still_published() {
+    // An unrelated byte that is not text must not abort the task: the
+    // managed entry is reconciled and the byte survives the publish
+    // byte-for-byte — procps applies the assignment in a file that
+    // carries one (`sysctl --dry-run -p`), so the refusal would reject
+    // a host file the underlying utility accepts.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-bytes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.conf");
+    std::fs::write(&path, b"# note \xff\nnet.other=1\n").unwrap();
+    let ctx = super::super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    super::super::run(
+        &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
+        &ctx,
+        &[],
+    )
+    .expect("a managed file with an unrelated invalid byte must still be reconciled");
+    let after = std::fs::read(&path).unwrap();
+    assert!(
+        after.windows(2).any(|w| w == [0xff, b'\n']),
+        "the unrelated bytes must survive the publish: {after:?}"
+    );
+    assert!(
+        after.windows(11).any(|w| w == b"net.test=1\n"),
+        "the managed entry must be published: {after:?}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

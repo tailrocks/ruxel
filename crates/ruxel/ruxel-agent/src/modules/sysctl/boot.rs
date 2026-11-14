@@ -37,10 +37,15 @@ pub(super) fn system_files() -> Vec<PathBuf> {
 /// The boot files of `dirs`: one copy per name, from the
 /// highest-precedence directory that holds it. procps loads a name
 /// once (`PreloadSystem`), so a shadowed copy never reaches the kernel
-/// and must not weigh on the boot value. A `*.conf` basename need not
-/// be valid UTF-8 and procps reads it all the same, so the names are
-/// compared as their raw bytes: a file whose name is not text is a
-/// boot file like any other and must weigh on the analysis.
+/// and must not weigh on the boot value. A name masked by a symlink to
+/// `/dev/null` — the mechanism `sysctl.d(5)` documents for disabling a
+/// lower-precedence file — holds its place like any other copy: the
+/// link opens as an empty file, the name is consumed, and the
+/// lower-precedence copies of it are the shadowed ones. A `*.conf`
+/// basename need not be valid UTF-8 and procps reads it all the same,
+/// so the names are compared as their raw bytes: a file whose name is
+/// not text is a boot file like any other and must weigh on the
+/// analysis.
 pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
     let mut by_name: BTreeMap<Vec<u8>, PathBuf> = BTreeMap::new();
     for (dir, _) in dirs {
@@ -49,7 +54,9 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || path.extension().is_none_or(|ext| ext != "conf") {
+            if (!path.is_file() && !masked_by_dev_null(&path))
+                || path.extension().is_none_or(|ext| ext != "conf")
+            {
                 continue;
             }
             let Some(name) = path.file_name() else {
@@ -61,6 +68,19 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = by_name.into_values().collect();
     files.push(PathBuf::from(LEGACY));
     files
+}
+
+/// Whether `path` is a file name masked by a symlink to `/dev/null`:
+/// the link opens as an empty file and consumes the name at boot —
+/// `sysctl.d(5)` documents the same-name higher-precedence symlink to
+/// `/dev/null` as the way to disable a vendor file — while `is_file`,
+/// which follows the link, answers false for the character device the
+/// link targets. The mask holds the name like any other copy: the
+/// lower-precedence files of it never load.
+fn masked_by_dev_null(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+        && std::fs::canonicalize(path)
+            .is_ok_and(|target| std::fs::canonicalize("/dev/null").is_ok_and(|null| target == null))
 }
 
 /// The same-named file in a higher-precedence system directory that
