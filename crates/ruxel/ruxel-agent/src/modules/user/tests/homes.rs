@@ -158,3 +158,46 @@ fn the_home_walk_stays_on_the_directories_it_opened() {
     );
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn the_home_walk_restarts_at_the_root_for_an_absolute_symlink() {
+    // A managed home traverses a root-owned absolute symlink below the
+    // first component (`srv/homes -> /mnt/homes` for
+    // `srv/homes/alice`): for an absolute target the walk restarts at
+    // the root with the target's components and must land on the
+    // target's directory — never under the already-walked prefix.
+    //
+    // The admission rule admits only a link a non-root principal
+    // cannot rewrite — its directory is root's and unwritable to the
+    // rest — so the scenario needs a root-owned directory tree: the
+    // unprivileged lanes skip it, and the root lane proves the walk.
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let base = std::env::temp_dir().join(format!("ruxel-abs-walk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(base.join("mnt/homes")).unwrap();
+    std::fs::create_dir_all(base.join("srv")).unwrap();
+    if std::fs::metadata(&base).unwrap().uid() != 0 {
+        // Not the root lane: the admitted-symlink scenario cannot be
+        // staged unprivileged.
+        std::fs::remove_dir_all(&base).unwrap();
+        return;
+    }
+    for dir in [&base, &base.join("srv"), &base.join("mnt")] {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    // The operator's absolute link below the first component of the
+    // walk, in a root-owned unwritable directory.
+    std::os::unix::fs::symlink(base.join("mnt/homes"), base.join("srv/homes")).unwrap();
+    let home = base.join("srv/homes/alice");
+    let created = super::super::ensure_home(home.to_str().unwrap(), 0, 0, false).unwrap();
+    assert!(created, "the missing home is created");
+    assert!(
+        base.join("mnt/homes/alice").is_dir(),
+        "the walk must land on the absolute symlink's target, not under the already-walked prefix"
+    );
+    assert!(
+        !base.join("srv/tmp").exists() && !base.join("srv/mnt").exists(),
+        "the retained prefix must not be walked again: the target restarts at the root"
+    );
+    std::fs::remove_dir_all(&base).unwrap();
+}

@@ -144,3 +144,35 @@ fn a_file_owned_by_an_identity_the_plan_creates_resolves_in_check_mode() {
     assert!(error.contains("not found"), "{error}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn check_mode_prefers_the_planned_gid_over_the_live_entry() {
+    // An earlier check-mode `Group` task renumbers an existing group
+    // from its live gid to a planned one (`groupmod -g`), and a later
+    // existing `User` declares the group as its primary: check mode
+    // runs nothing, so the live database still holds the stale number
+    // — the primary-group change and the home repair must be planned
+    // against the number the apply ends up with, or the dry run
+    // reports no change while apply runs `groupmod`, `usermod -g` and
+    // the repair.
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    let (name, live) = groups
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 3 && f[2].parse::<u32>().is_ok_and(|gid| gid > 0))
+                .then(|| (f[0].to_string(), f[2].parse::<u32>().unwrap()))
+        })
+        .expect("a non-root group on the host");
+    let planned = live + 100_000;
+    note_planned_group(&name, Some(planned));
+    assert_eq!(
+        planned_gid(&name, true).unwrap(),
+        Some(planned),
+        "the planned gid must win over the stale live {live} in check mode"
+    );
+    // Apply mode resolves from the host, whose `groupmod` has run by
+    // then — the live entry is fresh there and stands.
+    assert_eq!(planned_gid(&name, false).unwrap(), Some(live));
+    forget_planned_group(&name);
+}

@@ -31,6 +31,11 @@ fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
 }
 #[test]
 fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()> {
+    // An existing file whose bytes are not text is the host's content:
+    // procps parses the assignment syntax from bytes and applies the
+    // entry in such a file, so the task reconciles the managed entry
+    // and the unrelated bytes survive the publish byte-for-byte — the
+    // text-only read that refused the whole file is gone.
     let path = std::env::temp_dir().join(format!("ruxel-sysctl-read-{}", std::process::id()));
     std::fs::write(&path, [0xff, 0xfe])?;
     for check_mode in [true, false] {
@@ -41,8 +46,26 @@ fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()
             environment: vec![],
             become_user: None,
         };
-        assert!(super::super::run(&json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}), &ctx, &[]).is_err());
-        assert_eq!(std::fs::read(&path)?, [0xff, 0xfe]);
+        let result = super::super::run(
+            &json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}),
+            &ctx,
+            &[],
+        )
+        .map_err(std::io::Error::other)?;
+        assert_eq!(result["changed"], true);
+        let after = std::fs::read(&path)?;
+        if check_mode {
+            assert_eq!(after, [0xff, 0xfe], "check mode publishes nothing");
+        } else {
+            assert!(
+                after.starts_with(&[0xff, 0xfe]),
+                "the unrelated bytes survive the publish: {after:?}"
+            );
+            assert!(
+                after.ends_with(b"synthetic.test=1\n"),
+                "the managed entry lands: {after:?}"
+            );
+        }
     }
     std::fs::remove_file(path)?;
     Ok(())

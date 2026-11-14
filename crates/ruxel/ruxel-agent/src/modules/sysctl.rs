@@ -44,9 +44,14 @@ pub(super) fn run(
 
     let mut changed = false;
 
-    let current = match std::fs::read_to_string(file) {
+    // The file is read and rewritten as bytes: an unrelated byte that
+    // is not text belongs to the host's content and must survive the
+    // publish verbatim — procps parses the file as bytes and applies
+    // the assignment in a file that carries one, so a text-only read
+    // would refuse a host file the underlying utility accepts.
+    let current = match std::fs::read(file) {
         Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(format!("sysctl: cannot read {file}: {error}")),
     };
 
@@ -87,7 +92,7 @@ pub(super) fn run(
     }
 
     if file_changed && !ctx.check_mode {
-        write_atomic(std::path::Path::new(file), content.as_bytes())?;
+        write_atomic(std::path::Path::new(file), &content)?;
     }
 
     if changed && reload && !ctx.check_mode {
@@ -206,12 +211,29 @@ fn preflight_override(
     }
 }
 
-fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
+/// The managed entry's rewrite of the file: the one entry line is
+/// reconciled and every other byte of the host's content survives
+/// verbatim. The lines are matched as text (the entry itself is
+/// ASCII) but carried as raw bytes, so a line the rewrite does not
+/// touch — including one that is not valid text — is published back
+/// exactly as it was read.
+fn rewrite_file(current: &[u8], name: &str, value: &str) -> (Vec<u8>, bool) {
     let mut found = false;
     let mut changed = false;
-    let mut out_lines = Vec::new();
-    for line in current.lines() {
-        let trimmed = line.trim();
+    let mut out_lines: Vec<Vec<u8>> = Vec::new();
+    // The lines are the `\n`-separated segments of the content; the
+    // empty segment after a trailing newline is not a line of its own
+    // and is dropped, the way `str::lines` ends the file.
+    let mut lines: Vec<&[u8]> = current.split(|byte| *byte == b'\n').collect();
+    if !current.is_empty() && lines.last() == Some(&&[][..]) {
+        lines.pop();
+    }
+    for raw in lines {
+        // The line's text is the raw bytes with a line's trailing
+        // return and the surrounding blanks off: the key and value
+        // parse as text, the bytes publish as they are.
+        let text = String::from_utf8_lossy(trim(raw.strip_suffix(b"\r").unwrap_or(raw)));
+        let trimmed = text.trim();
         // Entry keys compare canonicalized: the slash-first and dotted
         // spellings of one parameter (`net/ipv4/ip_forward`,
         // `net.ipv4.ip_forward`) address one `/proc/sys` entry, so the
@@ -232,28 +254,47 @@ fn rewrite_file(current: &str, name: &str, value: &str) -> (String, bool) {
             // --option=value), which a split at every one would truncate.
             let existing = trimmed.split_once('=').map_or("", |x| x.1).trim();
             if normalized(existing) == normalized(value) {
-                out_lines.push(line.to_string());
+                out_lines.push(raw.to_vec());
             } else {
                 changed = true;
                 // The marker belongs to the line: the host's "ignore
                 // the error" intent survives the rewrite.
-                out_lines.push(format!("{}{name}={value}", marker(trimmed)));
+                out_lines.push(format!("{}{name}={value}", marker(trimmed)).into_bytes());
             }
         } else {
-            out_lines.push(line.to_string());
+            out_lines.push(raw.to_vec());
         }
     }
     if !found {
         changed = true;
-        out_lines.push(format!("{name}={value}"));
+        out_lines.push(format!("{name}={value}").into_bytes());
     }
     if changed {
-        let mut content = out_lines.join("\n");
-        content.push('\n');
+        let mut content: Vec<u8> = Vec::new();
+        for (index, line) in out_lines.iter().enumerate() {
+            if index > 0 {
+                content.push(b'\n');
+            }
+            content.extend_from_slice(line);
+        }
+        content.push(b'\n');
         (content, true)
     } else {
-        (current.to_string(), false)
+        (current.to_vec(), false)
     }
+}
+
+/// The ASCII whitespace trimmed off both ends of a byte line.
+fn trim(line: &[u8]) -> &[u8] {
+    let start = line
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(line.len());
+    let end = line
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map_or(start, |at| at + 1);
+    &line[start..end]
 }
 
 pub(super) fn normalized(v: &str) -> String {
