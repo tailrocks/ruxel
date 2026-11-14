@@ -6,11 +6,13 @@
 
 use super::{ExecContext, bool_param, params_object, str_param};
 
-use home::{claimed_home, ensure_home, home_gid, home_usable};
+use home::{claimed_home, ensure_home, home_gid, home_usable, reconcile_created_home};
 use shell::shell_allowed;
 
 mod entries;
 mod home;
+mod identity;
+mod plan;
 mod shell;
 use entries::{
     PasswdEntry, forget_planned_group, forget_planned_user, group_entry, groups_need_update,
@@ -19,9 +21,11 @@ use entries::{
 };
 #[cfg(test)]
 use entries::{
-    gid_holder_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
-    uid_holder_from,
+    gid_holders_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
+    uid_holders_from,
 };
+use identity::{effective, planned_primary_of, planned_set};
+use plan::PlannedPrimary;
 use serde_json::{Value, json};
 
 pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
@@ -113,7 +117,7 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                         name,
                         gid,
                         effective_gid,
-                        primary_group_holder(effective_gid)?.as_deref(),
+                        primary_group_holder(effective_gid, name)?.as_deref(),
                     )?;
                 }
             }
@@ -243,6 +247,8 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // it, so the plan's record goes the way of the host's.
         forget_planned_group(name);
         forget_planned_user(name);
+        plan::forget_primary(name);
+        plan::forget_supplementary(name);
         if changed {
             // The removal frees the number for whatever the plan claims
             // next: check mode runs no `userdel`, so the host's
@@ -311,6 +317,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     "user: refusing to create {name} with uid {u}: the account {holder} holds that number"
                 ));
             }
+            // The plan's record of the account the step creates: the
+            // primary group it claims and the supplementary set it
+            // declares. Check mode runs no `useradd`, so a later task
+            // of the plan resolves the account against the plan's own
+            // record.
+            plan::note_primary(name, planned_primary_of(name, group, ctx.check_mode));
+            plan::note_supplementary(name, groups.clone().unwrap_or_default());
             if !ctx.check_mode {
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
@@ -364,11 +377,25 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 if let Some(created) = passwd_entry(name)?
                     && create_home
                 {
-                    ensure_home(
+                    reconcile_created_home(
+                        name,
                         &claimed_home(home, name),
-                        created.uid,
-                        created.gid,
+                        &created,
                         ctx.check_mode,
+                        &|account| {
+                            // The account the step created is taken
+                            // back: `useradd` has already put it in
+                            // the passwd database, and a task that
+                            // fails with the account left behind
+                            // leaves the host in a state the workflow
+                            // never asked for.
+                            run_cmd("userdel", &[account])?;
+                            // The plan's record follows the host's:
+                            // the account is gone.
+                            note_removed_account(account);
+                            forget_planned_user(account);
+                            Ok(())
+                        },
                     )?;
                 }
             }
@@ -379,11 +406,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // take and the group it would join are verified before
             // anything runs, so a refused change leaves the host as it
             // was — the private group the step claims included.
+            //
+            // The account's effective identity at this step: the
+            // plan's own record where an earlier task of the plan
+            // changed it — check mode runs no `usermod`, so the live
+            // entry still holds the old numbers — and the live entry
+            // otherwise. Every guard and the home's repair resolve
+            // against the identity the plan ends up with, not against
+            // the host's unchanged one.
+            let effective = effective(name, &current);
             let mut identity_change = false;
             let uid_s;
             let mut args: Vec<&str> = Vec::new();
             if let Some(u) = uid
-                && u != current.uid
+                && u != effective.uid
             {
                 identity_change = true;
                 // The number must be free on the host: `usermod -u`
@@ -415,6 +451,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             } else {
                 None
             };
+            // The number the plan knows for the same-name group: it
+            // is `None` where the group is not on the host yet — the
+            // allocator draws the number at the apply — so the plan's
+            // record of the account's primary group carries the name
+            // alone.
+            let same_name_number = if group.is_none() {
+                planned_gid(name, ctx.check_mode)
+                    .ok()
+                    .flatten()
+                    .map(u64::from)
+            } else {
+                None
+            };
             // The step's footprint claims the account's private group
             // whenever it names no primary group — the same-name group
             // — and the schema models that group as the account's
@@ -428,7 +477,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // not move it either.
             let implicit_group_move = group.is_none()
                 && current.uid != 0
-                && same_name_gid.is_none_or(|gid| u64::from(gid) != current.gid);
+                && same_name_gid.is_none_or(|gid| u64::from(gid) != effective.gid);
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
@@ -441,23 +490,69 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     None => {
                         args.push("-g");
                         args.push(g);
+                        // The plan's record of the account's primary
+                        // group: the group the step declares, whose
+                        // number the plan does not know yet.
+                        plan::note_primary(
+                            name,
+                            PlannedPrimary {
+                                name: g.to_string(),
+                                gid: None,
+                            },
+                        );
                     }
                     Some(want_gid) => {
-                        if u64::from(want_gid) != current.gid {
+                        if u64::from(want_gid) != effective.gid {
                             identity_change = true;
                             args.push("-g");
                             args.push(g);
                         }
+                        // The plan's record of the account's primary
+                        // group: the group the step declares, with the
+                        // number the plan ends up with. The holder
+                        // scan of a group removal reads it — an
+                        // account the plan moves off a group holds it
+                        // no longer.
+                        plan::note_primary(
+                            name,
+                            PlannedPrimary {
+                                name: g.to_string(),
+                                gid: Some(u64::from(want_gid)),
+                            },
+                        );
                     }
                 }
             } else if implicit_group_move {
                 identity_change = true;
                 args.push("-g");
                 args.push(name);
+                // The implicit claim's move is a move of the primary
+                // group as much as the declared one is: the plan's
+                // record says so.
+                plan::note_primary(
+                    name,
+                    PlannedPrimary {
+                        name: name.to_string(),
+                        gid: same_name_number,
+                    },
+                );
             }
             let groups_s;
             if let Some(gs) = &groups {
-                let current_groups = supplementary_groups(name)?;
+                // The account's supplementary groups as the plan sees
+                // them: the plan's own record where an earlier task of
+                // the plan changed them — check mode runs no
+                // `usermod`, so the host's group database still holds
+                // the set the plan has already left behind — and the
+                // host's set otherwise. The comparison is against the
+                // set the plan ends up with, so a later task that
+                // changes the set again is compared against the
+                // earlier task's result and not against the host's
+                // unchanged one.
+                let current_groups = match plan::supplementary(name) {
+                    Some(recorded) => recorded,
+                    None => supplementary_groups(name)?,
+                };
                 if groups_need_update(&current_groups, gs, append) {
                     // The named groups must exist: `usermod -G`
                     // resolves the list against the host and fails on
@@ -475,6 +570,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     args.push("-G");
                     args.push(&groups_s);
                 }
+                // The plan's record of the account's supplementary set:
+                // the declared one where the step sets it, the union
+                // where it appends, and the set the step read where it
+                // changes nothing. A later task of the plan compares
+                // against it, so the set the plan has already changed
+                // is the one the later task changes.
+                plan::note_supplementary(name, planned_set(current_groups, gs, append));
             }
             if let Some(h) = home
                 && h != current.home
@@ -539,12 +641,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let final_gid = if implicit_group_move {
                 group_entry(name)?.map(|(_, gid)| gid)
             } else {
-                home_gid(group, current.gid, ctx.check_mode)?
+                home_gid(group, effective.gid, ctx.check_mode)?
             };
             if let Some(h) = home
                 && let Some(gid) = final_gid
             {
-                changed |= ensure_home(h, uid.unwrap_or(current.uid), gid, ctx.check_mode)?;
+                // The home's repair is planned against the identity
+                // the plan ends up with: the number the step states,
+                // the number an earlier task of the plan gave the
+                // account, or the live one.
+                changed |= ensure_home(h, uid.unwrap_or(effective.uid), gid, ctx.check_mode)?;
             }
         }
     }
