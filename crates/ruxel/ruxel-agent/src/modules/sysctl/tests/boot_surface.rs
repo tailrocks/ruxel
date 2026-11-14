@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use super::super::boot;
 
 /// A scratch directory that removes itself.
-struct Scratch(PathBuf);
+pub(super) struct Scratch(pub(super) PathBuf);
 
 impl Scratch {
-    fn new(name: &str) -> Self {
+    pub(super) fn new(name: &str) -> Self {
         let path =
             std::env::temp_dir().join(format!("ruxel-sysctl-boot-{}-{name}", std::process::id()));
         drop(std::fs::remove_dir_all(&path));
@@ -18,13 +18,13 @@ impl Scratch {
         Self(path)
     }
 
-    fn dir(&self, name: &str) -> PathBuf {
+    pub(super) fn dir(&self, name: &str) -> PathBuf {
         let path = self.0.join(name);
         std::fs::create_dir_all(&path).expect("operation succeeds");
         path
     }
 
-    fn file(&self, dir: &str, name: &str, content: &str) -> PathBuf {
+    pub(super) fn file(&self, dir: &str, name: &str, content: &str) -> PathBuf {
         let path = self.0.join(dir).join(name);
         std::fs::create_dir_all(self.0.join(dir)).expect("operation succeeds");
         std::fs::write(&path, content).expect("operation succeeds");
