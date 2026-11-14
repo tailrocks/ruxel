@@ -1,5 +1,7 @@
 #[path = "tests/comments.rs"]
 mod comments;
+#[path = "tests/rollback.rs"]
+mod rollback;
 
 use super::*;
 use std::os::unix::fs::{PermissionsExt, symlink};

@@ -88,7 +88,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 pub(super) fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String> {
-    publish_inner(dir, content, uid, gid, false, None)
+    publish_inner(dir, content, uid, gid, false, None, &|| {})
 }
 
 /// Publishes the file, and refuses when the `authorized_keys` it was
@@ -101,7 +101,23 @@ pub(super) fn publish_checked(
     gid: u32,
     expected: Option<FileIdentity>,
 ) -> Result<(), String> {
-    publish_inner(dir, content, uid, gid, true, expected)
+    publish_inner(dir, content, uid, gid, true, expected, &|| {})
+}
+
+/// Publishes the file, with the hook that runs between the exchange of
+/// the file and the rollback of a changed one. The hook is where a
+/// writer that does not take the lock would act; the run itself has
+/// none.
+#[cfg(test)]
+pub(super) fn publish_racing(
+    dir: &File,
+    content: &[u8],
+    uid: u32,
+    gid: u32,
+    expected: Option<FileIdentity>,
+    between: &dyn Fn(),
+) -> Result<(), String> {
+    publish_inner(dir, content, uid, gid, true, expected, between)
 }
 
 /// Publishes the file, and checks the file it was written from when the
@@ -113,6 +129,7 @@ fn publish_inner(
     gid: u32,
     check: bool,
     expected: Option<FileIdentity>,
+    between: &dyn Fn(),
 ) -> Result<(), String> {
     // A private directory protects the staging name from substitution by the
     // owner of .ssh while the descriptor pins the destination directory.
@@ -127,6 +144,7 @@ fn publish_inner(
             Err(e) => return Err(e.to_string()),
             Ok(()) => {}
         }
+        let mut staged: Option<FileIdentity> = None;
         let result = (|| {
             let stage = File::from(
                 openat(dir, name.as_str(), dir_flags(), Mode::empty())
@@ -147,9 +165,16 @@ fn publish_inner(
                     .map_err(|e| e.to_string())?,
                 );
                 write_staged(&file, &stage, content, uid, gid)?;
-                publish_staged(&stage, dir, check, expected)
+                let identity = FileIdentity::of(&file.metadata().map_err(|e| e.to_string())?);
+                staged = Some(identity);
+                publish_staged(&stage, dir, check, expected, identity, between)
             })();
-            let _ = unlinkat(&stage, "key", AtFlags::empty());
+            // The staged file is removed with the staging directory; a
+            // file that is not ours is kept, so that the edit of
+            // another writer is not taken away.
+            if staged == FileIdentity::of_name(&stage, c"key").ok().flatten() {
+                let _ = unlinkat(&stage, "key", AtFlags::empty());
+            }
             result
         })();
         let _ = unlinkat(dir, name.as_str(), AtFlags::REMOVEDIR);
@@ -195,6 +220,8 @@ fn publish_staged(
     dir: &File,
     check: bool,
     expected: Option<FileIdentity>,
+    staged: FileIdentity,
+    between: &dyn Fn(),
 ) -> Result<(), String> {
     if !check {
         renameat(stage, "key", dir, "authorized_keys").map_err(|e| e.to_string())?;
@@ -204,11 +231,20 @@ fn publish_staged(
         Some(expected) => {
             renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
                 .map_err(|e| e.to_string())?;
+            // The writer that does not take the lock acts here.
+            between();
             let displaced = FileIdentity::of_name(stage, c"key")?;
             if displaced != Some(expected) {
                 // The file that is there now is not the one that was
-                // read: it goes back where it was.
-                let _ = renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE);
+                // read: it goes back where it was. The rollback is
+                // made only while the file in place is still the one
+                // that was staged, so a newer edit is never taken away
+                // by it; the displaced file is kept when it cannot go
+                // back.
+                if FileIdentity::of_name(dir, c"authorized_keys")? == Some(staged) {
+                    let _ =
+                        renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE);
+                }
                 return Err("authorized_key: authorized_keys changed during operation".into());
             }
             let _ = unlinkat(stage, "key", AtFlags::empty());

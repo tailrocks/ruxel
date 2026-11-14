@@ -12,6 +12,7 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::path::Component;
 use std::path::Path;
 
+mod attachment;
 mod floor;
 mod mounts;
 mod removal;

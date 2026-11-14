@@ -1,11 +1,15 @@
 #[path = "tests/absent.rs"]
 mod absent;
+#[path = "tests/attachment.rs"]
+mod attachment;
 #[path = "tests/attributes.rs"]
 mod attributes;
 #[path = "tests/empty_path.rs"]
 mod empty_path;
 #[path = "tests/extra.rs"]
 mod extra;
+#[path = "tests/mounts.rs"]
+mod mounts;
 #[path = "tests/path.rs"]
 mod path;
 #[path = "tests/root_alias.rs"]

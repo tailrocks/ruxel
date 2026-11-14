@@ -153,6 +153,16 @@ pub(super) fn is_mount_point(parent: u64, entry: u64) -> bool {
     parent != entry
 }
 
+/// The device a stat reports: the platforms type it differently, and
+/// the identity of a file holds it as a number.
+pub(super) fn device(meta: &rustix::fs::Stat) -> u64 {
+    #[cfg(target_os = "macos")]
+    let device = u64::from(meta.st_dev.unsigned_abs());
+    #[cfg(not(target_os = "macos"))]
+    let device = meta.st_dev;
+    device
+}
+
 /// Whether a path is a symlink.
 fn is_symlink(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
