@@ -201,23 +201,35 @@ fn a_primary_group_holder_the_plan_removed_is_no_holder() {
     );
     // The same through the group task on the live host: the plan
     // removed the holder, so the group removal is its own to report.
+    // The account is the SOLE holder of its primary group: a group any
+    // other live account still holds is legitimately refused whatever
+    // the plan removed — the scan keeps looking and finds that one.
     let live_passwd = std::fs::read_to_string("/etc/passwd").unwrap();
     let live_groups = std::fs::read_to_string("/etc/group").unwrap();
     let holder = live_passwd
         .lines()
         .filter_map(|line| {
             let f: Vec<&str> = line.split(':').collect();
-            (f.len() >= 4 && f[3].parse::<u64>().is_ok_and(|gid| gid != 0))
+            (f.len() >= 4
+                && f[3].parse::<u64>().is_ok_and(|gid| gid != 0)
+                && live_passwd
+                    .lines()
+                    .filter(|other| {
+                        let g: Vec<&str> = other.split(':').collect();
+                        g.len() >= 4 && g[3] == f[3]
+                    })
+                    .count()
+                    == 1)
                 .then(|| f[0].to_string())
         })
         .find(|account| {
-            super::super::guards::primary_group_holder_from(
-                &live_passwd,
+            super::super::guards::group_name_of_gid_from(
+                &live_groups,
                 gid_of(&live_passwd, account),
             )
             .is_some()
         })
-        .expect("a live account with a primary group");
+        .expect("a live account that is its primary group's only holder");
     let gid = gid_of(&live_passwd, &holder);
     let name = super::super::guards::group_name_of_gid_from(&live_groups, gid)
         .expect("the live group of the account's primary group");
