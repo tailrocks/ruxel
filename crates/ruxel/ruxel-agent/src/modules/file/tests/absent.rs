@@ -147,6 +147,55 @@ fn a_removal_reports_a_path_it_cannot_read() {
     std::os::unix::fs::symlink("loop", base.join("loop")).unwrap();
     let params = json!({"path": base.join("loop/child"), "state": "absent"});
     let error = run(&params, &context()).unwrap_err();
-    assert!(error.contains("cannot read"), "{error}");
+    assert!(error.contains("file: cannot"), "{error}");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_walks_no_dot_segments() {
+    let base = scratch("dot-segment");
+    // `..` would name a directory the path never mentioned: the removal
+    // refuses it instead of resolving it.
+    let path = base.join("../etc");
+    let mut check = context();
+    check.check_mode = true;
+    let error = run(
+        &json!({"path": path, "state": "absent", "recurse": true}),
+        &check,
+    )
+    .unwrap_err();
+    assert!(error.contains("dot segments"), "{error}");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_does_not_follow_a_symlinked_ancestor() {
+    let base = scratch("no-follow");
+    let real = base.join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("file"), b"safe").unwrap();
+    // The ancestor is a link: the removal walks the path without
+    // following it, so the link is refused and the tree behind it is
+    // left alone.
+    std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+    let params = json!({"path": base.join("link/file"), "state": "absent"});
+    let error = run(&params, &context()).unwrap_err();
+    assert!(error.contains("file: cannot"), "{error}");
+    assert_eq!(std::fs::read(real.join("file")).unwrap(), b"safe");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_of_a_tree_takes_everything_under_it() {
+    let base = scratch("tree");
+    let tree = base.join("tree");
+    std::fs::create_dir_all(tree.join("nested")).unwrap();
+    std::fs::write(tree.join("file"), b"content").unwrap();
+    std::fs::write(tree.join("nested/file"), b"content").unwrap();
+    std::os::unix::fs::symlink(tree.join("file"), tree.join("link")).unwrap();
+    let params = json!({"path": tree, "state": "absent", "recurse": true});
+    assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+    assert!(!tree.exists());
+    assert!(base.exists());
     std::fs::remove_dir_all(&base).unwrap();
 }

@@ -32,7 +32,7 @@ pub(super) fn remove_key(
     flock(&dir, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
     ensure_attached(&home_file, &dir)?;
     #[cfg(test)]
-    if let Some(hook) = before_publish() {
+    for hook in before_publish() {
         hook(home);
     }
     let current = read_authorized_keys(&dir)?;
@@ -91,16 +91,17 @@ fn carries_key(line: &str, want: &(String, String)) -> bool {
 #[cfg(test)]
 type BeforePublish = std::sync::Arc<dyn Fn(&Path) + Send + Sync>;
 
-/// The armed hook, if any.
+/// The armed hooks. Every hook acts on the home it was armed for, so
+/// tests that run at the same time do not take each other's hook away.
 #[cfg(test)]
-static BEFORE_PUBLISH: std::sync::Mutex<Option<BeforePublish>> = std::sync::Mutex::new(None);
+static BEFORE_PUBLISH: std::sync::Mutex<Vec<BeforePublish>> = std::sync::Mutex::new(Vec::new());
 
-/// The armed hook, if any.
+/// The armed hooks.
 #[cfg(test)]
-fn before_publish() -> Option<BeforePublish> {
+fn before_publish() -> Vec<BeforePublish> {
     match BEFORE_PUBLISH.lock() {
         Ok(guard) => guard.clone(),
-        Err(_) => None,
+        Err(_) => Vec::new(),
     }
 }
 
@@ -279,8 +280,10 @@ mod tests {
         std::fs::write(ssh.join("authorized_keys"), "ssh-ed25519 AAAAC3Nzakeep\n").unwrap();
         // ... and the replacement holds the key that is to be absent.
         let replaced = root.clone();
-        *BEFORE_PUBLISH.lock().unwrap() =
-            Some(std::sync::Arc::new(move |home: &std::path::Path| {
+        BEFORE_PUBLISH
+            .lock()
+            .unwrap()
+            .push(std::sync::Arc::new(move |home: &std::path::Path| {
                 if home != replaced {
                     return;
                 }
@@ -299,7 +302,6 @@ mod tests {
             "ssh-ed25519 AAAAC3Nzadrop",
             false,
         );
-        *BEFORE_PUBLISH.lock().unwrap() = None;
         let error = result.unwrap_err();
         assert!(error.contains(".ssh changed"), "{error}");
         std::fs::remove_dir_all(&root).unwrap();
@@ -323,8 +325,10 @@ mod tests {
         // and its write: the key stays in the file the user sees, and the
         // removal fails instead of reporting a change it did not make.
         let replaced = root.clone();
-        *BEFORE_PUBLISH.lock().unwrap() =
-            Some(std::sync::Arc::new(move |home: &std::path::Path| {
+        BEFORE_PUBLISH
+            .lock()
+            .unwrap()
+            .push(std::sync::Arc::new(move |home: &std::path::Path| {
                 if home != replaced {
                     return;
                 }
@@ -343,7 +347,6 @@ mod tests {
             "ssh-ed25519 AAAAC3Nzadrop",
             false,
         );
-        *BEFORE_PUBLISH.lock().unwrap() = None;
         let error = result.unwrap_err();
         assert!(error.contains(".ssh changed"), "{error}");
         let left = std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap();
