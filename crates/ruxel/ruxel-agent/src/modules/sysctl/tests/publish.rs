@@ -2,6 +2,7 @@
 //! value is touched — but the probe runs only where the file needs
 //! replacement — and a boot-shadowed file is refused outright.
 
+use super::super::boot;
 use std::os::unix::fs::MetadataExt;
 
 use serde_json::json;
@@ -89,7 +90,7 @@ fn a_shadowed_persistence_file_is_refused() {
     // directory: the same name in a higher directory shadows the managed
     // file at boot, so the entry would revert.
     assert_eq!(
-        super::super::boot::shadow_candidates("/usr/lib/sysctl.d/50-ruxel.conf"),
+        boot::shadow_candidates_in("/usr/lib/sysctl.d/50-ruxel.conf", &boot::DIRS),
         vec![
             "/etc/sysctl.d/50-ruxel.conf".to_string(),
             "/run/sysctl.d/50-ruxel.conf".to_string(),
@@ -97,18 +98,18 @@ fn a_shadowed_persistence_file_is_refused() {
         ]
     );
     assert_eq!(
-        super::super::boot::shadow_candidates("/run/sysctl.d/50-ruxel.conf"),
+        boot::shadow_candidates_in("/run/sysctl.d/50-ruxel.conf", &boot::DIRS),
         vec!["/etc/sysctl.d/50-ruxel.conf".to_string()]
     );
     // The highest-precedence directory is never shadowed, and a path
     // outside the system directories is out of the boot surface entirely
     // (the type refuses it before the agent runs).
     assert_eq!(
-        super::super::boot::shadow_candidates("/etc/sysctl.d/50-ruxel.conf"),
+        boot::shadow_candidates_in("/etc/sysctl.d/50-ruxel.conf", &boot::DIRS),
         Vec::<String>::new()
     );
     assert_eq!(
-        super::super::boot::shadow_candidates("/etc/sysctl.conf"),
+        boot::shadow_candidates_in("/etc/sysctl.conf", &boot::DIRS),
         Vec::<String>::new()
     );
 }
