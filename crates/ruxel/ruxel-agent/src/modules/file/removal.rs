@@ -61,7 +61,7 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
     )
-    .map_err(|error| format!("file: cannot open {}: {error}", path.display()))?;
+    .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
     if !recurse {
         if !directory_is_empty(&child)? {
             // A removal without `recurse` takes an empty directory only,
@@ -128,7 +128,7 @@ fn open_parent(path: &Path) -> Result<(OwnedFd, CString), String> {
     } else {
         open(".", directory_flags(), Mode::empty())
     }
-    .map_err(|error| format!("file: cannot open {}: {error}", path.display()))?;
+    .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
     let parts: Vec<_> = path
         .components()
         .filter(|part| {
@@ -153,7 +153,7 @@ fn open_parent(path: &Path) -> Result<(OwnedFd, CString), String> {
             directory_flags() | OFlags::NOFOLLOW
         };
         current = openat(&current, part, flags, Mode::empty())
-            .map_err(|error| format!("file: cannot open {}: {error}", path.display()))?;
+            .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
     }
     Ok((current, name))
 }
