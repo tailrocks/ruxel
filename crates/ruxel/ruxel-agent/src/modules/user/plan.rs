@@ -42,6 +42,7 @@ impl PlannedPrimary {
 thread_local! {
     static GROUPS: RefCell<BTreeMap<String, Option<u32>>> = const { RefCell::new(BTreeMap::new()) };
     static USERS: RefCell<BTreeMap<String, Option<u32>>> = const { RefCell::new(BTreeMap::new()) };
+    static HOMES: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
     static REMOVED_ACCOUNTS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     static REMOVED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     static PRIMARY_GROUPS: RefCell<BTreeMap<String, PlannedPrimary>> = const { RefCell::new(BTreeMap::new()) };
@@ -90,6 +91,44 @@ pub(super) fn forget_user(name: &str) {
     USERS.with(|users| {
         users.borrow_mut().remove(name);
     });
+}
+
+/// The plan's record of the account's home: the path the account's
+/// passwd entry carries under the plan — what a removal verifies its
+/// declaration against, since `userdel -r` deletes that home and no
+/// other.
+pub(super) fn note_home(account: &str, home: &str) {
+    HOMES.with(|homes| {
+        homes
+            .borrow_mut()
+            .insert(account.to_string(), home.to_string());
+    });
+}
+
+/// The account's planned home, where a task of the plan gave it one.
+pub(super) fn home(account: &str) -> Option<String> {
+    HOMES.with(|homes| homes.borrow().get(account).cloned())
+}
+
+/// The record's counterpart when the plan removes the account.
+pub(super) fn forget_home(account: &str) {
+    HOMES.with(|homes| {
+        homes.borrow_mut().remove(account);
+    });
+}
+
+/// The plan removed the account and declares it present again: the
+/// apply takes the account away and creates it anew, so the number
+/// the account holds is the allocator's to draw — the stale live entry
+/// must not stand in for it.
+pub(crate) fn user_recreated(name: &str) -> bool {
+    account_removed(name) && user_requested(name).is_some()
+}
+
+/// The group counterpart: the plan removed the group and declares it
+/// present again, so its number is the allocator's to draw.
+pub(crate) fn group_recreated(name: &str) -> bool {
+    group_removed(name) && group_requested(name).is_some()
 }
 
 /// What the plan's account step requested; `None`: undeclared.

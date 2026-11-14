@@ -155,6 +155,7 @@ use guards::{
     private_group_missing, removal_allowed, removal_home_allowed, removal_primary_group_allowed,
     uid_holder_in_use,
 };
+pub(super) use plan::{group_recreated, user_recreated};
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
     let mut command = std::process::Command::new(cmd);
@@ -207,16 +208,37 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // no-op of a name the unchanged passwd file never had.
         let planned = planned_user(name);
         let exists = (entry.is_some() && !entries::account_removed(name)) || planned.is_some();
+        // The home and the primary group the removal's declaration is
+        // verified against: the plan's own record where the plan has
+        // one — check mode runs no `useradd` and no `usermod`, so the
+        // live entry alone is stale — and the live entry where it has
+        // none.
+        let effective_home =
+            plan::home(name).or_else(|| entry.as_ref().map(|current| current.home.clone()));
+        let effective_group = match plan::primary(name) {
+            Some(primary) => Some(primary.name),
+            None => match entry.as_ref() {
+                Some(current) => primary_group_name(current.gid)?,
+                None => None,
+            },
+        };
         if exists {
             // The uid the declaration is verified against: the planned
             // number where an earlier step states one, and the live one
             // where the host has it. An account the plan creates
             // without a number gets one the allocator draws at apply —
             // unknown here, so the guards that need a number cannot
-            // run, the same unknown `planned_gid` plans around.
-            let effective_uid = match planned {
-                Some(Requested::Number(number)) => Some(u64::from(number)),
-                _ => entry.as_ref().map(|current| current.uid),
+            // run, the same unknown `planned_gid` plans around. An
+            // account the plan removed and declares present again is
+            // one of those: the apply creates it anew, so the stale
+            // live entry must not stand in for the number it will hold.
+            let effective_uid = if plan::user_recreated(name) {
+                None
+            } else {
+                match planned {
+                    Some(Requested::Number(number)) => Some(u64::from(number)),
+                    _ => entry.as_ref().map(|current| current.uid),
+                }
             };
             if let Some(effective_uid) = effective_uid {
                 let effective = PasswdEntry {
@@ -225,14 +247,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 };
                 removal_allowed(name, uid, &effective)?;
             }
-            if let Some(current) = &entry {
-                removal_home_allowed(name, home, remove, &current.home)?;
-                removal_primary_group_allowed(
-                    name,
-                    str_param(obj, "group"),
-                    primary_group_name(current.gid)?.as_deref(),
-                )?;
+            if let Some(effective_home) = &effective_home {
+                removal_home_allowed(name, home, remove, effective_home)?;
             }
+            removal_primary_group_allowed(
+                name,
+                str_param(obj, "group"),
+                effective_group.as_deref(),
+            )?;
         }
         let changed = exists;
         if changed && !ctx.check_mode {
@@ -244,9 +266,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             run_cmd("userdel", &args)?;
         }
         // The removal takes the account's empty same-name group with
-        // it, so the plan's record goes the way of the host's.
-        forget_planned_group(name);
+        // it — `userdel` deletes the group the account holds as its
+        // primary group — so the plan's record goes the way of the
+        // host's. A same-name group the account does not hold as its
+        // primary group survives the removal, so an explicitly planned
+        // one stays in the plan's record: the apply leaves the group
+        // behind, and whatever resolves it next must find it there.
+        let same_name_is_primary = match effective_group.as_deref() {
+            Some(group) => group == name,
+            None => str_param(obj, "group").unwrap_or(name) == name,
+        };
+        if changed && same_name_is_primary {
+            forget_planned_group(name);
+        }
         forget_planned_user(name);
+        plan::forget_home(name);
         plan::forget_primary(name);
         plan::forget_supplementary(name);
         if changed {
@@ -282,6 +316,25 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     if manages_home(entry.is_some(), home.is_some()) {
         home_usable(&claimed_home(home, name))?;
     }
+
+    // The home the account's passwd entry carries under the plan: the
+    // step's own declaration, the plan's earlier record where the step
+    // declares none — a step that declares no home moves no field —
+    // and the live entry where the plan has not taken the account
+    // away: a removal of the plan's own leaves a stale entry behind,
+    // and the account the apply creates anew carries the home the
+    // creation gives it.
+    let effective_home = home
+        .map(str::to_string)
+        .or_else(|| plan::home(name))
+        .or_else(|| {
+            if entries::account_removed(name) {
+                None
+            } else {
+                entry.as_ref().map(|current| current.home.clone())
+            }
+        })
+        .unwrap_or_else(|| claimed_home(None, name));
 
     let mut changed = false;
 
@@ -665,8 +718,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     }
     // The plan's record of the account: what a later file's ownership
     // resolves against in check mode, which runs no `useradd` and would
-    // otherwise refuse the name the plan is about to create.
+    // otherwise refuse the name the plan is about to create — and what
+    // a later removal verifies its home against.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
+    plan::note_home(name, &effective_home);
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
 }
 
