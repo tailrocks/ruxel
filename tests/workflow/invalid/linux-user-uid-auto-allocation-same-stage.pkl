@@ -1,0 +1,24 @@
+// expect: takes its uid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An account created without uid lets the host's allocator draw one —
+// `useradd alice` takes the first free number at UID_MIN (1000 on a
+// clean default host) — and the draw runs before the later step of the
+// same stage, so `useradd -u 1000` for bob can claim exactly the number
+// the draw took and fails on the taken number. The automatic allocation
+// reserves its range against a later explicit claim of the same stage
+// too: the step order stands in for the stage order the cross-stage
+// case reasons with, and an explicit claim before the draw is safe —
+// the allocator skips the taken number.
+stages {
+  new Stage {
+    title = "one"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+      new linux.User { user = "bob"; uid = 1000 }
+    }
+  }
+}

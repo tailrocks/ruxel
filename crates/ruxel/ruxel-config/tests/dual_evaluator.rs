@@ -241,6 +241,8 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-auto-system-draw.pkl",
     "invalid/linux-file-owner-removed-later-stage.pkl",
     "invalid/linux-user-remove-home-mail-elsewhere.pkl",
+    "invalid/linux-user-uid-auto-allocation-same-stage.pkl",
+    "invalid/linux-group-gid-auto-removal-nonempty.pkl",
 ];
 
 /// The official `pkl` binary.

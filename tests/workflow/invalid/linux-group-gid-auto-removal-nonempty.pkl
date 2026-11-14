@@ -1,0 +1,41 @@
+// expect: takes its gid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Alice's private group draws its GID automatically — `useradd` creates
+// the group beside the account and takes the first free number at
+// GID_MIN (1000 on a clean default host) — and `userdel` removes that
+// group with the account only while it is empty. Bob remains a
+// supplementary member of it, so the group — and the GID it drew —
+// stays on the host after Alice's removal, and `groupadd -g 1000` for
+// staff fails on the taken number: an account removal proves the
+// private group's GID freed only where no member remains, otherwise an
+// explicit group removal must free it. The team group claims its gid
+// before the drawing account: an explicit claim before a draw is safe,
+// the allocator skips the taken number.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "team"; gid = 1002 }
+      new linux.User { user = "alice"; uid = 1001 }
+      new linux.User { user = "bob"; uid = 1003; group = "team"; groups = new Listing { "alice" } }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "staff"; gid = 1000 }
+    }
+  }
+}

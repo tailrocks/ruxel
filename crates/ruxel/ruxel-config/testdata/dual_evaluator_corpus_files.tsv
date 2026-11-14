@@ -74,6 +74,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-ensured-before-user-removal.pkl
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
+  tests/workflow/invalid/linux-group-gid-auto-removal-nonempty.pkl
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
@@ -131,6 +132,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl

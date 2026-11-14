@@ -126,7 +126,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + primaryGroupsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
-    + automaticNumbersAcrossStages(_stages, _indexes)
+    + automaticNumbers(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
     + homeRemovalsAcrossStages(_stages, _indexes))
@@ -152,8 +152,8 @@ function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<S
 function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
   positions(ix.steps).flatMap((i) ->
     let (s = ix.steps[i])
-    if (s is linux.User && s.state == "present" && s.uid != null) List(new IdClaim { number = s.uid; name = s.user; kind = "uid"; stage = m; spot = where(ix.placed[i]) })
-    else if (s is linux.Group && s.state == "present" && s.gid != null) List(new IdClaim { number = s.gid; name = s.name; kind = "gid"; stage = m; spot = where(ix.placed[i]) })
+    if (s is linux.User && s.state == "present" && s.uid != null) List(new IdClaim { number = s.uid; name = s.user; kind = "uid"; stage = m; order = i; spot = where(ix.placed[i]) })
+    else if (s is linux.Group && s.state == "present" && s.gid != null) List(new IdClaim { number = s.gid; name = s.name; kind = "gid"; stage = m; order = i; spot = where(ix.placed[i]) })
     else List())
 
 /// Whether the earlier claimant's identity is proven removed before the
@@ -205,6 +205,7 @@ class IdClaim {
   name: String
   kind: String
   stage: Int
+  order: Int
   spot: String
 }
 
@@ -222,6 +223,7 @@ class IdDraw {
   name: String
   kind: String
   stage: Int
+  order: Int
   spot: String
   low: Int
   high: Int
@@ -231,21 +233,25 @@ class IdDraw {
   uid: Int?
 }
 
-/// The explicit claims an earlier stage's automatic allocations stand
-/// in the way of: a present account or group without a declared number
-/// reserves the allocator's range on every host the two stages share,
-/// and a later explicit claim of a number inside it is refused until a
-/// proven removal of the drawing identity frees the range. A claim of
-/// the same name is the same identity redeclared — no second allocation
+/// The explicit claims an automatic allocation stands in the way of: a
+/// present account or group without a declared number reserves the
+/// allocator's range on every host the two steps share, and a later
+/// explicit claim of a number inside it is refused until a proven
+/// removal of the drawing identity frees the range. A claim of the
+/// same name is the same identity redeclared — no second allocation
 /// happens for it — and a number outside the range is the allocator's
 /// never to hand out. The direction is the one the allocator runs in:
 /// a draw after an explicit claim is safe, for the claim has already
-/// taken its number and the draw skips it.
-function automaticNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+/// taken its number and the draw skips it. Within one stage the step
+/// order stands where the stage order stands across stages: an earlier
+/// step's draw reserves its range against a later step's explicit
+/// claim the same way.
+function automaticNumbers(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   let (draws = positions(_indexes).flatMap((m) -> drawsOf(_indexes[m], m)))
   let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
   draws.flatMap((c) -> claims
-    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high
+      && ((d.stage == c.stage && d.order > c.order) || (d.stage > c.stage && hostsOverlap(_stages[c.stage], _stages[d.stage]))))
     .filter((d) -> !drawFreed(_stages, _indexes, c, d))
     .map((d) -> numberDraw(_stages[c.stage], c, _stages[d.stage], d)))
 
@@ -262,31 +268,36 @@ function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
   positions(ix.steps).flatMap((i) ->
     let (s = ix.steps[i])
     if (s is linux.User && s.state == "present")
-      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, where(ix.placed[i]), null)) else List())
-      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, where(ix.placed[i]), s.uid)) else List())
-    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, where(ix.placed[i]), null))
+      (if (s.uid == null) List(draw(s.user, "uid", s.system, m, i, where(ix.placed[i]), null)) else List())
+      + (if (s.group == null) List(draw(s.user, "gid", s.system, m, i, where(ix.placed[i]), s.uid)) else List())
+    else if (s is linux.Group && s.state == "present" && s.gid == null) List(draw(s.name, "gid", false, m, i, where(ix.placed[i]), null))
     else List())
 
 /// One automatic allocation: the name that draws, the kind of number,
 /// and the range the host's allocator draws it from. The account's
 /// declared uid rides along: the number the runtime verifies an
 /// account removal's declaration against.
-function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String, _uid: Int?): IdDraw =
-  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid }
+function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _order: Int, _spot: String, _uid: Int?): IdDraw =
+  new IdDraw { name = _name; kind = _kind; stage = _stage; order = _order; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid }
 
 /// Whether the drawing identity is proven gone before the later claim:
 /// the account — for a gid draw, the group or the account whose private
-/// group it is — is removed in a stage between the two, on every host
-/// both claimant stages share, with a removal the runtime can prove
-/// will succeed for the draw (see `removedDraw`): a removal that fails
-/// its live-entry verification frees nothing, and the later claim
-/// would collide on the number the draw still holds.
+/// group it is — is removed between the two, with a removal the runtime
+/// can prove will succeed for the draw (see `removesDraw`): a removal
+/// that fails its live-entry verification frees nothing, and the later
+/// claim would collide on the number the draw still holds. Between
+/// stages the proof is a removal stage standing on every host both
+/// claimant stages share; within one stage it is a removal step standing
+/// between the drawing and the claiming step.
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
-  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+  if (c.stage == d.stage)
+    positions(_indexes[c.stage].steps).filter((r) -> r > c.order && r < d.order)
+      .any((r) -> removesDraw(_indexes, _indexes[c.stage].steps[r], c, d))
+  else sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes[k], c, d)))
+      .any((k) -> stageRunsOn(_stages[k], h) && _indexes[k].steps.any((s) -> removesDraw(_indexes, s, c, d))))
 
-/// Whether a stage removes the identity that drew the number with a
+/// Whether one step removes the identity that drew the number with a
 /// removal the runtime can prove will succeed for the draw. The removal
 /// states the id the runtime verifies against the live entry, so a
 /// declaration that names another number fails the run rather than
@@ -298,15 +309,31 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// the runtime verifies only the id it is given. `userdel` deletes the
 /// empty same-name group with the account, so an account removal frees
 /// a private-group draw where the account's uid is the declared one the
-/// removal verifies.
-const function removedDraw(ix: StageIndex, c: IdDraw, d: IdClaim): Boolean =
+/// removal verifies and no member of the group remains — `userdel`
+/// removes the group only while it is empty, and a remaining member
+/// keeps the group, and the GID it drew, on the host.
+function removesDraw(_indexes: List<StageIndex>, s: core.Step, c: IdDraw, d: IdClaim): Boolean =
   if (c.low < 1000) false
-  else if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
-  else ix.steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
-    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid))
+  else if (c.kind == "uid") s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number
+  else (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && !membersRemain(_indexes, c.name))
+
+/// Whether a member of the group remains on the host: a present
+/// account beside the group's own that keeps the group as its primary
+/// one (`group`) or lists it among its supplementary groups (`groups`).
+/// `userdel` removes the account's same-name group with the account
+/// only while no member remains (USERGROUPS_ENAB), so a remaining
+/// member keeps the group — and the GID the group drew — and the
+/// account removal frees no number.
+function membersRemain(_indexes: List<StageIndex>, name: String): Boolean =
+  _indexes.any((ix) -> ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user != name
+    && (s.group == name || (s.groups != null && s.groups.toList().any((g) -> g == name)))))
 
 function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
-  "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically, and the host's allocator can hand it \(d.number), which '\(d.name)' (\(d.spot)) claims explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
+  if (c.stage == d.stage)
+    "stage \"\(a.title)\" claims the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically before '\(d.name)' (\(d.spot)) claims it explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
+  else
+    "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(d.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) takes its \(c.kind) automatically, and the host's allocator can hand it \(d.number), which '\(d.name)' (\(d.spot)) claims explicitly; one host keeps one identity per number, so remove '\(c.name)' before, or give '\(d.name)' another one"
 
 /// At boot the sysctl files load in file-name order across the system
 /// directories: a later stage that persists its value in a file loading
