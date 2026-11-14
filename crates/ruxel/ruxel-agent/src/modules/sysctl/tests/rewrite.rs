@@ -12,18 +12,18 @@ fn whitespace_normalization() {
 
 #[test]
 fn rewrites_existing_key_or_appends_missing_key() {
-    let current = "# keep\nnet.test = old\n";
+    let current = b"# keep\nnet.test = old\n";
     assert_eq!(
         super::super::rewrite_file(current, "net.test", "new"),
-        ("# keep\nnet.test=new\n".into(), true)
+        (b"# keep\nnet.test=new\n".to_vec(), true)
     );
     assert_eq!(
-        super::super::rewrite_file("# keep\n", "net.test", "new"),
-        ("# keep\nnet.test=new\n".into(), true)
+        super::super::rewrite_file(b"# keep\n", "net.test", "new"),
+        (b"# keep\nnet.test=new\n".to_vec(), true)
     );
     assert_eq!(
-        super::super::rewrite_file("net.test = 1  2\n", "net.test", "1\t2"),
-        ("net.test = 1  2\n".into(), false)
+        super::super::rewrite_file(b"net.test = 1  2\n", "net.test", "1\t2"),
+        (b"net.test = 1  2\n".to_vec(), false)
     );
 }
 
@@ -35,32 +35,33 @@ fn an_alias_spelling_is_the_same_entry() {
     // and restore the old value.
     assert_eq!(
         super::super::rewrite_file(
-            "net.ipv4.ip_forward=0\nnet/ipv4/ip_forward=1\n",
+            b"net.ipv4.ip_forward=0\nnet/ipv4/ip_forward=1\n",
             "net.ipv4.ip_forward",
             "0"
         ),
         (
-            "net.ipv4.ip_forward=0\nnet.ipv4.ip_forward=0\n".into(),
+            b"net.ipv4.ip_forward=0\nnet.ipv4.ip_forward=0\n".to_vec(),
             true
         )
     );
     // An alias line alone is rewritten to the managed spelling, with no
     // duplicate entry appended.
     assert_eq!(
-        super::super::rewrite_file("net/ipv4/ip_forward=1\n", "net.ipv4.ip_forward", "0"),
-        ("net.ipv4.ip_forward=0\n".into(), true)
+        super::super::rewrite_file(b"net/ipv4/ip_forward=1\n", "net.ipv4.ip_forward", "0"),
+        (b"net.ipv4.ip_forward=0\n".to_vec(), true)
     );
     // A slash-first name's literal dot keeps its identity apart from the
     // dotted spelling of another path (`enp3s0.200` is not
     // `enp3s0/200`), so no false entry matches.
     assert_eq!(
         super::super::rewrite_file(
-            "net.ipv4.conf.enp3s0.200.forwarding=1\n",
+            b"net.ipv4.conf.enp3s0.200.forwarding=1\n",
             "net/ipv4/conf/enp3s0.200/forwarding",
             "0"
         ),
         (
-            "net.ipv4.conf.enp3s0.200.forwarding=1\nnet/ipv4/conf/enp3s0.200/forwarding=0\n".into(),
+            b"net.ipv4.conf.enp3s0.200.forwarding=1\nnet/ipv4/conf/enp3s0.200/forwarding=0\n"
+                .to_vec(),
             true
         )
     );
@@ -69,20 +70,20 @@ fn an_alias_spelling_is_the_same_entry() {
 #[test]
 fn a_dash_prefixed_entry_is_the_same_entry() {
     // procps reads a leading '-' as the ignore-failure marker: the
-    // assignment still happens, so the line is the entry itself. A
+    // assignment happens either way, so the line is the entry itself. A
     // rewrite that did not see it would leave the marked assignment in
     // the file and append a second assignment of the same key beside
     // it — the file then holds two values for one parameter, and the
     // boot value is whichever line comes last.
     assert_eq!(
-        super::super::rewrite_file("-net.ipv4.ip_forward = 0\n", "net.ipv4.ip_forward", "1"),
-        ("-net.ipv4.ip_forward=1\n".into(), true)
+        super::super::rewrite_file(b"-net.ipv4.ip_forward = 0\n", "net.ipv4.ip_forward", "1"),
+        (b"-net.ipv4.ip_forward=1\n".to_vec(), true)
     );
     // The marker belongs to the line, so it survives the rewrite: the
     // host's "ignore errors" intent is not dropped.
     assert_eq!(
-        super::super::rewrite_file("-net.ipv4.ip_forward=1\n", "net.ipv4.ip_forward", "1"),
-        ("-net.ipv4.ip_forward=1\n".into(), false)
+        super::super::rewrite_file(b"-net.ipv4.ip_forward=1\n", "net.ipv4.ip_forward", "1"),
+        (b"-net.ipv4.ip_forward=1\n".to_vec(), false)
     );
 }
 
@@ -96,13 +97,40 @@ fn an_equals_sign_in_the_value_is_not_a_delimiter() {
     let value = "|/usr/lib/systemd/systemd-coredump --option=value";
     assert_eq!(
         super::super::rewrite_file(
-            "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n",
+            b"kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n",
             "kernel.core_pattern",
             value,
         ),
         (
-            "kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n".into(),
+            b"kernel.core_pattern = |/usr/lib/systemd/systemd-coredump --option=value\n".to_vec(),
             false
         )
     );
+}
+
+#[test]
+fn unrelated_bytes_survive_the_rewrite_verbatim() {
+    // The rewrite carries the host's content as raw bytes: a comment
+    // that is not valid text — a byte procps ignores all the same —
+    // must come back byte-for-byte, and a line the rewrite does not
+    // touch keeps its own bytes and line ending.
+    let current = b"# note \xff\r\nnet.other=1\r\n";
+    let (content, changed) = super::super::rewrite_file(current, "net.test", "1");
+    assert!(changed);
+    assert_eq!(
+        content,
+        b"# note \xff\r\nnet.other=1\r\nnet.test=1\n".to_vec(),
+        "the unrelated bytes and line endings survive: {content:?}"
+    );
+    // The managed entry is matched across the line ending's bytes: a
+    // CRLF entry line is the same entry and is rewritten to the
+    // managed spelling.
+    let (content, changed) = super::super::rewrite_file(b"net.test=0\r\n", "net.test", "1");
+    assert!(changed);
+    assert_eq!(content, b"net.test=1\n".to_vec(), "{content:?}");
+    // A byte-identical file publishes nothing.
+    let (content, changed) =
+        super::super::rewrite_file(b"# note \xff\nnet.test=1\n", "net.test", "1");
+    assert!(!changed);
+    assert_eq!(content, b"# note \xff\nnet.test=1\n".to_vec());
 }
