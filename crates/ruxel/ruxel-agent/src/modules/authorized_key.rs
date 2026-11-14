@@ -228,7 +228,12 @@ fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String>
 /// fields that keep a quoted value whole. The key type is the first field
 /// that names one, and the material is the field after it.
 fn key_material(line: &str) -> Option<(String, String)> {
-    let fields = key_fields(line);
+    let text = line.trim_start();
+    if text.is_empty() || text.starts_with('#') {
+        // sshd ignores a blank line and a comment: neither carries a key.
+        return None;
+    }
+    let fields = key_fields(text);
     for (index, field) in fields.iter().enumerate() {
         if !is_key_type(field) {
             continue;

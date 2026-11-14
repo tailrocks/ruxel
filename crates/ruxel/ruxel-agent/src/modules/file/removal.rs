@@ -12,9 +12,15 @@ use std::path::{Component, Path, PathBuf};
 pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<bool, String> {
     // A removal never takes a system root, however the path reaches it.
     refuse_system_root(path)?;
-    if path.symlink_metadata().is_err() {
-        // Removing something that is not there is no change.
-        return Ok(false);
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Removing something that is not there is no change.
+            return Ok(false);
+        }
+        // Every other failure (a symlink loop, a path that cannot be read)
+        // leaves the removal unable to say what is there.
+        Err(error) => return Err(format!("file: cannot read {}: {error}", path.display())),
     }
     let directory = path.is_dir() && !path.is_symlink();
     if directory && !recurse && !directory_is_empty(path)? {
@@ -47,8 +53,11 @@ const SYSTEM_ROOTS: [&str; 10] = [
 ///
 /// The plan holds a removal against the same floor, but the plan reads the
 /// path as it is written: a symlinked ancestor (`/tmp/root` -> `/`) carries
-/// the removal of `/tmp/root/etc` into the real `/etc`. The path is
-/// therefore resolved, and the result is held against the floor.
+/// the removal of `/tmp/root/etc` into the real `/etc`. The ancestors of
+/// the path are therefore resolved, and where they land is held against
+/// the floor. The last component keeps the name it was given: a symlink
+/// that points at a system root is a link, and taking a link takes
+/// nothing.
 pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
     let written = written_path(path);
     if SYSTEM_ROOTS.contains(&written.as_str()) {
@@ -56,32 +65,50 @@ pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
             "file: refusing to remove {written}: a removal never takes a system root"
         ));
     }
-    let Ok(resolved) = std::fs::canonicalize(path) else {
+    // The system's own layout (`/var` -> `/private/var`, `/bin` ->
+    // `/usr/bin`) is a first component and is not a crossing.
+    if !crosses_symlink(path) {
+        return Ok(());
+    }
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let written_parent = parent.to_string_lossy().to_string();
+    let Ok(resolved) = std::fs::canonicalize(parent) else {
         return Ok(());
     };
     let resolved = resolved.to_string_lossy().to_string();
+    if resolved == "/" {
+        return Err(format!(
+            "file: refusing to remove {written}: it reaches the filesystem root"
+        ));
+    }
     for root in SYSTEM_ROOTS {
+        // A root is held by the name it was written under and by the name
+        // it resolves to: `/var` and `/private/var` are one root.
         let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| PathBuf::from(root));
         let canonical = canonical.to_string_lossy().to_string();
-        if resolved == canonical {
-            return Err(format!(
-                "file: refusing to remove {written}: it resolves to {canonical}, a system root"
-            ));
+        let roots = [root.to_string(), canonical];
+        let reached = roots.iter().any(|root| inside(&resolved, root));
+        if !reached {
+            continue;
         }
-        // A path that crosses a symlink lands where the link points, and
-        // the contents of a system root are not the plan's to take. The
-        // system's own layout (`/var` -> `/private/var`, `/bin` ->
-        // `/usr/bin`) is a first component and is not a crossing.
-        if canonical != "/"
-            && resolved.starts_with(&format!("{canonical}/"))
-            && crosses_symlink(path)
-        {
-            return Err(format!(
-                "file: refusing to remove {written}: it resolves to {resolved}, inside the system root {canonical}"
-            ));
+        // The path was already inside the root as it was written: the
+        // resolution did not take it there.
+        let already = roots.iter().any(|root| inside(&written_parent, root));
+        if already {
+            continue;
         }
+        return Err(format!(
+            "file: refusing to remove {written}: it reaches {resolved}, inside the system root {root}"
+        ));
     }
     Ok(())
+}
+
+/// Whether a path is a root or lies inside it.
+fn inside(path: &str, root: &str) -> bool {
+    path == root || path.starts_with(&format!("{root}/"))
 }
 
 /// The path as it was written, without a trailing separator.
@@ -101,7 +128,8 @@ fn crosses_symlink(path: &Path) -> bool {
     let mut first = true;
     for component in path.components() {
         match component {
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
+            Component::RootDir => current.push("/"),
+            Component::CurDir | Component::Prefix(_) => {}
             Component::ParentDir => {
                 current.push("..");
                 first = false;

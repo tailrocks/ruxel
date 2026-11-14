@@ -48,26 +48,13 @@ fn run_with(
         // `iptables -D` takes one matching rule at a time, so a chain that
         // holds several copies of the same rule is emptied copy by copy:
         // one deletion would leave the others active.
-        let mut check: Vec<&str> = vec!["-C", chain];
-        check.extend(spec.iter().map(String::as_str));
-        let mut changed = false;
-        if ctx.check_mode {
-            changed = probe(binary, &check)?;
+        let changed = if ctx.check_mode {
+            let mut check: Vec<&str> = vec!["-C", chain];
+            check.extend(spec.iter().map(String::as_str));
+            probe(binary, &check)?
         } else {
-            let mut deletions = 0;
-            while probe(binary, &check)? {
-                let mut remove: Vec<&str> = vec!["-D", chain];
-                remove.extend(spec.iter().map(String::as_str));
-                exec_rule(binary, &remove)?;
-                changed = true;
-                deletions += 1;
-                if deletions > MAX_DELETIONS {
-                    return Err(format!(
-                        "{binary}: the rule is still there after {MAX_DELETIONS} deletions"
-                    ));
-                }
-            }
-        }
+            delete_copies(binary, chain, &spec, MAX_DELETIONS)? > 0
+        };
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
     let mut check: Vec<&str> = vec!["-C", chain];
@@ -80,6 +67,32 @@ fn run_with(
         exec_rule(binary, &append)?;
     }
     Ok(json!({"changed": changed, "failed": false, "chain": chain}))
+}
+
+/// Deletes every copy of the rule, and reports how many were deleted.
+///
+/// `iptables -D` takes one matching rule at a time, so a chain that holds
+/// several copies of the same rule is emptied copy by copy: one deletion
+/// would leave the others active. The number of deletions is bounded, so a
+/// chain that keeps the rule cannot keep the removal looping forever, and
+/// the bound is read before a deletion, so the removal never fails after
+/// the last copy is gone.
+fn delete_copies(binary: &str, chain: &str, spec: &[String], limit: u32) -> Result<u32, String> {
+    let mut check: Vec<&str> = vec!["-C", chain];
+    check.extend(spec.iter().map(String::as_str));
+    let mut deletions = 0;
+    while probe(binary, &check)? {
+        if deletions >= limit {
+            return Err(format!(
+                "{binary}: the rule is still there after {limit} deletions"
+            ));
+        }
+        let mut remove: Vec<&str> = vec!["-D", chain];
+        remove.extend(spec.iter().map(String::as_str));
+        exec_rule(binary, &remove)?;
+        deletions += 1;
+    }
+    Ok(deletions)
 }
 
 fn rule_spec(obj: &serde_json::Map<String, Value>) -> Vec<String> {

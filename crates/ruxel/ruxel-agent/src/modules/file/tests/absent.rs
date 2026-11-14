@@ -75,3 +75,46 @@ fn a_removal_of_an_empty_directory_takes_it() {
     assert!(!dir.exists());
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn a_removal_refuses_a_path_that_reaches_a_system_root_below_it() {
+    let base = scratch("floor-descendant");
+    // The symlinked ancestor carries the removal into the real /etc, and
+    // the target sits below the root the plan never named.
+    std::os::unix::fs::symlink("/", base.join("root")).unwrap();
+    let path = base.join("root/etc/subdir");
+    let mut check = context();
+    check.check_mode = true;
+    let error = run(
+        &json!({"path": path, "state": "absent", "recurse": true}),
+        &check,
+    )
+    .unwrap_err();
+    assert!(error.contains("system root"), "{error}");
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_of_a_link_to_a_system_root_takes_the_link() {
+    let base = scratch("floor-link");
+    // The last component is a link to a system root: removing the link
+    // takes nothing of the root.
+    std::os::unix::fs::symlink("/etc", base.join("old-etc")).unwrap();
+    let params = json!({"path": base.join("old-etc"), "state": "absent"});
+    assert_eq!(run(&params, &context()).unwrap()["changed"], true);
+    assert!(!base.join("old-etc").exists());
+    assert!(std::path::Path::new("/etc").exists());
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_removal_reports_a_path_it_cannot_read() {
+    let base = scratch("unreadable");
+    // A symlink that points at itself: the path below it cannot be read
+    // at all, and that is not the same as the path being absent.
+    std::os::unix::fs::symlink("loop", base.join("loop")).unwrap();
+    let params = json!({"path": base.join("loop/child"), "state": "absent"});
+    let error = run(&params, &context()).unwrap_err();
+    assert!(error.contains("cannot read"), "{error}");
+    std::fs::remove_dir_all(&base).unwrap();
+}

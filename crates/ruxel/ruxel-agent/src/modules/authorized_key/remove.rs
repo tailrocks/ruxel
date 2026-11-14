@@ -43,6 +43,9 @@ pub(super) fn remove_key(
         .filter(|line| !carries_key(line, &want_material))
         .collect();
     if kept.len() == lines.len() {
+        // The `.ssh` directory is checked again: a replacement in between
+        // may hold the key the directory this operation opened did not.
+        ensure_attached(&home_file, &dir)?;
         return Ok(false);
     }
     if !check_mode {
@@ -228,6 +231,68 @@ mod tests {
             left,
             b"ssh-ed25519 AAAAC3Nzakeep\r\nssh-rsa AAAAC3Nzaother".to_vec()
         );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_commented_line_carries_no_key() {
+        let root = scratch("comment");
+        let meta = std::fs::metadata(&root).unwrap();
+        let ssh = root.join(".ssh");
+        std::fs::create_dir(&ssh).unwrap();
+        // sshd ignores the whole line, so the key behind the comment is
+        // not there and the comment is not a line of its own to rewrite.
+        let before = "# disabled ssh-ed25519 AAAAC3Nzadrop\n";
+        std::fs::write(ssh.join("authorized_keys"), before).unwrap();
+        let changed = remove_key(
+            &root,
+            meta.uid(),
+            meta.gid(),
+            "ssh-ed25519 AAAAC3Nzadrop",
+            false,
+        )
+        .unwrap();
+        assert!(!changed, "a comment is not a key");
+        assert_eq!(
+            std::fs::read_to_string(ssh.join("authorized_keys")).unwrap(),
+            before
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_replaced_ssh_directory_is_noticeable_when_the_key_is_absent() {
+        let root = scratch("detached-absent");
+        let meta = std::fs::metadata(&root).unwrap();
+        let ssh = root.join(".ssh");
+        std::fs::create_dir(&ssh).unwrap();
+        // The directory this operation opened holds no key ...
+        std::fs::write(ssh.join("authorized_keys"), "ssh-ed25519 AAAAC3Nzakeep\n").unwrap();
+        // ... and the replacement holds the key that is to be absent.
+        let replaced = root.clone();
+        *BEFORE_PUBLISH.lock().unwrap() =
+            Some(std::sync::Arc::new(move |home: &std::path::Path| {
+                if home != replaced {
+                    return;
+                }
+                std::fs::rename(replaced.join(".ssh"), replaced.join(".ssh-detached")).unwrap();
+                std::fs::create_dir(replaced.join(".ssh")).unwrap();
+                std::fs::write(
+                    replaced.join(".ssh/authorized_keys"),
+                    "ssh-ed25519 AAAAC3Nzadrop\n",
+                )
+                .unwrap();
+            }));
+        let result = remove_key(
+            &root,
+            meta.uid(),
+            meta.gid(),
+            "ssh-ed25519 AAAAC3Nzadrop",
+            false,
+        );
+        *BEFORE_PUBLISH.lock().unwrap() = None;
+        let error = result.unwrap_err();
+        assert!(error.contains(".ssh changed"), "{error}");
         std::fs::remove_dir_all(&root).unwrap();
     }
 
