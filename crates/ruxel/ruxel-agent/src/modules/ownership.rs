@@ -66,8 +66,19 @@ fn resolve_uid(owner: &str) -> Result<(Option<u32>, bool), String> {
     // file still holds the stale number — accepting it would report the
     // file unchanged while the apply runs `usermod -u`, resolves the
     // account to the new number and chowns the file.
-    if let Some(super::user::Requested::Number(uid)) = super::user::planned_user(owner) {
-        return Ok((Some(uid), false));
+    match super::user::planned_user(owner) {
+        Some(super::user::Requested::Number(uid)) => return Ok((Some(uid), false)),
+        // The plan removed the account and declares it present again:
+        // the apply takes the account away and creates it anew, so the
+        // number is the allocator's to draw — the stale live entry must
+        // not stand in for it, or a file the plan owns with that
+        // account is reported unchanged while the apply chowns it to
+        // the number the allocator drew. The requested ownership is
+        // PENDING, like any other unnumbered identity.
+        Some(super::user::Requested::Unnumbered) if super::user::user_recreated(owner) => {
+            return Ok((None, true));
+        }
+        _ => {}
     }
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     match resolve_uid_from(&passwd, owner) {
@@ -108,8 +119,16 @@ fn resolve_gid(group: &str) -> Result<(Option<u32>, bool), String> {
     // The gid counterpart: an earlier `Group` task renumbers an
     // existing group (`groupmod -g`) and check mode runs nothing, so
     // the planned number is what the apply ends up with.
-    if let Some(super::user::Requested::Number(gid)) = super::user::planned_group(group) {
-        return Ok((Some(gid), false));
+    match super::user::planned_group(group) {
+        Some(super::user::Requested::Number(gid)) => return Ok((Some(gid), false)),
+        // The group counterpart of the recreated account: the plan
+        // removed the group and declares it present again, so its
+        // number is the allocator's to draw and the stale live entry
+        // must not stand in for it.
+        Some(super::user::Requested::Unnumbered) if super::user::group_recreated(group) => {
+            return Ok((None, true));
+        }
+        _ => {}
     }
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
     match resolve_gid_from(&groups, group) {
