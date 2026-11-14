@@ -1,7 +1,10 @@
 //! Writing the `authorized_keys` file, and the identity of the file it
 //! was written from.
 
-use rustix::fs::{AtFlags, Mode, OFlags, fchmod, fchown, mkdirat, openat, renameat, unlinkat};
+use rustix::fs::{
+    AtFlags, Mode, OFlags, RenameFlags, fchmod, fchown, mkdirat, openat, renameat, renameat_with,
+    unlinkat,
+};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
@@ -34,11 +37,11 @@ impl FileIdentity {
         }
     }
 
-    /// The identity the file in the directory has now.
-    fn of_entry(dir: &File) -> Result<Option<Self>, String> {
+    /// The identity the entry has now.
+    fn of_name(dir: &File, name: &std::ffi::CStr) -> Result<Option<Self>, String> {
         let fd = match openat(
             dir,
-            "authorized_keys",
+            name,
             OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
             Mode::empty(),
         ) {
@@ -130,7 +133,7 @@ fn publish_inner(
                     .map_err(|e| e.to_string())?,
             );
             let result = (|| {
-                let mut file = File::from(
+                let file = File::from(
                     openat(
                         &stage,
                         "key",
@@ -143,36 +146,8 @@ fn publish_inner(
                     )
                     .map_err(|e| e.to_string())?,
                 );
-                let sm = stage.metadata().map_err(|e| e.to_string())?;
-                let fm = file.metadata().map_err(|e| e.to_string())?;
-                if sm.uid() != fm.uid() || sm.mode() & 0o777 != 0o700 {
-                    return Err("authorized_key: unsafe staging directory".into());
-                }
-                fchown(
-                    &file,
-                    Some(rustix::fs::Uid::from_raw(uid)),
-                    Some(rustix::fs::Gid::from_raw(gid)),
-                )
-                .map_err(|e| e.to_string())?;
-                fchmod(&file, Mode::from_raw_mode(0o600)).map_err(|e| e.to_string())?;
-                file.write_all(content).map_err(|e| e.to_string())?;
-                file.sync_all().map_err(|e| e.to_string())?;
-                // The file that was read is checked right before the
-                // rename: a writer that came in between would lose its
-                // edit to this write.
-                if check {
-                    let current = FileIdentity::of_entry(dir)?;
-                    if current != expected {
-                        // The file that was read is not the one that is
-                        // there now: a writer that came in between would
-                        // lose its edit to this write.
-                        return Err(
-                            "authorized_key: authorized_keys changed during operation".into()
-                        );
-                    }
-                }
-                renameat(&stage, "key", dir, "authorized_keys").map_err(|e| e.to_string())?;
-                Ok(())
+                write_staged(&file, &stage, content, uid, gid)?;
+                publish_staged(&stage, dir, check, expected)
             })();
             let _ = unlinkat(&stage, "key", AtFlags::empty());
             result
@@ -181,4 +156,67 @@ fn publish_inner(
         return result;
     }
     Err("authorized_key: cannot reserve staging directory".into())
+}
+
+/// Writes the file that is to be published, in the staging directory.
+fn write_staged(
+    file: &File,
+    stage: &File,
+    content: &[u8],
+    uid: u32,
+    gid: u32,
+) -> Result<(), String> {
+    let sm = stage.metadata().map_err(|e| e.to_string())?;
+    let fm = file.metadata().map_err(|e| e.to_string())?;
+    if sm.uid() != fm.uid() || sm.mode() & 0o777 != 0o700 {
+        return Err("authorized_key: unsafe staging directory".into());
+    }
+    fchown(
+        file,
+        Some(rustix::fs::Uid::from_raw(uid)),
+        Some(rustix::fs::Gid::from_raw(gid)),
+    )
+    .map_err(|e| e.to_string())?;
+    fchmod(file, Mode::from_raw_mode(0o600)).map_err(|e| e.to_string())?;
+    let mut file = file;
+    file.write_all(content).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Puts the staged file in place.
+///
+/// The write is published with the syscall that cannot overwrite what it
+/// did not read: the file is exchanged with the one that is there, and the
+/// one it displaced is checked. A file that was absent is created with the
+/// syscall that refuses to replace one.
+fn publish_staged(
+    stage: &File,
+    dir: &File,
+    check: bool,
+    expected: Option<FileIdentity>,
+) -> Result<(), String> {
+    if !check {
+        renameat(stage, "key", dir, "authorized_keys").map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    match expected {
+        Some(expected) => {
+            renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
+                .map_err(|e| e.to_string())?;
+            let displaced = FileIdentity::of_name(stage, c"key")?;
+            if displaced != Some(expected) {
+                // The file that is there now is not the one that was
+                // read: it goes back where it was.
+                let _ = renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE);
+                return Err("authorized_key: authorized_keys changed during operation".into());
+            }
+            let _ = unlinkat(stage, "key", AtFlags::empty());
+            Ok(())
+        }
+        None => renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::NOREPLACE)
+            .map_err(|error| {
+                format!("authorized_key: authorized_keys changed during operation: {error}")
+            }),
+    }
 }
