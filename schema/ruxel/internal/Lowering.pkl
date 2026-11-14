@@ -427,6 +427,14 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
   else if (s is core.FetchSecret && !s.fnoxKey.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
     List("fnox key \"\(s.fnoxKey)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
+  else if (s is linux.IptablesRule && s.protocol == "icmp" && s.ipVersion == "ipv6")
+    List("'\(name(s))': protocol icmp is the ICMP of IPv4; the ICMP of IPv6 is icmpv6, and ip6tables administers the IPv6 rules")
+  else if (s is linux.IptablesRule && s.protocol == "icmpv6" && s.ipVersion == "ipv4")
+    List("'\(name(s))': protocol icmpv6 is the ICMP of IPv6; the ICMP of IPv4 is icmp, and iptables administers the IPv4 rules")
+  else if (s is linux.IptablesRule && s.destination != null && s.destination.contains(":") != (s.ipVersion == "ipv6"))
+    List("'\(name(s))': destination \(s.destination) is an \(if (s.destination.contains(":")) "IPv6" else "IPv4") address, but the rule is an \(s.ipVersion) rule; iptables administers the IPv4 rules and ip6tables the IPv6 ones")
+  else if (s is linux.IptablesRule && s.chain == "INPUT" && s.outInterface != null)
+    List("'\(name(s))': the INPUT chain takes no outgoing interface, because a packet on its way in has none; the rule can never match")
   else if (s is debian.DebconfEntry && s.type == "password" && !(s.value is debian.SecretAnswer))
     List("'\(name(s))': a password's answer is a secret (debian.secretAnswer(…)), never static text; a literal password would be committed to the workflow and printed in the clear")
   else if (s is debian.DebconfEntry && s.type == "boolean" && !(s.value is debian.SecretAnswer) && s.value != "true" && s.value != "false")
@@ -544,16 +552,17 @@ function floorProblems(ix: StageIndex, i: Int, s: core.Step): List<String> =
   if (s is core.Absent)
     let (path = s.path)
     if (floorRoots.contains(path))
-      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys")
+      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys, nor the system's own links into the merged tree: /bin, /sbin, /lib, /lib32, /lib64, /libx32")
     else
       let (held = positions(ix.steps).filter((j) -> j != i).flatMap((j) -> paths(ix.steps[j]).filter((p) -> p.startsWith(path + "/"))))
       if (held.isEmpty) List()
       else List("'\(name(s))' would remove \(path), which holds \(held.first), which another step of this stage manages; remove that path instead, or move the removal to a later stage")
   else List()
 
-/// The system roots a removal never takes: the filesystem root and the
-/// directories the system itself lives in.
-const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys")
+/// The system roots a removal never takes: the filesystem root, the
+/// directories the system itself lives in, and the system's own links into
+/// the merged tree — the agent's `SYSTEM_ROOTS` holds the same sixteen.
+const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32")
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.

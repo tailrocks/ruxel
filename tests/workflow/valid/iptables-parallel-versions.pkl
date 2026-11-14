@@ -4,7 +4,9 @@ import "../inventory.pkl"
 
 // `iptables` and `ip6tables` are separate rule sets: the same rule for
 // both versions is two rules, and a stage declares them side by side.
+// The match a rule carries belongs to the family of its version, so the
+// match both rules share is the one every address has.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
-  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.0/8"; jump = "DROP" }
-  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.0/8"; jump = "DROP"; ipVersion = "ipv6" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; jump = "DROP" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; jump = "DROP"; ipVersion = "ipv6" }
 } } }

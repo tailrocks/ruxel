@@ -1,4 +1,5 @@
-use super::super::{delete_matching, full_mask, rule_spec};
+use super::super::chain::delete_matching;
+use super::super::rules::{full_mask, rule_spec};
 use super::*;
 use serde_json::json;
 
@@ -90,7 +91,7 @@ fn the_deletion_bound_is_read_before_the_next_deletion() {
         "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.0/8", "jump":"DROP",
         "state":"absent"
     });
-    let spec = rule_spec(params.as_object().unwrap());
+    let spec = rule_spec(params.as_object().unwrap()).unwrap();
     // A bound below the number of rules leaves the rule, and the removal
     // says so.
     let error = delete_matching(&binary, "INPUT", &spec, 1).unwrap_err();

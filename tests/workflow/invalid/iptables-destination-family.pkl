@@ -1,0 +1,10 @@
+// expect: is an IPv4 address, but the rule is an ipv6 rule
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `iptables` administers the IPv4 rules and `ip6tables` the IPv6 ones, so
+// the address of a rule belongs to the family of its version.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; destination = "10.0.0.0/8"; ipVersion = "ipv6"; jump = "DROP" }
+} } }

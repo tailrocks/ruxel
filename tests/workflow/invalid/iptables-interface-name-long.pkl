@@ -1,0 +1,11 @@
+// expect-pklr: expected InterfaceName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An interface name of sixteen characters is past the kernel's limit:
+// `IFNAMSIZ` is sixteen, the name and its terminator.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "OUTPUT"; outInterface = "abcdefghijklmnop"; jump = "DROP" }
+} } }

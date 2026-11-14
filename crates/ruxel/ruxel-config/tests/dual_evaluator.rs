@@ -151,6 +151,15 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-universal-destination-conflict.pkl",
     "invalid/iptables-universal-destination-ipv6-conflict.pkl",
     "invalid/engine-iptables-policy-state.pkl",
+    "invalid/iptables-chain-option-name.pkl",
+    "invalid/iptables-interface-name.pkl",
+    "invalid/iptables-interface-name-long.pkl",
+    "invalid/iptables-destination-syntax.pkl",
+    "invalid/iptables-destination-family.pkl",
+    "invalid/iptables-icmp-version.pkl",
+    "invalid/iptables-icmpv6-version.pkl",
+    "invalid/iptables-input-out-interface.pkl",
+    "invalid/absent-floor-system-alias.pkl",
 ];
 
 /// The official `pkl` binary.
