@@ -76,3 +76,48 @@ fn the_plan_s_requested_gid_wins_over_the_stale_live_entry() {
         "the planned gid must win over the stale live {live}"
     );
 }
+
+#[test]
+fn an_unnumbered_planned_identity_keeps_the_pending_ownership() {
+    // An earlier same-stage step creates a missing account (and group)
+    // without an explicit id, and a later `File` names it as the owner
+    // of an existing, otherwise-correct path: check mode runs no
+    // `useradd`, so the names resolve to no id before the apply
+    // allocates one — but the apply creates the accounts, resolves the
+    // allocated ids and chowns the file, so the requested ownership is
+    // a PENDING change. Reporting it as "no owner constraint" lets the
+    // check claim the file unchanged while the apply chowns it.
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let owner = format!("ruxel-pending-owner-{}", std::process::id());
+    let group = format!("ruxel-pending-group-{}", std::process::id());
+    super::super::user::run(&json!({"name": owner, "create_home": false}), &check)
+        .expect("the earlier account step must plan");
+    super::super::user::group(&json!({"name": group}), &check)
+        .expect("the earlier group step must plan");
+    let obj = json!({"owner": owner, "group": group})
+        .as_object()
+        .expect("params object")
+        .clone();
+    let ownership = super::resolve_ownership(&obj).expect("the planned identities must resolve");
+    assert!(ownership.uid.is_none() && ownership.uid_pending);
+    assert!(ownership.gid.is_none() && ownership.gid_pending);
+    // The file is otherwise correct — its mode is not part of this
+    // check — but the pending ids still report the ownership change
+    // the apply makes.
+    let path = std::env::temp_dir().join(format!("ruxel-pending-owned-{}", std::process::id()));
+    std::fs::write(&path, b"").unwrap();
+    let mut changed = false;
+    super::super::attrs::apply_attrs_with(&path, &obj, &ownership, &mut changed, true)
+        .expect("the pending ownership must plan");
+    assert!(
+        changed,
+        "the pending ownership must be reported as a change"
+    );
+    std::fs::remove_file(&path).unwrap();
+}
