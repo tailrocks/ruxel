@@ -178,6 +178,9 @@ pub(super) fn mount_points() -> Vec<PathBuf> {
     };
     let mut points = Vec::new();
     for line in listing.split(|byte| *byte == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
         // The mount point is the fifth field of the line.
         let mut fields = line.split(|byte| *byte == b' ');
         let mut point = None;
