@@ -213,3 +213,78 @@ fn a_managed_file_with_an_invalid_utf8_byte_is_still_published() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Makes `path` un-replaceable — an immutable file, the one state a
+/// plain user on one platform and root on another can both create —
+/// and whether this host could.
+fn lock_target(path: &std::path::Path) -> bool {
+    let (program, argument) = if cfg!(target_os = "linux") {
+        ("chattr", "+i")
+    } else {
+        ("chflags", "uchg")
+    };
+    std::process::Command::new(program)
+        .arg(argument)
+        .arg(path)
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Puts the file back into the state `lock_target` took it out of.
+fn unlock_target(path: &std::path::Path) {
+    let (program, argument) = if cfg!(target_os = "linux") {
+        ("chattr", "-i")
+    } else {
+        ("chflags", "nouchg")
+    };
+    let _ = std::process::Command::new(program)
+        .arg(argument)
+        .arg(path)
+        .status();
+}
+
+#[test]
+fn a_target_that_cannot_be_replaced_is_refused_before_the_live_write() {
+    // The directory probe proves sibling creation only: an immutable
+    // file (or a read-only bind-mounted file) sits in a writable
+    // directory and rejects the atomic rename with EPERM/EBUSY —
+    // `sysctl -w` would succeed first and the later publish fail,
+    // leaving the kernel changed with no persistent entry behind it.
+    // The preflight rehearses the actual replacement before the live
+    // value is touched, so the refusal names the persistence file and
+    // the file itself is left exactly as it was.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-immutable-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.conf");
+    std::fs::write(&path, "net.test=2\n").unwrap();
+    if !lock_target(&path) {
+        // This host cannot make a file un-replaceable without a
+        // privilege the test has not: the ordinary path above is
+        // covered by the other tests' publishes.
+        unlock_target(&path);
+        std::fs::remove_dir_all(&dir).unwrap();
+        return;
+    }
+    let ctx = super::super::ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: vec![],
+        become_user: None,
+    };
+    let error = super::super::run(
+        &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
+        &ctx,
+        &[],
+    )
+    .expect_err("a target that cannot be replaced must be refused");
+    assert!(error.contains("cannot persist"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "net.test=2\n",
+        "a refused publish must leave the file untouched"
+    );
+    unlock_target(&path);
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}

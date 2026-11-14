@@ -110,6 +110,8 @@ fn the_resolved_ownership_is_applied_without_resolving_the_names_again() {
     let ownership = crate::modules::Ownership {
         uid: Some(meta.uid()),
         gid: Some(meta.gid()),
+        uid_pending: false,
+        gid_pending: false,
     };
     // The names do not resolve at all: they are the names the write
     // resolved before it published.

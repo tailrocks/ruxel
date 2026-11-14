@@ -388,3 +388,27 @@ fn a_declared_value_of_the_previous_plan_carries_the_next_transition() {
     assert_eq!(ledger.managed_sysctl_entries(), vec![entry]);
     drop(std::fs::remove_dir_all(&dir));
 }
+
+#[test]
+fn a_pending_named_assignment_in_an_existing_file_excludes_the_wildcard() {
+    // The managed file exists but holds no line for the managed key
+    // yet: the entry under management is an assignment by name that
+    // `rewrite_file` is about to write, and procps keeps a key a
+    // setting names outright out of the expansion of a pattern — so
+    // the later `net.ipv4.conf.*.rp_filter` never reaches
+    // `net.ipv4.conf.all.rp_filter`, and the boot value stays the
+    // managed one. The file's absence is not what makes the
+    // difference: the assignment is pending either way.
+    assert_eq!(
+        override_of(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.conf.all.rp_filter",
+            "1",
+            &[
+                ("/etc/sysctl.d/90-ruxel.conf", "# managed by ruxel\n"),
+                ("/etc/sysctl.conf", "net.ipv4.conf.*.rp_filter=0\n"),
+            ],
+        ),
+        None
+    );
+}

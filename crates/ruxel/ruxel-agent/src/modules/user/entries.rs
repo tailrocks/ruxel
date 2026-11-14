@@ -1,7 +1,7 @@
 //! The host's account and group entries: the passwd and group content
 //! every account and group operation reads before it touches anything.
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct PasswdEntry {
     pub(super) uid: u64,
     pub(super) gid: u64,
@@ -131,7 +131,13 @@ mod planned {
 
     pub(super) fn note(name: &str, requested: Option<u32>) {
         GROUPS.with(|groups| {
-            groups.borrow_mut().insert(name.to_string(), requested);
+            let mut groups = groups.borrow_mut();
+            // A present step that states no number changes no number:
+            // an earlier step's explicit one stays the plan's effective
+            // id, what a later removal's declaration is verified
+            // against.
+            let requested = requested.or_else(|| groups.get(name).copied().flatten());
+            groups.insert(name.to_string(), requested);
         });
     }
 
@@ -153,7 +159,11 @@ mod planned {
 
     pub(super) fn note_user(name: &str, requested: Option<u32>) {
         USERS.with(|users| {
-            users.borrow_mut().insert(name.to_string(), requested);
+            let mut users = users.borrow_mut();
+            // The account counterpart: a present step without a uid
+            // renumbers nothing.
+            let requested = requested.or_else(|| users.get(name).copied().flatten());
+            users.insert(name.to_string(), requested);
         });
     }
 
@@ -196,6 +206,20 @@ mod planned {
 
     pub(super) fn group_removed(name: &str) -> bool {
         REMOVED_GROUPS.with(|groups| groups.borrow().contains(name))
+    }
+
+    /// Whether the plan's steps move the account off the number it
+    /// holds on the host: the record carries the requested number, and
+    /// one that differs from the live entry frees it — `usermod -u`
+    /// sets the new uid and the old one is the next `useradd -u`'s.
+    pub(super) fn user_renumbered(name: &str, uid: u64) -> bool {
+        matches!(user_requested(name), Some(Requested::Number(n)) if u64::from(n) != uid)
+    }
+
+    /// The group counterpart: `groupmod -g` frees the old gid the same
+    /// way.
+    pub(super) fn group_renumbered(name: &str, gid: u64) -> bool {
+        matches!(group_requested(name), Some(Requested::Number(n)) if u64::from(n) != gid)
     }
 }
 
@@ -257,4 +281,19 @@ pub(super) fn note_removed_group(name: &str) {
 /// holds no number, so it is no collision.
 pub(super) fn group_removed(name: &str) -> bool {
     planned::group_removed(name)
+}
+
+/// Whether the plan's own earlier steps free the number the account
+/// holds on the host: the removal takes the account away, and a
+/// renumbering frees the old number before the change — `useradd -u`
+/// and `usermod -u` refuse a number another account holds, and this
+/// one holds it no longer.
+pub(crate) fn account_freed(name: &str, uid: u64) -> bool {
+    planned::account_removed(name) || planned::user_renumbered(name, uid)
+}
+
+/// The group counterpart: a removed or renumbered group holds no
+/// number.
+pub(crate) fn group_freed(name: &str, gid: u64) -> bool {
+    planned::group_removed(name) || planned::group_renumbered(name, gid)
 }
