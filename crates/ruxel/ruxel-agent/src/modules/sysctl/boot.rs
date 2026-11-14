@@ -7,11 +7,16 @@
 //! `/etc/sysctl.conf` after all of them.
 
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
 use super::{normalized, sysctl_key};
+
+mod fingerprint;
+
+pub(crate) use fingerprint::boot_fingerprint;
+#[cfg(test)]
+pub(crate) use fingerprint::fingerprint_of;
 
 /// The recognized system directories, by precedence: the higher rank
 /// wins a file name shared between them. procps reads them in this
@@ -41,11 +46,13 @@ pub(super) fn system_files() -> Vec<PathBuf> {
 /// `/dev/null` — the mechanism `sysctl.d(5)` documents for disabling a
 /// lower-precedence file — holds its place like any other copy: the
 /// link opens as an empty file, the name is consumed, and the
-/// lower-precedence copies of it are the shadowed ones. A `*.conf`
-/// basename need not be valid UTF-8 and procps reads it all the same,
-/// so the names are compared as their raw bytes: a file whose name is
-/// not text is a boot file like any other and must weigh on the
-/// analysis.
+/// lower-precedence copies of it are the shadowed ones. A broken
+/// symlink holds the name the same way: procps selects it, reports
+/// that it cannot open it, and never loads a lower-precedence copy. A
+/// `*.conf` basename need not be valid UTF-8 and procps reads it all
+/// the same, so the names are compared as their raw bytes: a file
+/// whose name is not text is a boot file like any other and must weigh
+/// on the analysis.
 pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
     let mut by_name: BTreeMap<Vec<u8>, PathBuf> = BTreeMap::new();
     for (dir, _) in dirs {
@@ -54,7 +61,7 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if (!path.is_file() && !masked_by_dev_null(&path))
+            if (!path.is_file() && !masked_by_dev_null(&path) && !broken_link(&path))
                 || path.extension().is_none_or(|ext| ext != "conf")
             {
                 continue;
@@ -83,33 +90,52 @@ fn masked_by_dev_null(path: &std::path::Path) -> bool {
             .is_ok_and(|target| std::fs::canonicalize("/dev/null").is_ok_and(|null| target == null))
 }
 
+/// Whether `path` is a symlink whose target is missing: procps selects
+/// the name all the same, reports that it cannot open the link, and
+/// never loads a lower-precedence copy of it — the link holds its
+/// place like the `/dev/null` mask above, loading as nothing.
+fn broken_link(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+        && !path.exists()
+}
+
 /// The same-named file in a higher-precedence system directory that
 /// shadows the persistence target at boot. `sysctl --system` applies
 /// one file name once: after a name is loaded from a directory, the
 /// same name in the later directories is ignored, and the directories
 /// load by precedence, so a managed file in a lower-precedence
 /// directory is silently skipped where a same-named file exists in a
-/// higher one, and the parameter reverts after reboot. Only files
+/// higher one, and the parameter reverts after reboot. The name is
+/// what shadows — procps selects it and then reports that it cannot
+/// open a broken link, never reaching the lower-precedence copy — so
+/// the presence test is `symlink_metadata`, never `exists`, which
+/// follows the link and answers false for a broken one. Only files
 /// inside the recognized system directories are shadowed:
 /// `/etc/sysctl.conf` loads after all of them and is never skipped.
 pub(super) fn shadowing(file: &str) -> Option<String> {
-    shadow_candidates(file)
-        .into_iter()
-        .find(|candidate| std::path::Path::new(candidate).exists())
+    shadowing_in(file, &DIRS)
 }
 
-/// The paths that would shadow `file` at boot, highest precedence
-/// first: the file's base name in the system directories that outrank
-/// its own.
-pub(super) fn shadow_candidates(file: &str) -> Vec<String> {
+/// The shadow of `file` among `dirs`, which the tests point at a
+/// scratch surface of their own.
+pub(super) fn shadowing_in(file: &str, dirs: &[(&str, u8)]) -> Option<String> {
+    shadow_candidates_in(file, dirs)
+        .into_iter()
+        .find(|candidate| std::fs::symlink_metadata(candidate).is_ok())
+}
+
+/// The paths that would shadow `file` at boot among `dirs`, highest
+/// precedence first: the file's base name in the directories that
+/// outrank its own.
+pub(super) fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<String> {
     let Some((dir, base)) = file.rsplit_once('/') else {
         return Vec::new();
     };
     let dir = format!("{dir}/");
-    let Some((_, rank)) = DIRS.iter().find(|(known, _)| *known == dir) else {
+    let Some((_, rank)) = dirs.iter().find(|(known, _)| *known == dir) else {
         return Vec::new();
     };
-    DIRS.iter()
+    dirs.iter()
         .filter(|(_, higher)| higher > rank)
         .map(|(known, _)| format!("{known}{base}"))
         .collect()
@@ -364,32 +390,4 @@ fn segment_matches(pattern: &str, key: &str) -> bool {
         at += 1;
     }
     at == pattern.len()
-}
-
-/// The fingerprint of the effective boot surface: the files that load
-/// at boot and what they assign. A change of it — a new file, another
-/// assignment — moves the value the host comes up with, so a cached
-/// task that judged the host before the change must not be served.
-pub(crate) fn boot_fingerprint() -> Option<String> {
-    fingerprint_of(&system_files())
-}
-
-/// The fingerprint of the boot files `files` names: their raw name
-/// bytes and contents, so a file whose name is not text moves the
-/// fingerprint like any other.
-pub(super) fn fingerprint_of(files: &[PathBuf]) -> Option<String> {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    for path in files {
-        let content = match std::fs::read(path) {
-            Ok(content) => content,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => return None,
-        };
-        hasher.update(OsStr::new(path).as_bytes());
-        hasher.update([0u8]);
-        hasher.update(&content);
-        hasher.update([0u8]);
-    }
-    Some(crate::ledger::hex(&hasher.finalize()))
 }

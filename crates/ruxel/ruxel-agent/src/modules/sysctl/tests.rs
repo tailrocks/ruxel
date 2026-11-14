@@ -4,6 +4,7 @@
 //! override's later-assignment refusal.
 
 mod boot_override;
+mod boot_shadows;
 mod boot_surface;
 mod boot_wildcards;
 mod names;
