@@ -1,0 +1,34 @@
+// expect: takes its uid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A system account draws its uid in the host's below-1000 range and
+// the runtime refuses to remove it altogether: a declared uid of 1000
+// or more fails the live-entry verification, and the schema refuses
+// every removal naming a below-1000 id or none at all. The draw is
+// therefore never freed, and a later explicit claim of a number the
+// system allocator can hand it collides.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "daemon2"; system = true }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "daemon2"; uid = 1200; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 500; system = true }
+    }
+  }
+}

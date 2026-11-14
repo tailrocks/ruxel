@@ -5,6 +5,7 @@
 
 mod boot_override;
 mod boot_surface;
+mod boot_wildcards;
 mod names;
 mod publish;
 mod rewrite;

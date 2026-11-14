@@ -128,41 +128,6 @@ fn a_dash_prefixed_assignment_is_the_same_entry() {
 }
 
 #[test]
-fn a_wildcard_reaches_no_key_the_managed_file_assigns_by_name() {
-    // procps keeps the keys a setting names outright out of the
-    // expansion of a pattern: the managed file's own entry is an
-    // assignment by name, so a later `net.ipv4.conf.*.rp_filter` never
-    // reaches `net.ipv4.conf.all.rp_filter` and hands no boot value
-    // away from it — while a key the sequence never names is still
-    // reported (see `boot_surface`'s
-    // `an_explicit_assignment_is_excluded_from_a_later_wildcard`).
-    assert_eq!(
-        override_of(
-            "/etc/sysctl.d/90-ruxel.conf",
-            "net.ipv4.conf.all.rp_filter",
-            "1",
-            &[("/etc/sysctl.conf", "net.ipv4.conf.*.rp_filter=0\n")],
-        ),
-        None
-    );
-}
-
-#[test]
-fn a_wildcard_key_that_covers_another_key_is_not_this_entry() {
-    // The wildcard covers the interfaces of another parameter: it does
-    // not assign the managed key.
-    assert_eq!(
-        override_of(
-            "/etc/sysctl.d/90-ruxel.conf",
-            "net.ipv4.ip_forward",
-            "1",
-            &[("/etc/sysctl.conf", "net.ipv4.conf.*.rp_filter=0\n")],
-        ),
-        None
-    );
-}
-
-#[test]
 fn a_boot_file_that_is_not_text_still_assigns() {
     // The assignment syntax is ASCII: a file that holds a byte
     // sequence that is not text is still read, and its assignments
