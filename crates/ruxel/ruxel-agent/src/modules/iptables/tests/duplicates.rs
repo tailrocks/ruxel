@@ -144,3 +144,26 @@ fn a_quoted_comment_is_one_argument() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_masked_destination_is_compared_the_way_the_firewall_prints_it() {
+    let dir = scratch("masked");
+    // The firewall masks the host bits off the address it is given, so
+    // the rule it prints is the network, and that is what the removal
+    // compares.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -d 10.0.0.0/8 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.1/8", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}

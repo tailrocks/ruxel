@@ -116,15 +116,45 @@ fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<Vec<
 }
 
 /// The destination in the form the firewall prints it: a host without a
-/// prefix carries its full mask.
+/// prefix carries its full mask, and the host bits of a prefix are
+/// masked off, the way the firewall masks them.
 fn full_mask(destination: &str) -> String {
-    if destination.contains('/') {
-        return destination.to_string();
+    let (address, prefix) = match destination.split_once('/') {
+        Some((address, prefix)) => (address, prefix.parse::<u8>().ok()),
+        None => (destination, None),
+    };
+    let Some(prefix) = prefix else {
+        return if address.contains(':') {
+            format!("{address}/128")
+        } else {
+            format!("{address}/32")
+        };
+    };
+    if let Ok(bits) = address.parse::<std::net::Ipv4Addr>() {
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - u32::from(prefix))
+        };
+        return format!(
+            "{}/{}",
+            std::net::Ipv4Addr::from(u32::from(bits) & mask),
+            prefix
+        );
     }
-    if destination.contains(':') {
-        return format!("{destination}/128");
+    if let Ok(bits) = address.parse::<std::net::Ipv6Addr>() {
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u128::MAX << (128 - u32::from(prefix))
+        };
+        return format!(
+            "{}/{}",
+            std::net::Ipv6Addr::from(u128::from(bits) & mask),
+            prefix
+        );
     }
-    format!("{destination}/32")
+    destination.to_string()
 }
 
 /// The rules of the chain, as the firewall lists them.
@@ -154,8 +184,16 @@ fn split_arguments(line: &str) -> Vec<String> {
     let mut argument = String::new();
     let mut quoted = false;
     let mut started = false;
+    let mut escaped = false;
     for character in line.chars() {
+        if escaped {
+            argument.push(character);
+            escaped = false;
+            started = true;
+            continue;
+        }
         match character {
+            '\\' => escaped = true,
             '"' => {
                 quoted = !quoted;
                 started = true;

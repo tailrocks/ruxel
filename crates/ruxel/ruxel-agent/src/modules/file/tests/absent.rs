@@ -322,17 +322,17 @@ fn a_relative_path_is_anchored_before_the_floor_holds_it() {
 fn the_mount_points_of_the_host_are_read_from_the_kernel() {
     // The kernel writes the characters that need it as octal escapes.
     assert_eq!(
-        super::super::removal::unescape_mount_bytes(b"/tmp/a\\040b"),
+        super::super::mounts::unescape_mount_bytes(b"/tmp/a\\040b"),
         b"/tmp/a b".to_vec()
     );
     assert_eq!(
-        super::super::removal::unescape_mount_bytes(b"/tmp/plain"),
+        super::super::mounts::unescape_mount_bytes(b"/tmp/plain"),
         b"/tmp/plain".to_vec()
     );
     // The mount points of this host are read from the kernel, and they are
     // paths. The listing ends with an empty line, which is not a mount
     // point.
-    for point in super::super::removal::mount_points() {
+    for point in super::super::mounts::mount_points() {
         assert!(!point.as_os_str().is_empty(), "{point:?}");
         assert!(point.is_absolute(), "{point:?}");
     }

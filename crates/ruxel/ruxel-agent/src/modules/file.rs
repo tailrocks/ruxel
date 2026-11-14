@@ -13,6 +13,7 @@ use std::path::Component;
 use std::path::Path;
 
 mod floor;
+mod mounts;
 mod removal;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
