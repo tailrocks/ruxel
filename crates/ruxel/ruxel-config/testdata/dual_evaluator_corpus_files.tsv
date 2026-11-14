@@ -63,6 +63,8 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-question-space.pkl
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
   tests/workflow/invalid/engine-iptables-policy-state.pkl
+  tests/workflow/invalid/iptables-universal-destination-conflict.pkl
+  tests/workflow/invalid/iptables-universal-destination-ipv6-conflict.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
   tests/workflow/invalid/secret-op-reference-dotted-selector.pkl
   tests/workflow/invalid/secret-placeholder-orphaned-runtime.pkl
@@ -99,6 +101,7 @@ dual_evaluator
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
   tests/workflow/valid/iptables-parallel-versions.pkl
+  tests/workflow/valid/iptables-universal-destination.pkl
   tests/workflow/valid/read-resource.pkl
   tests/workflow/valid/secret-literal-prefix.pkl
   tests/workflow/valid/secret-op-reference-dotted.pkl

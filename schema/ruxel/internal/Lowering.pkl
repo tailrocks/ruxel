@@ -1058,7 +1058,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // A removal's state is the path it takes away: `recursive` is a means,
   // not a state, so two removals of one path are one state.
   ["absent"] = (s) -> fields(List(s.path))
-  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(s.destination), s.protocol, optional(s.outInterface), s.jump, s.ipVersion, s.state))
+  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(if (universalDestination(s)) null else s.destination), s.protocol, optional(s.outInterface), s.jump, s.ipVersion, s.state))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -1449,9 +1449,17 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
 
 /// The match of an iptables rule, without its jump: the chain and the match
 /// are the rule's identity, so two rules that match the same way in the same
-/// chain are one rule.
+/// chain are one rule. The universal destination is spelled the way the
+/// firewall leaves it out, so `0.0.0.0/0` and the omitted destination are
+/// one identity.
 const function iptablesMatch(s: linux.IptablesRule): String =
-  (if (s.destination == null) "" else "to " + s.destination + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
+  (if (s.destination == null || universalDestination(s)) "" else "to " + s.destination + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
+
+/// The universal network is the omitted destination: Netfilter documents
+/// that `/0` has the same effect as omitting the address option, so a rule
+/// that names it and a rule that omits it match the same way.
+const function universalDestination(s: linux.IptablesRule): Boolean =
+  s.destination == "0.0.0.0/0" || s.destination == "::/0"
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
 /// its depth limit of 32 (P3).

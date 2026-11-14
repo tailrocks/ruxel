@@ -102,13 +102,13 @@ fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Re
 fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<Vec<String>>, String> {
     let rules = list_chain(binary, chain)?;
     let declared: Vec<String> = spec.to_vec();
-    let wanted = match_pairs(&declared);
+    let wanted = match_pairs(&declared)?;
     let mut matching = Vec::new();
     for rule in &rules {
         let Some(args) = rule_arguments(rule, chain) else {
             continue;
         };
-        if match_pairs(&args) == wanted {
+        if match_pairs(&args)? == wanted {
             matching.push(args);
         }
     }
@@ -117,44 +117,55 @@ fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<Vec<
 
 /// The destination in the form the firewall prints it: a host without a
 /// prefix carries its full mask, and the host bits of a prefix are
-/// masked off, the way the firewall masks them.
-fn full_mask(destination: &str) -> String {
+/// masked off, the way the firewall masks them. A complete CIDR comes
+/// first: a prefix that is not a number must not fall into the host
+/// branch and read `10.0.0.1/foo` as `10.0.0.1/32`, and a prefix past
+/// the family's width must never reach the mask calculation.
+fn full_mask(destination: &str) -> Result<String, String> {
     let (address, prefix) = match destination.split_once('/') {
-        Some((address, prefix)) => (address, prefix.parse::<u8>().ok()),
+        Some((address, prefix)) => (address, Some(prefix)),
         None => (destination, None),
     };
     let Some(prefix) = prefix else {
-        return if address.contains(':') {
+        return Ok(if address.contains(':') {
             format!("{address}/128")
         } else {
             format!("{address}/32")
-        };
+        });
     };
+    let malformed = || format!("iptables: destination {destination:?} is not a complete CIDR");
+    let prefix: u32 = prefix.parse().map_err(|_| malformed())?;
     if let Ok(bits) = address.parse::<std::net::Ipv4Addr>() {
+        if prefix > 32 {
+            return Err(malformed());
+        }
         let mask = if prefix == 0 {
             0
         } else {
-            u32::MAX << (32 - u32::from(prefix))
+            u32::MAX << (32 - prefix)
         };
-        return format!(
+        return Ok(format!(
             "{}/{}",
             std::net::Ipv4Addr::from(u32::from(bits) & mask),
             prefix
-        );
+        ));
     }
     if let Ok(bits) = address.parse::<std::net::Ipv6Addr>() {
+        if prefix > 128 {
+            return Err(malformed());
+        }
         let mask = if prefix == 0 {
             0
         } else {
-            u128::MAX << (128 - u32::from(prefix))
+            u128::MAX << (128 - prefix)
         };
-        return format!(
+        return Ok(format!(
             "{}/{}",
             std::net::Ipv6Addr::from(u128::from(bits) & mask),
             prefix
-        );
+        ));
     }
-    destination.to_string()
+    Err(malformed())
 }
 
 /// The rules of the chain, as the firewall lists them.
@@ -220,7 +231,7 @@ fn split_arguments(line: &str) -> Vec<String> {
 /// are not part of the match. An option the rule carries and the declared
 /// match does not is a different match, so a rule with `--dport 22` is not
 /// the rule that declares only a protocol.
-fn match_pairs(args: &[String]) -> Vec<(String, String)> {
+fn match_pairs(args: &[String]) -> Result<Vec<(String, String)>, String> {
     let mut pairs = Vec::new();
     let mut index = 0;
     while index < args.len() {
@@ -237,14 +248,18 @@ fn match_pairs(args: &[String]) -> Vec<(String, String)> {
             continue;
         }
         if let Some(value) = value {
-            // `-p all` is the default the listing leaves out, and a host
-            // without a prefix carries its full mask in the listing.
-            if flag != "-p" || value != "all" {
-                let value = if flag == "-d" {
-                    full_mask(value)
-                } else {
-                    value.clone()
-                };
+            // `-p all` is the default the listing leaves out, and so is
+            // the universal destination: `/0` has the same effect as
+            // omitting the address option, and the listing omits it. A
+            // host without a prefix carries its full mask in the listing.
+            let value = if flag == "-d" {
+                full_mask(value)?
+            } else {
+                value.clone()
+            };
+            let omitted = (flag == "-p" && value == "all")
+                || (flag == "-d" && matches!(value.as_str(), "0.0.0.0/0" | "::/0"));
+            if !omitted {
                 pairs.push((flag.clone(), value));
             }
             index += 2;
@@ -253,7 +268,7 @@ fn match_pairs(args: &[String]) -> Vec<(String, String)> {
         index += 1;
     }
     pairs.sort();
-    pairs
+    Ok(pairs)
 }
 
 fn rule_spec(obj: &serde_json::Map<String, Value>) -> Vec<String> {

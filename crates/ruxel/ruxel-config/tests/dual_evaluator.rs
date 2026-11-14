@@ -147,6 +147,9 @@ const EXAMPLES: &[&str] = &[
     "valid/secret-placeholder-shared-terminator.pkl",
     "invalid/absent-recursive-mismatch.pkl",
     "valid/iptables-parallel-versions.pkl",
+    "valid/iptables-universal-destination.pkl",
+    "invalid/iptables-universal-destination-conflict.pkl",
+    "invalid/iptables-universal-destination-ipv6-conflict.pkl",
     "invalid/engine-iptables-policy-state.pkl",
 ];
 

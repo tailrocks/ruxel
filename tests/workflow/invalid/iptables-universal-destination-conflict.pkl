@@ -1,0 +1,12 @@
+// expect: both manage the ipv4 iptables rule INPUT tcp with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `0.0.0.0/0` is the omitted destination: /0 has the same effect as
+// omitting the address option, so the two declarations are one rule of
+// one chain and match, and two jumps for it are a conflict.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; jump = "DROP" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "0.0.0.0/0"; jump = "ACCEPT" }
+} } }

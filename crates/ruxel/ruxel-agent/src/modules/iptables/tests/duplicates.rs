@@ -1,6 +1,31 @@
-use super::super::{delete_matching, rule_spec};
+use super::super::{delete_matching, full_mask, rule_spec};
 use super::*;
 use serde_json::json;
+
+#[test]
+fn normalizes_destinations_and_refuses_malformed_ones() {
+    // The destination in the form the firewall prints it: a host without
+    // a prefix carries its full mask, and the host bits of a prefix are
+    // masked off.
+    assert_eq!(full_mask("10.0.0.1").unwrap(), "10.0.0.1/32");
+    assert_eq!(full_mask("::1").unwrap(), "::1/128");
+    assert_eq!(full_mask("10.0.0.1/8").unwrap(), "10.0.0.0/8");
+    assert_eq!(full_mask("2001:db8::1/32").unwrap(), "2001:db8::/32");
+    // A complete CIDR comes before any normalization: a prefix that is
+    // not a number must not fall into the host branch and read the
+    // declaration as a host, and a prefix past the family's width must
+    // never reach the mask calculation.
+    for malformed in [
+        "10.0.0.1/foo",
+        "10.0.0.1/",
+        "10.0.0.1/33",
+        "10.0.0.1/64",
+        "::1/129",
+        "::1/200",
+    ] {
+        assert!(full_mask(malformed).is_err(), "{malformed}");
+    }
+}
 
 /// A stub that keeps the rules of the chain, one per line, and answers
 /// the listing the way the firewall does.
@@ -142,6 +167,99 @@ fn a_quoted_comment_is_one_argument() {
     .unwrap();
     assert_eq!(result["changed"], true);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_malformed_destination_prefix_is_refused() {
+    let dir = scratch("malformed");
+    // The declaration names a prefix that is not a number: it is not the
+    // host rule the chain holds, and the removal must refuse it instead
+    // of reading it as the host and deleting the rule.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -d 10.0.0.1/32 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.1/foo", "jump":"DROP",
+        "state":"absent"
+    });
+    let error = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap_err();
+    assert!(error.contains("10.0.0.1/foo"), "{error}");
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -d 10.0.0.1/32 -j DROP\n", "{left}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn an_out_of_range_destination_prefix_is_refused() {
+    let dir = scratch("out-of-range");
+    // `/33` is past IPv4's width: the mask calculation must never see
+    // it, and the rule the chain holds is not the declaration.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -d 10.0.0.1/32 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.1/33", "jump":"DROP",
+        "state":"absent"
+    });
+    let error = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap_err();
+    assert!(error.contains("10.0.0.1/33"), "{error}");
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -d 10.0.0.1/32 -j DROP\n", "{left}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_wildcard_destination_is_the_omitted_default() {
+    let dir = scratch("wildcard");
+    // The universal destination is the omitted one: `/0` has the same
+    // effect as omitting the address option, and the listing leaves it
+    // out, so the rule the removal declares is the rule in the chain.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"0.0.0.0/0", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_wildcard_destination_does_not_take_a_rule_with_another_destination() {
+    let dir = scratch("wildcard-other");
+    // The wildcard is the omitted destination, not every destination: a
+    // rule that names a network is another match and stays.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -d 10.0.0.0/8 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"::/0", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], false);
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -d 10.0.0.0/8 -j DROP\n", "{left}");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
