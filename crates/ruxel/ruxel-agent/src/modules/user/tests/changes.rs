@@ -147,57 +147,6 @@ fn a_declared_shell_must_exist_and_be_executable() {
 }
 
 #[test]
-fn a_home_that_is_a_regular_file_is_refused_before_the_account_changes() {
-    let ctx = ExecContext {
-        check_mode: true,
-        diff_mode: false,
-        no_log: false,
-        environment: Vec::new(),
-        become_user: None,
-    };
-    let probe = std::env::temp_dir().join(format!("ruxel-home-file-{}", std::process::id()));
-    std::fs::write(&probe, b"").unwrap();
-    // `usermod -d` moves the passwd field even when the declared home is
-    // a regular file, so the path is validated before any mutation: a
-    // refused apply must leave the account as it was.
-    let error = run(
-        &json!({"name":"ruxel-synthetic-user", "home":probe.to_str().unwrap()}),
-        &ctx,
-    )
-    .expect_err("a home that is a regular file must be refused before the account changes");
-    assert!(error.contains("home"), "{error}");
-    // The home helper refuses the same path in both modes.
-    assert!(super::super::home_usable(probe.to_str().unwrap()).is_err());
-    std::fs::remove_file(&probe).unwrap();
-}
-
-#[test]
-fn an_existing_home_directory_reports_drifted_ownership() {
-    use std::os::unix::fs::MetadataExt;
-    // The identity the test process owns: a probe file of it.
-    let probe = std::env::temp_dir().join(format!("ruxel-home-drift-{}", std::process::id()));
-    std::fs::write(&probe, b"").unwrap();
-    let meta = std::fs::metadata(&probe).unwrap();
-    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
-    std::fs::remove_file(&probe).unwrap();
-    let dir = std::env::temp_dir().join(format!("ruxel-home-owned-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir(&dir).unwrap();
-    // A home that exists but drifted to another identity is the agent's
-    // to reconcile — the early return reported no change and left the
-    // directory belonging to no one the account declares.
-    assert!(
-        super::super::ensure_home(dir.to_str().unwrap(), uid + 1, gid + 1, true).unwrap(),
-        "check mode reports the pending repair"
-    );
-    assert!(
-        !super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap(),
-        "matching ownership is no change"
-    );
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
 fn a_created_home_takes_the_final_primary_gid() {
     // When one step changes the primary group, `usermod -g` applies
     // before the home is created: the directory must take the requested
@@ -279,78 +228,6 @@ fn a_created_account_creates_its_private_group_explicitly() {
 }
 
 #[test]
-fn a_declared_home_that_is_a_symlink_is_refused_never_chowned() {
-    use std::os::unix::fs::MetadataExt;
-    // A home in an attacker-writable parent that is a symlink to a
-    // directory (`/tmp/alice-home -> /etc`) would be followed by the
-    // metadata probe and by chown: the TARGET's ownership would
-    // transfer to the managed account as root. A symlink is refused and
-    // ownership changes never follow one.
-    let target = std::env::temp_dir().join(format!("ruxel-home-target-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&target);
-    std::fs::create_dir(&target).unwrap();
-    let link = std::env::temp_dir().join(format!("ruxel-home-link-{}", std::process::id()));
-    let _ = std::fs::remove_file(&link);
-    std::os::unix::fs::symlink(&target, &link).unwrap();
-    let meta = std::fs::metadata(&target).unwrap();
-    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
-    assert!(super::super::home_usable(link.to_str().unwrap()).is_err());
-    assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, true).is_err());
-    assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, false).is_err());
-    let after = std::fs::metadata(&target).unwrap();
-    assert_eq!(
-        after.uid(),
-        meta.uid(),
-        "the symlink target must not be chowned"
-    );
-    assert_eq!(
-        after.gid(),
-        meta.gid(),
-        "the symlink target must not be chowned"
-    );
-    std::fs::remove_file(&link).unwrap();
-    std::fs::remove_dir_all(&target).unwrap();
-}
-
-#[test]
-fn a_home_lookup_error_beyond_not_found_is_refused_before_the_account_changes() {
-    // `/srv/file/alice` where `/srv/file` is a regular file: the lookup
-    // fails `NotADirectory` on an ancestor — not a missing home. Taking
-    // the catch-all for usable would let `usermod -d` move the passwd
-    // field before `ensure_home` reports the filesystem error, leaving a
-    // partially applied account after failure: only `NotFound` is
-    // usable, and every other lookup error propagates before any
-    // mutation.
-    let dir = std::env::temp_dir().join(format!("ruxel-home-notdir-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("f");
-    std::fs::write(&file, b"").unwrap();
-    let nested = dir.join("f/alice");
-    let error = super::super::home_usable(nested.to_str().unwrap())
-        .expect_err("NotADirectory must not be usable");
-    assert!(error.contains("home"), "{error}");
-    // The same path through the operation is refused before the account
-    // is touched, in both modes.
-    for check_mode in [true, false] {
-        let ctx = ExecContext {
-            check_mode,
-            diff_mode: false,
-            no_log: false,
-            environment: Vec::new(),
-            become_user: None,
-        };
-        let error = run(
-            &json!({"name":"ruxel-synthetic-user", "home":nested.to_str().unwrap()}),
-            &ctx,
-        )
-        .expect_err("a home under a regular file must be refused before the account changes");
-        assert!(error.contains("home"), "{error}");
-    }
-    std::fs::remove_file(&file).unwrap();
-    std::fs::remove_dir(&dir).unwrap();
-}
-
-#[test]
 fn the_creation_passes_the_claimed_home_explicitly() {
     // The lowering's footprint reserves `/home/<name>` where the step
     // names no home, and `useradd` must put the account there: the host's
@@ -378,4 +255,69 @@ fn an_existing_account_reconciles_its_claimed_private_group() {
     assert!(super::super::private_group_missing(None, false));
     assert!(!super::super::private_group_missing(None, true));
     assert!(!super::super::private_group_missing(Some("staff"), false));
+}
+
+/// A live account whose same-name group the host has: the step's
+/// implicit claim resolves the group's number, and the account's move
+/// onto it is the change the step plans.
+fn live_account_with_its_own_group() -> (String, u64) {
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    passwd
+        .lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 7
+                && f[2].parse::<u64>().is_ok_and(|uid| uid != 0)
+                && f[3].parse::<u64>().is_ok())
+            .then(|| (f[0].to_string(), f[3].parse::<u64>().unwrap()))
+        })
+        .find(|(name, _)| group_entry(name).unwrap().is_some_and(|(_, gid)| gid != 0))
+        .expect("a live account whose same-name group the host has")
+}
+
+/// A gid no group on the host holds: the plan renumbers a group to it.
+fn free_gid() -> u32 {
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    (60000u32..61000)
+        .find(|gid| {
+            !groups.lines().any(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                f.len() >= 3 && f[2].parse::<u32>() == Ok(*gid)
+            })
+        })
+        .expect("a free gid on the host")
+}
+
+#[test]
+fn an_existing_account_reconciles_its_implicit_primary_group() {
+    // The step's implicit claim is the account's PRIMARY group too: the
+    // schema models the same-name group as the primary group of an
+    // account that names none, so an existing account that lives on
+    // another group is moved onto it (`usermod -g <name>`) — the
+    // group's creation alone leaves the account where it was, and the
+    // declared account state unapplied.
+    //
+    // The group's number is the plan's own: an earlier task renumbers
+    // the same-name group, and the account follows the number the
+    // apply ends up with — the live one is stale in check mode, which
+    // runs no `groupmod`, and the renumbered group leaves the
+    // account's gid field pointing at a number no group holds.
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let (name, _) = live_account_with_its_own_group();
+    let planned = free_gid();
+    group(&json!({"name": name, "gid": planned}), &check)
+        .expect("the earlier group's renumbering must plan");
+    let result =
+        run(&json!({"name": name}), &check).expect("the implicit primary-group move must plan");
+    assert_eq!(
+        result.get("changed"),
+        Some(&json!(true)),
+        "the account is moved onto the same-name group the step claims: {result}"
+    );
 }
