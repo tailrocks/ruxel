@@ -240,6 +240,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-auto-removal-number-mismatch.pkl",
     "invalid/linux-user-uid-auto-system-draw.pkl",
     "invalid/linux-file-owner-removed-later-stage.pkl",
+    "invalid/linux-user-remove-home-mail-elsewhere.pkl",
 ];
 
 /// The official `pkl` binary.
