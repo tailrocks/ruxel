@@ -114,6 +114,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-needs-later-group.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
   tests/workflow/invalid/linux-user-remove-home-conflict.pkl
+  tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl
   tests/workflow/invalid/linux-user-remove-home-mail.pkl
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
   tests/workflow/invalid/linux-user-root-group.pkl

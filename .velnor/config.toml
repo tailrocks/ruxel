@@ -520,6 +520,7 @@ inputs = [
   "tests/workflow/invalid/linux-user-needs-later-account.pkl",
   "tests/workflow/invalid/linux-user-needs-later-group.pkl",
   "tests/workflow/invalid/linux-user-default-home-conflict.pkl",
+  "tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl",
   "tests/workflow/invalid/linux-user-remove-home-mail.pkl",
   "tests/workflow/invalid/linux-user-mail-spool.pkl",
   "tests/workflow/invalid/linux-user-mail-spool-location.pkl",
