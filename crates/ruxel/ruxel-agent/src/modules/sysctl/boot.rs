@@ -144,7 +144,11 @@ pub(super) fn host_files() -> Result<Vec<(String, Vec<u8>)>, String> {
 /// outside so the boot surface is provable without a system of its
 /// own. A file ruxel manages holds a declared managed value, not an
 /// unmanaged override, so `managed` — the file, key and value of every
-/// sysctl entry ruxel manages on this host — weighs on the answer.
+/// sysctl entry ruxel manages on this host — weighs on the answer. And
+/// a wildcard reaches no key the sequence assigns by name: procps
+/// keeps the keys a setting names outright out of the expansion of a
+/// pattern, so a later `net.ipv4.conf.*.rp_filter` cannot hand the boot
+/// value away from a key the managed file assigns by name.
 pub(super) fn boot_override(
     file: &str,
     name: &str,
@@ -153,14 +157,58 @@ pub(super) fn boot_override(
     managed: &[(String, String, String)],
 ) -> Option<(String, String)> {
     let key = sysctl_key(name);
+    let named = named_assignments(file, name, host);
     host.iter()
         .filter(|(path, _)| loads_after(file, path))
         .find_map(|(path, content)| {
-            assigns_other(content, &key, value)
+            assigns_other(content, &key, value, &named)
                 .into_iter()
                 .find(|other| !declared(path, &key, other, managed))
                 .map(|other| (path.clone(), other))
         })
+}
+
+/// The keys the boot sequence assigns by name, up to and including the
+/// managed file: procps keeps a key a setting names outright out of the
+/// expansion of a pattern (`write_setting_list` skips a globbed path
+/// `settinglist_findpath` finds), so a key named as the sequence loads
+/// keeps its value and a later wildcard never reaches it. The managed
+/// file's own entry is one such named assignment — the entry the task
+/// writes is an assignment by name — so where the managed file carries
+/// no content of its own yet, the entry under management stands for it.
+fn named_assignments(file: &str, name: &str, host: &[(String, Vec<u8>)]) -> Vec<String> {
+    let mut named: Vec<String> = host
+        .iter()
+        .filter(|(path, _)| !loads_after(file, path))
+        .flat_map(|(_, content)| named_keys(content))
+        .collect();
+    if !host.iter().any(|(path, _)| path == file) {
+        named.push(sysctl_key(name));
+    }
+    named
+}
+
+/// The keys `content` assigns by name: every assignment line whose key
+/// is no wildcard, in its canonical spelling with procps's
+/// ignore-failure marker off.
+fn named_keys(content: &[u8]) -> Vec<String> {
+    let mut keys = Vec::new();
+    for line in content.split(|byte| *byte == b'\n') {
+        let line = trim(line);
+        if line.is_empty() || line[0] == b'#' {
+            continue;
+        }
+        let Some(equals) = line.iter().position(|byte| *byte == b'=') else {
+            continue;
+        };
+        let assigned = trim(&line[..equals]);
+        let assigned = trim(assigned.strip_prefix(b"-").unwrap_or(assigned));
+        let assigned = String::from_utf8_lossy(assigned).into_owned();
+        if !assigned.contains('*') && !assigned.contains('?') {
+            keys.push(sysctl_key(&assigned));
+        }
+    }
+    keys
 }
 
 /// A file ruxel manages: an assignment of the key ruxel declared there
@@ -198,8 +246,10 @@ fn loads_after(file: &str, candidate: &str) -> bool {
 /// only a final differing value hands the boot value away. An alias
 /// spelling is the same entry, a leading `-` is procps's
 /// ignore-failure marker (the assignment happens either way), and a
-/// wildcard key assigns every key it expands to.
-fn assigns_other(content: &[u8], key: &str, value: &str) -> Vec<String> {
+/// wildcard key assigns every key it expands to — except the keys the
+/// sequence assigns by name (`named`): procps keeps those out of the
+/// expansion of a pattern, whatever file order the two sit in.
+fn assigns_other(content: &[u8], key: &str, value: &str, named: &[String]) -> Vec<String> {
     let want = normalized(value);
     let mut last: Option<String> = None;
     for line in content.split(|byte| *byte == b'\n') {
@@ -216,6 +266,13 @@ fn assigns_other(content: &[u8], key: &str, value: &str) -> Vec<String> {
         let assigned = trim(assigned.strip_prefix(b"-").unwrap_or(assigned));
         let assigned = String::from_utf8_lossy(assigned).into_owned();
         if !key_matches(&assigned, key) {
+            continue;
+        }
+        // A wildcard candidate reaches no key the sequence assigns by
+        // name: procps excludes the explicitly configured keys from
+        // the expansion of a pattern, so the managed key keeps its
+        // named value and the pattern assigns none of it.
+        if (assigned.contains('*') || assigned.contains('?')) && named.iter().any(|k| k == key) {
             continue;
         }
         last = Some(normalized(&String::from_utf8_lossy(trim(
