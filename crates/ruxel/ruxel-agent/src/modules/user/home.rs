@@ -166,6 +166,32 @@ pub(super) fn ensure_home(
     }
 }
 
+/// The claimed home of the account the step created: the directory is
+/// reconciled with the account's final identity, and the account is
+/// taken back when the reconciliation fails. A home that cannot take
+/// the ownership — an immutable directory, a directory on a read-only
+/// mount — fails the reconciliation, and the account the step created
+/// must not stay behind in the passwd database when the task fails:
+/// the host's account database is the workflow's to keep, and a
+/// refused task leaves it as it was.
+pub(super) fn reconcile_created_home(
+    name: &str,
+    home: &str,
+    created: &super::PasswdEntry,
+    check_mode: bool,
+    remove_account: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<bool, String> {
+    match ensure_home(home, created.uid, created.gid, check_mode) {
+        Ok(changed) => Ok(changed),
+        Err(error) => match remove_account(name) {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!(
+                "{error}; the account {name} could not be taken back: {rollback}"
+            )),
+        },
+    }
+}
+
 /// The home directory opened through its parent: the walk opens the
 /// directories of the path without following a link, and the leaf is
 /// created or opened as itself — never resolved through a link a
