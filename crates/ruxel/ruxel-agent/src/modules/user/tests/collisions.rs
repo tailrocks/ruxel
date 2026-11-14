@@ -22,11 +22,11 @@ fn a_group_a_live_account_holds_as_its_primary_group_is_never_removed() {
     // much as in apply.
     let passwd = "alice:x:1001:1002::/home/alice:/bin/sh\n";
     assert_eq!(
-        super::super::guards::primary_group_holder_from(passwd, 1002),
+        super::super::guards::primary_group_holder_from(passwd, 1002, "staff"),
         Some("alice".to_string())
     );
     assert_eq!(
-        super::super::guards::primary_group_holder_from(passwd, 1003),
+        super::super::guards::primary_group_holder_from(passwd, 1003, "staff"),
         None
     );
     assert!(group_removal_allowed("staff", None, 1002, None).is_ok());
@@ -50,8 +50,10 @@ fn a_live_primary_group_is_refused_before_groupdel_runs() {
                 .then(|| f[0].to_string())
         })
         .find(|account| {
-            super::super::guards::primary_group_holder_from(&passwd, gid_of(&passwd, account))
-                .is_some()
+            let gid = gid_of(&passwd, account);
+            let group =
+                super::super::guards::group_name_of_gid_from(&groups, gid).unwrap_or_default();
+            super::super::guards::primary_group_holder_from(&passwd, gid, &group).is_some()
         })
         .expect("a live account with a primary group");
     let gid = gid_of(&passwd, &holder);
@@ -139,7 +141,12 @@ fn a_number_the_plan_freed_is_no_collision() {
             let gid = f.get(2)?.parse::<u64>().ok()?;
             (gid != 0
                 && !name.starts_with(['+', '#', '-'])
-                && super::super::guards::primary_group_holder_from(&passwd, gid).is_none())
+                && super::super::guards::primary_group_holder_from(
+                    &passwd,
+                    gid,
+                    &super::super::guards::group_name_of_gid_from(&groups, gid).unwrap_or_default(),
+                )
+                .is_none())
             .then_some((name, gid))
         })
         .expect("a live group no account holds as its primary group");
@@ -185,18 +192,18 @@ fn a_primary_group_holder_the_plan_removed_is_no_holder() {
     // apply performs.
     let passwd = "alice:x:1001:1002::/home/alice:/bin/sh\nbob:x:1003:1002::/home/bob:/bin/sh\n";
     assert_eq!(
-        super::super::guards::primary_group_holder_from(passwd, 1002),
+        super::super::guards::primary_group_holder_from(passwd, 1002, "staff"),
         Some("alice".to_string())
     );
     super::super::entries::note_removed_account("alice");
     assert_eq!(
-        super::super::guards::primary_group_holder_from(passwd, 1002),
+        super::super::guards::primary_group_holder_from(passwd, 1002, "staff"),
         Some("bob".to_string()),
         "the scan continues to any remaining holder"
     );
     super::super::entries::note_removed_account("bob");
     assert_eq!(
-        super::super::guards::primary_group_holder_from(passwd, 1002),
+        super::super::guards::primary_group_holder_from(passwd, 1002, "staff"),
         None
     );
     // The same through the group task on the live host: the plan
