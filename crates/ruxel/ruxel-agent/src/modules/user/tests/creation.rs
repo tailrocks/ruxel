@@ -162,20 +162,26 @@ fn the_uid_holder_is_the_account_that_carries_the_number() {
     // nothing.
     let passwd = "root:x:0:0:root:/root:/bin/sh\nalice:x:1001:1001::/home/alice:/bin/sh\nbob:x:1002:1002::/home/bob:/bin/sh\n";
     assert_eq!(
-        super::super::uid_holder_from(passwd, 1002, "alice"),
-        Some("bob".to_string())
+        super::super::uid_holders_from(passwd, 1002, "alice"),
+        vec!["bob".to_string()]
     );
-    assert_eq!(super::super::uid_holder_from(passwd, 1001, "alice"), None);
     assert_eq!(
-        super::super::uid_holder_from(passwd, 1001, "bob"),
-        Some("alice".to_string())
+        super::super::uid_holders_from(passwd, 1001, "alice"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        super::super::uid_holders_from(passwd, 1001, "bob"),
+        vec!["alice".to_string()]
     );
     let groups = "root:x:0:\nalice:x:1001:\nbob:x:1002:\n";
     assert_eq!(
-        super::super::gid_holder_from(groups, 1002, "alice"),
-        Some("bob".to_string())
+        super::super::gid_holders_from(groups, 1002, "alice"),
+        vec!["bob".to_string()]
     );
-    assert_eq!(super::super::gid_holder_from(groups, 1001, "alice"), None);
+    assert_eq!(
+        super::super::gid_holders_from(groups, 1001, "alice"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

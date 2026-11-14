@@ -1,6 +1,9 @@
 //! The host's account and group entries: the passwd and group content
 //! every account and group operation reads before it touches anything.
 
+use super::plan;
+pub(crate) use super::plan::Requested;
+
 #[derive(Default, Clone)]
 pub(super) struct PasswdEntry {
     pub(super) uid: u64,
@@ -50,32 +53,35 @@ pub(super) fn passwd_entry_from(passwd: &str, name: &str) -> Result<Option<Passw
     Ok(None)
 }
 
-/// The account that holds `uid` in the passwd content, apart from
+/// The accounts that hold `uid` in the passwd content, apart from
 /// `name` itself: the account's own number is no collision with
-/// itself. `useradd -u` and `usermod -u` refuse a number another
-/// account holds, so the request is checked against the live database
-/// before anything runs.
-pub(super) fn uid_holder_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
+/// itself. Every holder is returned, not just the first: a host with
+/// duplicate numbers has more than one, and the one the plan has not
+/// freed is the collision `useradd -u` and `usermod -u` refuse.
+pub(super) fn uid_holders_from(passwd: &str, uid: u64, name: &str) -> Vec<String> {
+    let mut holders = Vec::new();
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
         if f.len() >= 3 && f[2].parse::<u64>() == Ok(uid) && f.first() != Some(&name) {
-            return Some(f[0].to_string());
+            holders.push(f[0].to_string());
         }
     }
-    None
+    holders
 }
 
-/// The group that holds `gid` in the group content, apart from `name`
+/// The groups that hold `gid` in the group content, apart from `name`
 /// itself. `groupadd -g` and `groupmod -g` refuse a number another
-/// group holds.
-pub(super) fn gid_holder_from(groups: &str, gid: u64, name: &str) -> Option<String> {
+/// group holds — every holder is returned, for the same reason the
+/// account scan returns every holder.
+pub(super) fn gid_holders_from(groups: &str, gid: u64, name: &str) -> Vec<String> {
+    let mut holders = Vec::new();
     for line in groups.lines() {
         let f: Vec<&str> = line.split(':').collect();
         if f.len() >= 3 && f[2].parse::<u64>() == Ok(gid) && f.first() != Some(&name) {
-            return Some(f[0].to_string());
+            holders.push(f[0].to_string());
         }
     }
-    None
+    holders
 }
 
 pub(super) fn supplementary_groups(name: &str) -> Result<Vec<String>, String> {
@@ -101,160 +107,44 @@ pub(super) fn groups_need_update(current: &[String], want: &[String], append: bo
             && (current.len() != want.len() || want.iter().any(|group| !current.contains(group))))
 }
 
-/// What the plan's step requests for an identity it creates: the
-/// declared number, or presence without one (`useradd` allocates one).
-#[derive(Clone, Copy)]
-pub(crate) enum Requested {
-    Number(u32),
-    Unnumbered,
-}
-
-/// The identities a plan has declared present so far: the check-mode
-/// counterpart of the host's passwd and group databases — check mode
-/// runs nothing, so `planned_gid` and the file module's ownership
-/// resolution read what the plan's own earlier tasks would have
-/// created. The record carries the requested number where the step
-/// declared one; an identity no task provides is refused exactly as
-/// apply refuses it.
-mod planned {
-    use super::Requested;
-    use std::cell::RefCell;
-    use std::collections::BTreeMap;
-    use std::collections::BTreeSet;
-
-    thread_local! {
-        static GROUPS: RefCell<BTreeMap<String, Option<u32>>> = const { RefCell::new(BTreeMap::new()) };
-        static USERS: RefCell<BTreeMap<String, Option<u32>>> = const { RefCell::new(BTreeMap::new()) };
-        static REMOVED_ACCOUNTS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-        static REMOVED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-    }
-
-    pub(super) fn note(name: &str, requested: Option<u32>) {
-        GROUPS.with(|groups| {
-            let mut groups = groups.borrow_mut();
-            // A present step that states no number changes no number:
-            // an earlier step's explicit one stays the plan's effective
-            // id, what a later removal's declaration is verified
-            // against.
-            let requested = requested.or_else(|| groups.get(name).copied().flatten());
-            groups.insert(name.to_string(), requested);
-        });
-    }
-
-    pub(super) fn forget(name: &str) {
-        GROUPS.with(|groups| {
-            groups.borrow_mut().remove(name);
-        });
-    }
-
-    /// What the plan's group step requested; `None`: undeclared.
-    pub(super) fn group_requested(name: &str) -> Option<Requested> {
-        GROUPS.with(|groups| {
-            groups
-                .borrow()
-                .get(name)
-                .map(|r| r.map_or(Requested::Unnumbered, Requested::Number))
-        })
-    }
-
-    pub(super) fn note_user(name: &str, requested: Option<u32>) {
-        USERS.with(|users| {
-            let mut users = users.borrow_mut();
-            // The account counterpart: a present step without a uid
-            // renumbers nothing.
-            let requested = requested.or_else(|| users.get(name).copied().flatten());
-            users.insert(name.to_string(), requested);
-        });
-    }
-
-    pub(super) fn forget_user(name: &str) {
-        USERS.with(|users| {
-            users.borrow_mut().remove(name);
-        });
-    }
-
-    /// What the plan's account step requested; `None`: undeclared.
-    pub(super) fn user_requested(name: &str) -> Option<Requested> {
-        USERS.with(|users| {
-            users
-                .borrow()
-                .get(name)
-                .map(|r| r.map_or(Requested::Unnumbered, Requested::Number))
-        })
-    }
-
-    /// The plan's record of an account it has removed: the number the
-    /// account held is free for whatever the plan claims next, although
-    /// the host's database still lists it while check mode runs.
-    pub(super) fn note_removed_account(name: &str) {
-        REMOVED_ACCOUNTS.with(|accounts| {
-            accounts.borrow_mut().insert(name.to_string());
-        });
-    }
-
-    pub(super) fn account_removed(name: &str) -> bool {
-        REMOVED_ACCOUNTS.with(|accounts| accounts.borrow().contains(name))
-    }
-
-    /// The plan's record of a group it has removed: the number the
-    /// group held is free for whatever the plan claims next.
-    pub(super) fn note_removed_group(name: &str) {
-        REMOVED_GROUPS.with(|groups| {
-            groups.borrow_mut().insert(name.to_string());
-        });
-    }
-
-    pub(super) fn group_removed(name: &str) -> bool {
-        REMOVED_GROUPS.with(|groups| groups.borrow().contains(name))
-    }
-
-    /// Whether the plan's steps move the account off the number it
-    /// holds on the host: the record carries the requested number, and
-    /// one that differs from the live entry frees it — `usermod -u`
-    /// sets the new uid and the old one is the next `useradd -u`'s.
-    pub(super) fn user_renumbered(name: &str, uid: u64) -> bool {
-        matches!(user_requested(name), Some(Requested::Number(n)) if u64::from(n) != uid)
-    }
-
-    /// The group counterpart: `groupmod -g` frees the old gid the same
-    /// way.
-    pub(super) fn group_renumbered(name: &str, gid: u64) -> bool {
-        matches!(group_requested(name), Some(Requested::Number(n)) if u64::from(n) != gid)
-    }
-}
-
 /// The plan's record of a present group — or an account's private
 /// group — for whatever resolves the group next; carries the requested
 /// gid where the step declared one.
 pub(super) fn note_planned_group(name: &str, requested: Option<u32>) {
-    planned::note(name, requested);
+    plan::note(name, requested);
 }
 
 /// What the plan's group step requested; `None`: undeclared.
 pub(crate) fn planned_group(name: &str) -> Option<Requested> {
-    planned::group_requested(name)
+    plan::group_requested(name)
 }
 
 /// The plan's record of a present account: what the file module's
 /// ownership resolves against in check mode, which runs no `useradd`.
 /// It carries the requested uid where the step declared one.
 pub(super) fn note_planned_user(name: &str, requested: Option<u32>) {
-    planned::note_user(name, requested);
+    plan::note_user(name, requested);
 }
 
 /// The record's counterpart when the plan removes the account.
 pub(super) fn forget_planned_user(name: &str) {
-    planned::forget_user(name);
+    plan::forget_user(name);
 }
 
 /// What the plan's account step requested; `None`: undeclared.
 pub(crate) fn planned_user(name: &str) -> Option<Requested> {
-    planned::user_requested(name)
+    plan::user_requested(name)
+}
+
+/// The number the plan has given the account: the number a task of the
+/// plan declared, `None` where no task declared one.
+pub(super) fn planned_uid(name: &str) -> Option<u64> {
+    plan::uid(name)
 }
 
 /// The record's counterpart when the plan removes the group.
 pub(super) fn forget_planned_group(name: &str) {
-    planned::forget(name);
+    plan::forget(name);
 }
 
 /// The plan's record of the account it has removed: the number the
@@ -262,25 +152,25 @@ pub(super) fn forget_planned_group(name: &str) {
 /// runs no `userdel`, so the host's database still lists the account
 /// while the plan knows it is gone.
 pub(super) fn note_removed_account(name: &str) {
-    planned::note_removed_account(name);
+    plan::note_removed_account(name);
 }
 
 /// Whether the plan has removed the account: a holder the plan took
 /// away holds no number, so it is no collision.
 pub(super) fn account_removed(name: &str) -> bool {
-    planned::account_removed(name)
+    plan::account_removed(name)
 }
 
 /// The plan's record of the group it has removed: the number the group
 /// held is free for whatever the plan claims next.
 pub(super) fn note_removed_group(name: &str) {
-    planned::note_removed_group(name);
+    plan::note_removed_group(name);
 }
 
 /// Whether the plan has removed the group: a holder the plan took away
 /// holds no number, so it is no collision.
 pub(super) fn group_removed(name: &str) -> bool {
-    planned::group_removed(name)
+    plan::group_removed(name)
 }
 
 /// Whether the plan's own earlier steps free the number the account
@@ -289,11 +179,11 @@ pub(super) fn group_removed(name: &str) -> bool {
 /// and `usermod -u` refuse a number another account holds, and this
 /// one holds it no longer.
 pub(crate) fn account_freed(name: &str, uid: u64) -> bool {
-    planned::account_removed(name) || planned::user_renumbered(name, uid)
+    plan::account_removed(name) || plan::user_renumbered(name, uid)
 }
 
 /// The group counterpart: a removed or renumbered group holds no
 /// number.
 pub(crate) fn group_freed(name: &str, gid: u64) -> bool {
-    planned::group_removed(name) || planned::group_renumbered(name, gid)
+    plan::group_removed(name) || plan::group_renumbered(name, gid)
 }

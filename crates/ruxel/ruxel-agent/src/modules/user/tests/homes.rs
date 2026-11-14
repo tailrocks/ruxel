@@ -324,3 +324,54 @@ fn a_home_lookup_error_beyond_not_found_is_refused_before_the_account_changes() 
     std::fs::remove_file(&file).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
+
+#[test]
+fn a_failed_home_reconciliation_takes_the_created_account_back() {
+    // `useradd` has already put the account in the passwd database
+    // when the home's reconciliation runs, and the reconciliation can
+    // fail — an immutable directory, a directory on a read-only
+    // mount. The account the step created must be taken back then: a
+    // task that fails with the account left behind leaves the host's
+    // account database in a state the workflow never asked for.
+    let file = std::env::temp_dir().join(format!("ruxel-not-a-directory-{}", std::process::id()));
+    std::fs::write(&file, b"not a directory").unwrap();
+    let home = file.join("home");
+    let taken = std::cell::RefCell::new(Vec::new());
+    let error = super::super::reconcile_created_home(
+        "ruxel-created-account",
+        home.to_str().unwrap(),
+        &super::super::PasswdEntry {
+            uid: 1001,
+            gid: 1001,
+            ..Default::default()
+        },
+        false,
+        &|account| {
+            taken.borrow_mut().push(account.to_string());
+            Ok(())
+        },
+    )
+    .expect_err("the reconciliation must fail");
+    assert!(error.contains("not a directory"), "{error}");
+    assert_eq!(
+        taken.borrow().clone(),
+        vec!["ruxel-created-account".to_string()],
+        "the account the step created must be taken back"
+    );
+    // A removal that fails itself is reported: the host keeps the
+    // account, and the task says so.
+    let error = super::super::reconcile_created_home(
+        "ruxel-created-account",
+        home.to_str().unwrap(),
+        &super::super::PasswdEntry {
+            uid: 1001,
+            gid: 1001,
+            ..Default::default()
+        },
+        false,
+        &|_| Err("exec userdel: no such file or directory".to_string()),
+    )
+    .expect_err("the reconciliation must fail");
+    assert!(error.contains("could not be taken back"), "{error}");
+    std::fs::remove_file(&file).unwrap();
+}

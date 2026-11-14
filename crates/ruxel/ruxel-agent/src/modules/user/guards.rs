@@ -101,20 +101,43 @@ pub(super) fn group_removal_allowed(
 /// account the plan has already removed holds no group: check mode
 /// runs no `userdel`, so the passwd file still lists the account while
 /// the apply has already taken it away — the scan skips it and keeps
-/// looking for a remaining holder.
-pub(super) fn primary_group_holder(gid: u64) -> Result<Option<String>, String> {
+/// looking for a remaining holder. An account the plan gives another
+/// primary group holds this one no longer: the apply moves the
+/// account first (`usermod -g`), and the scan follows the plan's own
+/// record rather than the unchanged passwd file.
+pub(super) fn primary_group_holder(gid: u64, group: &str) -> Result<Option<String>, String> {
     let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    Ok(primary_group_holder_from(&passwd, gid))
+    Ok(primary_group_holder_from(&passwd, gid, group))
 }
 
 /// The passwd counterpart of [`primary_group_holder`], over canned
-/// content. The accounts the plan has removed are no holders, so the
-/// scan skips them and keeps looking for one that remains.
-pub(super) fn primary_group_holder_from(passwd: &str, gid: u64) -> Option<String> {
+/// content. The accounts the plan has removed are no holders, and the
+/// accounts the plan gives another primary group hold this one no
+/// longer: the scan reads the plan's own record, so it skips the
+/// accounts the plan moved away and finds the ones the plan moved
+/// onto the group — the host's database still shows the old numbers
+/// while check mode runs.
+pub(super) fn primary_group_holder_from(passwd: &str, gid: u64, group: &str) -> Option<String> {
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
-        if f.len() >= 4 && f[3].parse::<u64>() == Ok(gid) && !super::entries::account_removed(f[0])
-        {
+        if f.len() < 4 || super::entries::account_removed(f[0]) {
+            continue;
+        }
+        // The account's primary group under the plan: the plan's own
+        // record where a task of the plan gave the account one, and
+        // the live entry otherwise.
+        let primary = if let Some(planned) = super::plan::primary(f[0]) {
+            planned
+        } else {
+            let Ok(live) = f[3].parse::<u64>() else {
+                continue;
+            };
+            super::plan::PlannedPrimary {
+                name: group.to_string(),
+                gid: Some(live),
+            }
+        };
+        if primary.holds(gid, group) {
             return Some(f[0].to_string());
         }
     }
@@ -134,9 +157,13 @@ pub(super) fn uid_holder_in_use(uid: u64, name: &str) -> Result<Option<String>, 
 }
 
 /// The passwd counterpart of [`uid_holder_in_use`], over canned content.
+/// Every account that carries the number is scanned: a host with
+/// duplicate numbers has more than one, and the one the plan has not
+/// freed is the collision the request runs into.
 pub(super) fn uid_holder_in_use_from(passwd: &str, uid: u64, name: &str) -> Option<String> {
-    super::entries::uid_holder_from(passwd, uid, name)
-        .filter(|account| !super::entries::account_freed(account, uid))
+    super::entries::uid_holders_from(passwd, uid, name)
+        .into_iter()
+        .find(|account| !super::entries::account_freed(account, uid))
 }
 
 /// The group that holds `gid` on the host and that the plan has not
@@ -149,9 +176,12 @@ pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, 
 }
 
 /// The group counterpart of [`uid_holder_in_use`], over canned content.
+/// Every group that carries the number is scanned, for the same reason
+/// the account scan scans every holder.
 pub(super) fn gid_holder_in_use_from(groups: &str, gid: u64, name: &str) -> Option<String> {
-    super::entries::gid_holder_from(groups, gid, name)
-        .filter(|group| !super::entries::group_freed(group, gid))
+    super::entries::gid_holders_from(groups, gid, name)
+        .into_iter()
+        .find(|group| !super::entries::group_freed(group, gid))
 }
 
 /// Whether the plan provides the named group: the host's group database
