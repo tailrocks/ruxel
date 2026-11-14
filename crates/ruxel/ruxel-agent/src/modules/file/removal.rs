@@ -12,7 +12,7 @@ use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 /// Takes the path away: a removal without `recurse` takes an empty
 /// directory only, with it the tree goes with the directory. Reports
@@ -22,7 +22,7 @@ use std::path::{Component, Path, PathBuf};
 /// ones the run itself makes, so both answer the same.
 pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<bool, String> {
     // A removal never takes a system root, however the path reaches it.
-    refuse_system_root(path)?;
+    super::floor::refuse_system_root(path)?;
     // A removal walks no dot segments: `..` would name a directory the
     // path never mentioned.
     if path
@@ -43,7 +43,7 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
     // A bind mount aliases the directory it is mounted from: the
     // directory that holds the target has a system root's own identity,
     // and the path says nothing about it.
-    refuse_bound_root(&parent, path, &SYSTEM_ROOTS)?;
+    refuse_bound_root(&parent, path, &super::floor::SYSTEM_ROOTS)?;
     let meta = match statat(&parent, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW) {
         Ok(meta) => meta,
         Err(rustix::io::Errno::NOENT) => {
@@ -77,7 +77,7 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
             // A removal without `recurse` takes an empty directory only,
             // and check mode gives the same answer the run itself gives,
             // so a plan never promises a removal that cannot happen.
-            return Err(directory_not_empty());
+            return Err(super::floor::directory_not_empty());
         }
         if !check_mode {
             unlinkat(&parent, name.as_c_str(), AtFlags::REMOVEDIR)
@@ -86,7 +86,7 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
         return Ok(true);
     }
     if !check_mode {
-        remove_tree(&child)?;
+        remove_tree(&child, path)?;
         unlinkat(&parent, name.as_c_str(), AtFlags::REMOVEDIR)
             .map_err(|error| format!("file: cannot remove {}: {error}", path.display()))?;
     }
@@ -153,7 +153,8 @@ fn names_the_same(one: &Path, other: &Path) -> bool {
 /// Removes the tree under the pinned directory, and the directory itself
 /// is left to the caller: every entry is taken away through the
 /// descriptor, so a name that is replaced in between is never followed.
-fn remove_tree(dir: &OwnedFd) -> Result<(), String> {
+fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
+    let held = fstat(dir).map_err(|error| error.to_string())?;
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -163,6 +164,15 @@ fn remove_tree(dir: &OwnedFd) -> Result<(), String> {
         }
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
+        if super::floor::is_mount_point(held.st_dev, meta.st_dev) {
+            // The entry is on another device: it is a mount point, and
+            // the tree below it belongs to somewhere else.
+            return Err(format!(
+                "file: refusing to remove {}: it holds the mount point {}",
+                path.display(),
+                name.to_string_lossy()
+            ));
+        }
         if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
             let child = openat(
                 dir,
@@ -171,7 +181,7 @@ fn remove_tree(dir: &OwnedFd) -> Result<(), String> {
                 Mode::empty(),
             )
             .map_err(|error| error.to_string())?;
-            remove_tree(&child)?;
+            remove_tree(&child, path)?;
             unlinkat(dir, name, AtFlags::REMOVEDIR).map_err(|error| error.to_string())?;
         } else {
             unlinkat(dir, name, AtFlags::empty()).map_err(|error| error.to_string())?;
@@ -232,7 +242,7 @@ pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), OpenError> 
         // it points at a directory of the same name, so a link that
         // points somewhere else (`/scratch` -> `/`) is refused.
         let flags = if index == 0 {
-            if is_alias(&current, part) {
+            if super::floor::is_alias(&current, part) {
                 directory_flags()
             } else {
                 directory_flags() | OFlags::NOFOLLOW
@@ -250,134 +260,6 @@ pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), OpenError> 
     Ok((current, name))
 }
 
-/// The flags a directory is opened with.
-fn directory_flags() -> OFlags {
-    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC
-}
-
-/// The roots a removal never takes: the filesystem root and the
-/// directories the system itself lives in.
-const SYSTEM_ROOTS: [&str; 10] = [
-    "/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys",
-];
-
-/// A removal never takes a system root, however the path reaches it.
-///
-/// The plan holds a removal against the same floor, but the plan reads the
-/// path as it is written: a symlinked ancestor (`/tmp/root` -> `/`) carries
-/// the removal of `/tmp/root/etc` into the real `/etc`. The ancestors of
-/// the path are therefore resolved, and where they land is held against
-/// the floor. The last component keeps the name it was given: a symlink
-/// that points at a system root is a link, and taking a link takes
-/// nothing.
-pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
-    let written = written_path(path);
-    if SYSTEM_ROOTS.contains(&written.as_str()) {
-        return Err(format!(
-            "file: refusing to remove {written}: a removal never takes a system root"
-        ));
-    }
-    // The system's own layout (`/var` -> `/private/var`, `/bin` ->
-    // `/usr/bin`) is a first component and is not a crossing.
-    if !crosses_symlink(path) {
-        return Ok(());
-    }
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    let written_parent = parent.to_string_lossy().to_string();
-    let Ok(resolved) = std::fs::canonicalize(parent) else {
-        return Ok(());
-    };
-    let resolved = resolved.to_string_lossy().to_string();
-    if resolved == "/" {
-        return Err(format!(
-            "file: refusing to remove {written}: it reaches the filesystem root"
-        ));
-    }
-    for root in SYSTEM_ROOTS {
-        // A root is held by the name it was written under and by the name
-        // it resolves to: `/var` and `/private/var` are one root.
-        let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| PathBuf::from(root));
-        let canonical = canonical.to_string_lossy().to_string();
-        let roots = [root.to_string(), canonical];
-        let reached = roots.iter().any(|root| inside(&resolved, root));
-        if !reached {
-            continue;
-        }
-        // The path was already inside the root as it was written: the
-        // resolution did not take it there.
-        let already = roots.iter().any(|root| inside(&written_parent, root));
-        if already {
-            continue;
-        }
-        return Err(format!(
-            "file: refusing to remove {written}: it reaches {resolved}, inside the system root {root}"
-        ));
-    }
-    Ok(())
-}
-
-/// Whether a path is a root or lies inside it.
-fn inside(path: &str, root: &str) -> bool {
-    path == root || path.starts_with(&format!("{root}/"))
-}
-
-/// The path as it was written, without a trailing separator.
-fn written_path(path: &Path) -> String {
-    let written = path.to_string_lossy().to_string();
-    let trimmed = written.trim_end_matches('/');
-    if trimmed.is_empty() {
-        "/".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// Whether the path crosses a symlink below its first component.
-fn crosses_symlink(path: &Path) -> bool {
-    let mut current = PathBuf::new();
-    let mut first = true;
-    for component in path.components() {
-        match component {
-            Component::RootDir => current.push("/"),
-            Component::CurDir | Component::Prefix(_) => {}
-            Component::ParentDir => {
-                current.push("..");
-                first = false;
-            }
-            Component::Normal(name) => {
-                current.push(name);
-                if !first && is_symlink(&current) {
-                    return true;
-                }
-                first = false;
-            }
-        }
-    }
-    false
-}
-
-/// Whether a name is the system's own alias for a directory of the same
-/// name: the link points at a directory whose own name is the name of the
-/// link (`/var` -> `/private/var`, `/bin` -> `/usr/bin`).
-pub(super) fn is_alias(dir: &impl std::os::fd::AsFd, name: &std::ffi::OsStr) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    let Ok(target) = rustix::fs::readlinkat(dir, name, Vec::new()) else {
-        return false;
-    };
-    let target = Path::new(std::ffi::OsStr::from_bytes(target.as_bytes()));
-    match target.file_name() {
-        Some(last) => last == name,
-        None => false,
-    }
-}
-
-/// Whether a path is a symlink.
-fn is_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
-}
-
 /// Whether a directory holds no entry.
 fn directory_is_empty(dir: &OwnedFd) -> Result<bool, String> {
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
@@ -391,8 +273,7 @@ fn directory_is_empty(dir: &OwnedFd) -> Result<bool, String> {
     Ok(true)
 }
 
-/// The error a removal of a nonempty directory gives: the message the run
-/// itself produces, so check mode and the run agree.
-fn directory_not_empty() -> String {
-    std::io::Error::from_raw_os_error(rustix::io::Errno::NOTEMPTY.raw_os_error()).to_string()
+/// The flags a directory is opened with.
+fn directory_flags() -> OFlags {
+    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC
 }

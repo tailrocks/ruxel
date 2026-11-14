@@ -264,15 +264,23 @@ fn a_first_component_is_followed_only_when_it_is_the_system_s_own_alias() {
     // The system's own alias points at a directory of the same name.
     std::os::unix::fs::symlink(private.join("var"), base.join("var")).unwrap();
     let held = std::fs::File::open(&base).unwrap();
-    assert!(super::super::removal::is_alias(
+    assert!(super::super::floor::is_alias(
         &held,
         std::ffi::OsStr::new("var")
     ));
     // A link that points somewhere else is not an alias.
     std::os::unix::fs::symlink("/", base.join("scratch")).unwrap();
-    assert!(!super::super::removal::is_alias(
+    assert!(!super::super::floor::is_alias(
         &held,
         std::ffi::OsStr::new("scratch")
     ));
     std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_mount_point_in_a_tree_is_not_crossed() {
+    // An entry of another device is a mount point, and the tree below it
+    // belongs to somewhere else: the removal does not descend into it.
+    assert!(super::super::floor::is_mount_point(1, 2));
+    assert!(!super::super::floor::is_mount_point(1, 1));
 }
