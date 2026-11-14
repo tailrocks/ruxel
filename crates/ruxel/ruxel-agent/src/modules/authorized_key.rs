@@ -4,23 +4,28 @@
 )]
 
 use super::{ExecContext, params_object, str_param};
+use publish::{publish_checked, read_authorized_keys_with_identity};
+
 use rustix::fs::{
     AtFlags, FlockOperation, Mode, OFlags, fchmod, fchown, flock, fstat, mkdirat, open, openat,
-    renameat, statat, unlinkat,
+    statat, unlinkat,
 };
 use serde_json::{Value, json};
 use std::fs::File;
-use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+#[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
+
+mod publish;
+mod remove;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let user = str_param(obj, "user").ok_or("authorized_key: user required")?;
     let key = str_param(obj, "key").ok_or("authorized_key: key required")?;
     let state = str_param(obj, "state").unwrap_or("present");
-    if state != "present" {
+    if state != "present" && state != "absent" {
         return Err(format!(
             "authorized_key: state {state:?} outside the closed surface"
         ));
@@ -28,12 +33,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
     let home = home_of(user)?;
     let (uid, gid) = ids_of(user)?;
-    let changed = update(Path::new(&home), uid, gid, key, ctx.check_mode)?;
+    let changed = if state == "absent" {
+        remove::remove_key(Path::new(&home), uid, gid, key, ctx.check_mode)?
+    } else {
+        update(Path::new(&home), uid, gid, key, ctx.check_mode)?
+    };
     Ok(json!({"changed": changed, "failed": false, "user": user}))
 }
 
 fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Result<bool, String> {
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
+    let want_material = (want_material.0.into_bytes(), want_material.1.into_bytes());
     let home = File::from(open(home, dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
     // Lock before inspecting .ssh so concurrent first-time creation is serialized too.
     flock(&home, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
@@ -42,28 +52,29 @@ fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Resul
         flock(dir, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
         ensure_attached(&home, dir)?;
     }
-    let current = match &ssh {
-        Some(dir) => read_authorized_keys(dir)?,
-        None => String::new(),
+    let (current, identity) = match &ssh {
+        Some(dir) => read_authorized_keys_with_identity(dir)?,
+        None => (Vec::new(), None),
     };
-    let present = current
-        .lines()
-        .filter_map(key_material)
-        .any(|m| m == want_material);
+    let present = split_lines(&current)
+        .into_iter()
+        .filter_map(key_material_bytes)
+        .any(|material| material == want_material);
     let changed = !present;
     if changed && !check_mode {
         let mut next = current;
-        if !next.is_empty() && !next.ends_with('\n') {
-            next.push('\n');
+        if !next.is_empty() && !next.ends_with(b"\n") {
+            next.push(b'\n');
         }
-        next.push_str(key.trim_end());
-        next.push('\n');
+        next.extend_from_slice(key.trim_end().as_bytes());
+        next.push(b'\n');
         ensure_attached(&home, ssh.as_ref().ok_or("authorized_key: missing .ssh")?)?;
-        publish(
+        publish_checked(
             ssh.as_ref().ok_or("authorized_key: missing .ssh")?,
-            next.as_bytes(),
+            &next,
             uid,
             gid,
+            identity,
         )?;
     }
 
@@ -71,6 +82,11 @@ fn update(home: &Path, uid: u32, gid: u32, key: &str, check_mode: bool) -> Resul
         ensure_attached(&home, dir)?;
     }
     Ok(changed)
+}
+
+#[cfg(test)]
+fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String> {
+    publish::publish(dir, content, uid, gid)
 }
 
 fn dir_flags() -> OFlags {
@@ -133,98 +149,171 @@ fn ensure_attached(home: &File, dir: &File) -> Result<(), String> {
     Ok(())
 }
 
-fn read_authorized_keys(dir: &File) -> Result<String, String> {
-    let fd = match openat(
-        dir,
-        "authorized_keys",
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-        Mode::empty(),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => return Ok(String::new()),
-        Err(e) => return Err(format!("authorized_key: cannot open authorized_keys: {e}")),
-    };
-    let mut file = File::from(fd);
-    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-        return Err("authorized_key: authorized_keys is not a file".into());
-    }
-    let mut content = String::new();
-    file.read_to_string(&mut content)
-        .map_err(|e| format!("authorized_key: cannot read authorized_keys: {e}"))?;
-    Ok(content)
+#[cfg(test)]
+fn read_authorized_keys(dir: &File) -> Result<Vec<u8>, String> {
+    read_authorized_keys_with_identity(dir).map(|(content, _)| content)
 }
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-fn publish(dir: &File, content: &[u8], uid: u32, gid: u32) -> Result<(), String> {
-    // A private directory protects the staging name from substitution by the
-    // owner of .ssh while the descriptor pins the destination directory.
-    for _ in 0..128 {
-        let name = format!(
-            ".ruxel-key-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        match mkdirat(dir, name.as_str(), Mode::from_raw_mode(0o700)) {
-            Err(rustix::io::Errno::EXIST) => continue,
-            Err(e) => return Err(e.to_string()),
-            Ok(()) => {}
+/// The lines of the file, each with the terminator it had: a retained
+/// line is written back byte for byte, and a file without a final newline
+/// stays without one.
+fn split_lines(content: &[u8]) -> Vec<&[u8]> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for (index, byte) in content.iter().enumerate() {
+        if *byte == b'\n' {
+            lines.push(&content[start..=index]);
+            start = index + 1;
         }
-        let result = (|| {
-            let stage = File::from(
-                openat(dir, name.as_str(), dir_flags(), Mode::empty())
-                    .map_err(|e| e.to_string())?,
-            );
-            let result = (|| {
-                let mut file = File::from(
-                    openat(
-                        &stage,
-                        "key",
-                        OFlags::WRONLY
-                            | OFlags::CREATE
-                            | OFlags::EXCL
-                            | OFlags::NOFOLLOW
-                            | OFlags::CLOEXEC,
-                        Mode::from_raw_mode(0o600),
-                    )
-                    .map_err(|e| e.to_string())?,
-                );
-                let sm = stage.metadata().map_err(|e| e.to_string())?;
-                let fm = file.metadata().map_err(|e| e.to_string())?;
-                if sm.uid() != fm.uid() || sm.mode() & 0o777 != 0o700 {
-                    return Err("authorized_key: unsafe staging directory".into());
-                }
-                fchown(
-                    &file,
-                    Some(rustix::fs::Uid::from_raw(uid)),
-                    Some(rustix::fs::Gid::from_raw(gid)),
-                )
-                .map_err(|e| e.to_string())?;
-                fchmod(&file, Mode::from_raw_mode(0o600)).map_err(|e| e.to_string())?;
-                file.write_all(content).map_err(|e| e.to_string())?;
-                file.sync_all().map_err(|e| e.to_string())?;
-                renameat(&stage, "key", dir, "authorized_keys").map_err(|e| e.to_string())?;
-                Ok(())
-            })();
-            let _ = unlinkat(&stage, "key", AtFlags::empty());
-            result
-        })();
-        let _ = unlinkat(dir, name.as_str(), AtFlags::REMOVEDIR);
-        return result;
     }
-    Err("authorized_key: cannot reserve staging directory".into())
+    if start < content.len() {
+        lines.push(&content[start..]);
+    }
+    lines
 }
 
-fn key_material(line: &str) -> Option<(String, String)> {
-    let mut parts = line.split_whitespace();
-    let first = parts.next()?;
-    let (ktype, material) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
-        (first, parts.next()?)
-    } else {
-        let t = parts.next()?;
-        (t, parts.next()?)
+/// The key type and the material of a line, read as bytes: a comment may
+/// hold bytes that are not text, and sshd ignores the comment anyway.
+fn key_material_bytes(line: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let text = match line.iter().position(|byte| !byte.is_ascii_whitespace()) {
+        Some(start) => &line[start..],
+        None => &[],
     };
-    Some((ktype.to_string(), material.to_string()))
+    if text.is_empty() || text.starts_with(b"#") {
+        // sshd ignores a blank line and a comment: neither carries a key.
+        return None;
+    }
+    let fields = key_fields_bytes(text);
+    for (index, field) in fields.iter().enumerate() {
+        if !is_key_type_bytes(field) {
+            continue;
+        }
+        let Some(material) = fields.get(index + 1) else {
+            continue;
+        };
+        return Some((field.clone(), material.clone()));
+    }
+    None
+}
+
+/// The fields of a line of `authorized_keys`, as bytes: a quoted value
+/// stays in one field, and a value that is not text does not end the line.
+fn key_fields_bytes(line: &[u8]) -> Vec<Vec<u8>> {
+    let mut fields = Vec::new();
+    let mut field = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut started = false;
+    for byte in line {
+        if escaped {
+            field.push(*byte);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            byte if byte.is_ascii_whitespace() && !quoted => {
+                if started {
+                    fields.push(std::mem::take(&mut field));
+                    started = false;
+                }
+            }
+            byte => {
+                field.push(*byte);
+                started = true;
+            }
+        }
+    }
+    if started {
+        fields.push(field);
+    }
+    fields
+}
+
+/// Whether a field names a key type.
+fn is_key_type_bytes(field: &[u8]) -> bool {
+    const TYPES: [&[u8]; 4] = [b"ssh-", b"ecdsa-", b"sk-", b"xmss-"];
+    TYPES.iter().any(|prefix| field.starts_with(prefix))
+}
+
+/// The key type and the material of a line of `authorized_keys`.
+///
+/// A line may carry options before the key, and an option's value may be
+/// quoted and hold spaces (`command="echo hi"`), so the line is split into
+/// fields that keep a quoted value whole. The key type is the first field
+/// that names one, and the material is the field after it.
+fn key_material(line: &str) -> Option<(String, String)> {
+    let text = line.trim_start();
+    if text.is_empty() || text.starts_with('#') {
+        // sshd ignores a blank line and a comment: neither carries a key.
+        return None;
+    }
+    let fields = key_fields(text);
+    for (index, field) in fields.iter().enumerate() {
+        if !is_key_type(field) {
+            continue;
+        }
+        let Some(material) = fields.get(index + 1) else {
+            continue;
+        };
+        return Some((field.clone(), material.clone()));
+    }
+    None
+}
+
+/// The fields of a line of `authorized_keys`: a quoted value stays in one
+/// field and loses its quotes.
+fn key_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut started = false;
+    for character in line.chars() {
+        if escaped {
+            field.push(character);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match character {
+            '\\' if quoted => escaped = true,
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            character if character.is_whitespace() && !quoted => {
+                if started {
+                    fields.push(std::mem::take(&mut field));
+                    started = false;
+                }
+            }
+            character => {
+                field.push(character);
+                started = true;
+            }
+        }
+    }
+    if started {
+        fields.push(field);
+    }
+    fields
+}
+
+/// Whether a field names a key type.
+fn is_key_type(field: &str) -> bool {
+    // The names of the key types the format lists. `rsa-sha2-256` and
+    // `rsa-sha2-512` are signature algorithms, not key types: a key of
+    // that name is not a key at all.
+    field.starts_with("ssh-")
+        || field.starts_with("ecdsa-")
+        || field.starts_with("sk-")
+        || field.starts_with("xmss")
 }
 
 fn home_of(user: &str) -> Result<String, String> {
@@ -253,143 +342,4 @@ fn ids_of(user: &str) -> Result<(u32, u32), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::fs::{PermissionsExt, symlink};
-
-    #[test]
-    fn material_ignores_comment() {
-        assert_eq!(
-            key_material("ssh-ed25519 AAAAC3Nza host-a"),
-            key_material("ssh-ed25519 AAAAC3Nza other")
-        );
-        assert_eq!(
-            key_material("from=\"10.0.0.1\" ssh-ed25519 AAAAC3Nza comment").unwrap(),
-            ("ssh-ed25519".into(), "AAAAC3Nza".into())
-        );
-    }
-
-    #[test]
-    fn refuses_symlinks_and_invalid_content() {
-        let root = scratch("refuse");
-        let meta = std::fs::metadata(&root).unwrap();
-        let home = File::open(&root).unwrap();
-        let victim = root.join("victim");
-        std::fs::write(&victim, "untouched").unwrap();
-        symlink(&victim, root.join(".ssh")).unwrap();
-        assert!(open_ssh(&home, meta.uid(), meta.gid(), true).is_err());
-        std::fs::remove_file(root.join(".ssh")).unwrap();
-        std::fs::create_dir(root.join(".ssh")).unwrap();
-        let ssh = open_ssh(&home, meta.uid(), meta.gid(), false)
-            .unwrap()
-            .unwrap();
-        symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
-        assert!(read_authorized_keys(&ssh).is_err());
-        std::fs::remove_file(root.join(".ssh/authorized_keys")).unwrap();
-        std::fs::write(root.join(".ssh/authorized_keys"), [0xff]).unwrap();
-        assert!(read_authorized_keys(&ssh).is_err());
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "untouched");
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn directory_swap_cannot_redirect_write() {
-        let root = scratch("swap");
-        let meta = std::fs::metadata(&root).unwrap();
-        let home = File::open(&root).unwrap();
-        let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
-            .unwrap()
-            .unwrap();
-        std::fs::rename(root.join(".ssh"), root.join("original")).unwrap();
-        let victim = root.join("victim");
-        std::fs::create_dir(&victim).unwrap();
-        std::fs::write(victim.join("authorized_keys"), "untouched").unwrap();
-        symlink(&victim, root.join(".ssh")).unwrap();
-        assert!(ensure_attached(&home, &ssh).is_err());
-        publish(&ssh, b"new key\n", meta.uid(), meta.gid()).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(victim.join("authorized_keys")).unwrap(),
-            "untouched"
-        );
-        assert_eq!(
-            std::fs::read_to_string(root.join("original/authorized_keys")).unwrap(),
-            "new key\n"
-        );
-        assert_eq!(
-            std::fs::metadata(root.join("original/authorized_keys"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn file_swap_cannot_write_through_symlink() {
-        let root = scratch("file-swap");
-        let meta = std::fs::metadata(&root).unwrap();
-        let home = File::open(&root).unwrap();
-        let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
-            .unwrap()
-            .unwrap();
-        assert_eq!(read_authorized_keys(&ssh).unwrap(), "");
-        let victim = root.join("victim");
-        std::fs::write(&victim, "untouched").unwrap();
-        symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
-        publish(&ssh, b"key\n", meta.uid(), meta.gid()).unwrap();
-        assert_eq!(std::fs::read_to_string(victim).unwrap(), "untouched");
-        assert_eq!(
-            std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap(),
-            "key\n"
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn concurrent_updates_preserve_both_keys() {
-        let root = scratch("concurrent");
-
-        let meta = std::fs::metadata(&root).unwrap();
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let threads: Vec<_> = ["ssh-ed25519 FIRST first", "ssh-ed25519 SECOND second"]
-            .into_iter()
-            .map(|key| {
-                let root = root.clone();
-                let barrier = barrier.clone();
-                let meta = meta.clone();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    assert!(update(&root, meta.uid(), meta.gid(), key, false).unwrap());
-                })
-            })
-            .collect();
-        for thread in threads {
-            thread.join().unwrap();
-        }
-        let keys = std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap();
-        assert!(
-            keys.contains("ssh-ed25519 FIRST first\n")
-                && keys.contains("ssh-ed25519 SECOND second\n")
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    // The per-process counter keeps two tests that pick the same label from
-    // sharing one directory: `ruxel-file-swap-<pid>` is also a `file` test's
-    // scratch base, and a shared path made each test's `remove_dir_all` race
-    // the other's writes.
-    static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
-
-    fn scratch(label: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "ruxel-{label}-{}-{}",
-            std::process::id(),
-            NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir(&path).unwrap();
-        path
-    }
-}
+mod tests;

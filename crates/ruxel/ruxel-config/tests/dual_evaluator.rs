@@ -47,6 +47,10 @@ fn root() -> PathBuf {
 /// its own wording.
 ///
 /// The user step that lowers to the engine's user operation is here too.
+///
+/// The absent forms are here too: two removals of one path must agree on
+/// the recursion, the same rule for IPv4 and IPv6 is two rules of two
+/// separate rule sets, and a chain policy takes no state.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -141,6 +145,9 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
     "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
+    "invalid/absent-recursive-mismatch.pkl",
+    "valid/iptables-parallel-versions.pkl",
+    "invalid/engine-iptables-policy-state.pkl",
 ];
 
 /// The official `pkl` binary.

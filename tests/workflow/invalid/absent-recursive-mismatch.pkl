@@ -1,0 +1,12 @@
+// expect: with different recursion
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+// Two removals of one path are one removal, and the recursion is how deep
+// it goes: a removal that takes a directory with everything in it and one
+// that takes the directory alone are different removals, so the two
+// declarations must agree.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Absent { path = "/var/tmp/old-cache" }
+  new Absent { path = "/var/tmp/old-cache"; recursive = true }
+} } }

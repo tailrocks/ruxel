@@ -1,0 +1,11 @@
+// expect-pkl: icmpv6
+// expect-pklr: icmpv6
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The protocol of an iptables rule is a closed set: "gre" is not one of
+// them.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "gre"; jump = "DROP" }
+} } }

@@ -86,6 +86,8 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["timezone"] = (s) -> s is linux.Timezone
   ["loginShell"] = (s) -> s is linux.User
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
+  ["absent"] = (s) -> s is core.Absent
+  ["iptablesRule"] = (s) -> s is linux.IptablesRule
 }
 
 /// Whether the step's class is the served class of its kind, or a subclass
@@ -353,10 +355,17 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 /// The kept step of a merge. Two preferences that share the identity —
 /// the package plus the pin (BB §3.7) — are one step, but their priorities
 /// must then agree: the priority is not part of the identity, so a mismatch
-/// would silently collapse the two stanzas into one and drop a priority.
+/// would silently collapse the two stanzas into one and drop a priority. Two
+/// removals of one path are one removal for the same reason: the recursion
+/// is how deep the removal goes, not which path it takes away, so a mismatch
+/// would silently collapse the two removals into one and keep the shallower
+/// one — and that removal fails on the directory the author asked to take
+/// with everything in it.
 function sameStanza(q: Placed, p: Placed): Placed =
   if (q.step is debian.AptPreference && p.step is debian.AptPreference && q.step.priority != p.step.priority)
     throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) pin \(q.step.package) with \(q.step.pin) at different priorities (\(q.step.priority) and \(p.step.priority)); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage")
+  else if (q.step is core.Absent && p.step is core.Absent && q.step.recursive != p.step.recursive)
+    throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) remove \(q.step.path) with different recursion (\(q.step.recursive) and \(p.step.recursive)); two removals of one path are one removal, so keep one recursion or put the second in a later stage")
   else q
 
 /// A step that manages a thing merges with an exact repeat. Package steps,
@@ -369,7 +378,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), absentFloor(ix, i), keyringModes(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -515,13 +524,36 @@ function nested(ix: StageIndex, i: Int): List<String> =
     let (byEarlier = inside(leaves(ix.steps[j]), paths(ix.steps[i])))
     let (byLater = inside(leaves(ix.steps[i]), paths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
+    let (leafAbsent = if (byEarlier.isEmpty) ix.steps[i].kind == "absent" else ix.steps[j].kind == "absent")
     if (pair.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is " + (if (leafAbsent) "removed, so" else "a file, so") + " \(pair.first.last) cannot be inside it"))
 
-/// Paths a step writes as a regular file or a link. A timer writes its
-/// unit file, which is a regular file like any other.
+/// Paths a step writes as a regular file or a link, or removes. A timer
+/// writes its unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
-  if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s) else List()
+  if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer", "absent").contains(s.kind)) subjectsOf(s) else List()
+
+/// A removal never takes a system root, and never takes a directory that
+/// holds a path another step of the same stage manages: a stage declares
+/// one state for each thing, and a system root is no thing to declare.
+function absentFloor(ix: StageIndex, i: Int): List<String> =
+  if (ix.steps[i] is core.Absent) floorProblems(ix, i, ix.steps[i]) else List()
+
+/// The floor rules for one `Absent` step.
+function floorProblems(ix: StageIndex, i: Int, s: core.Step): List<String> =
+  if (s is core.Absent)
+    let (path = s.path)
+    if (floorRoots.contains(path))
+      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys")
+    else
+      let (held = positions(ix.steps).filter((j) -> j != i).flatMap((j) -> paths(ix.steps[j]).filter((p) -> p.startsWith(path + "/"))))
+      if (held.isEmpty) List()
+      else List("'\(name(s))' would remove \(path), which holds \(held.first), which another step of this stage manages; remove that path instead, or move the removal to a later stage")
+  else List()
+
+/// The system roots a removal never takes: the filesystem root and the
+/// directories the system itself lives in.
+const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys")
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -1023,6 +1055,10 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["timezone"] = (s) -> s.name
   ["loginShell"] = (s) -> fields(List(s.user, s.shell))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
+  // A removal's state is the path it takes away: `recursive` is a means,
+  // not a state, so two removals of one path are one state.
+  ["absent"] = (s) -> fields(List(s.path))
+  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(s.destination), s.protocol, optional(s.outInterface), s.jump, s.ipVersion, s.state))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -1043,6 +1079,12 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
+  ["absent"] = (s) -> List(s.path)
+  // The rule sets are separate: `iptables` and `ip6tables` hold their own
+  // rules, so the version is part of the thing a rule manages. The same
+  // rule for both versions is two rules, and a stage declares them side by
+  // side.
+  ["iptablesRule"] = (s) -> List("the \(s.ipVersion) iptables rule \(s.chain) \(iptablesMatch(s))")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
@@ -1401,7 +1443,15 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
   ["fetchSecret"] = (s) -> "Fetch \(s.fromPath) into fnox"
+  ["absent"] = (s) -> "Remove \(s.path)"
+  ["iptablesRule"] = (s) -> (if (s.state == "absent") "Remove iptables rule from " else "Add iptables rule to ") + s.chain
 }
+
+/// The match of an iptables rule, without its jump: the chain and the match
+/// are the rule's identity, so two rules that match the same way in the same
+/// chain are one rule.
+const function iptablesMatch(s: linux.IptablesRule): String =
+  (if (s.destination == null) "" else "to " + s.destination + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
 /// its depth limit of 32 (P3).
@@ -1445,6 +1495,8 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   // pre-check reads /etc/passwd before it.
   ["loginShell"] = (s, m) -> List(task(m, user(s.user, s.shell), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
+  ["absent"] = (s, m) -> List(task(m, absent(s.path, s.recursive), null, null))
+  ["iptablesRule"] = (s, m) -> List(task(m, firewall(s), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -1715,6 +1767,16 @@ function copyText(_dest: String, _content: String): engine.Copy =
   new engine.Copy { dest = _dest; content = _content; mode = "0644"; owner = "root"; group = "root" }
 
 function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
+function absent(_path: String, _recursive: Boolean): engine.File = new engine.File { path = _path; state = "absent"; recurse = _recursive }
+function firewall(s: linux.IptablesRule): engine.Firewall = new engine.Firewall {
+  chain = s.chain
+  destination = s.destination
+  protocol = s.protocol
+  out_interface = s.outInterface
+  jump = s.jump
+  ip_version = s.ipVersion
+  state = s.state
+}
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
 function apt(_names: List<String>, _upgrade: Boolean, _hold: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }

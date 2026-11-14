@@ -12,6 +12,10 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::path::Component;
 use std::path::Path;
 
+mod floor;
+mod mounts;
+mod removal;
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let path = str_param(obj, "path").ok_or("file: path required")?;
@@ -56,17 +60,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             Ok(json!({"path": path, "state": "directory", "changed": changed, "failed": false}))
         }
         "absent" => {
-            let existed = p.symlink_metadata().is_ok();
-            if existed {
-                changed = true;
-                if !ctx.check_mode {
-                    if p.is_dir() && !p.is_symlink() {
-                        std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
-                    } else {
-                        std::fs::remove_file(p).map_err(|e| e.to_string())?;
-                    }
-                }
-            }
+            // A removal without `recurse` takes an empty directory only; with
+            // it, the tree goes with the directory.
+            let recurse = super::bool_param(obj, "recurse", false);
+            changed = removal::remove(p, recurse, ctx.check_mode)?;
             Ok(json!({"path": path, "state": "absent", "changed": changed, "failed": false}))
         }
         "link" => {
