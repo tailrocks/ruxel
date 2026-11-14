@@ -78,47 +78,41 @@ fn run_with(
 /// their number, the last one first, so the numbers of the rules that are
 /// left do not move.
 fn delete_matching(binary: &str, chain: &str, spec: &[String], limit: u32) -> Result<u32, String> {
-    let rules = list_chain(binary, chain)?;
-    let declared: Vec<String> = spec.to_vec();
-    let wanted = match_pairs(&declared);
-    let mut numbers: Vec<u32> = Vec::new();
-    for (index, rule) in rules.iter().enumerate() {
-        let Some(args) = rule_arguments(rule, chain) else {
-            continue;
-        };
-        if match_pairs(&args) == wanted {
-            numbers.push(u32::try_from(index).unwrap_or(u32::MAX) + 1);
-        }
-    }
-    numbers.reverse();
+    let rules = matching_rules(binary, chain, spec)?;
     let mut deletions = 0;
-    for number in numbers {
+    for args in rules {
         if deletions >= limit {
             return Err(format!(
                 "{binary}: the rule is still there after {limit} deletions"
             ));
         }
-        exec_rule(binary, &["-D", chain, &number.to_string()])?;
+        // The rule is deleted by its own specification, the way the
+        // firewall printed it: a number would name another rule when the
+        // chain changes in between.
+        let mut command = vec!["-D", chain];
+        command.extend(args.iter().map(String::as_str));
+        exec_rule(binary, &command)?;
         deletions += 1;
     }
     Ok(deletions)
 }
 
-/// The numbers of the rules of the chain that match the declared match.
-fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<u32>, String> {
+/// The rules of the chain that match the declared match, with the
+/// arguments the firewall printed them with.
+fn matching_rules(binary: &str, chain: &str, spec: &[String]) -> Result<Vec<Vec<String>>, String> {
     let rules = list_chain(binary, chain)?;
     let declared: Vec<String> = spec.to_vec();
     let wanted = match_pairs(&declared);
-    let mut numbers = Vec::new();
-    for (index, rule) in rules.iter().enumerate() {
+    let mut matching = Vec::new();
+    for rule in &rules {
         let Some(args) = rule_arguments(rule, chain) else {
             continue;
         };
         if match_pairs(&args) == wanted {
-            numbers.push(u32::try_from(index).unwrap_or(u32::MAX) + 1);
+            matching.push(args);
         }
     }
-    Ok(numbers)
+    Ok(matching)
 }
 
 /// The destination in the form the firewall prints it: a host without a

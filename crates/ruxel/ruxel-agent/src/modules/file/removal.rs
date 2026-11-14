@@ -12,7 +12,7 @@ use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 /// Takes the path away: a removal without `recurse` takes an empty
 /// directory only, with it the tree goes with the directory. Reports
@@ -94,6 +94,14 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
         }
         return Ok(true);
     }
+    if recurse {
+        // The tree is walked before anything is taken away, so a mount
+        // point in it is refused before the removal starts.
+        let mounts = mount_points();
+        if !mounts.is_empty() {
+            preflight(&child, path, &mounts)?;
+        }
+    }
     if !check_mode {
         remove_tree(&child, path)?;
         unlinkat(&parent, name.as_c_str(), AtFlags::REMOVEDIR)
@@ -159,6 +167,87 @@ fn names_the_same(one: &Path, other: &Path) -> bool {
         (Ok(one), Ok(other)) => one == other,
         _ => false,
     }
+}
+
+/// The mount points of the host, as the kernel lists them. A mount point
+/// is a tree that belongs to somewhere else, and a removal does not take
+/// it.
+pub(super) fn mount_points() -> Vec<PathBuf> {
+    let Ok(listing) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return Vec::new();
+    };
+    listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split(' ');
+            let _id = fields.next()?;
+            let _parent = fields.next()?;
+            let _device = fields.next()?;
+            let _root = fields.next()?;
+            let point = fields.next()?;
+            Some(PathBuf::from(unescape_mount_path(point)))
+        })
+        .collect()
+}
+
+/// The mount path as the kernel writes it: the characters that need it
+/// are written as octal escapes.
+pub(super) fn unescape_mount_path(path: &str) -> String {
+    let mut out = String::new();
+    let mut characters = path.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            out.push(character);
+            continue;
+        }
+        let mut octal = String::new();
+        for _ in 0..3 {
+            match characters.next() {
+                Some(character) => octal.push(character),
+                None => break,
+            }
+        }
+        if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+            out.push(char::from(byte));
+        } else {
+            out.push('\\');
+            out.push_str(&octal);
+        }
+    }
+    out
+}
+
+/// Walks the tree without touching it, and refuses a mount point in it.
+fn preflight(dir: &OwnedFd, path: &Path, mounts: &[PathBuf]) -> Result<(), String> {
+    let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        if matches!(name.to_bytes(), b"." | b"..") {
+            continue;
+        }
+        let child_path = path.join(name.to_string_lossy().as_ref());
+        if mounts.iter().any(|mount| mount == &child_path) {
+            return Err(format!(
+                "file: refusing to remove {}: it holds the mount point {}",
+                path.display(),
+                child_path.display()
+            ));
+        }
+        let meta =
+            statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
+        if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
+            let child = openat(
+                dir,
+                name,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|error| error.to_string())?;
+            preflight(&child, &child_path, mounts)?;
+        }
+    }
+    Ok(())
 }
 
 /// Removes the tree under the pinned directory, and the directory itself

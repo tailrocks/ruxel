@@ -11,7 +11,7 @@ fn listing_stub(dir: &std::path::Path, rules: &[&str]) -> (String, std::path::Pa
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -D) sed -i.bak \"${{3}}d\" '{file}' && rm -f '{file}.bak'; exit 0;;\n  -C) exit 1;;\nesac\nexit 0\n",
+            "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -D) needle=\"$3 $4 $5 $6\"; awk -v n=\"$needle\" 'BEGIN{{done=0}} {{if (!done && index($0, n) > 0) {{done=1; next}} print}}' '{file}' > '{file}.tmp' && mv '{file}.tmp' '{file}'; exit 0;;\n  -C) exit 1;;\nesac\nexit 0\n",
             file = file.display()
         ),
     )

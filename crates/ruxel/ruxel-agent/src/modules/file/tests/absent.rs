@@ -317,3 +317,21 @@ fn a_relative_path_is_anchored_before_the_floor_holds_it() {
     assert!(result.is_ok(), "the anchored path is not a root");
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn the_mount_points_of_the_host_are_read_from_the_kernel() {
+    // The kernel writes the characters that need it as octal escapes.
+    assert_eq!(
+        super::super::removal::unescape_mount_path("/tmp/a\\040b"),
+        "/tmp/a b"
+    );
+    assert_eq!(
+        super::super::removal::unescape_mount_path("/tmp/plain"),
+        "/tmp/plain"
+    );
+    // The mount points of this host are read from the kernel, and they are
+    // paths.
+    for point in super::super::removal::mount_points() {
+        assert!(point.is_absolute(), "{point:?}");
+    }
+}
