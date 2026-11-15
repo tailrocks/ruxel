@@ -536,25 +536,53 @@ fn read_sysctl(name: &str) -> Result<String, String> {
         .map_err(|e| format!("read {path}: {e}"))
 }
 
-/// The `/proc/sys` path of a kernel parameter. Dotted notation spells
-/// its separators `.`, so they translate to `/`; slash-first notation
-/// preserves its dots and slashes as written — every `/` a separator and
-/// every `.` a literal of its component (`enp3s0.200`) — so the name is
-/// the path beneath `/proc/sys`, never `enp3s0.200` looked up as
-/// `enp3s0/200`.
+/// The `/proc/sys` path of a kernel parameter. procps follows the
+/// FIRST separator (`slashdot` in procps-ng `src/sysctl.c`): a name
+/// whose first separator is `.` is dotted notation with every `.` a
+/// separator and every `/` a literal dot of its component, so the two
+/// swap — `net.ipv4.conf.enp3s0/200.forwarding` addresses
+/// `net/ipv4/conf/enp3s0.200/forwarding` — while a name whose first
+/// separator is `/` is slash-first notation and stays as written, every
+/// `/` a separator and every `.` a literal of its component.
 pub(crate) fn proc_sys_path(name: &str) -> String {
     format!("/proc/sys/{}", sysctl_key(name))
 }
 
-/// One parameter's identity: the `/proc/sys` path it addresses. The two
-/// spellings of one parameter compare equal — and a slash-first name
-/// with a literal dot (`enp3s0.200`) keeps its identity apart from the
-/// dotted spelling of another path.
+/// One parameter's identity: the `/proc/sys` path it addresses. The
+/// separators canonicalize the way procps reads them — the first
+/// separator decides (`slashdot` in procps-ng `src/sysctl.c` swaps
+/// every separator of a dot-first name and leaves a slash-first name
+/// alone) — so a dot-first mixed spelling
+/// (`net.ipv4.conf.enp3s0/200.forwarding`) compares equal to its slash
+/// form (`net/ipv4/conf/enp3s0.200/forwarding`), while a slash-first
+/// name with a literal dot (`enp3s0.200`) keeps its identity apart from
+/// the dotted spelling of another path.
 pub(crate) fn sysctl_key(name: &str) -> String {
-    if name.contains('/') {
-        name.to_string()
+    let dot = name.find('.');
+    let slash = name.find('/');
+    // procps looks at the first separator it meets: a dot-first name
+    // swaps every separator, a slash-first (or separator-free) one is
+    // already the path. Any `/` alone never meant slash-first — a
+    // dot-first mixed spelling holds one too.
+    let dot_first = match (dot, slash) {
+        (Some(first_dot), Some(first_slash)) => first_dot < first_slash,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    if dot_first {
+        name.chars()
+            .map(|cell| {
+                if cell == '.' {
+                    '/'
+                } else if cell == '/' {
+                    '.'
+                } else {
+                    cell
+                }
+            })
+            .collect()
     } else {
-        name.replace('.', "/")
+        name.to_string()
     }
 }
 
