@@ -44,6 +44,11 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 
     let entry = group_entry(name)?;
     let mut changed = false;
+    // Whether the present branch below creates the group: the host
+    // holds no entry for it. The plan's own record may still stand in
+    // for the missing entry (see below), so the flag is taken before
+    // that substitution.
+    let mut group_created = false;
 
     match state {
         "present" => {
@@ -56,6 +61,38 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             let live = entry.filter(|_| {
                 !entries::group_removed(name) || entries::planned_group(name).is_some()
             });
+            // A group an earlier task of the plan created is present
+            // although the host's group file does not list it yet —
+            // check mode runs no `groupadd`, so the live entry is
+            // stale — and a later declaration compares against the
+            // plan's own record instead of creating the group again,
+            // the way the apply compares against the live entry the
+            // earlier step created. A group the plan removed stays a
+            // recreation: the apply takes it away and creates it anew,
+            // so the declaration still reports the creation.
+            //
+            // Whether the branch below creates the group: the host
+            // holds no entry for it. A later declaration instead
+            // compares against the plan's own record (see above) and
+            // marks nothing.
+            let planned_creation =
+                live.is_none() && planned_group(name).is_some() && !entries::group_removed(name);
+            group_created = live.is_none() && !planned_creation;
+            let live = match (live, planned_group(name)) {
+                (None, Some(Requested::Number(number))) if !entries::group_removed(name) => {
+                    Some((name.to_string(), u64::from(number)))
+                }
+                // The number the allocator draws is unknown until the
+                // apply draws it: no comparison runs against it. A
+                // declaration that states none reports the entry the
+                // apply holds, while a declaration that states one
+                // conservatively plans the change the apply runs unless
+                // the allocator drew that very number.
+                (None, Some(Requested::Unnumbered)) if !entries::group_removed(name) => {
+                    Some((name.to_string(), u64::MAX))
+                }
+                (live, _) => live,
+            };
             if let Some((_, live_gid)) = live {
                 // The number the group holds under the plan: the
                 // number an earlier task of the plan gave it — check
@@ -194,6 +231,14 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     // declared one.
     if state == "present" {
         note_planned_group(name, gid.and_then(|want| u32::try_from(want).ok()));
+        // Every creation the allocator numbers draws a number no probe
+        // has seen yet: the plan's record of the moved number is what
+        // tells an ownership cache it is stale — for the allocator's
+        // numbers as much as for the recreated ones below. A creation
+        // that states no number is one.
+        if group_created && gid.is_none() {
+            plan::note_changed_group(name);
+        }
         // The plan removed the group and declares it present again:
         // the apply takes the group away and creates it anew, so its
         // number is the allocator's to draw and the files that hold
@@ -294,16 +339,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // without a number gets one the allocator draws at apply —
             // unknown here, so the guards that need a number cannot
             // run, the same unknown `planned_gid` plans around. An
-            // account the plan removed and declares present again is
-            // one of those: the apply creates it anew, so the stale
-            // live entry must not stand in for the number it will hold.
-            let effective_uid = if plan::user_recreated(name) {
-                None
-            } else {
-                match planned {
-                    Some(Requested::Number(number)) => Some(u64::from(number)),
-                    _ => entry.as_ref().map(|current| current.uid),
-                }
+            // unnumbered recreation is one of those: the apply creates
+            // it anew, so the stale live entry must not stand in for
+            // the number it will hold. A numbered recreation instead
+            // keeps its planned number: the guards verify the
+            // declaration against it in check mode as much as in apply,
+            // where the recreated entry holds it.
+            let effective_uid = match planned {
+                Some(Requested::Number(number)) => Some(u64::from(number)),
+                _ if plan::user_recreated(name) => None,
+                _ => entry.as_ref().map(|current| current.uid),
             };
             if let Some(effective_uid) = effective_uid {
                 let effective = PasswdEntry {
@@ -359,7 +404,24 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // removal, so an explicitly planned one stays in the
             // plan's record: the apply leaves the group behind, and
             // whatever resolves it next must find it there.
-            if private_group_emptied(name, private_gid)? {
+            // `userdel` deletes the account's empty same-name group
+            // with it — but only on a host that deletes one
+            // (`USERGROUPS_ENAB`): a host that keeps the empty group
+            // keeps it, so the plan records no removal for it — a
+            // later step resolves the live entry instead of
+            // attempting `groupadd` on a group that exists. Check
+            // mode runs no `userdel`, so the pre-removal emptiness
+            // is the prediction the plan records; apply re-inspects
+            // the group database after the removal really ran.
+            let post_removal = if ctx.check_mode {
+                None
+            } else {
+                group_entry(name)?
+            };
+            if private_group_gone(
+                private_group_emptied(name, private_gid)?,
+                post_removal.as_ref(),
+            ) {
                 note_removed_group(name);
                 forget_planned_group(name);
             }
@@ -390,6 +452,26 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // history stays — the allocator draws the number anew.
     let entry = if entries::account_removed(name) && entries::planned_user(name).is_none() {
         None
+    } else {
+        entry
+    };
+    // An account an earlier task of the plan created is present
+    // although the host's passwd file does not list it yet — check
+    // mode runs no `useradd`, so the live entry is stale — and a later
+    // declaration compares against the plan's own record instead of
+    // creating the account again, the way the apply compares against
+    // the live entry the earlier step created. An account the plan
+    // removed stays a recreation: the apply takes it away and creates
+    // it anew, so the declaration still reports the creation.
+    let planned_creation =
+        entry.is_none() && planned_user(name).is_some() && !entries::account_removed(name);
+    // Whether the branch below creates the account: the host holds no
+    // entry for it — a recreation included. A later declaration instead
+    // compares against the plan's own record (see above) and marks
+    // nothing.
+    let created_account = entry.is_none() && !planned_creation;
+    let entry = if planned_creation {
+        Some(synthesized_entry(name))
     } else {
         entry
     };
@@ -507,12 +589,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 // before the account is created: `useradd -g <name>`
                 // selects the host's group, and the rollback's
                 // `userdel` below takes that group with the account —
-                // the restore brings back the whole entry, not just
+                // the restore brings back the entry, not just
                 // the number.
                 let reused_group = match reused_private_group.as_ref() {
                     Some((group_name, _)) => snapshot_group(group_name)?,
                     None => None,
                 };
+                // Whether the claimed home exists before the creation:
+                // `useradd -m` creates it where it is missing, and the
+                // rollback of a failed reconciliation takes back only
+                // what this operation created — a pre-existing home is
+                // the host's, whatever it holds.
+                let home_preexisted = std::fs::symlink_metadata(claimed_home(home, name)).is_ok();
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
                 if system {
@@ -579,14 +667,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                             // the passwd database, and a task that
                             // fails with the account left behind
                             // leaves the host in a state the workflow
-                            // never asked for. The account's deletion
+                            // never asked for — with the home `useradd
+                            // -m` created for it, where this operation
+                            // created one. The account's deletion
                             // takes its private group with it on a
                             // host that deletes one, so a group the
                             // step reused is restored with the number
                             // it held.
-                            take_back_account(
+                            take_back_created_account(
                                 account,
                                 reused_private_group.as_ref(),
+                                &claimed_home(home, name),
+                                home_preexisted,
                                 &|account| run_cmd("userdel", &[account]),
                                 &|name| Ok(group_entry(name)?.is_some()),
                                 &|group_name, gid| {
@@ -712,9 +804,23 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // superuser's account keeps its primary group: a step for
             // `root` may not declare one, and the implicit claim must
             // not move it either.
+            //
+            // The same-name group the plan's own creation brings with
+            // `-U` holds the account's number by construction: an
+            // account the plan created without a declared group lives
+            // on its same-name group whatever number the allocator drew
+            // for both — while check mode runs, that group is not on the
+            // host yet, so the missing live number must not read as a
+            // move the apply never performs. Any other missing number
+            // still moves the account: a declared group the account does
+            // not hold, or a same-name group the plan never claimed for
+            // an account it created around another group.
+            let private_claim_holds =
+                planned_creation && plan::primary(name).is_some_and(|primary| primary.name == name);
             let implicit_group_move = group.is_none()
                 && current.uid != 0
-                && same_name_gid.is_none_or(|gid| u64::from(gid) != effective.gid);
+                && ((same_name_gid.is_none() && !private_claim_holds)
+                    || same_name_gid.is_some_and(|gid| u64::from(gid) != effective.gid));
             // The plan's record of the primary group and the
             // supplementary set the step declares: check mode runs no
             // `usermod`, so the record is made in advance and later
@@ -723,6 +829,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // `halt_on_failure = false` must not leave later tasks
             // comparing against a set the host never took.
             let mut planned_primary: Option<PlannedPrimary> = None;
+            // Whether the step moves the account's primary group: the
+            // declared group resolves to another number, or the implicit
+            // claim moves the account onto its same-name group. The
+            // default home's repair below is scoped to that move.
+            let mut primary_gid_moves = implicit_group_move;
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
@@ -746,6 +857,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     Some(want_gid) => {
                         if u64::from(want_gid) != effective.gid {
                             identity_change = true;
+                            primary_gid_moves = true;
                             args.push("-g");
                             args.push(g);
                         }
@@ -790,6 +902,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     Some(recorded) => recorded,
                     None => supplementary_groups(name)?,
                 };
+                // The set the plan compares and records, without the
+                // groups the plan has taken away: check mode runs no
+                // `groupdel`, so the host's group database still lists
+                // a member the apply has already removed. The stale
+                // member would report a change check mode never
+                // performs — and, with append mode, persist in the
+                // plan's own record and make later steps treat the
+                // account as a member the apply never retained.
+                let current_groups = planned_visible_supplementary(current_groups);
                 if groups_need_update(&current_groups, gs, append) {
                     // The named groups must exist: `usermod -G`
                     // resolves the list against the host and fails on
@@ -850,26 +971,33 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // decides the directory's owner, and the primary-group
             // change the plan already reports covers the repair, so
             // nothing is compared against a gid that does not exist.
-            let home_repair = match home {
-                Some(path) => {
-                    let owner = if let Some(g) = group {
-                        home_gid(Some(g), effective.gid, ctx.check_mode)?.map(HomeOwner::Number)
-                    } else if implicit_group_move {
-                        Some(match group_entry(name)? {
-                            Some((_, gid)) => HomeOwner::Number(gid),
-                            None => HomeOwner::SameName,
-                        })
-                    } else {
-                        Some(HomeOwner::Number(effective.gid))
-                    };
-                    owner.map(|owner| Home {
-                        path: path.to_string(),
-                        uid: uid.unwrap_or(effective.uid),
-                        owner,
-                    })
-                }
-                None => None,
-            };
+            //
+            // The default home the step does not declare is repaired
+            // where the step moves the account's primary group:
+            // `groupmod -g` leaves the directory's ownership behind, so
+            // the repair covers it the way the declared home's does. A
+            // step that moves no identity manages the untouched default
+            // nowhere: building the repair there would create and chown
+            // directories a no-op task never claimed. And numbers the
+            // plan never stated are the allocator's to draw: the repair
+            // runs against none of them — the change the plan already
+            // reports covers it, the way a group that is not on the host
+            // yet does.
+            let numbers_known = !planned_creation
+                || (plan::uid(name).is_some()
+                    && plan::primary(name).is_some_and(|primary| primary.gid.is_some()));
+            let home_repair = planned_home_repair(
+                home,
+                name,
+                group,
+                uid,
+                effective.uid,
+                effective.gid,
+                implicit_group_move,
+                primary_gid_moves,
+                numbers_known,
+                ctx.check_mode,
+            )?;
             // The step's footprint claims the account's private group
             // whenever it names no primary group, and the lowering's
             // group ordering advertises it as provided: an existing
@@ -935,6 +1063,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // otherwise refuse the name the plan is about to create — and what
     // a later removal verifies its home against.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
+    // Every creation the allocator numbers draws a number no probe has
+    // seen yet: an account the host deleted outside the plan and
+    // creates again keeps no number, so a cached file the account owned
+    // passes its old numeric probe and stays with whoever claimed the
+    // freed number. The plan's record of the moved number is what tells
+    // the cache it is stale — for the allocator's numbers as much as
+    // for the recreated ones below. A creation the plan records without
+    // a number is one — while a later declaration compares against the
+    // plan's own record and marks nothing.
+    if created_account && uid.is_none() {
+        plan::note_changed_user(name);
+    }
     // The plan removed the account and declares it present again: the
     // apply takes the account away and creates it anew, so its number
     // is the allocator's to draw and the files that hold the old one
@@ -950,20 +1090,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 
 /// The host's record of the group the account creation reused: the
 /// number alone does not restore it. `userdel` takes the whole entry
-/// with the account, so the password, the members and the
-/// administrators are snapshotted before the account is created and
-/// restored with the number.
+/// with the account, so the members and the administrators are
+/// snapshotted before the account is created and restored with the
+/// number. The group password is deliberately not part of the record:
+/// no shadow utility accepts it off the command line, and passing the
+/// hash through `groupadd -p` argv would expose it to every local user
+/// that can read `/proc/*/cmdline` — so the restored group stays
+/// locked, the way a fresh group is, instead of leaking its secret.
 struct ReusedGroup {
-    password: Option<String>,
     members: Vec<String>,
     admins: Vec<String>,
-}
-
-/// The password fields that carry no password to restore: a fresh
-/// group is locked the same way, so passing them back would only
-/// expose the placeholder on the command line.
-fn default_group_password(password: &str) -> bool {
-    matches!(password, "" | "x" | "!" | "*")
 }
 
 /// The group's record over canned group and gshadow content: `None`
@@ -974,7 +1110,7 @@ fn snapshot_group_from(groups: &str, gshadow: &str, name: &str) -> Option<Reused
         .find(|line| line.split(':').next() == Some(name))?;
     let mut fields = line.split(':');
     fields.next()?;
-    let group_password = fields.next().unwrap_or("");
+    fields.next()?;
     fields.next()?;
     let mut members: Vec<String> = fields
         .next()
@@ -983,14 +1119,14 @@ fn snapshot_group_from(groups: &str, gshadow: &str, name: &str) -> Option<Reused
         .filter(|member| !member.is_empty())
         .map(str::to_string)
         .collect();
-    let (shadow_password, admins, shadow_members) = gshadow
+    let (admins, shadow_members) = gshadow
         .lines()
         .find_map(|line| {
             let mut fields = line.split(':');
             if fields.next()? != name {
                 return None;
             }
-            let password = fields.next().unwrap_or("").to_string();
+            fields.next()?;
             let admins: Vec<String> = fields
                 .next()
                 .unwrap_or_default()
@@ -1005,7 +1141,7 @@ fn snapshot_group_from(groups: &str, gshadow: &str, name: &str) -> Option<Reused
                 .filter(|member| !member.is_empty())
                 .map(str::to_string)
                 .collect();
-            Some((password, admins, members))
+            Some((admins, members))
         })
         .unwrap_or_default();
     // The members the shadowed record lists and the group file does
@@ -1015,18 +1151,7 @@ fn snapshot_group_from(groups: &str, gshadow: &str, name: &str) -> Option<Reused
             members.push(member);
         }
     }
-    // The password to restore: the shadowed hash where it is a real
-    // one, the group file's own where that one is, and none where the
-    // group carries a default.
-    let password = [shadow_password.as_str(), group_password]
-        .into_iter()
-        .find(|password| !default_group_password(password))
-        .map(str::to_string);
-    Some(ReusedGroup {
-        password,
-        members,
-        admins,
-    })
+    Some(ReusedGroup { members, admins })
 }
 
 /// The group's record on the host: the gshadow half is best effort —
@@ -1039,9 +1164,12 @@ fn snapshot_group(name: &str) -> Result<Option<ReusedGroup>, String> {
 }
 
 /// The commands that bring back the group the rollback's `userdel` took
-/// with the account: `groupadd` with the number — and the password and
-/// the members where the snapshot holds them — then `gpasswd -A` where
-/// it held administrators, which `groupadd` has no flag for. The
+/// with the account: `groupadd` with the number — and the members where
+/// the snapshot holds them — then `gpasswd -A` where it held
+/// administrators, which `groupadd` has no flag for. The password is
+/// never among them: no shadow utility accepts it off the command line,
+/// and a hash in argv is a hash every local user can copy for offline
+/// cracking — so the restored group stays locked instead. The
 /// deleted account itself is dropped from both lists: it no longer
 /// exists, so restoring it would fail the rollback.
 fn restore_group_args(
@@ -1053,10 +1181,6 @@ fn restore_group_args(
     let mut groupadd = vec!["-g".to_string(), gid.to_string()];
     let mut administrators = None;
     if let Some(record) = snapshot {
-        if let Some(password) = &record.password {
-            groupadd.push("-p".to_string());
-            groupadd.push(password.clone());
-        }
         let members: Vec<String> = record
             .members
             .iter()
@@ -1088,7 +1212,8 @@ fn restore_group_args(
 /// on a host that deletes an account's private group
 /// (`USERGROUPS_ENAB`), so a group the step reused — `useradd -g
 /// <name>` selects the host's group instead of creating one — is the
-/// host's and is restored with the full record the snapshot holds.
+/// host's and is restored with the members and the administrators the
+/// snapshot holds; its password stays locked, never crossing argv.
 fn take_back_account(
     account: &str,
     reused_private_group: Option<&(String, u64)>,
@@ -1159,6 +1284,152 @@ fn primary_group_args<'a>(group: Option<&'a str>, same_name: Option<&'a str>) ->
 /// not this step's to validate.
 fn manages_home(account_exists: bool, home_declared: bool) -> bool {
     !account_exists || home_declared
+}
+
+/// The passwd entry the plan's own record stands in for: an account an
+/// earlier task of the plan created although the host's passwd file
+/// does not list it yet. The home, shell and comment are the plan's own
+/// record where the steps declared them, and the claimed default home
+/// otherwise; numbers the plan never stated are the allocator's to
+/// draw, so they stand in as `u64::MAX` — no live number reaches them,
+/// the superuser's 0 included — and neither a comparison nor a repair
+/// runs against them (the repair is skipped where they are unknown).
+fn synthesized_entry(name: &str) -> PasswdEntry {
+    PasswdEntry {
+        uid: plan::uid(name).unwrap_or(u64::MAX),
+        gid: plan::primary(name)
+            .and_then(|primary| primary.gid)
+            .unwrap_or(u64::MAX),
+        home: plan::home(name).unwrap_or_else(|| claimed_home(None, name)),
+        shell: plan::shell(name).unwrap_or_default(),
+        comment: plan::comment(name).unwrap_or_default(),
+    }
+}
+
+/// The supplementary set the plan compares and records: the recorded
+/// or live set without the groups the plan has taken away.
+fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
+    set.into_iter()
+        .filter(|group| !entries::group_removed(group))
+        .collect()
+}
+
+/// The home's repair the step plans: the declared home, or the
+/// effective default home where the step moves the account's primary
+/// group — `groupmod -g` leaves the directory's ownership behind, so
+/// the repair covers it the way the declared home's does. A step that
+/// moves no identity manages the untouched default nowhere: building
+/// the repair there would create and chown directories a no-op task
+/// never claimed. And numbers the plan never stated are the
+/// allocator's to draw: the repair runs against none of them — the
+/// primary-group change the plan already reports covers it, the way a
+/// group that is not on the host yet does — so an unknown number plans
+/// no repair.
+#[expect(
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
+    clippy::similar_names,
+    reason = "the repair decision reads the declaration, the planned identity and the move flags together; splitting it would scatter one match across callers"
+)]
+fn planned_home_repair(
+    home: Option<&str>,
+    name: &str,
+    group: Option<&str>,
+    uid: Option<u64>,
+    effective_uid: u64,
+    effective_gid: u64,
+    implicit_group_move: bool,
+    primary_gid_moves: bool,
+    numbers_known: bool,
+    check_mode: bool,
+) -> Result<Option<Home>, String> {
+    let owner = if numbers_known {
+        repair_owner(group, name, effective_gid, implicit_group_move, check_mode)?
+    } else {
+        None
+    };
+    Ok(match home {
+        Some(path) => owner.map(|owner| Home {
+            path: path.to_string(),
+            uid: uid.unwrap_or(effective_uid),
+            owner,
+        }),
+        None if primary_gid_moves => owner.map(|owner| Home {
+            path: claimed_home(None, name),
+            uid: uid.unwrap_or(effective_uid),
+            owner,
+        }),
+        None => None,
+    })
+}
+
+/// The owner the home's repair chowns to: the declared group's number,
+/// the account's own same-name group where the step's implicit claim
+/// moves it there, or the account's effective number where the step
+/// moves no group. `None` is check mode's answer for a group that is
+/// not on the host yet: its gid decides the directory's owner, and the
+/// primary-group change the plan already reports covers the repair, so
+/// nothing is compared against a gid that does not exist.
+fn repair_owner(
+    group: Option<&str>,
+    name: &str,
+    effective_gid: u64,
+    implicit_group_move: bool,
+    check_mode: bool,
+) -> Result<Option<HomeOwner>, String> {
+    if let Some(g) = group {
+        Ok(home_gid(Some(g), effective_gid, check_mode)?.map(HomeOwner::Number))
+    } else if implicit_group_move {
+        Ok(Some(match group_entry(name)? {
+            Some((_, gid)) => HomeOwner::Number(gid),
+            None => HomeOwner::SameName,
+        }))
+    } else {
+        Ok(Some(HomeOwner::Number(effective_gid)))
+    }
+}
+
+/// Whether the plan records the account's private group as removed: the
+/// emptiness the pre-removal databases show, and — where the removal
+/// really ran — the post-removal group database no longer listing it.
+/// An empty group `userdel` leaves behind is the host's still, so the
+/// plan records no removal for it: a later step resolves the live entry
+/// instead of attempting `groupadd` on a group that exists.
+fn private_group_gone(emptied: bool, post_removal: Option<&(String, u64)>) -> bool {
+    emptied && post_removal.is_none()
+}
+
+/// The account the step created is taken back with the home `useradd
+/// -m` created for it: the failed reconciliation leaves the host as it
+/// was — the account the workflow never asked for is gone, and the
+/// directory the operation added goes with it. Only a home this
+/// operation created is removed: a pre-existing home is the host's,
+/// whatever it holds — and the removal refuses a directory that is not
+/// empty, so contents a concurrent writer planted are kept and reported
+/// rather than deleted. The home's repair and its rollback live a layer
+/// below (`apply::run` takes back the repairs of an existing account's
+/// change): this one covers the creation's own home only, so the two
+/// never take back the same directory.
+fn take_back_created_account(
+    account: &str,
+    reused_private_group: Option<&(String, u64)>,
+    home: &str,
+    home_preexisted: bool,
+    remove_account: &dyn Fn(&str) -> Result<(), String>,
+    group_exists: &dyn Fn(&str) -> Result<bool, String>,
+    restore_group: &dyn Fn(&str, u64) -> Result<(), String>,
+) -> Result<(), String> {
+    take_back_account(
+        account,
+        reused_private_group,
+        remove_account,
+        group_exists,
+        restore_group,
+    )?;
+    if !home_preexisted && std::fs::symlink_metadata(home).is_ok() {
+        home::rollback_home(home, None)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1628,15 +1899,17 @@ mod cat06_batch_b {
     }
 
     #[test]
-    fn the_snapshot_carries_the_whole_group_and_gshadow_records() {
+    fn the_snapshot_carries_the_group_members_and_admins_but_no_password() {
         // The rollback restores what `userdel` takes with the account,
-        // so the snapshot carries the password, the members and the
-        // administrators — not just the number.
+        // so the snapshot carries the members and the administrators —
+        // not just the number. The password hash is deliberately not
+        // part of the record: no shadow utility accepts it off the
+        // command line, and a hash in `groupadd -p` argv is a hash every
+        // local user can copy from `/proc/*/cmdline`.
         let groups = "alice:x:1500:carol\n";
         let gshadow = "alice:$6$salt$hash:root,ops:carol,dave\n";
         let record =
             super::snapshot_group_from(groups, gshadow, "alice").expect("the group is on the host");
-        assert_eq!(record.password.as_deref(), Some("$6$salt$hash"));
         assert_eq!(
             record.members,
             vec!["carol".to_string(), "dave".to_string()]
@@ -1647,33 +1920,37 @@ mod cat06_batch_b {
     }
 
     #[test]
-    fn the_snapshot_prefers_the_shadowed_password_and_ignores_defaults() {
-        // A locked group carries no password to pass back: `groupadd`
-        // locks a new group itself.
-        let groups = "alice:x:1500:\n";
-        let gshadow = "alice:!:root:\n";
+    fn the_snapshot_unions_the_group_and_shadow_members() {
+        // A locked group carries no password to pass back — and the
+        // record carries none at all — while the member union still
+        // restores both lists: the group file's and the shadowed one.
+        let groups = "alice:x:1500:carol\n";
+        let gshadow = "alice:!:root:carol,dave\n";
         let record =
             super::snapshot_group_from(groups, gshadow, "alice").expect("the group is on the host");
-        assert_eq!(record.password, None);
-        // Without a gshadow record the group file's own hash stands in.
-        let groups = "alice:$6$salt$hash:1500:\n";
-        let record =
-            super::snapshot_group_from(groups, "", "alice").expect("the group is on the host");
-        assert_eq!(record.password.as_deref(), Some("$6$salt$hash"));
+        assert_eq!(
+            record.members,
+            vec!["carol".to_string(), "dave".to_string()]
+        );
+        assert_eq!(record.admins, vec!["root".to_string()]);
     }
 
     #[test]
-    fn the_restore_recreates_the_group_with_its_password_members_and_admins() {
+    fn the_restore_recreates_the_group_without_any_password_in_argv() {
+        // The restored group stays locked: neither a real hash nor a
+        // locked placeholder ever reaches `groupadd -p` argv — a local
+        // user polling `/proc/*/cmdline` sees the number, the members
+        // and the group name only.
         let record = super::ReusedGroup {
-            password: Some("$6$salt$hash".to_string()),
             members: vec!["carol".to_string()],
             admins: vec!["root".to_string(), "ops".to_string()],
         };
         let (groupadd, administrators) =
             super::restore_group_args("alice", 1500, Some(&record), "alice");
-        assert_eq!(
-            groupadd,
-            vec!["-g", "1500", "-p", "$6$salt$hash", "-U", "carol", "alice"]
+        assert_eq!(groupadd, vec!["-g", "1500", "-U", "carol", "alice"]);
+        assert!(
+            !groupadd.iter().any(|argument| argument == "-p"),
+            "no password flag may reach argv: {groupadd:?}"
         );
         assert_eq!(
             administrators,
@@ -1689,7 +1966,6 @@ mod cat06_batch_b {
     fn the_restore_drops_the_removed_account_and_omits_defaults() {
         // A bare group restores with the number alone.
         let record = super::ReusedGroup {
-            password: None,
             members: Vec::new(),
             admins: Vec::new(),
         };
@@ -1700,7 +1976,6 @@ mod cat06_batch_b {
         // The removed account no longer exists, so it is dropped from
         // both lists instead of failing the rollback.
         let record = super::ReusedGroup {
-            password: None,
             members: vec!["alice".to_string()],
             admins: vec!["alice".to_string(), "root".to_string()],
         };
@@ -1724,8 +1999,8 @@ mod cat06_batch_b {
     #[test]
     fn the_snapshot_reads_the_live_group_file() {
         // The reader runs against the host's group file without mutating
-        // anything: a live group snapshots, with no password where the
-        // host locks it.
+        // anything: a live group snapshots its members and
+        // administrators, never its password.
         let (name, _live) = live_group();
         let record = super::snapshot_group(&name).expect("the group file must read");
         assert!(record.is_some(), "the live group must snapshot");
