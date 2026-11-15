@@ -315,7 +315,7 @@ executor = "hosted"
 [[checks]]
 id = "dual-evaluator"
 task = "dual-evaluator"
-inputs = inputs = [
+inputs = [
   ".cargo/config.toml",
   "Cargo.lock",
   "Cargo.toml",
