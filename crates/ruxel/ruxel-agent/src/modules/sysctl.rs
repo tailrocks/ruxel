@@ -127,10 +127,11 @@ pub(super) fn run(
 /// directory or a non-file at the path is refused up front; where the
 /// apply may run, a probe of the directory catches a read-only file
 /// system the same way, and a rehearsal of the target's replacement
-/// catches the target that cannot be renamed over. The probe is a write
-/// of its own, so this runs only where the file needs replacement: an
-/// idempotent no-op must not fail on a target that is never published
-/// to.
+/// catches the target that cannot be renamed over. The rehearsal never
+/// renames the live file away (see `rehearse_replacement`), so there is
+/// no restoration to fail. The probe is a write of its own, so this
+/// runs only where the file needs replacement: an idempotent no-op
+/// must not fail on a target that is never published to.
 pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), String> {
     let path = std::path::Path::new(file);
     let mut target = false;
@@ -160,18 +161,82 @@ pub(super) fn preflight_persistence(file: &str, probe: bool) -> Result<(), Strin
         // rejects the atomic rename (`EPERM`, `EBUSY`) although the
         // directory accepts sibling writes. Rehearse that replacement
         // now — before `sysctl -w` changes the live value with no
-        // persistent entry behind it — and put the file back where the
-        // rehearsal cannot finish.
+        // persistent entry behind it — but never rename the live file
+        // away: the rehearsal links it aside first, publishes a scratch
+        // copy of its own bytes over it, and links it back, so every
+        // step leaves a complete file at the configured path, and a
+        // refusal leaves the live file exactly where it was, with no
+        // restoration to fail.
         if target {
             let aside = dir.join(format!(".ruxel-sysctl-rehearse-{}", std::process::id()));
-            std::fs::rename(path, &aside)
-                .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-            if let Err(error) = std::fs::rename(&aside, path) {
-                let _ = std::fs::rename(&aside, path);
-                return Err(format!("sysctl: cannot persist {file}: {error}"));
+            let staged = dir.join(format!(".ruxel-sysctl-staged-{}", std::process::id()));
+            // A scratch name of a dead process reuses no live pid, so
+            // taking the names collides with no live rehearsal.
+            let _ = std::fs::remove_file(&aside);
+            let _ = std::fs::remove_file(&staged);
+            if let Err(error) = rehearse_replacement(path, file, &aside, &staged) {
+                let _ = std::fs::remove_file(&aside);
+                let _ = std::fs::remove_file(&staged);
+                return Err(error);
             }
         }
     }
+    Ok(())
+}
+
+/// Publishes a scratch copy of the live file's own bytes over it and
+/// puts the live inode back. The link aside comes first, so the
+/// configured path is never renamed away: an interruption between any
+/// two steps leaves a complete file holding the same bytes at the path,
+/// never a missing file — and the link back restores the live inode
+/// itself, so a passed rehearsal changes nothing the publish would not
+/// change right after. The publish over the live path is the operation
+/// under test: an immutable or append-only file refuses the link the
+/// way it refuses the rename, and a read-only bind-mounted file refuses
+/// the rename (`EPERM`, `EBUSY`) the way the publish would — before
+/// `sysctl -w` changes the live value with no persistent entry behind
+/// it. A refusal leaves the live file exactly where it was: the path
+/// still holds it, so there is no restoration to fail.
+fn rehearse_replacement(
+    path: &std::path::Path,
+    file: &str,
+    aside: &std::path::Path,
+    staged: &std::path::Path,
+) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+    let live = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    std::fs::hard_link(path, aside).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    let mut stage = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(staged)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    // The staged copy carries the live identity: the mode and the owner
+    // the publish preserves, so even an interruption after the publish
+    // below leaves the path holding the same bytes under the same
+    // identity. The owner is set before the bytes are written and the
+    // mode after, the way the atomic publish orders them.
+    rustix::fs::fchown(
+        &stage,
+        Some(rustix::fs::Uid::from_raw(live.uid())),
+        Some(rustix::fs::Gid::from_raw(live.gid())),
+    )
+    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    stage
+        .write_all(&bytes)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    stage
+        .sync_all()
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    stage
+        .set_permissions(std::fs::Permissions::from_mode(live.mode() & 0o7777))
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    std::fs::rename(staged, path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    std::fs::rename(aside, path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     Ok(())
 }
 
@@ -384,3 +449,101 @@ pub(crate) fn entry_key(text: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod preflight_tests {
+    //! The rehearsal the publishability probe runs: the live file is
+    //! never renamed away, so no interruption and no refusal strands
+    //! the configured path.
+
+    use super::preflight_persistence;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    #[test]
+    fn the_rehearsal_preserves_the_live_file_and_leaves_no_scratch() {
+        // The rehearsal publishes a scratch copy of the live bytes over
+        // the live path and links the live inode back: the configured
+        // path is never renamed away, so the file the rehearsal proves
+        // keeps its inode, its bytes, its mode — and no scratch file is
+        // left behind.
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-sysctl-rehearse-ok-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::create_dir_all(&dir).expect("operation succeeds");
+        let path = dir.join("x.conf");
+        std::fs::write(&path, "net.test=2\n").expect("operation succeeds");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))
+            .expect("operation succeeds");
+        let text = path.to_str().expect("path is text").to_owned();
+        let before = std::fs::metadata(&path).expect("operation succeeds");
+        preflight_persistence(&text, true).expect("a replaceable target must pass the rehearsal");
+        let after = std::fs::metadata(&path).expect("operation succeeds");
+        assert_eq!(
+            before.ino(),
+            after.ino(),
+            "the rehearsal must link the live inode back"
+        );
+        assert_eq!(
+            after.mode() & 0o7777,
+            0o640,
+            "the rehearsal must preserve the live mode"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("operation succeeds"),
+            "net.test=2\n",
+            "the rehearsal must preserve the live bytes"
+        );
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .expect("operation succeeds")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            vec!["x.conf".to_string()],
+            "the rehearsal must leave no scratch behind: {left:?}"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn a_refused_rehearsal_leaves_the_live_file_where_it_was() {
+        // The link aside is the rehearsal's first step: where it cannot
+        // be made — here a directory squats on the scratch name — the
+        // publish over the live path never runs, and the live file
+        // keeps its inode and its bytes behind no missing path, with no
+        // staged copy left behind.
+        let dir = std::env::temp_dir().join(format!(
+            "ruxel-sysctl-rehearse-refused-{}",
+            std::process::id()
+        ));
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::create_dir_all(&dir).expect("operation succeeds");
+        let path = dir.join("x.conf");
+        std::fs::write(&path, "net.test=2\n").expect("operation succeeds");
+        let aside = dir.join(format!(".ruxel-sysctl-rehearse-{}", std::process::id()));
+        std::fs::create_dir_all(&aside).expect("operation succeeds");
+        let staged = dir.join(format!(".ruxel-sysctl-staged-{}", std::process::id()));
+        let text = path.to_str().expect("path is text").to_owned();
+        let before = std::fs::metadata(&path).expect("operation succeeds");
+        let error = preflight_persistence(&text, true).expect_err("the rehearsal must refuse");
+        assert!(error.contains("cannot persist"), "{error}");
+        let after = std::fs::metadata(&path).expect("operation succeeds");
+        assert_eq!(
+            before.ino(),
+            after.ino(),
+            "a refused rehearsal must leave the live inode where it was"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("operation succeeds"),
+            "net.test=2\n",
+            "a refused rehearsal must leave the live bytes alone"
+        );
+        assert!(
+            !staged.exists(),
+            "a refused rehearsal must leave no staged copy behind"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+}
