@@ -903,7 +903,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1176,10 +1176,27 @@ function sysctlShadowAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 function sysctlShadowPair(a: core.Stage, ia: StageIndex, j: Int, b: core.Stage, ib: StageIndex, i: Int): List<String> =
   let (x = ia.steps[j])
   let (y = ib.steps[i])
-  if (!(x is linux.Sysctl) || !(y is linux.Sysctl)) List()
-  else if (x.path == y.path || sysctlBase(x.path) != sysctlBase(y.path)) List()
-  else if (x.path == "/etc/sysctl.conf" || y.path == "/etc/sysctl.conf") List()
+  if (!sysctlShadowClash(x, y)) List()
   else List("'\(name(x))' (\(where(ia.placed[j]))) of stage \"\(a.title)\" persists \(x.path), and '\(name(y))' (\(where(ib.placed[i]))) of stage \"\(b.title)\" persists \(y.path); sysctl --system loads one file per name from the highest-precedence directory, so the lower-precedence copy never loads and the keys only it carries revert after reboot; persist both entries in one directory's file")
+
+/// Whether two steps persist different directories' files of one name:
+/// the shadow the pair check refuses, within one stage as much as
+/// across two. `/etc/sysctl.conf` never shadows: it stands under no
+/// ranked directory, so the runtime never skips it.
+const function sysctlShadowClash(x: core.Step, y: core.Step): Boolean =
+  x is linux.Sysctl && y is linux.Sysctl && x.path != y.path && sysctlBase(x.path) == sysctlBase(y.path) && x.path != "/etc/sysctl.conf" && y.path != "/etc/sysctl.conf"
+
+/// Two sysctl steps of one stage that persist different directories'
+/// files of one name collide at boot whatever keys they manage, the
+/// same way two stages' same-basename files do: `sysctl --system`
+/// loads one file per name from the highest-precedence directory, so
+/// the lower-precedence copy never loads and the keys only it carries
+/// revert after reboot — or the apply fails on the shadowed file,
+/// depending on task order.
+function sysctlShadow(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is linux.Sysctl)) List()
+  else earlier(i).filter((j) -> sysctlShadowClash(ix.steps[j], ix.steps[i]))
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) persist \(ix.steps[j].path) and \(ix.steps[i].path); sysctl --system loads one file per name from the highest-precedence directory, so the lower-precedence copy never loads and the keys only it carries revert after reboot; persist both entries in one directory's file")
 
 /// The file name of a sysctl persistence path: the segment after the
 /// last `/`. Shadowing is by name alone.
@@ -1421,16 +1438,47 @@ function shellProviderRels(_stages: List<core.Stage>, _indexes: List<StageIndex>
 /// The refusals for one step of another stage that manages the shell:
 /// the mode one where it names a non-executable file, and the ordering
 /// one where the provider's stage runs after the account's — and the
-/// target chain where the provider is a link.
+/// target chain where the provider is a link. A provider an effective
+/// one replaces before the account runs is obsolete there: the
+/// account's task reads the replacement, so the superseded mode and
+/// chain are not judged (see `shellObsoleteBeforeAccount`). Only the
+/// ordering branch already excuses a later reconciliation (see
+/// `shellProvidedOn`); the mode and chain branches need the same
+/// effective-state guard, or every superseded declaration still errors.
 function shellProviderRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, k: Int, j: Int): List<String> =
   let (s = _indexes[k].steps[j])
-  (if (s is core.File && !executableMode(s.mode))
+  if (shellObsoleteBeforeAccount(_stages, _indexes, m, i, k, shell)) List()
+  else (if (s is core.File && !executableMode(s.mode))
     List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages the shell \(shell) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" at mode \(s.mode), which does not make it executable for the account; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
   else List())
   + (if (k > m && sharedHosts(_stages[m], _stages[k]).any((h) -> !shellProvidedOn(_stages, _indexes, m, i, h, shell)))
     List("'\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names the shell \(shell), which '\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages; the account's task verifies the shell path at apply time, so list the shell's step in a stage before the account")
   else List())
   + shellChainAcrossStages(_stages, _indexes, m, i, u, shell, s, List(shell))
+
+/// Whether the provider at `k` is obsolete on every host it shares with
+/// the account's stage: an effective manager replaces it before the
+/// account runs there. Only a provider before the account can be
+/// obsolete: one after it reconciles the path (or breaks it) after the
+/// account's task has already read the earlier file, so its mode and
+/// chain are still judged.
+function shellObsoleteBeforeAccount(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, shell: String): Boolean =
+  k < m && sharedHosts(_stages[m], _stages[k]).every((h) -> shellSupersededOn(_stages, _indexes, m, i, k, h, shell))
+
+/// Whether another manager of the shell `shell` overwrites the provider
+/// at `k` before the account at `m`, `i` runs on the host `h`: a stage
+/// between them that runs there manages the path — or an earlier step
+/// of the account's own stage does. Any manager overwrites, whatever
+/// mode it carries: its own mode is judged separately, and the earlier
+/// provider's state is gone by the time the account runs.
+function shellSupersededOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, h: core.Host, shell: String): Boolean =
+  positions(_indexes).filter((n) -> n > k && n < m && stageRunsOn(_stages[n], h)).any((n) ->
+    positions(_indexes[n].steps).any((l) -> shellManages(shell, _indexes[n].steps[l])))
+  || positions(_indexes[m].steps).filter((l) -> l < i).any((l) -> shellManages(shell, _indexes[m].steps[l]))
+
+/// Whether the step manages the shell path: a file or a link at it.
+const function shellManages(shell: String, s: core.Step): Boolean =
+  (s is core.File || s is core.Symlink) && paths(s).contains(shell)
 
 /// Whether the shell is already provided on the host `h` before the
 /// account's task runs: an earlier overlapping-host stage manages it as
@@ -1827,11 +1875,16 @@ function knownRenumbering(_stages: List<core.Stage>, _indexes: List<StageIndex>,
 /// written. A file is written by the file task, which resolves the
 /// owner by name and gives the file the number the name carries then; a
 /// managed home is repaired by the account's task, which gives the home
-/// the number its group carries then.
+/// the number its group carries then. A step of the renumbering stage
+/// itself reconciles where it comes after the renumbering step: the
+/// tasks run where the author wrote them, so a `File` that redeclares
+/// the owner after the `User` that renumbers it chowns the file to the
+/// new number.
 function reconcilesOwnership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>, h: core.Host): Boolean =
   let (s = _indexes[m].steps[i])
-  positions(_indexes).filter((k2) -> k2 > k && identityRunsOn(_stages[k2], h)).any((k2) ->
-    positions(_indexes[k2].steps).any((j) ->
+  let (renumberStep = identityNumberStepAt(_indexes[k], p))
+  positions(_indexes).filter((k2) -> k2 >= k && identityRunsOn(_stages[k2], h)).any((k2) ->
+    positions(_indexes[k2].steps).filter((j) -> k2 > k || j > renumberStep).any((j) ->
       let (t = _indexes[k2].steps[j])
       if (s is core.File)
         t is core.File && paths(t).contains(s.path) && declaresIdentity(t, p)
@@ -1854,10 +1907,44 @@ function identityNumberAt(ix: StageIndex, p: List<String>): Int? =
   if (hits.isEmpty) null else identityNumber(ix.steps[hits.first], p)
 
 /// The number the identity `p` carried on host `h` before the stage
-/// `k`: the number the last stage before it that runs on `h` declares.
+/// `k`: the number the last stage before it that runs on `h` declares —
+/// unless the identity was removed and recreated without a number since:
+/// a removal followed by an unnumbered recreation draws a fresh number
+/// the schema cannot name (see `drawNeededOn`), so the effective history
+/// becomes unknown there. A removal alone leaves the history: the
+/// recreation at `k` that states the old number restores it (see
+/// `restoresIdentity`), and a different number is a known renumbering of
+/// it. Only a provider no removal takes away still suppresses the draw
+/// (see `providesEffectiveIdentity`); here only a numbered declaration
+/// no removal-and-recreation takes away still provides the number.
 function identityNumberBeforeOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Int? =
   let (declaring = positions(_indexes).filter((n) -> n < k && identityRunsOn(_stages[n], h) && identityNumberAt(_indexes[n], p) != null))
-  if (declaring.isEmpty) null else identityNumberAt(_indexes[declaring.last], p)
+  if (declaring.isEmpty) null
+  else if (numberHistoryReset(_stages, _indexes, declaring.last, k, p, h)) null
+  else identityNumberAt(_indexes[declaring.last], p)
+
+/// Whether the numbered declaration at `last` is superseded before the
+/// stage `k` on the host `h`: a stage between them removes the identity
+/// there (see `identityGoneOn`), and a later stage between the removal
+/// and `k` declares it present again without a number — `useradd` draws
+/// a fresh one then (or the private group draws its own), so the number
+/// the last declaration states is stale. A numbered redeclaration after
+/// the unknown period is the history again, so only the last numbered
+/// declaration is tested: anything between an earlier one and it is
+/// already overwritten.
+function numberHistoryReset(_stages: List<core.Stage>, _indexes: List<StageIndex>, last: Int, k: Int, p: List<String>, h: core.Host): Boolean =
+  positions(_indexes).filter((n1) -> n1 > last && n1 < k && identityRunsOn(_stages[n1], h)).any((n1) ->
+    identityGoneOn(_stages, _indexes, n1, p, h) && positions(_indexes).filter((n2) -> n2 > n1 && n2 < k && identityRunsOn(_stages[n2], h)).any((n2) -> identityUnnumberedPresent(_indexes[n2], p)))
+
+/// Whether the stage declares the identity `p` present without a number:
+/// a present account that states none for an owner, and for a group a
+/// present group that states none — or a present account of that name
+/// that names no primary group, whose private group `useradd` creates
+/// beside it and draws a number for the same way.
+const function identityUnnumberedPresent(ix: StageIndex, p: List<String>): Boolean =
+  if (p[1] == "owner") ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user == p[0] && s.uid == null)
+  else ix.steps.any((s) -> (s is linux.Group && s.state == "present" && s.name == p[0] && s.gid == null)
+    || (s is linux.User && s.state == "present" && s.user == p[0] && s.group == null))
 
 /// Whether the step declares the identity `p` with a number.
 const function numbersIdentity(s: core.Step, p: List<String>): Boolean =

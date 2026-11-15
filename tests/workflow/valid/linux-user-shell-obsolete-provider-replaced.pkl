@@ -1,0 +1,39 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Obsolete shell providers are not judged: the first stage writes the
+// shell path without an executable mode, the second leaves a
+// self-referential link there — and the third replaces both with an
+// executable file before the account runs, so the account's task reads
+// the replacement and every apply converges on it.
+stages {
+  new Stage {
+    title = "bad-mode"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/appsh"; mode = "0600"; content = "#!/bin/sh\n" }
+    }
+  }
+  new Stage {
+    title = "bad-link"
+    hosts = inventory.workers
+    steps {
+      new Symlink { path = "/opt/appsh"; target = "/opt/appsh" }
+    }
+  }
+  new Stage {
+    title = "good"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
+    }
+  }
+  new Stage {
+    title = "account"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; shell = "/opt/appsh" }
+    }
+  }
+}
