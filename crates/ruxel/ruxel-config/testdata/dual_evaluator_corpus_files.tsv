@@ -162,6 +162,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
   tests/workflow/invalid/linux-user-uid-draw-other-hosts.pkl
+  tests/workflow/invalid/linux-user-uid-draw-recreated-after-removal.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl
@@ -236,6 +237,7 @@ dual_evaluator
   tests/workflow/valid/linux-user-shell-symlink-chain-before-account.pkl
   tests/workflow/valid/linux-user-uid-login-users-same-account.pkl
   tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
+  tests/workflow/valid/linux-user-uid-recreated-then-renumbered.pkl
   tests/workflow/valid/linux-user-uid-renumbered-frees-draw.pkl
   tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl
   tests/workflow/valid/linux-user-uid-reused-after-removal.pkl
