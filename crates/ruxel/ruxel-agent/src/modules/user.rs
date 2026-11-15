@@ -981,7 +981,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // change the plan already reports covers the repair, so
             // nothing is compared against a gid that does not exist.
             //
-            // The default home the step does not declare is repaired
+            // The effective home the step does not declare is repaired
             // where the step moves the account's primary group:
             // `groupmod -g` leaves the directory's ownership behind, so
             // the repair covers it the way the declared home's does. A
@@ -997,6 +997,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     && plan::primary(name).is_some_and(|primary| primary.gid.is_some()));
             let home_repair = planned_home_repair(
                 home,
+                &planned_home,
                 name,
                 group,
                 uid,
@@ -1325,7 +1326,7 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
 }
 
 /// The home's repair the step plans: the declared home, or the
-/// effective default home where the step moves the account's primary
+/// account's effective home where the step moves the account's primary
 /// group — `groupmod -g` leaves the directory's ownership behind, so
 /// the repair covers it the way the declared home's does. A step that
 /// moves no identity manages the untouched default nowhere: building
@@ -1343,6 +1344,7 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
 )]
 fn planned_home_repair(
     home: Option<&str>,
+    planned_home: &str,
     name: &str,
     group: Option<&str>,
     uid: Option<u64>,
@@ -1365,7 +1367,7 @@ fn planned_home_repair(
             owner,
         }),
         None if primary_gid_moves => owner.map(|owner| Home {
-            path: claimed_home(None, name),
+            path: planned_home.to_string(),
             uid: uid.unwrap_or(effective_uid),
             owner,
         }),
