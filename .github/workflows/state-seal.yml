@@ -285,6 +285,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/plan-v1-request.json
+          VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-acceptance-local\":[{\"job_id\":\"check-acceptance-local\"}],\"check-cargo-deny\":[{\"job_id\":\"check-cargo-deny\"}],\"check-dual-evaluator\":[{\"job_id\":\"check-dual-evaluator\"}]}"
         run: &r17 "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.75'"
       - name: Check generated files
         env: *m6
