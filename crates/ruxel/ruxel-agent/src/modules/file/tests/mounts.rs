@@ -111,8 +111,7 @@ fn a_listing_that_cannot_be_read_is_not_an_empty_listing() {
     // that reads it refuses.
     let error =
         super::super::mounts::mounts_from(Err("the mount table cannot be read".to_string()))
-            .err()
-            .expect("the listing must fail");
+            .expect_err("the listing must fail");
     assert!(error.contains("mount points of the host"), "{error}");
 }
 
@@ -131,7 +130,10 @@ fn an_entry_that_carries_the_identity_of_a_mount_point_is_a_mount_point() {
 #[test]
 fn the_mount_points_of_the_host_carry_the_identity_of_their_directories() {
     let identities = super::super::mounts::mount_identities().unwrap();
-    assert!(!identities.is_empty());
+    assert!(
+        !identities.is_empty(),
+        "the host holds the mount points it lists"
+    );
     for mount in super::super::mounts::mounts().unwrap() {
         let meta = std::fs::metadata(&mount.point).unwrap();
         assert!(identities.contains(&(meta.dev(), meta.ino())), "{mount:?}");
