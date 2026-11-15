@@ -453,6 +453,30 @@ fn preflight_override(
     }
 }
 
+/// The host's boot files for the cache gate: the same surface the
+/// override preflight reads, so the cache weighs what the run would.
+pub(crate) fn sysctl_host_files() -> Result<Vec<(std::path::PathBuf, Vec<u8>)>, String> {
+    boot::host_files()
+}
+
+/// Whether the cached sysctl result still stands under the current
+/// managed set: the override preflight replayed over the injected
+/// surface. The fingerprint pins the surface's bytes, not who manages
+/// them — a dropped task leaves its file behind with every probe still
+/// matching — so the cache must recheck the declarations: where the
+/// record's entry is overridden by a file nothing manages anymore,
+/// the task must run (and refuse) instead of reporting a convergence
+/// the next reboot reverts.
+pub(crate) fn sysctl_cache_covered(
+    file: &str,
+    name: &str,
+    value: &str,
+    host: &[(std::path::PathBuf, Vec<u8>)],
+    managed: &[(String, String, String)],
+) -> bool {
+    boot::boot_override(file, name, value, host, managed).is_none()
+}
+
 /// The managed entry's rewrite of the file: the one entry line is
 /// reconciled and every other byte of the host's content survives
 /// verbatim. The lines are matched as text (the entry itself is

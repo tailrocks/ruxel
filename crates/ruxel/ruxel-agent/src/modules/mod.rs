@@ -106,7 +106,10 @@ pub(crate) use copy::validate_source;
 #[cfg(test)]
 pub(super) use ownership::{OWNERSHIP_RESOLUTIONS, resolve_gid_from, resolve_uid_from};
 pub(super) use ownership::{Ownership, resolve_ownership};
-pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key, trimmed_value};
+pub(crate) use sysctl::{
+    boot_fingerprint, entry_key, proc_sys_path, sysctl_cache_covered, sysctl_host_files,
+    sysctl_key, trimmed_value,
+};
 pub(crate) use user::begin_plan;
 
 /// The sysctl declaration the current plan's task carries: the file it
