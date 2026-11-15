@@ -263,6 +263,13 @@ use guards::{
 pub(crate) use plan::{group_number_changed, user_number_changed};
 pub(super) use plan::{group_recreated, user_recreated};
 
+/// A new plan begins: the previous plan's user/group record is void.
+/// `PlanPatch` frames keep it — a patch continues the plan it
+/// extends. Runs beside the ledger's own `begin_plan` (see `serve`).
+pub(crate) fn begin_plan() {
+    plan::reset();
+}
+
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
     #[cfg(test)]
     if let Some(result) = test_hook::fake_run_cmd(cmd, args) {
