@@ -128,27 +128,31 @@ pub(super) fn run(
 /// touched: `sysctl -w` succeeds first, and a publish failure after it
 /// would leave the kernel changed with no persistent entry behind it.
 /// A missing directory or a non-file at the path is refused up front;
-/// where the apply may run, the rehearsal proves the target's own
-/// replacement — an immutable file or a read-only bind mount rejects
-/// the atomic rename although the directory accepts sibling writes —
-/// staging the exact rewritten bytes, so a quota that fits the old
-/// content but not the new one refuses before the live value is
-/// touched. The rehearsal never renames the live file away (see
-/// `rehearse_replacement`), so there is no restoration to fail, and it
-/// runs only where the file needs replacement: an idempotent no-op
-/// must not fail on a target that is never published to.
+/// where the apply may run, the rehearsal stages the exact rewritten
+/// bytes under scratch names in the same directory — a quota that fits
+/// the old content but not the new one refuses, and the rename of one
+/// scratch name over the other proves the directory admits the
+/// replacement mechanics — before the live value is touched. The live
+/// path itself is never renamed: the states that belong to its own
+/// inode — an immutable or append-only file, a file mounted over its
+/// path — are refused by read-only probes (see `refuse_unreplaceable`),
+/// so no interruption and no refusal strands rewritten bytes at the
+/// live path, and there is no restoration to fail. The probes read the
+/// live state; a lock set after them still refuses at publish, but only
+/// after `sysctl -w`. The rehearsal runs only where the file needs
+/// replacement: an idempotent no-op must not fail on a target that is
+/// never published to.
 pub(super) fn preflight_persistence(file: &str, content: &[u8], probe: bool) -> Result<(), String> {
     let path = std::path::Path::new(file);
-    let mut target = false;
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => target = true,
+    let live = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => Some(meta),
         Ok(_) => {
             return Err(format!(
                 "sysctl: cannot persist {file}: the path is not a regular file"
             ));
         }
-        Err(_) => {}
-    }
+        Err(_) => None,
+    };
     let dir = path
         .parent()
         .filter(|parent| parent.is_dir())
@@ -160,80 +164,132 @@ pub(super) fn preflight_persistence(file: &str, content: &[u8], probe: bool) -> 
             .create_new(true)
             .open(&probe)
             .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-        if target {
-            // The target's own replacement is the publish's actual
-            // operation: rehearse it with the exact rewritten bytes —
-            // before `sysctl -w` changes the live value with no
-            // persistent entry behind it — but never rename the live
-            // file away: the rehearsal links it aside first, publishes
-            // a scratch copy carrying the new bytes over it, and links
-            // it back, so every step leaves a complete file at the
-            // configured path, and a refusal leaves the live file
-            // exactly where it was, with no restoration to fail.
-            let aside = dir.join(format!(".ruxel-sysctl-rehearse-{}", std::process::id()));
-            let staged = dir.join(format!(".ruxel-sysctl-staged-{}", std::process::id()));
-            // A scratch name of a dead process reuses no live pid, so
-            // taking the names collides with no live rehearsal.
-            let _ = std::fs::remove_file(&aside);
-            let _ = std::fs::remove_file(&staged);
-            let result = rehearse_replacement(path, file, &aside, &staged, content);
-            if result.is_err() {
-                let _ = std::fs::remove_file(&aside);
-                let _ = std::fs::remove_file(&staged);
+        let result = match &live {
+            Some(live) => {
+                // The rehearsal's own names retire the link-aside pair:
+                // no step below renames the live file, so no step can
+                // strand the rewritten bytes at the live path.
+                let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
+                let second = dir.join(format!(".ruxel-sysctl-rehearse-b-{}", std::process::id()));
+                // A scratch name of a dead process reuses no live pid,
+                // so taking the names collides with no live rehearsal.
+                let _ = std::fs::remove_file(&first);
+                let _ = std::fs::remove_file(&second);
+                refuse_unreplaceable(path, file, dir)?;
+                let outcome = rehearse_replacement(file, live, &first, &second, content);
+                let _ = std::fs::remove_file(&first);
+                let _ = std::fs::remove_file(&second);
+                outcome
             }
-            let _ = std::fs::remove_file(&probe);
-            result?;
-        } else {
-            // The target is absent: there is no live file to rehearse
-            // against, so the probe itself carries the exact bytes the
-            // publish will write — a quota that fits an empty file but
-            // not the new content refuses here, before `sysctl -w`.
-            let result = std::fs::write(&probe, content)
-                .map_err(|e| format!("sysctl: cannot persist {file}: {e}"));
-            let _ = std::fs::remove_file(&probe);
-            result?;
-        }
+            None => {
+                // The target is absent: there is no live file to rehearse
+                // against, so the probe itself carries the exact bytes the
+                // publish will write — a quota that fits an empty file but
+                // not the new content refuses here, before `sysctl -w`.
+                std::fs::write(&probe, content)
+                    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))
+            }
+        };
+        let _ = std::fs::remove_file(&probe);
+        result?;
     }
     Ok(())
 }
 
-/// Publishes a scratch copy carrying the rewritten bytes over the live
-/// path and puts the live inode back. The link aside comes first, so
-/// the configured path is never renamed away: an interruption between
-/// any two steps leaves a complete file holding the same bytes at the
-/// path, never a missing file — and the link back restores the live
-/// inode itself, so a passed rehearsal changes nothing the publish
-/// would not change right after. The publish over the live path is the
-/// operation under test: an immutable or append-only file refuses the
-/// link the way it refuses the rename, and a read-only bind-mounted
-/// file refuses the rename (`EPERM`, `EBUSY`) the way the publish
-/// would — before `sysctl -w` changes the live value with no
-/// persistent entry behind it. A refusal leaves the live file exactly
-/// where it was: the path still holds it, so there is no restoration
-/// to fail.
-fn rehearse_replacement(
+/// Refuses a live file the atomic publish cannot replace, without
+/// touching the file: a file mounted over its path — a read-only bind
+/// mount — lives on another device than its parent directory, and the
+/// publish's rename over it fails the way any replacement does. The
+/// comparison is `u64` against `u64` on every platform, with no
+/// narrowing cast.
+fn refuse_unreplaceable(
     path: &std::path::Path,
     file: &str,
-    aside: &std::path::Path,
-    staged: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let live =
+        std::fs::metadata(path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    let parent =
+        std::fs::metadata(dir).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    if live.dev() != parent.dev() {
+        return Err(format!(
+            "sysctl: cannot persist {file}: the file is mounted over its path and cannot be replaced"
+        ));
+    }
+    refuse_locked(path, file)
+}
+
+/// Refuses a file the operating system locks against replacement: the
+/// immutable or append-only inode flags, read without modifying
+/// anything. A filesystem without flag support carries no such flag,
+/// so an unsupported ioctl is not a refusal — the scratch rehearsal
+/// still proves the replacement mechanics.
+#[cfg(target_os = "linux")]
+fn refuse_locked(path: &std::path::Path, file: &str) -> Result<(), String> {
+    let live =
+        std::fs::File::open(path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    let flags = match rustix::fs::ioctl_getflags(&live) {
+        Ok(flags) => flags,
+        Err(_) => return Ok(()),
+    };
+    if flags.intersects(rustix::fs::IFlags::APPEND | rustix::fs::IFlags::IMMUTABLE) {
+        return Err(format!(
+            "sysctl: cannot persist {file}: the file is locked against replacement"
+        ));
+    }
+    Ok(())
+}
+
+/// The same lock on the other platforms: the BSD file flags
+/// (`<sys/stat.h>`), read through `statat` without modifying anything.
+/// The constants are the platform's own `u32` values, compared as
+/// `u32` against `u32`, with no narrowing cast.
+#[cfg(not(target_os = "linux"))]
+fn refuse_locked(path: &std::path::Path, file: &str) -> Result<(), String> {
+    const UF_IMMUTABLE: u32 = 0x0000_0002;
+    const UF_APPEND: u32 = 0x0000_0004;
+    let live = rustix::fs::statat(rustix::fs::CWD, path, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    if live.st_flags & (UF_IMMUTABLE | UF_APPEND) != 0 {
+        return Err(format!(
+            "sysctl: cannot persist {file}: the file is locked against replacement"
+        ));
+    }
+    Ok(())
+}
+
+/// Proves the publish's replacement mechanics under scratch names in
+/// the same directory, without ever renaming the live path: the exact
+/// rewritten bytes are staged carrying the live identity, and the
+/// rename of one scratch name over the other is the operation the
+/// publish performs — over a scratch name instead of the live file.
+/// The directory's own states (permissions, read-only mounts, quotas)
+/// refuse here the way they would refuse the publish; the live inode's
+/// own states are refused by the read-only probes, not exercised. A
+/// refusal leaves the live file exactly where it was: the path still
+/// holds it, so there is no restoration to fail — and an interruption
+/// strands at most scratch names, never rewritten bytes at the live
+/// path.
+fn rehearse_replacement(
+    file: &str,
+    live: &std::fs::Metadata,
+    first: &std::path::Path,
+    second: &std::path::Path,
     content: &[u8],
 ) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
-    let live = std::fs::symlink_metadata(path)
-        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    std::fs::hard_link(path, aside).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     let mut stage = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(staged)
+        .open(first)
         .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     // The staged copy carries the live identity: the mode and the owner
-    // the publish preserves, so even an interruption after the publish
-    // below leaves the path holding the new bytes under the same
-    // identity. The owner is set before the bytes are written and the
-    // mode after, the way the atomic publish orders them.
+    // the publish preserves. The owner is set before the bytes are
+    // written and the mode after, the way the atomic publish orders
+    // them.
     rustix::fs::fchown(
         &stage,
         Some(rustix::fs::Uid::from_raw(live.uid())),
@@ -249,8 +305,12 @@ fn rehearse_replacement(
     stage
         .set_permissions(std::fs::Permissions::from_mode(live.mode() & 0o7777))
         .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    std::fs::rename(staged, path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    std::fs::rename(aside, path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    // The replacement the publish performs, over a scratch name: the
+    // target exists, so the rename replaces — and a directory that
+    // refuses renames refuses here, before `sysctl -w` changes the
+    // live value with no persistent entry behind it.
+    std::fs::write(second, b"").map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    std::fs::rename(first, second).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     Ok(())
 }
 
