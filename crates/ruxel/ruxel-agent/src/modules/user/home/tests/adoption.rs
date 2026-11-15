@@ -286,3 +286,96 @@ fn an_operator_owned_home_under_a_shared_path_is_repaired() {
     );
     std::fs::remove_dir_all(&parent).unwrap();
 }
+
+#[test]
+fn an_attacker_owned_closed_leaf_is_refused() {
+    // The finding's shape: another principal's 0700 leaf under trusted
+    // ancestors — the mode-only fallback adopted it and handed the
+    // account the principal's planted contents at login. Only the root
+    // lane can stage another principal's ownership, so the unprivileged
+    // lanes skip it.
+    use std::os::unix::fs::PermissionsExt;
+    if super::operating_uid() != 0 {
+        return;
+    }
+    // A trusted tree straight under the root: root-owned and closed, so
+    // the refusal below is the leaf's own, not its ancestors'.
+    let parent = std::path::Path::new("/").join(format!("ruxel-adopt-leaf-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&parent);
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let home = parent.join("alice");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(home.join(".profile"), b"evil\n").unwrap();
+    let stranger = 65534u32;
+    rustix::fs::chown(
+        &home,
+        Some(rustix::fs::Uid::from_raw(stranger)),
+        Some(rustix::fs::Gid::from_raw(stranger)),
+    )
+    .unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // No passwd entry claims the scratch home, so no intended account
+    // admits it: the preflight refuses before any mutation.
+    assert_eq!(
+        super::super::adoption::intended_uid(home.to_str().unwrap()),
+        None,
+        "the scratch home names no intended account"
+    );
+    let error = home_usable(home.to_str().unwrap())
+        .expect_err("another principal's closed leaf must be refused");
+    assert!(error.contains("adopt"), "{error}");
+    for check_mode in [true, false] {
+        let error = ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+            .expect_err("another principal's closed leaf must never be adopted");
+        assert!(error.contains("adopt"), "{error}");
+    }
+    // The pinned adoption refuses the replacement the same way: the
+    // descriptors name the leaf the walk opened.
+    let (fd, _) = super::open_home(home.to_str().unwrap(), false).unwrap();
+    let error = super::adoption_pinned(home.to_str().unwrap(), &fd)
+        .expect_err("the pinned adoption must refuse another principal's leaf");
+    assert!(error.contains("adopt"), "{error}");
+    // Nothing was adopted: the ownership and the planted contents are
+    // exactly what the principal left.
+    let meta = std::fs::metadata(&home).unwrap();
+    assert_eq!(
+        meta.uid(),
+        stranger,
+        "the refused directory is never handed to the account"
+    );
+    assert_eq!(
+        std::fs::read(home.join(".profile")).unwrap(),
+        b"evil\n",
+        "the planted contents are preserved, never handed over"
+    );
+    std::fs::remove_dir_all(&parent).unwrap();
+}
+
+#[test]
+fn the_passwd_home_names_its_intended_account() {
+    // The lookup the leaf rule weighs: the account whose home field
+    // names the path. Every host lists an account, so the hit is
+    // portable — and a scratch home misses, so the create flow's
+    // not-yet-existing account never fails a valid creation.
+    let host = std::fs::read_to_string("/etc/passwd").unwrap();
+    let (claimed, uid) = host
+        .lines()
+        .find_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            let uid: u32 = fields.get(2)?.parse().ok()?;
+            Some((fields.get(5)?.to_string(), uid))
+        })
+        .expect("the host lists an account");
+    assert_eq!(
+        super::super::adoption::intended_uid(&claimed),
+        Some(uid),
+        "the passwd home names its account"
+    );
+    let missing = std::env::temp_dir().join(format!("ruxel-adopt-miss-{}", std::process::id()));
+    assert_eq!(
+        super::super::adoption::intended_uid(missing.to_str().unwrap()),
+        None,
+        "an unclaimed home names no intended account"
+    );
+}
