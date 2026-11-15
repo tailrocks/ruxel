@@ -16,4 +16,5 @@ mod no_log;
 mod preflight;
 mod publish;
 mod rewrite;
+mod trim;
 mod values;
