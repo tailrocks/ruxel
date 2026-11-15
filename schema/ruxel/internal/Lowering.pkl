@@ -312,36 +312,44 @@ function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot
 /// both claimant stages share, with a removal the runtime can prove
 /// will succeed for the draw (see `removedDraw`): a removal that fails
 /// its live-entry verification frees nothing, and the later claim
-/// would collide on the number the draw still holds.
+/// would collide on the number the draw still holds. The proof is per
+/// host: a removal that runs on another machine leaves the identity
+/// where it is on this one.
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
   sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes, k, c, d)))
+      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_stages, _indexes, k, c, h)))
 
 /// Whether a stage removes the identity that drew the number with a
-/// removal the runtime can prove will succeed for the draw. The removal
-/// states the id the runtime verifies against the live entry, so a
-/// declaration that names another number fails the run rather than
-/// freeing the draw — the same match `removedNumber` demands of the
-/// claim — and an automatic system account is never freed at all: its
-/// number is the host's to keep, and the schema refuses the removal of
-/// an account below UID 1000, where `userdel` refuses to remove the
-/// account and `groupdel` refuses the private group it still holds as
-/// its primary one. A number below 1000 is never freed either: the
-/// removal that states it is refused by the schema. A group removal
-/// that states no gid frees by name:
-/// the runtime verifies only the id it is given. `userdel` deletes the
-/// empty same-name group with the account, so an account removal frees
-/// a private-group draw where the account's uid is the declared one the
-/// removal verifies — but only where that group is the account's
-/// primary one and no other account keeps a membership in it: a group
-/// another account is a member of is left behind, and its number stays
-/// taken.
-const function removedDraw(_indexes: List<StageIndex>, k: Int, c: IdDraw, d: IdClaim): Boolean =
+/// removal the runtime can prove will succeed for the draw, on the
+/// host `h` the proof is about.
+///
+/// A drawn number is no number the schema can name: the host's
+/// allocator chose it, so a removal that declares one possible value
+/// proves nothing about the value the draw took — the runtime verifies
+/// the declared id against the live entry and refuses the removal when
+/// the two differ, so a declaration never frees the draw. An account's
+/// drawn uid is never freed at all: the schema refuses every account
+/// removal that states no uid, so no removal can name the number the
+/// draw took. A drawn gid is freed only by a removal that frees by
+/// name — a group removal that states no gid, and an account removal
+/// whose declared uid is the account's own declared one, which
+/// verifies against the live entry and takes the empty same-name
+/// private group with the account, but only where that group is the
+/// account's primary one and no other account keeps a membership in it:
+/// a group another account is a member of is left behind, and its
+/// number stays taken.
+///
+/// An automatic system account is never freed at all: its number is the
+/// host's to keep, and the schema refuses the removal of an account
+/// below UID 1000, where `userdel` refuses to remove the account and
+/// `groupdel` refuses the private group it still holds as its primary
+/// one.
+const function removedDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, c: IdDraw, h: core.Host): Boolean =
   if (c.system) false
-  else if (c.kind == "uid") d.number >= 1000 && _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
-  else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
-    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_indexes, k, c.name)))
+  else if (c.kind == "uid") false
+  else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, c.name, h)))
 
 /// The removal declares the same-name group as the account's primary
 /// one: `userdel` takes the same-name group with the account only
@@ -357,12 +365,13 @@ const function samePrimaryGroup(s: core.Step, n: String): Boolean =
 /// the removal's stage — that names the group as its primary group or
 /// among its supplementary groups. An account removed in a stage
 /// between the one that declares it and the removal's stage has left
-/// the group already.
-const function groupHeld(_indexes: List<StageIndex>, k: Int, n: String): Boolean =
+/// the group already — where that stage runs on the host the proof is
+/// about: a removal on another machine leaves the membership here.
+const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, n: String, h: core.Host): Boolean =
   positions(_indexes).filter((m) -> m <= k).any((m) -> positions(_indexes[m].steps).any((j) ->
     let (u = _indexes[m].steps[j])
     if (!(u is linux.User)) false
-    else u.state == "present" && u.user != n && holdsGroup(u, n) && !removedBetween(_indexes, m, k, u.user)))
+    else u.state == "present" && u.user != n && holdsGroup(u, n) && !removedBetween(_stages, _indexes, m, k, u.user, h)))
 
 /// Whether the account names the group `n` as its primary group or
 /// among its supplementary groups.
@@ -370,9 +379,10 @@ const function holdsGroup(u: linux.User, n: String): Boolean =
   u.group == n || (u.groups != null && u.groups.toList().contains(n))
 
 /// Whether the account is removed in a stage between the one that
-/// declares it and the removal's stage.
-const function removedBetween(_indexes: List<StageIndex>, m: Int, k: Int, account: String): Boolean =
-  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> _indexes[s].steps.any((x) -> x is linux.User && x.state == "absent" && x.user == account))
+/// declares it and the removal's stage — on the host `h`: a stage that
+/// runs on another machine leaves the account where it is here.
+const function removedBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, account: String, h: core.Host): Boolean =
+  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> stageRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> x is linux.User && x.state == "absent" && x.user == account))
 
 function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
   if (c.stage == d.stage)
@@ -421,11 +431,35 @@ function overwrittenEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: St
 /// The refusals for a sysctl whose persistence path an owner of the
 /// other stage leaves as anything but a regular file: the entry joins a
 /// file, so a directory, a link or a checkout at the path makes the
-/// sysctl task fail wherever the owner stands in the order.
+/// sysctl task fail wherever the owner stands in the order. The home of
+/// a present account counts among them: the account's task creates the
+/// directory, so the sysctl task fails on it too.
 function unusableEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   sysctlsOf(ib).flatMap((x) -> positions(ia.steps)
-    .filter((j) -> !(ia.steps[j] is linux.Sysctl) && (ia.steps[j] is core.Directory || ia.steps[j] is core.Symlink || ia.steps[j] is linux.GitCheckout) && paths(ia.steps[j]).contains(x.path))
-    .map((j) -> "'\(name(ia.steps[j]))' of stage \"\(a.title)\" leaves \(x.path) as \(if (ia.steps[j] is core.Symlink) "a link" else if (ia.steps[j] is core.Directory) "a directory" else "a checkout"), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
+    .filter((j) -> !(ia.steps[j] is linux.Sysctl) && leavesUnusable(ia.steps[j], x.path))
+    .map((j) -> "'\(name(ia.steps[j]))' of stage \"\(a.title)\" leaves \(x.path) as \(unusableAs(ia.steps[j])), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
+
+/// Whether the step leaves the path `p` as something a sysctl entry
+/// cannot join: a directory, a link or a checkout — and the home of a
+/// present account, which the account's task creates as a directory.
+const function leavesUnusable(s: core.Step, p: String): Boolean =
+  (s is core.Directory && paths(s).contains(p))
+  || (s is core.Symlink && paths(s).contains(p))
+  || (s is linux.GitCheckout && paths(s).contains(p))
+  || (s is linux.User && s.state == "present" && presentHome(s).contains(p))
+
+/// The home a present account's task leaves behind: the home the step
+/// manages, or the default one `useradd -m` creates beside the account
+/// when it states none.
+const function presentHome(s: linux.User): List<String> =
+  if (s.state == "present") List(if (s.home != null) s.home else "/home/\(s.user)") else List()
+
+/// What the step leaves the path as, for the refusal's wording.
+const function unusableAs(s: core.Step): String =
+  if (s is core.Symlink) "a link"
+  else if (s is core.Directory) "a directory"
+  else if (s is linux.GitCheckout) "a checkout"
+  else "the account's home directory"
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
