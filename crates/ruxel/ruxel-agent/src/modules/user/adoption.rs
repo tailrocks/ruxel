@@ -109,18 +109,15 @@ fn standing_parent(link: &Path, home: &str) -> Result<PathBuf, String> {
 }
 
 /// Every directory a symlink target leads through, trusted the way
-/// trusted ancestors are: the resolution starts where the link stands —
-/// a relative target against its parent directory, the way the kernel
-/// resolves it — and every existing directory on the way must be the
-/// operator's own and writable by no one else. There is no carve-out
-/// for group writability: a group-writable intermediate lets any member
-/// of the group rename the resolved target aside after the check and
-/// plant a tree the managed account then executes at login — and the
-/// lexical walk already refuses a group-writable ancestor, so a chain
-/// check that admitted one would be inconsistent with it. A nested link
-/// is admitted where it stands the same way, within the expansion
-/// budget; a missing component ends the walk, for the rest does not
-/// exist yet and nothing could have been planted under it.
+/// trusted ancestors are — except that an intermediate admits one
+/// narrow case: a root-owned directory whose group writability belongs
+/// to a privileged group. Renaming the target aside there needs a
+/// writer, and every writer is already privileged (root everywhere,
+/// admin on macOS), so no privilege boundary is crossed. The resolved
+/// target itself always takes the full ancestor rule. A nested link is
+/// admitted where it stands the same way, within the expansion budget;
+/// a missing component ends the walk, for the rest does not exist yet
+/// and nothing could have been planted under it.
 pub(super) fn symlink_target_trusted(base: &Path, target: &Path, home: &str) -> Result<(), String> {
     target_dirs_trusted(&join_normalized(base, target), home, 8)
 }
@@ -178,11 +175,19 @@ fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), St
                 return target_dirs_trusted(&spliced, home, budget - 1);
             }
             Ok(meta) if meta.is_dir() => {
-                // Every directory on the chain — the resolved target
-                // and every intermediate alike — takes the full ancestor
-                // rule (see `symlink_target_trusted`): a principal that
-                // can write any of them can redirect the home.
-                if !own_directory(meta.uid(), meta.mode()) {
+                // The resolved target takes the full ancestor rule; an
+                // intermediate takes the chain rule (see
+                // `symlink_target_trusted`): a principal that can write
+                // the target can redirect the home, while an
+                // intermediate admits root-owned group writability by a
+                // privileged group — every writer there is already
+                // privileged.
+                let trusted = if prefix == *resolved {
+                    own_directory(meta.uid(), meta.mode())
+                } else {
+                    chain_dir_trusted(meta.uid(), meta.gid(), meta.mode())
+                };
+                if !trusted {
                     return Err(format!(
                         "user: refusing to adopt the existing home {home}: {} is writable by others or not the operator's, so a non-root principal may have placed the home beneath it",
                         prefix.display()
@@ -216,12 +221,37 @@ pub(super) fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), S
 /// Whether the directory is the operator's own and writable by no one
 /// else: only the operator could have created it and only the operator
 /// could have filled it, so its adoption hands the account no
-/// principal's contents but the operator's. Every directory of a
-/// resolved symlink target takes this same rule — the lexical ancestors
-/// and the chain intermediaries alike, with no carve-out for group
-/// writability (see `symlink_target_trusted`).
+/// principal's contents but the operator's. The lexical ancestors and
+/// the resolved target take this rule; chain intermediaries take it or
+/// the privileged-group exception (`chain_dir_trusted`).
 pub(super) fn own_directory(uid: u32, mode: u32) -> bool {
     (uid == 0 || uid == operating_uid()) && mode & 0o022 == 0
+}
+
+/// Whether a chain intermediate is trusted: the full ancestor rule, or
+/// a root-owned directory whose group writability belongs to a
+/// privileged group. Renaming the resolved target aside needs a writer:
+/// the owner is root, the group holds no unprivileged principal, and
+/// others cannot write — so no unprivileged principal can plant
+/// through it.
+///
+/// The other-triplet check is other-write, not other-closed: others
+/// traverse every root-owned system directory already (including `/`),
+/// and traversal without write cannot rename anything aside. An
+/// other-closed check would refuse `root:admin 0775` layouts — macOS
+/// routes all of `/home` through one — without buying any privilege
+/// boundary.
+pub(super) fn chain_dir_trusted(uid: u32, gid: u32, mode: u32) -> bool {
+    own_directory(uid, mode)
+        || (uid == 0 && mode & 0o002 == 0 && mode & 0o020 != 0 && privileged_gid(gid))
+}
+
+/// Whether the group holds no unprivileged principal: root everywhere,
+/// and admin on macOS, whose members can already sudo. Any other group
+/// may hold a lower-privileged local user, whose group writability is
+/// refused.
+pub(super) fn privileged_gid(gid: u32) -> bool {
+    gid == 0 || (cfg!(target_os = "macos") && gid == 80)
 }
 
 /// The uid the agent operates as: the owner of a file the agent just

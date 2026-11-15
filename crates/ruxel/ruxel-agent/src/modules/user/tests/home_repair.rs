@@ -389,54 +389,19 @@ fn a_failed_creation_takes_back_only_the_home_it_created() {
 
 #[test]
 fn a_group_writable_symlink_target_ancestor_is_refused() {
-    use std::os::unix::fs::PermissionsExt;
-    // Every directory a resolved symlink target leads through takes the
-    // full ancestor rule, with no carve-out for group writability: an
-    // intermediate `root:<group>` 0775 directory lets any member of the
-    // group rename the resolved target aside after the check and plant a
-    // tree the managed account then executes at login. The lexical walk
-    // already refuses such an ancestor, so the chain check must refuse
-    // it too.
+    // The strict base rule the lexical ancestors, the resolved target
+    // and the chain's first disjunct enforce: no group write, no other
+    // write, operator-owned. The chain's narrow privileged-group
+    // exception lives in `chain_dir_trusted` and is pinned with the
+    // chain tests in `shells.rs`.
     let operator = adoption::operating_uid();
     for uid in [0, operator] {
         assert!(adoption::own_directory(uid, 0o755));
         assert!(
             !adoption::own_directory(uid, 0o775),
-            "a group-writable intermediate is refused"
+            "a group-writable directory fails the strict rule"
         );
         assert!(!adoption::own_directory(uid, 0o777));
         assert!(!adoption::own_directory(uid, 0o707));
     }
-    if operator != 0 {
-        // The staging below needs root-owned directories.
-        return;
-    }
-    // The regression the predicate pins, staged end to end: the home
-    // continues beneath a link whose target leads through a
-    // group-writable intermediate.
-    let base = std::path::Path::new("/").join(format!("ruxel-chain-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
-    let real = base.join("real");
-    std::fs::create_dir_all(&real).unwrap();
-    std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
-    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o775)).unwrap();
-    std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
-    let home = base.join("link/alice");
-    let error = adoption::symlink_target_trusted(
-        &base,
-        std::path::Path::new("link/alice"),
-        home.to_str().unwrap(),
-    )
-    .expect_err("a group-writable intermediate must be refused");
-    assert!(error.contains("writable by others"), "{error}");
-    // The control: the same chain with the intermediate closed to the
-    // group is admitted — the missing leaf ends the walk.
-    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
-    adoption::symlink_target_trusted(
-        &base,
-        std::path::Path::new("link/alice"),
-        home.to_str().unwrap(),
-    )
-    .expect("a chain of operator-owned unwritable directories is admitted");
-    std::fs::remove_dir_all(&base).unwrap();
 }
