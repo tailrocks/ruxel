@@ -126,7 +126,7 @@ pub(super) fn apply_attrs(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    let ownership = super::resolve_ownership(obj)?;
+    let ownership = super::resolve_ownership(obj, check_mode)?;
     apply_attrs_with(path, obj, &ownership, changed, check_mode)
 }
 
@@ -153,7 +153,7 @@ pub(super) fn apply_attrs_fd(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    let ownership = super::resolve_ownership(obj)?;
+    let ownership = super::resolve_ownership(obj, check_mode)?;
     apply_attrs_fd_with(fd, obj, &ownership, changed, check_mode)
 }
 

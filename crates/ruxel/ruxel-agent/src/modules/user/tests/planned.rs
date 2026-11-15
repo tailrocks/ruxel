@@ -258,6 +258,7 @@ fn a_recreated_account_keeps_the_pending_ownership() {
     run(&json!({"name": name, "create_home": false}), &check).expect("the creation must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"owner": name}).as_object().expect("params object"),
+        true,
     )
     .expect("the recreated account must resolve");
     assert!(
@@ -281,6 +282,7 @@ fn a_recreated_group_keeps_the_pending_ownership() {
     group(&json!({"name": name}), &check).expect("the creation must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"group": name}).as_object().expect("params object"),
+        true,
     )
     .expect("the recreated group must resolve");
     assert!(
@@ -381,6 +383,7 @@ fn a_removal_keeps_a_planned_same_name_group_the_account_does_not_hold() {
     .expect("the removal must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"group": name}).as_object().expect("params object"),
+        true,
     )
     .expect("the group's plan must survive the removal of the account");
     assert!(

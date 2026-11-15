@@ -50,6 +50,11 @@ thread_local! {
     static RENUMBERED_GROUPS: RefCell<BTreeMap<String, (u64, u64)>> = const { RefCell::new(BTreeMap::new()) };
     static SHELLS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
     static COMMENTS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
+    /// The accounts whose number the plan has moved: renumbered, or
+    /// removed and created anew, so the allocator draws the number.
+    static CHANGED_USERS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// The groups whose number the plan has moved.
+    static CHANGED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
 pub(super) fn note(name: &str, requested: Option<u32>) {
@@ -132,6 +137,32 @@ pub(crate) fn user_recreated(name: &str) -> bool {
 /// present again, so its number is the allocator's to draw.
 pub(crate) fn group_recreated(name: &str) -> bool {
     group_removed(name) && group_requested(name).is_some()
+}
+
+/// The plan moved the account's number: it renumbered the account, or
+/// removed it and created it anew — the allocator draws the number
+/// then, and the old one is gone whatever the files that held it say.
+pub(super) fn note_changed_user(name: &str) {
+    CHANGED_USERS.with(|users| {
+        users.borrow_mut().insert(name.to_string());
+    });
+}
+
+/// Whether the plan moved the account's number.
+pub(crate) fn user_number_changed(name: &str) -> bool {
+    CHANGED_USERS.with(|users| users.borrow().contains(name))
+}
+
+/// The group counterpart: the plan moved the group's number.
+pub(super) fn note_changed_group(name: &str) {
+    CHANGED_GROUPS.with(|groups| {
+        groups.borrow_mut().insert(name.to_string());
+    });
+}
+
+/// Whether the plan moved the group's number.
+pub(crate) fn group_number_changed(name: &str) -> bool {
+    CHANGED_GROUPS.with(|groups| groups.borrow().contains(name))
 }
 
 /// What the plan's account step requested; `None`: undeclared.
