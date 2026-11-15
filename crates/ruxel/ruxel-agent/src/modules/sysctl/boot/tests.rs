@@ -1,40 +1,9 @@
 //! The name is what the boot selects: every entry holds its
 //! basename even where it contributes no bytes.
 
+use super::scratch::{Scratch, dirs_of};
 use super::{boot_bytes, boot_override, scan_error, system_files_in};
 use std::path::PathBuf;
-
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new(name: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("ruxel-sysctl-select-{}-{name}", std::process::id()));
-        drop(std::fs::remove_dir_all(&path));
-        std::fs::create_dir_all(&path).expect("operation succeeds");
-        Self(path)
-    }
-
-    fn dir(&self, name: &str) -> PathBuf {
-        let path = self.0.join(name);
-        std::fs::create_dir_all(&path).expect("operation succeeds");
-        path
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        drop(std::fs::remove_dir_all(&self.0));
-    }
-}
-
-fn dirs_of(etc: &std::path::Path, usr: &std::path::Path) -> (String, String) {
-    (
-        etc.to_str().expect("path is text").to_owned(),
-        usr.to_str().expect("path is text").to_owned(),
-    )
-}
-
 #[test]
 fn a_link_to_a_directory_holds_the_name_at_boot() {
     // procps records the entry's basename before it tries to open
