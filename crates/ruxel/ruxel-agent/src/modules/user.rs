@@ -145,6 +145,14 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                 // know, so the guards that need a number cannot run.
                 let effective_gid = match planned {
                     Some(Requested::Number(number)) => Some(u64::from(number)),
+                    // The plan removed the group and declares it present
+                    // again without a number: the apply takes the group
+                    // away and creates it anew, so the allocator draws
+                    // the number and the live entry is stale — check
+                    // mode must not verify the declaration against it.
+                    // The recreated number stays pending instead. Apply
+                    // resolves the live entry the recreation drew.
+                    _ if ctx.check_mode && plan::group_recreated(name) => None,
                     _ => entry.as_ref().map(|(_, current_gid)| *current_gid),
                 };
                 if let Some(effective_gid) = effective_gid {
@@ -1277,6 +1285,79 @@ mod cat06_batch_b {
             super::plan::primary(&name).map(|planned| planned.name),
             Some(primary),
             "the successful retry records the primary group afterwards"
+        );
+    }
+
+    /// A live group no account holds as its primary group: the removal
+    /// of such a group is admittable.
+    pub(super) fn removable_group() -> (String, u64) {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        groups
+            .lines()
+            .find_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                if f.len() < 3 {
+                    return None;
+                }
+                let gid: u64 = f[2].parse().ok()?;
+                if gid == 0 {
+                    return None;
+                }
+                super::guards::primary_group_holder_from(&passwd, gid, f[0])
+                    .is_none()
+                    .then(|| (f[0].to_string(), gid))
+            })
+            .expect("a group no account holds as its primary group")
+    }
+
+    #[test]
+    fn check_mode_keeps_an_unnumbered_recreation_pending_at_removal() {
+        // The plan removes a live group, recreates it without a number
+        // and removes it again with a declared number: the apply draws
+        // the recreated number from the allocator, so the live entry is
+        // stale — check mode keeps the recreated number pending instead
+        // of verifying the declaration against the stale entry.
+        let check = check_context();
+        let (name, live) = removable_group();
+        group(&json!({"name": name, "state": "absent"}), &check).expect("the removal must plan");
+        group(&json!({"name": name}), &check).expect("the recreation must plan");
+        let wrong = live + 100_000;
+        let result = group(
+            &json!({"name": name, "state": "absent", "gid": wrong}),
+            &check,
+        )
+        .expect("the pending number is not the stale one");
+        assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+    }
+
+    #[test]
+    fn apply_mode_verifies_the_removal_against_the_live_group() {
+        // The mirror: apply resolves the live entry the recreation drew,
+        // so a declaration that matches no live number is refused before
+        // anything mutates.
+        let apply = apply_context();
+        let (name, live) = removable_group();
+        test_hook::arm(vec![Ok(())]);
+        group(&json!({"name": name, "state": "absent"}), &apply).expect("the removal must run");
+        test_hook::take_calls();
+        test_hook::arm(vec![Ok(())]);
+        group(&json!({"name": name}), &apply).expect("the recreation must run");
+        test_hook::take_calls();
+        // The stand-in stays armed with no results: a regression that
+        // reaches `groupdel` fails the test instead of touching the
+        // host.
+        test_hook::arm(vec![]);
+        let wrong = live + 100_000;
+        let error = group(
+            &json!({"name": name, "state": "absent", "gid": wrong}),
+            &apply,
+        )
+        .expect_err("the live group holds another number");
+        assert!(error.contains("not the declared"), "{error}");
+        assert!(
+            test_hook::take_calls().is_empty(),
+            "groupdel never ran: the removal was refused before it"
         );
     }
 }
