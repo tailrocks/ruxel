@@ -69,6 +69,7 @@ dual_evaluator
   tests/workflow/invalid/linux-file-owner-removed.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-unknown.pkl
+  tests/workflow/invalid/linux-file-owner-renumbered.pkl
   tests/workflow/invalid/linux-file-sysctl-clash.pkl
   tests/workflow/invalid/linux-group-absent-after-user.pkl
   tests/workflow/invalid/linux-group-absent-root.pkl
@@ -128,6 +129,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-needs-later-account.pkl
   tests/workflow/invalid/linux-user-needs-later-group.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
+  tests/workflow/invalid/linux-user-private-group-gone-no-member.pkl
   tests/workflow/invalid/linux-user-private-group-member-removed-on-other-host.pkl
   tests/workflow/invalid/linux-user-removal-home-mismatch.pkl
   tests/workflow/invalid/linux-user-removal-uid-mismatch.pkl
@@ -200,6 +202,7 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/linux-file-owner-renumbered-reconciled.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
   tests/workflow/valid/linux-group-gid-freed-by-departure.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
@@ -221,6 +224,7 @@ dual_evaluator
   tests/workflow/valid/linux-user-home-directory-cross-stage.pkl
   tests/workflow/valid/linux-user-home-recreated-by-account.pkl
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
+  tests/workflow/valid/linux-user-private-group-survives-for-member.pkl
   tests/workflow/valid/linux-user-removal-home-match.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl
   tests/workflow/valid/linux-user-removal-uid-match.pkl
