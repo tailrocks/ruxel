@@ -105,6 +105,7 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
             path: "/srv/alice".to_string(),
             uid: 1500,
             owner: super::super::apply::HomeOwner::Number(gid),
+            managed_uid: 1500,
         }),
         "the declared home is repaired to the declared group's number"
     );
@@ -139,6 +140,7 @@ fn the_default_home_repair_covers_a_primary_group_move() {
             path: format!("/home/{account}"),
             uid: 1500,
             owner: super::super::apply::HomeOwner::Number(gid),
+            managed_uid: 1500,
         }),
         "the default home is repaired to the moved group's number"
     );
@@ -265,6 +267,7 @@ fn a_group_only_change_repairs_the_account_effective_home() {
             path: "/srv/alice".to_string(),
             uid: 1500,
             owner: super::super::apply::HomeOwner::Number(gid),
+            managed_uid: 1500,
         }),
         "the group-only change repairs the account's effective home, not the creation default"
     );
@@ -290,6 +293,7 @@ fn a_group_only_change_repairs_the_account_effective_home() {
             path: format!("/home/{account}"),
             uid: 1500,
             owner: super::super::apply::HomeOwner::Number(gid),
+            managed_uid: 1500,
         }),
         "a default effective home still repairs the default path"
     );

@@ -8,7 +8,7 @@ use super::{ExecContext, bool_param, params_object, str_param};
 
 #[cfg(test)]
 use home::ensure_home;
-use home::{claimed_home, home_gid, home_usable, reconcile_created_home};
+use home::{ManagedAccount, claimed_home, home_gid, home_usable, reconcile_created_home};
 use shell::shell_provided;
 
 mod adoption;
@@ -519,7 +519,26 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // step's to validate — while a declared home is validated for it
     // exactly like the claimed one, before `usermod` moves the field.
     if manages_home(entry.is_some(), home.is_some()) {
-        home_usable(&claimed_home(home, name))?;
+        // The account the preflight judges the home for: the live
+        // account where the host holds one — a creation's account is
+        // not in the database yet, so the declared number stands in,
+        // and `None` where the step states none and the allocator
+        // draws it: no intended claim can match it then.
+        let path = claimed_home(home, name);
+        let managed_uid = match entry.as_ref() {
+            Some(current) => Some(
+                u32::try_from(current.uid)
+                    .map_err(|_| format!("user: home {path}: uid {} does not fit", current.uid))?,
+            ),
+            None => uid.and_then(|declared| u32::try_from(declared).ok()),
+        };
+        home_usable(
+            &path,
+            &ManagedAccount {
+                name,
+                uid: managed_uid,
+            },
+        )?;
     }
 
     // The home the account's passwd entry carries under the plan: the
@@ -1040,8 +1059,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // The plan's record of the declared primary group and
             // supplementary set: check mode runs no `usermod`, so the
             // record is made here in advance and later tasks resolve
-            // against it. Apply records it only after the change below
-            // succeeds.
+            // against it.
             if ctx.check_mode {
                 if let Some(primary) = planned_primary.clone() {
                     plan::note_primary(name, primary);
@@ -1328,11 +1346,13 @@ fn planned_home_repair(
             path: path.to_string(),
             uid: uid.unwrap_or(effective_uid),
             owner,
+            managed_uid: effective_uid,
         }),
         None if primary_gid_moves => owner.map(|owner| Home {
             path: planned_home.to_string(),
             uid: uid.unwrap_or(effective_uid),
             owner,
+            managed_uid: effective_uid,
         }),
         None => None,
     })
