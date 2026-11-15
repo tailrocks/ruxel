@@ -348,7 +348,12 @@ fn base_name_bytes(path: &[u8]) -> Option<&[u8]> {
 fn final_assignment<'a>(content: &'a [u8], key: &str, named: &[String]) -> Option<&'a [u8]> {
     let mut last: Option<&[u8]> = None;
     for line in content.split(|byte| *byte == b'\n') {
-        let line = trim(line);
+        // A trailing carriage return is the line ending, not the
+        // value: the syntax-blank trim no longer covers it (managed
+        // values forbid it), so the ending is stripped beside the trim
+        // the way the file rewrite strips it — a CRLF host file's
+        // entry is the same entry, and procps strips it too.
+        let line = trim(line.strip_suffix(b"\r").unwrap_or(line));
         if line.is_empty() || line[0] == b'#' {
             continue;
         }
