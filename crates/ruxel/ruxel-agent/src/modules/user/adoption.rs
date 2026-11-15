@@ -112,19 +112,15 @@ fn standing_parent(link: &Path, home: &str) -> Result<PathBuf, String> {
 /// trusted ancestors are: the resolution starts where the link stands —
 /// a relative target against its parent directory, the way the kernel
 /// resolves it — and every existing directory on the way must be the
-/// operator's own and never writable by a lower-privileged local user
-/// as `other`. Group writability on a root-owned directory is the
-/// platform's own administration (the operator's link into it, like
-/// `/home` through `root:admin` on macOS), not a lower-privileged
-/// principal's to plant through — and anything planted there is itself
-/// validated before adoption. The resolved target itself — the
-/// directory the home continues beneath — additionally takes the full
-/// ancestor rule: a principal that can write it could rename the fresh
-/// home aside after the repair and plant its own contents at the passwd
-/// path. A nested link is admitted where it stands the same way,
-/// within the expansion budget; a missing component ends the walk, for
-/// the rest does not exist yet and nothing could have been planted
-/// under it.
+/// operator's own and writable by no one else. There is no carve-out
+/// for group writability: a group-writable intermediate lets any member
+/// of the group rename the resolved target aside after the check and
+/// plant a tree the managed account then executes at login — and the
+/// lexical walk already refuses a group-writable ancestor, so a chain
+/// check that admitted one would be inconsistent with it. A nested link
+/// is admitted where it stands the same way, within the expansion
+/// budget; a missing component ends the walk, for the rest does not
+/// exist yet and nothing could have been planted under it.
 pub(super) fn symlink_target_trusted(base: &Path, target: &Path, home: &str) -> Result<(), String> {
     target_dirs_trusted(&join_normalized(base, target), home, 8)
 }
@@ -182,16 +178,11 @@ fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), St
                 return target_dirs_trusted(&spliced, home, budget - 1);
             }
             Ok(meta) if meta.is_dir() => {
-                // The resolved target itself takes the full ancestor
-                // rule; an intermediate only needs the operator's
-                // ownership without `other`-write (see
-                // `symlink_target_trusted`).
-                let trusted = if prefix == *resolved {
-                    own_directory(meta.uid(), meta.mode())
-                } else {
-                    link_target_usable(meta.uid(), meta.mode())
-                };
-                if !trusted {
+                // Every directory on the chain — the resolved target
+                // and every intermediate alike — takes the full ancestor
+                // rule (see `symlink_target_trusted`): a principal that
+                // can write any of them can redirect the home.
+                if !own_directory(meta.uid(), meta.mode()) {
                     return Err(format!(
                         "user: refusing to adopt the existing home {home}: {} is writable by others or not the operator's, so a non-root principal may have placed the home beneath it",
                         prefix.display()
@@ -222,13 +213,15 @@ pub(super) fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), S
     fchmod(fd, mode).map_err(|error| format!("user: create home {home}: {error}"))
 }
 
-/// Whether a directory a symlink target leads through is the
-/// operator's own and never writable by a lower-privileged local user
-/// as `other`: only the operator could have placed it, and no
-/// lower-privileged principal can plant through it. Group writability
-/// stays the platform's own to grant.
-fn link_target_usable(uid: u32, mode: u32) -> bool {
-    (uid == 0 || uid == operating_uid()) && mode & 0o002 == 0
+/// Whether the directory is the operator's own and writable by no one
+/// else: only the operator could have created it and only the operator
+/// could have filled it, so its adoption hands the account no
+/// principal's contents but the operator's. Every directory of a
+/// resolved symlink target takes this same rule — the lexical ancestors
+/// and the chain intermediaries alike, with no carve-out for group
+/// writability (see `symlink_target_trusted`).
+pub(super) fn own_directory(uid: u32, mode: u32) -> bool {
+    (uid == 0 || uid == operating_uid()) && mode & 0o022 == 0
 }
 
 /// The uid the agent operates as: the owner of a file the agent just
@@ -267,14 +260,6 @@ fn probe_operating_uid() -> Result<u32, String> {
         }
     }
     Err("the operator probe could not be created".to_string())
-}
-
-/// Whether the directory is the operator's own and writable by no one
-/// else: only the operator could have created it and only the operator
-/// could have filled it, so its adoption hands the account no
-/// principal's contents but the operator's.
-fn own_directory(uid: u32, mode: u32) -> bool {
-    (uid == 0 || uid == operating_uid()) && mode & 0o022 == 0
 }
 
 /// An existing home directory the account adopts: the directory is
