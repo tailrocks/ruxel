@@ -1,0 +1,20 @@
+// expect-pkl: !contains("\u{0}")
+// expect-pklr: expected SysctlValue
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A kernel parameter value reaches the kernel through a process
+// argument — `sysctl -w name=value` — and an argument cannot hold a
+// NUL: the spawn of that command fails with an opaque error instead of
+// naming the value at fault. The value is refused at the schema
+// boundary, so an accepted workflow stays executable.
+stages {
+  new Stage {
+    title = "Kernel"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1\u{0}2" }
+    }
+  }
+}

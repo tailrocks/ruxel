@@ -1,4 +1,6 @@
-use super::{ExecContext, bool_param, params_object, reject_newlines, str_param, write_atomic};
+use super::{
+    ExecContext, bool_param, params_object, reject_newlines, reject_nuls, str_param, write_atomic,
+};
 use serde_json::{Value, json};
 
 mod boot;
@@ -30,6 +32,13 @@ pub(super) fn run(
         other => return Err(format!("sysctl: invalid value {other:?}")),
     };
     reject_newlines("sysctl", &[("name", name), ("value", &value)])?;
+    // A NUL cannot be in a process argument: the live value reaches the
+    // kernel through `sysctl -w name=value`, and the spawn of that
+    // command would fail with an opaque error instead of naming the
+    // value at fault. The schema's `SysctlValue` refuses such a value
+    // too, but the runtime states the rule itself, so a value that
+    // reaches the module by any other way is refused here.
+    reject_nuls("sysctl", &[("value", &value)])?;
     let state = str_param(obj, "state").unwrap_or("present");
     if state != "present" {
         return Err(format!(
