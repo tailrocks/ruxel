@@ -1,4 +1,3 @@
-use rustix::fs::fstat;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
 
@@ -209,11 +208,17 @@ pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
 /// is refused; the descriptors name the replacement, so the refusal
 /// sees it.
 pub(super) fn adoption_pinned(home: &str, fd: &OwnedFd) -> Result<(), String> {
-    let meta = fstat(fd).map_err(|error| format!("user: own home {home}: {error}"))?;
-    if own_directory(meta.st_uid, meta.st_mode.into()) {
+    use std::os::unix::fs::MetadataExt;
+    let duplicate = fd
+        .try_clone()
+        .map_err(|error| format!("user: own home {home}: {error}"))?;
+    let meta = std::fs::File::from(duplicate)
+        .metadata()
+        .map_err(|error| format!("user: own home {home}: {error}"))?;
+    if own_directory(meta.uid(), meta.mode()) {
         return Ok(());
     }
-    if meta.st_mode & 0o022 != 0 {
+    if meta.mode() & 0o022 != 0 {
         return Err(format!(
             "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
         ));
