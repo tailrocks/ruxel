@@ -307,7 +307,7 @@ fn a_failed_creation_takes_back_only_the_home_it_created() {
     let take_back = |home: &std::path::Path, preexisted: bool, calls: Rc<RefCell<Vec<String>>>| {
         super::super::take_back_created_account(
             "alice",
-            None,
+            super::super::PrivateGroup::Declared,
             home.to_str().unwrap(),
             preexisted,
             &|account| {
@@ -316,6 +316,10 @@ fn a_failed_creation_takes_back_only_the_home_it_created() {
             },
             &|account| {
                 calls.borrow_mut().push(format!("userdel {account}"));
+                Ok(())
+            },
+            &|group| {
+                calls.borrow_mut().push(format!("groupdel {group}"));
                 Ok(())
             },
             &|_: &str| Ok(true),
