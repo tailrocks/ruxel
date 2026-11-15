@@ -132,28 +132,6 @@ pub(super) fn ensure_home(
     }
 }
 
-/// The home's repair a later failure takes back: the ownership the
-/// repair found, restored — or the directory the repair created,
-/// removed. The reversal runs on the descriptors the safe walk opens,
-/// never through a link a concurrent rewrite plants, for the repair's
-/// own reason. Removing the created directory takes back exactly what
-/// the repair added: the removal refuses a directory that is not
-/// empty, so contents a concurrent writer planted are kept and
-/// reported rather than deleted.
-pub(super) fn rollback_home(path: &str, prior: Option<(u64, u64)>) -> Result<(), String> {
-    match prior {
-        Some((uid, gid)) => {
-            let uid = u32::try_from(uid)
-                .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
-            let gid = u32::try_from(gid)
-                .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
-            own_through(&open_home(path, false)?, uid, gid, path)
-        }
-        None => std::fs::remove_dir(path)
-            .map_err(|error| format!("user: take back created home {path}: {error}")),
-    }
-}
-
 /// The claimed home of the account the step created: the directory is
 /// reconciled with the account's final identity and takes the policy
 /// mode — `useradd -m` makes the home with the host's own creation
@@ -210,7 +188,7 @@ fn enforce_created_mode(home: &str, check_mode: bool) -> Result<bool, String> {
 /// created or opened as itself — never resolved through a link a
 /// concurrent rewrite plants at it, so the ownership below lands on
 /// the directory the path named, or on nothing at all.
-fn open_home(home: &str, create: bool) -> Result<OwnedFd, String> {
+pub(super) fn open_home(home: &str, create: bool) -> Result<OwnedFd, String> {
     let path = Path::new(home);
     let parent = path
         .parent()
@@ -377,7 +355,7 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
 /// walk opened: the fd names the inode the path resolved to when the
 /// walk opened it, so a rewrite after that point changes nothing about
 /// which directory is owned.
-fn own_through(fd: &OwnedFd, uid: u32, gid: u32, home: &str) -> Result<(), String> {
+pub(super) fn own_through(fd: &OwnedFd, uid: u32, gid: u32, home: &str) -> Result<(), String> {
     let meta = fstat(fd).map_err(|error| format!("user: own home {home}: {error}"))?;
     if meta.st_uid != uid || meta.st_gid != gid {
         fchown(fd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))
