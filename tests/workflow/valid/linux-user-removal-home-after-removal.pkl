@@ -1,0 +1,32 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An intervening removal invalidates the present-home history: Alice is
+// created with /srv/alice and then removed, so the later recursive
+// removal compares its declared /home/alice against a home the workflow
+// cannot read — the stale /srv/alice declaration stands for a live home
+// that is gone by then, and names no clash.
+stages {
+  new Stage {
+    title = "account"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/srv/alice" }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "scrub"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+    }
+  }
+}

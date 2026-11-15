@@ -314,6 +314,8 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-group-gid-draw-freed-same-stage.pkl",
     "invalid/linux-group-gid-same-stage-order.pkl",
     "invalid/linux-group-gid-draw-same-stage-order.pkl",
+    "valid/linux-user-removal-home-after-removal.pkl",
+    "invalid/linux-user-removal-home-after-partial-removal.pkl",
 ];
 
 /// The official `pkl` binary.
