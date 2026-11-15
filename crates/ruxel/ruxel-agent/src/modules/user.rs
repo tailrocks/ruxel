@@ -896,7 +896,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 name,
                 &current,
                 identity_change,
-                private_group_missing(group, same_name.is_some()),
+                claimed_private_group_missing(group, name, same_name.is_some(), ctx.check_mode),
                 home_repair,
                 &args,
             )?;
@@ -1116,6 +1116,24 @@ fn group_taken_by_removal(reused: Option<&(String, u64)>, live: bool) -> Option<
         Some((name, gid)) if !live => Some((name.clone(), *gid)),
         _ => None,
     }
+}
+
+/// Whether the account's claimed private group is still missing: a
+/// step that names no primary group claims the same-name group. In
+/// check mode an earlier task of the plan may provide it — check mode
+/// runs no `groupadd`, so the live entry is stale and the plan's own
+/// record decides with it. Apply runs the providing step first and
+/// resolves from the host alone.
+fn claimed_private_group_missing(
+    group: Option<&str>,
+    name: &str,
+    live_present: bool,
+    check_mode: bool,
+) -> bool {
+    private_group_missing(
+        group,
+        live_present || (check_mode && planned_group(name).is_some()),
+    )
 }
 
 /// The switches that give a created account its primary group: the
@@ -1709,6 +1727,44 @@ mod cat06_batch_b {
         let (name, _live) = live_group();
         let record = super::snapshot_group(&name).expect("the group file must read");
         assert!(record.is_some(), "the live group must snapshot");
+    }
+
+    #[test]
+    fn the_private_group_decision_consults_the_plan_in_check_mode() {
+        // An earlier Group step declares the same-name group, and check
+        // mode runs no `groupadd`: the live entry is stale, so the
+        // plan's own record says the group is provided and no private
+        // group is queued. Apply runs the providing step first and
+        // resolves from the host alone.
+        let fresh = format!("ruxel-cat06-private-{}", std::process::id());
+        assert!(
+            super::claimed_private_group_missing(None, &fresh, false, true),
+            "nothing provides the group yet"
+        );
+        super::entries::note_planned_group(&fresh, None);
+        assert!(
+            !super::claimed_private_group_missing(None, &fresh, false, true),
+            "check mode sees the planned group"
+        );
+        assert!(
+            super::claimed_private_group_missing(None, &fresh, false, false),
+            "apply resolves from the host alone"
+        );
+        super::entries::forget_planned_group(&fresh);
+        // A declared primary group never claims the private one, and a
+        // live group is never missing.
+        assert!(!super::claimed_private_group_missing(
+            Some("wheel"),
+            &fresh,
+            false,
+            true
+        ));
+        assert!(!super::claimed_private_group_missing(
+            None, &fresh, true, true
+        ));
+        assert!(!super::claimed_private_group_missing(
+            None, &fresh, true, false
+        ));
     }
 }
 /// The test stand-in for the host's account utilities: apply-mode tests
