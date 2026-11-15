@@ -161,12 +161,31 @@ pub(super) fn preflight_persistence(file: &str, content: &[u8], probe: bool) -> 
         // The probe carries its scratch name and is removed whatever the
         // rehearsal reports: a refusal partway through must not strand it
         // beside the live file.
-        let scratch = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
+        let scratch = dir.join(unique_probe_name());
         let outcome = stage_probe(file, &scratch, path, dir, live.as_ref(), content);
         let _ = std::fs::remove_file(&scratch);
         outcome?;
     }
     Ok(())
+}
+
+/// The probe's scratch name: unique per attempt — the process id, a
+/// nanosecond stamp and a per-process sequence — so a probe a kill
+/// strands never collides with a later attempt, even after the pid is
+/// reused and every file-changing task in the directory would fail with
+/// `AlreadyExists`. The open stays exclusive and owner-only, the handle
+/// stays retained, and the caller still removes the name whatever the
+/// rehearsal reports.
+fn unique_probe_name() -> String {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!(
+        ".ruxel-sysctl-preflight-{}-{nanos}-{sequence}",
+        std::process::id()
+    )
 }
 
 /// The publishability probe under its scratch name: a single retained
