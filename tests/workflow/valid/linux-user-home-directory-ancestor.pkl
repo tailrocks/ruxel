@@ -1,0 +1,16 @@
+// A directory above the home creates the path the account's task
+// walks: the earlier stage manages /srv as a directory, and the later
+// account's home /srv/alice lies beneath it, which `useradd -m`
+// traverses and creates. Only a regular file above the home blocks it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "directory"; hosts = inventory.workers; steps {
+    new Directory { path = "/srv"; mode = "0755" }
+  } }
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; home = "/srv/alice" }
+  } }
+}
