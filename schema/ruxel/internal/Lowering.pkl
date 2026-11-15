@@ -170,16 +170,30 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
 /// before the later claim: a step removing the account (for a gid claim,
 /// the group) in a stage between the two claims, or a step that keeps
 /// the same identity present under another explicit number — on every
-/// host both claimant stages run on. The number is freed per machine: a
-/// removal or a renumbering covering only one of the shared hosts leaves
-/// the original holder present on the others, where the later `useradd
-/// -u` (or `groupadd -g`) still fails, so the proof covers the whole
-/// intersection and may be spread over several intervening stages, each
-/// covering one of its hosts.
+/// host both claimant stages run on. A removal or a renumbering listed
+/// before the later claim in its own stage frees the number the same
+/// way: the steps of a stage run where the author wrote them, so an
+/// `absent` before the claim releases the number on the hosts the stage
+/// covers. The number is freed per machine: a removal or a renumbering
+/// covering only one of the shared hosts leaves the original holder
+/// present on the others, where the later `useradd -u` (or `groupadd
+/// -g`) still fails, so the proof covers the whole intersection and may
+/// be spread over several intervening stages, each covering one of its
+/// hosts.
 function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
   sharedIdentityHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> identityRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumberedIdentity(_indexes[k], c))))
+      .any((k) -> identityRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumberedIdentity(_indexes[k], c)))
+    || numberFreedBefore(_indexes[d.stage], c, d.step))
+
+/// Whether a step listed before the later claim in its own stage frees
+/// the earlier claimant's number: a removal of the identity with the
+/// number the claim holds, or a renumbering of it to another explicit
+/// number. The order is the point: a removal or a renumbering listed
+/// after the claim runs after the claim has already failed on the taken
+/// number, so only the steps before it free anything.
+function numberFreedBefore(ix: StageIndex, c: IdClaim, upto: Int): Boolean =
+  positions(ix.steps).filter((j) -> j < upto).any((j) -> removalFreesNumber(ix.steps[j], c) || renumberFreesNumber(ix.steps[j], c))
 
 /// Whether a stage renumbers the claimant's identity to another explicit
 /// number: a step that keeps the same account (for a gid claim, the
@@ -189,8 +203,18 @@ function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: I
 /// same number renumbers nothing and frees nothing, and a step that draws
 /// its number states none: only a stated number releases one.
 function renumberedIdentity(ix: StageIndex, c: IdClaim): Boolean =
-  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user == c.name && s.uid != null && s.uid != c.number)
-  else ix.steps.any((s) -> s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null && s.gid != c.number)
+  ix.steps.any((s) -> renumberFreesNumber(s, c))
+
+/// Whether the step renumbers the claimant's identity to another
+/// explicit number: a step that keeps the same account (for a gid claim,
+/// the group) present under a stated number that differs — `usermod -u
+/// 1600` (or `groupmod -g`) releases the old number on the hosts the
+/// stage covers, so a later claim of it succeeds there. A redeclaration
+/// of the same number renumbers nothing and frees nothing, and a step
+/// that draws its number states none: only a stated number releases one.
+function renumberFreesNumber(s: core.Step, c: IdClaim): Boolean =
+  if (c.kind == "uid") s is linux.User && s.state == "present" && s.user == c.name && s.uid != null && s.uid != c.number
+  else s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null && s.gid != c.number
 
 /// The hosts both stages run on: one machine when they connect alike —
 /// the same identity `hostsOverlap` compares stages by.
@@ -241,8 +265,18 @@ const function hostsShareIdentity(a: core.Stage, b: core.Stage): Boolean =
 /// states no gid frees by name: the runtime verifies only the id it
 /// is given.
 function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
-  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number)
-  else ix.steps.any((s) -> s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == c.number))
+  ix.steps.any((s) -> removalFreesNumber(s, c))
+
+/// Whether the step removes the claimant with the number the claim
+/// holds: an account removal states its uid, and a declaration that
+/// names another number frees nothing — the runtime verifies the
+/// declared id against the live entry and refuses such a removal, so
+/// the later claim would never get its turn. A group removal that
+/// states no gid frees by name: the runtime verifies only the id it
+/// is given.
+function removalFreesNumber(s: core.Step, c: IdClaim): Boolean =
+  if (c.kind == "uid") s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number
+  else s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == c.number)
 
 function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
   "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(c.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) and '\(d.name)' (\(d.spot)); one host keeps one identity per number, so remove '\(c.name)' before reusing its \(c.kind), or give '\(d.name)' another one"
@@ -412,10 +446,26 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// later claim: a stage between the two runs there and removes the
 /// drawing identity with a removal the runtime can prove will succeed
 /// for the draw, or states the identity's number explicitly — a
-/// renumbering releases whatever the allocator drew for it.
+/// renumbering releases whatever the allocator drew for it. A removal
+/// or a renumbering listed before the later claim in its own stage frees
+/// the draw the same way: the steps of a stage run where the author
+/// wrote them, so an `absent` before the claim releases the number the
+/// allocator drew on the hosts the stage covers.
 function drawFreedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
   positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
     .any((k) -> identityRunsOn(_stages[k], h) && (removedDraw(_stages, _indexes, k, c, h) || renumberedDraw(_indexes[k], c)))
+  || drawFreedBefore(_stages, _indexes, c, d, h)
+
+/// Whether a step listed before the later claim in its own stage frees
+/// the draw: a removal of the drawing identity the runtime can prove
+/// will succeed for the draw, or a step that states the identity's
+/// number explicitly. The order is the point: a removal or a
+/// renumbering listed after the claim runs after the claim has already
+/// failed on the number the draw took, so only the steps before it free
+/// anything.
+function drawFreedBefore(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
+  positions(_indexes[d.stage].steps).filter((j) -> j < d.step)
+    .any((j) -> removalFreesDraw(_stages, _indexes, d.stage, _indexes[d.stage].steps[j], c, h) || renumberFreesDraw(_indexes[d.stage].steps[j], c))
 
 /// Whether a stage renumbers the drawing identity to another explicit
 /// number: a step that keeps the same account (for a gid draw, the same
@@ -425,8 +475,18 @@ function drawFreedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: I
 /// of the draw's own stage states nothing and frees nothing: only a
 /// stated number releases one.
 function renumberedDraw(ix: StageIndex, c: IdDraw): Boolean =
-  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user == c.name && s.uid != null)
-  else ix.steps.any((s) -> s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null)
+  ix.steps.any((s) -> renumberFreesDraw(s, c))
+
+/// Whether the step renumbers the drawing identity to another explicit
+/// number: a step that keeps the same account (for a gid draw, the same
+/// group) present under a stated number — `usermod -u` (or `groupmod
+/// -g`) releases whatever the allocator drew for it on the hosts the
+/// stage covers, so the draw holds nothing back anymore. A redeclaration
+/// of the draw's own stage states nothing and frees nothing: only a
+/// stated number releases one.
+function renumberFreesDraw(s: core.Step, c: IdDraw): Boolean =
+  if (c.kind == "uid") s is linux.User && s.state == "present" && s.user == c.name && s.uid != null
+  else s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null
 
 /// Whether the draw happens on the host `h` at all: the allocator draws
 /// a number only for an identity that is not there yet — `useradd`
@@ -503,10 +563,17 @@ const function providesIdentityStep(s: core.Step, c: IdDraw): Boolean =
 /// `groupdel` refuses the private group it still holds as its primary
 /// one.
 const function removedDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, c: IdDraw, h: core.Host): Boolean =
+  _indexes[k].steps.any((s) -> removalFreesDraw(_stages, _indexes, k, s, c, h))
+
+/// Whether the step removes the drawing identity with a removal the
+/// runtime can prove will succeed for the draw, on the host `h` the
+/// proof is about (see `removedDraw` for why only a removal that frees
+/// by name frees the drawn gid).
+const function removalFreesDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, s: core.Step, c: IdDraw, h: core.Host): Boolean =
   if (c.system) false
   else if (c.kind == "uid") false
-  else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
-    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, c.name, h)))
+  else (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, c.name, h))
 
 /// The removal declares the same-name group as the account's primary
 /// one: `userdel` takes the same-name group with the account only

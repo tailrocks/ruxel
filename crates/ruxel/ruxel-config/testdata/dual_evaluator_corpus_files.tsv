@@ -78,7 +78,9 @@ dual_evaluator
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation-private-group-member.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
+  tests/workflow/invalid/linux-group-gid-draw-same-stage-order.pkl
   tests/workflow/invalid/linux-group-gid-held-blocks-free.pkl
+  tests/workflow/invalid/linux-group-gid-same-stage-order.pkl
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
@@ -216,7 +218,9 @@ dual_evaluator
   tests/workflow/valid/linux-file-owner-renumbered-reconciled.pkl
   tests/workflow/valid/linux-file-owner-renumbered-same-stage.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
+  tests/workflow/valid/linux-group-gid-draw-freed-same-stage.pkl
   tests/workflow/valid/linux-group-gid-freed-by-departure.pkl
+  tests/workflow/valid/linux-group-gid-reused-after-same-stage-removal.pkl
   tests/workflow/valid/linux-group-removed-supplementary-restored.pkl
   tests/workflow/valid/linux-sysctl-alias-watcher.pkl
   tests/workflow/valid/linux-sysctl-boot-order-different-port.pkl
