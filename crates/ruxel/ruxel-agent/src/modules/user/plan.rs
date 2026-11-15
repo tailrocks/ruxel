@@ -57,6 +57,27 @@ thread_local! {
     static CHANGED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
+/// A new plan begins: the previous plan's verdict on what this
+/// workflow manages is void. Every map the plan's tasks recorded —
+/// numbers, homes, removals, renumbers, shells, comments — is cleared
+/// here, while `PlanPatch` frames keep them: a patch continues the
+/// plan it extends, so its tasks still read what the plan's own
+/// earlier tasks declared.
+pub(super) fn reset() {
+    GROUPS.with(|groups| groups.borrow_mut().clear());
+    USERS.with(|users| users.borrow_mut().clear());
+    HOMES.with(|homes| homes.borrow_mut().clear());
+    REMOVED_ACCOUNTS.with(|accounts| accounts.borrow_mut().clear());
+    REMOVED_GROUPS.with(|groups| groups.borrow_mut().clear());
+    PRIMARY_GROUPS.with(|groups| groups.borrow_mut().clear());
+    SUPPLEMENTARY.with(|sets| sets.borrow_mut().clear());
+    RENUMBERED_GROUPS.with(|groups| groups.borrow_mut().clear());
+    SHELLS.with(|shells| shells.borrow_mut().clear());
+    COMMENTS.with(|comments| comments.borrow_mut().clear());
+    CHANGED_USERS.with(|users| users.borrow_mut().clear());
+    CHANGED_GROUPS.with(|groups| groups.borrow_mut().clear());
+}
+
 pub(super) fn note(name: &str, requested: Option<u32>) {
     GROUPS.with(|groups| {
         let mut groups = groups.borrow_mut();

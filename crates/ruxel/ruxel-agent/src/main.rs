@@ -188,11 +188,13 @@ fn serve() -> i32 {
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
-                // A new plan begins: the previous plan's verdict on what
-                // this workflow manages is void, and the new plan may
-                // complete.
+                // A new plan begins: the previous plan's verdict on
+                // what this workflow manages is void, and the new plan
+                // may complete. The user/group maps reset beside the
+                // ledger; a patch keeps its maps.
                 if is_plan {
                     ledger.begin_plan();
+                    modules::begin_plan();
                 }
                 for task in &tasks {
                     let mut task = task.clone();
@@ -360,15 +362,26 @@ fn execute_task(
             system_state,
             &managed,
         );
-        if !task_check_mode && !task.no_log {
-            ledger.record_with_state(
-                &iteration.ledger_key,
-                &task.module,
-                &params,
-                outcome.status,
-                &outcome.result,
-                system_state,
-            );
+        if !task_check_mode {
+            if task.no_log {
+                // The result and its probes stay out of the ledger;
+                // the sysctl declaration is the workflow's own.
+                ledger.record_managed_declaration(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                );
+            } else {
+                ledger.record_with_state(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                    &outcome.result,
+                    system_state,
+                );
+            }
         }
         send_result(
             out,
