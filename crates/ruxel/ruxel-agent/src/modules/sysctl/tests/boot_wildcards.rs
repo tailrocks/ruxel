@@ -79,6 +79,85 @@ fn a_pending_named_assignment_beside_another_key_excludes_the_wildcard() {
 }
 
 #[test]
+fn a_bracket_expression_is_a_wildcard_pattern() {
+    // procps treats bracket expressions as wildcard syntax:
+    // `GLOB_CHARS` in procps-ng `src/sysctl.c` is `"*?["`, expanded
+    // through libc `glob` — `vm.[m]ax_map_count` expands to
+    // `vm.max_map_count` (measured on procps-ng 4.0.4 with
+    // `sysctl --dry-run -p`). The matcher reads them as character
+    // classes: literals, `a-z` ranges and `[!...]` negation. (Keys
+    // compare canonicalized, the way the boot probe calls the
+    // matcher.)
+    assert!(boot::key_matches("vm.[m]ax_map_count", "vm/max_map_count"));
+    assert!(boot::key_matches(
+        "vm.max_map_coun[t-z]",
+        "vm/max_map_count"
+    ));
+    assert!(!boot::key_matches(
+        "vm.max_map_coun[a-s]",
+        "vm/max_map_count"
+    ));
+    assert!(boot::key_matches(
+        "vm.max_map_coun[!a-s]",
+        "vm/max_map_count"
+    ));
+    assert!(!boot::key_matches(
+        "vm.max_map_coun[!t-z]",
+        "vm/max_map_count"
+    ));
+    // An unterminated class is unknown syntax: the conservative
+    // answer assumes the assignment rather than miss an override.
+    assert!(boot::key_matches("vm.max_map_count[", "vm/max_map_count"));
+    // And a key without wildcard syntax is still a literal.
+    assert!(!boot::key_matches("vm.max_map_count2", "vm/max_map_count"));
+    assert!(boot::key_matches("vm.max_map_count", "vm/max_map_count"));
+}
+
+#[test]
+fn a_bracket_assignment_names_no_key() {
+    // A bracket expression is a pattern, not a name, so it weighs on
+    // no named set: only the plain assignment names the key.
+    assert_eq!(
+        boot::named_keys(b"vm.[m]ax_map_count=65530\n"),
+        Vec::<String>::new(),
+        "a bracket assignment must not name the key"
+    );
+    assert_eq!(
+        boot::named_keys(b"vm.max_map_count=65530\n"),
+        vec!["vm/max_map_count".to_string()],
+        "a plain assignment names the key"
+    );
+}
+
+#[test]
+fn a_bracket_pattern_never_reaches_a_named_key() {
+    // Like every pattern, the bracket expansion never reaches a key
+    // the sequence names outright (procps `settinglist_findpath`
+    // skips the expansion for explicitly listed paths): the managed
+    // file's own entry — the assignment `rewrite_file` is about to
+    // write — keeps the boot value, whatever the later pattern holds.
+    assert_eq!(
+        override_of(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "vm.max_map_count",
+            "65530",
+            &[("/etc/sysctl.conf", "vm.[m]ax_map_count=123\n")],
+        ),
+        None
+    );
+    // The `?` spelling of the same pattern is excluded the same way.
+    assert_eq!(
+        override_of(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "vm.max_map_count",
+            "65530",
+            &[("/etc/sysctl.conf", "vm.max_map_coun?=123\n")],
+        ),
+        None
+    );
+}
+
+#[test]
 fn a_pending_named_assignment_in_an_existing_file_excludes_the_wildcard() {
     // The managed file exists but holds no line for the managed key
     // yet: the entry under management is an assignment by name that
