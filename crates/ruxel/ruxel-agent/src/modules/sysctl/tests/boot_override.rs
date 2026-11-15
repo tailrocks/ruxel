@@ -282,7 +282,9 @@ fn a_record_the_plan_never_encountered_expires() {
         &serde_json::json!({"changed": true}),
     );
     ledger.flush();
-    // The next plan runs another task and ends without the dropped one.
+    // The next plan runs another task and ends without the dropped
+    // one: the end of the session is the evidence that the plan is
+    // complete, and a complete plan expires what it never encountered.
     ledger.record(
         "kept-task",
         "file",
@@ -290,6 +292,7 @@ fn a_record_the_plan_never_encountered_expires() {
         "ok",
         &serde_json::json!({"changed": true}),
     );
+    ledger.complete_plan();
     ledger.flush();
     let managed = ledger.managed_sysctl_entries();
     assert_eq!(managed, Vec::<(String, String, String)>::new());

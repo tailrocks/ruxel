@@ -98,7 +98,7 @@ pub(super) fn run_in(
         // attributes apply the same ids afterwards. A change to the passwd
         // or group file between the two resolutions cannot fail or
         // mis-apply a publication that already succeeded.
-        let ownership = resolve_ownership(obj)?;
+        let ownership = resolve_ownership(obj, ctx.check_mode)?;
         if writes {
             let creation_mode = if let Some(mode) = obj.get("mode") {
                 // The replacement is created with the requested mode before
