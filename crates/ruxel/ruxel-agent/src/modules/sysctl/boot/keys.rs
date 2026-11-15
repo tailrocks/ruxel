@@ -2,17 +2,19 @@
 //! the canonical spelling of one key, and the wildcards a pattern
 //! expands to.
 
-use super::super::sysctl_key;
+use super::super::{is_syntax_ws, sysctl_key};
 
-/// The ASCII whitespace trimmed off both ends of a line.
+/// The syntax blanks trimmed off both ends of a line: the same four
+/// the file rewrite trims (see `super::super`), so the boot analysis
+/// and the publish read one value where procps applies one.
 pub(super) fn trim(line: &[u8]) -> &[u8] {
     let start = line
         .iter()
-        .position(|byte| !byte.is_ascii_whitespace())
+        .position(|byte| !is_syntax_ws(*byte))
         .unwrap_or(line.len());
     let end = line
         .iter()
-        .rposition(|byte| !byte.is_ascii_whitespace())
+        .rposition(|byte| !is_syntax_ws(*byte))
         .map_or(start, |at| at + 1);
     &line[start..end]
 }

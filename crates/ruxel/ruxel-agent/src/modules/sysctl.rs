@@ -396,34 +396,53 @@ fn rewrite_file(current: &[u8], name: &str, value: &str) -> (Vec<u8>, bool) {
     }
 }
 
-/// The ASCII whitespace trimmed off both ends of a byte line.
+/// Whether the byte is one of procps's syntax blanks: space, tab,
+/// vertical tab, form feed — the `isspace` set the `lstrip`/`rstrip`
+/// helpers trim in procps-ng `src/sysctl.c`. Newline and carriage
+/// return are line endings, never trimmed content (lines arrive split
+/// on `\n`, and a trailing `\r` is stripped beside the trim), and
+/// every other blank — including every non-ASCII whitespace — is value
+/// content the trim keeps: the byte-level non-UTF8 tests pin that
+/// preservation.
+fn is_syntax_ws(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\x0B' | b'\x0C')
+}
+
+/// Whether the character is one of procps's syntax blanks: the same
+/// four the byte trim covers, for the text-side trims.
+fn is_syntax_ws_char(blank: char) -> bool {
+    matches!(blank, ' ' | '\t' | '\u{B}' | '\u{C}')
+}
+
+/// The syntax blanks trimmed off both ends of a byte line.
 fn trim(line: &[u8]) -> &[u8] {
     let start = line
         .iter()
-        .position(|byte| !byte.is_ascii_whitespace())
+        .position(|byte| !is_syntax_ws(*byte))
         .unwrap_or(line.len());
     let end = line
         .iter()
-        .rposition(|byte| !byte.is_ascii_whitespace())
+        .rposition(|byte| !is_syntax_ws(*byte))
         .map_or(start, |at| at + 1);
     &line[start..end]
 }
 
 /// A value with the syntax-level whitespace trimmed off both ends:
-/// procps strips the blanks around a value, and the blanks inside it
-/// are part of the value itself — `kernel.hostname` holds "abc  def"
-/// as it is written, so a value that differs from it in its blanks is
-/// another value.
+/// procps strips the blanks around a value (`isspace`: space, tab,
+/// vertical tab, form feed), and the blanks inside it are part of the
+/// value itself — `kernel.hostname` holds "abc  def" as it is written,
+/// so a value that differs from it in its blanks is another value.
 pub(crate) fn trimmed_value(value: &str) -> &str {
-    value.trim_matches(|c: char| c.is_ascii_whitespace())
+    value.trim_matches(is_syntax_ws_char)
 }
 
 /// Whether the live kernel value already holds the requested one.
-/// Edges compare byte-exactly (procps preserves edge whitespace as
-/// value content); internal separators compare token-wise for numeric
-/// vector values — `/proc/sys` separates port ranges with tabs where
-/// workflows write spaces — and exactly otherwise, so `kernel.hostname`
-/// keeps every blank of "abc  def".
+/// procps strips the syntax blanks around a value before applying it,
+/// so both sides compare trimmed — a vertically padded value is one
+/// kernel value with its bare spelling; internal separators compare
+/// token-wise for numeric vector values — `/proc/sys` separates port
+/// ranges with tabs where workflows write spaces — and exactly
+/// otherwise, so `kernel.hostname` keeps every blank of "abc  def".
 fn live_matches(live: &str, value: &str) -> bool {
     let live = trimmed_value(live);
     let value = trimmed_value(value);
@@ -443,10 +462,7 @@ fn live_matches(live: &str, value: &str) -> bool {
 /// The ignore-failure marker of an assignment line: procps reads a
 /// leading '-' as "ignore the error", and the assignment still happens.
 fn marker(line: &str) -> &'static str {
-    if line
-        .trim_start_matches(|c: char| c.is_ascii_whitespace())
-        .starts_with('-')
-    {
+    if line.trim_start_matches(is_syntax_ws_char).starts_with('-') {
         "-"
     } else {
         ""
@@ -486,14 +502,14 @@ pub(crate) fn sysctl_key(name: &str) -> String {
 /// it addresses. A leading '-' is procps's ignore-failure marker, not
 /// part of the key — the marked line assigns the entry all the same,
 /// so the marker is stripped before the key is compared. The trims
-/// are ASCII-only: the key arrives already ASCII-trimmed, and
+/// cover the syntax blanks only, and the key arrives already trimmed:
 /// non-ASCII whitespace is content procps preserves, not syntax.
 pub(crate) fn entry_key(text: &str) -> String {
-    let text = text.trim_matches(|c: char| c.is_ascii_whitespace());
+    let text = text.trim_matches(is_syntax_ws_char);
     sysctl_key(
         text.strip_prefix('-')
             .unwrap_or(text)
-            .trim_matches(|c: char| c.is_ascii_whitespace()),
+            .trim_matches(is_syntax_ws_char),
     )
 }
 
