@@ -301,3 +301,42 @@ fn a_failed_rollback_is_reported_with_the_original_error() {
     );
     std::fs::remove_file(&file).unwrap();
 }
+
+#[test]
+fn a_home_repair_that_fails_after_creating_parents_takes_them_back() {
+    // The repair creates missing parents before it fails — here the
+    // ownership change a non-root repair cannot perform — and the
+    // failure must take the partial hierarchy back: the rollback
+    // reverts the earlier mutations and removes the created parents
+    // instead of leaving them behind. The missing home is created
+    // beneath its ancestors, so the case stages it under the
+    // operator's own tree. Only the unprivileged lanes fail the
+    // ownership change, so the root lane skips it.
+    if super::super::home::operating_uid() == 0 {
+        return;
+    }
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-rollback-partial-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir_all(&anchor).unwrap();
+    let home = anchor.join("stage/alice");
+    let stranger = 65534u64;
+    let error = run(
+        "ruxel-rollback-alice",
+        vec![home_mutation(&home, stranger, stranger)],
+        false,
+        &|_, _| Ok(()),
+    )
+    .expect_err("the ownership change a non-root repair cannot perform must fail");
+    assert!(error.contains("home"), "{error}");
+    assert!(
+        !home.exists() && !anchor.join("stage").exists(),
+        "the partial hierarchy the failed repair created is taken back"
+    );
+    assert!(
+        anchor.is_dir(),
+        "the pre-existing anchor survives the rollback"
+    );
+    std::fs::remove_dir_all(&anchor).unwrap();
+}

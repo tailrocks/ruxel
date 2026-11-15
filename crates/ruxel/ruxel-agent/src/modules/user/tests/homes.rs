@@ -361,4 +361,36 @@ fn a_failed_home_reconciliation_takes_the_created_account_back() {
     .expect_err("the reconciliation must fail");
     assert!(error.contains("could not be taken back"), "{error}");
     std::fs::remove_file(&file).unwrap();
+    // A repair that creates parents before it fails takes them back
+    // with the account. Only the unprivileged lanes fail the
+    // ownership change, so the root lane skips this scenario.
+    if super::super::home::operating_uid() != 0 {
+        let base = std::env::home_dir()
+            .expect("the test process runs with a home directory")
+            .join(format!("ruxel-home-staged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir(&base).unwrap();
+        let staged = base.join("stage/alice");
+        let error = super::super::reconcile_created_home(
+            "ruxel-staged-account",
+            staged.to_str().unwrap(),
+            &super::super::PasswdEntry {
+                uid: 65534,
+                gid: 65534,
+                ..Default::default()
+            },
+            false,
+            &|account| {
+                taken.borrow_mut().push(account.to_string());
+                Ok(())
+            },
+        )
+        .expect_err("the failed repair must not leave its parents behind");
+        assert!(error.contains("home"), "{error}");
+        assert!(
+            !base.join("stage").exists(),
+            "the parents the failed repair created go with the account"
+        );
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

@@ -152,12 +152,25 @@ pub(super) fn reconcile_created_home(
     })();
     match reconciled {
         Ok(changed) => Ok(changed),
-        Err(error) => match remove_account(name) {
-            Ok(()) => Err(error),
-            Err(rollback) => Err(format!(
-                "{error}; the account {name} could not be taken back: {rollback}"
-            )),
-        },
+        Err(error) => {
+            // Parents the failed repair created before it failed go
+            // with the account: a retry must not inherit the partial
+            // hierarchy the refused change leaves behind.
+            let error = if added.is_empty() {
+                error
+            } else {
+                match super::apply::rollback_home(home, None, &added) {
+                    Ok(()) => error,
+                    Err(cleanup) => format!("{error}; {cleanup}"),
+                }
+            };
+            match remove_account(name) {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(format!(
+                    "{error}; the account {name} could not be taken back: {rollback}"
+                )),
+            }
+        }
     }
 }
 
