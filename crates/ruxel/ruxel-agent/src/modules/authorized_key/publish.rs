@@ -320,7 +320,19 @@ fn publish_staged(
                 .map_err(|e| e.to_string())?;
             // The writer that does not take the lock acts here.
             (hooks.between)();
-            let displaced = FileIdentity::of_name(stage, c"key")?;
+            let displaced = match FileIdentity::of_name(stage, c"key") {
+                Ok(displaced) => displaced,
+                Err(error) => {
+                    // The displaced entry cannot be inspected: a
+                    // writer replaced the file with a link after the
+                    // read, and the open refuses the link. The staged
+                    // file is live at the path, so it goes back the
+                    // way a changed file goes back, before the failure
+                    // is reported.
+                    rollback(stage, dir, staged, None, hooks)?;
+                    return Err(error);
+                }
+            };
             if displaced != Some(expected) {
                 // The file that is there now is not the one that was
                 // read: it goes back where it was.
@@ -332,27 +344,7 @@ fn publish_staged(
                 // staging directory, and it goes back when it is not
                 // ours. A writer that acts in between does not lose
                 // its edit, and the edit is not stranded either.
-                (hooks.before_rollback)();
-                renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
-                    .map_err(|error| {
-                        format!("authorized_key: cannot restore authorized_keys: {error}")
-                    })?;
-                let taken = FileIdentity::of_name(stage, c"key")?;
-                if taken != Some(staged) {
-                    // The entry that was at the path is not ours: it
-                    // goes back, and the file that was displaced stays
-                    // in the staging directory.
-                    renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
-                        .map_err(|error| {
-                            format!("authorized_key: cannot restore authorized_keys: {error}")
-                        })?;
-                    // The file that was displaced is the file the
-                    // writer replaced: it goes, so that nothing is
-                    // left behind in the directory of the user.
-                    if FileIdentity::of_name(stage, c"key")? == displaced {
-                        let _ = unlinkat(stage, "key", AtFlags::empty());
-                    }
-                }
+                rollback(stage, dir, staged, displaced, hooks)?;
                 return Err("authorized_key: authorized_keys changed during operation".into());
             }
             let _ = unlinkat(stage, "key", AtFlags::empty());
@@ -363,4 +355,38 @@ fn publish_staged(
                 format!("authorized_key: authorized_keys changed during operation: {error}")
             }),
     }
+}
+
+/// Rolls the exchanged file back: the staged file is live at the path,
+/// so one exchange puts the displaced entry back where it was. The
+/// reading that tells whether the exchange was the right one comes
+/// after it: the entry that is at the path when the exchange happens is
+/// the one that goes into the staging directory, and what is not ours
+/// goes back, so that a writer that acts in between loses neither its
+/// edit nor the edit itself.
+fn rollback(
+    stage: &File,
+    dir: &File,
+    staged: FileIdentity,
+    displaced: Option<FileIdentity>,
+    hooks: Hooks<'_>,
+) -> Result<(), String> {
+    (hooks.before_rollback)();
+    renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
+        .map_err(|error| format!("authorized_key: cannot restore authorized_keys: {error}"))?;
+    let taken = FileIdentity::of_name(stage, c"key")?;
+    if taken != Some(staged) {
+        // The entry that was at the path is not ours: it goes back,
+        // and the file that was displaced stays in the staging
+        // directory.
+        renameat_with(stage, "key", dir, "authorized_keys", RenameFlags::EXCHANGE)
+            .map_err(|error| format!("authorized_key: cannot restore authorized_keys: {error}"))?;
+        // The file that was displaced is the file the writer replaced:
+        // it goes, so that nothing is left behind in the directory of
+        // the user.
+        if FileIdentity::of_name(stage, c"key")? == displaced {
+            let _ = unlinkat(stage, "key", AtFlags::empty());
+        }
+    }
+    Ok(())
 }
