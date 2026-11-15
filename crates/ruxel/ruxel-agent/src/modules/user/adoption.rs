@@ -1,5 +1,6 @@
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
+use std::path::{Component, Path, PathBuf};
 
 /// The declared home path is usable before the account is touched:
 /// `usermod -d` moves the passwd field even when the path is a regular
@@ -74,13 +75,27 @@ pub(super) fn ancestors_usable(home: &str) -> Result<(), String> {
 /// or other-writable, or not root's. Such a link is the attacker's to
 /// redirect a root traversal through; a link only root can replace is
 /// system configuration the operator chose, and the path resolves
-/// through it as it always did.
-fn planted_in(link: &std::path::Path, home: &str) -> Result<(), String> {
+/// through it as it always did — but only through directories the
+/// target leads through that are trusted the same way, so a link in a
+/// trusted directory cannot point at a home a non-root principal
+/// pre-created (`/srv/homes -> /tmp/homes`, `/home -> /tmp/attacker`).
+fn planted_in(link: &Path, home: &str) -> Result<(), String> {
+    let parent = standing_parent(link, home)?;
+    let target = std::fs::read_link(link)
+        .map_err(|error| format!("user: home {home}: {}: {error}", link.display()))?;
+    symlink_target_trusted(&parent, &target, home)
+}
+
+/// The directory a symlinked ancestor stands in, trusted the way the
+/// symlinked-ancestor rule trusts a parent: root's and writable by no
+/// one else — the operator's configuration, never the attacker's to
+/// redirect.
+fn standing_parent(link: &Path, home: &str) -> Result<PathBuf, String> {
     let parent = match link.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => std::path::Path::new("."),
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
     };
-    let meta = std::fs::metadata(parent)
+    let meta = std::fs::metadata(&parent)
         .map_err(|error| format!("user: home {home}: {}: {error}", parent.display()))?;
     if meta.uid() != 0 || meta.mode() & 0o022 != 0 {
         return Err(format!(
@@ -89,7 +104,119 @@ fn planted_in(link: &std::path::Path, home: &str) -> Result<(), String> {
             parent.display()
         ));
     }
+    Ok(parent)
+}
+
+/// Every directory a symlink target leads through, trusted the way
+/// trusted ancestors are: the resolution starts where the link stands —
+/// a relative target against its parent directory, the way the kernel
+/// resolves it — and every existing directory on the way must be the
+/// operator's own and never writable by a lower-privileged local user
+/// as `other`. Group writability on a root-owned directory is the
+/// platform's own administration (the operator's link into it, like
+/// `/home` through `root:admin` on macOS), not a lower-privileged
+/// principal's to plant through — and anything planted there is itself
+/// validated before adoption. The resolved target itself — the
+/// directory the home continues beneath — additionally takes the full
+/// ancestor rule: a principal that can write it could rename the fresh
+/// home aside after the repair and plant its own contents at the passwd
+/// path. A nested link is admitted where it stands the same way,
+/// within the expansion budget; a missing component ends the walk, for
+/// the rest does not exist yet and nothing could have been planted
+/// under it.
+pub(super) fn symlink_target_trusted(base: &Path, target: &Path, home: &str) -> Result<(), String> {
+    target_dirs_trusted(&join_normalized(base, target), home, 8)
+}
+
+/// A symlink target joined onto the directory the link stands in, with
+/// `.` and `..` resolved lexically: the kernel resolves the target the
+/// same way before the walk opens any of it, so the validation sees the
+/// directories the operation will enter.
+fn join_normalized(base: &Path, target: &Path) -> PathBuf {
+    let mut resolved = if target.is_absolute() {
+        PathBuf::from("/")
+    } else {
+        base.to_path_buf()
+    };
+    for part in target.components() {
+        match part {
+            Component::Normal(name) => resolved.push(name),
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
+        }
+    }
+    resolved
+}
+
+/// Every existing directory of a resolved symlink target, trusted the
+/// way trusted ancestors are. A nested link is admitted where it stands
+/// and the walk continues under its own resolved target, within the
+/// expansion budget — a loop of links ends the walk instead of the
+/// operation.
+fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), String> {
+    let mut prefix = PathBuf::new();
+    for component in resolved.components() {
+        prefix.push(component);
+        match std::fs::symlink_metadata(&prefix) {
+            Ok(meta) if meta.is_symlink() => {
+                if budget == 0 {
+                    return Err(format!(
+                        "user: refusing to adopt the existing home {home}: {} leads through too many symlinks",
+                        prefix.display()
+                    ));
+                }
+                let parent = standing_parent(&prefix, home)?;
+                let nested = std::fs::read_link(&prefix)
+                    .map_err(|error| format!("user: home {home}: {}: {error}", prefix.display()))?;
+                let mut spliced = join_normalized(&parent, &nested);
+                let rest = resolved
+                    .strip_prefix(&prefix)
+                    .unwrap_or_else(|_| Path::new(""))
+                    .to_path_buf();
+                for part in rest.components() {
+                    spliced.push(part);
+                }
+                return target_dirs_trusted(&spliced, home, budget - 1);
+            }
+            Ok(meta) if meta.is_dir() => {
+                // The resolved target itself takes the full ancestor
+                // rule; an intermediate only needs the operator's
+                // ownership without `other`-write (see
+                // `symlink_target_trusted`).
+                let trusted = if prefix == *resolved {
+                    own_directory(meta.uid(), meta.mode())
+                } else {
+                    link_target_usable(meta.uid(), meta.mode())
+                };
+                if !trusted {
+                    return Err(format!(
+                        "user: refusing to adopt the existing home {home}: {} is writable by others or not the operator's, so a non-root principal may have placed the home beneath it",
+                        prefix.display()
+                    ));
+                }
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "user: home {home}: {} is not a directory",
+                    prefix.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("user: home {home}: {error}")),
+        }
+    }
     Ok(())
+}
+
+/// Whether a directory a symlink target leads through is the
+/// operator's own and never writable by a lower-privileged local user
+/// as `other`: only the operator could have placed it, and no
+/// lower-privileged principal can plant through it. Group writability
+/// stays the platform's own to grant.
+fn link_target_usable(uid: u32, mode: u32) -> bool {
+    (uid == 0 || uid == operating_uid()) && mode & 0o002 == 0
 }
 
 /// The uid the agent operates as: the owner of a file the agent just
@@ -170,7 +297,10 @@ pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(
 
 /// Every existing ancestor of the home path, trusted the way the
 /// symlinked-ancestor rule trusts a parent: root's — or the
-/// operator's own — and writable by no one else. A directory a
+/// operator's own — and writable by no one else. A symlinked ancestor
+/// resolves through its whole target chain the same way: a link only
+/// root can replace is admitted, and every directory the target leads
+/// through must be trusted too. A directory a
 /// non-root principal can write is a directory that principal can
 /// plant the home under, so the adoption is refused there. A missing
 /// component ends the walk: the rest of the path does not exist yet,
