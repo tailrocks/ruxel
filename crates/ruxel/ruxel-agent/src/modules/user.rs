@@ -6,14 +6,18 @@
 
 use super::{ExecContext, bool_param, params_object, str_param};
 
-use home::{claimed_home, ensure_home, home_gid, home_usable, reconcile_created_home};
+#[cfg(test)]
+use home::ensure_home;
+use home::{claimed_home, home_gid, home_usable, reconcile_created_home};
 use shell::shell_allowed;
 
+mod apply;
 mod entries;
 mod home;
 mod identity;
 mod plan;
 mod shell;
+use apply::{Home, HomeOwner, Mutation};
 use entries::{
     PasswdEntry, forget_planned_group, forget_planned_user, group_entry, groups_need_update,
     note_planned_group, note_planned_user, note_removed_account, note_removed_group, passwd_entry,
@@ -24,7 +28,7 @@ use entries::{
     gid_holders_from, group_entry_from, passwd_entry_from, supplementary_groups_from,
     uid_holders_from,
 };
-use identity::{effective, planned_primary_of, planned_set};
+use identity::{effective, effective_group_gid, planned_primary_of, planned_set};
 use plan::PlannedPrimary;
 use serde_json::{Value, json};
 
@@ -42,11 +46,21 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 
     match state {
         "present" => {
-            if let Some((_, current_gid)) = entry {
+            if let Some((_, live_gid)) = entry {
+                // The number the group holds under the plan: the
+                // number an earlier task of the plan gave it — check
+                // mode runs no `groupmod`, so the host's database still
+                // holds the number the plan has left behind — and the
+                // live one otherwise. The account path compares
+                // against the identity the plan ends up with the same
+                // way.
+                let current_gid = effective_group_gid(name, live_gid, ctx.check_mode);
                 if let Some(want) = gid
                     && current_gid != want
                 {
-                    group_change_allowed(name, current_gid)?;
+                    // The root group is the host's to keep whatever it
+                    // is named: the guard reads the host's own entry.
+                    group_change_allowed(name, live_gid)?;
                     // The number must be free on the host:
                     // `groupmod -g` refuses a number another group
                     // holds, so the plan must say so before the
@@ -59,6 +73,13 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                         ));
                     }
                     changed = true;
+                    // The renumbering moves the primary group of every
+                    // account that holds the group: `groupmod -g`
+                    // gives them the new number, so the plan's record
+                    // of that effect is what a later removal's holder
+                    // scan reads — the host's passwd file still shows
+                    // the old number while check mode runs.
+                    plan::note_renumbered_group(name, live_gid, want);
                     if !ctx.check_mode {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
                     }
@@ -150,10 +171,9 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 mod guards;
 pub(super) use entries::{Requested, planned_group, planned_user};
 use guards::{
-    gid_holder_in_use, group_change_allowed, group_provided, group_removal_allowed,
-    identity_change_allowed, planned_gid, primary_group_holder, primary_group_name,
-    private_group_missing, removal_allowed, removal_home_allowed, removal_primary_group_allowed,
-    uid_holder_in_use,
+    gid_holder_in_use, group_change_allowed, group_provided, group_removal_allowed, planned_gid,
+    primary_group_holder, primary_group_name, private_group_missing, removal_allowed,
+    removal_home_allowed, removal_primary_group_allowed, uid_holder_in_use,
 };
 pub(super) use plan::{group_recreated, user_recreated};
 
@@ -649,6 +669,43 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push("-c");
                 args.push(c);
             }
+            // The declared home is managed as a directory too: usermod -d
+            // moves the passwd field only, so a missing directory is
+            // reconciled here — an account whose home field already
+            // matches still gets its directory. The reconciliation is
+            // planned against the identity the plan ends up with: the
+            // number the step states, the number an earlier task of
+            // the plan gave the account, or the live one.
+            //
+            // The group that owns the home is the account's final
+            // primary group: the declared one — whose number the plan
+            // knows — or the account's own same-name group, whose
+            // number the plan's own group creation draws at the apply
+            // where the host has no group yet. `None` is check mode's
+            // answer for a group that is not on the host yet: its gid
+            // decides the directory's owner, and the primary-group
+            // change the plan already reports covers the repair, so
+            // nothing is compared against a gid that does not exist.
+            let home_repair = match home {
+                Some(path) => {
+                    let owner = if let Some(g) = group {
+                        home_gid(Some(g), effective.gid, ctx.check_mode)?.map(HomeOwner::Number)
+                    } else if implicit_group_move {
+                        Some(match group_entry(name)? {
+                            Some((_, gid)) => HomeOwner::Number(gid),
+                            None => HomeOwner::SameName,
+                        })
+                    } else {
+                        Some(HomeOwner::Number(effective.gid))
+                    };
+                    owner.map(|owner| Home {
+                        path: path.to_string(),
+                        uid: uid.unwrap_or(effective.uid),
+                        owner,
+                    })
+                }
+                None => None,
+            };
             // The step's footprint claims the account's private group
             // whenever it names no primary group, and the lowering's
             // group ordering advertises it as provided: an existing
@@ -660,51 +717,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // name the group — and after every guard, so a refused
             // change never leaves the group it would have created
             // behind.
-            let mutations = existing_account_mutations(
+            let mutations = apply::mutations(
                 name,
                 &current,
                 identity_change,
                 private_group_missing(group, same_name.is_some()),
+                home_repair,
                 &args,
             )?;
-            changed |= !mutations.is_empty();
-            if !ctx.check_mode {
-                for mutation in mutations {
-                    match mutation {
-                        Mutation::GroupAdd(group) => run_cmd("groupadd", &[&group])?,
-                        Mutation::UserMod(mut args) => {
-                            args.push(name.to_string());
-                            let arguments: Vec<&str> = args.iter().map(String::as_str).collect();
-                            run_cmd("usermod", &arguments)?;
-                        }
-                    }
-                }
-            }
-            // The declared home is managed as a directory too: usermod -d
-            // moves the passwd field only, so a missing directory is
-            // reconciled here — an account whose home field already
-            // matches still gets its directory.
-            // `None` is check mode's answer for a group that is not on
-            // the host yet: its gid decides the directory's owner, and
-            // the primary-group change the plan already reports covers
-            // the repair, so nothing is compared against a gid that
-            // does not exist. The implicit claim's move counts the same
-            // way: the gid is the same-name group's, read after the
-            // mutations created it where the host had none.
-            let final_gid = if implicit_group_move {
-                group_entry(name)?.map(|(_, gid)| gid)
-            } else {
-                home_gid(group, effective.gid, ctx.check_mode)?
-            };
-            if let Some(h) = home
-                && let Some(gid) = final_gid
-            {
-                // The home's repair is planned against the identity
-                // the plan ends up with: the number the step states,
-                // the number an earlier task of the plan gave the
-                // account, or the live one.
-                changed |= ensure_home(h, uid.unwrap_or(effective.uid), gid, ctx.check_mode)?;
-            }
+            changed |= mutations
+                .iter()
+                .any(|mutation| !matches!(mutation, Mutation::Home(_)));
+            changed |= apply::run(name, mutations, ctx.check_mode, &run_cmd)?;
         }
     }
 
@@ -723,50 +747,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
     plan::note_home(name, &effective_home);
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
-}
-
-/// The mutations the existing-account branch runs, in the order they
-/// must run.
-#[derive(Debug, PartialEq, Eq)]
-enum Mutation {
-    /// The private group the step claims, created before the account's
-    /// own change: `usermod -G` resolves the supplementary list against
-    /// the host, and the list may name the group.
-    GroupAdd(String),
-    /// The account's own change.
-    UserMod(Vec<String>),
-}
-
-/// The mutations an existing account's change runs. The identity
-/// guard runs here, before the first of them: a refused change plans
-/// no mutation at all, so the host keeps the private group the step
-/// would have created, exactly as it kept it before the refusal.
-fn existing_account_mutations(
-    name: &str,
-    current: &PasswdEntry,
-    identity_change: bool,
-    group_missing: bool,
-    usermod: &[&str],
-) -> Result<Vec<Mutation>, String> {
-    if identity_change {
-        // The live uid-0 account is the superuser's whatever it is
-        // named: moving it off uid 0 — or off its primary group —
-        // strands every file it owns.
-        identity_change_allowed(name, current)?;
-    }
-    let mut mutations = Vec::new();
-    if group_missing {
-        mutations.push(Mutation::GroupAdd(name.to_string()));
-    }
-    if !usermod.is_empty() {
-        mutations.push(Mutation::UserMod(
-            usermod
-                .iter()
-                .map(|argument| (*argument).to_string())
-                .collect(),
-        ));
-    }
-    Ok(mutations)
 }
 
 /// The switches that give a created account its primary group: the
