@@ -311,11 +311,14 @@ fn a_failed_creation_takes_back_only_the_home_it_created() {
             home.to_str().unwrap(),
             preexisted,
             &|account| {
+                calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+                Ok(())
+            },
+            &|account| {
                 calls.borrow_mut().push(format!("userdel {account}"));
                 Ok(())
             },
-            &|_: &str| Ok(false),
-            &|_: &str, _: u64| Ok(()),
+            &|_: &str| Ok(true),
         )
     };
     // The operation created the home: it is taken back with the account.
