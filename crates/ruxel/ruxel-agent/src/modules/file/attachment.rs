@@ -36,14 +36,14 @@ pub(super) fn take_name(
     let staging = stage(parent, name, path)?;
     match holds_name(parent, staging.as_c_str(), opened) {
         Ok(true) => Ok(staging),
-        Ok(false) => {
-            give_back(parent, &staging, name);
-            Err(replaced(path))
-        }
-        Err(error) => {
-            give_back(parent, &staging, name);
-            Err(format!("file: cannot remove {}: {error}", path.display()))
-        }
+        Ok(false) => Err(failed_give_back(
+            give_back(parent, &staging, name),
+            replaced(path),
+        )),
+        Err(error) => Err(failed_give_back(
+            give_back(parent, &staging, name),
+            format!("file: cannot remove {}: {error}", path.display()),
+        )),
     }
 }
 
@@ -61,14 +61,14 @@ pub(super) fn take_entry(
     let held = statat(parent, staging.as_c_str(), AtFlags::SYMLINK_NOFOLLOW);
     match held {
         Ok(meta) if (super::floor::device(&meta), meta.st_ino) == identity => Ok(staging),
-        Ok(_) => {
-            give_back(parent, &staging, name);
-            Err(replaced(path))
-        }
-        Err(error) => {
-            give_back(parent, &staging, name);
-            Err(format!("file: cannot remove {}: {error}", path.display()))
-        }
+        Ok(_) => Err(failed_give_back(
+            give_back(parent, &staging, name),
+            replaced(path),
+        )),
+        Err(error) => Err(failed_give_back(
+            give_back(parent, &staging, name),
+            format!("file: cannot remove {}: {error}", path.display()),
+        )),
     }
 }
 
@@ -122,14 +122,31 @@ pub(super) fn holds_name(
 
 /// Gives the name back: the entry that was taken away goes back to the
 /// name it had.
-pub(super) fn give_back(parent: &OwnedFd, staging: &CString, name: &CString) {
-    let _ = renameat_with(
+pub(super) fn give_back(parent: &OwnedFd, staging: &CString, name: &CString) -> Result<(), String> {
+    renameat_with(
         parent,
         staging.as_c_str(),
         parent,
         name.as_c_str(),
         RenameFlags::NOREPLACE,
-    );
+    )
+    .map_err(|error| {
+        format!(
+            "file: cannot give {} back: {error}; the tree is at {}",
+            name.to_string_lossy(),
+            staging.to_string_lossy()
+        )
+    })
+}
+
+/// The failure of a removal with the failure of the rollback that gave
+/// the name back: a tree that is not given back is reported with the
+/// name it is under.
+pub(super) fn failed_give_back(given: Result<(), String>, error: String) -> String {
+    match given {
+        Ok(()) => error,
+        Err(rollback) => format!("{error}; {rollback}"),
+    }
 }
 
 /// The refusal of a removal whose target was replaced in between.

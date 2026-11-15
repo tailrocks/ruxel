@@ -105,6 +105,18 @@ fn the_preflight_finds_a_mount_point_whose_name_is_not_text() {
 }
 
 #[test]
+fn a_listing_that_cannot_be_read_is_not_an_empty_listing() {
+    // A host whose mount table cannot be read has no mounts the
+    // removal may trust: the listing is a refusal, and the removal
+    // that reads it refuses.
+    let error =
+        super::super::mounts::mounts_from(Err("the mount table cannot be read".to_string()))
+            .err()
+            .expect("the listing must fail");
+    assert!(error.contains("mount points of the host"), "{error}");
+}
+
+#[test]
 fn an_entry_that_carries_the_identity_of_a_mount_point_is_a_mount_point() {
     // A bind mount keeps the identity of the tree it is mounted from:
     // the device alone does not tell it apart.
@@ -118,9 +130,9 @@ fn an_entry_that_carries_the_identity_of_a_mount_point_is_a_mount_point() {
 #[cfg(target_os = "linux")]
 #[test]
 fn the_mount_points_of_the_host_carry_the_identity_of_their_directories() {
-    let identities = super::super::mounts::mount_identities();
+    let identities = super::super::mounts::mount_identities().unwrap();
     assert!(!identities.is_empty());
-    for mount in super::super::mounts::mounts() {
+    for mount in super::super::mounts::mounts().unwrap() {
         let meta = std::fs::metadata(&mount.point).unwrap();
         assert!(identities.contains(&(meta.dev(), meta.ino())), "{mount:?}");
     }

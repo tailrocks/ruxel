@@ -5,11 +5,34 @@ use std::path::{Component, Path, PathBuf};
 
 /// The roots a removal never takes: the filesystem root and the
 /// directories the system itself lives in.
-pub(super) const SYSTEM_ROOTS: [&str; 16] = [
-    "/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys",
+pub(super) const SYSTEM_ROOTS: [&str; 22] = [
+    "/",
+    "/etc",
+    "/var",
+    "/root",
+    "/home",
+    "/usr",
+    "/boot",
+    "/dev",
+    "/proc",
+    "/sys",
     // The system's own links into the merged tree: they are the system's
     // own names, and a removal that takes one breaks the host.
-    "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib32",
+    "/lib64",
+    "/libx32",
+    // The roots of the platform the agent also runs on: `/private`
+    // holds the real `/etc` and `/var` of macOS, `/Users` is the home
+    // root of the platform, and the rest hold the system itself.
+    "/private",
+    "/Users",
+    "/Library",
+    "/System",
+    "/Applications",
+    "/Volumes",
 ];
 
 /// A removal never takes a system root, however the path reaches it.

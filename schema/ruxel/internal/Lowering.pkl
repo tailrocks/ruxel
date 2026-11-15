@@ -552,7 +552,7 @@ function floorProblems(ix: StageIndex, i: Int, s: core.Step): List<String> =
   if (s is core.Absent)
     let (path = s.path)
     if (floorRoots.contains(path))
-      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys, nor the system's own links into the merged tree: /bin, /sbin, /lib, /lib32, /lib64, /libx32")
+      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys, nor the system's own links into the merged tree: /bin, /sbin, /lib, /lib32, /lib64, /libx32, nor the roots of the platform the agent also runs on: /private, /Users, /Library, /System, /Applications, /Volumes")
     else
       let (held = positions(ix.steps).filter((j) -> j != i).flatMap((j) -> paths(ix.steps[j]).filter((p) -> p.startsWith(path + "/"))))
       if (held.isEmpty) List()
@@ -560,9 +560,10 @@ function floorProblems(ix: StageIndex, i: Int, s: core.Step): List<String> =
   else List()
 
 /// The system roots a removal never takes: the filesystem root, the
-/// directories the system itself lives in, and the system's own links into
-/// the merged tree — the agent's `SYSTEM_ROOTS` holds the same sixteen.
-const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32")
+/// directories the system itself lives in, the system's own links into
+/// the merged tree, and the roots of the platform the agent also runs on
+/// — the agent's `SYSTEM_ROOTS` holds the same twenty-two.
+const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/private", "/Users", "/Library", "/System", "/Applications", "/Volumes")
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.

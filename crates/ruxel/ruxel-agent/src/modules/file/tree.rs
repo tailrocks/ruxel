@@ -62,7 +62,7 @@ pub(super) fn take_nested(
     }
     // The mounts are read again as the walk descends: a mount that
     // appeared after the preflight must not be followed.
-    let mounts = super::mounts::mount_identities();
+    let mounts = super::mounts::mount_identities()?;
     if super::mounts::is_mount_identity(&mounts, opened_id) {
         // The entry carries the identity of a tree the kernel mounted:
         // it is a mount point under another name.
@@ -88,10 +88,16 @@ pub(super) fn take_nested(
         remove_tree(child, path)?;
         unlinkat(dir, staging.as_c_str(), AtFlags::REMOVEDIR).map_err(|error| error.to_string())
     })();
-    if removed.is_err() {
-        super::attachment::give_back(dir, &staging, name);
+    // The name is given back when the removal failed: a name that is
+    // taken in between cannot be given back, and then the tree is
+    // reported with the name it is under.
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) => Err(super::attachment::failed_give_back(
+            super::attachment::give_back(dir, &staging, name),
+            error,
+        )),
     }
-    removed
 }
 
 /// Takes an entry away: the name is taken away before the entry is
@@ -106,10 +112,16 @@ fn take_plain(
     let staging = super::attachment::take_entry(dir, name, identity, path)?;
     let removed =
         unlinkat(dir, staging.as_c_str(), AtFlags::empty()).map_err(|error| error.to_string());
-    if removed.is_err() {
-        super::attachment::give_back(dir, &staging, name);
+    // The name is given back when the removal failed: a name that is
+    // taken in between cannot be given back, and then the entry is
+    // reported with the name it is under.
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) => Err(super::attachment::failed_give_back(
+            super::attachment::give_back(dir, &staging, name),
+            error,
+        )),
     }
-    removed
 }
 
 /// The names of the entries of a directory: the names are read before

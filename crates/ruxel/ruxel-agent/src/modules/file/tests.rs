@@ -8,6 +8,8 @@ mod attributes;
 mod empty_path;
 #[path = "tests/extra.rs"]
 mod extra;
+#[path = "tests/floor.rs"]
+mod floor;
 #[path = "tests/mounts.rs"]
 mod mounts;
 #[path = "tests/path.rs"]

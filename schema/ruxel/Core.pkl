@@ -549,9 +549,11 @@ class Symlink extends Step {
 ///     new Absent { path = "/etc/motd"; recursive = true }
 ///
 /// The path is absolute. A removal never takes a system root (`/`, `/etc`,
-/// `/var`, `/root`, `/home`, `/usr`, `/boot`, `/dev`, `/proc` or `/sys`) and
-/// never takes a directory that holds a path another step of the stage
-/// manages: a stage declares one state for each thing.
+/// `/var`, `/root`, `/home`, `/usr`, `/boot`, `/dev`, `/proc` or `/sys`, nor
+/// the roots of the platform the agent also runs on: `/private`, `/Users`,
+/// `/Library`, `/System`, `/Applications` or `/Volumes`) and never takes a
+/// directory that holds a path another step of the stage manages: a stage
+/// declares one state for each thing.
 ///
 /// `recursive` removes a directory with everything in it; without it only
 /// an empty directory goes.

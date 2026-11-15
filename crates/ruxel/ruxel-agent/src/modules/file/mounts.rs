@@ -22,10 +22,58 @@ pub(super) struct Mount {
 }
 
 /// The mounts of the host, as the kernel lists them.
-pub(super) fn mounts() -> Vec<Mount> {
-    let Ok(listing) = std::fs::read("/proc/self/mountinfo") else {
-        return Vec::new();
-    };
+///
+/// The listing is read from the source the platform writes it in. A
+/// listing that cannot be read is not an empty listing: without it the
+/// removal cannot tell a mount point from an ordinary directory, and it
+/// refuses rather than walk a tree it cannot see the mounts of.
+pub(super) fn mounts() -> Result<Vec<Mount>, String> {
+    mounts_from(listing())
+}
+
+/// The mount table of the host, as the removal reads it: the table is
+/// read through this, so that a table that cannot be read is a refusal
+/// and never an empty table.
+pub(super) type Listing = dyn Fn() -> Result<Vec<Mount>, String>;
+
+/// The mounts of the host, with the listing of the host given: a
+/// listing that cannot be read is a refusal, never an empty listing.
+pub(super) fn mounts_from(listing: Result<Vec<u8>, String>) -> Result<Vec<Mount>, String> {
+    let listing = listing.map_err(|error| mount_table_failed(&error))?;
+    Ok(parse(&listing))
+}
+
+/// The failure of reading the mount table of the host: the table holds
+/// the mount points, and without it the removal cannot tell a mount
+/// point from an ordinary directory.
+pub(super) fn mount_table_failed(error: &str) -> String {
+    format!("file: cannot read the mount points of the host: {error}")
+}
+
+/// The listing of the host, as the platform writes it.
+///
+/// Linux writes the mount table in `/proc/self/mountinfo`. A host
+/// without a procfs — a container, a chroot — has none, and the
+/// removal cannot see the mounts of the host: it refuses.
+#[cfg(target_os = "linux")]
+fn listing() -> Result<Vec<u8>, String> {
+    std::fs::read("/proc/self/mountinfo").map_err(|error| error.to_string())
+}
+
+/// The platform writes no mount table to read: it mounts no tree under
+/// another name, and a mount point is an entry of another device, which
+/// the walk holds.
+#[cfg(not(target_os = "linux"))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the listing of the host is read on the platform that writes one"
+)]
+fn listing() -> Result<Vec<u8>, String> {
+    Ok(Vec::new())
+}
+
+/// The mounts of the host, as the listing of the host lists them.
+fn parse(listing: &[u8]) -> Vec<Mount> {
     let mut mounts = Vec::new();
     for line in listing.split(|byte| *byte == b'\n') {
         if line.is_empty() {
@@ -66,8 +114,8 @@ pub(super) fn mounts() -> Vec<Mount> {
 /// inode of the tree that is mounted. A bind mount keeps the identity
 /// of the tree it is mounted from, so an entry with that identity is a
 /// mount point under another name.
-pub(super) fn mount_identities() -> Vec<(u64, u64)> {
-    identities(&mounts())
+pub(super) fn mount_identities() -> Result<Vec<(u64, u64)>, String> {
+    Ok(identities(&mounts()?))
 }
 
 /// The identity of every mount of the list: the device and the inode of
@@ -90,8 +138,12 @@ pub(super) fn is_mount_identity(mounts: &[(u64, u64)], identity: (u64, u64)) -> 
 /// mount: a tree of a root that is mounted under another name is the
 /// root's own tree, and a removal that reaches it takes the root's
 /// files.
-pub(super) fn bound_root(path: &Path, roots: &[&str]) -> Option<String> {
-    bound_root_in(path, roots, &mounts())
+pub(super) fn bound_root(path: &Path, roots: &[&str]) -> Result<Option<String>, String> {
+    Ok(bound_root_in(
+        path,
+        roots,
+        &mounts().map_err(|error| mount_table_failed(&error))?,
+    ))
 }
 
 /// The system root a path lands in, with the mounts of the host given.

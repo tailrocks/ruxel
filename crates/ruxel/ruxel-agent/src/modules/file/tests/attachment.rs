@@ -36,6 +36,27 @@ fn a_name_that_no_longer_holds_the_directory_is_not_taken_away() {
 }
 
 #[test]
+fn a_name_that_is_taken_again_is_reported_with_the_name_the_tree_is_under() {
+    let base = scratch("give-back");
+    let dir = base.join("dir");
+    std::fs::create_dir(&dir).unwrap();
+    let parent = std::os::fd::OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let child = std::os::fd::OwnedFd::from(std::fs::File::open(&dir).unwrap());
+    let name = CString::new("dir").unwrap();
+    let staging = super::super::attachment::take_name(&parent, &name, &child, &dir).unwrap();
+    // Another writer takes the name while the removal is in flight: the
+    // tree cannot go back to the name it had, and the failure says where
+    // the tree is, so that it is not stranded without a word.
+    std::fs::write(base.join("dir"), b"taken").unwrap();
+    let error = super::super::attachment::give_back(&parent, &staging, &name).unwrap_err();
+    assert!(error.contains("cannot give"), "{error}");
+    assert!(error.contains(staging.to_str().unwrap()), "{error}");
+    // The tree is whole, under the name of its own.
+    assert!(base.join(staging.to_str().unwrap()).is_dir());
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn a_name_that_holds_the_directory_is_taken_away() {
     let base = scratch("attached");
     let dir = base.join("dir");

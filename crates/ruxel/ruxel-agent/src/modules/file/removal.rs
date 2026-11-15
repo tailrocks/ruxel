@@ -7,14 +7,16 @@
 //! descriptor. A directory that is replaced in between is therefore never
 //! reached, and the path is never resolved a second time.
 
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, statat, unlinkat};
+mod parent;
+
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat, unlinkat};
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
 use super::mounts::Mount;
+use parent::{OpenError, open_parent};
 
 /// Takes the path away: a removal without `recurse` takes an empty
 /// directory only, with it the tree goes with the directory. Reports
@@ -23,7 +25,20 @@ use super::mounts::Mount;
 /// In check mode nothing is removed: the checks a removal makes are the
 /// ones the run itself makes, so both answer the same.
 pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<bool, String> {
-    remove_with(path, recurse, check_mode, &super::mounts::mounts())
+    remove_with_listing(path, recurse, check_mode, &super::mounts::mounts)
+}
+
+/// The removal, with the mount table of the host read through the
+/// listing it is given: a table that cannot be read is a refusal, and
+/// not an empty table the removal walks a tree with.
+pub(super) fn remove_with_listing(
+    path: &Path,
+    recurse: bool,
+    check_mode: bool,
+    listing: &super::mounts::Listing,
+) -> Result<bool, String> {
+    let mounts = listing().map_err(|error| super::mounts::mount_table_failed(&error))?;
+    remove_with(path, recurse, check_mode, &mounts)
 }
 
 /// The removal with the mounts of the host given: a mount is a tree
@@ -88,7 +103,7 @@ fn refuse_before(path: &Path, mounts: &[Mount]) -> Result<(), String> {
     // A tree of a system root that is mounted under another name is the
     // root's own tree: the path says nothing about where the removal
     // lands.
-    if let Some(root) = super::mounts::bound_root(path, &super::floor::SYSTEM_ROOTS) {
+    if let Some(root) = super::mounts::bound_root(path, &super::floor::SYSTEM_ROOTS)? {
         return Err(format!(
             "file: refusing to remove {}: it is bound to {root}, a system root",
             path.display()
@@ -144,10 +159,16 @@ pub(super) fn take_file(
     let staging = super::attachment::take_entry(parent, name, identity, path)?;
     let removed = unlinkat(parent, staging.as_c_str(), AtFlags::empty())
         .map_err(|error| format!("file: cannot remove {}: {error}", path.display()));
-    if removed.is_err() {
-        super::attachment::give_back(parent, &staging, name);
+    // The name is given back when the removal failed: a name that is
+    // taken in between cannot be given back, and then the entry is
+    // reported with the name it is under.
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) => Err(super::attachment::failed_give_back(
+            super::attachment::give_back(parent, &staging, name),
+            error,
+        )),
     }
-    removed
 }
 
 /// Takes a directory away: an empty one without `recurse`, the tree
@@ -203,10 +224,16 @@ fn take_empty(
     let staging = super::attachment::take_name(parent, name, child, path)?;
     let removed = unlinkat(parent, staging.as_c_str(), AtFlags::REMOVEDIR)
         .map_err(|error| format!("file: cannot remove {}: {error}", path.display()));
-    if removed.is_err() {
-        super::attachment::give_back(parent, &staging, name);
+    // The name is given back when the removal failed: a name that is
+    // taken in between cannot be given back, and then the tree is
+    // reported with the name it is under.
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) => Err(super::attachment::failed_give_back(
+            super::attachment::give_back(parent, &staging, name),
+            error,
+        )),
     }
-    removed
 }
 
 /// Takes a tree away: the name is taken first, so it cannot be swapped
@@ -219,10 +246,16 @@ fn take_tree(parent: &OwnedFd, name: &CString, child: &OwnedFd, path: &Path) -> 
         unlinkat(parent, staging.as_c_str(), AtFlags::REMOVEDIR)
             .map_err(|error| format!("file: cannot remove {}: {error}", path.display()))
     })();
-    if removed.is_err() {
-        super::attachment::give_back(parent, &staging, name);
+    // The name is given back when the removal failed: a name that is
+    // taken in between cannot be given back, and then the tree is
+    // reported with the name it is under.
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) => Err(super::attachment::failed_give_back(
+            super::attachment::give_back(parent, &staging, name),
+            error,
+        )),
     }
-    removed
 }
 
 /// Refuses a removal whose directory is a system root under another name.
@@ -295,79 +328,4 @@ fn directory_is_empty(dir: &OwnedFd) -> Result<bool, String> {
         }
     }
     Ok(true)
-}
-
-/// Opens the directory that holds the path, and the name of the entry in
-/// it. The walk follows the first component, which is where the system's
-/// own layout lives (`/var` -> `/private/var`, `/bin` -> `/usr/bin`), and
-/// no symlink below it.
-/// The reason a walk to the parent of a path failed.
-#[derive(Debug)]
-pub(super) enum OpenError {
-    /// A component of the path is not there.
-    Missing,
-    /// The walk failed for any other reason.
-    Other(String),
-}
-
-pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), OpenError> {
-    let name = path.file_name().ok_or_else(|| {
-        OpenError::Other(format!("file: {} does not name an entry", path.display()))
-    })?;
-    let name = CString::new(name.as_bytes()).map_err(|_| {
-        OpenError::Other(format!(
-            "file: {} names an entry with a zero byte",
-            path.display()
-        ))
-    })?;
-    let mut current = if path.is_absolute() {
-        open("/", directory_flags(), Mode::empty())
-    } else {
-        open(".", directory_flags(), Mode::empty())
-    }
-    .map_err(|error| OpenError::Other(format!("file: cannot read {}: {error}", path.display())))?;
-    let parts: Vec<_> = path
-        .components()
-        .filter(|part| {
-            !matches!(
-                part,
-                Component::RootDir | Component::CurDir | Component::Prefix(_)
-            )
-        })
-        .collect();
-    // The last component is the entry itself; the rest is the directory
-    // that holds it.
-    let parents = parts.len().saturating_sub(1);
-    for (index, part) in parts.iter().take(parents).enumerate() {
-        let part = match part {
-            Component::Normal(part) => part,
-            Component::ParentDir => std::ffi::OsStr::new(".."),
-            _ => continue,
-        };
-        // The first component may be the system's own alias (`/var` ->
-        // `/private/var`, `/bin` -> `/usr/bin`): it is followed only when
-        // it points at a directory of the same name, so a link that
-        // points somewhere else (`/scratch` -> `/`) is refused.
-        let flags = if index == 0 {
-            if super::floor::is_alias(&current, part) {
-                directory_flags()
-            } else {
-                directory_flags() | OFlags::NOFOLLOW
-            }
-        } else {
-            directory_flags() | OFlags::NOFOLLOW
-        };
-        current = openat(&current, part, flags, Mode::empty()).map_err(|error| {
-            if error == rustix::io::Errno::NOENT {
-                return OpenError::Missing;
-            }
-            OpenError::Other(format!("file: cannot read {}: {error}", path.display()))
-        })?;
-    }
-    Ok((current, name))
-}
-
-/// The flags a directory is opened with.
-fn directory_flags() -> OFlags {
-    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC
 }

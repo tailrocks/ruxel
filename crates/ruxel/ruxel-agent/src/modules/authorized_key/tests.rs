@@ -1,5 +1,7 @@
 #[path = "tests/comments.rs"]
 mod comments;
+#[path = "tests/identity.rs"]
+mod identity;
 #[path = "tests/rollback.rs"]
 mod rollback;
 

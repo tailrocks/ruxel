@@ -40,6 +40,47 @@ fn a_rollback_does_not_take_a_newer_edit_away() {
 }
 
 #[test]
+fn a_rollback_does_not_lose_the_edit_of_a_writer_that_acts_in_it() {
+    let root = scratch("rollback-race");
+    let meta = std::fs::metadata(&root).unwrap();
+    let home = File::open(&root).unwrap();
+    let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
+        .unwrap()
+        .unwrap();
+    // The file that is read.
+    std::fs::write(root.join(".ssh/authorized_keys"), b"old\n").unwrap();
+    let (_, identity) = read_authorized_keys_with_identity(&ssh).unwrap();
+    // Another writer changes the file before the publication: the
+    // publication must refuse, because the file it was written from is
+    // not the one that is there.
+    std::fs::write(root.join(".ssh/authorized_keys"), b"other\n").unwrap();
+    // A writer that does not take the lock acts while the rollback is
+    // in flight: the rollback must not take its edit away, and must
+    // not strand it either.
+    let racer = || {
+        std::fs::write(root.join(".ssh/authorized_keys"), b"raced\n").unwrap();
+    };
+    let error = publish::publish_racing_at(
+        &ssh,
+        b"published\n",
+        meta.uid(),
+        meta.gid(),
+        identity,
+        &|| {},
+        &racer,
+    )
+    .unwrap_err();
+    assert!(error.contains("changed during operation"), "{error}");
+    // The edit of the writer that does not take the lock is still
+    // there: the rollback did not take it away.
+    assert_eq!(
+        std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap(),
+        "raced\n"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_rollback_restores_the_file_that_was_there() {
     let root = scratch("rollback-restore");
     let meta = std::fs::metadata(&root).unwrap();
