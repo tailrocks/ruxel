@@ -169,13 +169,17 @@ fn an_operator_placed_home_is_adopted() {
     home_usable(home.to_str().unwrap()).expect("the operator's home must be usable");
     // Check mode reports the repair where the ownership drifted.
     assert!(
-        ensure_home(home.to_str().unwrap(), uid + 1, gid + 1, true).unwrap(),
+        ensure_home(home.to_str().unwrap(), uid + 1, gid + 1, true)
+            .unwrap()
+            .0,
         "the drifted operator home reports its repair"
     );
     // Apply mode with matching ownership is no change — accepted,
     // nothing to do — and keeps the skeleton.
     assert!(
-        !ensure_home(home.to_str().unwrap(), uid, gid, false).unwrap(),
+        !ensure_home(home.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0,
         "the operator's home is adopted, not refused"
     );
     assert_eq!(
@@ -266,7 +270,8 @@ fn an_operator_owned_home_under_a_shared_path_is_repaired() {
     std::fs::create_dir(&home).unwrap();
     std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
     let repaired = ensure_home(home.to_str().unwrap(), 65534, 65534, false)
-        .expect("the operator's home must be adopted");
+        .expect("the operator's home must be adopted")
+        .0;
     assert!(repaired, "the ownership moves to the account");
     let meta = std::fs::metadata(&home).unwrap();
     assert_eq!(

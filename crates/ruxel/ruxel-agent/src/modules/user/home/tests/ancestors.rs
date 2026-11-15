@@ -78,12 +78,16 @@ fn a_missing_home_under_the_operators_own_tree_stays_usable() {
     super::home_usable(home.to_str().unwrap())
         .expect("the operator's tree must accept the creation");
     assert!(
-        super::ensure_home(home.to_str().unwrap(), uid, gid, true).unwrap(),
+        super::ensure_home(home.to_str().unwrap(), uid, gid, true)
+            .unwrap()
+            .0,
         "check mode reports the pending creation"
     );
     assert!(!home.exists(), "check mode creates nothing");
     assert!(
-        super::ensure_home(home.to_str().unwrap(), uid, gid, false).unwrap(),
+        super::ensure_home(home.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0,
         "the missing home is created"
     );
     assert!(

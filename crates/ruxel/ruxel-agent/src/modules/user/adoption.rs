@@ -1,3 +1,4 @@
+use rustix::fs::{Mode, fchmod};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
@@ -208,6 +209,17 @@ fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), St
         }
     }
     Ok(())
+}
+
+/// The mode a created directory is given: the mode the creation
+/// asked for is only a request — the process's umask takes bits away
+/// from it, and a default ACL on the parent grants the ones the request
+/// does not ask for — so the mode is enforced on the directory itself,
+/// after it is created. The walk creates parents traversable and never
+/// world-writable, and the home takes the policy mode: the trust the
+/// adoption checks rely on.
+pub(super) fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), String> {
+    fchmod(fd, mode).map_err(|error| format!("user: create home {home}: {error}"))
 }
 
 /// Whether a directory a symlink target leads through is the
