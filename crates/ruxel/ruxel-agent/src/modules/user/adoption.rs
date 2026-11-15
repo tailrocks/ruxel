@@ -302,7 +302,7 @@ pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(
     // The intended account's own leaf is adopted under trusted
     // ancestors — and only where it is itself writable by no one
     // else, or anyone's contents in it would become the account's.
-    if Some(leaf.uid()) == intended_uid(home) {
+    if intended_claim(home).is_some_and(|(_, uid)| uid == leaf.uid()) {
         if leaf.mode() & 0o022 != 0 {
             return Err(format!(
                 "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
@@ -315,21 +315,29 @@ pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(
     ))
 }
 
-/// The uid the host's passwd database intends the home for: the
-/// account whose home field names the path. `None` where no entry
-/// names it — the creation claims the home before the account exists —
-/// so a miss admits no one new: the leaf still takes the operator's
-/// rule, and a valid creation (a missing or operator-staged home)
-/// passes it.
-pub(super) fn intended_uid(home: &str) -> Option<u32> {
-    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+/// The account the passwd database intends the home for: the name and
+/// number from the single line whose home field names the path. `None`
+/// where none names it — the creation claims the home first — or where
+/// two do: a shared path cannot be attributed to either owner.
+pub(super) fn intended_claim(home: &str) -> Option<(String, u32)> {
+    sole_claimant(&std::fs::read_to_string("/etc/passwd").ok()?, home)
+}
+
+/// The sole claimant in the passwd text: a second claimant voids the
+/// attribution, so no first match adopts another account's leaf.
+pub(super) fn sole_claimant(passwd: &str, home: &str) -> Option<(String, u32)> {
+    let mut found: Option<(String, u32)> = None;
     for line in passwd.lines() {
         let fields: Vec<&str> = line.split(':').collect();
-        if fields.get(5) == Some(&home) {
-            return fields.get(2).and_then(|uid| uid.parse().ok());
+        if fields.get(5) != Some(&home) {
+            continue;
+        }
+        let uid: u32 = fields.get(2)?.parse().ok()?;
+        if found.replace((fields.first()?.to_string(), uid)).is_some() {
+            return None;
         }
     }
-    None
+    found
 }
 
 /// Every existing ancestor of the home path, trusted the way the
