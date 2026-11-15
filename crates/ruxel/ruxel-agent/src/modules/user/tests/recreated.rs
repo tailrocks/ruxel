@@ -216,6 +216,80 @@ fn every_group_creation_marks_its_number_changed() {
 }
 
 #[test]
+fn an_implicit_group_creation_marks_its_number_changed() {
+    // The `-U` counterpart of the group creation's own marking: a user
+    // creation that names no primary group brings the same-name group
+    // with it, so the allocator draws a number no probe has seen yet —
+    // a cached file naming the group must resolve stale instead of
+    // passing its old numeric probe and staying with whoever claimed
+    // the freed number.
+    begin_plan();
+    let check = check_context();
+    let fresh = format!("ruxel-implicit-group-{}", std::process::id());
+    assert!(
+        passwd_entry(&fresh).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    assert!(
+        group_entry(&fresh).unwrap().is_none(),
+        "the group must not exist on the host"
+    );
+    run(&json!({"name": fresh, "create_home": false}), &check)
+        .expect("the unnumbered creation must plan");
+    assert!(
+        group_number_changed(&fresh),
+        "the `-U` group creation is identity-changing"
+    );
+    assert!(
+        crate::modules::ownership_cache_stale(
+            "file",
+            &json!({"path": "/srv/data", "group": fresh})
+        ),
+        "a cached file the created group owns resolves stale"
+    );
+}
+
+#[test]
+fn a_reused_group_keeps_its_number() {
+    // The mirror: the host holds the same-name group, so the creation
+    // reuses it instead of drawing a number — its number is one probes
+    // have seen, and a cached file naming the group stays served from
+    // the cache.
+    begin_plan();
+    let check = check_context();
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let name = groups
+        .lines()
+        .find_map(|line| {
+            let mut fields = line.split(':');
+            let group = fields.next()?;
+            let _password = fields.next()?;
+            let gid = fields.next()?;
+            let usable = !group.is_empty()
+                && !group.starts_with(['+', '#', '-'])
+                && gid.parse::<u64>().is_ok()
+                && !passwd
+                    .lines()
+                    .any(|line| line.split(':').next() == Some(group));
+            usable.then(|| group.to_string())
+        })
+        .expect("a group without a same-name account");
+    run(&json!({"name": name, "create_home": false}), &check).expect("the creation must plan");
+    assert!(
+        !group_number_changed(&name),
+        "a reused group is not identity-changing"
+    );
+    assert!(
+        !crate::modules::ownership_cache_stale(
+            "file",
+            &json!({"path": "/srv/data", "group": name})
+        ),
+        "a cached file the reused group owns stays cached"
+    );
+}
+
+#[test]
 fn a_numbered_recreation_keeps_its_planned_uid_at_removal() {
     // The plan removes an account, recreates it with an explicit uid,
     // and removes it again with a mismatched declared uid: the

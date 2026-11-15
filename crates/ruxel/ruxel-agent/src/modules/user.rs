@@ -545,6 +545,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         .or_else(|| entry.as_ref().map(|current| current.comment.clone()));
 
     let mut changed = false;
+    // Whether the creation below brings the same-name group with it:
+    // `useradd -U` creates the group where the host holds none, so its
+    // number is the allocator's to draw. Set in the creation branch and
+    // read where the plan's record of the group is made.
+    let mut implicit_group_created = false;
 
     match entry {
         None => {
@@ -585,6 +590,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // record.
             plan::note_primary(name, planned_primary_of(name, group, ctx.check_mode));
             plan::note_supplementary(name, groups.clone().unwrap_or_default());
+            // Whether the creation draws the same-name group's number:
+            // `useradd -U` creates the group where the host holds none,
+            // so its number is one no probe has seen yet — the
+            // allocator's — and the plan's record marks it the way a
+            // group creation does. A group the host holds is reused
+            // instead (selected with `-g`), and a group the plan's own
+            // earlier step declares is that step's to mark: the live
+            // entry is stale in check mode, which runs no `groupadd` —
+            // a group the plan removed is created anew, while a planned
+            // one is provided.
+            implicit_group_created = group.is_none() && {
+                let live = group_entry(name)?.is_some();
+                let removed = entries::group_removed(name);
+                removed || (!live && planned_group(name).is_none())
+            };
             if !ctx.check_mode {
                 // The private group the account reuses: `useradd -g
                 // <name>` selects the host's group instead of creating
@@ -1048,6 +1068,15 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // so the plan's record holds it for whatever resolves the
         // group next.
         note_planned_group(name, None);
+        // Every creation the `-U` switch brings draws a number no probe
+        // has seen yet — the allocator's — so the plan's record of the
+        // moved number is what tells an ownership cache it is stale: a
+        // cached file the group owns must not pass its old numeric
+        // probe and stay with whoever claimed the freed number. A
+        // reused group keeps its number, so only the creation marks it.
+        if created_account && implicit_group_created {
+            plan::note_changed_group(name);
+        }
     }
     // The plan's record of the account: what a later file's ownership
     // resolves against in check mode, which runs no `useradd` and would
