@@ -117,6 +117,7 @@ fn serve() -> i32 {
     let mut no_cache = false;
     let mut ledger = ledger::Ledger::load(&dir);
     let mut system_state = system_state::SystemState::default();
+    let mut plan_sysctl: Vec<(String, String, String)> = Vec::new();
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -132,8 +133,7 @@ fn serve() -> i32 {
             }
         };
         let is_hello = matches!(&envelope.msg, Some(Msg::Hello(_)));
-        // A plan frame starts a plan; a patch continues the plan it
-        // extends.
+        // A plan frame starts a plan; a patch continues the plan it extends.
         let is_plan = matches!(&envelope.msg, Some(Msg::Plan(_)));
         if is_hello == handshaken.load(Ordering::Relaxed) {
             log_event(
@@ -180,18 +180,16 @@ fn serve() -> i32 {
                 }
             }
             Some(Msg::Done(_)) => {
-                // The session's plans ran to their end: the plan is
-                // complete, and a complete plan may expire the records
-                // it never encountered.
+                // The session's plans ran to their end: the plan is complete,
+                // and may expire the records it never encountered.
                 ledger.complete_plan();
                 ledger.flush();
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
-                // A new plan begins: the previous plan's verdict on
-                // what this workflow manages is void, and the new plan
-                // may complete. The user/group maps reset beside the
-                // ledger; a patch keeps its maps.
+                // A new plan begins: the previous verdict on what this
+                // workflow manages is void and the new plan may complete;
+                // the user/group maps reset beside the ledger, a patch keeps its maps.
                 if is_plan {
                     ledger.begin_plan();
                     modules::begin_plan();
@@ -208,11 +206,10 @@ fn serve() -> i32 {
                         &mut ledger,
                         &mut system_state,
                         &mut sensitive_effects,
+                        &mut plan_sysctl,
                     ) {
-                        // The plan stopped before its last task: the
-                        // tasks it never reached are still the
-                        // workflow's, so their records must not expire
-                        // at the plan's end.
+                        // The plan halted before its last task: the tasks it never reached are
+                        // still the workflow's, so their records must not expire at the plan's end.
                         ledger.abort_plan();
                         break;
                     }
@@ -252,6 +249,7 @@ fn execute_task(
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
     sensitive_effects: &mut sensitivity::Marker,
+    plan_sysctl: &mut Vec<(String, String, String)>,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
@@ -286,10 +284,8 @@ fn execute_task(
         } else {
             serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
         };
-        // The plan has encountered this task whatever the run does with
-        // it: a cache hit, a check-mode run and a run that records
-        // nothing are encounters too, and the plan's end expires only
-        // the records it never saw.
+        // The plan has encountered this task whatever the run does with it — cache
+        // hit, check-mode run, unrecorded run — and its end expires only records it never saw.
         ledger.encounter(&iteration.ledger_key);
         let params = match parsed.and_then(|params| {
             modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
@@ -313,23 +309,28 @@ fn execute_task(
             }
         };
 
+        // The plan's sysctl entries in delivery order, not the ledger's dropped-task history.
+        if let Some(declared) = modules::sysctl_plan_declaration(&task.module, &params)
+            && !plan_sysctl.contains(&declared)
+        {
+            plan_sysctl.push(declared);
+        }
+
         if !no_cache
             && task.become_user.is_empty()
             && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
-            // The plan's own earlier steps can renumber an identity
-            // the task names: `usermod -u` leaves an arbitrary file at
-            // the old number, and the cached probe weighs the file's
-            // number alone — the task would be skipped and the file
-            // would keep the number the plan gave the account.
+            // The plan's own earlier steps can renumber an identity the
+            // task names: `usermod -u` leaves an arbitrary file at the
+            // old number, and the cached probe weighs the file's number
+            // alone — the file would keep the number the plan gave out.
             && !modules::ownership_cache_stale(&task.module, &params)
             && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
         {
-            // A forced task the ledger satisfies still observes the host:
-            // the predictions of its own dimension are reconciled here
-            // too, so no later task judges against one it made stale.
+            // A forced task the ledger satisfies still observes the host,
+            // reconciling its own predictions so no later task judges a stale one.
             if task.module == "systemd" {
                 modules::systemd::reconcile_predictions(&params, system_state);
             }
@@ -352,7 +353,6 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
-        let managed = modules::managed_sysctl_entries(&task.module, ledger);
         let outcome = modules::execute(
             &task.module,
             &params,
@@ -360,7 +360,7 @@ fn execute_task(
             iteration.source_content.as_deref(),
             &ctx,
             system_state,
-            &managed,
+            plan_sysctl.as_slice(),
         );
         if !task_check_mode {
             if task.no_log {
