@@ -15,6 +15,7 @@ mod home_repair;
 mod homes;
 mod identity;
 mod parsing;
+mod plan_reset;
 mod plan_state;
 mod planned;
 mod reconciliation;

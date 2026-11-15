@@ -107,6 +107,7 @@ pub(crate) use copy::validate_source;
 pub(super) use ownership::{OWNERSHIP_RESOLUTIONS, resolve_gid_from, resolve_uid_from};
 pub(super) use ownership::{Ownership, resolve_ownership};
 pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key, trimmed_value};
+pub(crate) use user::begin_plan;
 
 /// The managed sysctl entries a task's module consumes: only the
 /// sysctl module reads them, and the scan they need weighs on every
