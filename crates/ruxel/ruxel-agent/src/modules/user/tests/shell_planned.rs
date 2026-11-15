@@ -1,0 +1,158 @@
+//! Check-mode shell validation consults the plan's own File and
+//! Symlink providers: check mode runs no file creation, so a shell an
+//! earlier step of the plan manages is still missing from the live
+//! filesystem when the account's task verifies it — the provider
+//! record excuses it the way `planned_group` excuses a group
+//! `groupadd` has not created yet. The lowering orders every managed
+//! shell provider before the account
+//! (`linux-user-shell-symlink-chain-before-account.pkl` chains a file
+//! through two links before it,
+//! `linux-user-shell-reconciled-later-stage.pkl` provides the file an
+//! earlier stage, and
+//! `linux-user-shell-obsolete-provider-replaced.pkl` replaces the
+//! earlier managers with an executable file before it), and apply runs
+//! the provider first and verifies the live shell it created — so the
+//! excuse holds in check mode only.
+
+use super::super::*;
+
+fn check_context() -> ExecContext {
+    ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    }
+}
+
+fn apply_context() -> ExecContext {
+    ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    }
+}
+
+#[test]
+fn check_mode_consults_planned_file_and_symlink_providers() {
+    // A File step of the plan manages the shell, and check mode runs
+    // no file creation: the live filesystem still lacks the path when
+    // the account's task verifies it, so the dry run must consult the
+    // plan's own provider record instead of refusing a change the
+    // apply performs — the identical apply deterministically succeeds,
+    // the provider having run first.
+    shell::reset_planned_shell_providers();
+    let shell = format!("/tmp/ruxel-shell-planned-file-{}", std::process::id());
+    assert!(
+        std::fs::symlink_metadata(&shell).is_err(),
+        "the planned shell must be missing from the live filesystem"
+    );
+    let account = format!("ruxel-shell-planned-file-{}", std::process::id());
+    shell::note_planned_shell_provider(&shell);
+    let planned = run(&json!({"name": account, "shell": shell}), &check_context())
+        .expect("check mode excuses a shell an earlier File step provides");
+    assert_eq!(planned.get("changed"), Some(&json!(true)), "{planned}");
+    // A Symlink step manages the declared path and its target chain
+    // the way `linux-user-shell-symlink-chain-before-account.pkl`
+    // chains a file through two links before the account: every hop
+    // is the plan's to provide while the live filesystem holds none
+    // of them.
+    let target = format!("/tmp/ruxel-shell-planned-real-{}", std::process::id());
+    let link = format!("/tmp/ruxel-shell-planned-link-{}", std::process::id());
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    shell::note_planned_shell_provider(&target);
+    shell::note_planned_shell_provider(&link);
+    let chained = run(
+        &json!({"name": format!("ruxel-shell-planned-link-{}", std::process::id()), "shell": link}),
+        &check_context(),
+    )
+    .expect("check mode excuses a shell an earlier Symlink step provides");
+    assert_eq!(chained.get("changed"), Some(&json!(true)), "{chained}");
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn check_mode_refuses_a_missing_shell_no_step_provides() {
+    // A shell no File or Symlink step of the plan provides is refused
+    // here the way apply refuses it: the identical apply
+    // deterministically fails `shell_allowed` on the missing path, so
+    // the dry run must report that instead of a valid planned change —
+    // and a provider for another path excuses nothing.
+    shell::reset_planned_shell_providers();
+    let missing = format!("/tmp/ruxel-shell-unprovided-{}", std::process::id());
+    assert!(std::fs::symlink_metadata(&missing).is_err());
+    shell::note_planned_shell_provider(&format!("{missing}-elsewhere"));
+    let error = run(
+        &json!({"name": format!("ruxel-shell-unprovided-{}", std::process::id()), "shell": missing}),
+        &check_context(),
+    )
+    .expect_err("check mode must refuse a missing shell no step provides");
+    assert!(error.contains("shell"), "{error}");
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn apply_mode_verifies_the_live_shell_from_the_host() {
+    // Apply runs the providing step first and resolves from the host
+    // alone: a planned provider excuses nothing there — a shell still
+    // missing when the account's task runs is refused before anything
+    // mutates, the stand-in absorbing nothing. A live executable shell
+    // instead applies, the stand-in absorbing the creation.
+    use std::os::unix::fs::PermissionsExt;
+
+    shell::reset_planned_shell_providers();
+    let missing = format!("/tmp/ruxel-shell-apply-missing-{}", std::process::id());
+    assert!(std::fs::symlink_metadata(&missing).is_err());
+    shell::note_planned_shell_provider(&missing);
+    test_hook::arm(vec![]);
+    let error = run(
+        &json!({"name": format!("ruxel-shell-apply-missing-{}", std::process::id()), "shell": missing}),
+        &apply_context(),
+    )
+    .expect_err("apply must refuse a shell the live filesystem still lacks");
+    assert!(error.contains("shell"), "{error}");
+    assert!(
+        test_hook::take_calls().is_empty(),
+        "useradd never ran: the missing shell was refused before it"
+    );
+    // The provider ran: the live shell exists and is executable for
+    // the account, so the apply succeeds.
+    let live =
+        std::path::Path::new("/tmp").join(format!("ruxel-shell-apply-live-{}", std::process::id()));
+    std::fs::write(&live, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&live, std::fs::Permissions::from_mode(0o755)).unwrap();
+    test_hook::arm(vec![Ok(())]);
+    let applied = run(
+        &json!({"name": format!("ruxel-shell-apply-live-{}", std::process::id()), "shell": live.to_str().unwrap(), "create_home": false}),
+        &apply_context(),
+    )
+    .expect("apply succeeds where the provider created the live shell");
+    assert_eq!(applied.get("changed"), Some(&json!(true)), "{applied}");
+    let calls = test_hook::take_calls();
+    assert!(
+        calls.iter().any(|(cmd, _)| cmd == "useradd"),
+        "the creation ran: {calls:?}"
+    );
+    std::fs::remove_file(&live).unwrap();
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn a_new_plan_clears_the_shell_provider_record() {
+    // A provider an earlier plan managed is not the next plan's to
+    // rely on: `begin_plan` clears the shell-provider record beside
+    // the identity one, so a later plan verifies against the live
+    // filesystem again.
+    shell::reset_planned_shell_providers();
+    let shell = format!("/tmp/ruxel-shell-plan-reset-{}", std::process::id());
+    shell::note_planned_shell_provider(&shell);
+    assert!(shell::planned_shell_provided(&shell));
+    begin_plan();
+    assert!(
+        !shell::planned_shell_provided(&shell),
+        "a new plan starts with no shell provider"
+    );
+}
