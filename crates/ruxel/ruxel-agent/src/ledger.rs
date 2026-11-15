@@ -312,7 +312,9 @@ impl Ledger {
     /// managed value, not an unmanaged boot override. The records are
     /// the current plan's to report: the plan's end expires every record
     /// it never encountered (see `flush`), so a task a previous plan ran
-    /// and this one dropped leaves no declaration behind.
+    /// and this one dropped leaves no declaration behind. The live run
+    /// reads the plan's declarations instead (see `sysctl_plan_declaration`).
+    #[cfg(test)]
     pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
         #[cfg(test)]
         {
