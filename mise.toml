@@ -155,13 +155,14 @@ run = ["alint validate-config", "alint check --fail-on-warning"]
 
 [tasks."acceptance-local"]
 description = "Safe native Pkl acceptance against actual local agent subprocesses"
+env = { CARGO_TARGET_DIR = "{{config_root}}/target" }
 run = [
   "cargo build --locked -p ruxel -p ruxel-agent 1>&2",
   "perl -T -MConfig -MFcntl -MMath::BigInt -MPOSIX -e 1 1>&2",
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-xfs/Cargo.toml 1>&2",
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-plan/Cargo.toml 1>&2",
   "cargo build --locked --manifest-path tools/http-fixture/Cargo.toml 1>&2",
-  "cargo run --locked --manifest-path tools/acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --http-fixture tools/http-fixture/target/debug/ruxel-http-fixture 1>&2",
+  "cargo run --locked --manifest-path tools/acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --http-fixture target/debug/ruxel-http-fixture 1>&2",
   "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --manifest-path tools/acceptance-manifest/Cargo.toml 1>&2",
   "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation 1>&2",
   "cargo run --locked --manifest-path tools/acceptance-manifest/Cargo.toml --example secret_dedup -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
