@@ -207,41 +207,47 @@ pub(super) fn rollback_created_home_from(home: &str, skel: &Path) -> Result<(), 
     }
     let home_set = relative_entries(Path::new(home))
         .map_err(|error| format!("user: take back created home {home}: {error}"))?;
-    if home_set.is_empty() {
-        std::fs::remove_dir(home)
-            .map_err(|error| format!("user: take back created home {home}: {error}"))?;
-        return Ok(());
-    }
-    // A missing skeleton means no template: any content is foreign.
-    // An unreadable one fails closed the same way — the rollback keeps
-    // the home and reports it rather than deleting contents it cannot
-    // prove `useradd` put there.
-    let skel_set = match relative_entries(skel) {
-        Ok(set) => set,
-        Err(_) if skel_missing(skel) => BTreeSet::new(),
-        Err(error) => {
-            return Err(format!("user: take back created home {home}: {error}"));
+    // Provenance is the template's own entry at the name — the same kind
+    // of entry with the same bytes — not the name alone: an overwrite or
+    // a planted link at a template name is foreign, so the home is kept.
+    for entry in &home_set {
+        if !skel_entry_matches(Path::new(home), skel, entry)? {
+            return Err(format!(
+                "user: take back created home {home}: home contains contents a concurrent writer planted"
+            ));
         }
-    };
-    if home_set.iter().all(|entry| skel_set.contains(entry)) {
-        std::fs::remove_dir_all(home)
-            .map_err(|error| format!("user: take back created home {home}: {error}"))?;
-        Ok(())
-    } else {
-        Err(format!(
-            "user: take back created home {home}: home contains contents a concurrent writer planted"
-        ))
     }
+    std::fs::remove_dir_all(home)
+        .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+    Ok(())
 }
 
-/// Whether the skeleton root is absent: a missing template, so every
-/// entry the created home holds is foreign. The check runs off the
-/// path's own lookup, not the enumeration's error string.
-fn skel_missing(skel: &Path) -> bool {
-    matches!(
-        std::fs::symlink_metadata(skel),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound
-    )
+/// Whether the home's entry is the template's own at the same name: the same
+/// kind of entry with the same bytes — an overwrite or a planted link is foreign.
+fn skel_entry_matches(home: &Path, skel: &Path, entry: &Path) -> Result<bool, String> {
+    let (at_home, at_skel) = (home.join(entry), skel.join(entry));
+    let home_meta = std::fs::symlink_metadata(&at_home)
+        .map_err(|error| format!("{}: {error}", at_home.display()))?;
+    let Ok(skel_meta) = std::fs::symlink_metadata(&at_skel) else {
+        return Ok(false);
+    };
+    if home_meta.is_symlink() != skel_meta.is_symlink() {
+        return Ok(false);
+    }
+    if home_meta.is_symlink() {
+        let home_target = std::fs::read_link(&at_home)
+            .map_err(|error| format!("{}: {error}", at_home.display()))?;
+        return Ok(std::fs::read_link(&at_skel).is_ok_and(|target| target == home_target));
+    }
+    if home_meta.is_dir() && skel_meta.is_dir() {
+        return Ok(true);
+    }
+    if !home_meta.is_file() || !skel_meta.is_file() {
+        return Ok(false);
+    }
+    let home_bytes =
+        std::fs::read(&at_home).map_err(|error| format!("{}: {error}", at_home.display()))?;
+    Ok(std::fs::read(&at_skel).is_ok_and(|skel_bytes| skel_bytes == home_bytes))
 }
 
 /// Every entry beneath `root`, relative to it, without following a
@@ -382,6 +388,10 @@ fn prior_owner(home: &str) -> Result<Option<(u64, u64)>, String> {
     }
 }
 
+/// The skeleton-provenance rollback: overwrites and planted links are foreign.
+#[cfg(test)]
+#[path = "apply/tests/rollback_skel.rs"]
+mod skel_tests;
 /// The rollback of a failed change: the mutations a later step's
 /// failure takes back, over canned commands and scratch directories —
 /// no host account is touched.
