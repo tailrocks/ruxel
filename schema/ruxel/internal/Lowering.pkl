@@ -1114,7 +1114,9 @@ function sysctlNestedAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 /// the shadowed file where it loads last (`preflight_shadow`), so
 /// splitting the pair across stages helps nothing. Whether the managed
 /// keys match changes nothing: the shadow hides the whole file, not the
-/// clashing entries. The comparison is per host pair — stages on
+/// clashing entries. `/etc/sysctl.conf` is exempt: it loads after every
+/// directory file and is never skipped, so a legacy/dirfile pair of one
+/// name both loads. The comparison is per host pair — stages on
 /// disjoint hosts never share a boot — and one shared file is the
 /// multi-entry model, not a shadow.
 function sysctlShadowAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
@@ -1123,12 +1125,17 @@ function sysctlShadowAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
       sysctlShadowPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
 
 /// The refusal for one pair of sysctl steps of two stages that persist
-/// different directories' files of one name.
+/// different directories' files of one name. `/etc/sysctl.conf` is no
+/// shadow candidate either way: it stands under no ranked directory,
+/// so the runtime never skips it, and it loads after every directory
+/// file — a legacy/dirfile pair of one name both loads, and refusing
+/// it would be factually false.
 function sysctlShadowPair(a: core.Stage, ia: StageIndex, j: Int, b: core.Stage, ib: StageIndex, i: Int): List<String> =
   let (x = ia.steps[j])
   let (y = ib.steps[i])
   if (!(x is linux.Sysctl) || !(y is linux.Sysctl)) List()
   else if (x.path == y.path || sysctlBase(x.path) != sysctlBase(y.path)) List()
+  else if (x.path == "/etc/sysctl.conf" || y.path == "/etc/sysctl.conf") List()
   else List("'\(name(x))' (\(where(ia.placed[j]))) of stage \"\(a.title)\" persists \(x.path), and '\(name(y))' (\(where(ib.placed[i]))) of stage \"\(b.title)\" persists \(y.path); sysctl --system loads one file per name from the highest-precedence directory, so the lower-precedence copy never loads and the keys only it carries revert after reboot; persist both entries in one directory's file")
 
 /// The file name of a sysctl persistence path: the segment after the

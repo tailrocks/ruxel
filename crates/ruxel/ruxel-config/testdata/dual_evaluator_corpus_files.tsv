@@ -211,6 +211,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-hyphen.pkl
   tests/workflow/valid/linux-sysctl-local-lib-dir.pkl
   tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
+  tests/workflow/valid/linux-sysctl-shadow-legacy.pkl
   tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
   tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl
