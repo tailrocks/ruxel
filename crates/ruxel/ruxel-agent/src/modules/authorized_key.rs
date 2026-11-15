@@ -184,16 +184,136 @@ fn key_material_bytes(line: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
         return None;
     }
     let fields = key_fields_bytes(text);
-    for (index, field) in fields.iter().enumerate() {
-        if !is_key_type_bytes(field) {
+    // The key type is the first field, or the second when the first is
+    // the options field: sshd rejects a line whose leading field is
+    // neither, so a key-looking pair further along the line is not an
+    // active key.
+    let key_at = if fields.first().is_some_and(|field| is_key_type_bytes(field)) {
+        0
+    } else if fields.len() > 1 && is_options_bytes(first_field_span(text)) {
+        1
+    } else {
+        return None;
+    };
+    let material = fields.get(key_at + 1)?;
+    Some((fields[key_at].clone(), material.clone()))
+}
+
+/// The first field of the line, with its quotes intact: whitespace
+/// inside quotes does not end it. The options check reads this span,
+/// because a quoted comma is part of a value, not a separator.
+fn first_field_span(line: &[u8]) -> &[u8] {
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, byte) in line.iter().enumerate() {
+        if escaped {
+            escaped = false;
             continue;
         }
-        let Some(material) = fields.get(index + 1) else {
-            continue;
-        };
-        return Some((field.clone(), material.clone()));
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            byte if byte.is_ascii_whitespace() && !quoted => return &line[..index],
+            _ => {}
+        }
     }
-    None
+    line
+}
+
+/// Whether the field is a valid `authorized_keys` options field: a
+/// comma-separated list of the options sshd accepts, where a comma
+/// inside quotes stays in the value. A leading field that is neither a
+/// key type nor valid options makes sshd reject the line, so the line
+/// carries no key.
+fn is_options_bytes(field: &[u8]) -> bool {
+    let mut any = false;
+    for option in split_options_bytes(field) {
+        if !is_option_bytes(option) {
+            return false;
+        }
+        any = true;
+    }
+    any
+}
+
+/// The options of the field, split on the commas that are not quoted.
+fn split_options_bytes(field: &[u8]) -> Vec<&[u8]> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, byte) in field.iter().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            b',' if !quoted => {
+                parts.push(&field[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&field[start..]);
+    parts
+}
+
+/// Whether the option names one sshd accepts, with the value the name
+/// requires: a valued option holds a value, and a flag stands alone.
+fn is_option_bytes(option: &[u8]) -> bool {
+    let (name, value) = match option.iter().position(|byte| *byte == b'=') {
+        Some(at) => (&option[..at], Some(&option[at + 1..])),
+        None => (option, None),
+    };
+    match option_arity(name) {
+        Some(true) => value.is_some_and(|value| !unquoted(value).is_empty()),
+        Some(false) => value.is_none(),
+        None => false,
+    }
+}
+
+/// Whether the option takes a value: the names sshd accepts for
+/// `authorized_keys` lines.
+fn option_arity(name: &[u8]) -> Option<bool> {
+    const VALUED: [&[u8]; 8] = [
+        b"command",
+        b"environment",
+        b"expiry-time",
+        b"from",
+        b"permitlisten",
+        b"permitopen",
+        b"principals",
+        b"tunnel",
+    ];
+    const FLAGS: [&[u8]; 8] = [
+        b"cert-authority",
+        b"no-agent-forwarding",
+        b"no-pty",
+        b"no-user-rc",
+        b"no-X11-forwarding",
+        b"restrict",
+        b"verify-required",
+        b"no-touch-required",
+    ];
+    if VALUED.contains(&name) {
+        Some(true)
+    } else if FLAGS.contains(&name) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The value without one pair of surrounding quotes.
+fn unquoted(value: &[u8]) -> &[u8] {
+    if value.len() >= 2 && value.starts_with(b"\"") && value.ends_with(b"\"") {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
 }
 
 /// The fields of a line of `authorized_keys`, as bytes: a quoted value
@@ -254,16 +374,19 @@ fn key_material(line: &str) -> Option<(String, String)> {
         return None;
     }
     let fields = key_fields(text);
-    for (index, field) in fields.iter().enumerate() {
-        if !is_key_type(field) {
-            continue;
-        }
-        let Some(material) = fields.get(index + 1) else {
-            continue;
-        };
-        return Some((field.clone(), material.clone()));
-    }
-    None
+    // The key type is the first field, or the second when the first is
+    // the options field: sshd rejects a line whose leading field is
+    // neither, so a key-looking pair further along the line is not an
+    // active key.
+    let key_at = if fields.first().is_some_and(|field| is_key_type(field)) {
+        0
+    } else if fields.len() > 1 && is_options_bytes(first_field_span(text.as_bytes())) {
+        1
+    } else {
+        return None;
+    };
+    let material = fields.get(key_at + 1)?;
+    Some((fields[key_at].clone(), material.clone()))
 }
 
 /// The fields of a line of `authorized_keys`: a quoted value stays in one
