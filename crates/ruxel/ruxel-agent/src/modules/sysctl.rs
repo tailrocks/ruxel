@@ -48,6 +48,12 @@ pub(super) fn run(
     let sysctl_set = bool_param(obj, "sysctl_set", false);
     let reload = bool_param(obj, "reload", true);
     let file = str_param(obj, "sysctl_file").unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    // The managed set is plan-first: the session's own declarations
+    // lead, and the ledger's retained entries cover the (file, key)
+    // pairs the plan doesn't mention — the earlier stages of a second
+    // apply replayed with fresh agent state. A dropped task's record
+    // authorizes its shadow for exactly one run: the plan's end
+    // expires the records it never encountered.
     preflight_shadow(file, name, managed)?;
     preflight_override(file, name, &value, managed)?;
 

@@ -668,3 +668,6 @@ mod source_content;
 
 #[path = "protocol/sensitive_check.rs"]
 mod sensitive_check;
+
+#[path = "protocol/session_plans.rs"]
+mod session_plans;
