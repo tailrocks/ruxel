@@ -1,0 +1,27 @@
+// expect: is a file, so /etc/sysctl.d/90-ruxel.conf/child cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A sysctl writes its persistence file as a regular file: a later
+// overlapping-host stage that manages a path inside it fails when the
+// parent turns out to be the sysctl's file. The exact-path owners check
+// sees only one path at a time and admits this workflow; the
+// leaf/descendant relation it borrows from the stage-local nested check
+// refuses it.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d/90-ruxel.conf/child"; content = "x\n" }
+    }
+  }
+}
