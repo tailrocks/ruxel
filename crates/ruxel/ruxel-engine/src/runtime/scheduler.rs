@@ -58,6 +58,7 @@ pub(super) async fn run_plays(
                             total.skipped += recap.skipped;
                             total.rescued += recap.rescued;
                             total.ignored += recap.ignored;
+                            total.filtered |= recap.filtered;
                         }
                     }
                     super::connect::report_failure(execution, &host, "host_failed", &failure)?;
@@ -74,6 +75,7 @@ pub(super) async fn run_plays(
                         total.skipped += recap.skipped;
                         total.rescued += recap.rescued;
                         total.ignored += recap.ignored;
+                        total.filtered |= recap.filtered;
                     }
                 }
             }

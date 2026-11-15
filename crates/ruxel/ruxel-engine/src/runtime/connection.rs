@@ -28,10 +28,10 @@ impl Connection {
             Self::Test(c) => c.next().await,
         }
     }
-    pub(super) async fn shutdown(self) -> Result<()> {
+    pub(super) async fn shutdown(self, filtered: bool) -> Result<()> {
         match self {
-            Self::Local(c) => c.shutdown().await,
-            Self::Remote(c) => c.shutdown().await,
+            Self::Local(c) => c.shutdown(filtered).await,
+            Self::Remote(c) => c.shutdown(filtered).await,
             #[cfg(test)]
             Self::Test(_) => Ok(()),
         }
