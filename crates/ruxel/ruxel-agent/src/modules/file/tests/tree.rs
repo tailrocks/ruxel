@@ -35,6 +35,7 @@ fn a_nested_directory_that_was_replaced_is_not_emptied() {
         identity,
         meta.dev(),
         &dir,
+        &mut std::collections::HashSet::new(),
     )
     .unwrap_err();
     assert!(error.contains("replaced"), "{error}");
@@ -42,5 +43,23 @@ fn a_nested_directory_that_was_replaced_is_not_emptied() {
     // was read is where it was.
     assert!(dir.exists());
     assert_eq!(std::fs::read(base.join("moved/file")).unwrap(), b"content");
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn an_entry_with_the_staging_prefix_is_removed_like_any_other() {
+    let base = scratch("staging-prefix");
+    // The prefix reserves nothing: an entry a user named this way is an
+    // entry like any other, and the walk takes it with the tree.
+    std::fs::write(base.join(".ruxel-remove-1-1"), b"content").unwrap();
+    std::fs::write(base.join("other"), b"content").unwrap();
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::tree::remove_tree(&dir, &base).unwrap();
+    assert!(
+        !base.join(".ruxel-remove-1-1").exists(),
+        "the prefixed entry is gone"
+    );
+    assert!(!base.join("other").exists(), "the other entry is gone");
+    drop(dir);
     std::fs::remove_dir_all(base).unwrap();
 }
