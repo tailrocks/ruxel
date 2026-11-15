@@ -152,6 +152,79 @@ pub(super) fn primary_group_holder_from(passwd: &str, gid: u64, group: &str) -> 
     None
 }
 
+/// The accounts that hold `gid` as their primary group, apart from
+/// `name` itself: the account that leaves the group holds it no
+/// longer. The plan's own record decides — check mode runs no
+/// `usermod`, so the host's database still shows the old numbers, and
+/// an account the plan moved off the group holds it no longer either.
+pub(super) fn other_primary_group_holders(
+    gid: u64,
+    group: &str,
+    name: &str,
+) -> Result<Vec<String>, String> {
+    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    Ok(other_primary_group_holders_from(&passwd, gid, group, name))
+}
+
+/// The passwd counterpart of [`other_primary_group_holders`], over
+/// canned content.
+pub(super) fn other_primary_group_holders_from(
+    passwd: &str,
+    gid: u64,
+    group: &str,
+    name: &str,
+) -> Vec<String> {
+    let mut holders = Vec::new();
+    for line in passwd.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() < 4 || f[0] == name {
+            continue;
+        }
+        // An account the plan has removed holds the group no longer.
+        if super::entries::account_removed(f[0]) {
+            continue;
+        }
+        // The account's primary group under the plan: the plan's own
+        // record where a task of the plan gave it one, and the live
+        // entry otherwise.
+        let primary = if let Some(planned) = super::plan::primary(f[0]) {
+            planned
+        } else {
+            let Ok(live) = f[3].parse::<u64>() else {
+                continue;
+            };
+            super::plan::PlannedPrimary {
+                name: group.to_string(),
+                gid: Some(live),
+            }
+        };
+        if primary.holds(gid, group) {
+            holders.push(f[0].to_string());
+        }
+    }
+    holders
+}
+
+/// Whether the account's private group goes with the account: the
+/// group is empty once the account leaves it — no member holds it and
+/// no account holds it as its primary group. `userdel` deletes the
+/// account's private group only when it is empty; a group another
+/// member holds is the host's still, and the agent's own rule says
+/// the same about a group a live account holds as its primary group:
+/// `groupdel` refuses to delete one without `--force`.
+pub(super) fn private_group_emptied(name: &str, gid: Option<u64>) -> Result<bool, String> {
+    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    if !super::entries::group_members_from(&groups, name).is_empty() {
+        return Ok(false);
+    }
+    let Some(gid) = gid else {
+        // The group is not on the host and the plan knows no number
+        // for it: the plan's own group, empty by construction.
+        return Ok(true);
+    };
+    Ok(other_primary_group_holders(gid, name, name)?.is_empty())
+}
+
 /// The account that holds `uid` on the host and that the plan has not
 /// freed: `useradd -u` and `usermod -u` refuse a number another
 /// account holds, so the request is checked against the live database —
