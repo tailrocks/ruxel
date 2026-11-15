@@ -123,6 +123,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + repositoryPlanningAcrossStages(_stages, _indexes)
     + sysctlBootOrder(_stages, _indexes)
     + sysctlOwnersAcrossStages(_stages, _indexes)
+    + sysctlNestedAcrossStages(_stages, _indexes)
     + groupRemovalsAcrossStages(_stages, _indexes)
     + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
@@ -963,6 +964,38 @@ function keyringModes(ix: StageIndex, i: Int): List<String> =
 
 const function keyringClash(a: core.Step, b: core.Step): Boolean =
   a is debian.AptRepository && b is core.Directory && b.path == "/etc/apt/keyrings"
+
+/// A regular file leaves no room for anything inside it, whatever stage
+/// manages the inside path: the stage-local `nested` check refuses the
+/// leaf/descendant pair inside one stage, and across the stages that
+/// share a file system the same relation fails the same way. A sysctl
+/// step writes its persistence file as a regular file, so a later
+/// overlapping-host stage that manages a path inside it fails when the
+/// parent turns out to be the sysctl's file — and where the earlier
+/// stage manages the inside path the sysctl's own file would land in a
+/// directory, so the sysctl task fails on it. Only pairs a sysctl step
+/// stands on are refused here: the persistence file is the sysctl's
+/// whole-file footprint, which the exact-path owners check does not see
+/// beneath.
+function sysctlNestedAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> positions(_indexes[n].steps).flatMap((j) -> positions(_indexes[m].steps).flatMap((i) ->
+      sysctlNestedPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
+
+/// The refusal for one step pair of two stages whose paths stand in the
+/// leaf/descendant relation with a sysctl's persistence file on one side:
+/// the file the sysctl writes is a regular file like any whole-file
+/// subject, so a path inside it — and a sysctl file inside a regular
+/// file the other stage writes — cannot both hold, whichever stage runs
+/// first.
+function sysctlNestedPair(a: core.Stage, ia: StageIndex, j: Int, b: core.Stage, ib: StageIndex, i: Int): List<String> =
+  if (!(ia.steps[j] is linux.Sysctl) && !(ib.steps[i] is linux.Sysctl)) List()
+  else
+    let (byEarlier = inside(leaves(ia.steps[j]), paths(ib.steps[i])))
+    let (byLater = inside(leaves(ib.steps[i]), paths(ia.steps[j])))
+    let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
+    if (pair.isEmpty) List()
+    else List("'\(name(ia.steps[j]))' (\(where(ia.placed[j]))) of stage \"\(a.title)\" and '\(name(ib.steps[i]))' (\(where(ib.placed[i]))) of stage \"\(b.title)\" conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it")
 
 /// A sysctl step manages the entries of the file at its `path`, never the
 /// file itself, so any other step that manages the same path declares a
