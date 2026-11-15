@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 /// A mount of the host: the tree that is mounted, and where it is
 /// mounted. A mount keeps the identity of the tree it is mounted from,
 /// so the path says nothing about where a removal lands.
+#[derive(Debug)]
 pub(super) struct Mount {
     /// The tree that is mounted, as the path it has in the filesystem
     /// it comes from.
