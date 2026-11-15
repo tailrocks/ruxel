@@ -94,6 +94,64 @@ fn an_attacker_writable_home_is_refused_never_adopted() {
 }
 
 #[test]
+fn a_created_home_takes_the_policy_mode() {
+    // The `useradd -m` shape: the host makes the home with its own
+    // creation mode — 0700 under a strict `HOME_MODE` — owned by the
+    // account. The creation's reconciliation repairs the mode to the
+    // policy's 0750: check mode reports the pending repair without
+    // touching the directory, apply enforces it, and a converged home
+    // is no change.
+    use std::os::unix::fs::PermissionsExt;
+    let parent = scratch("created-mode");
+    let home = parent.join("alice");
+    let (uid, gid) = own_identity();
+    std::fs::create_dir(&home).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let entry = || super::super::entries::PasswdEntry {
+        uid,
+        gid,
+        ..Default::default()
+    };
+    let mode = || std::fs::metadata(&home).unwrap().permissions().mode() & 0o777;
+    assert!(
+        reconcile_created_home(
+            "ruxel-created-alice",
+            home.to_str().unwrap(),
+            &entry(),
+            true,
+            &|_| panic!("check mode takes nothing back"),
+        )
+        .unwrap(),
+        "check mode reports the pending mode repair"
+    );
+    assert_eq!(mode(), 0o700, "check mode changes nothing");
+    assert!(
+        reconcile_created_home(
+            "ruxel-created-alice",
+            home.to_str().unwrap(),
+            &entry(),
+            false,
+            &|_| panic!("the mode repair must not take the account back"),
+        )
+        .unwrap(),
+        "apply repairs the mode"
+    );
+    assert_eq!(mode(), 0o750, "the created home takes the policy mode");
+    assert!(
+        !reconcile_created_home(
+            "ruxel-created-alice",
+            home.to_str().unwrap(),
+            &entry(),
+            false,
+            &|_| panic!("a converged home takes nothing back"),
+        )
+        .unwrap(),
+        "a converged home is no change"
+    );
+    std::fs::remove_dir_all(&parent).unwrap();
+}
+
+#[test]
 fn an_operator_placed_home_is_adopted() {
     // The operator's own staging under a shared path: the
     // directory the operator placed — owned by the operating
