@@ -93,7 +93,7 @@ fn finish_agent(agent: &mut Child, stdin: &mut impl std::io::Write) {
     write_frame(
         stdin,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
@@ -120,7 +120,7 @@ fn handshake_facts_clean_shutdown() {
     write_frame(
         &mut stdin,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
@@ -342,7 +342,7 @@ fn second_agent_is_locked_out_and_kill9_releases() {
     write_frame(
         &mut stdin3,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
@@ -665,6 +665,9 @@ fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
 
 #[path = "protocol/source_content.rs"]
 mod source_content;
+
+#[path = "protocol/filtered_done.rs"]
+mod filtered_done;
 
 #[path = "protocol/sensitive_check.rs"]
 mod sensitive_check;

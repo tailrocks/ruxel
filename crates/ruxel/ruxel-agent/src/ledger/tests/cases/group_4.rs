@@ -136,6 +136,31 @@ fn a_complete_plan_expires_the_records_it_never_encountered() {
 }
 
 #[test]
+fn a_filtered_done_prunes_nothing() {
+    // A tagged run omits tasks the workflow keeps: its Done frame
+    // carries the filtered flag, and the agent must not treat the
+    // run's end as the plan's verdict on what the workflow manages.
+    let dir = Scratch::new("filtered-done");
+    let file = dir.file("target", b"stable");
+    let mut ledger = Ledger::load(&dir.0);
+    record_file(&mut ledger, "later", &file);
+    ledger.flush();
+
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.encounter("earlier");
+    let done = ruxel_proto::v1::Done { filtered: true };
+    if !done.filtered {
+        ledger.complete_plan();
+    }
+    ledger.flush();
+
+    assert!(
+        Ledger::load(&dir.0).cached_ok("later").is_some(),
+        "a filtered run must not expire the records it never sent"
+    );
+}
+
+#[test]
 fn an_unfinished_session_expires_nothing() {
     // The controller's stream closed before the end of the session: the
     // run is an executed prefix, not a complete plan, so the records

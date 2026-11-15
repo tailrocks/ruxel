@@ -25,6 +25,7 @@ impl<B: super::Backend> super::Runner<'_, B> {
         task: &Value,
         parent: &super::ContextLayer,
     ) -> super::Result<()> {
+        self.filtered = true;
         self.recap.skipped += 1;
         let result = if parent.no_log || parent.control_sensitive || super::flag(task, "noLog") {
             super::json!({"censored":true,"changed":false,"failed":false})
