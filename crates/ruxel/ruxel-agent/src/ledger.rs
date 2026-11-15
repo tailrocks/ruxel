@@ -94,11 +94,45 @@ impl Probe {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SysctlDecl {
+    file: String,
+    name: String,
+    value: String,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Record {
     agent_version: String,
     status: String,
     result_json: Value,
     probes: Vec<Probe>,
+    /// The managed declaration of the task, where it has one. The
+    /// declaration is independent of the probes: a file whose bytes are
+    /// not text, or that assigns the key twice, is no cacheable
+    /// result, but the declaration the task made of it is the
+    /// workflow's own and must survive.
+    #[serde(default)]
+    managed_sysctl: Option<SysctlDecl>,
+}
+
+impl Record {
+    /// Whether the record's probes are of the schema this agent
+    /// writes. A sysctl record the parent agent wrote carries the
+    /// key/value probe and the live probe but no boot probe, and it
+    /// identifies itself as this agent's version — serving it would
+    /// skip the task, and with it the override preflight the boot
+    /// probe guards.
+    fn schema_current(&self) -> bool {
+        let sysctl = self
+            .probes
+            .iter()
+            .any(|probe| matches!(probe, Probe::SysctlKV { .. } | Probe::SysctlLive { .. }));
+        !sysctl
+            || self
+                .probes
+                .iter()
+                .any(|probe| matches!(probe, Probe::SysctlBoot { .. }))
+    }
 }
 
 pub(crate) struct Ledger {
@@ -111,6 +145,14 @@ pub(crate) struct Ledger {
     /// encounters too — so the plan's end can tell the records that are
     /// the plan's from the history of tasks it does not run anymore.
     encountered: HashSet<String>,
+    /// The plan stopped before its last task: the tasks it never
+    /// reached are still part of the workflow, so their records are
+    /// not the history of a task the workflow dropped.
+    aborted: bool,
+    /// The session's plans ran to their end: the end of the session is
+    /// the evidence that the plan is complete, and only a complete
+    /// plan may expire what it never encountered.
+    complete: bool,
     dirty: bool,
     /// The number of scans of the persisted records: the cost the
     /// module gate keeps away from the tasks that read none of them.
@@ -155,6 +197,9 @@ impl Ledger {
         let key = self.storage_key(key)?;
         let rec = self.records.get(&key)?;
         if rec.agent_version != env!("CARGO_PKG_VERSION") {
+            return None;
+        }
+        if !rec.schema_current() {
             return None;
         }
         if rec.probes.is_empty() || !rec.probes.iter().all(|probe| probe.verify(system_state)) {
@@ -202,10 +247,14 @@ impl Ledger {
         {
             return;
         }
-        let Some(probes) = probe_for(module, params, system_state) else {
-            return;
-        };
-        if probes.is_empty() {
+        let probes = probe_for(module, params, system_state).unwrap_or_default();
+        // The managed declaration of a sysctl task is the task's own,
+        // whether or not its result can be cached: a file whose bytes
+        // are not text, or that assigns the key twice, is no cacheable
+        // result, but the declaration the task made of it still tells
+        // the preflight that the file is managed.
+        let managed_sysctl = sysctl_declaration(module, params);
+        if probes.is_empty() && managed_sysctl.is_none() {
             return;
         }
         let Some(key) = self.storage_key(key) else {
@@ -219,9 +268,29 @@ impl Ledger {
                 status: status.to_string(),
                 result_json: result.clone(),
                 probes,
+                managed_sysctl,
             },
         );
         self.dirty = true;
+    }
+
+    /// The plan stopped before its last task: the tasks it never
+    /// reached are still the workflow's, so their records are not
+    /// history and must not expire at the plan's end.
+    pub(crate) fn abort_plan(&mut self) {
+        self.aborted = true;
+    }
+
+    /// The session's plans ran to their end: the plan is complete, and
+    /// a complete plan may expire the records it never encountered.
+    pub(crate) fn complete_plan(&mut self) {
+        self.complete = true;
+    }
+
+    /// A new plan begins: the previous plan's verdict on what this
+    /// workflow manages is void, and the new plan may complete.
+    pub(crate) fn begin_plan(&mut self) {
+        self.aborted = false;
     }
 
     /// The current plan has encountered this task: its record — a
@@ -251,12 +320,18 @@ impl Ledger {
         let mut entries: Vec<(String, String, String)> = self
             .records
             .values()
-            .flat_map(|record| record.probes.iter())
-            .filter_map(|probe| match probe {
-                Probe::SysctlKV { file, name, value } => {
-                    Some((file.clone(), name.clone(), value.clone()))
-                }
-                _ => None,
+            .flat_map(|record| {
+                let declared = record
+                    .managed_sysctl
+                    .clone()
+                    .map(|decl| (decl.file, decl.name, decl.value));
+                let probed = record.probes.iter().filter_map(|probe| match probe {
+                    Probe::SysctlKV { file, name, value } => {
+                        Some((file.clone(), name.clone(), value.clone()))
+                    }
+                    _ => None,
+                });
+                declared.into_iter().chain(probed)
             })
             .collect();
         entries.sort();
@@ -284,6 +359,32 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests;
+
+/// The managed declaration a sysctl task carries: the file it declares
+/// the key in, the key, and the value it declared there. The
+/// declaration is the task's own, not the file's current content: the
+/// task wrote the value it declared, whatever else the file holds.
+fn sysctl_declaration(module: &str, params: &Value) -> Option<SysctlDecl> {
+    if module != "sysctl" {
+        return None;
+    }
+    let name = params.get("name").and_then(Value::as_str)?;
+    let value = match params.get("value")? {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => if *value { "1" } else { "0" }.to_string(),
+        _ => return None,
+    };
+    let file = params
+        .get("sysctl_file")
+        .and_then(Value::as_str)
+        .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    Some(SysctlDecl {
+        file: file.to_string(),
+        name: name.to_string(),
+        value,
+    })
+}
 
 pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";

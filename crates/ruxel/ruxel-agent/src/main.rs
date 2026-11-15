@@ -132,6 +132,9 @@ fn serve() -> i32 {
             }
         };
         let is_hello = matches!(&envelope.msg, Some(Msg::Hello(_)));
+        // A plan frame starts a plan; a patch continues the plan it
+        // extends.
+        let is_plan = matches!(&envelope.msg, Some(Msg::Plan(_)));
         if is_hello == handshaken.load(Ordering::Relaxed) {
             log_event(
                 &mut stdout,
@@ -177,10 +180,20 @@ fn serve() -> i32 {
                 }
             }
             Some(Msg::Done(_)) => {
+                // The session's plans ran to their end: the plan is
+                // complete, and a complete plan may expire the records
+                // it never encountered.
+                ledger.complete_plan();
                 ledger.flush();
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
+                // A new plan begins: the previous plan's verdict on what
+                // this workflow manages is void, and the new plan may
+                // complete.
+                if is_plan {
+                    ledger.begin_plan();
+                }
                 for task in &tasks {
                     let mut task = task.clone();
                     task.no_log |= sensitive_effects.is_marked();
@@ -194,6 +207,11 @@ fn serve() -> i32 {
                         &mut system_state,
                         &mut sensitive_effects,
                     ) {
+                        // The plan stopped before its last task: the
+                        // tasks it never reached are still the
+                        // workflow's, so their records must not expire
+                        // at the plan's end.
+                        ledger.abort_plan();
                         break;
                     }
                 }
@@ -299,6 +317,12 @@ fn execute_task(
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
+            // The plan's own earlier steps can renumber an identity
+            // the task names: `usermod -u` leaves an arbitrary file at
+            // the old number, and the cached probe weighs the file's
+            // number alone — the task would be skipped and the file
+            // would keep the number the plan gave the account.
+            && !modules::ownership_cache_stale(&task.module, &params)
             && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
         {
             // A forced task the ledger satisfies still observes the host:
