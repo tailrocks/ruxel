@@ -7,18 +7,12 @@ use std::path::{Component, Path, PathBuf};
 /// `usermod -d` moves the passwd field even when the path is a regular
 /// file, so the path is validated before any mutation — a refused apply
 /// must leave the account as it was. A symlink is refused whatever it
-/// targets: a home in an attacker-writable parent must never be
-/// followed to a directory the account does not own, and every ancestor
-/// of the path — which the lookup and the later `create_dir_all` and
-/// `lchown` all traverse — is inspected the same way. An existing
-/// directory is adopted only where [`adoption_trusted`] admits it: a
-/// directory a non-root principal may have placed must never become the
-/// account's home with its contents. Only a missing path under trusted
-/// ancestors is usable — the repair creates the home beneath them, so
-/// a creation beneath a directory a non-root principal can write would
-/// hand the fresh home to that principal's rename-and-plant: any other
-/// lookup error — an ancestor that is a
-/// regular file (`NotADirectory`), a permission refusal — propagates
+/// targets, and every ancestor of the path is inspected the same way.
+/// An existing directory is adopted only where [`adoption_trusted`]
+/// admits it; only a missing path under trusted ancestors is usable —
+/// a creation beneath a writable directory would hand the fresh home
+/// to that principal's rename-and-plant. Any other lookup error — an
+/// ancestor that is a regular file, a permission refusal — propagates
 /// before any mutation, for `usermod -d` would otherwise move the passwd
 /// field first and leave a partially applied account behind.
 pub(super) fn home_usable(home: &str) -> Result<(), String> {
@@ -40,15 +34,10 @@ pub(super) fn home_usable(home: &str) -> Result<(), String> {
 /// component would be traversed as root and the operation could create
 /// or chown beneath a target the account does not own. A symlinked
 /// ancestor is refused wherever a non-root principal could plant or
-/// replace it, and admitted only where the parent is root's and
-/// unwritable to the rest — the system links an operator places (`/var`
-/// on macOS) are the operator's configuration, not the attacker's to
-/// redirect. The walk judges the shape, not the trust: an existing
-/// directory of any owner passes here — the trust of an adopted home is
-/// [`adoption_trusted`]'s to judge — while a missing leaf is created
-/// beneath its ancestors, so the creation's entry points additionally
-/// require [`trusted_ancestors`]. A missing component ends the walk: the
-/// rest of the path does not exist yet, so nothing can traverse it.
+/// replace it, and admitted only where the parent is root's and closed.
+/// The walk judges the shape, not the trust — an adopted home's trust
+/// is [`adoption_trusted`]'s to judge — and a missing component ends
+/// the walk: the rest of the path does not exist yet.
 pub(super) fn ancestors_usable(home: &str) -> Result<(), String> {
     let components: Vec<std::path::Component<'_>> =
         std::path::Path::new(home).components().collect();
@@ -254,22 +243,19 @@ pub(super) fn privileged_gid(gid: u32) -> bool {
 }
 
 /// The uid the agent operates as: the owner of a file the agent just
-/// created. The agent runs as root, and the operator's staging is the
-/// operator's own — but reading the euid directly needs an unsafe call
-/// the workspace forbids, so the uid is read off a probe file the
-/// process creates itself: the kernel owns new files to their creator.
-/// The probe's name is unique to the process and created atomically
-/// (`create_new`), so a planted file never stands in for it — a name
-/// something else holds only fails the creation and the next name is
-/// tried. Where no probe can be created the answer matches nothing:
-/// only root-owned directories are trusted then.
+/// created. Reading the euid directly needs an unsafe call the
+/// workspace forbids, so the uid is read off a probe file the process
+/// creates itself: the kernel owns new files to their creator. The
+/// probe's name is unique to the process and created atomically
+/// (`create_new`), so a planted file never stands in for it. Where no
+/// probe can be created the answer matches nothing: only root-owned
+/// directories are trusted then.
 pub(super) fn operating_uid() -> u32 {
     static OPERATOR: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *OPERATOR.get_or_init(|| probe_operating_uid().unwrap_or(u32::MAX))
 }
 
 fn probe_operating_uid() -> Result<u32, String> {
-    use std::os::unix::fs::MetadataExt;
     let dir = std::env::temp_dir();
     for attempt in 0..100 {
         let probe = dir.join(format!("ruxel-operator-{}-{attempt}", std::process::id()));
@@ -292,24 +278,26 @@ fn probe_operating_uid() -> Result<u32, String> {
 }
 
 /// An existing home directory the account adopts: the directory is
-/// adopted only where it is root's, the operator's own, or the
-/// intended account's — the account whose passwd home field names the
-/// path. A directory another principal owns may have been pre-created
-/// by that principal with contents the new account would then execute
-/// at login — `useradd -m` reuses the directory and the reconciliation
-/// only changes its ownership, preserving whatever the directory
-/// holds — so it is refused whatever its mode: a 0700 leaf under
-/// trusted ancestors is still another principal's. The operator's own
-/// staging — a leftover `/home/alice`, a same-stage file's directory —
-/// is adopted as before, and a creation whose account is not in the
-/// database yet misses the intended lookup and still takes the
-/// operator's rule, so the miss never fails a valid creation.
+/// adopted only under trusted ancestors — where it is root's or the
+/// operator's own, or the intended account's whose passwd home field
+/// names the path. A directory another principal owns may have been
+/// pre-created by that principal with contents the new account would
+/// then execute at login — `useradd -m` reuses the directory and the
+/// reconciliation only changes its ownership, preserving whatever the
+/// directory holds — so it is refused whatever its mode: a 0700 leaf
+/// under trusted ancestors is still another principal's. The ancestors
+/// weigh even the operator's own staging — a leftover `/home/alice`,
+/// a same-stage file's directory: a leaf a non-root principal renamed
+/// aside and replanted under a writable ancestor must never become the
+/// account's. A creation whose account is not in the database yet
+/// misses the intended lookup and still takes the operator's rule, so
+/// the miss never fails a valid creation.
 pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
-    // The operator's own directory is adopted wherever it stands: no
-    // other principal could have created or filled it.
+    // The operator's own directory is adopted under trusted ancestors
+    // too: the inspected leaf may have been renamed aside and replanted
+    // since, so only the ancestors weigh the replacement.
     if own_directory(leaf.uid(), leaf.mode()) {
-        return Ok(());
+        return trusted_ancestors(home);
     }
     // The intended account's own leaf is adopted under trusted
     // ancestors — and only where it is itself writable by no one
@@ -353,7 +341,6 @@ pub(super) fn intended_uid(home: &str) -> Option<u32> {
 /// ends the walk: the rest of the path does not exist yet, so nothing
 /// could have been planted under it.
 pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
     let components: Vec<std::path::Component<'_>> =
         std::path::Path::new(home).components().collect();
     let mut prefix = std::path::PathBuf::new();
