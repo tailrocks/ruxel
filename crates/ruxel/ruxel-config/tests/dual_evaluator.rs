@@ -300,6 +300,10 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-sysctl-shadow-same-stage-legacy.pkl",
     "valid/linux-user-shell-obsolete-provider-replaced.pkl",
     "invalid/linux-user-shell-effective-provider-not-executable.pkl",
+    "valid/linux-group-gid-reused-after-same-stage-removal.pkl",
+    "valid/linux-group-gid-draw-freed-same-stage.pkl",
+    "invalid/linux-group-gid-same-stage-order.pkl",
+    "invalid/linux-group-gid-draw-same-stage-order.pkl",
 ];
 
 /// The official `pkl` binary.
