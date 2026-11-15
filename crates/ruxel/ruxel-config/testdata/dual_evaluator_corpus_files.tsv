@@ -66,6 +66,9 @@ dual_evaluator
   tests/workflow/invalid/engine-iptables-policy-state.pkl
   tests/workflow/invalid/iptables-chain-option-name.pkl
   tests/workflow/invalid/iptables-destination-family.pkl
+  tests/workflow/invalid/iptables-destination-host-conflict.pkl
+  tests/workflow/invalid/iptables-destination-ipv6-spelling-conflict.pkl
+  tests/workflow/invalid/iptables-destination-masked-conflict.pkl
   tests/workflow/invalid/iptables-destination-syntax.pkl
   tests/workflow/invalid/iptables-icmp-version.pkl
   tests/workflow/invalid/iptables-icmpv6-version.pkl
@@ -109,6 +112,7 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/iptables-absent-jumps.pkl
   tests/workflow/valid/iptables-parallel-versions.pkl
   tests/workflow/valid/iptables-universal-destination.pkl
   tests/workflow/valid/read-resource.pkl

@@ -50,7 +50,8 @@ fn root() -> PathBuf {
 ///
 /// The absent forms are here too: two removals of one path must agree on
 /// the recursion, the same rule for IPv4 and IPv6 is two rules of two
-/// separate rule sets, and a chain policy takes no state.
+/// separate rule sets, two removals of one rule are one state however
+/// they name the jump, and a chain policy takes no state.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -156,6 +157,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-interface-name-long.pkl",
     "invalid/iptables-destination-syntax.pkl",
     "invalid/iptables-destination-family.pkl",
+    "invalid/iptables-destination-masked-conflict.pkl",
+    "invalid/iptables-destination-host-conflict.pkl",
+    "invalid/iptables-destination-ipv6-spelling-conflict.pkl",
+    "valid/iptables-absent-jumps.pkl",
     "invalid/iptables-icmp-version.pkl",
     "invalid/iptables-icmpv6-version.pkl",
     "invalid/iptables-input-out-interface.pkl",

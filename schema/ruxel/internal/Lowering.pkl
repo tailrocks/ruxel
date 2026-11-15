@@ -1067,7 +1067,13 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // A removal's state is the path it takes away: `recursive` is a means,
   // not a state, so two removals of one path are one state.
   ["absent"] = (s) -> fields(List(s.path))
-  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(if (universalDestination(s)) null else s.destination), s.protocol, optional(s.outInterface), s.jump, s.ipVersion, s.state))
+  // The jump is not part of an absent rule's state: the removal deletes
+  // the rule of the match whatever the jump names, so two removals of
+  // one match are one state however they spell the jump. For a present
+  // rule the jump is the state it declares. The destination is
+  // canonical (`10.0.0.1/8` and `10.0.0.0/8` are one network), so one
+  // network carries one state whatever spelling names it.
+  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(if (s.destination == null || universalDestination(s)) null else canonicalDestination(s.destination)), s.protocol, optional(s.outInterface), optional(if (s.state == "absent") null else s.jump), s.ipVersion, s.state))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -1458,17 +1464,110 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
 
 /// The match of an iptables rule, without its jump: the chain and the match
 /// are the rule's identity, so two rules that match the same way in the same
-/// chain are one rule. The universal destination is spelled the way the
-/// firewall leaves it out, so `0.0.0.0/0` and the omitted destination are
-/// one identity.
+/// chain are one rule. The destination is spelled canonically (`10.0.0.1/8`
+/// and `10.0.0.0/8` name one network), and the universal destination is
+/// spelled the way the firewall leaves it out, so `0.0.0.0/0` and the
+/// omitted destination are one identity.
 const function iptablesMatch(s: linux.IptablesRule): String =
-  (if (s.destination == null || universalDestination(s)) "" else "to " + s.destination + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
+  (if (s.destination == null || universalDestination(s)) "" else "to " + canonicalDestination(s.destination) + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
 
 /// The universal network is the omitted destination: Netfilter documents
 /// that `/0` has the same effect as omitting the address option, so a rule
-/// that names it and a rule that omits it match the same way.
+/// that names it and a rule that omits it match the same way. The spelling
+/// is read canonically: a `/0` masks every address to the universal
+/// network whichever address it names (`10.0.0.1/0` is `0.0.0.0/0`).
 const function universalDestination(s: linux.IptablesRule): Boolean =
-  s.destination == "0.0.0.0/0" || s.destination == "::/0"
+  s.destination != null && (let (network = canonicalDestination(s.destination)) network == "0.0.0.0/0" || network == "0:0:0:0:0:0:0:0/0")
+
+/// The destination in the one spelling one network has, the way the
+/// agent and Netfilter read it: the host bits are masked off, a host
+/// without a prefix carries its full prefix, and an IPv6 address is
+/// spelled in full lowercase groups without leading zeros. So
+/// `10.0.0.1/8`, `10.0.0.0/8`, a host and its `/32`, and an IPv6
+/// address and its equivalent spelling are one identity: the firewall
+/// matches one rule where the lowering must find one rule.
+const function canonicalDestination(destination: String): String =
+  let (slash = if (destination.contains("/")) destination.indexOf("/") else destination.length)
+  let (address = destination.substring(0, slash))
+  let (prefix = if (destination.contains("/")) destination.substring(slash + 1, destination.length).toInt() else (if (address.contains(":")) 128 else 32))
+  (if (address.contains(":")) ipv6Network(address, prefix) else ipv4Network(address, prefix)) + "/\(prefix)"
+
+/// The IPv4 network: the four octets, each masked to the top bits the
+/// prefix leaves it.
+const function ipv4Network(address: String, prefix: Int): String =
+  positions(List(0, 0, 0, 0)).map((i) -> maskedOctet(address.split(".")[i], keptBits(prefix - 8 * i, 8))).join(".")
+
+/// The IPv6 network: the eight groups, each masked and spelled without
+/// leading zeros. An IPv4 tail is the two groups it spells
+/// (`::ffff:1.2.3.4` is `…:ffff:102:304`), and `::` is the groups it
+/// stands for. Split keeps or drops empty pieces as it pleases — pklr
+/// drops a trailing one the way Java does — so the empties are filtered
+/// and the gap is found by `::`, never by position.
+const function ipv6Network(address: String, prefix: Int): String =
+  let (gap = if (address.contains("::")) address.indexOf("::") else -1)
+  let (head = ipv6Words((if (gap >= 0) address.substring(0, gap) else address).split(":")))
+  let (tail = ipv6Words((if (gap >= 0) address.substring(gap + 2, address.length) else "").split(":")))
+  let (back = 8 - tail.length)
+  positions(List(0, 0, 0, 0, 0, 0, 0, 0)).map((i) -> maskedGroup((if (i < head.length) head[i] else (if (i < back) "0" else tail[i - back])), keptBits(prefix - 16 * i, 16))).join(":")
+
+/// The groups as written: the empty pieces around `::` are not groups,
+/// and the last group is the two a trailing IPv4 address spells.
+const function ipv6Words(pieces: List<String>): List<String> =
+  let (words = pieces.filter((g) -> !g.isEmpty))
+  if (words.isEmpty || !words.last.contains(".")) words
+  else positions(words).filter((i) -> i < words.length - 1).map((i) -> words[i]) + ipv4Words(words.last)
+
+/// The two hex groups an IPv4 tail spells: `1.2.3.4` is `0102:0304`.
+const function ipv4Words(tail: String): List<String> =
+  let (octets = tail.split("."))
+  List(hexGroup(octets[0], octets[1]), hexGroup(octets[2], octets[3]))
+
+/// The four hex digits of two octets: `1.2` is `0102`.
+const function hexGroup(high: String, low: String): String =
+  hexDigit((high.toInt() - high.toInt() % 16) ~/ 16) + hexDigit(high.toInt() % 16) + hexDigit((low.toInt() - low.toInt() % 16) ~/ 16) + hexDigit(low.toInt() % 16)
+
+/// The octet in decimal, masked to the top bits the prefix leaves it.
+const function maskedOctet(octet: String, kept: Int): String =
+  let (value = octet.toInt())
+  "\(value - value % octetSteps[kept])"
+
+/// The group in lowercase hex without leading zeros, masked to the top
+/// bits the prefix leaves it. A mask that lands inside one digit keeps
+/// the top bits of that digit alone.
+const function maskedGroup(group: String, kept: Int): String =
+  let (padded = group.toLowerCase().padStart(4, "0"))
+  stripZeros(positions(List(0, 0, 0, 0)).map((j) -> maskedDigit(padded, j, kept)).join(""))
+
+/// The digit, masked to the top bits of its own four the prefix leaves
+/// it.
+const function maskedDigit(padded: String, j: Int, kept: Int): String =
+  let (value = hexValue(padded.substring(j, j + 1)))
+  hexDigit(value - value % hexSteps[keptBits(kept - 4 * j, 4)])
+
+/// The bits a unit keeps: the whole unit while the prefix reaches past
+/// it, the top of it where the prefix lands inside, none past the
+/// prefix.
+const function keptBits(remaining: Int, width: Int): Int =
+  if (remaining <= 0) 0 else (if (remaining >= width) width else remaining)
+
+const function hexValue(digit: String): Int = "0123456789abcdef".indexOf(digit.toLowerCase())
+
+const function hexDigit(value: Int): String = "0123456789abcdef".substring(value, value + 1)
+
+/// The spelling without the zeros a group carries in front: `0db8` is
+/// `db8`, and a group of all zeros is `0`.
+const function stripZeros(group: String): String =
+  if (group.startsWith("0000")) "0"
+  else if (group.startsWith("000")) group.substring(3, 4)
+  else if (group.startsWith("00")) group.substring(2, 4)
+  else if (group.startsWith("0")) group.substring(1, 4)
+  else group
+
+/// What masking one unit subtracts to zero the bits past `kept`: a
+/// unit's width is its top bit, so `2^(width - kept)` is the value of
+/// the first zeroed bit and the remainder below it is what goes.
+const local octetSteps: List<Int> = List(256, 128, 64, 32, 16, 8, 4, 2, 1)
+const local hexSteps: List<Int> = List(16, 8, 4, 2, 1)
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
 /// its depth limit of 32 (P3).

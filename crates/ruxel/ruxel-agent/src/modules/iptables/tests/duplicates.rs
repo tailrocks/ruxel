@@ -242,13 +242,62 @@ fn a_wildcard_destination_is_the_omitted_default() {
 }
 
 #[test]
+fn the_destination_family_is_validated_before_a_wildcard_is_omitted() {
+    let dir = scratch("cross-family");
+    // The IPv6 wildcard is not the omitted destination of the IPv4 rule
+    // set: `iptables` and `ip6tables` hold their own rules, so the
+    // opposite-family address must be refused before the wildcard branch
+    // erases it and the removal takes the no-destination rule of the
+    // chain.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"::/0", "jump":"DROP",
+        "state":"absent"
+    });
+    let error = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap_err();
+    assert!(error.contains("::/0"), "{error}");
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -j DROP\n", "{left}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn the_ipv6_rule_refuses_an_ipv4_destination() {
+    let dir = scratch("cross-family-v6");
+    // The mirror: the IPv4 wildcard of an IPv6 rule is refused, and the
+    // no-destination rule of the IPv6 chain stays.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "destination":"0.0.0.0/0", "jump":"DROP",
+        "ip_version":"ipv6", "state":"absent"
+    });
+    let error = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap_err();
+    assert!(error.contains("0.0.0.0/0"), "{error}");
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -j DROP\n", "{left}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn a_wildcard_destination_does_not_take_a_rule_with_another_destination() {
     let dir = scratch("wildcard-other");
     // The wildcard is the omitted destination, not every destination: a
     // rule that names a network is another match and stays.
     let (binary, file) = listing_stub(&dir, &["-p tcp -d 10.0.0.0/8 -j DROP"]);
     let params = json!({
-        "chain":"INPUT", "protocol":"tcp", "destination":"::/0", "jump":"DROP",
+        "chain":"INPUT", "protocol":"tcp", "destination":"0.0.0.0/0", "jump":"DROP",
         "state":"absent"
     });
     let result = run_with(

@@ -1,0 +1,12 @@
+// expect: both manage the ipv6 iptables rule INPUT to 2001:db8:0:0:0:0:0:1/128 tcp with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An IPv6 address has one spelling in the identity: `2001:db8::1` and
+// its full spelling name one address of one rule set, so two jumps for
+// it are a conflict.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "2001:db8::1"; jump = "DROP"; ipVersion = "ipv6" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "2001:0db8:0:0:0:0:0:1/128"; jump = "ACCEPT"; ipVersion = "ipv6" }
+} } }

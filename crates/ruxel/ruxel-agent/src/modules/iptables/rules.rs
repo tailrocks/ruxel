@@ -22,6 +22,7 @@ pub(super) fn rule_spec(obj: &serde_json::Map<String, Value>) -> Result<Vec<Stri
         if let Some(value) = value {
             if flag == "-d" {
                 full_mask(value)?;
+                validate_family(value, str_param(obj, "ip_version"))?;
             }
             spec.extend([flag.into(), value.into()]);
         }
@@ -204,6 +205,35 @@ pub(super) fn full_mask(destination: &str) -> Result<String, String> {
         ));
     }
     Err(malformed(destination))
+}
+
+/// The destination must belong to the family of the rule's `ip_version`:
+/// `iptables` holds the IPv4 rules and `ip6tables` the IPv6 ones. Without
+/// this, an absent IPv4 rule declaring the IPv6 wildcard `::/0` would
+/// reach `match_pairs`, erase the wildcard as the omitted destination and
+/// delete the valid no-destination rule of the selected firewall.
+fn validate_family(destination: &str, ip_version: Option<&str>) -> Result<(), String> {
+    let selected = match ip_version {
+        None | Some("ipv4") => "ipv4",
+        Some("ipv6") => "ipv6",
+        Some(other) => return Err(format!("iptables: ip_version {other:?} invalid")),
+    };
+    let address = destination.split('/').next().unwrap_or(destination);
+    let bare = address.split('%').next().unwrap_or(address);
+    // `full_mask` has already proved the address parses as one of the two
+    // families.
+    let found = if bare.parse::<std::net::Ipv4Addr>().is_ok() {
+        "ipv4"
+    } else {
+        "ipv6"
+    };
+    if found == selected {
+        return Ok(());
+    }
+    Err(format!(
+        "iptables: destination {destination:?} is an {} address, but the rule is an {selected} rule; iptables administers the IPv4 rules and ip6tables the IPv6 ones",
+        if found == "ipv4" { "IPv4" } else { "IPv6" }
+    ))
 }
 
 /// The prefix of a destination: the bits the family holds, or the whole
