@@ -1,0 +1,49 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A re-armed draw frees the way any draw frees: Alice holds 1500 in
+// the first stage, the second removes her, and the third recreates her
+// without a uid — so the recreation draws a fresh number — but the
+// fourth stage renumbers her to 1600, which releases whatever the
+// allocator drew, and the fifth stage may claim 1500 for Bob. The
+// renumbering covers every host both the draw and the claim run on,
+// so the later `useradd -u 1500` succeeds there the way it does after
+// a removal.
+stages {
+  new Stage {
+    title = "numbered"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "recreate"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "renumber"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1600 }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1500 }
+    }
+  }
+}
