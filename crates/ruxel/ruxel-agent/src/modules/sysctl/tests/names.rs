@@ -116,6 +116,34 @@ fn slash_first_names_keep_their_separators_in_the_proc_path() {
 }
 
 #[test]
+fn a_dot_first_mixed_spelling_addresses_the_slash_path() {
+    // procps follows the FIRST separator (`slashdot` in procps-ng
+    // `src/sysctl.c`): a dot-first name swaps every separator, so the
+    // dot-first mixed spelling addresses the same /proc/sys path as
+    // its slash form — the two spellings are one entry, not two. The
+    // old "any / means slash-first" read kept the mixed spelling as
+    // written and looked up another path.
+    assert_eq!(
+        super::super::sysctl_key("net.ipv4.conf.enp3s0/200.forwarding"),
+        super::super::sysctl_key("net/ipv4/conf/enp3s0.200/forwarding"),
+    );
+    assert_eq!(
+        super::super::sysctl_key("net.ipv4.conf.enp3s0/200.forwarding"),
+        "net/ipv4/conf/enp3s0.200/forwarding",
+    );
+    assert_eq!(
+        super::super::proc_sys_path("net.ipv4.conf.enp3s0/200.forwarding"),
+        "/proc/sys/net/ipv4/conf/enp3s0.200/forwarding"
+    );
+    // The apartness stays: a slash-first name's literal dot is not the
+    // dotted spelling of another path.
+    assert_ne!(
+        super::super::sysctl_key("net.ipv4.conf.enp3s0.200.forwarding"),
+        super::super::sysctl_key("net/ipv4/conf/enp3s0.200/forwarding"),
+    );
+}
+
+#[test]
 fn rejects_newline_in_name_or_value_before_io() {
     let ctx = super::super::ExecContext {
         check_mode: true,
