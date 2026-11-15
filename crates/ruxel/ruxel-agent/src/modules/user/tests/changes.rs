@@ -57,8 +57,15 @@ fn a_declared_home_directory_is_reconciled() {
     let meta = std::fs::metadata(&probe).unwrap();
     let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
     std::fs::remove_file(&probe).unwrap();
-    let dir = std::env::temp_dir().join(format!("ruxel-home-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    // The missing home is created beneath its ancestors, so the test
+    // stages it under the operator's own tree: a shared-writable
+    // ancestor would refuse the creation before any mutation.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-home-anchor-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    let dir = anchor.join("alice");
     // usermod -d moves the passwd field only: a missing directory is the
     // agent's to create, even when the home field already matches.
     assert!(super::super::ensure_home(dir.to_str().unwrap(), uid, gid, true).unwrap());
@@ -66,7 +73,7 @@ fn a_declared_home_directory_is_reconciled() {
     assert!(super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap());
     assert!(dir.is_dir(), "the declared home exists");
     assert!(!super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap());
-    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&anchor).unwrap();
 }
 
 #[test]

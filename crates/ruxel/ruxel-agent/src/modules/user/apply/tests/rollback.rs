@@ -61,10 +61,16 @@ fn a_failed_account_change_takes_back_the_home_and_the_group() {
     // The home's repair runs before the account's own change, and
     // the change can fail after the repair created the directory.
     // The created directory and the created group must both go back
-    // with the failure.
-    let base = std::env::temp_dir().join(format!("ruxel-rollback-base-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).unwrap();
+    // with the failure. The missing home is created beneath its
+    // ancestors, so the case stages it under the operator's own tree:
+    // a shared-writable ancestor would refuse the creation before any
+    // mutation.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-rollback-base-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir_all(&anchor).unwrap();
+    let base = anchor;
     let home = base.join("alice");
     let (uid, gid) = own_identity("created");
     let group = format!("ruxel-rollback-group-{}", std::process::id());
