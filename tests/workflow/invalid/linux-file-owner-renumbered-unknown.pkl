@@ -1,0 +1,26 @@
+// expect: renumbers the owner alice to uid 1002
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account exists on the host only: no stage declares its number, so
+// the number it carries is unknown. A later stage that gives it a
+// number renumbers it, and `usermod -u` does not repair the files it
+// owns: the file the earlier stage wrote keeps the old number and no
+// longer has the owner it declares.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1002 }
+    }
+  }
+}
