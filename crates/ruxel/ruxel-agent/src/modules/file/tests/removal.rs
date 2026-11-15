@@ -58,3 +58,27 @@ fn a_target_that_carries_the_identity_of_a_mount_point_is_refused() {
     assert!(file.exists());
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn a_mount_installed_after_the_first_read_is_read_again() {
+    let base = scratch("late-bind");
+    let root = base.join("root");
+    std::fs::create_dir_all(root.join("opt")).unwrap();
+    let target = root.join("opt/data");
+    std::fs::write(&target, b"content").unwrap();
+    // The filesystem root is mounted at the scratch root after the first
+    // read: the descriptor walk enters the new mount, and the directory
+    // that holds the target is the real `/opt` under another name.
+    let meta = std::fs::metadata("/").unwrap();
+    let mounts = [super::super::mounts::Mount {
+        root: PathBuf::from("/"),
+        point: root.clone(),
+        identity: (meta.dev(), meta.ino()),
+    }];
+    // The parent is already held when this table is read: reading the
+    // covering mount again is what refuses the real system file.
+    let error = super::super::removal::remove_with(&target, true, false, &mounts).unwrap_err();
+    assert!(error.contains("bound to /"), "{error}");
+    assert!(target.exists(), "the system file is untouched");
+    std::fs::remove_dir_all(base).unwrap();
+}

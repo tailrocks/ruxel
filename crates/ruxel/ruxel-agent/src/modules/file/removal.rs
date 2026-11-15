@@ -9,7 +9,7 @@
 
 mod parent;
 
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat, unlinkat};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, openat, statat, unlinkat};
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
@@ -57,6 +57,10 @@ pub(super) fn remove_with(
         Err(OpenError::Missing) => return Ok(false),
         Err(OpenError::Other(error)) => return Err(error),
     };
+    // The mounts are read again once the parent is held: a mount
+    // installed between the first read and the open changes where the
+    // path lands, and the table the removal checked no longer holds.
+    recheck_mounts(&parent, &path, mounts)?;
     // A bind mount aliases the directory it is mounted from: the
     // directory that holds the target has a system root's own identity,
     // and the path says nothing about it.
@@ -257,6 +261,47 @@ fn take_tree(parent: &OwnedFd, name: &CString, child: &OwnedFd, path: &Path) -> 
             error,
         )),
     }
+}
+
+/// Rechecks the mounts once the directory that holds the target is held:
+/// a mount installed between the first read and the open is in no table
+/// the removal checked, and the held directory is where the path lands.
+fn recheck_mounts(parent: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(), String> {
+    // The held directory is still the one the path names: a directory
+    // that was replaced in between is not the one the removal checked.
+    let held = fstat(parent).map_err(|error| error.to_string())?;
+    let held = (super::floor::device(&held), held.st_ino);
+    let Some(written) = path.parent() else {
+        return Err(format!(
+            "file: cannot read {}: no parent directory",
+            path.display()
+        ));
+    };
+    let named = std::fs::metadata(written)
+        .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
+    if (named.dev(), named.ino()) != held {
+        return Err(super::attachment::replaced(path));
+    }
+    // The path through the mounts given: a covering mount the first read
+    // missed lands the path in a system root.
+    if let Some(root) = super::mounts::bound_root_in(path, &super::floor::SYSTEM_ROOTS, mounts) {
+        return Err(format!(
+            "file: refusing to remove {}: it is bound to {root}, a system root",
+            path.display()
+        ));
+    }
+    // And through the mounts of the host as they are now: a mount
+    // installed after the first read lands the path somewhere else. A
+    // table that cannot be read is a refusal, never an empty table.
+    let fresh =
+        super::mounts::mounts().map_err(|error| super::mounts::mount_table_failed(&error))?;
+    if let Some(root) = super::mounts::bound_root_in(path, &super::floor::SYSTEM_ROOTS, &fresh) {
+        return Err(format!(
+            "file: refusing to remove {}: it is bound to {root}, a system root",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 /// Refuses a removal whose directory is a system root under another name.
