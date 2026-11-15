@@ -98,3 +98,86 @@ fn a_renumbered_group_is_still_held_by_its_primary_holder() {
         .expect_err("the removal must be refused: the account holds the group");
     assert!(error.contains(&account), "{error}");
 }
+
+/// A second gid no live group holds and unlike the first: the later
+/// declaration's number.
+fn another_free_gid(first: u64) -> u64 {
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    (60000..70000)
+        .find(|gid| {
+            *gid != first
+                && !groups.lines().any(|line| {
+                    let f: Vec<&str> = line.split(':').collect();
+                    f.get(2).and_then(|g| g.parse::<u64>().ok()) == Some(*gid)
+                })
+        })
+        .expect("a second free group number")
+}
+
+#[test]
+fn a_planned_creation_is_compared_not_created_again() {
+    // Check mode runs no `groupadd`: the first step's creation is the
+    // second step's live entry. An identical declaration reports no
+    // change — the apply created the group in the first stage and
+    // reports the later task unchanged — instead of creating it again.
+    let ctx = check_context();
+    let fresh = format!("ruxel-planned-twice-{}", std::process::id());
+    assert!(
+        super::super::group_entry(&fresh).unwrap().is_none(),
+        "the group must not exist on the host"
+    );
+    let first = super::super::group(&json!({"name": fresh}), &ctx).expect("the creation must plan");
+    assert_eq!(first.get("changed"), Some(&json!(true)), "{first}");
+    let again =
+        super::super::group(&json!({"name": fresh}), &ctx).expect("the redeclaration must plan");
+    assert_eq!(
+        again.get("changed"),
+        Some(&json!(false)),
+        "the planned creation compares, it does not create again: {again}"
+    );
+}
+
+#[test]
+fn a_numbered_creation_verifies_later_declarations_against_the_plan() {
+    // The plan's own record carries the requested number, so a later
+    // declaration stating it reports no change — while a declaration
+    // stating another number plans the renumbering the apply runs.
+    let ctx = check_context();
+    let fresh = format!("ruxel-planned-numbered-{}", std::process::id());
+    let planned = a_free_gid();
+    let other = another_free_gid(planned);
+    super::super::group(&json!({"name": fresh, "gid": planned}), &ctx)
+        .expect("the creation must plan");
+    let again = super::super::group(&json!({"name": fresh, "gid": planned}), &ctx)
+        .expect("the redeclaration must plan");
+    assert_eq!(
+        again.get("changed"),
+        Some(&json!(false)),
+        "the planned number compares: {again}"
+    );
+    let moved = super::super::group(&json!({"name": fresh, "gid": other}), &ctx)
+        .expect("the renumbering must plan");
+    assert_eq!(
+        moved.get("changed"),
+        Some(&json!(true)),
+        "another number plans the change the apply runs: {moved}"
+    );
+}
+
+#[test]
+fn an_unnumbered_creation_plans_a_declared_number_conservatively() {
+    // The number the allocator draws is unknown until the apply draws
+    // it: a later declaration stating one conservatively plans the
+    // change the apply runs unless the allocator drew that very number.
+    let ctx = check_context();
+    let fresh = format!("ruxel-planned-unnumbered-{}", std::process::id());
+    super::super::group(&json!({"name": fresh}), &ctx).expect("the creation must plan");
+    let planned = a_free_gid();
+    let result = super::super::group(&json!({"name": fresh, "gid": planned}), &ctx)
+        .expect("the numbered declaration must plan");
+    assert_eq!(
+        result.get("changed"),
+        Some(&json!(true)),
+        "the unknown number cannot compare equal: {result}"
+    );
+}

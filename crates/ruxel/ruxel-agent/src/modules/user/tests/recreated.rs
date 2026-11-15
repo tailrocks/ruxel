@@ -108,3 +108,147 @@ fn a_renumbered_identity_makes_the_ownership_cache_stale() {
         "a task that owns nothing is not ownership-sensitive"
     );
 }
+
+/// A uid no live account holds: the plan's own, fitting the request
+/// the creation records.
+fn free_uid() -> u64 {
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    (60000u64..61000)
+        .find(|uid| {
+            !passwd.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == uid.to_string())
+            })
+        })
+        .expect("a free uid on the host")
+}
+
+/// A gid no live group holds, for the same reason.
+fn free_gid() -> u64 {
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    (60000u64..61000)
+        .find(|gid| {
+            !groups.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == gid.to_string())
+            })
+        })
+        .expect("a free gid on the host")
+}
+
+#[test]
+fn an_allocator_created_account_marks_its_number_changed() {
+    // An account the plan creates without a number gets one the
+    // allocator draws at apply: no probe has seen it, so a cached file
+    // the account owned — deleted outside the plan and recreated with a
+    // new UID — must not pass its old numeric probe and keep the file
+    // with whoever claimed the freed number. The plan's record of the
+    // moved number is what tells the cache it is stale — for the
+    // allocator's numbers as much as for the recreated ones. A creation
+    // that states its number instead is fully known and marks nothing.
+    let check = check_context();
+    let fresh = format!("ruxel-allocator-user-{}", std::process::id());
+    assert!(
+        passwd_entry(&fresh).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    run(&json!({"name": fresh, "create_home": false}), &check)
+        .expect("the unnumbered creation must plan");
+    assert!(
+        user_number_changed(&fresh),
+        "the allocator-drawn number is identity-changing"
+    );
+    assert!(
+        crate::modules::ownership_cache_stale(
+            "file",
+            &json!({"path": "/srv/data", "owner": fresh})
+        ),
+        "a cached file the recreated account owns resolves stale"
+    );
+    let numbered = format!("ruxel-numbered-user-{}", std::process::id());
+    run(
+        &json!({"name": numbered, "uid": free_uid(), "create_home": false}),
+        &check,
+    )
+    .expect("the numbered creation must plan");
+    assert!(
+        !user_number_changed(&numbered),
+        "a stated number is known and marks nothing"
+    );
+}
+
+#[test]
+fn an_allocator_created_group_marks_its_number_changed() {
+    // The group counterpart: a creation without a number draws it from
+    // the allocator, so the plan's record tells the cache it is stale —
+    // while a creation that states its number marks nothing.
+    let check = check_context();
+    let fresh = format!("ruxel-allocator-group-{}", std::process::id());
+    assert!(
+        group_entry(&fresh).unwrap().is_none(),
+        "the group must not exist on the host"
+    );
+    super::super::group(&json!({"name": fresh}), &check)
+        .expect("the unnumbered creation must plan");
+    assert!(
+        group_number_changed(&fresh),
+        "the allocator-drawn number is identity-changing"
+    );
+    let numbered = format!("ruxel-numbered-group-{}", std::process::id());
+    super::super::group(&json!({"name": numbered, "gid": free_gid()}), &check)
+        .expect("the numbered creation must plan");
+    assert!(
+        !group_number_changed(&numbered),
+        "a stated number is known and marks nothing"
+    );
+}
+
+#[test]
+fn a_numbered_recreation_keeps_its_planned_uid_at_removal() {
+    // The plan removes an account, recreates it with an explicit uid,
+    // and removes it again with a mismatched declared uid: the
+    // recreation's number is the guard's to verify against — both check
+    // and apply delete the recreated entry — so the mismatch is refused
+    // instead of skipping the guards the way an unnumbered recreation
+    // (whose number the allocator draws) must.
+    let check = check_context();
+    let name = format!("ruxel-recreated-uid-{}", std::process::id());
+    assert!(
+        passwd_entry(&name).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    let planned = free_uid();
+    run(
+        &json!({"name": name, "uid": planned, "create_home": false}),
+        &check,
+    )
+    .expect("the creation must plan");
+    run(
+        &json!({"name": name, "state": "absent", "uid": planned}),
+        &check,
+    )
+    .expect("the removal must plan");
+    run(
+        &json!({"name": name, "uid": planned, "create_home": false}),
+        &check,
+    )
+    .expect("the recreation must plan");
+    // The stale live number (here: no live number at all) must not
+    // stand in for the planned one: the declaration names another
+    // number and is refused.
+    let error = run(
+        &json!({"name": name, "state": "absent", "uid": planned + 1}),
+        &check,
+    )
+    .expect_err("a declaration naming another number must be refused");
+    assert!(error.contains("not the declared"), "{error}");
+    // The matching declaration is the removal the apply performs.
+    let removal = run(
+        &json!({"name": name, "state": "absent", "uid": planned}),
+        &check,
+    )
+    .expect("the matching removal must plan");
+    assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
+}
