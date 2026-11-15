@@ -9,6 +9,11 @@ use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
+/// The rounds a walk re-reads a directory before it declares the tree
+/// gone: a writer that never stops must fail the removal instead of
+/// hanging it.
+const REENUMERATE_ROUNDS: usize = 8;
+
 /// Removes the tree under the pinned directory, and the directory itself
 /// is left to the caller: every entry is taken away through the
 /// descriptor, so a name that is replaced in between is never followed.
@@ -21,25 +26,74 @@ pub(super) fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
     // a name this walk staged is left alone, and an entry a user named
     // with the same prefix is an entry like any other.
     let mut owned: HashSet<Vec<u8>> = HashSet::new();
-    for name in names(dir)? {
-        if owned.contains(name.to_bytes()) {
-            continue;
+    #[cfg(test)]
+    let mut hooked = false;
+    // A writer that kept a descriptor may add entries after the names are
+    // read: the directory is read again until it is empty, so a child
+    // that arrived late is taken too. The rounds are bounded, so a writer
+    // that never stops fails the removal instead of hanging it.
+    for _ in 0..REENUMERATE_ROUNDS {
+        let mut pending = Vec::new();
+        for name in names(dir)? {
+            if owned.contains(name.to_bytes()) {
+                continue;
+            }
+            pending.push(name);
         }
-        let meta = statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW)
-            .map_err(|error| error.to_string())?;
-        let identity = (super::floor::device(&meta), meta.st_ino);
-        if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
-            let child = openat(
-                dir,
-                name.as_c_str(),
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::empty(),
-            )
-            .map_err(|error| error.to_string())?;
-            take_nested(dir, &name, &child, identity, held, path, &mut owned)?;
-        } else {
-            take_plain(dir, &name, identity, path)?;
+        #[cfg(test)]
+        if !hooked {
+            hooked = true;
+            for hook in after_snapshot() {
+                hook(dir, path);
+            }
         }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        for name in pending {
+            remove_entry(dir, &name, &mut owned, held, path)?;
+        }
+    }
+    Err(format!(
+        "file: refusing to remove {}: it changed during the operation",
+        path.display()
+    ))
+}
+
+/// Removes one entry of a directory that is being emptied: an entry that
+/// is already gone is nothing to take, and a directory is detached
+/// before it is emptied.
+fn remove_entry(
+    dir: &OwnedFd,
+    name: &CString,
+    owned: &mut HashSet<Vec<u8>>,
+    held: u64,
+    path: &Path,
+) -> Result<(), String> {
+    let meta = match statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(meta) => meta,
+        // Taken between the listing and the reading: there is nothing
+        // left to take, and the next round confirms it.
+        Err(rustix::io::Errno::NOENT) => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let identity = (super::floor::device(&meta), meta.st_ino);
+    if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
+        let child = match openat(
+            dir,
+            name.as_c_str(),
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(child) => child,
+            // Taken between the reading and the opening: there is
+            // nothing left to take, and the next round confirms it.
+            Err(rustix::io::Errno::NOENT) => return Ok(()),
+            Err(error) => return Err(error.to_string()),
+        };
+        take_nested(dir, name, &child, identity, held, path, owned)?;
+    } else {
+        take_plain(dir, name, identity, path)?;
     }
     Ok(())
 }
@@ -127,6 +181,27 @@ fn take_plain(
             super::attachment::give_back(dir, &staging, name),
             error,
         )),
+    }
+}
+
+/// A test hook, run after the names of a directory are read and before
+/// they are taken away: a test arms it to add a child the way a writer
+/// holding a descriptor would, and the walk must take it too.
+#[cfg(test)]
+pub(super) type AfterSnapshot = std::sync::Arc<dyn Fn(&OwnedFd, &std::path::Path) + Send + Sync>;
+
+/// The armed hooks. A hook fires in every walk, so a test scopes its
+/// hook to the directory it watches and fires it once.
+#[cfg(test)]
+pub(super) static AFTER_SNAPSHOT: std::sync::Mutex<Vec<AfterSnapshot>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// The armed hooks.
+#[cfg(test)]
+fn after_snapshot() -> Vec<AfterSnapshot> {
+    match AFTER_SNAPSHOT.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => Vec::new(),
     }
 }
 
