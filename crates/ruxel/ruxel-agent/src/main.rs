@@ -313,6 +313,9 @@ fn execute_task(
             plan_sysctl.push(declared);
         }
 
+        // The preflight's managed set, shared with the cache below.
+        let managed = ledger.sysctl_preflight_managed(&task.module, plan_sysctl);
+        let key = &iteration.ledger_key;
         if !no_cache
             && task.become_user.is_empty()
             && ledger::cache_allowed(&task.module, &params)
@@ -324,7 +327,7 @@ fn execute_task(
             // old number, and the cached probe weighs the file's number
             // alone — the file would keep the number the plan gave out.
             && !modules::ownership_cache_stale(&task.module, &params)
-            && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
+            && let Some(cached) = ledger.cached_ok_with_managed(key, system_state, &managed)
         {
             // A forced task the ledger satisfies still observes the host,
             // reconciling its own predictions so no later task judges a stale one.
@@ -350,9 +353,6 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
-        // The preflight's managed set: the plan's own declarations
-        // first, the ledger's retained entries behind them.
-        let managed = ledger.sysctl_preflight_managed(&task.module, plan_sysctl);
         let outcome = modules::execute(
             &task.module,
             &params,
