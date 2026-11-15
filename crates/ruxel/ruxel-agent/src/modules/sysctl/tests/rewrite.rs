@@ -157,3 +157,55 @@ fn a_value_that_differs_in_its_blanks_is_rewritten() {
         (b"kernel.hostname=abc def\n".to_vec(), true)
     );
 }
+
+#[test]
+fn non_utf8_assignment_values_compare_as_bytes() {
+    // procps passes the file's bytes to the kernel, so an existing
+    // `\xff` byte and a requested U+FFFD are different values even
+    // though `from_utf8_lossy` spells both `�`: the lossy comparison
+    // kept the `0xff` byte in place while the live value was encoded
+    // as UTF-8, and reboot restored the wrong bytes.
+    assert_eq!(
+        super::super::rewrite_file(
+            b"kernel.core_pattern=\xff\n",
+            "kernel.core_pattern",
+            "\u{fffd}",
+        ),
+        ("kernel.core_pattern=\u{fffd}\n".as_bytes().to_vec(), true,)
+    );
+    // And the reverse: the managed UTF-8 bytes already in place are
+    // the requested value, not a lossy collision to rewrite.
+    assert_eq!(
+        super::super::rewrite_file(
+            "kernel.core_pattern=\u{fffd}\n".as_bytes(),
+            "kernel.core_pattern",
+            "\u{fffd}",
+        ),
+        ("kernel.core_pattern=\u{fffd}\n".as_bytes().to_vec(), false)
+    );
+}
+
+#[test]
+fn non_ascii_whitespace_is_value_content_not_syntax() {
+    // The byte-level trim already removed procps syntax whitespace;
+    // a second Unicode trim stripped U+00A0 too, although procps
+    // preserves it as value content. A requested value ending in
+    // U+00A0 then compared different on every run and was republished
+    // forever — now the bytes compare equal and nothing is rewritten.
+    assert_eq!(
+        super::super::rewrite_file(
+            "kernel.hostname=nb\u{a0}\n".as_bytes(),
+            "kernel.hostname",
+            "nb\u{a0}",
+        ),
+        ("kernel.hostname=nb\u{a0}\n".as_bytes().to_vec(), false)
+    );
+    // A host line with U+00A0 before the key is not the managed
+    // assignment — procps strips ASCII blanks only, so it never
+    // applies that line at boot — and the entry is appended instead
+    // of leaving the unmanaged line in place of the managed value.
+    assert_eq!(
+        super::super::rewrite_file("\u{a0}net.test=1\n".as_bytes(), "net.test", "2",),
+        ("\u{a0}net.test=1\nnet.test=2\n".as_bytes().to_vec(), true)
+    );
+}

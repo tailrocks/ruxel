@@ -308,7 +308,7 @@ fn the_publish_rehearsal_leaves_the_target_where_it_was() {
     let path = dir.join("x.conf");
     std::fs::write(&path, "net.test=2\n").unwrap();
     let before = std::fs::metadata(&path).unwrap();
-    super::super::preflight_persistence(path.to_str().unwrap(), true)
+    super::super::preflight_persistence(path.to_str().unwrap(), b"net.test=2\n", true)
         .expect("a replaceable target must pass the rehearsal");
     let after = std::fs::metadata(&path).unwrap();
     assert_eq!(
