@@ -244,3 +244,60 @@ fn a_missing_target_stages_the_exact_bytes_it_will_publish() {
     );
     std::fs::remove_dir_all(&dir).expect("operation succeeds");
 }
+
+#[test]
+fn a_stranded_pid_only_probe_does_not_block_a_missing_target() {
+    // A kill between the probe's creation and its cleanup strands the
+    // pid-only probe; after the pid is reused every file-changing task
+    // in the directory failed with AlreadyExists. The probe name is
+    // unique per attempt now, so the stranded file collides with
+    // nothing: the rehearsal succeeds, stages nothing behind, and never
+    // touches the stranger's file.
+    let dir = scratch("stale-missing");
+    let stale = format!(".ruxel-sysctl-preflight-{}", std::process::id());
+    std::fs::write(dir.join(&stale), b"stranded\n").expect("operation succeeds");
+    let path = dir.join("x.conf");
+    let text = path.to_str().expect("path is text").to_owned();
+    super::super::preflight_persistence(&text, b"net.test=1\n", true)
+        .expect("a stranded probe must not block the rehearsal");
+    assert!(
+        !path.exists(),
+        "the rehearsal must not publish the missing target"
+    );
+    assert_eq!(
+        dir_names(&dir),
+        vec![stale.clone()],
+        "the rehearsal must leave no probe of its own behind"
+    );
+    assert_eq!(
+        std::fs::read(dir.join(&stale)).expect("operation succeeds"),
+        b"stranded\n",
+        "the rehearsal must not touch the stranger's file"
+    );
+    std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}
+
+#[test]
+fn a_stranded_pid_only_probe_does_not_block_a_replacement() {
+    // The same stranded probe on the replacement path: the rehearsal
+    // proves the publish mechanics under its own names, the live file
+    // keeps its bytes, and no probe of the rehearsal's own is left
+    // behind beside the stranger's file.
+    let dir = scratch("stale-live");
+    let (text, _) = live_bytes(&dir);
+    let stale = format!(".ruxel-sysctl-preflight-{}", std::process::id());
+    std::fs::write(dir.join(&stale), b"stranded\n").expect("operation succeeds");
+    super::super::preflight_persistence(&text, b"net.test=1\n", true)
+        .expect("a stranded probe must not block the rehearsal");
+    assert_eq!(
+        std::fs::read(dir.join("x.conf")).expect("operation succeeds"),
+        b"net.test=2\n",
+        "the rehearsal must leave the live bytes alone"
+    );
+    assert_eq!(
+        dir_names(&dir),
+        vec![stale.clone(), "x.conf".to_string()],
+        "the rehearsal must leave no probe of its own behind"
+    );
+    std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}
