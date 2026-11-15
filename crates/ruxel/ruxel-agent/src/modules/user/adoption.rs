@@ -5,22 +5,17 @@ use std::path::{Component, Path, PathBuf};
 
 /// The declared home path is usable before the account is touched:
 /// `usermod -d` moves the passwd field even when the path is a regular
-/// file, so the path is validated before any mutation — a refused apply
-/// must leave the account as it was. A symlink is refused whatever it
-/// targets, and every ancestor of the path is inspected the same way.
-/// An existing directory is adopted only where [`adoption_trusted`]
-/// admits it; only a missing path under trusted ancestors is usable —
-/// a creation beneath a writable directory would hand the fresh home
-/// to that principal's rename-and-plant. Any other lookup error — an
-/// ancestor that is a regular file, a permission refusal — propagates
-/// before any mutation, for `usermod -d` would otherwise move the passwd
-/// field first and leave a partially applied account behind.
-pub(super) fn home_usable(home: &str) -> Result<(), String> {
+/// file, so the path is validated before any mutation. A symlink is
+/// refused whatever it targets, and every ancestor is inspected the
+/// same way. An existing directory is adopted only where
+/// [`adoption_trusted`] admits it for the managed account; a missing
+/// path is usable only under trusted ancestors.
+pub(super) fn home_usable(home: &str, managed: &ManagedAccount<'_>) -> Result<(), String> {
     ancestors_usable(home)?;
     match std::fs::symlink_metadata(home) {
         Ok(meta) if meta.is_symlink() => Err(format!("user: home {home} exists and is a symlink")),
         Ok(meta) if meta.is_dir() => {
-            adoption_trusted(home, &meta)?;
+            adoption_trusted(home, &meta, managed)?;
             Ok(())
         }
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
@@ -30,14 +25,11 @@ pub(super) fn home_usable(home: &str) -> Result<(), String> {
 }
 
 /// Every ancestor of the home path, inspected without following it:
-/// `create_dir_all` and `lchown` are path-based, so a symlinked
-/// component would be traversed as root and the operation could create
-/// or chown beneath a target the account does not own. A symlinked
-/// ancestor is refused wherever a non-root principal could plant or
-/// replace it, and admitted only where the parent is root's and closed.
-/// The walk judges the shape, not the trust — an adopted home's trust
-/// is [`adoption_trusted`]'s to judge — and a missing component ends
-/// the walk: the rest of the path does not exist yet.
+/// path-based creation and ownership would traverse a symlinked
+/// component as root. A symlinked ancestor is refused wherever a
+/// non-root principal could plant or replace it, and admitted only
+/// where the parent is root's and closed. A missing component ends the
+/// walk: the rest does not exist yet.
 pub(super) fn ancestors_usable(home: &str) -> Result<(), String> {
     let components: Vec<std::path::Component<'_>> =
         std::path::Path::new(home).components().collect();
@@ -60,15 +52,13 @@ pub(super) fn ancestors_usable(home: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a symlinked ancestor of the home path stands where a
-/// non-root principal could plant or replace it: its parent is group-
-/// or other-writable, or not root's. Such a link is the attacker's to
-/// redirect a root traversal through; a link only root can replace is
-/// system configuration the operator chose, and the path resolves
-/// through it as it always did — but only through directories the
-/// target leads through that are trusted the same way, so a link in a
-/// trusted directory cannot point at a home a non-root principal
-/// pre-created (`/srv/homes -> /tmp/homes`, `/home -> /tmp/attacker`).
+/// Whether a symlinked ancestor stands where a non-root principal
+/// could plant or replace it: a link only root can replace is system
+/// configuration the operator chose, and the path resolves through it
+/// as it always did — but only through directories the target leads
+/// through that are trusted the same way, so a link in a trusted
+/// directory cannot point at a home a non-root principal pre-created
+/// (`/srv/homes -> /tmp/homes`, `/home -> /tmp/attacker`).
 fn planted_in(link: &Path, home: &str) -> Result<(), String> {
     let parent = standing_parent(link, home)?;
     let target = std::fs::read_link(link)
@@ -76,10 +66,8 @@ fn planted_in(link: &Path, home: &str) -> Result<(), String> {
     symlink_target_trusted(&parent, &target, home)
 }
 
-/// The directory a symlinked ancestor stands in, trusted the way the
-/// symlinked-ancestor rule trusts a parent: root's and writable by no
-/// one else — the operator's configuration, never the attacker's to
-/// redirect.
+/// The directory a symlinked ancestor stands in: root's and writable
+/// by no one else — the operator's configuration.
 fn standing_parent(link: &Path, home: &str) -> Result<PathBuf, String> {
     let parent = match link.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
@@ -98,23 +86,20 @@ fn standing_parent(link: &Path, home: &str) -> Result<PathBuf, String> {
 }
 
 /// Every directory a symlink target leads through, trusted the way
-/// trusted ancestors are — except that an intermediate admits one
-/// narrow case: a root-owned directory whose group writability belongs
-/// to a privileged group. Renaming the target aside there needs a
-/// writer, and every writer is already privileged (root everywhere,
-/// admin on macOS), so no privilege boundary is crossed. The resolved
-/// target itself always takes the full ancestor rule. A nested link is
-/// admitted where it stands the same way, within the expansion budget;
-/// a missing component ends the walk, for the rest does not exist yet
-/// and nothing could have been planted under it.
+/// trusted ancestors are — except that an intermediate admits a
+/// root-owned directory whose group writability belongs to a
+/// privileged group, whose every writer is already privileged. The
+/// resolved target itself always takes the full ancestor rule. A nested
+/// link is admitted where it stands the same way, within the expansion
+/// budget; a missing component ends the walk, for nothing could have
+/// been planted under it.
 pub(super) fn symlink_target_trusted(base: &Path, target: &Path, home: &str) -> Result<(), String> {
     target_dirs_trusted(&join_normalized(base, target), home, 8)
 }
 
-/// A symlink target joined onto the directory the link stands in, with
-/// `.` and `..` resolved lexically: the kernel resolves the target the
-/// same way before the walk opens any of it, so the validation sees the
-/// directories the operation will enter.
+/// A symlink target joined onto the directory the link stands in,
+/// with `.` and `..` resolved lexically the way the kernel resolves
+/// the target before the walk opens any of it.
 fn join_normalized(base: &Path, target: &Path) -> PathBuf {
     let mut resolved = if target.is_absolute() {
         PathBuf::from("/")
@@ -165,12 +150,10 @@ fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), St
             }
             Ok(meta) if meta.is_dir() => {
                 // The resolved target takes the full ancestor rule; an
-                // intermediate takes the chain rule (see
-                // `symlink_target_trusted`): a principal that can write
-                // the target can redirect the home, while an
+                // intermediate takes the chain rule: a principal that
+                // can write the target can redirect the home, while an
                 // intermediate admits root-owned group writability by a
-                // privileged group — every writer there is already
-                // privileged.
+                // privileged group.
                 let trusted = if prefix == *resolved {
                     own_directory(meta.uid(), meta.mode())
                 } else {
@@ -196,56 +179,47 @@ fn target_dirs_trusted(resolved: &Path, home: &str, budget: u8) -> Result<(), St
     Ok(())
 }
 
-/// The mode a created directory is given: the mode the creation
-/// asked for is only a request — the process's umask takes bits away
-/// from it, and a default ACL on the parent grants the ones the request
-/// does not ask for — so the mode is enforced on the directory itself,
-/// after it is created. The walk creates parents traversable and never
-/// world-writable, and the home takes the policy mode: the trust the
-/// adoption checks rely on.
+/// The mode a created directory is given, enforced on the directory
+/// itself after it is created: the requested mode is only a request —
+/// the process's umask takes bits away, and a default ACL on the
+/// parent grants the ones the request does not ask for. Parents are
+/// created traversable and never world-writable, and the home takes
+/// the policy mode: the trust the adoption checks rely on.
 pub(super) fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), String> {
     fchmod(fd, mode).map_err(|error| format!("user: create home {home}: {error}"))
 }
 
 /// Whether the directory is the operator's own and writable by no one
-/// else: only the operator could have created and filled it, so its
-/// adoption hands the account no principal's contents but the
-/// operator's. Lexical ancestors and the resolved target take this
-/// rule; chain intermediaries take it or the exception below.
+/// else — so its adoption hands the account no principal's contents
+/// but the operator's — or a chain intermediate under the exception.
 pub(super) fn own_directory(uid: u32, mode: u32) -> bool {
     (uid == 0 || uid == operating_uid()) && mode & 0o022 == 0
 }
 
 /// Whether a chain intermediate is trusted: the full ancestor rule, or
 /// a root-owned directory whose group writability belongs to a
-/// privileged group. Renaming the resolved target aside needs a writer:
-/// the owner is root, the group holds no unprivileged principal, and
-/// others cannot write — so no unprivileged principal can plant
-/// through it.
-///
-/// The other-triplet check is other-write, not other-closed: others
-/// traverse every root-owned system directory already (including `/`),
-/// and traversal without write cannot rename anything aside. An
-/// other-closed check would refuse `root:admin 0775` layouts — macOS
-/// routes all of `/home` through one — without buying any privilege
-/// boundary.
+/// privileged group — the owner is root, the group holds no
+/// unprivileged principal, and others cannot write, so no unprivileged
+/// principal can plant through it. The other-triplet check is
+/// other-write, not other-closed: others traverse every root-owned
+/// system directory already (including `/`), and traversal without
+/// write cannot rename anything aside. An other-closed check would
+/// refuse `root:admin 0775` layouts — macOS routes all of `/home`
+/// through one — without buying any privilege boundary.
 pub(super) fn chain_dir_trusted(uid: u32, gid: u32, mode: u32) -> bool {
     own_directory(uid, mode)
         || (uid == 0 && mode & 0o002 == 0 && mode & 0o020 != 0 && privileged_gid(gid))
 }
 
 /// Whether the group holds no unprivileged principal: root everywhere,
-/// and admin on macOS, whose members can already sudo. Any other group
-/// may hold a lower-privileged local user, whose group writability is
-/// refused.
+/// and admin on macOS, whose members can already sudo.
 pub(super) fn privileged_gid(gid: u32) -> bool {
     gid == 0 || (cfg!(target_os = "macos") && gid == 80)
 }
 
-/// The uid the agent operates as: the owner of a file the agent just
-/// created. Reading the euid directly needs an unsafe call the
-/// workspace forbids, so the uid is read off a probe file the process
-/// creates itself: the kernel owns new files to their creator. The
+/// The uid the agent operates as, read off a probe file the process
+/// creates itself: the kernel owns new files to their creator, and the
+/// workspace forbids the unsafe call that reads the euid directly. The
 /// probe's name is unique to the process and created atomically
 /// (`create_new`), so a planted file never stands in for it. Where no
 /// probe can be created the answer matches nothing: only root-owned
@@ -277,32 +251,66 @@ fn probe_operating_uid() -> Result<u32, String> {
     Err("the operator probe could not be created".to_string())
 }
 
-/// An existing home directory the account adopts: the directory is
-/// adopted only under trusted ancestors — where it is root's or the
-/// operator's own, or the intended account's whose passwd home field
-/// names the path. A directory another principal owns may have been
-/// pre-created by that principal with contents the new account would
-/// then execute at login — `useradd -m` reuses the directory and the
-/// reconciliation only changes its ownership, preserving whatever the
-/// directory holds — so it is refused whatever its mode: a 0700 leaf
-/// under trusted ancestors is still another principal's. The ancestors
-/// weigh even the operator's own staging — a leftover `/home/alice`,
-/// a same-stage file's directory: a leaf a non-root principal renamed
-/// aside and replanted under a writable ancestor must never become the
-/// account's. A creation whose account is not in the database yet
-/// misses the intended lookup and still takes the operator's rule, so
-/// the miss never fails a valid creation.
-pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(), String> {
+/// The account a home operation manages: the adoption admits an
+/// existing directory only where the passwd home field names this
+/// account — name and number both. The number is `None` where the
+/// step states none and the allocator draws it.
+pub(super) struct ManagedAccount<'a> {
+    pub(super) name: &'a str,
+    pub(super) uid: Option<u32>,
+}
+
+#[cfg(test)]
+impl<'a> ManagedAccount<'a> {
+    /// The managed account where the plan states no number.
+    pub(super) fn unnumbered(name: &'a str) -> Self {
+        ManagedAccount { name, uid: None }
+    }
+}
+
+/// Whether the passwd claim hands the leaf to the managed account —
+/// name and number both — with the leaf carrying the claimant's
+/// number, so the entry read is the live one, not a stale line.
+pub(super) fn managed_claim(
+    claimant: &str,
+    uid: u32,
+    leaf_uid: u32,
+    managed: &ManagedAccount<'_>,
+) -> bool {
+    claimant == managed.name && managed.uid == Some(uid) && uid == leaf_uid
+}
+
+/// An existing home directory the account adopts, only under trusted
+/// ancestors — where it is root's or the operator's own, or the
+/// managed account's whose passwd home field names the path. A
+/// directory another principal owns may have been pre-created by that
+/// principal with contents the new account would then execute at login,
+/// so it is refused whatever its mode: a 0700 leaf under trusted
+/// ancestors is still another principal's. The ancestors weigh even
+/// the operator's own staging — a leftover `/home/alice`, a
+/// same-stage file's directory — since a renamed-aside leaf replanted
+/// under a writable ancestor must never become the account's. A
+/// creation whose account is not in the database yet misses the
+/// intended lookup and still takes the operator's rule, so the miss
+/// never fails a valid creation.
+pub(super) fn adoption_trusted(
+    home: &str,
+    leaf: &std::fs::Metadata,
+    managed: &ManagedAccount<'_>,
+) -> Result<(), String> {
     // The operator's own directory is adopted under trusted ancestors
-    // too: the inspected leaf may have been renamed aside and replanted
-    // since, so only the ancestors weigh the replacement.
+    // too: only the ancestors weigh a leaf renamed aside and replanted.
     if own_directory(leaf.uid(), leaf.mode()) {
         return trusted_ancestors(home);
     }
-    // The intended account's own leaf is adopted under trusted
+    // The managed account's own leaf is adopted under trusted
     // ancestors — and only where it is itself writable by no one
     // else, or anyone's contents in it would become the account's.
-    if intended_claim(home).is_some_and(|(_, uid)| uid == leaf.uid()) {
+    // The claim must name the managed account itself, so adopting
+    // `/home/bob` for Alice is refused while Bob still points there.
+    if let Some((claimant, uid)) = intended_claim(home)
+        && managed_claim(&claimant, uid, leaf.uid(), managed)
+    {
         if leaf.mode() & 0o022 != 0 {
             return Err(format!(
                 "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
@@ -316,15 +324,13 @@ pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(
 }
 
 /// The account the passwd database intends the home for: the name and
-/// number from the single line whose home field names the path. `None`
-/// where none names it — the creation claims the home first — or where
-/// two do: a shared path cannot be attributed to either owner.
+/// number from the single line whose home field names the path — or
+/// `None` where none names it, or where two do.
 pub(super) fn intended_claim(home: &str) -> Option<(String, u32)> {
     sole_claimant(&std::fs::read_to_string("/etc/passwd").ok()?, home)
 }
 
-/// The sole claimant in the passwd text: a second claimant voids the
-/// attribution, so no first match adopts another account's leaf.
+/// The sole claimant in the passwd text, voided by a second claimant.
 pub(super) fn sole_claimant(passwd: &str, home: &str) -> Option<(String, u32)> {
     let mut found: Option<(String, u32)> = None;
     for line in passwd.lines() {
@@ -342,12 +348,10 @@ pub(super) fn sole_claimant(passwd: &str, home: &str) -> Option<(String, u32)> {
 
 /// Every existing ancestor of the home path, trusted the way the
 /// symlinked-ancestor rule trusts a parent: root's — or the
-/// operator's own — and writable by no one else. A symlinked ancestor
-/// resolves through its whole target chain the same way; a directory a
+/// operator's own — and writable by no one else. A directory a
 /// non-root principal can write is one that principal can plant the
 /// home under, so the adoption is refused there. A missing component
-/// ends the walk: the rest of the path does not exist yet, so nothing
-/// could have been planted under it.
+/// ends the walk: the rest does not exist yet.
 pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
     let components: Vec<std::path::Component<'_>> =
         std::path::Path::new(home).components().collect();
@@ -377,19 +381,20 @@ pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The adoption the opened descriptors pin: the directory the walk
-/// opened, re-verified after the open. The path the pre-open check
-/// inspected may have been replaced in between — a directory renamed
-/// aside where a writable ancestor allows it — so the trust decision
-/// is re-made on the inode the operation will own, never on the path,
-/// under the same rule: the descriptors name the replacement, so the
-/// refusal sees it.
-pub(super) fn adoption_pinned(home: &str, fd: &OwnedFd) -> Result<(), String> {
+/// The adoption the opened descriptors pin, re-verified after the
+/// open: the path the pre-open check inspected may have been replaced
+/// in between, so the trust decision is re-made on the inode the
+/// operation will own, never on the path.
+pub(super) fn adoption_pinned(
+    home: &str,
+    fd: &OwnedFd,
+    managed: &ManagedAccount<'_>,
+) -> Result<(), String> {
     let duplicate = fd
         .try_clone()
         .map_err(|error| format!("user: own home {home}: {error}"))?;
     let meta = std::fs::File::from(duplicate)
         .metadata()
         .map_err(|error| format!("user: own home {home}: {error}"))?;
-    adoption_trusted(home, &meta)
+    adoption_trusted(home, &meta, managed)
 }
