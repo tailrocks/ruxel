@@ -87,6 +87,7 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
     let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
     let repair = super::super::planned_home_repair(
         Some("/srv/alice"),
+        "/srv/alice",
         &account,
         Some(&primary),
         Some(1500),
@@ -120,6 +121,7 @@ fn the_default_home_repair_covers_a_primary_group_move() {
     let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
     let repair = super::super::planned_home_repair(
         None,
+        &format!("/home/{account}"),
         &account,
         Some(&primary),
         None,
@@ -143,6 +145,7 @@ fn the_default_home_repair_covers_a_primary_group_move() {
     // No move, no repair: a no-op task never claimed the default home.
     let idle = super::super::planned_home_repair(
         None,
+        &format!("/home/{account}"),
         &account,
         Some(&primary),
         None,
@@ -166,6 +169,7 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
     let (account, _) = an_account_with_its_group();
     let unknown = super::super::planned_home_repair(
         None,
+        "/srv/alice",
         &account,
         None,
         None,
@@ -183,6 +187,7 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
     );
     let explicit = super::super::planned_home_repair(
         Some("/srv/alice"),
+        "/srv/alice",
         &account,
         None,
         None,
@@ -215,6 +220,7 @@ fn a_missing_group_plans_no_repair_for_the_change_it_covers() {
     super::super::entries::note_planned_group(&missing, None);
     let repair = super::super::planned_home_repair(
         None,
+        &format!("/home/{account}"),
         &account,
         Some(&missing),
         None,
@@ -228,6 +234,65 @@ fn a_missing_group_plans_no_repair_for_the_change_it_covers() {
     .expect("the pending group plans no repair");
     assert_eq!(repair, None, "a group with no number yet repairs nothing");
     super::super::entries::forget_planned_group(&missing);
+}
+
+#[test]
+fn a_group_only_change_repairs_the_account_effective_home() {
+    // An existing account with a custom passwd home (`/srv/alice`)
+    // that changes only its primary group: the repair covers the home
+    // the account holds under the plan — not the creation default
+    // `/home/<name>`, a path this step never claimed and must not
+    // create or chown while the real home keeps the old GID.
+    let (account, primary) = an_account_with_its_group();
+    let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
+    let repair = super::super::planned_home_repair(
+        None,
+        "/srv/alice",
+        &account,
+        Some(&primary),
+        None,
+        1500,
+        999,
+        false,
+        true,
+        true,
+        true,
+    )
+    .expect("the owner must resolve");
+    assert_eq!(
+        repair,
+        Some(super::super::apply::Home {
+            path: "/srv/alice".to_string(),
+            uid: 1500,
+            owner: super::super::apply::HomeOwner::Number(gid),
+        }),
+        "the group-only change repairs the account's effective home, not the creation default"
+    );
+    // An account whose effective home is the default still repairs
+    // that default: the effective home is what decides, either way.
+    let default = super::super::planned_home_repair(
+        None,
+        &format!("/home/{account}"),
+        &account,
+        Some(&primary),
+        None,
+        1500,
+        999,
+        false,
+        true,
+        true,
+        true,
+    )
+    .expect("the owner must resolve");
+    assert_eq!(
+        default,
+        Some(super::super::apply::Home {
+            path: format!("/home/{account}"),
+            uid: 1500,
+            owner: super::super::apply::HomeOwner::Number(gid),
+        }),
+        "a default effective home still repairs the default path"
+    );
 }
 
 #[test]
