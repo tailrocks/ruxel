@@ -1,0 +1,22 @@
+// The dotted and slash-first spellings of one parameter in one file are
+// one entry: they merge into one task, and a service that watches one
+// spelling watches the merged task — the watcher metadata lands on the
+// one task instead of a second no-op one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+local dotted = new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net/ipv4/ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new systemd.Service { name = "app"; restartOnChangeOf { dotted } }
+    }
+  }
+}
