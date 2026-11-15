@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::symlink;
 
 #[test]
 fn a_rollback_does_not_take_a_newer_edit_away() {
@@ -77,6 +78,45 @@ fn a_rollback_does_not_lose_the_edit_of_a_writer_that_acts_in_it() {
         std::fs::read_to_string(root.join(".ssh/authorized_keys")).unwrap(),
         "raced\n"
     );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_symlink_swap_before_the_exchange_is_rolled_back() {
+    let root = scratch("rollback-symlink");
+    let meta = std::fs::metadata(&root).unwrap();
+    let home = File::open(&root).unwrap();
+    let ssh = open_ssh(&home, meta.uid(), meta.gid(), true)
+        .unwrap()
+        .unwrap();
+    std::fs::write(root.join(".ssh/authorized_keys"), b"old\n").unwrap();
+    let (_, identity) = read_authorized_keys_with_identity(&ssh).unwrap();
+    // A writer that does not take the lock replaces the file with a
+    // link after the read: the exchange still swaps, but the displaced
+    // link cannot be opened through O_NOFOLLOW.
+    let victim = root.join("victim");
+    std::fs::write(&victim, b"victim\n").unwrap();
+    std::fs::remove_file(root.join(".ssh/authorized_keys")).unwrap();
+    symlink(&victim, root.join(".ssh/authorized_keys")).unwrap();
+    let error = publish::publish_checked(&ssh, b"published\n", meta.uid(), meta.gid(), identity)
+        .unwrap_err();
+    assert!(error.contains("authorized_key"), "{error}");
+    // The staged file is not live at the path: the link the writer
+    // installed is still there, the victim is untouched, and nothing
+    // is stranded in a staging directory.
+    assert!(
+        std::fs::symlink_metadata(root.join(".ssh/authorized_keys"))
+            .unwrap()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "victim\n");
+    assert!(std::fs::read_dir(root.join(".ssh")).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ruxel-key-")
+    }));
     std::fs::remove_dir_all(root).unwrap();
 }
 
