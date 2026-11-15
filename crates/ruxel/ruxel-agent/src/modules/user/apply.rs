@@ -180,7 +180,11 @@ pub(super) fn run(
 /// the repair added: the removal refuses a directory that is not
 /// empty, so contents a concurrent writer planted are kept and
 /// reported rather than deleted.
-fn rollback_home(path: &str, prior: Option<(u64, u64)>, created: &[PathBuf]) -> Result<(), String> {
+pub(super) fn rollback_home(
+    path: &str,
+    prior: Option<(u64, u64)>,
+    created: &[PathBuf],
+) -> Result<(), String> {
     let Some((uid, gid)) = prior else {
         // Every parent directory the repair created, leaf first: the
         // removal refuses a directory that is not empty, so contents
