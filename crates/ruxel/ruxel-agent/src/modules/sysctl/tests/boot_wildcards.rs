@@ -2,6 +2,8 @@
 //! covers, and a key the sequence names outright is kept out of that
 //! expansion.
 
+use std::path::PathBuf;
+
 use super::super::boot;
 
 /// The later-loading file that overrides the managed entry, if any.
@@ -11,9 +13,9 @@ fn override_of(
     value: &str,
     host: &[(&str, &str)],
 ) -> Option<(String, String)> {
-    let host: Vec<(String, Vec<u8>)> = host
+    let host: Vec<(PathBuf, Vec<u8>)> = host
         .iter()
-        .map(|(path, content)| ((*path).to_string(), content.as_bytes().to_vec()))
+        .map(|(path, content)| (PathBuf::from(*path), content.as_bytes().to_vec()))
         .collect();
     boot::boot_override(file, name, value, &host, &[])
 }

@@ -326,7 +326,7 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
-        let managed = ledger.managed_sysctl_entries();
+        let managed = modules::managed_sysctl_entries(&task.module, ledger);
         let outcome = modules::execute(
             &task.module,
             &params,
