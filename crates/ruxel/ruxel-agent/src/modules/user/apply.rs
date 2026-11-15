@@ -158,19 +158,14 @@ pub(super) fn run(
                         &managed,
                         &mut created,
                     );
-                    match outcome {
-                        Ok(changed) => {
-                            if !check_mode {
-                                completed.push(Completed::Home {
-                                    path: home.path,
-                                    prior,
-                                    created,
-                                });
-                            }
-                            Ok(changed)
-                        }
-                        Err(error) => Err(error),
+                    if !check_mode {
+                        completed.push(Completed::Home {
+                            path: home.path,
+                            prior,
+                            created,
+                        });
                     }
+                    outcome
                 }
                 Mutation::UserMod(mut args) => {
                     if !check_mode {
