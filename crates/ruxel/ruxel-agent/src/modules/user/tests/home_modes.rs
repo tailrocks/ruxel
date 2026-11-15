@@ -39,11 +39,16 @@ fn a_created_home_gets_the_policy_mode_under_any_umask() {
     // The child: the umask is 0077, so a mode that is only requested
     // at the creation comes out 0700 — the policy's mode must be
     // enforced on the directory itself, and on the parents it creates.
-    let base = std::env::temp_dir().join(format!("ruxel-home-mode-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).unwrap();
-    let home = base.join("homes/alice");
-    let meta = std::fs::metadata(&base).unwrap();
+    // The missing home is created beneath its ancestors, so the case
+    // stages it under the operator's own tree: a shared-writable
+    // ancestor would refuse the creation before any mutation.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-home-mode-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir_all(&anchor).unwrap();
+    let home = anchor.join("homes/alice");
+    let meta = std::fs::metadata(&anchor).unwrap();
     let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
     assert!(
         super::super::ensure_home(home.to_str().unwrap(), uid, gid, false).unwrap(),
@@ -63,5 +68,5 @@ fn a_created_home_gets_the_policy_mode_under_any_umask() {
         parent, 0o755,
         "the created parent is traversable and never world-writable"
     );
-    std::fs::remove_dir_all(&base).unwrap();
+    std::fs::remove_dir_all(&anchor).unwrap();
 }

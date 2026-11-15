@@ -11,8 +11,11 @@ use std::os::unix::fs::MetadataExt;
 /// `lchown` all traverse — is inspected the same way. An existing
 /// directory is adopted only where [`adoption_trusted`] admits it: a
 /// directory a non-root principal may have placed must never become the
-/// account's home with its contents. Only a missing
-/// path is usable: any other lookup error — an ancestor that is a
+/// account's home with its contents. Only a missing path under trusted
+/// ancestors is usable — the repair creates the home beneath them, so
+/// a creation beneath a directory a non-root principal can write would
+/// hand the fresh home to that principal's rename-and-plant: any other
+/// lookup error — an ancestor that is a
 /// regular file (`NotADirectory`), a permission refusal — propagates
 /// before any mutation, for `usermod -d` would otherwise move the passwd
 /// field first and leave a partially applied account behind.
@@ -25,7 +28,7 @@ pub(super) fn home_usable(home: &str) -> Result<(), String> {
             Ok(())
         }
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => trusted_ancestors(home),
         Err(error) => Err(format!("user: home {home}: {error}")),
     }
 }
@@ -38,8 +41,12 @@ pub(super) fn home_usable(home: &str) -> Result<(), String> {
 /// replace it, and admitted only where the parent is root's and
 /// unwritable to the rest — the system links an operator places (`/var`
 /// on macOS) are the operator's configuration, not the attacker's to
-/// redirect. A missing component ends the walk: the rest of the path
-/// does not exist yet, so nothing can traverse it.
+/// redirect. The walk judges the shape, not the trust: an existing
+/// directory of any owner passes here — the trust of an adopted home is
+/// [`adoption_trusted`]'s to judge — while a missing leaf is created
+/// beneath its ancestors, so the creation's entry points additionally
+/// require [`trusted_ancestors`]. A missing component ends the walk: the
+/// rest of the path does not exist yet, so nothing can traverse it.
 pub(super) fn ancestors_usable(home: &str) -> Result<(), String> {
     let components: Vec<std::path::Component<'_>> =
         std::path::Path::new(home).components().collect();
