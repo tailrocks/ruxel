@@ -501,6 +501,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     Some(_) => None,
                     None => group_entry(name)?,
                 };
+                // The full record of the reused group, snapshotted
+                // before the account is created: `useradd -g <name>`
+                // selects the host's group, and the rollback's
+                // `userdel` below takes that group with the account —
+                // the restore brings back the whole entry, not just
+                // the number.
+                let reused_group = match reused_private_group.as_ref() {
+                    Some((group_name, _)) => snapshot_group(group_name)?,
+                    None => None,
+                };
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
                 if system {
@@ -577,12 +587,25 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                                 reused_private_group.as_ref(),
                                 &|account| run_cmd("userdel", &[account]),
                                 &|name| Ok(group_entry(name)?.is_some()),
-                                &|name, gid| {
-                                    run_cmd("groupadd", &["-g", &gid.to_string(), name])?;
+                                &|group_name, gid| {
+                                    let (groupadd, administrators) = restore_group_args(
+                                        group_name,
+                                        gid,
+                                        reused_group.as_ref(),
+                                        account,
+                                    );
+                                    let groupadd: Vec<&str> =
+                                        groupadd.iter().map(String::as_str).collect();
+                                    run_cmd("groupadd", &groupadd)?;
+                                    if let Some(administrators) = administrators {
+                                        let administrators: Vec<&str> =
+                                            administrators.iter().map(String::as_str).collect();
+                                        run_cmd("gpasswd", &administrators)?;
+                                    }
                                     // The plan's record follows the
                                     // host's: the group is there
                                     // again.
-                                    note_planned_group(name, u32::try_from(gid).ok());
+                                    note_planned_group(group_name, u32::try_from(gid).ok());
                                     Ok(())
                                 },
                             )?;
@@ -923,6 +946,139 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
 }
 
+/// The host's record of the group the account creation reused: the
+/// number alone does not restore it. `userdel` takes the whole entry
+/// with the account, so the password, the members and the
+/// administrators are snapshotted before the account is created and
+/// restored with the number.
+struct ReusedGroup {
+    password: Option<String>,
+    members: Vec<String>,
+    admins: Vec<String>,
+}
+
+/// The password fields that carry no password to restore: a fresh
+/// group is locked the same way, so passing them back would only
+/// expose the placeholder on the command line.
+fn default_group_password(password: &str) -> bool {
+    matches!(password, "" | "x" | "!" | "*")
+}
+
+/// The group's record over canned group and gshadow content: `None`
+/// where the group file holds no such group.
+fn snapshot_group_from(groups: &str, gshadow: &str, name: &str) -> Option<ReusedGroup> {
+    let line = groups
+        .lines()
+        .find(|line| line.split(':').next() == Some(name))?;
+    let mut fields = line.split(':');
+    fields.next()?;
+    let group_password = fields.next().unwrap_or("");
+    fields.next()?;
+    let mut members: Vec<String> = fields
+        .next()
+        .unwrap_or_default()
+        .split(',')
+        .filter(|member| !member.is_empty())
+        .map(str::to_string)
+        .collect();
+    let (shadow_password, admins, shadow_members) = gshadow
+        .lines()
+        .find_map(|line| {
+            let mut fields = line.split(':');
+            if fields.next()? != name {
+                return None;
+            }
+            let password = fields.next().unwrap_or("").to_string();
+            let admins: Vec<String> = fields
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter(|admin| !admin.is_empty())
+                .map(str::to_string)
+                .collect();
+            let members: Vec<String> = fields
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter(|member| !member.is_empty())
+                .map(str::to_string)
+                .collect();
+            Some((password, admins, members))
+        })
+        .unwrap_or_default();
+    // The members the shadowed record lists and the group file does
+    // not are the group's still: both files name the same set.
+    for member in shadow_members {
+        if !members.contains(&member) {
+            members.push(member);
+        }
+    }
+    // The password to restore: the shadowed hash where it is a real
+    // one, the group file's own where that one is, and none where the
+    // group carries a default.
+    let password = [shadow_password.as_str(), group_password]
+        .into_iter()
+        .find(|password| !default_group_password(password))
+        .map(str::to_string);
+    Some(ReusedGroup {
+        password,
+        members,
+        admins,
+    })
+}
+
+/// The group's record on the host: the gshadow half is best effort —
+/// where it cannot be read the snapshot carries what the group file
+/// holds and the restore falls back to it.
+fn snapshot_group(name: &str) -> Result<Option<ReusedGroup>, String> {
+    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    let gshadow = std::fs::read_to_string("/etc/gshadow").unwrap_or_default();
+    Ok(snapshot_group_from(&groups, &gshadow, name))
+}
+
+/// The commands that bring back the group the rollback's `userdel` took
+/// with the account: `groupadd` with the number — and the password and
+/// the members where the snapshot holds them — then `gpasswd -A` where
+/// it held administrators, which `groupadd` has no flag for. The
+/// deleted account itself is dropped from both lists: it no longer
+/// exists, so restoring it would fail the rollback.
+fn restore_group_args(
+    group: &str,
+    gid: u64,
+    snapshot: Option<&ReusedGroup>,
+    removed_account: &str,
+) -> (Vec<String>, Option<Vec<String>>) {
+    let mut groupadd = vec!["-g".to_string(), gid.to_string()];
+    let mut administrators = None;
+    if let Some(record) = snapshot {
+        if let Some(password) = &record.password {
+            groupadd.push("-p".to_string());
+            groupadd.push(password.clone());
+        }
+        let members: Vec<String> = record
+            .members
+            .iter()
+            .filter(|member| member.as_str() != removed_account)
+            .cloned()
+            .collect();
+        if !members.is_empty() {
+            groupadd.push("-U".to_string());
+            groupadd.push(members.join(","));
+        }
+        let admins: Vec<String> = record
+            .admins
+            .iter()
+            .filter(|admin| admin.as_str() != removed_account)
+            .cloned()
+            .collect();
+        if !admins.is_empty() {
+            administrators = Some(vec!["-A".to_string(), admins.join(","), group.to_string()]);
+        }
+    }
+    groupadd.push(group.to_string());
+    (groupadd, administrators)
+}
+
 /// The account the step created is taken back: `useradd` has already
 /// put it in the passwd database, and a task that fails with the
 /// account left behind leaves the host in a state the workflow never
@@ -930,7 +1086,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 /// on a host that deletes an account's private group
 /// (`USERGROUPS_ENAB`), so a group the step reused — `useradd -g
 /// <name>` selects the host's group instead of creating one — is the
-/// host's and is restored with the number it held.
+/// host's and is restored with the full record the snapshot holds.
 fn take_back_account(
     account: &str,
     reused_private_group: Option<&(String, u64)>,
@@ -1449,6 +1605,110 @@ mod cat06_batch_b {
             test_hook::take_calls().is_empty(),
             "useradd never ran: the entry was compared, not created"
         );
+    }
+
+    #[test]
+    fn the_snapshot_carries_the_whole_group_and_gshadow_records() {
+        // The rollback restores what `userdel` takes with the account,
+        // so the snapshot carries the password, the members and the
+        // administrators — not just the number.
+        let groups = "alice:x:1500:carol\n";
+        let gshadow = "alice:$6$salt$hash:root,ops:carol,dave\n";
+        let record =
+            super::snapshot_group_from(groups, gshadow, "alice").expect("the group is on the host");
+        assert_eq!(record.password.as_deref(), Some("$6$salt$hash"));
+        assert_eq!(
+            record.members,
+            vec!["carol".to_string(), "dave".to_string()]
+        );
+        assert_eq!(record.admins, vec!["root".to_string(), "ops".to_string()]);
+        // No such group: nothing to snapshot.
+        assert!(super::snapshot_group_from(groups, gshadow, "nobody").is_none());
+    }
+
+    #[test]
+    fn the_snapshot_prefers_the_shadowed_password_and_ignores_defaults() {
+        // A locked group carries no password to pass back: `groupadd`
+        // locks a new group itself.
+        let groups = "alice:x:1500:\n";
+        let gshadow = "alice:!:root:\n";
+        let record =
+            super::snapshot_group_from(groups, gshadow, "alice").expect("the group is on the host");
+        assert_eq!(record.password, None);
+        // Without a gshadow record the group file's own hash stands in.
+        let groups = "alice:$6$salt$hash:1500:\n";
+        let record =
+            super::snapshot_group_from(groups, "", "alice").expect("the group is on the host");
+        assert_eq!(record.password.as_deref(), Some("$6$salt$hash"));
+    }
+
+    #[test]
+    fn the_restore_recreates_the_group_with_its_password_members_and_admins() {
+        let record = super::ReusedGroup {
+            password: Some("$6$salt$hash".to_string()),
+            members: vec!["carol".to_string()],
+            admins: vec!["root".to_string(), "ops".to_string()],
+        };
+        let (groupadd, administrators) =
+            super::restore_group_args("alice", 1500, Some(&record), "alice");
+        assert_eq!(
+            groupadd,
+            vec!["-g", "1500", "-p", "$6$salt$hash", "-U", "carol", "alice"]
+        );
+        assert_eq!(
+            administrators,
+            Some(vec![
+                "-A".to_string(),
+                "root,ops".to_string(),
+                "alice".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn the_restore_drops_the_removed_account_and_omits_defaults() {
+        // A bare group restores with the number alone.
+        let record = super::ReusedGroup {
+            password: None,
+            members: Vec::new(),
+            admins: Vec::new(),
+        };
+        let (groupadd, administrators) =
+            super::restore_group_args("alice", 1500, Some(&record), "alice");
+        assert_eq!(groupadd, vec!["-g", "1500", "alice"]);
+        assert_eq!(administrators, None);
+        // The removed account no longer exists, so it is dropped from
+        // both lists instead of failing the rollback.
+        let record = super::ReusedGroup {
+            password: None,
+            members: vec!["alice".to_string()],
+            admins: vec!["alice".to_string(), "root".to_string()],
+        };
+        let (groupadd, administrators) =
+            super::restore_group_args("alice", 1500, Some(&record), "alice");
+        assert_eq!(groupadd, vec!["-g", "1500", "alice"]);
+        assert_eq!(
+            administrators,
+            Some(vec![
+                "-A".to_string(),
+                "root".to_string(),
+                "alice".to_string()
+            ])
+        );
+        // Without a snapshot the restore is the bare `groupadd -g`.
+        let (groupadd, administrators) = super::restore_group_args("alice", 1500, None, "alice");
+        assert_eq!(groupadd, vec!["-g", "1500", "alice"]);
+        assert_eq!(administrators, None);
+    }
+
+    #[test]
+    fn the_snapshot_reads_the_live_group_file() {
+        // The reader runs against the host's group file without mutating
+        // anything: a live group snapshots, with no password where the
+        // host locks it.
+        let (name, _live) = live_group();
+        let record = super::snapshot_group(&name).expect("the group file must read");
+        assert!(record.is_some(), "the live group must snapshot");
     }
 }
 /// The test stand-in for the host's account utilities: apply-mode tests
