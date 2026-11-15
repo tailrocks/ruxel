@@ -1,0 +1,19 @@
+// expect: both manage the sysctl net/ipv4/ip_forward in /etc/sysctl.d/10-a.conf with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The trim reaches the edges only to compare: a padded " 2" is still
+// another kernel value beside "1", so the same-entry pair declares two
+// states for one thing and is refused. (The subject names the canonical
+// parameter, whatever spelling the steps write.)
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = " 2"; path = "/etc/sysctl.d/10-a.conf" }
+    }
+  }
+}
