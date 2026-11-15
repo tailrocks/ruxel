@@ -46,7 +46,11 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 
     match state {
         "present" => {
-            if let Some((_, live_gid)) = entry {
+            // The group's presence under the plan: the plan's own
+            // removal takes the group away — check mode runs no
+            // `groupdel`, so the live entry is stale — and a step
+            // that declares it present again recreates it.
+            if let Some((_, live_gid)) = entry.filter(|_| !entries::group_removed(name)) {
                 // The number the group holds under the plan: the
                 // number an earlier task of the plan gave it — check
                 // mode runs no `groupmod`, so the host's database still
@@ -172,8 +176,8 @@ mod guards;
 pub(super) use entries::{Requested, planned_group, planned_user};
 use guards::{
     gid_holder_in_use, group_change_allowed, group_provided, group_removal_allowed, planned_gid,
-    primary_group_holder, primary_group_name, private_group_missing, removal_allowed,
-    removal_home_allowed, removal_primary_group_allowed, uid_holder_in_use,
+    primary_group_holder, primary_group_name, private_group_emptied, private_group_missing,
+    removal_allowed, removal_home_allowed, removal_primary_group_allowed, uid_holder_in_use,
 };
 pub(super) use plan::{group_recreated, user_recreated};
 
@@ -297,12 +301,34 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             None => str_param(obj, "group").unwrap_or(name) == name,
         };
         if changed && same_name_is_primary {
-            forget_planned_group(name);
+            // The number the account's private group holds: the
+            // plan's own record where it knows one — check mode runs
+            // no `groupadd`, so the live entry is stale — and the
+            // host's entry otherwise.
+            let private_gid = plan::primary(name)
+                .and_then(|primary| primary.gid)
+                .or(group_entry(name)?.map(|(_, gid)| gid));
+            // The removal takes the account's empty same-name group
+            // with it — `userdel` deletes the group the account holds
+            // as its primary group when no other member holds it — so
+            // the plan's record goes the way of the host's: a later
+            // step that declares the group absent reports the no-op
+            // the apply performs, the group being gone before that
+            // step runs. A group another member holds survives the
+            // removal, so an explicitly planned one stays in the
+            // plan's record: the apply leaves the group behind, and
+            // whatever resolves it next must find it there.
+            if private_group_emptied(name, private_gid)? {
+                note_removed_group(name);
+                forget_planned_group(name);
+            }
         }
         forget_planned_user(name);
         plan::forget_home(name);
         plan::forget_primary(name);
         plan::forget_supplementary(name);
+        plan::forget_shell(name);
+        plan::forget_comment(name);
         if changed {
             // The removal frees the number for whatever the plan claims
             // next: check mode runs no `userdel`, so the host's
@@ -312,6 +338,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         return Ok(json!({"changed": changed, "failed": false, "name": name, "state": "absent"}));
     }
+
+    // The account's presence under the plan: the plan's own removal
+    // takes the account away — check mode runs no `userdel`, so the
+    // live entry is stale — and a step that declares it present again
+    // recreates it, the way the apply does.
+    let entry = if entries::account_removed(name) {
+        None
+    } else {
+        entry
+    };
 
     let group = str_param(obj, "group");
     let append = bool_param(obj, "append", false);
@@ -355,6 +391,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         })
         .unwrap_or_else(|| claimed_home(None, name));
+    // The shell and the comment the account's passwd entry carries
+    // under the plan: the step's own declaration, the plan's earlier
+    // record where the step declares none — a step that declares no
+    // shell moves no field — and the live entry where the plan has
+    // not taken the account away.
+    let effective_shell = shell
+        .map(str::to_string)
+        .or_else(|| plan::shell(name))
+        .or_else(|| entry.as_ref().map(|current| current.shell.clone()));
+    let effective_comment = comment
+        .map(str::to_string)
+        .or_else(|| plan::comment(name))
+        .or_else(|| entry.as_ref().map(|current| current.comment.clone()));
 
     let mut changed = false;
 
@@ -398,6 +447,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             plan::note_primary(name, planned_primary_of(name, group, ctx.check_mode));
             plan::note_supplementary(name, groups.clone().unwrap_or_default());
             if !ctx.check_mode {
+                // The private group the account reuses: `useradd -g
+                // <name>` selects the host's group instead of creating
+                // one — `useradd -U` refuses to create a group that
+                // exists — so the group is the host's. A rollback that
+                // takes the account back takes the group with it on a
+                // host that deletes an account's private group
+                // (`USERGROUPS_ENAB`), so the group is restored.
+                let reused_private_group = match group {
+                    Some(_) => None,
+                    None => group_entry(name)?,
+                };
                 let uid_s;
                 let mut args: Vec<&str> = Vec::new();
                 if system {
@@ -413,7 +473,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 // group that exists, so the existing group is selected
                 // with `-g` the way `useradd(8)` documents — or the
                 // group's own creation with `-U`.
-                for arg in primary_group_args(group, group_entry(name)?.is_some().then_some(name)) {
+                for arg in primary_group_args(
+                    group,
+                    reused_private_group.as_ref().map(|(name, _)| name.as_str()),
+                ) {
                     args.push(arg);
                 }
                 let groups_s;
@@ -461,8 +524,25 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                             // the passwd database, and a task that
                             // fails with the account left behind
                             // leaves the host in a state the workflow
-                            // never asked for.
-                            run_cmd("userdel", &[account])?;
+                            // never asked for. The account's deletion
+                            // takes its private group with it on a
+                            // host that deletes one, so a group the
+                            // step reused is restored with the number
+                            // it held.
+                            take_back_account(
+                                account,
+                                reused_private_group.as_ref(),
+                                &|account| run_cmd("userdel", &[account]),
+                                &|name| Ok(group_entry(name)?.is_some()),
+                                &|name, gid| {
+                                    run_cmd("groupadd", &["-g", &gid.to_string(), name])?;
+                                    // The plan's record follows the
+                                    // host's: the group is there
+                                    // again.
+                                    note_planned_group(name, u32::try_from(gid).ok());
+                                    Ok(())
+                                },
+                            )?;
                             // The plan's record follows the host's:
                             // the account is gone.
                             note_removed_account(account);
@@ -488,6 +568,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // against the identity the plan ends up with, not against
             // the host's unchanged one.
             let effective = effective(name, &current);
+            // The account's passwd fields under the plan: the plan's
+            // own record where an earlier task of the plan changed
+            // them — check mode runs no `usermod`, so the live entry
+            // still holds the old values — and the live entry
+            // otherwise. The comparison below is against the state
+            // the plan ends up with, so a later task that changes a
+            // field again is compared against the earlier task's
+            // result and not against the host's unchanged one.
+            let planned_home = plan::home(name).unwrap_or_else(|| current.home.clone());
+            let planned_shell = plan::shell(name).unwrap_or_else(|| current.shell.clone());
+            let planned_comment = plan::comment(name).unwrap_or_else(|| current.comment.clone());
             let mut identity_change = false;
             let uid_s;
             let mut args: Vec<&str> = Vec::new();
@@ -652,19 +743,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 plan::note_supplementary(name, planned_set(current_groups, gs, append));
             }
             if let Some(h) = home
-                && h != current.home
+                && h != planned_home
             {
                 args.push("-d");
                 args.push(h);
             }
             if let Some(sh) = shell
-                && sh != current.shell
+                && sh != planned_shell
             {
                 args.push("-s");
                 args.push(sh);
             }
             if let Some(c) = comment
-                && c != current.comment
+                && c != planned_comment
             {
                 args.push("-c");
                 args.push(c);
@@ -746,7 +837,48 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // a later removal verifies its home against.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
     plan::note_home(name, &effective_home);
+    plan::note_shell(name, effective_shell.as_deref());
+    plan::note_comment(name, effective_comment.as_deref());
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
+}
+
+/// The account the step created is taken back: `useradd` has already
+/// put it in the passwd database, and a task that fails with the
+/// account left behind leaves the host in a state the workflow never
+/// asked for. The account's deletion takes its private group with it
+/// on a host that deletes an account's private group
+/// (`USERGROUPS_ENAB`), so a group the step reused — `useradd -g
+/// <name>` selects the host's group instead of creating one — is the
+/// host's and is restored with the number it held.
+fn take_back_account(
+    account: &str,
+    reused_private_group: Option<&(String, u64)>,
+    remove_account: &dyn Fn(&str) -> Result<(), String>,
+    group_exists: &dyn Fn(&str) -> Result<bool, String>,
+    restore_group: &dyn Fn(&str, u64) -> Result<(), String>,
+) -> Result<(), String> {
+    remove_account(account)?;
+    let live = match reused_private_group {
+        Some((name, _)) => group_exists(name)?,
+        None => false,
+    };
+    let Some((name, gid)) = group_taken_by_removal(reused_private_group, live) else {
+        return Ok(());
+    };
+    restore_group(&name, gid)
+}
+
+/// The private group the account's deletion took with it: the group
+/// the step reused — `useradd -g <name>` selects the host's group
+/// instead of creating one — where the deletion removed it. A group
+/// the deletion left alone — another member holds it — is the host's
+/// still, and nothing is restored; a group the step created is the
+/// step's to remove.
+fn group_taken_by_removal(reused: Option<&(String, u64)>, live: bool) -> Option<(String, u64)> {
+    match reused {
+        Some((name, gid)) if !live => Some((name.clone(), *gid)),
+        _ => None,
+    }
 }
 
 /// The switches that give a created account its primary group: the
