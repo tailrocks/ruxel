@@ -2,6 +2,8 @@
 mod concurrent;
 #[path = "tests/detached.rs"]
 mod detached;
+#[path = "tests/home.rs"]
+mod home;
 #[path = "tests/keys.rs"]
 mod keys;
 
