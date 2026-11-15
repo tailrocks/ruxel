@@ -32,7 +32,7 @@ fn roundtrip_through_buffer() {
     write_frame(
         &mut buf,
         &v1::Envelope {
-            msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered: false })),
         },
     )
     .expect("frame operation succeeds");
@@ -48,6 +48,26 @@ fn roundtrip_through_buffer() {
     assert!(matches!(second.msg, Some(v1::envelope::Msg::Done(_))));
     let eof: Option<v1::Envelope> = read_frame(&mut r).expect("frame operation succeeds");
     assert!(eof.is_none());
+}
+
+#[test]
+fn done_filtered_roundtrips() {
+    // The filtered flag travels the whole frame path: a tagged run's
+    // end must still read filtered on the agent's side.
+    for filtered in [false, true] {
+        let mut buf = Vec::new();
+        let env = v1::Envelope {
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered })),
+        };
+        write_frame(&mut buf, &env).expect("frame operation succeeds");
+        let mut r = buf.as_slice();
+        let decoded: v1::Envelope = read_frame(&mut r)
+            .expect("frame operation succeeds")
+            .expect("frame operation succeeds");
+        assert!(
+            matches!(decoded.msg, Some(v1::envelope::Msg::Done(done)) if done.filtered == filtered)
+        );
+    }
 }
 
 #[test]
@@ -113,7 +133,7 @@ fn interrupted_read_retries() {
     }
 
     let expected = v1::Envelope {
-        msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+        msg: Some(v1::envelope::Msg::Done(v1::Done { filtered: false })),
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &expected).expect("frame operation succeeds");

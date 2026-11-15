@@ -73,13 +73,13 @@ async fn unsafe_cached_objects_are_replaced_without_following_or_mutating_them()
 -> anyhow::Result<()> {
     let fixture = Fixture::new()?;
     let (connection, _) = fixture.connect().await?;
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     let cached = fixture.verify_first_upload()?;
     std::fs::set_permissions(&cached, std::fs::Permissions::from_mode(0o666))?;
     let before = std::fs::metadata(&cached)?.ino();
     let (connection, _) = fixture.connect().await?;
     assert!(connection.uploaded_agent);
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     assert_ne!(std::fs::metadata(&cached)?.ino(), before);
     let relative = cached.strip_prefix(fixture.root.join("remote"))?;
     let remote_path = format!("/{}", relative.display());
@@ -87,7 +87,7 @@ async fn unsafe_cached_objects_are_replaced_without_following_or_mutating_them()
     fixture.override_owner(&remote_path, old.uid() + 1, Some(old.ino()))?;
     let (connection, _) = fixture.connect().await?;
     assert!(connection.uploaded_agent);
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     assert_ne!(std::fs::metadata(&cached)?.ino(), old.ino());
     std::fs::remove_file(fixture.root.join("metadata"))?;
     let victim = fixture.root.join("unrelated executable");
@@ -103,7 +103,7 @@ async fn unsafe_cached_objects_are_replaced_without_following_or_mutating_them()
         }
         let (connection, _) = fixture.connect().await?;
         assert!(connection.uploaded_agent);
-        connection.shutdown().await?;
+        connection.shutdown(false).await?;
         assert_eq!(std::fs::metadata(&victim)?.ino(), victim_inode);
         assert_eq!(
             std::fs::metadata(&victim)?.permissions().mode() & 0o777,

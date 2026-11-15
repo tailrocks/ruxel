@@ -100,7 +100,7 @@ fn migrated_shell_is_reachable_and_unknown_modules_fail_cleanly() -> Result<()> 
     write_frame(
         &mut input,
         &v1::Envelope {
-            msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered: false })),
         },
     )?;
     assert!(agent.wait()?.success());

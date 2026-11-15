@@ -296,11 +296,11 @@ impl AgentConnection {
 
     /// # Errors
     /// Returns stream errors or an unsuccessful agent exit.
-    pub async fn shutdown(mut self) -> Result<()> {
+    pub async fn shutdown(mut self, filtered: bool) -> Result<()> {
         write_frame(
             &mut self.stdin,
             &v1::Envelope {
-                msg: Some(EnvMsg::Done(v1::Done {})),
+                msg: Some(EnvMsg::Done(v1::Done { filtered })),
             },
         )
         .await?;
