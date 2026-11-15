@@ -109,11 +109,40 @@ pub(super) use ownership::{Ownership, resolve_ownership};
 pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key, trimmed_value};
 pub(crate) use user::begin_plan;
 
+/// The sysctl declaration the current plan's task carries: the file it
+/// declares the key in, the key, and the value it declared there. The
+/// plan declares the entry whatever the run does with the task — a cache
+/// hit and a check-mode run declare too — so a later task's preflight
+/// reads the plan's own entries, not the ledger's retained history of a
+/// task the workflow dropped. A task that failed to parse declares
+/// nothing: its entry is unknown.
+pub(crate) fn sysctl_plan_declaration(
+    module: &str,
+    params: &Value,
+) -> Option<(String, String, String)> {
+    if module != "sysctl" {
+        return None;
+    }
+    let name = params.get("name").and_then(Value::as_str)?;
+    let value = match params.get("value")? {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => if *value { "1" } else { "0" }.to_string(),
+        _ => return None,
+    };
+    let file = params
+        .get("sysctl_file")
+        .and_then(Value::as_str)
+        .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    Some((file.to_string(), name.to_string(), value))
+}
+
 /// The managed sysctl entries a task's module consumes: only the
 /// sysctl module reads them, and the scan they need weighs on every
 /// persisted record — so a workflow of ordinary tasks would pay
 /// 1+2+…+N inspections for a result none of them reads. The gate
 /// keeps the scan to the module that needs it.
+#[cfg(test)]
 pub(crate) fn managed_sysctl_entries(
     module: &str,
     ledger: &crate::ledger::Ledger,
