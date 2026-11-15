@@ -71,15 +71,77 @@ fn run_with(
     let shadowed = chain::stale_rules(binary, chain, &spec)?;
     let changed = !present || !shadowed.is_empty();
     if changed && !ctx.check_mode {
-        chain::delete_rules(binary, chain, &shadowed, MAX_DELETIONS)?;
+        // The replacement is installed before the stale rules go: `-D`
+        // and `-A` are separate commands, so deleting first and then
+        // failing to append would leave the match unfiltered.
         if !present {
             let mut append: Vec<&str> = vec!["-A", chain];
             append.extend(spec.iter().map(String::as_str));
             chain::exec_rule(binary, &append)?;
         }
+        chain::delete_rules(binary, chain, &shadowed, MAX_DELETIONS)?;
     }
     Ok(json!({"changed": changed, "failed": false, "chain": chain}))
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod replacement_first_tests {
+    use super::super::ExecContext;
+    use super::run_with;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A stub whose append always fails: the lock is held, the target is
+    /// missing, or the command itself errors.
+    fn failing_append_stub(dir: &std::path::Path) -> (String, std::path::PathBuf) {
+        let file = dir.join("rules");
+        std::fs::write(&file, "-p tcp -d 10.0.0.0/8 -j ACCEPT\n").unwrap();
+        let script = dir.join("iptables-stub");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\n  -A) echo 'iptables: Resource temporarily unavailable' >&2; exit 4;;\nesac\nexit 0\n",
+                file = file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (script.to_str().unwrap().to_owned(), file)
+    }
+
+    #[test]
+    fn a_failed_replacement_leaves_the_stale_rule_behind() {
+        // The chain holds only the stale jump and the append fails: the
+        // old rule must still filter while apply reports the failure.
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-iptables-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (binary, file) = failing_append_stub(&dir);
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "destination": "10.0.0.0/8",
+            "jump": "DROP", "state": "present"
+        });
+        let error = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("temporarily unavailable"), "{error}");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "-p tcp -d 10.0.0.0/8 -j ACCEPT\n"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
