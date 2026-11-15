@@ -109,6 +109,66 @@ fn a_failed_account_change_takes_back_the_home_and_the_group() {
 }
 
 #[test]
+fn a_failed_account_change_takes_back_every_parent_the_repair_created() {
+    // An explicit home with several missing components: the repair
+    // creates the whole chain before the account's own change, and the
+    // change can fail after that. The rollback removes every parent
+    // the repair created, leaf first — a failed task must not leave
+    // the newly created directories behind. The missing home is
+    // created beneath its ancestors, so the case stages it under the
+    // operator's own tree.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-rollback-parents-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir_all(&anchor).unwrap();
+    let home = anchor.join("srv/accounts/alice");
+    let parents = [anchor.join("srv"), anchor.join("srv/accounts")];
+    let (uid, gid) = own_identity("parents");
+    let group = format!("ruxel-rollback-group-{}", std::process::id());
+    let mutations = vec![
+        Mutation::GroupAdd(group.clone()),
+        home_mutation(&home, uid, gid),
+        Mutation::UserMod(vec!["-s".to_string(), "/bin/sh".to_string()]),
+    ];
+    let calls = std::rc::Rc::new(RefCell::new(Vec::new()));
+    let error = run("ruxel-rollback-alice", mutations, false, &{
+        let calls = std::rc::Rc::clone(&calls);
+        move |cmd: &str, args: &[&str]| {
+            calls.borrow_mut().push(format!("{cmd} {}", args.join(" ")));
+            if cmd == "usermod" {
+                return Err("injected usermod failure".to_string());
+            }
+            Ok(())
+        }
+    })
+    .expect_err("the account's change must fail the task");
+    assert!(error.contains("injected usermod failure"), "{error}");
+    assert_eq!(
+        calls.borrow().clone(),
+        vec![
+            format!("groupadd {group}"),
+            "usermod -s /bin/sh ruxel-rollback-alice".to_string(),
+            format!("groupdel {group}"),
+        ],
+        "the repair is reversed before the group: {error}"
+    );
+    assert!(
+        !home.exists(),
+        "the directory the repair created is taken back"
+    );
+    for parent in &parents {
+        assert!(
+            !parent.exists(),
+            "every parent the repair created is taken back: {}",
+            parent.display()
+        );
+    }
+    assert!(anchor.is_dir(), "the ancestor that already existed is kept");
+    std::fs::remove_dir_all(&anchor).unwrap();
+}
+
+#[test]
 fn a_failed_repair_of_an_existing_home_restores_its_ownership() {
     // The repair of a home that exists keeps the directory and only
     // changes its owner; the rollback restores the ownership the

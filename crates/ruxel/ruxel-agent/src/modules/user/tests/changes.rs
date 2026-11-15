@@ -68,11 +68,23 @@ fn a_declared_home_directory_is_reconciled() {
     let dir = anchor.join("alice");
     // usermod -d moves the passwd field only: a missing directory is the
     // agent's to create, even when the home field already matches.
-    assert!(super::super::ensure_home(dir.to_str().unwrap(), uid, gid, true).unwrap());
+    assert!(
+        super::super::ensure_home(dir.to_str().unwrap(), uid, gid, true)
+            .unwrap()
+            .0
+    );
     assert!(!dir.exists(), "check mode creates nothing");
-    assert!(super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap());
+    assert!(
+        super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0
+    );
     assert!(dir.is_dir(), "the declared home exists");
-    assert!(!super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap());
+    assert!(
+        !super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0
+    );
     std::fs::remove_dir_all(&anchor).unwrap();
 }
 
