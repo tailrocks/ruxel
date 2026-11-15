@@ -49,8 +49,13 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             // The group's presence under the plan: the plan's own
             // removal takes the group away — check mode runs no
             // `groupdel`, so the live entry is stale — and a step
-            // that declares it present again recreates it.
-            if let Some((_, live_gid)) = entry.filter(|_| !entries::group_removed(name)) {
+            // that declares it present again recreates it. The
+            // recreation retires the removal's tombstone for this
+            // branch the way the account path does.
+            let live = entry.filter(|_| {
+                !entries::group_removed(name) || entries::planned_group(name).is_some()
+            });
+            if let Some((_, live_gid)) = live {
                 // The number the group holds under the plan: the
                 // number an earlier task of the plan gave it — check
                 // mode runs no `groupmod`, so the host's database still
@@ -376,8 +381,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // The account's presence under the plan: the plan's own removal
     // takes the account away — check mode runs no `userdel`, so the
     // live entry is stale — and a step that declares it present again
-    // recreates it, the way the apply does.
-    let entry = if entries::account_removed(name) {
+    // recreates it, the way the apply does. The recreation retires the
+    // removal's tombstone for this branch: a later step that declares
+    // the account present again compares against the recreated entry
+    // instead of attempting another creation, while the number-change
+    // history stays — the allocator draws the number anew.
+    let entry = if entries::account_removed(name) && entries::planned_user(name).is_none() {
         None
     } else {
         entry
@@ -1358,6 +1367,87 @@ mod cat06_batch_b {
         assert!(
             test_hook::take_calls().is_empty(),
             "groupdel never ran: the removal was refused before it"
+        );
+    }
+
+    #[test]
+    fn a_redeclared_group_compares_against_the_recreated_entry() {
+        // The plan removes a group, recreates it and declares it present
+        // again: the recreation retires the removal's tombstone for the
+        // present branch, so the third step compares against the
+        // recreated entry instead of attempting another creation.
+        let check = check_context();
+        let (name, _live) = removable_group();
+        group(&json!({"name": name, "state": "absent"}), &check).expect("the removal must plan");
+        group(&json!({"name": name}), &check).expect("the recreation must plan");
+        let again = group(&json!({"name": name}), &check).expect("the redeclaration must plan");
+        assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
+    }
+
+    #[test]
+    fn apply_redeclaration_after_a_group_recreation_reports_no_change() {
+        // The mirror in apply: the recreation really ran, so the
+        // redeclaration compares against the live entry and reports no
+        // change without running anything.
+        let apply = apply_context();
+        let (name, _live) = removable_group();
+        test_hook::arm(vec![Ok(())]);
+        group(&json!({"name": name, "state": "absent"}), &apply).expect("the removal must run");
+        test_hook::take_calls();
+        test_hook::arm(vec![Ok(())]);
+        group(&json!({"name": name}), &apply).expect("the recreation must run");
+        test_hook::take_calls();
+        // The stand-in stays armed with no results: a regression that
+        // reaches `groupadd` fails the test instead of touching the
+        // host.
+        test_hook::arm(vec![]);
+        let again = group(&json!({"name": name}), &apply).expect("the redeclaration must run");
+        assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
+        assert!(
+            test_hook::take_calls().is_empty(),
+            "groupadd never ran: the entry was compared, not created"
+        );
+    }
+
+    #[test]
+    fn a_redeclared_account_compares_against_the_recreated_entry() {
+        // The account counterpart: remove, recreate, declare present
+        // again. Without the retired tombstone the third step attempts
+        // another `useradd`, failing on the duplicate account after the
+        // earlier stages have already mutated the host.
+        let check = check_context();
+        let (name, _uid, primary) = live_account();
+        let declare = |state: &str| json!({"name": name, "group": primary, "create_home": false, "state": state});
+        // The plan's own removal, recorded the way the removal step
+        // records it; the guards it runs are covered elsewhere.
+        super::plan::note_removed_account(&name);
+        run(&declare("present"), &check).expect("the recreation must plan");
+        let again = run(&declare("present"), &check).expect("the redeclaration must plan");
+        assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
+    }
+
+    #[test]
+    fn apply_redeclaration_after_an_account_recreation_reports_no_change() {
+        // The mirror in apply, with the stand-in absorbing the removal
+        // and the recreation.
+        let apply = apply_context();
+        let (name, _uid, primary) = live_account();
+        let declare = |state: &str| json!({"name": name, "group": primary, "create_home": false, "state": state});
+        // The plan's own removal, recorded the way the removal step
+        // records it; the guards it runs are covered elsewhere.
+        super::plan::note_removed_account(&name);
+        test_hook::arm(vec![Ok(())]);
+        run(&declare("present"), &apply).expect("the recreation must run");
+        test_hook::take_calls();
+        // The stand-in stays armed with no results: a regression that
+        // reaches `useradd` fails the test instead of touching the
+        // host.
+        test_hook::arm(vec![]);
+        let again = run(&declare("present"), &apply).expect("the redeclaration must run");
+        assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
+        assert!(
+            test_hook::take_calls().is_empty(),
+            "useradd never ran: the entry was compared, not created"
         );
     }
 }
