@@ -139,15 +139,14 @@ fn free_gid() -> u64 {
 }
 
 #[test]
-fn an_allocator_created_account_marks_its_number_changed() {
-    // An account the plan creates without a number gets one the
-    // allocator draws at apply: no probe has seen it, so a cached file
-    // the account owned — deleted outside the plan and recreated with a
-    // new UID — must not pass its old numeric probe and keep the file
-    // with whoever claimed the freed number. The plan's record of the
-    // moved number is what tells the cache it is stale — for the
-    // allocator's numbers as much as for the recreated ones. A creation
-    // that states its number instead is fully known and marks nothing.
+fn every_creation_marks_its_number_changed() {
+    // Every creation draws a number no probe has seen yet — the
+    // allocator's where the step states none, the declared one where
+    // it does: an account the host deleted outside the plan and
+    // creates again keeps no number, so a cached file the account
+    // owned must not pass its old numeric probe and stay with whoever
+    // claimed the freed number. The plan's record of the moved number
+    // is what tells the cache it is stale.
     let check = check_context();
     let fresh = format!("ruxel-allocator-user-{}", std::process::id());
     assert!(
@@ -167,6 +166,9 @@ fn an_allocator_created_account_marks_its_number_changed() {
         ),
         "a cached file the recreated account owns resolves stale"
     );
+    // A creation that states its number is identity-changing too: the
+    // number is one no probe has seen, and a file the deleted account
+    // owned still holds the old one.
     let numbered = format!("ruxel-numbered-user-{}", std::process::id());
     run(
         &json!({"name": numbered, "uid": free_uid(), "create_home": false}),
@@ -174,16 +176,24 @@ fn an_allocator_created_account_marks_its_number_changed() {
     )
     .expect("the numbered creation must plan");
     assert!(
-        !user_number_changed(&numbered),
-        "a stated number is known and marks nothing"
+        user_number_changed(&numbered),
+        "a stated number is identity-changing too"
+    );
+    assert!(
+        crate::modules::ownership_cache_stale(
+            "file",
+            &json!({"path": "/srv/data", "owner": numbered})
+        ),
+        "a cached file the numbered recreation owns resolves stale"
     );
 }
 
 #[test]
-fn an_allocator_created_group_marks_its_number_changed() {
-    // The group counterpart: a creation without a number draws it from
-    // the allocator, so the plan's record tells the cache it is stale —
-    // while a creation that states its number marks nothing.
+fn every_group_creation_marks_its_number_changed() {
+    // The group counterpart: every creation draws a number no probe
+    // has seen yet — the allocator's where the step states none, the
+    // declared one where it does — so the plan's record tells the
+    // cache it is stale either way.
     let check = check_context();
     let fresh = format!("ruxel-allocator-group-{}", std::process::id());
     assert!(
@@ -200,8 +210,8 @@ fn an_allocator_created_group_marks_its_number_changed() {
     super::super::group(&json!({"name": numbered, "gid": free_gid()}), &check)
         .expect("the numbered creation must plan");
     assert!(
-        !group_number_changed(&numbered),
-        "a stated number is known and marks nothing"
+        group_number_changed(&numbered),
+        "a stated number is identity-changing too"
     );
 }
 
