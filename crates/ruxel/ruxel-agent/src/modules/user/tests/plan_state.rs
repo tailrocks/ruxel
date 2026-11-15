@@ -116,7 +116,7 @@ fn a_rollback_moves_the_doomed_account_off_a_reused_group() {
     let group_present = std::cell::RefCell::new(true);
     take_back_account(
         "alice",
-        Some(&reused),
+        PrivateGroup::Reused(&reused),
         &|account| {
             calls.borrow_mut().push(format!("usermod -g 0 {account}"));
             *primary.borrow_mut() = false;
@@ -127,6 +127,10 @@ fn a_rollback_moves_the_doomed_account_off_a_reused_group() {
             if *primary.borrow() {
                 *group_present.borrow_mut() = false;
             }
+            Ok(())
+        },
+        &|group| {
+            calls.borrow_mut().push(format!("groupdel {group}"));
             Ok(())
         },
         &|_name| Ok(*group_present.borrow()),
@@ -149,27 +153,54 @@ fn a_rollback_moves_the_doomed_account_off_a_reused_group() {
 #[test]
 fn a_rollback_may_take_the_group_the_step_created() {
     // Where the host held no same-name group `useradd -U` created it,
-    // so it is the step's own: the rollback takes it with the account
-    // and moves nothing off first.
+    // so it is the step's own: the rollback moves the doomed account
+    // off it first — `userdel` removes the same-name group only where
+    // it is the account's primary group — deletes the account, deletes
+    // the created group explicitly, and verifies it is gone. The
+    // explicit `groupdel` removes it on every host policy: a host that
+    // keeps empty groups (`USERGROUPS_ENAB=no`) would otherwise leave
+    // the created group and its gid behind for a retry to silently
+    // reuse.
     let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    // The simulated host: `userdel` takes the same-name group only
+    // while it is the account's primary one.
+    let primary = std::cell::RefCell::new(true);
+    let group_present = std::cell::RefCell::new(true);
     take_back_account(
         "alice",
-        None,
+        PrivateGroup::Created,
         &|account| {
             calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            *primary.borrow_mut() = false;
             Ok(())
         },
         &|account| {
             calls.borrow_mut().push(format!("userdel {account}"));
+            if *primary.borrow() {
+                *group_present.borrow_mut() = false;
+            }
             Ok(())
         },
-        &|_name| Ok(false),
+        &|group| {
+            calls.borrow_mut().push(format!("groupdel {group}"));
+            *group_present.borrow_mut() = false;
+            Ok(())
+        },
+        &|_name| Ok(*group_present.borrow()),
     )
     .expect("the rollback must succeed");
     assert_eq!(
         calls.borrow().clone(),
-        vec!["userdel alice".to_string()],
-        "a group the step created goes with the account; nothing moves off first"
+        vec![
+            "usermod -g 0 alice".to_string(),
+            "userdel alice".to_string(),
+            "groupdel alice".to_string()
+        ],
+        "the created group is moved off, deleted with the account, and removed explicitly"
+    );
+    assert!(
+        !*group_present.borrow(),
+        "the group the step created is gone with the account"
     );
 }
 
@@ -184,13 +215,17 @@ fn a_rollback_reports_a_reused_group_userdel_took() {
     let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     let error = take_back_account(
         "alice",
-        Some(&reused),
+        PrivateGroup::Reused(&reused),
         &|account| {
             calls.borrow_mut().push(format!("usermod -g 0 {account}"));
             Ok(())
         },
         &|account| {
             calls.borrow_mut().push(format!("userdel {account}"));
+            Ok(())
+        },
+        &|group| {
+            calls.borrow_mut().push(format!("groupdel {group}"));
             Ok(())
         },
         &|_name| Ok(false),
@@ -207,6 +242,90 @@ fn a_rollback_reports_a_reused_group_userdel_took() {
             "userdel alice".to_string()
         ],
         "nothing recreates the group behind the error: {calls:?}"
+    );
+}
+
+#[test]
+fn a_rollback_removes_the_created_group_where_userdel_keeps_it() {
+    // A host that keeps empty groups (`USERGROUPS_ENAB=no`): `userdel`
+    // leaves the operation-created group behind, so the rollback deletes
+    // it explicitly after moving the doomed account off it — a retry
+    // must not silently reuse the partial state. The absence afterwards
+    // is verified.
+    let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    // The simulated host: a `USERGROUPS_ENAB=no` host whose `userdel`
+    // never takes the same-name group.
+    let group_present = std::cell::RefCell::new(true);
+    take_back_account(
+        "alice",
+        PrivateGroup::Created,
+        &|account| {
+            calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            Ok(())
+        },
+        &|account| {
+            calls.borrow_mut().push(format!("userdel {account}"));
+            Ok(())
+        },
+        &|group| {
+            calls.borrow_mut().push(format!("groupdel {group}"));
+            *group_present.borrow_mut() = false;
+            Ok(())
+        },
+        &|_name| Ok(*group_present.borrow()),
+    )
+    .expect("the rollback must take the created group back");
+    assert_eq!(
+        calls.borrow().clone(),
+        vec![
+            "usermod -g 0 alice".to_string(),
+            "userdel alice".to_string(),
+            "groupdel alice".to_string()
+        ],
+        "the doomed account moves off first and the kept group is deleted explicitly"
+    );
+    assert!(
+        !*group_present.borrow(),
+        "no partial state survives for a retry to reuse"
+    );
+}
+
+#[test]
+fn a_rollback_reports_a_created_group_left_behind() {
+    // `groupdel` reported success but the group survives: the rollback
+    // says so loudly instead of handing a retry the partial state to
+    // silently reuse.
+    let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let error = take_back_account(
+        "alice",
+        PrivateGroup::Created,
+        &|account| {
+            calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            Ok(())
+        },
+        &|account| {
+            calls.borrow_mut().push(format!("userdel {account}"));
+            Ok(())
+        },
+        &|group| {
+            calls.borrow_mut().push(format!("groupdel {group}"));
+            Ok(())
+        },
+        &|_name| Ok(true),
+    )
+    .expect_err("a group left behind must fail loudly");
+    assert!(
+        error.contains("alice"),
+        "the error names the group the host kept: {error}"
+    );
+    assert_eq!(
+        calls.borrow().clone(),
+        vec![
+            "usermod -g 0 alice".to_string(),
+            "userdel alice".to_string(),
+            "groupdel alice".to_string()
+        ],
+        "nothing proceeds past the group left behind: {calls:?}"
     );
 }
 
