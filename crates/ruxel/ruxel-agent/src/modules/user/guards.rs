@@ -152,22 +152,9 @@ pub(super) fn primary_group_holder_from(passwd: &str, gid: u64, group: &str) -> 
     None
 }
 
-/// The accounts that hold `gid` as their primary group, apart from
-/// `name` itself: the account that leaves the group holds it no
-/// longer. The plan's own record decides — check mode runs no
-/// `usermod`, so the host's database still shows the old numbers, and
-/// an account the plan moved off the group holds it no longer either.
-pub(super) fn other_primary_group_holders(
-    gid: u64,
-    group: &str,
-    name: &str,
-) -> Result<Vec<String>, String> {
-    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    Ok(other_primary_group_holders_from(&passwd, gid, group, name))
-}
-
-/// The passwd counterpart of [`other_primary_group_holders`], over
-/// canned content.
+/// The passwd counterpart of the primary-holder scan, over canned
+/// content: the accounts that hold `gid` as their primary group, apart
+/// from `name` itself.
 pub(super) fn other_primary_group_holders_from(
     passwd: &str,
     gid: u64,
@@ -186,16 +173,21 @@ pub(super) fn other_primary_group_holders_from(
         }
         // The account's primary group under the plan: the plan's own
         // record where a task of the plan gave it one, and the live
-        // entry otherwise.
+        // entry otherwise — the number the account holds under the plan
+        // is the new number of the group the plan renumbered, and the
+        // live one where the plan renumbered no group: the apply moves
+        // the group first (`groupmod -g`), so the account holds the new
+        // number while the host's passwd entry still shows the old one.
         let primary = if let Some(planned) = super::plan::primary(f[0]) {
             planned
         } else {
             let Ok(live) = f[3].parse::<u64>() else {
                 continue;
             };
+            let planned_gid = super::plan::renumbered_gid(live).unwrap_or(live);
             super::plan::PlannedPrimary {
                 name: group.to_string(),
-                gid: Some(live),
+                gid: Some(planned_gid),
             }
         };
         if primary.holds(gid, group) {
@@ -214,15 +206,75 @@ pub(super) fn other_primary_group_holders_from(
 /// `groupdel` refuses to delete one without `--force`.
 pub(super) fn private_group_emptied(name: &str, gid: Option<u64>) -> Result<bool, String> {
     let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    if !super::entries::group_members_from(&groups, name).is_empty() {
-        return Ok(false);
+    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    Ok(private_group_emptied_from(&groups, &passwd, name, gid))
+}
+
+/// The canned-content counterpart of [`private_group_emptied`]: the
+/// group is empty once the account leaves it — no member holds it
+/// under the plan and no account holds it as its primary group under
+/// the plan.
+pub(super) fn private_group_emptied_from(
+    groups: &str,
+    passwd: &str,
+    name: &str,
+    gid: Option<u64>,
+) -> bool {
+    if !private_group_members_from(groups, passwd, name).is_empty() {
+        return false;
     }
     let Some(gid) = gid else {
         // The group is not on the host and the plan knows no number
         // for it: the plan's own group, empty by construction.
-        return Ok(true);
+        return true;
     };
-    Ok(other_primary_group_holders(gid, name, name)?.is_empty())
+    other_primary_group_holders_from(passwd, gid, name, name).is_empty()
+}
+
+/// The members the group `name` carries under the plan: the live
+/// members the plan has not moved away, and the live accounts the plan
+/// has moved onto the group. Check mode runs no `usermod`, so the
+/// host's group database still lists the set the plan has already left
+/// behind — an account an earlier task of the plan added to the group
+/// is a member the live file does not show, and one the plan moved off
+/// the group (or took away with the account) is a member the live file
+/// still shows.
+pub(super) fn private_group_members_from(groups: &str, passwd: &str, name: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    for member in super::entries::group_members_from(groups, name) {
+        // An account the plan has removed holds no group: check mode
+        // runs no `userdel`, so the host's group file still lists it.
+        if super::entries::account_removed(&member) {
+            continue;
+        }
+        // The member's supplementary set under the plan: the plan's own
+        // record where a task of the plan gave the account one, and the
+        // live set otherwise.
+        match super::plan::supplementary(&member) {
+            Some(set) if !set.iter().any(|group| group == name) => {}
+            _ => members.push(member),
+        }
+    }
+    // The live accounts the plan moved onto the group: the host's group
+    // file does not list them, so the passwd scan finds them through
+    // the plan's own record.
+    for line in passwd.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() < 4 || f[0] == name {
+            continue;
+        }
+        if super::entries::account_removed(f[0]) {
+            continue;
+        }
+        if members.iter().any(|member| member == f[0]) {
+            continue;
+        }
+        if super::plan::supplementary(f[0]).is_some_and(|set| set.iter().any(|group| group == name))
+        {
+            members.push(f[0].to_string());
+        }
+    }
+    members
 }
 
 /// The account that holds `uid` on the host and that the plan has not
@@ -386,5 +438,88 @@ pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, 
             .map_err(|_| format!("group {group:?} gid {gid} does not fit")),
         None if check_mode && super::entries::planned_group(group).is_some() => Ok(None),
         None => Err(format!("group {group:?} not found")),
+    }
+}
+
+/// The emptiness scan's plan: the holder a renumbering moves and the
+/// member the plan adds or takes away, over canned content — the host's
+/// databases still show the numbers and the sets the plan has already
+/// left behind while check mode runs.
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn other_primary_holders_follow_a_renumbered_group() {
+        // Alice's private group lives at gid 1000 and Bob holds it as
+        // his primary group; the plan renumbers the group to 2000. The
+        // apply moves the group first (`groupmod -g`), which gives every
+        // holder the new number, so under the plan Bob holds 2000 and
+        // nothing holds 1000 — while the host's passwd entry still shows
+        // the old number.
+        let passwd = "alice:x:1001:1000::/home/alice:/bin/sh\n\
+                      bob:x:1002:1000::/home/bob:/bin/sh\n";
+        assert_eq!(
+            super::other_primary_group_holders_from(passwd, 1000, "alice", "alice"),
+            vec!["bob".to_string()],
+            "before the plan Bob holds the live number"
+        );
+        super::super::plan::note_renumbered_group("alice", 1000, 2000);
+        assert!(
+            super::other_primary_group_holders_from(passwd, 1000, "alice", "alice").is_empty(),
+            "the renumbered number is held by no one under the plan"
+        );
+        assert_eq!(
+            super::other_primary_group_holders_from(passwd, 2000, "alice", "alice"),
+            vec!["bob".to_string()],
+            "Bob holds the new number under the plan"
+        );
+    }
+
+    #[test]
+    fn private_group_emptiness_follows_planned_supplementary_membership() {
+        // Alice's group is empty on the host: no live member lists it
+        // and no other account holds its number as its primary group.
+        let groups = "alice:x:1000:\n";
+        let passwd = "alice:x:1001:1000::/home/alice:/bin/sh\n\
+                      bob:x:1002:1003::/home/bob:/bin/sh\n";
+        assert!(
+            super::private_group_emptied_from(groups, passwd, "alice", Some(1000)),
+            "the group no one holds is empty"
+        );
+        // An earlier task of the plan adds Bob to the group: check mode
+        // runs no `usermod`, so the host's group file still shows no
+        // member — but the apply adds Bob first and `userdel` preserves
+        // the group, so the scan must not report it empty.
+        super::super::plan::note_supplementary("bob", vec!["alice".to_string()]);
+        assert!(
+            !super::private_group_emptied_from(groups, passwd, "alice", Some(1000)),
+            "the member the plan added keeps the group"
+        );
+        // The plan moves Bob off the group again: the live file is
+        // unchanged either way, and the scan follows the plan's record.
+        super::super::plan::note_supplementary("bob", Vec::new());
+        assert!(
+            super::private_group_emptied_from(groups, passwd, "alice", Some(1000)),
+            "the member the plan moved away frees the group"
+        );
+    }
+
+    #[test]
+    fn private_group_emptiness_skips_the_members_the_plan_removed() {
+        // Bob is the group's live member, and the plan takes his account
+        // away: check mode runs no `userdel`, so the host's group file
+        // still lists him — but the apply removes him first and the
+        // empty group goes with Alice.
+        let groups = "alice:x:1000:bob\n";
+        let passwd = "alice:x:1001:1000::/home/alice:/bin/sh\n\
+                      bob:x:1002:1003::/home/bob:/bin/sh\n";
+        assert!(
+            !super::private_group_emptied_from(groups, passwd, "alice", Some(1000)),
+            "the live member keeps the group"
+        );
+        super::super::entries::note_removed_account("bob");
+        assert!(
+            super::private_group_emptied_from(groups, passwd, "alice", Some(1000)),
+            "the member the plan removed holds the group no longer"
+        );
     }
 }
