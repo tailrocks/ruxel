@@ -292,6 +292,14 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-uid-across-login-users.pkl",
     "valid/linux-user-uid-login-users-same-account.pkl",
     "valid/linux-sysctl-literal-dot-apart.pkl",
+    "invalid/linux-user-uid-history-reset-after-recreation.pkl",
+    "valid/linux-user-uid-history-reset-reconciled.pkl",
+    "valid/linux-file-owner-renumbered-same-stage.pkl",
+    "invalid/linux-file-owner-renumbered-same-stage-order.pkl",
+    "invalid/linux-sysctl-shadow-same-stage.pkl",
+    "valid/linux-sysctl-shadow-same-stage-legacy.pkl",
+    "valid/linux-user-shell-obsolete-provider-replaced.pkl",
+    "invalid/linux-user-shell-effective-provider-not-executable.pkl",
 ];
 
 /// The official `pkl` binary.
