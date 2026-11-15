@@ -1,0 +1,26 @@
+// expect: is a file, so /etc/sysctl.d/90-ruxel.conf/child cannot be inside it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The ancestor form fails in the opposite order: the earlier stage's
+// file inside the sysctl's path turns the persistence path into a
+// directory, so the later stage's sysctl task fails on it. A file leaves
+// no room for anything inside it whichever stage runs first, so the
+// cross-stage leaf/descendant check refuses the workflow either way.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d/90-ruxel.conf/child"; content = "x\n" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+}
