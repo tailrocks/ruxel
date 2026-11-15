@@ -235,6 +235,53 @@ pub(super) fn gid_holder_in_use(gid: u64, name: &str) -> Result<Option<String>, 
     Ok(gid_holder_in_use_from(&groups, gid, name))
 }
 
+/// Whether the host deletes an account's empty same-name group with
+/// the account: `USERGROUPS_ENAB` in `/etc/login.defs`. A host that
+/// keeps the empty group keeps it, so check mode must predict the group
+/// retained — otherwise a later `Group state=absent` is treated as a
+/// no-op in check mode while apply re-inspects the retained group and
+/// runs `groupdel`. An unreadable policy fails closed: the group is
+/// predicted retained.
+pub(super) fn usergroups_enabled() -> bool {
+    match std::fs::read_to_string("/etc/login.defs") {
+        Ok(content) => usergroups_enabled_from(&content),
+        Err(_) => false,
+    }
+}
+
+/// The canned-content counterpart of [`usergroups_enabled`]: the last
+/// uncommented `USERGROUPS_ENAB` line wins, `yes` enables and anything
+/// else (including absent) disables — fail closed.
+pub(super) fn usergroups_enabled_from(content: &str) -> bool {
+    let mut enabled = false;
+    for line in content.lines() {
+        let stripped = line.split('#').next().unwrap_or("").trim();
+        if stripped.is_empty() {
+            continue;
+        }
+        let mut parts = stripped.split_whitespace();
+        let (Some(key), Some(value)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if key == "USERGROUPS_ENAB" {
+            enabled = value.eq_ignore_ascii_case("yes");
+        }
+    }
+    enabled
+}
+
+/// Whether check mode predicts the removal takes the private group: the
+/// group is empty once the account leaves it, and the host policy
+/// deletes one (`USERGROUPS_ENAB`). The canned policy string drives the
+/// tests; an unreadable host policy fails closed through
+/// [`usergroups_enabled`].
+pub(super) fn check_predicts_private_group_removal(
+    emptied: bool,
+    usergroups_enabled: bool,
+) -> bool {
+    emptied && usergroups_enabled
+}
+
 /// The group counterpart of [`uid_holder_in_use`], over canned content.
 /// Every group that carries the number is scanned, for the same reason
 /// the account scan scans every holder.
