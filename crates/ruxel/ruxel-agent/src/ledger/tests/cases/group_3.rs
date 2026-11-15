@@ -198,6 +198,37 @@ fn old_schema_ledger_loads_empty() {
 }
 
 #[test]
+fn the_sysctl_live_probe_keeps_a_no_break_space() {
+    // `str::trim` strips a no-break space while the comparison keeps
+    // it: the record then describes a value the host never held, and
+    // the verify weighs another one. The probe trims the syntax blanks
+    // only — the same four the comparison reads.
+    use super::super::super::probe::trim_live_value;
+    assert_eq!(trim_live_value("nb\u{A0}"), "nb\u{A0}");
+    assert_eq!(trim_live_value("\u{A0}nb"), "\u{A0}nb");
+    assert_eq!(trim_live_value(" \t\u{B}1\u{C}\t "), "1");
+}
+
+#[test]
+fn the_sysctl_live_probe_records_what_the_verify_weighs() {
+    // Record and verify compare through the same trim, so what the
+    // probe pins is what the verify weighs: the NBSP value verifies,
+    // and drift to the bare spelling misses the cache.
+    use super::super::super::probe::trim_live_value;
+    let recorded = trim_live_value("nb\u{A0}");
+    assert_eq!(
+        crate::modules::trimmed_value(recorded),
+        "nb\u{A0}",
+        "the recorded value keeps the no-break space"
+    );
+    assert_ne!(
+        crate::modules::trimmed_value(recorded),
+        crate::modules::trimmed_value("nb"),
+        "drift to the bare spelling misses the cache"
+    );
+}
+
+#[test]
 fn the_sysctl_live_verification_trims_only_the_outer_blanks() {
     // The syntax-level blanks around a value are procps's, the ones
     // inside it are the value's.
