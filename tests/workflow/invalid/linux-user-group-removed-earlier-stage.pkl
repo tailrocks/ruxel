@@ -1,0 +1,25 @@
+// expect: needs the group staff
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An earlier stage removes the group and a later stage declares an
+// account that keeps it: `useradd` and `usermod` refuse a group that is
+// not there, so the apply fails after the earlier stage has already run
+// `groupdel`.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "staff"; gid = 1501; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; group = "staff" }
+    }
+  }
+}

@@ -124,6 +124,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + sysctlBootOrder(_stages, _indexes)
     + sysctlOwnersAcrossStages(_stages, _indexes)
     + groupRemovalsAcrossStages(_stages, _indexes)
+    + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
@@ -1170,10 +1171,17 @@ const function removedHomes(ix: StageIndex): List<String> =
 const function parentOf(p: String): String =
   if (p.lastIndexOf("/") <= 0) "/" else p.substring(0, p.lastIndexOf("/"))
 
-/// The directory `d` is the one the path `p` needs: it lies at or below
-/// the removed home `h` and at or above the parent of `p`.
+/// The directory `d` is the one the path `p` needs: it is the parent of
+/// `p` itself or lies inside it, so the operation that creates `d`
+/// creates the whole parent path of `p`. A `d` above the parent does
+/// not: the directory operation creates the path it names and the
+/// parents of that path, and the account's task creates the home it
+/// declares, so a provider at the home root creates the home root
+/// only — the deeper parent a file writes into is still absent when the
+/// file task opens it. The directory lies at or below the removed home
+/// `h`, whose removal is the conflict at hand.
 const function covers(h: String, p: String, d: String): Boolean =
-  (d == h || d.startsWith(h + "/")) && (parentOf(p) == d || parentOf(p).startsWith(d + "/"))
+  (d == h || d.startsWith(h + "/")) && (d == parentOf(p) || d.startsWith(parentOf(p) + "/"))
 
 /// A removal with `removeHome` deletes the home directory of an earlier
 /// stage, so a later stage that manages a path inside it writes into a
@@ -1208,16 +1216,29 @@ function removedPathRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
     let (s = _indexes[m].steps[j])
     if (!(s is linux.User) || s.state != "absent" || !s.removeHome) List()
     else (if (s.home == null) List() else List(s.home))
-      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, "home directory", "deletes the directory and everything in it"))
-      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, "mail spool", "removes the spool and everything in it")))
+      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, s.user, "home directory", "deletes the directory and everything in it"))
+      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, s.user, "mail spool", "removes the spool and everything in it")))
 
 /// The paths an earlier stage manages inside the directory a later
-/// stage's removal takes with it, and the refusal for them.
-function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, what: String, how: String): List<String> =
+/// stage's removal takes with it, and the refusal for them. The exact
+/// path counts too: the removal deletes the directory the earlier stage
+/// manages, so the run ends with a path gone that a stage declared —
+/// although both stages report success. The account's own steps are
+/// the exception: the home and the mail spool are created with the
+/// account and deleted with it, which is the lifecycle the removal is
+/// there for.
+function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, account: String, what: String, how: String): List<String> =
   positions(_indexes[n].steps).flatMap((i) ->
-    let (inside = paths(_indexes[n].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    let (s = _indexes[n].steps[i])
+    let (inside = paths(s).filter((p) -> (p == h || p.startsWith(h + "/")) && !accountOwnsPath(s, account)))
     if (inside.isEmpty) List()
-    else List("'\(name(_indexes[n].steps[i]))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
+    else List("'\(name(s))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
+
+/// Whether the step is the account the removal removes: the account's
+/// own footprint — its home and its mail spool — belongs to it, and the
+/// removal takes it with the account.
+const function accountOwnsPath(s: core.Step, account: String): Boolean =
+  s is linux.User && s.user == account && s.state == "present"
 
 /// The home is there again before the later step: a step between the
 /// removal and it declares a directory that covers the path's parent —
@@ -1260,12 +1281,57 @@ function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageI
 /// is not the one the identity carried on a host both stages share, so
 /// the file keeps the old one there. The history is host-scoped: a
 /// declaration on a disjoint host is another machine's identity and
-/// must not stand in for the one the file lives on.
+/// must not stand in for the one the file lives on. A host where no
+/// stage declares the number is a host whose number is unknown: the
+/// identity lives there with a number the workflow cannot read, and a
+/// later stage that gives it another number renumbers it there too,
+/// unless the ownership is reconciled after the renumbering.
 function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
   let (after = identityNumberAt(_indexes[k], p))
   if (after == null) List()
-  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int && identityNumberBeforeOn(_stages, _indexes, k, p, h) != after)) List()
-  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> renumbersIdentity(_stages, _indexes, m, i, k, p, h, after))) List()
+  else if (sharedHosts(_stages[m], _stages[k]).any((h) -> knownRenumbering(_stages, _indexes, k, p, h, after))) List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); no stage declares the number it carried, so the renumbering may leave it with another owner: declare the file's \(p[1]) again after the renumbering")
+
+/// Whether the identity `p` carried another number on the host `h`
+/// before the stage `k`: the number the last stage before it that runs
+/// on the host declares, and it differs from the one the stage `k`
+/// declares.
+function knownRenumbering(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host, after: Int): Boolean =
+  identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int && identityNumberBeforeOn(_stages, _indexes, k, p, h) != after
+
+/// Whether the identity `p` is renumbered on the host `h` by the stage
+/// `k`: the number it carried there is another one, or it is unknown —
+/// the identity lives on the host with a number no stage declares, so
+/// the renumbering may reach the files it owns. An unknown number is
+/// no renumbering when the ownership is reconciled after the stage `k`:
+/// the step that names it declares it again, so the number it carries
+/// then is the one written.
+function renumbersIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>, h: core.Host, after: Int): Boolean =
+  if (identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int)
+    identityNumberBeforeOn(_stages, _indexes, k, p, h) != after
+  else !reconcilesOwnership(_stages, _indexes, m, i, k, p, h)
+
+/// The ownership the step at `m`, `i` names is reconciled after the
+/// renumbering on the host `h`: a later step declares it again, so the
+/// number the identity carries after the renumbering is the one
+/// written. A file is written by the file task, which resolves the
+/// owner by name and gives the file the number the name carries then; a
+/// managed home is repaired by the account's task, which gives the home
+/// the number its group carries then.
+function reconcilesOwnership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>, h: core.Host): Boolean =
+  let (s = _indexes[m].steps[i])
+  positions(_indexes).filter((k2) -> k2 > k && stageRunsOn(_stages[k2], h)).any((k2) ->
+    positions(_indexes[k2].steps).any((j) ->
+      let (t = _indexes[k2].steps[j])
+      if (s is core.File)
+        t is core.File && paths(t).contains(s.path) && declaresIdentity(t, p)
+      else s is linux.User && t is linux.User && t.state == "present" && t.user == s.user))
+
+/// Whether the step declares the identity `p` by name.
+const function declaresIdentity(s: core.Step, p: List<String>): Boolean =
+  (p[1] == "owner" && s is core.File && s.owner == p[0])
+    || (p[1] == "group" && s is core.File && s.group == p[0])
 
 /// The step of the stage that declares the identity `p` with a number.
 function identityNumberStepAt(ix: StageIndex, p: List<String>): Int =
@@ -1467,6 +1533,46 @@ const function leavesPrimary(s: core.Step, account: String, group: String): Bool
 /// has.
 const function leavesSupplementary(s: core.Step, account: String, group: String): Boolean =
   s is linux.User && s.user == account && !primaryGroup(s).contains(group) && s.groups != null && !s.groups.toList().contains(group)
+
+/// An account needs the groups it names, and a group an earlier stage
+/// removed is gone by the time the later stage's account task runs:
+/// `useradd` and `usermod` refuse a group that is not there, so the
+/// apply fails after the earlier stage has already run `groupdel`. The
+/// stage-local rule sees only its own stage; across stages the
+/// removal and the account live in different stages. The comparison is
+/// per host pair, as the other cross-stage rules' is, and a stage
+/// between them that declares the group present again lifts the
+/// refusal.
+function groupNeedsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (u = _indexes[m].steps[i])
+    if (!(u is linux.User) || u.state != "present") List()
+    else requiredGroups(u).flatMap((g) -> positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+      .flatMap((n) -> removedGroupRels(_stages, _indexes, n, m, i, g)))))
+
+/// The refusal for an account that needs a group an earlier stage
+/// removed, and the stages that remove the group: a group step that
+/// removes it, or the removal of the account whose same-name group it
+/// is (`userdel` takes that group with the account).
+function removedGroupRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<String> =
+  positions(_indexes[n].steps).filter((j) -> removesGroup(_indexes[n].steps[j], group))
+    .filter((j) -> sharedHosts(_stages[n], _stages[m]).any((h) -> !recreatesGroup(_stages, _indexes, n, m, group, h)))
+    .map((j) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" needs the group \(group), which '\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
+
+/// Whether the step removes the group `group`: a group step that
+/// removes it, or the removal of the account whose same-name group it
+/// is — `userdel` takes that group with the account where it is the
+/// account's primary one.
+const function removesGroup(s: core.Step, group: String): Boolean =
+  (s is linux.Group && s.name == group && s.state == "absent")
+    || (s is linux.User && s.user == group && s.state == "absent" && s.group == null)
+
+/// The group is there again before the later stage: a stage between
+/// the removal and it declares the group present, on the host they
+/// share.
+function recreatesGroup(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, group: String, h: core.Host): Boolean =
+  positions(_indexes).filter((k) -> k > n && k <= m)
+    .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], List(group, "group")))
 
 /// A managed home is a directory: a whole-file owner at exactly the
 /// same path in another stage is a type conflict whichever side runs
