@@ -775,3 +775,77 @@ mod probe_handle_tests {
         std::fs::remove_dir_all(&dir).expect("operation succeeds");
     }
 }
+
+#[cfg(test)]
+mod stale_plan_tests {
+    //! The dropped task's retained record must not authorize the plan's
+    //! own shadow or override: both preflights consult the current
+    //! plan's declarations, never the whole ledger's scan. The first
+    //! plan manages the key in one file and the second plan drops that
+    //! task for the same key in another file; the leftover assignment
+    //! is unmanaged under the plan's own set and both preflights refuse.
+
+    use super::boot;
+
+    const KEY: &str = "net.ipv4.ip_forward";
+    const ETC: &str = "/etc/sysctl.d/50-ruxel.conf";
+    const USR: &str = "/usr/lib/sysctl.d/50-ruxel.conf";
+    const OLD: &str = "/etc/sysctl.d/99-old.conf";
+    const NEW: &str = "/etc/sysctl.d/10-new.conf";
+
+    /// The whole-ledger scan after the workflow drops the `/etc` tasks:
+    /// the retained records still declare the dropped files, with the
+    /// values the previous apply wrote there.
+    fn stale_managed() -> Vec<(String, String, String)> {
+        vec![
+            (ETC.to_string(), KEY.to_string(), "1".to_string()),
+            (OLD.to_string(), KEY.to_string(), "0".to_string()),
+            (USR.to_string(), KEY.to_string(), "1".to_string()),
+        ]
+    }
+
+    /// The second plan's own declarations: the dropped tasks are gone,
+    /// only the entries the plan still delivers authorize a shadow.
+    fn plan_managed() -> Vec<(String, String, String)> {
+        vec![(USR.to_string(), KEY.to_string(), "1".to_string())]
+    }
+
+    #[test]
+    fn a_dropped_tasks_shadow_is_refused_under_the_plans_own_set() {
+        // The same basename in `/etc` shadows the `/usr/lib` target at
+        // boot. The stale set authorizes it — the retained record
+        // declares the shadowing file — while the plan's own set leaves
+        // the leftover unmanaged and the shadow refuses.
+        assert!(
+            super::declared_shadow(ETC, KEY, &stale_managed()),
+            "the stale set authorizes the shadow: the hole this pins"
+        );
+        assert!(
+            !super::declared_shadow(ETC, KEY, &plan_managed()),
+            "the plan dropped the /etc task, so its shadow refuses"
+        );
+    }
+
+    #[test]
+    fn a_dropped_tasks_override_is_refused_under_the_plans_own_set() {
+        // The same stale set in the override direction: the leftover
+        // assignment in the later-loading file is a declared transition
+        // under the retained record and an unmanaged override under the
+        // plan's own set.
+        let newcomer = vec![(NEW.to_string(), KEY.to_string(), "1".to_string())];
+        let host = vec![(
+            std::path::PathBuf::from(OLD),
+            b"net.ipv4.ip_forward=0\n".to_vec(),
+        )];
+        assert_eq!(
+            boot::boot_override(NEW, KEY, "1", &host, &stale_managed()),
+            None,
+            "the stale set treats the leftover as a declared transition"
+        );
+        assert_eq!(
+            boot::boot_override(NEW, KEY, "1", &host, &newcomer),
+            Some((OLD.to_string(), "0".to_string())),
+            "the leftover assignment is an unmanaged override again"
+        );
+    }
+}
