@@ -161,12 +161,12 @@ pub async fn run(
     let mut shutdown_errors = Vec::new();
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
-        // A filtered run omits tasks the workflow keeps: its end is no
-        // verdict on the records of the tasks it never sent.
-        let filtered = match &result {
-            Ok(recap) => recap.get(&host).is_some_and(|total| total.filtered),
-            Err(_) => false,
-        };
+        // A filtered or aborted run is no verdict on the records of the
+        // tasks it never sent, so its end must expire nothing: tag
+        // selection omits tasks the workflow keeps, and a
+        // controller-side failure stops the session before its tasks
+        // are all sent.
+        let filtered = session_incomplete(&result, &host);
         match Arc::try_unwrap(connection) {
             Err(_) => {
                 shutdown_errors.push((host, anyhow::anyhow!("agent connection still in use")));
@@ -225,3 +225,17 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests;
+
+/// Whether the session's end is no verdict on the records of the tasks
+/// it never sent, so the agent must not expire them: tag selection
+/// omitted tasks the workflow keeps (`filtered`), the controller
+/// stopped the session before its tasks were all sent (`aborted`), or
+/// the run itself failed before the shutdown could read a recap.
+fn session_incomplete(result: &Result<BTreeMap<String, Recap>>, host: &str) -> bool {
+    match result {
+        Ok(recap) => recap
+            .get(host)
+            .is_some_and(|total| total.filtered || total.aborted),
+        Err(_) => true,
+    }
+}

@@ -332,6 +332,10 @@ pub async fn run<B: Backend>(
             recap.ignored += runner.recap.ignored;
             recap.filtered |= runner.filtered;
             if let Err(error) = execution {
+                // The session stopped before its tasks were all sent:
+                // the agent never receives the rest and never calls
+                // `abort_plan`, so the shutdown must not prune them.
+                recap.aborted = true;
                 let error = if layer.control_sensitive || runner.backend.conservative_sensitive() {
                     anyhow::anyhow!("sensitive execution failed")
                 } else {
