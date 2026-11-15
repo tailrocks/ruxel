@@ -4,6 +4,7 @@
 //! override's later-assignment refusal.
 
 mod boot_byte_values;
+mod boot_cache;
 mod boot_names;
 mod boot_override;
 mod boot_override_canonical;
