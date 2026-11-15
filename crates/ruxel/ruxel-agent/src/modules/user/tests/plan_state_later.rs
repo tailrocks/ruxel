@@ -87,6 +87,55 @@ fn a_later_step_compares_the_comment_against_the_planned_state() {
 }
 
 #[test]
+fn a_refused_identity_change_records_no_plan_state() {
+    // A primary-group change for the live uid-0 account: the identity
+    // guard refuses it, and the refusal must record no plan state.
+    // Check mode runs no `usermod`, so a recorded group would stand in
+    // for the host while later tasks resolve against it — the holder
+    // scan a later group-removal consults would then miss the account
+    // still holding its old primary group and report it removable,
+    // while the apply keeps its holder and refuses it.
+    begin_plan();
+    let passwd = std::fs::read_to_string("/etc/passwd").expect("the passwd database reads");
+    let staged = passwd.lines().find_map(|line| {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() < 7 || f[2] != "0" {
+            return None;
+        }
+        Some((f[0].to_string(), f[3].parse::<u64>().ok()?))
+    });
+    let Some((superuser, live_gid)) = staged else {
+        // No uid-0 account in the database: the guard has nothing to refuse.
+        return;
+    };
+    let Some(live_primary) =
+        super::super::guards::primary_group_name(live_gid).expect("the group database reads")
+    else {
+        // The superuser's primary group resolves nowhere: the holder
+        // scan below has nothing to consult.
+        return;
+    };
+    let other = live_group().expect("a live group on the host");
+    let ctx = check_context();
+    let error = run(&json!({"name": superuser, "group": other}), &ctx)
+        .expect_err("the identity guard must refuse the superuser's move");
+    assert!(error.contains("uid 0"), "{error}");
+    assert!(
+        super::super::plan::primary(&superuser).is_none(),
+        "the refused change records no primary group"
+    );
+    // The holder scan a later group-removal consults still sees the
+    // account on its old primary group.
+    assert_eq!(
+        super::super::holders::primary_group_holder(live_gid, &live_primary)
+            .expect("the holder scan reads"),
+        Some(superuser),
+        "the refused account still holds its old primary group"
+    );
+    begin_plan();
+}
+
+#[test]
 fn a_recreated_account_is_planned_as_a_creation() {
     // The plan takes the account away and a later step declares it
     // present again: check mode runs no `userdel`, so the live passwd
