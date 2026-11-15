@@ -1,0 +1,17 @@
+// expect: state the effective home
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The recursive removal names another home than the workflow's last
+// word for the account: Alice's effective home is /srv/alice, and
+// removing her with /home/alice fails where the runtime compares the
+// declared home with the live one.
+stages {
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; home = "/srv/alice" }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+  } }
+}
