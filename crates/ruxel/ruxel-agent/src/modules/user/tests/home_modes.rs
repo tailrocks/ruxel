@@ -83,7 +83,10 @@ fn an_adopted_home_takes_the_policy_mode_with_the_ownership() {
     let parent = std::env::temp_dir().join(format!("ruxel-adopt-mode-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&parent);
     std::fs::create_dir_all(&parent).unwrap();
-    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    // The staging anchor itself is trusted (0755): the adopted leaf is
+    // what the adoption judges, and an untrusted ancestor would refuse
+    // the adoption before any repair runs.
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
     let home = parent.join("alice");
     std::fs::create_dir(&home).unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
