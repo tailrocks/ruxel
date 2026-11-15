@@ -1,0 +1,13 @@
+// expect-pklr: expected ChainName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The chain parser of the firewall refuses a name that holds a newline:
+// `assert_valid_chain_name` rejects every character `isspace` accepts,
+// and a newline is one of them, so such a chain is refused at apply and
+// must be refused here.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "APP\nRULES"; jump = "DROP" }
+} } }

@@ -1,0 +1,14 @@
+// expect-pklr: expected InterfaceName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The kernel's limit is in bytes, not in characters: `IFNAMSIZ` is
+// sixteen, the name and its terminator, and the firewall measures the
+// name the way C does, by its encoded length. Eight `é` are eight
+// characters but sixteen bytes, so the name is past the limit even
+// though it reads as a short one.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "OUTPUT"; outInterface = "éééééééé"; jump = "DROP" }
+} } }

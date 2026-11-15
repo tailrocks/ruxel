@@ -64,6 +64,8 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-question-space.pkl
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
   tests/workflow/invalid/engine-iptables-policy-state.pkl
+  tests/workflow/invalid/iptables-chain-name-newline.pkl
+  tests/workflow/invalid/iptables-chain-name-whitespace.pkl
   tests/workflow/invalid/iptables-chain-option-name.pkl
   tests/workflow/invalid/iptables-destination-family.pkl
   tests/workflow/invalid/iptables-destination-host-conflict.pkl
@@ -73,7 +75,9 @@ dual_evaluator
   tests/workflow/invalid/iptables-icmp-version.pkl
   tests/workflow/invalid/iptables-icmpv6-version.pkl
   tests/workflow/invalid/iptables-input-out-interface.pkl
+  tests/workflow/invalid/iptables-interface-name-bytes.pkl
   tests/workflow/invalid/iptables-interface-name-long.pkl
+  tests/workflow/invalid/iptables-interface-name-whitespace.pkl
   tests/workflow/invalid/iptables-interface-name.pkl
   tests/workflow/invalid/iptables-universal-destination-conflict.pkl
   tests/workflow/invalid/iptables-universal-destination-ipv6-conflict.pkl

@@ -46,13 +46,31 @@ typealias Presence = "present"|"absent"
 
 /// An iptables chain name: at most 31 characters, as iptables itself allows,
 /// and not the spelling of an option: the chain parser of the firewall
-/// refuses a name that begins with `-` or `!`.
-typealias ChainName = Static(!isEmpty && length <= 31 && !startsWith("-") && !startsWith("!"))
+/// refuses a name that begins with `-` or `!`. The name holds no
+/// whitespace: the chain parser refuses every character `isspace` accepts,
+/// so a name that holds one is refused at apply and must be refused here.
+typealias ChainName = Static(!isEmpty && length <= 31 && isAscii(this) && !startsWith("-") && !startsWith("!") && !hasWhitespace(this))
 
 /// An outgoing interface name: at most 15 characters, the kernel's
 /// interface-name limit (`IFNAMSIZ` is 16, the name and its terminator),
 /// and without the `/` and the whitespace the kernel refuses in a name.
-typealias InterfaceName = Static(!isEmpty && length < 16 && !contains("/") && !contains(" ") && !contains("\t") && !contains("\n") && !contains("\r"))
+typealias InterfaceName = Static(!isEmpty && length < 16 && isAscii(this) && !contains("/") && !hasWhitespace(this))
+
+/// Whether the text is ASCII: the firewall measures the names it takes in
+/// bytes — the chain name's length and the interface name's limit are byte
+/// limits, and the firewall reads a name the way C does, by its encoded
+/// length — while a length in characters is not a length in bytes. Where
+/// the name is ASCII the two lengths are one, so the name the schema
+/// admits is the name the firewall accepts.
+const local function isAscii(s: String): Boolean =
+  s.matches(Regex("[\\x00-\\x7F]*"))
+
+/// Whether the text holds whitespace: the characters `isspace` accepts —
+/// the space, the tab, the newline, the vertical tab, the form feed and
+/// the carriage return. The kernel refuses them in an interface name and
+/// the chain parser of the firewall refuses them in a chain name.
+const local function hasWhitespace(s: String): Boolean =
+  s.contains(" ") || s.contains("\t") || s.contains("\n") || s.contains("\u{0B}") || s.contains("\u{0C}") || s.contains("\r")
 
 /// A destination address: an IPv4 or an IPv6 address, with an optional
 /// prefix length — the network the rule matches.

@@ -51,7 +51,9 @@ fn root() -> PathBuf {
 /// The absent forms are here too: two removals of one path must agree on
 /// the recursion, the same rule for IPv4 and IPv6 is two rules of two
 /// separate rule sets, two removals of one rule are one state however
-/// they name the jump, and a chain policy takes no state.
+/// they name the jump, and a chain policy takes no state. The names the
+/// firewall reads are here too: a chain name that holds whitespace and an
+/// interface name longer in bytes than in characters are refused by both.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -164,6 +166,10 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-icmp-version.pkl",
     "invalid/iptables-icmpv6-version.pkl",
     "invalid/iptables-input-out-interface.pkl",
+    "invalid/iptables-chain-name-whitespace.pkl",
+    "invalid/iptables-chain-name-newline.pkl",
+    "invalid/iptables-interface-name-bytes.pkl",
+    "invalid/iptables-interface-name-whitespace.pkl",
     "invalid/absent-floor-system-alias.pkl",
 ];
 
