@@ -2,13 +2,25 @@
 //! and to keep belonging to the account.
 
 use rustix::fs::{
-    AtFlags, Gid, Mode, OFlags, Uid, fchown, fstat, mkdirat, open, openat, readlinkat, statat,
+    AtFlags, Gid, Mode, OFlags, Uid, fchmod, fchown, fstat, mkdirat, open, openat, readlinkat,
+    statat,
 };
 use std::ffi::{OsStr, OsString};
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path};
+
+/// The mode a created home directory gets: the account's own, not the
+/// world's to read or write. The schema exposes no home-mode field, so
+/// the mode is the agent's policy — the conventional mode of a home
+/// directory (`useradd -D`'s `HOME_MODE`).
+const HOME_MODE: Mode = Mode::from_raw_mode(0o750);
+
+/// The mode a created parent of the home gets: the path to the home is
+/// traversable, and never world-writable — a parent that others may
+/// write is a parent they may replace.
+const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 
 /// The declared home path is usable before the account is touched:
 /// `usermod -d` moves the passwd field even when the path is a regular
@@ -219,12 +231,23 @@ fn open_home(home: &str, create: bool) -> Result<OwnedFd, String> {
         }
         Ok(_) => open_leaf(&dir, name, home),
         Err(rustix::io::Errno::NOENT) if create => {
-            mkdirat(&dir, name, Mode::from_raw_mode(0o777))
+            mkdirat(&dir, name, HOME_MODE)
                 .map_err(|error| format!("user: create home {home}: {error}"))?;
-            open_leaf(&dir, name, home)
+            let leaf = open_leaf(&dir, name, home)?;
+            enforce_mode(&leaf, HOME_MODE, home)?;
+            Ok(leaf)
         }
         Err(error) => Err(format!("user: own home {home}: {error}")),
     }
+}
+
+/// The mode the directory is given: the mode the creation asked for is
+/// only a request — the process's umask takes bits away from it, and a
+/// default ACL on the parent grants the ones the request does not ask
+/// for — so the mode is enforced on the directory itself, after it is
+/// created.
+fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), String> {
+    fchmod(fd, mode).map_err(|error| format!("user: create home {home}: {error}"))
 }
 
 fn open_leaf(dir: &OwnedFd, name: &OsStr, home: &str) -> Result<OwnedFd, String> {
@@ -276,7 +299,7 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
                 index += 1;
             }
             Err(rustix::io::Errno::NOENT) if create => {
-                mkdirat(&current, &name, Mode::from_raw_mode(0o777)).map_err(|error| {
+                mkdirat(&current, &name, PARENT_MODE).map_err(|error| {
                     format!(
                         "user: create home {home}: {}: {error}",
                         Path::new(&name).display()
@@ -284,6 +307,7 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
                 })?;
                 current = openat(&current, &name, walk_flags(), Mode::empty())
                     .map_err(|error| format!("user: home {home}: {error}"))?;
+                enforce_mode(&current, PARENT_MODE, home)?;
                 index += 1;
             }
             Err(rustix::io::Errno::NOENT) => {

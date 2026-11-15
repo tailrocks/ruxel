@@ -47,6 +47,7 @@ thread_local! {
     static REMOVED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     static PRIMARY_GROUPS: RefCell<BTreeMap<String, PlannedPrimary>> = const { RefCell::new(BTreeMap::new()) };
     static SUPPLEMENTARY: RefCell<BTreeMap<String, Vec<String>>> = const { RefCell::new(BTreeMap::new()) };
+    static RENUMBERED_GROUPS: RefCell<BTreeMap<String, (u64, u64)>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 pub(super) fn note(name: &str, requested: Option<u32>) {
@@ -231,4 +232,34 @@ pub(super) fn forget_supplementary(account: &str) {
     SUPPLEMENTARY.with(|sets| {
         sets.borrow_mut().remove(account);
     });
+}
+
+/// The plan's record of a group it renumbered: the number the group
+/// held on the host and the number the plan gives it. `groupmod -g`
+/// gives every account that holds the group as its primary group the
+/// new number, so the accounts' primary numbers under the plan are the
+/// new ones — check mode runs no `groupmod`, so the host's passwd file
+/// still shows the old ones. The number the group held on the host is
+/// the one the record keeps across further renumberings: it is the
+/// number the accounts' passwd entries carry while check mode runs.
+pub(super) fn note_renumbered_group(group: &str, live_gid: u64, planned_gid: u64) {
+    RENUMBERED_GROUPS.with(|groups| {
+        let mut groups = groups.borrow_mut();
+        let from = groups.get(group).map_or(live_gid, |(from, _)| *from);
+        groups.insert(group.to_string(), (from, planned_gid));
+    });
+}
+
+/// The number an account that holds `live_gid` as its primary group
+/// holds under the plan: the new number of the group the plan
+/// renumbered, and the live number where the plan renumbered no
+/// group.
+pub(super) fn renumbered_gid(live_gid: u64) -> Option<u64> {
+    RENUMBERED_GROUPS.with(|groups| {
+        groups
+            .borrow()
+            .values()
+            .find(|(from, _)| *from == live_gid)
+            .map(|(_, to)| *to)
+    })
 }

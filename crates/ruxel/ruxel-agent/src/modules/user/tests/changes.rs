@@ -37,12 +37,12 @@ fn identity_changes_verify_the_live_entry_not_the_declared_name() {
         gid: 1500,
         ..PasswdEntry::default()
     };
-    assert!(identity_change_allowed("app", &app).is_ok());
+    assert!(super::super::guards::identity_change_allowed("app", &app).is_ok());
     let toor = PasswdEntry {
         uid: 0,
         ..PasswdEntry::default()
     };
-    assert!(identity_change_allowed("toor", &toor).is_err());
+    assert!(super::super::guards::identity_change_allowed("toor", &toor).is_err());
     assert!(group_change_allowed("wheel", 0).is_err());
     assert!(group_change_allowed("docker", 999).is_ok());
 }
