@@ -48,6 +48,8 @@ thread_local! {
     static PRIMARY_GROUPS: RefCell<BTreeMap<String, PlannedPrimary>> = const { RefCell::new(BTreeMap::new()) };
     static SUPPLEMENTARY: RefCell<BTreeMap<String, Vec<String>>> = const { RefCell::new(BTreeMap::new()) };
     static RENUMBERED_GROUPS: RefCell<BTreeMap<String, (u64, u64)>> = const { RefCell::new(BTreeMap::new()) };
+    static SHELLS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
+    static COMMENTS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 pub(super) fn note(name: &str, requested: Option<u32>) {
@@ -262,4 +264,66 @@ pub(super) fn renumbered_gid(live_gid: u64) -> Option<u64> {
             .find(|(from, _)| *from == live_gid)
             .map(|(_, to)| *to)
     })
+}
+
+/// The plan's record of the account's login shell: the shell the
+/// account's passwd entry carries under the plan — what a later step
+/// compares its own declaration against, since check mode runs no
+/// `usermod` and the host's entry still holds the shell the account
+/// held before.
+pub(super) fn note_shell(account: &str, shell: Option<&str>) {
+    SHELLS.with(|shells| {
+        let mut shells = shells.borrow_mut();
+        match shell {
+            Some(shell) => {
+                shells.insert(account.to_string(), shell.to_string());
+            }
+            None => {
+                shells.remove(account);
+            }
+        }
+    });
+}
+
+/// The account's planned shell, where a task of the plan gave it one.
+pub(super) fn shell(account: &str) -> Option<String> {
+    SHELLS.with(|shells| shells.borrow().get(account).cloned())
+}
+
+/// The record's counterpart when the plan removes the account.
+pub(super) fn forget_shell(account: &str) {
+    SHELLS.with(|shells| {
+        shells.borrow_mut().remove(account);
+    });
+}
+
+/// The plan's record of the account's comment (the GECOS field): the
+/// comment the account's passwd entry carries under the plan — what a
+/// later step compares its own declaration against, for the shell's
+/// reason.
+pub(super) fn note_comment(account: &str, comment: Option<&str>) {
+    COMMENTS.with(|comments| {
+        let mut comments = comments.borrow_mut();
+        match comment {
+            Some(comment) => {
+                comments.insert(account.to_string(), comment.to_string());
+            }
+            None => {
+                comments.remove(account);
+            }
+        }
+    });
+}
+
+/// The account's planned comment, where a task of the plan gave it
+/// one.
+pub(super) fn comment(account: &str) -> Option<String> {
+    COMMENTS.with(|comments| comments.borrow().get(account).cloned())
+}
+
+/// The record's counterpart when the plan removes the account.
+pub(super) fn forget_comment(account: &str) {
+    COMMENTS.with(|comments| {
+        comments.borrow_mut().remove(account);
+    });
 }

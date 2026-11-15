@@ -107,6 +107,23 @@ pub(super) fn groups_need_update(current: &[String], want: &[String], append: bo
             && (current.len() != want.len() || want.iter().any(|group| !current.contains(group))))
 }
 
+/// The members the group file lists for the group `name`, apart from
+/// `name` itself: the account that leaves the group is no member of
+/// it any more.
+pub(super) fn group_members_from(groups: &str, name: &str) -> Vec<String> {
+    for line in groups.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 4 && f[0] == name {
+            return f[3]
+                .split(',')
+                .filter(|member| !member.is_empty() && *member != name)
+                .map(str::to_string)
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
 /// The plan's record of a present group — or an account's private
 /// group — for whatever resolves the group next; carries the requested
 /// gid where the step declared one.
