@@ -92,15 +92,18 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-file-clash.pkl
   tests/workflow/invalid/linux-sysctl-file-later-stage.pkl
   tests/workflow/invalid/linux-sysctl-file-owned-earlier-stage.pkl
+  tests/workflow/invalid/linux-sysctl-local-lib-boot-order.pkl
   tests/workflow/invalid/linux-sysctl-name-alias.pkl
   tests/workflow/invalid/linux-sysctl-name-dot-component.pkl
   tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl
+  tests/workflow/invalid/linux-sysctl-shadow-across-dirs.pkl
   tests/workflow/invalid/linux-sysctl-stage-order.pkl
   tests/workflow/invalid/linux-sysctl-user-home-clash.pkl
   tests/workflow/invalid/linux-sysctl-value-newline.pkl
   tests/workflow/invalid/linux-sysctl-value-nul.pkl
+  tests/workflow/invalid/linux-sysctl-value-vertical-tab-difference.pkl
   tests/workflow/invalid/linux-sysctl-values-differ.pkl
   tests/workflow/invalid/linux-user-default-home-conflict.pkl
   tests/workflow/invalid/linux-user-group-absent.pkl
@@ -138,6 +141,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-group-exec-only.pkl
   tests/workflow/invalid/linux-user-shell-is-default-home.pkl
   tests/workflow/invalid/linux-user-shell-is-home.pkl
+  tests/workflow/invalid/linux-user-shell-later-stage-no-provider.pkl
   tests/workflow/invalid/linux-user-shell-later.pkl
   tests/workflow/invalid/linux-user-shell-link-target-not-executable.pkl
   tests/workflow/invalid/linux-user-shell-not-absolute.pkl
@@ -145,6 +149,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-owner-execute-only.pkl
   tests/workflow/invalid/linux-user-shell-root.pkl
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
+  tests/workflow/invalid/linux-user-shell-symlink-cycle.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-low-number.pkl
@@ -201,8 +206,11 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
   tests/workflow/valid/linux-sysctl-equals.pkl
   tests/workflow/valid/linux-sysctl-hyphen.pkl
+  tests/workflow/valid/linux-sysctl-local-lib-dir.pkl
   tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
+  tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
+  tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl
   tests/workflow/valid/linux-sysctl.pkl
   tests/workflow/valid/linux-user-absent-fields-inactive.pkl
   tests/workflow/valid/linux-user-absent-home-inactive.pkl
@@ -218,6 +226,8 @@ dual_evaluator
   tests/workflow/valid/linux-user-removal-uid-match.pkl
   tests/workflow/valid/linux-user-remove-home-inactive.pkl
   tests/workflow/valid/linux-user-remove-home-other-spool-dir.pkl
+  tests/workflow/valid/linux-user-shell-reconciled-later-stage.pkl
+  tests/workflow/valid/linux-user-shell-symlink-chain-before-account.pkl
   tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
   tests/workflow/valid/linux-user-uid-renumbered-frees-draw.pkl
   tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl
