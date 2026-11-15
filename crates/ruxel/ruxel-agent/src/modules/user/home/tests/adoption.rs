@@ -100,10 +100,16 @@ fn a_created_home_takes_the_policy_mode() {
     // account. The creation's reconciliation repairs the mode to the
     // policy's 0750: check mode reports the pending repair without
     // touching the directory, apply enforces it, and a converged home
-    // is no change.
+    // is no change. The leaf is staged under the operator's own tree:
+    // an operator-owned leaf counts only under trusted ancestors now.
     use std::os::unix::fs::PermissionsExt;
-    let parent = scratch("created-mode");
-    let home = parent.join("alice");
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-adopt-created-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    std::fs::set_permissions(&anchor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let home = anchor.join("alice");
     let (uid, gid) = own_identity();
     std::fs::create_dir(&home).unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -148,20 +154,21 @@ fn a_created_home_takes_the_policy_mode() {
         .unwrap(),
         "a converged home is no change"
     );
-    std::fs::remove_dir_all(&parent).unwrap();
+    std::fs::remove_dir_all(&anchor).unwrap();
 }
 
 #[test]
 fn an_operator_placed_home_is_adopted() {
-    // The operator's own staging under a shared path: the
-    // directory the operator placed — owned by the operating
-    // principal and writable by no one else — is adopted, with its
-    // contents. `useradd -m` leaves a pre-existing directory's
-    // ownership untouched, so the reconciliation repairs it with
-    // the account's final identity instead of refusing it.
-    let parent = scratch("operator");
-    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let home = parent.join("alice");
+    // The operator's own staging under trusted ancestors: the directory
+    // the operator placed is adopted with its contents, and the
+    // reconciliation repairs it with the account's final identity.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-adopt-operator-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    std::fs::set_permissions(&anchor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let home = anchor.join("alice");
     std::fs::create_dir(&home).unwrap();
     std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
     let (uid, gid) = own_identity();
@@ -200,7 +207,7 @@ fn an_operator_placed_home_is_adopted() {
         &|_| panic!("nothing to take back: the adoption succeeds"),
     );
     assert!(error.is_ok(), "the creation adopts the operator's home");
-    std::fs::remove_dir_all(&parent).unwrap();
+    std::fs::remove_dir_all(&anchor).unwrap();
 }
 
 #[test]
@@ -252,37 +259,6 @@ fn an_attacker_owned_home_under_a_shared_path_is_refused() {
         meta.uid(),
         nobody,
         "the refused directory is never handed to the account"
-    );
-    std::fs::remove_dir_all(&parent).unwrap();
-}
-
-#[test]
-fn an_operator_owned_home_under_a_shared_path_is_repaired() {
-    // The root lane's adoption: the operator's own directory under
-    // a shared path is repaired with the account's identity — the
-    // ownership moves and the operator's contents stay.
-    if super::operating_uid() != 0 {
-        return;
-    }
-    let parent = scratch("operator-owned");
-    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let home = parent.join("alice");
-    std::fs::create_dir(&home).unwrap();
-    std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
-    let repaired = ensure_home(home.to_str().unwrap(), 65534, 65534, false)
-        .expect("the operator's home must be adopted")
-        .0;
-    assert!(repaired, "the ownership moves to the account");
-    let meta = std::fs::metadata(&home).unwrap();
-    assert_eq!(
-        (meta.uid(), meta.gid()),
-        (65534, 65534),
-        "the directory belongs to the account now"
-    );
-    assert_eq!(
-        std::fs::read(home.join(".profile")).unwrap(),
-        b"operator skeleton\n",
-        "the operator's contents survive the adoption"
     );
     std::fs::remove_dir_all(&parent).unwrap();
 }
