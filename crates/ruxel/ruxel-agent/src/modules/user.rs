@@ -18,7 +18,7 @@ mod home;
 mod identity;
 mod plan;
 mod shell;
-use apply::{Home, HomeOwner, Mutation};
+use apply::{Home, HomeOwner, Mutation, rollback_home};
 use entries::{
     PasswdEntry, forget_planned_group, forget_planned_user, group_entry, groups_need_update,
     note_planned_group, note_planned_user, note_removed_account, note_removed_group, passwd_entry,
@@ -1434,7 +1434,7 @@ fn take_back_created_account(
         restore_group,
     )?;
     if !home_preexisted && std::fs::symlink_metadata(home).is_ok() {
-        home::rollback_home(home, None)?;
+        rollback_home(home, None, &[])?;
     }
     Ok(())
 }
