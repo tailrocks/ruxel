@@ -558,7 +558,20 @@ pub(crate) fn trimmed_value(value: &str) -> &str {
     value.trim_matches(is_syntax_ws_char)
 }
 
+/// The `/proc/sys` line ending off a live read: the kernel ends the
+/// value with `\n` (a `\r` travels beside it on some payloads), and
+/// that ending is the read's framing — not syntax whitespace the file
+/// trim would cover and not content the compare would weigh — so the
+/// live path strips it before any other trim. Only the live path: the
+/// file-side trims keep their four blanks exactly.
+fn strip_live_ending(live: &str) -> &str {
+    live.trim_matches(|ending: char| ending == '\n' || ending == '\r')
+}
+
 /// Whether the live kernel value already holds the requested one.
+/// The `/proc/sys` read ends with a line ending, which is stripped on
+/// the live side before the syntax-blank trim — a value the workflow
+/// wrote reads back equal, so the second apply is a no-op — and
 /// procps strips the syntax blanks around a value before applying it,
 /// so both sides compare trimmed — a vertically padded value is one
 /// kernel value with its bare spelling; internal separators compare
@@ -566,7 +579,7 @@ pub(crate) fn trimmed_value(value: &str) -> &str {
 /// ranges with tabs where workflows write spaces — and exactly
 /// otherwise, so `kernel.hostname` keeps every blank of "abc  def".
 fn live_matches(live: &str, value: &str) -> bool {
-    let live = trimmed_value(live);
+    let live = trimmed_value(strip_live_ending(live));
     let value = trimmed_value(value);
     if live == value {
         return true;
@@ -592,9 +605,17 @@ fn marker(line: &str) -> &'static str {
 }
 
 fn read_sysctl(name: &str) -> Result<String, String> {
-    let path = proc_sys_path(name);
-    std::fs::read_to_string(&path)
-        .map(|s| trimmed_value(&s).to_string())
+    read_live(&proc_sys_path(name))
+}
+
+/// The live read behind `read_sysctl`, split out so the mapping is
+/// provable without `/proc/sys`: the read's line ending is stripped
+/// before the syntax-blank trim, so what the second apply reads back
+/// compares equal to the value the first apply wrote and no
+/// `sysctl -w` runs again.
+fn read_live(path: &str) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map(|s| trimmed_value(strip_live_ending(&s)).to_string())
         .map_err(|e| format!("read {path}: {e}"))
 }
 

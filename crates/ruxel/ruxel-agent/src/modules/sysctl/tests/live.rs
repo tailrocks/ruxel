@@ -46,3 +46,48 @@ fn edge_whitespace_compares_exactly() {
     assert!(!super::super::live_matches("nb\u{a0}", "nb"));
     assert!(super::super::live_matches("nb\u{a0}", "nb\u{a0}"));
 }
+
+#[test]
+fn the_proc_line_ending_is_not_value_content() {
+    // The kernel terminates the `/proc/sys` value with `\n`: the live
+    // path strips that ending before the syntax-blank trim, so a value
+    // the workflow wrote reads back equal and no `sysctl -w` runs on
+    // an idempotent apply — while another value under the same ending
+    // still reconciles.
+    assert!(super::super::live_matches("1\n", "1"));
+    assert!(super::super::live_matches("1\r\n", "1"));
+    assert!(super::super::live_matches("32768\t60999\n", "32768 60999"));
+    assert!(!super::super::live_matches("2\n", "1"));
+}
+
+#[test]
+fn the_live_read_strips_the_proc_line_ending() {
+    // The exact mapping `read_sysctl` applies to the `/proc/sys`
+    // bytes, proved without `/proc/sys`: a "1\n" payload reads back as
+    // "1", so the value the first apply wrote compares equal on the
+    // second and the reapply is a no-op.
+    let dir = std::env::temp_dir().join(format!("ruxel-sysctl-live-read-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&dir));
+    std::fs::create_dir_all(&dir).expect("operation succeeds");
+    for (payload, want) in [("1\n", "1"), ("1\r\n", "1"), ("\u{B}1\u{B}\n", "1")] {
+        let path = dir.join("live");
+        std::fs::write(&path, payload).expect("operation succeeds");
+        let text = path.to_str().expect("path is text").to_owned();
+        let reread = super::super::read_live(&text).expect("the live file reads");
+        assert_eq!(reread, want, "the read strips the ending: {payload:?}");
+        assert!(
+            super::super::live_matches(&reread, "1"),
+            "the reread value is a no-op against the desired one"
+        );
+    }
+    std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}
+
+#[test]
+fn the_file_trim_keeps_the_line_ending_outside_its_set() {
+    // Pin: the fix touches the live path only — the file-side trims
+    // keep their four syntax blanks, and `\n` is not one of them, so
+    // the byte-level non-UTF8 preservation is unchanged.
+    assert_eq!(super::super::trim(b"1\n"), b"1\n");
+    assert_eq!(super::super::trimmed_value("1\n"), "1\n");
+}
