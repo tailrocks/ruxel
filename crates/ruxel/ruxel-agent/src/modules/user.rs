@@ -82,8 +82,16 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                     // gives them the new number, so the plan's record
                     // of that effect is what a later removal's holder
                     // scan reads — the host's passwd file still shows
-                    // the old number while check mode runs.
-                    plan::note_renumbered_group(name, live_gid, want);
+                    // the old number while check mode runs. Check mode
+                    // runs no `groupmod`, so the record is made in
+                    // advance; apply records it only after the change
+                    // succeeds — a failed `groupmod` with
+                    // `halt_on_failure = false` must not free the old
+                    // number for a later claim while the host still
+                    // holds it, nor assign the requested one.
+                    if ctx.check_mode {
+                        plan::note_renumbered_group(name, live_gid, want);
+                    }
                     // The plan moved the group's number: the files
                     // that hold it keep the old one, and a task that
                     // names the group must not be served from a cache
@@ -91,6 +99,7 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                     plan::note_changed_group(name);
                     if !ctx.check_mode {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
+                        plan::note_renumbered_group(name, live_gid, want);
                     }
                 }
             } else {
@@ -195,6 +204,10 @@ pub(crate) use plan::{group_number_changed, user_number_changed};
 pub(super) use plan::{group_recreated, user_recreated};
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
+    #[cfg(test)]
+    if let Some(result) = test_hook::fake_run_cmd(cmd, args) {
+        return result;
+    }
     let mut command = std::process::Command::new(cmd);
     command.args(args);
     super::run_checked(command)?;
@@ -660,6 +673,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             let implicit_group_move = group.is_none()
                 && current.uid != 0
                 && same_name_gid.is_none_or(|gid| u64::from(gid) != effective.gid);
+            // The plan's record of the primary group and the
+            // supplementary set the step declares: check mode runs no
+            // `usermod`, so the record is made in advance and later
+            // tasks resolve against it. Apply records it only after the
+            // change below succeeds — a failed `usermod` with
+            // `halt_on_failure = false` must not leave later tasks
+            // comparing against a set the host never took.
+            let mut planned_primary: Option<PlannedPrimary> = None;
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
@@ -675,13 +696,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                         // The plan's record of the account's primary
                         // group: the group the step declares, whose
                         // number the plan does not know yet.
-                        plan::note_primary(
-                            name,
-                            PlannedPrimary {
-                                name: g.to_string(),
-                                gid: None,
-                            },
-                        );
+                        planned_primary = Some(PlannedPrimary {
+                            name: g.to_string(),
+                            gid: None,
+                        });
                     }
                     Some(want_gid) => {
                         if u64::from(want_gid) != effective.gid {
@@ -695,13 +713,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                         // scan of a group removal reads it — an
                         // account the plan moves off a group holds it
                         // no longer.
-                        plan::note_primary(
-                            name,
-                            PlannedPrimary {
-                                name: g.to_string(),
-                                gid: Some(u64::from(want_gid)),
-                            },
-                        );
+                        planned_primary = Some(PlannedPrimary {
+                            name: g.to_string(),
+                            gid: Some(u64::from(want_gid)),
+                        });
                     }
                 }
             } else if implicit_group_move {
@@ -711,15 +726,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 // The implicit claim's move is a move of the primary
                 // group as much as the declared one is: the plan's
                 // record says so.
-                plan::note_primary(
-                    name,
-                    PlannedPrimary {
-                        name: name.to_string(),
-                        gid: same_name_number,
-                    },
-                );
+                planned_primary = Some(PlannedPrimary {
+                    name: name.to_string(),
+                    gid: same_name_number,
+                });
             }
             let groups_s;
+            let mut planned_supplementary: Option<Vec<String>> = None;
             if let Some(gs) = &groups {
                 // The account's supplementary groups as the plan sees
                 // them: the plan's own record where an earlier task of
@@ -758,7 +771,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 // changes nothing. A later task of the plan compares
                 // against it, so the set the plan has already changed
                 // is the one the later task changes.
-                plan::note_supplementary(name, planned_set(current_groups, gs, append));
+                planned_supplementary = Some(planned_set(current_groups, gs, append));
             }
             if let Some(h) = home
                 && h != planned_home
@@ -826,6 +839,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // name the group — and after every guard, so a refused
             // change never leaves the group it would have created
             // behind.
+            // The plan's record of the declared primary group and
+            // supplementary set: check mode runs no `usermod`, so the
+            // record is made here in advance and later tasks resolve
+            // against it. Apply records it only after the change below
+            // succeeds.
+            if ctx.check_mode {
+                if let Some(primary) = planned_primary.clone() {
+                    plan::note_primary(name, primary);
+                }
+                if let Some(supplementary) = planned_supplementary.clone() {
+                    plan::note_supplementary(name, supplementary);
+                }
+            }
             let mutations = apply::mutations(
                 name,
                 &current,
@@ -838,6 +864,19 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 .iter()
                 .any(|mutation| !matches!(mutation, Mutation::Home(_)));
             changed |= apply::run(name, mutations, ctx.check_mode, &run_cmd)?;
+            if !ctx.check_mode {
+                // The change succeeded: the plan's record follows the
+                // host's. A failed `usermod` records nothing, so a
+                // later task of a `halt_on_failure = false` plan
+                // compares against the host's unchanged state instead
+                // of a set the host never took.
+                if let Some(primary) = planned_primary {
+                    plan::note_primary(name, primary);
+                }
+                if let Some(supplementary) = planned_supplementary {
+                    plan::note_supplementary(name, supplementary);
+                }
+            }
         }
     }
 
@@ -931,3 +970,367 @@ fn manages_home(account_exists: bool, home_declared: bool) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// CAT.06 batch B: the plan's record follows successful applies instead
+/// of preceding failing ones, removals ignore stale numbers of
+/// recreated identities, recreations retire the removal tombstone, the
+/// rollback restores the whole reused group, and the private-group
+/// decision consults the plan.
+#[cfg(test)]
+mod cat06_batch_b {
+    use super::test_hook;
+    use super::*;
+    use serde_json::json;
+
+    pub(super) fn check_context() -> ExecContext {
+        ExecContext {
+            check_mode: true,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        }
+    }
+
+    pub(super) fn apply_context() -> ExecContext {
+        ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: Vec::new(),
+            become_user: None,
+        }
+    }
+
+    /// A live group that is not the root group.
+    pub(super) fn live_group() -> (String, u64) {
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        groups
+            .lines()
+            .find_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                (f.len() >= 3 && f[2].parse::<u64>().is_ok_and(|gid| gid != 0))
+                    .then(|| (f[0].to_string(), f[2].parse::<u64>().unwrap()))
+            })
+            .expect("a non-root group on the host")
+    }
+
+    /// A number no live group holds: above every live gid.
+    pub(super) fn free_gid() -> u64 {
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        groups
+            .lines()
+            .filter_map(|line| line.split(':').nth(2)?.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0)
+            + 100_000
+    }
+
+    /// A number no live account holds: above every live uid.
+    pub(super) fn free_uid() -> u64 {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+        passwd
+            .lines()
+            .filter_map(|line| line.split(':').nth(2)?.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0)
+            + 100_000
+    }
+
+    /// A live account that is not the superuser, with the name of its
+    /// live primary group.
+    pub(super) fn live_account() -> (String, u64, String) {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        passwd
+            .lines()
+            .find_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                if f.len() < 7 {
+                    return None;
+                }
+                let uid: u64 = f[2].parse().ok()?;
+                if uid == 0 {
+                    return None;
+                }
+                let gid: u64 = f[3].parse().ok()?;
+                let primary = super::guards::group_name_of_gid_from(&groups, gid)?;
+                Some((f[0].to_string(), uid, primary))
+            })
+            .expect("a non-root account with a named primary group on the host")
+    }
+
+    /// Two live groups whose set differs from the account's live
+    /// supplementary set, so declaring them always changes it.
+    pub(super) fn other_groups(account: &str) -> (String, String) {
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        let live = super::entries::supplementary_groups_from(&groups, account);
+        let names: Vec<String> = groups
+            .lines()
+            .filter_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                (f.len() >= 4 && f[0] != account && f[2].parse::<u64>().is_ok_and(|gid| gid != 0))
+                    .then(|| f[0].to_string())
+            })
+            .collect();
+        for (index, first) in names.iter().enumerate() {
+            for second in names.iter().skip(index + 1) {
+                let want = vec![first.clone(), second.clone()];
+                if super::entries::groups_need_update(&live, &want, false) {
+                    return (first.clone(), second.clone());
+                }
+            }
+        }
+        panic!("two live groups unlike the account's set");
+    }
+
+    #[test]
+    fn check_mode_records_a_group_renumber_in_advance() {
+        // Check mode runs no `groupmod`, so the renumber is recorded
+        // before anything runs and later tasks resolve against it.
+        let (name, live) = live_group();
+        let planned = free_gid();
+        let result = group(&json!({"name": name, "gid": planned}), &check_context())
+            .expect("the renumbering must plan");
+        assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+        assert_eq!(
+            super::plan::renumbered_gid(live),
+            Some(planned),
+            "check mode records the renumber in advance"
+        );
+    }
+
+    #[test]
+    fn apply_mode_records_no_renumber_when_groupmod_fails() {
+        // Apply records the renumber only after `groupmod` succeeds: a
+        // failed change leaves no fictitious transition behind.
+        let (name, live) = live_group();
+        let planned = free_gid();
+        test_hook::arm(vec![Err("groupmod: cannot lock /etc/group".to_string())]);
+        let error = group(&json!({"name": name, "gid": planned}), &apply_context())
+            .expect_err("the failed renumbering must surface");
+        assert!(error.contains("cannot lock"), "{error}");
+        let calls = test_hook::take_calls();
+        assert_eq!(calls.len(), 1, "groupmod ran once: {calls:?}");
+        assert_eq!(calls[0].0, "groupmod");
+        assert_eq!(
+            super::plan::renumbered_gid(live),
+            None,
+            "a failed groupmod records no renumbering"
+        );
+    }
+
+    /// A live group a live account holds as its primary group: the
+    /// removal of such a group is the holder's to refuse.
+    pub(super) fn held_group() -> (String, u64, String) {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+        let groups = std::fs::read_to_string("/etc/group").unwrap();
+        groups
+            .lines()
+            .find_map(|line| {
+                let f: Vec<&str> = line.split(':').collect();
+                if f.len() < 3 {
+                    return None;
+                }
+                let gid: u64 = f[2].parse().ok()?;
+                if gid == 0 {
+                    return None;
+                }
+                let holder = passwd.lines().find(|account| {
+                    let a: Vec<&str> = account.split(':').collect();
+                    a.len() >= 4 && a[3].parse::<u64>() == Ok(gid)
+                })?;
+                Some((
+                    f[0].to_string(),
+                    gid,
+                    holder.split(':').next().unwrap_or_default().to_string(),
+                ))
+            })
+            .expect("a live group a live account holds as its primary group")
+    }
+
+    #[test]
+    fn a_removal_after_a_failed_renumber_still_sees_the_live_holder() {
+        // The `halt_on_failure = false` continuation: the failed
+        // renumber records nothing, so the removal's holder scan still
+        // finds the live account that holds the group and refuses —
+        // instead of admitting a removal the host would reject while
+        // the group is still held. The stand-in absorbs `groupdel` so
+        // the admitted-before path cannot touch the host either.
+        let (name, _live, holder) = held_group();
+        let planned = free_gid();
+        test_hook::arm(vec![Err("groupmod: cannot lock /etc/group".to_string())]);
+        group(&json!({"name": name, "gid": planned}), &apply_context())
+            .expect_err("the failed renumbering must surface");
+        test_hook::arm(vec![Ok(())]);
+        let error = group(&json!({"name": name, "state": "absent"}), &apply_context())
+            .expect_err("the live holder keeps the group");
+        assert!(error.contains(&holder), "{error}");
+        assert!(
+            test_hook::take_calls().is_empty(),
+            "groupdel never ran: the removal was refused before it"
+        );
+    }
+
+    #[test]
+    fn check_mode_admits_the_claim_a_planned_renumber_frees() {
+        // The mirror: check mode records the renumber in advance, so a
+        // later claim of the freed number is admitted the way the apply
+        // admits it after `groupmod` really runs.
+        let check = check_context();
+        let (holder, live) = live_group();
+        let planned = free_gid();
+        group(&json!({"name": holder, "gid": planned}), &check).expect("the renumbering must plan");
+        let fresh = format!("ruxel-cat06-claim-{}", std::process::id());
+        let result = group(&json!({"name": fresh, "gid": live}), &check)
+            .expect("the freed number must be claimable");
+        assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+    }
+
+    #[test]
+    fn check_mode_records_the_declared_group_set_in_advance() {
+        // Check mode runs no `usermod`, so the declared supplementary
+        // set and primary group are recorded before anything runs.
+        let (name, _uid, primary) = live_account();
+        let (first, second) = other_groups(&name);
+        let result = run(
+            &json!({"name": name, "group": primary.clone(), "groups": [first.clone(), second.clone()]}),
+            &check_context(),
+        )
+        .expect("the change must plan");
+        assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+        assert_eq!(
+            super::plan::supplementary(&name),
+            Some(vec![first, second]),
+            "check mode records the declared set in advance"
+        );
+        assert_eq!(
+            super::plan::primary(&name).map(|planned| planned.name),
+            Some(primary),
+            "check mode records the declared primary group in advance"
+        );
+    }
+
+    #[test]
+    fn apply_mode_records_no_group_set_when_usermod_fails() {
+        // Apply records the declared set only after `usermod` succeeds:
+        // a failed change leaves no fictitious set behind.
+        let (name, _uid, primary) = live_account();
+        let (first, second) = other_groups(&name);
+        let planned_uid = free_uid();
+        test_hook::arm(vec![Err(
+            "usermod: user currently used by process".to_string()
+        )]);
+        let error = run(
+            &json!({"name": name, "uid": planned_uid, "group": primary, "groups": [first, second]}),
+            &apply_context(),
+        )
+        .expect_err("the failed change must surface");
+        assert!(error.contains("currently used"), "{error}");
+        let calls = test_hook::take_calls();
+        assert_eq!(calls.len(), 1, "usermod ran once: {calls:?}");
+        assert_eq!(calls[0].0, "usermod");
+        assert_eq!(
+            super::plan::supplementary(&name),
+            None,
+            "a failed usermod records no supplementary set"
+        );
+        assert!(
+            super::plan::primary(&name).is_none(),
+            "a failed usermod records no primary group"
+        );
+    }
+
+    #[test]
+    fn a_group_change_after_a_failed_usermod_compares_against_the_live_set() {
+        // The `halt_on_failure = false` continuation: the failed task
+        // records nothing, so the next task compares its declaration
+        // against the host's unchanged set and reports the change — and
+        // the successful retry records the set afterwards.
+        let (name, _uid, primary) = live_account();
+        let (first, second) = other_groups(&name);
+        let planned_uid = free_uid();
+        test_hook::arm(vec![Err(
+            "usermod: user currently used by process".to_string()
+        )]);
+        run(
+            &json!({"name": name, "uid": planned_uid, "group": primary.clone(), "groups": [first.clone(), second.clone()]}),
+            &apply_context(),
+        )
+        .expect_err("the failed change must surface");
+        test_hook::take_calls();
+        test_hook::arm(vec![Ok(())]);
+        let result = run(
+            &json!({"name": name, "group": primary.clone(), "groups": [first.clone(), second.clone()]}),
+            &apply_context(),
+        )
+        .expect("the continuation must run");
+        let calls = test_hook::take_calls();
+        assert_eq!(calls.len(), 1, "usermod ran once: {calls:?}");
+        assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+        assert_eq!(
+            super::plan::supplementary(&name),
+            Some(vec![first, second]),
+            "the successful retry records the set afterwards"
+        );
+        assert_eq!(
+            super::plan::primary(&name).map(|planned| planned.name),
+            Some(primary),
+            "the successful retry records the primary group afterwards"
+        );
+    }
+}
+/// The test stand-in for the host's account utilities: apply-mode tests
+/// arm canned results and assert what ran, so a failing `groupmod` or
+/// `usermod` is observable without touching the host. Check-mode tests
+/// never arm it — check mode runs nothing.
+#[cfg(test)]
+pub(super) mod test_hook {
+    thread_local! {
+        static FAKE_RUN_CMD: std::cell::RefCell<Option<FakeRunCmd>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    #[derive(Default)]
+    struct FakeRunCmd {
+        calls: Vec<(String, Vec<String>)>,
+        results: std::collections::VecDeque<Result<(), String>>,
+    }
+
+    pub(super) fn fake_run_cmd(cmd: &str, args: &[&str]) -> Option<Result<(), String>> {
+        FAKE_RUN_CMD.with(|fake| {
+            fake.borrow_mut().as_mut().map(|state| {
+                state.calls.push((
+                    cmd.to_string(),
+                    args.iter()
+                        .map(|argument| (*argument).to_string())
+                        .collect(),
+                ));
+                state
+                    .results
+                    .pop_front()
+                    .unwrap_or_else(|| Err(format!("test: no fake result queued for {cmd}")))
+            })
+        })
+    }
+
+    /// Arm the stand-in with the results the next commands return, in
+    /// order.
+    pub(super) fn arm(results: Vec<Result<(), String>>) {
+        FAKE_RUN_CMD.with(|fake| {
+            *fake.borrow_mut() = Some(FakeRunCmd {
+                calls: Vec::new(),
+                results: results.into(),
+            });
+        });
+    }
+
+    /// Disarm the stand-in and take the commands it observed.
+    pub(super) fn take_calls() -> Vec<(String, Vec<String>)> {
+        FAKE_RUN_CMD.with(|fake| {
+            fake.borrow_mut()
+                .take()
+                .map_or(Vec::new(), |state| state.calls)
+        })
+    }
+}
