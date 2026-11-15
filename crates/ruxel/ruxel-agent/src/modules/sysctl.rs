@@ -390,7 +390,20 @@ fn preflight_shadow(
     name: &str,
     managed: &[(String, String, String)],
 ) -> Result<(), String> {
-    if let Some(shadow) = boot::shadowing(file) {
+    preflight_shadow_in(file, name, managed, &boot::DIRS)
+}
+
+/// The shadow refusal over `dirs`, split out so the alias exemption
+/// is provable without the system directories: a symlink alias of the
+/// managed file passes, a declared shadow passes, and anything else
+/// that holds the name refuses.
+fn preflight_shadow_in(
+    file: &str,
+    name: &str,
+    managed: &[(String, String, String)],
+    dirs: &[(&str, u8)],
+) -> Result<(), String> {
+    if let Some(shadow) = boot::shadowing_in(file, dirs) {
         if declared_shadow(&shadow, name, managed) {
             return Ok(());
         }
