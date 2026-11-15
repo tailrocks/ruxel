@@ -212,16 +212,28 @@ class IdClaim {
   step: Int
 }
 
+/// The range an automatic allocation draws from: the host's allocator
+/// takes the first free number of the range its own configuration
+/// names — `UID_MIN`..`UID_MAX` in `login.defs` for a regular account,
+/// `GID_MIN`..`GID_MAX` for a group, and the `SYS_` counterparts for
+/// a system one — and the schema cannot read the host's configuration,
+/// so it reserves every number an id supports: from 1, the superuser
+/// keeping 0, to the largest id the schema admits. A host whose
+/// `UID_MIN` is 500 hands 500 out, one whose `UID_MIN` is 1000 hands
+/// 1000 out, and the reservation covers both.
+const automaticIdLow = 1
+const automaticIdHigh = 60000
+
 /// An identity number an earlier stage allocates automatically: a
 /// present account or group that states no id lets the host's allocator
-/// draw one — `useradd alice` takes the first free number at UID_MIN
-/// (1000 on a clean default host), and `groupadd` and the private group
-/// draw the same way — so a later `useradd -u` (or `groupadd -g`) may
-/// claim exactly the number the draw took. The draw is no one number
-/// the schema can name: the host's free list decides, so every number
-/// of the allocator's range is the drawing account's until a proven
-/// removal frees it, and the range holds against a later explicit
-/// claim the way an explicit claim holds its own number.
+/// draw one — `useradd alice` takes the first free number at UID_MIN,
+/// and `groupadd` and the private group draw the same way — so a later
+/// `useradd -u` (or `groupadd -g`) may claim exactly the number the
+/// draw took. The draw is no one number the schema can name: the
+/// host's free list decides, so every number of the allocator's range
+/// is the drawing account's until a proven removal frees it, and the
+/// range holds against a later explicit claim the way an explicit
+/// claim holds its own number.
 class IdDraw {
   name: String
   kind: String
@@ -229,6 +241,9 @@ class IdDraw {
   spot: String
   low: Int
   high: Int
+  /// Whether the drawing account is a system one (`useradd --system`):
+  /// its number is the host's to keep, so a removal never frees it.
+  system: Boolean
   /// The account's declared uid — the number the runtime verifies an
   /// account removal's declaration against — or `null` where the
   /// account draws its uid too (or the drawing step is a group).
@@ -271,10 +286,10 @@ const function drawsBefore(c: IdDraw, d: IdClaim): Boolean =
 /// states none, and the gid of the private group a present account
 /// gets when it names no primary group (USERGROUPS_ENAB) — useradd
 /// creates that group beside the account and draws its number the same
-/// way. The range is the clean default host's: UID_MIN..UID_MAX
-/// (1000..60000) for a regular account, SYS_UID_MIN..SYS_UID_MAX
-/// (1..999) for a system one (`useradd --system`), the same split for
-/// the groups.
+/// way. The range is every number an id supports (see
+/// `automaticIdLow` and `automaticIdHigh`): the host's own
+/// configuration names the range it draws from, and the schema cannot
+/// read it.
 function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
   positions(ix.steps).flatMap((i) ->
     let (s = ix.steps[i])
@@ -289,7 +304,7 @@ function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
 /// declared uid rides along: the number the runtime verifies an
 /// account removal's declaration against.
 function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String, _uid: Int?, _step: Int): IdDraw =
-  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid; step = _step }
+  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = automaticIdLow; high = automaticIdHigh; system = _system; uid = _uid; step = _step }
 
 /// Whether the drawing identity is proven gone before the later claim:
 /// the account — for a gid draw, the group or the account whose private
@@ -309,9 +324,12 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// declaration that names another number fails the run rather than
 /// freeing the draw — the same match `removedNumber` demands of the
 /// claim — and an automatic system account is never freed at all: its
-/// drawn number is below 1000, where `userdel` refuses to remove the
+/// number is the host's to keep, and the schema refuses the removal of
+/// an account below UID 1000, where `userdel` refuses to remove the
 /// account and `groupdel` refuses the private group it still holds as
-/// its primary one. A group removal that states no gid frees by name:
+/// its primary one. A number below 1000 is never freed either: the
+/// removal that states it is refused by the schema. A group removal
+/// that states no gid frees by name:
 /// the runtime verifies only the id it is given. `userdel` deletes the
 /// empty same-name group with the account, so an account removal frees
 /// a private-group draw where the account's uid is the declared one the
@@ -320,8 +338,8 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// another account is a member of is left behind, and its number stays
 /// taken.
 const function removedDraw(_indexes: List<StageIndex>, k: Int, c: IdDraw, d: IdClaim): Boolean =
-  if (c.low < 1000) false
-  else if (c.kind == "uid") _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
+  if (c.system) false
+  else if (c.kind == "uid") d.number >= 1000 && _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
   else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
     || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_indexes, k, c.name)))
 

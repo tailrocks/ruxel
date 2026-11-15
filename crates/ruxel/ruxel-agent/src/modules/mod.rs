@@ -251,6 +251,18 @@ pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(
     Ok(())
 }
 
+/// A value the operating system cannot carry: a NUL cannot be in a
+/// process argument at all, so a value that holds one is refused before
+/// it reaches a spawn.
+pub(super) fn reject_nuls(module: &str, fields: &[(&str, &str)]) -> Result<(), String> {
+    for (name, value) in fields {
+        if value.contains('\0') {
+            return Err(format!("{module}: {name} must not hold a NUL byte"));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn run_checked(
     mut command: std::process::Command,
 ) -> Result<std::process::Output, String> {

@@ -11,3 +11,4 @@ mod boot_wildcards;
 mod names;
 mod publish;
 mod rewrite;
+mod values;
