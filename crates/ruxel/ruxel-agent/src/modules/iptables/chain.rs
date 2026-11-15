@@ -58,14 +58,32 @@ pub(super) fn stale_rules(
 
 /// Deletes every rule of the chain that matches the declared match, and
 /// reports how many were deleted.
+///
+/// The chain is listed again after every deletion: another writer may
+/// append the same match while the deletions run, and the removal
+/// reports convergence only when no match remains.
 pub(super) fn delete_matching(
     binary: &str,
     chain: &str,
     spec: &[String],
     limit: u32,
 ) -> Result<u32, String> {
-    let rules = matching_rules(binary, chain, spec)?;
-    delete_rules(binary, chain, &rules, limit)
+    let mut deletions = 0;
+    loop {
+        let rules = matching_rules(binary, chain, spec)?;
+        if rules.is_empty() {
+            return Ok(deletions);
+        }
+        if deletions >= limit {
+            return Err(format!(
+                "{binary}: the rule is still there after {limit} deletions"
+            ));
+        }
+        let mut command = vec!["-D", chain];
+        command.extend(rules[0].iter().map(String::as_str));
+        exec_rule(binary, &command)?;
+        deletions += 1;
+    }
 }
 
 /// Deletes the given rules of the chain, and reports how many were
@@ -222,6 +240,50 @@ mod duplicate_tests {
             std::fs::read_to_string(&file).unwrap(),
             "-p tcp -d 10.0.0.0/8 -j DROP\n"
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn absent_mode_lists_again_before_reporting_convergence() {
+        // Another writer appends the same match after the first
+        // deletion: the one-time snapshot is stale, and the removal
+        // must list again instead of reporting a rule that is back.
+        let dir = std::env::temp_dir().join(format!("ruxel-iptables-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("rules");
+        std::fs::write(&file, "-p tcp -d 10.0.0.0/8 -j DROP\n").unwrap();
+        let script = dir.join("iptables-stub");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -D) shift 2; awk -v n=\"$*\" 'BEGIN{{done=0}} {{if (!done && $0 == n) {{done=1; next}} print}}' '{file}' > '{file}.tmp'; mv '{file}.tmp' '{file}'; if [ ! -f '{dir}/appended' ]; then touch '{dir}/appended'; echo \"$*\" >> '{file}'; fi;;\nesac\nexit 0\n",
+                file = file.display(),
+                dir = dir.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let binary = script.to_str().unwrap().to_owned();
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "destination": "10.0.0.0/8",
+            "jump": "DROP", "state": "absent"
+        });
+        let result = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
