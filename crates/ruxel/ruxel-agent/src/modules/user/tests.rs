@@ -22,6 +22,7 @@ mod planned;
 mod reconciliation;
 mod recreated;
 mod removal;
+mod shell_planned;
 mod shells;
 
 fn strings(values: &[&str]) -> Vec<String> {

@@ -9,7 +9,7 @@ use super::{ExecContext, bool_param, params_object, str_param};
 #[cfg(test)]
 use home::ensure_home;
 use home::{claimed_home, home_gid, home_usable, reconcile_created_home};
-use shell::shell_allowed;
+use shell::shell_provided;
 
 mod adoption;
 mod apply;
@@ -268,8 +268,11 @@ pub(super) use plan::{group_recreated, user_recreated};
 /// A new plan begins: the previous plan's user/group record is void.
 /// `PlanPatch` frames keep it — a patch continues the plan it
 /// extends. Runs beside the ledger's own `begin_plan` (see `serve`).
+/// The plan's shell-provider record goes with it: a provider an
+/// earlier plan managed is not this plan's to rely on.
 pub(crate) fn begin_plan() {
     plan::reset();
+    shell::reset_planned_shell_providers();
 }
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -494,7 +497,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let create_home = bool_param(obj, "create_home", true);
     let shell = str_param(obj, "shell");
     if let Some(sh) = shell {
-        shell_allowed(sh)?;
+        // The live shell check consults the plan's own File/Symlink
+        // providers in check mode: check mode runs no file creation,
+        // so a shell an earlier step of the plan manages is still
+        // missing from the live filesystem when the account's task
+        // verifies it — the way `group_provided` consults the planned
+        // groups below. Apply runs the provider first and verifies
+        // the live shell it created.
+        shell_provided(sh, ctx.check_mode)?;
     }
     let comment = str_param(obj, "comment");
     let system = bool_param(obj, "system", false);
