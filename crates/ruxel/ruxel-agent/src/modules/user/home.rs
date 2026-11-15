@@ -178,6 +178,28 @@ pub(super) fn ensure_home(
     }
 }
 
+/// The home's repair a later failure takes back: the ownership the
+/// repair found, restored — or the directory the repair created,
+/// removed. The reversal runs on the descriptors the safe walk opens,
+/// never through a link a concurrent rewrite plants, for the repair's
+/// own reason. Removing the created directory takes back exactly what
+/// the repair added: the removal refuses a directory that is not
+/// empty, so contents a concurrent writer planted are kept and
+/// reported rather than deleted.
+pub(super) fn rollback_home(path: &str, prior: Option<(u64, u64)>) -> Result<(), String> {
+    match prior {
+        Some((uid, gid)) => {
+            let uid = u32::try_from(uid)
+                .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
+            let gid = u32::try_from(gid)
+                .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
+            own_through(&open_home(path, false)?, uid, gid, path)
+        }
+        None => std::fs::remove_dir(path)
+            .map_err(|error| format!("user: take back created home {path}: {error}")),
+    }
+}
+
 /// The claimed home of the account the step created: the directory is
 /// reconciled with the account's final identity, and the account is
 /// taken back when the reconciliation fails. A home that cannot take
