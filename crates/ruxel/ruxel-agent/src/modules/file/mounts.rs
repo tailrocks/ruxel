@@ -248,7 +248,12 @@ pub(super) fn child_path(dir: &Path, name: &std::ffi::CStr) -> PathBuf {
 }
 
 /// Walks the tree without touching it, and refuses a mount point in it.
-pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[PathBuf]) -> Result<(), String> {
+/// A mount point is the path the kernel lists, and the identity the
+/// mounted tree carries: the path says nothing when the tree is reached
+/// under another name (`/bin/tool` for `/usr/bin/tool`), and only the
+/// identity the entry carries tells then.
+pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(), String> {
+    let identities = identities(mounts);
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -260,7 +265,7 @@ pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[PathBuf]) -> Resul
         // that is not text is the name the mount has, and a path made
         // of text would miss the mount.
         let child_path = child_path(path, name);
-        if mounts.iter().any(|mount| mount == &child_path) {
+        if mounts.iter().any(|mount| mount.point == child_path) {
             return Err(format!(
                 "file: refusing to remove {}: it holds the mount point {}",
                 path.display(),
@@ -269,6 +274,16 @@ pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[PathBuf]) -> Resul
         }
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
+        // A bind mount keeps the identity of the tree it is mounted
+        // from: the entry carries the identity of a mount point under
+        // another name, and the spelling of the path says nothing.
+        if is_mount_identity(&identities, (super::floor::device(&meta), meta.st_ino)) {
+            return Err(format!(
+                "file: refusing to remove {}: it holds the mount point {}",
+                path.display(),
+                child_path.display()
+            ));
+        }
         if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
             let child = openat(
                 dir,
