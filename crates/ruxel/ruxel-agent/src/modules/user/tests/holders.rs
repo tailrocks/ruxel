@@ -96,3 +96,30 @@ fn a_duplicate_number_the_plan_frees_is_still_a_collision() {
         "the scan continues to the holder the plan has not freed"
     );
 }
+
+#[test]
+fn a_plan_created_member_keeps_the_private_group() {
+    // Check mode runs no `useradd`, so an account an earlier task of
+    // the plan created is absent from the passwd scan — but the plan's
+    // own record holds its supplementary set. The plan creates `alice`,
+    // creates `bob` with supplementary group `alice`, and removes
+    // `alice`: the dry run must see that `bob` still holds the group —
+    // `userdel` keeps a private group another member holds — instead of
+    // predicting that the removal takes the group with the account.
+    let groups = "alice:x:1001:\n";
+    let passwd = "alice:x:1001:1001::/home/alice:/bin/sh\n";
+    super::super::plan::note_user("alice", Some(1001));
+    super::super::plan::note_user("bob", Some(1002));
+    super::super::plan::note_supplementary("bob", vec!["alice".to_string()]);
+    super::super::plan::note_removed_account("alice");
+    let members = super::super::holders::private_group_members_from(groups, passwd, "alice");
+    assert_eq!(
+        members,
+        vec!["bob".to_string()],
+        "the plan's own member keeps the group: {members:?}"
+    );
+    assert!(
+        !super::super::holders::private_group_emptied_from(groups, passwd, "alice", Some(1001)),
+        "the group survives the removal while the plan's member holds it"
+    );
+}
