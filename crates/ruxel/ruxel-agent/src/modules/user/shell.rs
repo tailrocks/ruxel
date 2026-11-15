@@ -1,6 +1,75 @@
 //! A declared login shell exists and is executable by the account.
 
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::os::unix::fs::PermissionsExt;
+
+thread_local! {
+    /// The shell paths an earlier File or Symlink step of the plan
+    /// provides: check mode runs no file creation, so the live
+    /// filesystem still lacks them when the account's task verifies
+    /// the shell — the plan's own record stands in for the missing
+    /// live entries the way `planned_group` stands in for a group
+    /// `groupadd` has not created yet. The lowering orders every
+    /// managed shell provider before the account
+    /// (`linux-user-shell-symlink-chain-before-account.pkl`,
+    /// `linux-user-shell-reconciled-later-stage.pkl`,
+    /// `linux-user-shell-obsolete-provider-replaced.pkl`), and apply
+    /// verifies the live shell the provider created, so the excuse
+    /// holds in check mode only.
+    static PLANNED_SHELL_PROVIDERS: RefCell<BTreeSet<String>> =
+        const { RefCell::new(BTreeSet::new()) };
+}
+
+/// Records that a File or Symlink step of the plan manages `path`:
+/// the account's check-mode verification reads it instead of failing
+/// on the live filesystem the step has not mutated yet. The File and
+/// Symlink steps are the producers of this record; until their
+/// check-mode runs note what they manage, only the tests below call
+/// it — the producer wiring removes the `expect` when it notes here.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the File/Symlink producer wiring notes here")
+)]
+pub(super) fn note_planned_shell_provider(path: &str) {
+    PLANNED_SHELL_PROVIDERS.with(|providers| {
+        providers.borrow_mut().insert(path.to_string());
+    });
+}
+
+/// Whether an earlier step of the plan provides the shell `path`.
+pub(super) fn planned_shell_provided(path: &str) -> bool {
+    PLANNED_SHELL_PROVIDERS.with(|providers| providers.borrow().contains(path))
+}
+
+/// Clears the plan's shell-provider record: a new plan starts with no
+/// provider, the way `plan::reset` clears the identity record.
+pub(super) fn reset_planned_shell_providers() {
+    PLANNED_SHELL_PROVIDERS.with(|providers| {
+        providers.borrow_mut().clear();
+    });
+}
+
+/// Whether the account may declare `shell` as its login shell: the
+/// live `shell_allowed` check, except that check mode excuses a shell
+/// an earlier File or Symlink step of the plan provides — check mode
+/// runs no file creation, so the live filesystem still lacks it,
+/// while apply runs the provider first and verifies the live shell
+/// it created. A shell no step provides is refused here the way
+/// apply refuses it: the dry run must not report a change that cannot
+/// succeed.
+pub(super) fn shell_provided(shell: &str, check_mode: bool) -> Result<(), String> {
+    match shell_allowed(shell) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if check_mode && planned_shell_provided(shell) {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
 
 /// Whether the shell is executable by the account that signs in with
 /// it. `useradd` and `usermod` accept a missing or non-executable shell
