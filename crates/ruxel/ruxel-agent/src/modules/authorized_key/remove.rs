@@ -9,6 +9,7 @@ use super::{
     key_material_bytes, open, open_ssh, publish_checked, read_authorized_keys_with_identity,
     split_lines,
 };
+use std::os::unix::fs::MetadataExt;
 
 #[cfg(test)]
 #[path = "remove/tests.rs"]
@@ -28,11 +29,17 @@ pub(super) fn remove_key(
 ) -> Result<bool, String> {
     let want_material = key_material(key).ok_or("authorized_key: malformed key")?;
     let want_material = (want_material.0.into_bytes(), want_material.1.into_bytes());
-    let home_file = File::from(open(home, dir_flags(), Mode::empty()).map_err(|e| e.to_string())?);
+    let home_file = match open(home, dir_flags(), Mode::empty()) {
+        // A missing home holds no key: a removal changes nothing, the
+        // way a missing `.ssh` changes nothing.
+        Err(rustix::io::Errno::NOENT) => return Ok(false),
+        opened => File::from(opened.map_err(|e| e.to_string())?),
+    };
     flock(&home_file, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
     // Never create `.ssh` for a removal: a missing directory holds no key.
     let ssh = open_ssh(&home_file, uid, gid, false)?;
     let Some(dir) = ssh else {
+        ensure_home(home, &home_file)?;
         return Ok(false);
     };
     flock(&dir, FlockOperation::LockExclusive).map_err(|e| e.to_string())?;
@@ -53,8 +60,10 @@ pub(super) fn remove_key(
         .filter(|line| !carries_key(line, &want_material))
         .collect();
     if kept.len() == lines.len() {
-        // The `.ssh` directory is checked again: a replacement in between
-        // may hold the key the directory this operation opened did not.
+        // The home and the `.ssh` directory are checked again: a
+        // replacement in between may hold the key the directories this
+        // operation opened did not.
+        ensure_home(home, &home_file)?;
         ensure_attached(&home_file, &dir)?;
         return Ok(false);
     }
@@ -65,6 +74,11 @@ pub(super) fn remove_key(
         ensure_attached(&home_file, &dir)?;
         publish_checked(&dir, &kept.concat(), uid, gid, identity)?;
     }
+    // The home and the directory are checked once more before the
+    // removal is reported, in check mode as well: every later check is
+    // relative to the detached old home when the account home was
+    // replaced, while the visible replacement is another directory.
+    ensure_home(home, &home_file)?;
     // The directory is checked once more before the removal is
     // reported, in check mode as well: the key the detached directory
     // holds may not be the one the attached one holds, and the write —
@@ -72,6 +86,20 @@ pub(super) fn remove_key(
     // the directory that is still `.ssh`.
     ensure_attached(&home_file, &dir)?;
     Ok(true)
+}
+
+/// Whether the home the operation opened is still the account home:
+/// an administrator that renames and replaces the home in between
+/// leaves every later check relative to the detached old home, while
+/// the visible replacement is another directory.
+fn ensure_home(home: &Path, home_file: &File) -> Result<(), String> {
+    let current =
+        std::fs::metadata(home).map_err(|e| format!("authorized_key: home changed: {e}"))?;
+    let opened = home_file.metadata().map_err(|e| e.to_string())?;
+    if current.dev() != opened.dev() || current.ino() != opened.ino() {
+        return Err("authorized_key: home changed during operation".into());
+    }
+    Ok(())
 }
 
 /// Whether a line of the file carries the key.
