@@ -706,11 +706,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                             // and recreating it.
                             take_back_created_account(
                                 account,
-                                reused_private_group.as_ref(),
+                                match group {
+                                    Some(_) => PrivateGroup::Declared,
+                                    None => match reused_private_group.as_ref() {
+                                        Some(reused) => PrivateGroup::Reused(reused),
+                                        None => PrivateGroup::Created,
+                                    },
+                                },
                                 &claimed_home(home, name),
                                 home_preexisted,
                                 &|account| run_cmd("usermod", &["-g", "0", account]),
                                 &|account| run_cmd("userdel", &[account]),
+                                &|group| run_cmd("groupdel", &[group]),
                                 &|name| Ok(group_entry(name)?.is_some()),
                             )?;
                             // The plan's record follows the host's:
@@ -1109,6 +1116,26 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     Ok(json!({"changed": changed, "failed": false, "name": name, "state": "present"}))
 }
 
+/// Which same-name group the failed operation leaves behind: the
+/// rollback's decision about the group depends on where it came from.
+#[derive(Clone, Copy)]
+enum PrivateGroup<'a> {
+    /// The step reused a group that predates it — the host's own, or an
+    /// earlier plan step's: never the rollback's to delete. The doomed
+    /// account moves off it first and the rollback verifies it survived
+    /// instead of deleting and recreating it.
+    Reused(&'a (String, u64)),
+    /// `useradd -U` created the group: it is the step's own, so the
+    /// rollback takes it back explicitly — `userdel` removes the empty
+    /// same-name group only on a host that deletes one
+    /// (`USERGROUPS_ENAB`), while a host that keeps it would leave the
+    /// created group and its gid behind for a retry to silently reuse.
+    Created,
+    /// The step declared another primary group (`-g`): no same-name
+    /// group is the operation's to take back, whatever the host holds.
+    Declared,
+}
+
 /// The account the step created is taken back: `useradd` has already
 /// put it in the passwd database, and a task that fails with the
 /// account left behind leaves the host in a state the workflow never
@@ -1117,42 +1144,69 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
 /// Which groups the deletion may take is decided before `useradd`
 /// runs, by the live lookup the creation already does: where the host
 /// holds no same-name group `useradd -U` creates one, so it is the
-/// step's own and the deletion takes it with the account. A group the
-/// step reused predates the step — the host's own, or an earlier plan
-/// step's (apply runs steps in order, so an earlier step's group is
-/// already on the host) — and is never the rollback's to delete. No
-/// restore brings back a password-bearing group's secret: no shadow
-/// utility accepts it off the command line, and a hash in `groupadd
-/// -p` argv is a hash every local user can copy — so the rollback
-/// leaves the group alone instead of trading the host's authentication
-/// state for a locked one. `userdel` removes the same-name group only
-/// where it is the account's primary group, so the rollback moves the
-/// doomed account off it first (`usermod -g 0`; gid 0 is the one group
-/// every Linux host holds, and a number needs no lookup) and verifies
-/// it survived afterwards: a group `userdel` took anyway is reported,
+/// step's own and the rollback takes it back explicitly — the doomed
+/// account moves off it first (`usermod -g 0`; gid 0 is the one group
+/// every Linux host holds, and a number needs no lookup), `userdel`
+/// takes the account, `groupdel` takes the created group, and the
+/// absence afterwards is verified: `userdel` removes the empty
+/// same-name group only on a host that deletes one (`USERGROUPS_ENAB`),
+/// and a group left behind would hand a retry the partial state to
+/// silently reuse. A group the step reused predates the step — the
+/// host's own, or an earlier plan step's (apply runs steps in order, so
+/// an earlier step's group is already on the host) — and is never the
+/// rollback's to delete. No restore brings back a password-bearing
+/// group's secret: no shadow utility accepts it off the command line,
+/// and a hash in `groupadd -p` argv is a hash every local user can
+/// copy — so the rollback leaves the group alone instead of trading
+/// the host's authentication state for a locked one. `userdel` removes
+/// the same-name group only where it is the account's primary group, so
+/// the rollback moves the doomed account off it first and verifies it
+/// survived afterwards: a group `userdel` took anyway is reported,
 /// never recreated locked.
 fn take_back_account(
     account: &str,
-    reused_private_group: Option<&(String, u64)>,
+    private_group: PrivateGroup<'_>,
     move_off_group: &dyn Fn(&str) -> Result<(), String>,
     remove_account: &dyn Fn(&str) -> Result<(), String>,
+    remove_group: &dyn Fn(&str) -> Result<(), String>,
     group_exists: &dyn Fn(&str) -> Result<bool, String>,
 ) -> Result<(), String> {
-    if reused_private_group.is_some() {
-        move_off_group(account)?;
+    match private_group {
+        PrivateGroup::Reused((name, _)) => {
+            move_off_group(account)?;
+            remove_account(account)?;
+            // The pre-existing group is never the rollback's to delete: a host
+            // that took it anyway says so loudly, and nothing recreates it
+            // locked behind the failed task.
+            if !group_exists(name)? {
+                return Err(format!(
+                    "user: rollback of {account} took the pre-existing group {name} with it; refusing to recreate it without its password"
+                ));
+            }
+            Ok(())
+        }
+        PrivateGroup::Created => {
+            // The operation's own group: the explicit `groupdel` removes
+            // it on every host policy, and the absence afterwards is
+            // verified — a group left behind would hand a retry the
+            // partial state to silently reuse.
+            move_off_group(account)?;
+            remove_account(account)?;
+            remove_group(account)?;
+            if group_exists(account)? {
+                return Err(format!(
+                    "user: rollback of {account} left its created group {account} behind; refusing to leave the partial state for a retry to silently reuse"
+                ));
+            }
+            Ok(())
+        }
+        PrivateGroup::Declared => {
+            // The account holds a declared group: no same-name group is
+            // the operation's, whatever the host holds.
+            remove_account(account)?;
+            Ok(())
+        }
     }
-    remove_account(account)?;
-    // The pre-existing group is never the rollback's to delete: a host
-    // that took it anyway says so loudly, and nothing recreates it
-    // locked behind the failed task.
-    if let Some((name, _)) = reused_private_group
-        && !group_exists(name)?
-    {
-        return Err(format!(
-            "user: rollback of {account} took the pre-existing group {name} with it; refusing to recreate it without its password"
-        ));
-    }
-    Ok(())
 }
 
 /// Whether the account's claimed private group is still missing: a
@@ -1321,20 +1375,26 @@ fn private_group_gone(emptied: bool, post_removal: Option<&(String, u64)>) -> bo
 /// layer below (`apply::run` takes back the repairs of an existing
 /// account's change): this one covers the creation's own home only, so
 /// the two never take back the same directory.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the take-back threads the account, the home and the group teardown together; splitting it would scatter one rollback across callers"
+)]
 fn take_back_created_account(
     account: &str,
-    reused_private_group: Option<&(String, u64)>,
+    private_group: PrivateGroup<'_>,
     home: &str,
     home_preexisted: bool,
     move_off_group: &dyn Fn(&str) -> Result<(), String>,
     remove_account: &dyn Fn(&str) -> Result<(), String>,
+    remove_group: &dyn Fn(&str) -> Result<(), String>,
     group_exists: &dyn Fn(&str) -> Result<bool, String>,
 ) -> Result<(), String> {
     take_back_account(
         account,
-        reused_private_group,
+        private_group,
         move_off_group,
         remove_account,
+        remove_group,
         group_exists,
     )?;
     if !home_preexisted && std::fs::symlink_metadata(home).is_ok() {
