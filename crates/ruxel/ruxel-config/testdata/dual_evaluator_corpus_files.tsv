@@ -76,6 +76,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation-private-group-member.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
+  tests/workflow/invalid/linux-group-gid-held-blocks-free.pkl
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
@@ -147,9 +148,11 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-auto-removal-claim-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
+  tests/workflow/invalid/linux-user-uid-draw-other-hosts.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl
+  tests/workflow/invalid/linux-user-uid-renumbered-other-host.pkl
   tests/workflow/invalid/linux-user-uid-reuse-partial-hosts.pkl
   tests/workflow/invalid/linux-user-uid-twice.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
@@ -188,6 +191,7 @@ dual_evaluator
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
+  tests/workflow/valid/linux-group-gid-freed-by-departure.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
   tests/workflow/valid/linux-sysctl-equals.pkl
@@ -204,6 +208,8 @@ dual_evaluator
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl
   tests/workflow/valid/linux-user-remove-home-inactive.pkl
+  tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
+  tests/workflow/valid/linux-user-uid-renumbered-frees-draw.pkl
   tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl
   tests/workflow/valid/linux-user-uid-reused-after-removal.pkl
   tests/workflow/valid/linux-user-watch.pkl

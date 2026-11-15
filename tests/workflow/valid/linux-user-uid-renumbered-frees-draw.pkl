@@ -1,0 +1,19 @@
+// An explicit renumbering of the drawing identity frees its automatic
+// allocation: Alice draws a uid in the first stage, the second stage
+// sets it to 1600 — `usermod -u` releases whatever the allocator drew
+// — so the third stage may claim 1500, which Alice can no longer hold.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "draw"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice" }
+  } }
+  new Stage { title = "renumber"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1600 }
+  } }
+  new Stage { title = "claim"; hosts = inventory.workers; steps {
+    new linux.User { user = "bob"; uid = 1500 }
+  } }
+}
