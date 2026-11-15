@@ -155,13 +155,14 @@ pub(super) fn rollback_home(path: &str, prior: Option<(u64, u64)>) -> Result<(),
 }
 
 /// The claimed home of the account the step created: the directory is
-/// reconciled with the account's final identity, and the account is
-/// taken back when the reconciliation fails. A home that cannot take
-/// the ownership — an immutable directory, a directory on a read-only
+/// reconciled with the account's final identity and takes the policy
+/// mode — `useradd -m` makes the home with the host's own creation
+/// mode, so the same run would otherwise report convergence on a home
+/// the module defines differently — and the account is taken back when
+/// the reconciliation fails. A home that cannot take the ownership or
+/// the mode — an immutable directory, a directory on a read-only
 /// mount — fails the reconciliation, and the account the step created
-/// must not stay behind in the passwd database when the task fails:
-/// the host's account database is the workflow's to keep, and a
-/// refused task leaves it as it was.
+/// must not stay behind in the passwd database when the task fails.
 pub(super) fn reconcile_created_home(
     name: &str,
     home: &str,
@@ -169,7 +170,11 @@ pub(super) fn reconcile_created_home(
     check_mode: bool,
     remove_account: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<bool, String> {
-    match ensure_home(home, created.uid, created.gid, check_mode) {
+    let reconciled: Result<bool, String> = (|| {
+        let changed = ensure_home(home, created.uid, created.gid, check_mode)?;
+        Ok(changed || enforce_created_mode(home, check_mode)?)
+    })();
+    match reconciled {
         Ok(changed) => Ok(changed),
         Err(error) => match remove_account(name) {
             Ok(()) => Err(error),
@@ -178,6 +183,26 @@ pub(super) fn reconcile_created_home(
             )),
         },
     }
+}
+
+/// The mode of the claimed home of an account the step created: the
+/// policy's, not the host's creation default. The mode is read off the
+/// directory itself after the reconciliation owns it — the creation may
+/// have asked for the policy mode and still landed elsewhere — and
+/// check mode reports the pending repair. Only the creation reconciles
+/// the mode: an adopted home of an existing account keeps the mode its
+/// owner chose.
+fn enforce_created_mode(home: &str, check_mode: bool) -> Result<bool, String> {
+    let fd = open_home(home, false)?;
+    let meta = fstat(&fd).map_err(|error| format!("user: own home {home}: {error}"))?;
+    if Mode::from_raw_mode(meta.st_mode & 0o777) == HOME_MODE {
+        return Ok(false);
+    }
+    if check_mode {
+        return Ok(true);
+    }
+    fchmod(&fd, HOME_MODE).map_err(|error| format!("user: create home {home}: {error}"))?;
+    Ok(true)
 }
 
 /// The home directory opened through its parent: the walk opens the
@@ -364,7 +389,6 @@ fn own_through(fd: &OwnedFd, uid: u32, gid: u32, home: &str) -> Result<(), Strin
 /// The adoption of an existing home: the directory a non-root
 /// principal may have placed is refused, the operator's own staging is
 /// adopted — over scratch directories, never a host account.
-#[cfg(test)]
 #[cfg(test)]
 #[path = "home/tests/adoption.rs"]
 mod tests;
