@@ -122,6 +122,15 @@ pub(super) fn forget_user(name: &str) {
     });
 }
 
+/// Every account the plan declares present: the plan's own user record —
+/// including the accounts check mode never created, which the host's
+/// passwd file does not list. A scan that decides whether a group
+/// survives the plan consults these alongside the live entries, or it
+/// misses the memberships the plan's own earlier tasks gave them.
+pub(super) fn users() -> Vec<String> {
+    USERS.with(|users| users.borrow().keys().cloned().collect())
+}
+
 /// The plan's record of the account's home: the path the account's
 /// passwd entry carries under the plan — what a removal verifies its
 /// declaration against, since `userdel -r` deletes that home and no
