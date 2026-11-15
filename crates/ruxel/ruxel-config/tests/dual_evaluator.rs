@@ -256,6 +256,12 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-sysctl-user-home-clash.pkl",
     "invalid/linux-user-private-group-member-removed-on-other-host.pkl",
     "invalid/linux-user-uid-auto-removal-claim-number.pkl",
+    "invalid/linux-group-gid-held-blocks-free.pkl",
+    "invalid/linux-user-uid-draw-other-hosts.pkl",
+    "invalid/linux-user-uid-renumbered-other-host.pkl",
+    "valid/linux-group-gid-freed-by-departure.pkl",
+    "valid/linux-user-uid-provided-before-draw.pkl",
+    "valid/linux-user-uid-renumbered-frees-draw.pkl",
 ];
 
 /// The official `pkl` binary.
