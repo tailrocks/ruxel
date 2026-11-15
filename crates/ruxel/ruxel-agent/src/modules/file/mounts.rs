@@ -150,14 +150,16 @@ pub(super) fn bound_root(path: &Path, roots: &[&str]) -> Result<Option<String>, 
 /// The system root a path lands in, with the mounts of the host given.
 pub(super) fn bound_root_in(path: &Path, roots: &[&str], mounts: &[Mount]) -> Option<String> {
     // The mount that covers the path the deepest is the one that names
-    // where the path lands.
+    // where the path lands. When mounts are stacked at one point, the
+    // later record is the tree that is visible, so an equal depth keeps
+    // the later one and never the hidden one.
     let mut covering: Option<&Mount> = None;
     for mount in mounts {
         if !path.starts_with(&mount.point) {
             continue;
         }
         let deeper = covering.is_some_and(|other| {
-            other.point.components().count() >= mount.point.components().count()
+            other.point.components().count() > mount.point.components().count()
         });
         if !deeper {
             covering = Some(mount);

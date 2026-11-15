@@ -71,6 +71,45 @@ fn a_descendant_reached_through_a_bound_filesystem_root_is_refused() {
 }
 
 #[test]
+fn the_visible_mount_is_the_one_stacked_on_top() {
+    // Two trees are mounted at one point: the later record is the tree
+    // the removal would enter, so the hidden tree must not excuse it.
+    let mounts = [
+        mount("/srv/benign", "/scratch/config", (7, 11)),
+        mount("/etc", "/scratch/config", etc_identity()),
+    ];
+    let roots = super::super::floor::SYSTEM_ROOTS;
+    assert_eq!(
+        super::super::mounts::bound_root_in(
+            Path::new("/scratch/config/ssh/sshd_config"),
+            &roots,
+            &mounts,
+        ),
+        Some("/etc".to_string())
+    );
+}
+
+#[test]
+fn a_mount_hidden_below_another_is_not_the_visible_tree() {
+    // The bind of the root is stacked below a benign mount: the visible
+    // tree carries no root, and the removal is not refused for the tree
+    // it would enter.
+    let mounts = [
+        mount("/etc", "/scratch/config", etc_identity()),
+        mount("/srv/benign", "/scratch/config", (7, 11)),
+    ];
+    let roots = super::super::floor::SYSTEM_ROOTS;
+    assert_eq!(
+        super::super::mounts::bound_root_in(
+            Path::new("/scratch/config/ssh/sshd_config"),
+            &roots,
+            &mounts,
+        ),
+        None
+    );
+}
+
+#[test]
 fn a_mount_of_another_filesystem_is_not_a_crossing() {
     // The mount holds a tree of a filesystem of its own: the path
     // lands there, and not in the root the name resembles.
