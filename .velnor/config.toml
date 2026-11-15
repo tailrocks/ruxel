@@ -106,10 +106,6 @@ name = "ubuntu-26.04-scale-set"
 labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
 
-[execution.overrides.check-acceptance-local]
-profile = "local"
-role = "verification"
-
 [execution.overrides.check-cargo-deny]
 profile = "local"
 role = "verification"
@@ -166,10 +162,6 @@ role = "verification"
 profile = "local"
 role = "verification"
 
-[execution.overrides.rust-ruxel-agent]
-profile = "local"
-role = "verification"
-
 [execution.overrides.rust-ruxel-config]
 profile = "local"
 role = "verification"
@@ -179,10 +171,6 @@ profile = "local"
 role = "verification"
 
 [execution.overrides.rust-ruxel-engine]
-profile = "local"
-role = "verification"
-
-[execution.overrides.rust-ruxel-guard]
 profile = "local"
 role = "verification"
 

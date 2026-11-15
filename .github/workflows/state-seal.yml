@@ -325,7 +325,7 @@ jobs:
       - &s24
         name: Record optional cache budget
         id: velnor-cache-clock
-        run: "set -eu\nunavailable() { printf '%s\\n' '::warning::cache_unavailable: invalid first-step clock or output'; }\noutput=${GITHUB_OUTPUT-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$now\" \"$seconds\"; do\n  case \"$value\" in ''|*[!0-9]*) unavailable; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) unavailable; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { unavailable; exit 0; }\ndone\nif [ -z \"$output\" ] || ! printf 'started=%s\\ndeadline=%s\\n' \"$now\" \"$((now + seconds))\" 2>/dev/null >> \"$output\"; then\n  unavailable\nfi\n"
+        run: &r18 "set -eu\nunavailable() { printf '%s\\n' '::warning::cache_unavailable: invalid first-step clock or output'; }\noutput=${GITHUB_OUTPUT-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$now\" \"$seconds\"; do\n  case \"$value\" in ''|*[!0-9]*) unavailable; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) unavailable; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { unavailable; exit 0; }\ndone\nif [ -z \"$output\" ] || ! printf 'started=%s\\ndeadline=%s\\n' \"$now\" \"$((now + seconds))\" 2>/dev/null >> \"$output\"; then\n  unavailable\nfi\n"
         env:
           VELNOR_CACHE_JOB_SECONDS: "300"
       - &s25
@@ -446,12 +446,12 @@ jobs:
       - &s31
         name: Prepare pinned tools
         env: *m6
-        run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
+        run: &r22 "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" jactionlint@2.4.0 shellcheck@0.11.0 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
       - *s7
       - &s32
         name: Prepare Rust components
         env: *m6
-        run: "mise --no-config --no-env --no-hooks exec 'rust@'\"${VELNOR_TOOL_RUST}\" -- rustup component add --toolchain \"${VELNOR_TOOL_RUST}\"'-x86_64-unknown-linux-gnu' clippy rustfmt"
+        run: &r23 "mise --no-config --no-env --no-hooks exec 'rust@'\"${VELNOR_TOOL_RUST}\" -- rustup component add --toolchain \"${VELNOR_TOOL_RUST}\"'-x86_64-unknown-linux-gnu' clippy rustfmt"
       - *s8
       - &s33
         name: Restore Cargo sources
@@ -2331,6 +2331,7 @@ jobs:
       - state-producer-root
       - sources-producer
       - tools-producer-36cc6f04
+      - tools-producer-76f7a9c9
       - tools-producer-80da2be8
     if: "!cancelled() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && needs.state-producer-root.outputs.produced == 'true' && needs.state-producer-root.outputs.artifact_id != ''"
     steps:
@@ -3146,14 +3147,61 @@ jobs:
         name: Report optional cache save failure
         if: always() && !cancelled() && steps.velnor-optional-tools-save.outcome == 'failure'
         run: *r21
+  tools-producer-76f7a9c9:
+    name: Tools producer / 76f7a9c9
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    continue-on-error: true
+    env: &m25
+      RUSTUP_AUTO_INSTALL: "0"
+      VELNOR_RUN_KEY_ATTEMPT: ${{ github.run_attempt }}
+    cache-mode: write
+    needs:
+      - sources-producer
+    if: "!cancelled() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true"
+    steps:
+      - name: Record optional cache budget
+        id: velnor-cache-clock
+        run: *r18
+        env:
+          VELNOR_CACHE_JOB_SECONDS: "1200"
+      - *s25
+      - *s26
+      - *s2
+      - *s28
+      - *s29
+      - *s65
+      - *s66
+      - name: Prepare pinned tools
+        if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
+        env: *m6
+        run: *r22
+      - *s67
+      - name: Prepare Rust components
+        if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
+        env: *m6
+        run: *r23
+      - &s71
+        name: Verify Rust channel manifest
+        if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
+        uses: ./.github/actions/velnor-verify-rust-manifest # zizmor: ignore[self-repository]
+      - name: Admit optional cache save
+        id: velnor-optional-tools-save-budget
+        if: success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
+        run: *r20
+        env:
+          VELNOR_CACHE_JOB_SECONDS: "1200"
+          VELNOR_CACHE_STARTED: ${{ steps.velnor-cache-clock.outputs.started }}
+          VELNOR_CACHE_DEADLINE: ${{ steps.velnor-cache-clock.outputs.deadline }}
+          VELNOR_CACHE_REQUIRED_SECONDS: "90"
+      - *s69
+      - *s70
   tools-producer-80da2be8:
     name: Tools producer / 80da2be8
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     continue-on-error: true
-    env:
-      RUSTUP_AUTO_INSTALL: "0"
-      VELNOR_RUN_KEY_ATTEMPT: ${{ github.run_attempt }}
+    env: *m25
     cache-mode: write
     needs:
       - sources-producer
@@ -3172,9 +3220,7 @@ jobs:
         env: *m6
         run: *r1
       - *s67
-      - name: Verify Rust channel manifest
-        if: steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
-        uses: ./.github/actions/velnor-verify-rust-manifest # zizmor: ignore[self-repository]
+      - *s71
       - *s68
       - *s69
       - *s70
