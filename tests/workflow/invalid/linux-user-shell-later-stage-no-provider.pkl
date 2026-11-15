@@ -1,0 +1,16 @@
+// expect: list the shell's step in a stage before the account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// No earlier provider excuses the later one: the account's stage runs
+// first and its task verifies the shell before the later stage creates
+// it, so the ordering is refused.
+stages {
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "app"; shell = "/opt/appsh" }
+  } }
+  new Stage { title = "provide"; hosts = inventory.workers; steps {
+    new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
+  } }
+}
