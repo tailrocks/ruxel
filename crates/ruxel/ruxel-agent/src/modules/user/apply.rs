@@ -167,6 +167,29 @@ pub(super) fn run(
     Ok(changed)
 }
 
+/// The home's repair a later failure takes back: the ownership the
+/// repair found, restored — or the directory the repair created,
+/// removed. The reversal runs on the descriptors the safe walk opens,
+/// never through a link a concurrent rewrite plants, for the repair's
+/// own reason. Removing the created directory takes back exactly what
+/// the repair added: the removal refuses a directory that is not
+/// empty, so contents a concurrent writer planted are kept and
+/// reported rather than deleted.
+fn rollback_home(path: &str, prior: Option<(u64, u64)>) -> Result<(), String> {
+    match prior {
+        Some((uid, gid)) => {
+            let uid = u32::try_from(uid)
+                .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
+            let gid = u32::try_from(gid)
+                .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
+            let fd = super::home::open_home(path, false)?;
+            super::home::own_through(&fd, uid, gid, path)
+        }
+        None => std::fs::remove_dir(path)
+            .map_err(|error| format!("user: take back created home {path}: {error}")),
+    }
+}
+
 /// What the earlier mutations did, taken back in reverse order: the
 /// private group the step created is deleted, and the home's repair is
 /// reversed — the ownership it found restored, the directory it created
@@ -180,7 +203,7 @@ fn take_back(completed: &[Completed], run_cmd: &Runner, error: String) -> String
             Completed::Group(group) => run_cmd("groupdel", &[group]).map_err(|rollback| {
                 format!("the group {group} could not be taken back: {rollback}")
             }),
-            Completed::Home { path, prior } => super::home::rollback_home(path, *prior)
+            Completed::Home { path, prior } => rollback_home(path, *prior)
                 .map_err(|rollback| format!("the home {path} could not be taken back: {rollback}")),
         };
         if let Err(failure) = undone {
