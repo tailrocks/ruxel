@@ -145,19 +145,52 @@ pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
 /// what shadows — procps selects it and then reports that it cannot
 /// open a broken link, never reaching the lower-precedence copy — so
 /// the presence test is `symlink_metadata`, never `exists`, which
-/// follows the link and answers false for a broken one. Only files
-/// inside the recognized system directories are shadowed:
+/// follows the link and answers false for a broken one. A symlink
+/// alias of the target itself is no shadow: the entry resolves to the
+/// file itself, so the boot reads the managed bytes through it
+/// (`boot_bytes` follows links) and there is nothing to refuse. Only
+/// files inside the recognized system directories shadow:
 /// `/etc/sysctl.conf` loads after all of them and is never skipped.
-pub(super) fn shadowing(file: &str) -> Option<String> {
-    shadowing_in(file, &DIRS)
-}
-
+///
 /// The shadow of `file` among `dirs`, which the tests point at a
 /// scratch surface of their own.
 pub(super) fn shadowing_in(file: &str, dirs: &[(&str, u8)]) -> Option<String> {
     shadow_candidates_in(file, dirs)
         .into_iter()
-        .find(|candidate| std::fs::symlink_metadata(candidate).is_ok())
+        .find(|candidate| {
+            std::fs::symlink_metadata(candidate).is_ok() && !is_self_alias(candidate, file)
+        })
+}
+
+/// Whether `candidate` is a symlink alias of the managed file: the
+/// entry resolves to the file itself, so it carries the managed bytes
+/// at boot rather than shadowing them. Only a link that targets the
+/// managed file is exempt — a regular file, a mask, a broken link, or
+/// a link anywhere else still holds the name over the lower-precedence
+/// copy. The comparison is path-level (`read_link` with
+/// `canonicalize`), never a raw device-and-inode stat conversion.
+fn is_self_alias(candidate: &str, file: &str) -> bool {
+    let Ok(target) = std::fs::read_link(candidate) else {
+        return false;
+    };
+    let resolved = if target.is_absolute() {
+        target
+    } else {
+        Path::new(candidate)
+            .parent()
+            .map_or(target.clone(), |parent| parent.join(&target))
+    };
+    match (
+        std::fs::canonicalize(&resolved),
+        std::fs::canonicalize(file),
+    ) {
+        (Ok(into), Ok(managed)) => into == managed,
+        // Neither side resolves — the link dangles at the managed
+        // path the publish has yet to create — so the names compare
+        // lexically; a broken link anywhere else still shadows.
+        (Err(_), Err(_)) => resolved.as_path() == Path::new(file),
+        _ => false,
+    }
 }
 
 /// The paths that would shadow `file` at boot among `dirs`, highest
