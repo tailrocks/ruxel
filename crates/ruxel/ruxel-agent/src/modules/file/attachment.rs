@@ -12,6 +12,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// The counter that keeps the staging names of the process apart.
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+/// The prefix of the names the process stages entries under: the names
+/// are its own, and the walk of a tree leaves them alone.
+const PREFIX: &str = ".ruxel-remove-";
+
+/// Whether a name is one the process stages entries under: the walk of
+/// a tree skips them, or it takes an entry of its own.
+pub(super) fn is_staging(name: &std::ffi::CStr) -> bool {
+    name.to_bytes().starts_with(PREFIX.as_bytes())
+}
+
 /// Takes the name of the target away: the entry is renamed to a name
 /// of its own inside the directory that holds it, so the name the
 /// removal was asked for cannot be swapped while the target goes. The
@@ -23,9 +33,52 @@ pub(super) fn take_name(
     opened: &OwnedFd,
     path: &Path,
 ) -> Result<CString, String> {
+    let staging = stage(parent, name, path)?;
+    match holds_name(parent, staging.as_c_str(), opened) {
+        Ok(true) => Ok(staging),
+        Ok(false) => {
+            give_back(parent, &staging, name);
+            Err(replaced(path))
+        }
+        Err(error) => {
+            give_back(parent, &staging, name);
+            Err(format!("file: cannot remove {}: {error}", path.display()))
+        }
+    }
+}
+
+/// Takes the name of an entry away and checks that it still holds the
+/// entry that was read: the identity that was read is the identity the
+/// staged name must carry. An entry that was replaced in between is put
+/// back, and the removal refuses.
+pub(super) fn take_entry(
+    parent: &OwnedFd,
+    name: &CString,
+    identity: (u64, u64),
+    path: &Path,
+) -> Result<CString, String> {
+    let staging = stage(parent, name, path)?;
+    let held = statat(parent, staging.as_c_str(), AtFlags::SYMLINK_NOFOLLOW);
+    match held {
+        Ok(meta) if (super::floor::device(&meta), meta.st_ino) == identity => Ok(staging),
+        Ok(_) => {
+            give_back(parent, &staging, name);
+            Err(replaced(path))
+        }
+        Err(error) => {
+            give_back(parent, &staging, name);
+            Err(format!("file: cannot remove {}: {error}", path.display()))
+        }
+    }
+}
+
+/// Moves the name of an entry to a name of its own inside the directory
+/// that holds it, so the name the removal was asked for cannot be
+/// swapped while the entry goes.
+fn stage(parent: &OwnedFd, name: &CString, path: &Path) -> Result<CString, String> {
     for _ in 0..128 {
         let staging = CString::new(format!(
-            ".ruxel-remove-{}-{}",
+            "{PREFIX}{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
@@ -37,25 +90,11 @@ pub(super) fn take_name(
             staging.as_c_str(),
             RenameFlags::NOREPLACE,
         ) {
-            Ok(()) => {}
-            Err(Errno::EXIST) => continue,
+            Ok(()) => return Ok(staging),
+            // The name of the staging entry is taken: another name is
+            // tried.
+            Err(Errno::EXIST) => {}
             Err(error) => {
-                return Err(format!("file: cannot remove {}: {error}", path.display()));
-            }
-        }
-        // The name that was taken away must be the directory that was
-        // opened: a name that was replaced in between is put back.
-        match holds_name(parent, staging.as_c_str(), opened) {
-            Ok(true) => return Ok(staging),
-            Ok(false) => {
-                give_back(parent, &staging, name);
-                return Err(format!(
-                    "file: refusing to remove {}: it was replaced during the operation",
-                    path.display()
-                ));
-            }
-            Err(error) => {
-                give_back(parent, &staging, name);
                 return Err(format!("file: cannot remove {}: {error}", path.display()));
             }
         }
@@ -91,4 +130,12 @@ pub(super) fn give_back(parent: &OwnedFd, staging: &CString, name: &CString) {
         name.as_c_str(),
         RenameFlags::NOREPLACE,
     );
+}
+
+/// The refusal of a removal whose target was replaced in between.
+pub(super) fn replaced(path: &Path) -> String {
+    format!(
+        "file: refusing to remove {}: it was replaced during the operation",
+        path.display()
+    )
 }

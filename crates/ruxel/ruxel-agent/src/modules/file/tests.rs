@@ -12,8 +12,12 @@ mod extra;
 mod mounts;
 #[path = "tests/path.rs"]
 mod path;
+#[path = "tests/removal.rs"]
+mod removal;
 #[path = "tests/root_alias.rs"]
 mod root_alias;
+#[path = "tests/tree.rs"]
+mod tree;
 use super::*;
 use std::os::unix::fs::PermissionsExt;
 

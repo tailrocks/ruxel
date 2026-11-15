@@ -46,6 +46,20 @@ fn a_path_inside_the_root_it_names_is_not_a_crossing() {
 }
 
 #[test]
+fn a_descendant_reached_through_a_bound_filesystem_root_is_refused() {
+    // The filesystem root is bind-mounted under another name, and the
+    // target lies outside the other listed roots: the removal lands in
+    // the tree of the root, and the path says nothing about it.
+    let meta = std::fs::metadata("/").unwrap();
+    let mounts = [mount("/", "/scratch/root", (meta.dev(), meta.ino()))];
+    let roots = super::super::floor::SYSTEM_ROOTS;
+    assert_eq!(
+        super::super::mounts::bound_root_in(Path::new("/scratch/root/opt/data"), &roots, &mounts,),
+        Some("/".to_string())
+    );
+}
+
+#[test]
 fn a_mount_of_another_filesystem_is_not_a_crossing() {
     // The mount holds a tree of a filesystem of its own: the path
     // lands there, and not in the root the name resembles.

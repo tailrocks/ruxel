@@ -16,6 +16,7 @@ mod attachment;
 mod floor;
 mod mounts;
 mod removal;
+mod tree;
 
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;

@@ -62,20 +62,19 @@ pub(super) fn mounts() -> Vec<Mount> {
     mounts
 }
 
-/// The mount points of the host, as the kernel lists them. A mount
-/// point is a tree that belongs to somewhere else, and a removal does
-/// not take it.
-pub(super) fn mount_points() -> Vec<PathBuf> {
-    mounts().into_iter().map(|mount| mount.point).collect()
-}
-
 /// The identity of every mount point of the host: the device and the
 /// inode of the tree that is mounted. A bind mount keeps the identity
 /// of the tree it is mounted from, so an entry with that identity is a
 /// mount point under another name.
 pub(super) fn mount_identities() -> Vec<(u64, u64)> {
-    mounts()
-        .into_iter()
+    identities(&mounts())
+}
+
+/// The identity of every mount of the list: the device and the inode of
+/// the tree that is mounted.
+pub(super) fn identities(mounts: &[Mount]) -> Vec<(u64, u64)> {
+    mounts
+        .iter()
         .map(|mount| mount.identity)
         .filter(|identity| *identity != (0, 0))
         .collect()
@@ -114,7 +113,17 @@ pub(super) fn bound_root_in(path: &Path, roots: &[&str], mounts: &[Mount]) -> Op
     let mount = covering?;
     let relative = path.strip_prefix(&mount.point).ok()?;
     let landed = mount.root.join(relative);
+    // The mount took the path nowhere: the path lands where it was
+    // written, and the mount is not an alias of anything.
+    if landed == path {
+        return None;
+    }
     for root in roots {
+        // The mount does not carry the tree of the root: the path lands
+        // in a tree of its own.
+        if !carries(&mount.root, Path::new(root)) {
+            continue;
+        }
         // The root is on another device: the mount does not carry its
         // tree, and the path lands in a filesystem of its own.
         let Ok(meta) = std::fs::metadata(root) else {
@@ -123,17 +132,33 @@ pub(super) fn bound_root_in(path: &Path, roots: &[&str], mounts: &[Mount]) -> Op
         if meta.dev() != mount.identity.0 {
             continue;
         }
-        if !landed.starts_with(root) {
-            continue;
-        }
         // The path was already inside the root as it was written: the
-        // mount did not take it there.
-        if path.starts_with(root) {
+        // mount did not take it there. The filesystem root holds only
+        // itself: every absolute path starts with it, and the test
+        // would excuse every alias.
+        if inside(path, Path::new(root)) {
             continue;
         }
         return Some((*root).to_string());
     }
     None
+}
+
+/// Whether a mount carries the tree of a root: the tree that is mounted
+/// is the root, or a directory below it.
+fn carries(mounted: &Path, root: &Path) -> bool {
+    mounted == root || inside(mounted, root)
+}
+
+/// Whether a path lies inside a root: a root holds itself and the tree
+/// below it, but the filesystem root holds only itself.
+fn inside(path: &Path, root: &Path) -> bool {
+    if root.parent().is_none() {
+        // The filesystem root: every absolute path starts with it, and
+        // it holds nothing but itself.
+        return path == root;
+    }
+    path.starts_with(root)
 }
 
 /// The mount path as the kernel writes it: the characters that need it

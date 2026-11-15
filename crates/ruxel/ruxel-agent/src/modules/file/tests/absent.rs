@@ -332,7 +332,8 @@ fn the_mount_points_of_the_host_are_read_from_the_kernel() {
     // The mount points of this host are read from the kernel, and they are
     // paths. The listing ends with an empty line, which is not a mount
     // point.
-    for point in super::super::mounts::mount_points() {
+    for mount in super::super::mounts::mounts() {
+        let point = mount.point;
         assert!(!point.as_os_str().is_empty(), "{point:?}");
         assert!(point.is_absolute(), "{point:?}");
     }

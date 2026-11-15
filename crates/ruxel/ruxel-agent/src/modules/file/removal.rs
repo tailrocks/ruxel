@@ -12,7 +12,9 @@ use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
+
+use super::mounts::Mount;
 
 /// Takes the path away: a removal without `recurse` takes an empty
 /// directory only, with it the tree goes with the directory. Reports
@@ -21,15 +23,66 @@ use std::path::{Component, Path};
 /// In check mode nothing is removed: the checks a removal makes are the
 /// ones the run itself makes, so both answer the same.
 pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<bool, String> {
-    // The removal works on the absolute path: a relative path is anchored
-    // at the working directory of the agent, and the floor has to hold the
-    // path that is anchored there.
-    let working = std::env::current_dir().map_err(|error| error.to_string())?;
-    let path = &if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        working.join(path)
+    remove_with(path, recurse, check_mode, &super::mounts::mounts())
+}
+
+/// The removal with the mounts of the host given: a mount is a tree
+/// that belongs to somewhere else, and the removal does not take it.
+pub(super) fn remove_with(
+    path: &Path,
+    recurse: bool,
+    check_mode: bool,
+    mounts: &[Mount],
+) -> Result<bool, String> {
+    let path = absolute(path)?;
+    refuse_before(&path, mounts)?;
+    let (parent, name) = match open_parent(&path) {
+        Ok(opened) => opened,
+        // A missing ancestor means the target is not there either.
+        Err(OpenError::Missing) => return Ok(false),
+        Err(OpenError::Other(error)) => return Err(error),
     };
+    // A bind mount aliases the directory it is mounted from: the
+    // directory that holds the target has a system root's own identity,
+    // and the path says nothing about it.
+    refuse_bound_root(&parent, &path, &super::floor::SYSTEM_ROOTS)?;
+    let meta = match statat(&parent, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(meta) => meta,
+        Err(rustix::io::Errno::NOENT) => {
+            // Removing something that is not there is no change.
+            return Ok(false);
+        }
+        // Every other failure (a path that cannot be read) leaves the
+        // removal unable to say what is there.
+        Err(error) => {
+            return Err(format!("file: cannot read {}: {error}", path.display()));
+        }
+    };
+    let identity = (super::floor::device(&meta), meta.st_ino);
+    refuse_target_mount(identity, mounts, &path)?;
+    if FileType::from_raw_mode(meta.st_mode) != FileType::Directory {
+        // A file, and a link that points at one: the link itself is what
+        // the removal takes.
+        if !check_mode {
+            take_file(&parent, &name, identity, &path)?;
+        }
+        return Ok(true);
+    }
+    take_directory(&parent, &name, &path, recurse, check_mode, mounts)
+}
+
+/// The path the removal works on: the absolute path, so the floor holds
+/// the path that is anchored at the working directory of the agent.
+fn absolute(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let working = std::env::current_dir().map_err(|error| error.to_string())?;
+    Ok(working.join(path))
+}
+
+/// The refusals a removal makes before it opens anything.
+fn refuse_before(path: &Path, mounts: &[Mount]) -> Result<(), String> {
     // A removal never takes a system root, however the path reaches it.
     super::floor::refuse_system_root(path)?;
     // A tree of a system root that is mounted under another name is the
@@ -54,48 +107,61 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
     }
     // A target that is itself a mount point is a tree that belongs to
     // somewhere else, and the removal does not take it.
-    if super::mounts::mount_points()
-        .iter()
-        .any(|mount| mount == path)
-    {
+    if mounts.iter().any(|mount| mount.point == path) {
         return Err(format!(
             "file: refusing to remove {}: it is a mount point",
             path.display()
         ));
     }
-    let (parent, name) = match open_parent(path) {
-        Ok(opened) => opened,
-        // A missing ancestor means the target is not there either.
-        Err(OpenError::Missing) => return Ok(false),
-        Err(OpenError::Other(error)) => return Err(error),
-    };
-    // A bind mount aliases the directory it is mounted from: the
-    // directory that holds the target has a system root's own identity,
-    // and the path says nothing about it.
-    refuse_bound_root(&parent, path, &super::floor::SYSTEM_ROOTS)?;
-    let meta = match statat(&parent, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW) {
-        Ok(meta) => meta,
-        Err(rustix::io::Errno::NOENT) => {
-            // Removing something that is not there is no change.
-            return Ok(false);
-        }
-        // Every other failure (a path that cannot be read) leaves the
-        // removal unable to say what is there.
-        Err(error) => {
-            return Err(format!("file: cannot read {}: {error}", path.display()));
-        }
-    };
-    if FileType::from_raw_mode(meta.st_mode) != FileType::Directory {
-        // A file, and a link that points at one: the link itself is what
-        // the removal takes.
-        if !check_mode {
-            unlinkat(&parent, name.as_c_str(), AtFlags::empty())
-                .map_err(|error| format!("file: cannot remove {}: {error}", path.display()))?;
-        }
-        return Ok(true);
+    Ok(())
+}
+
+/// Refuses a target that is a mount point: the identity of the opened
+/// target is the identity of a tree the kernel mounted, however the path
+/// names it. The path may reach the mount point through an alias
+/// (`/bin/tool` for `/usr/bin/tool`), and the name says nothing about
+/// the tree.
+fn refuse_target_mount(identity: (u64, u64), mounts: &[Mount], path: &Path) -> Result<(), String> {
+    if super::mounts::is_mount_identity(&super::mounts::identities(mounts), identity) {
+        return Err(format!(
+            "file: refusing to remove {}: it is a mount point",
+            path.display()
+        ));
     }
+    Ok(())
+}
+
+/// Takes a file away, and a link that points at one: the link itself is
+/// what the removal takes. The name is taken away before the entry is
+/// unlinked, so an entry that was replaced in between is not the one
+/// that goes.
+pub(super) fn take_file(
+    parent: &OwnedFd,
+    name: &CString,
+    identity: (u64, u64),
+    path: &Path,
+) -> Result<(), String> {
+    let staging = super::attachment::take_entry(parent, name, identity, path)?;
+    let removed = unlinkat(parent, staging.as_c_str(), AtFlags::empty())
+        .map_err(|error| format!("file: cannot remove {}: {error}", path.display()));
+    if removed.is_err() {
+        super::attachment::give_back(parent, &staging, name);
+    }
+    removed
+}
+
+/// Takes a directory away: an empty one without `recurse`, the tree
+/// with it.
+fn take_directory(
+    parent: &OwnedFd,
+    name: &CString,
+    path: &Path,
+    recurse: bool,
+    check_mode: bool,
+    mounts: &[Mount],
+) -> Result<bool, String> {
     let child = openat(
-        &parent,
+        parent,
         name.as_c_str(),
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
@@ -109,20 +175,18 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
             return Err(super::floor::directory_not_empty());
         }
         if !check_mode {
-            take_empty(&parent, &name, &child, path)?;
+            take_empty(parent, name, &child, path)?;
         }
         return Ok(true);
     }
-    if recurse {
-        // The tree is walked before anything is taken away, so a mount
-        // point in it is refused before the removal starts.
-        let mounts = super::mounts::mount_points();
-        if !mounts.is_empty() {
-            super::mounts::preflight(&child, path, &mounts)?;
-        }
+    // The tree is walked before anything is taken away, so a mount
+    // point in it is refused before the removal starts.
+    let points: Vec<PathBuf> = mounts.iter().map(|mount| mount.point.clone()).collect();
+    if !points.is_empty() {
+        super::mounts::preflight(&child, path, &points)?;
     }
     if !check_mode {
-        take_tree(&parent, &name, &child, path)?;
+        take_tree(parent, name, &child, path)?;
     }
     Ok(true)
 }
@@ -151,7 +215,7 @@ fn take_empty(
 fn take_tree(parent: &OwnedFd, name: &CString, child: &OwnedFd, path: &Path) -> Result<(), String> {
     let staging = super::attachment::take_name(parent, name, child, path)?;
     let removed = (|| {
-        remove_tree(child, path)?;
+        super::tree::remove_tree(child, path)?;
         unlinkat(parent, staging.as_c_str(), AtFlags::REMOVEDIR)
             .map_err(|error| format!("file: cannot remove {}: {error}", path.display()))
     })();
@@ -198,8 +262,8 @@ pub(super) fn refuse_bound_root(
 /// Whether the directory that holds the target is another name for the
 /// root: the same directory under a path that does not name it. A bind
 /// mount (`/scratch/root` mounted from `/`) keeps the identity of the
-/// directory it is mounted from, so the path says nothing about where the
-/// removal lands.
+/// directory it is mounted from, so the path says nothing about where
+/// the removal lands.
 pub(super) fn aliases_root(
     parent: &Path,
     parent_id: (u64, u64),
@@ -220,73 +284,17 @@ fn names_the_same(one: &Path, other: &Path) -> bool {
     }
 }
 
-/// Removes the tree under the pinned directory, and the directory itself
-/// is left to the caller: every entry is taken away through the
-/// descriptor, so a name that is replaced in between is never followed.
-fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
-    let held = std::fs::File::from(dir.try_clone().map_err(|error| error.to_string())?)
-        .metadata()
-        .map_err(|error| error.to_string())?;
-    // The mounts are read again as the walk goes: a mount that appeared
-    // after the preflight must not be followed.
+/// Whether a directory holds no entry.
+fn directory_is_empty(dir: &OwnedFd) -> Result<bool, String> {
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let name = entry.file_name();
-        if matches!(name.to_bytes(), b"." | b"..") {
-            continue;
-        }
-        let meta =
-            statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
-        let identity = (super::floor::device(&meta), meta.st_ino);
-        if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
-            let child = openat(
-                dir,
-                name,
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::empty(),
-            )
-            .map_err(|error| error.to_string())?;
-            let opened = rustix::fs::fstat(&child).map_err(|error| error.to_string())?;
-            if (super::floor::device(&opened), opened.st_ino) != identity {
-                // The entry is not the entry that was read: it was
-                // replaced in between.
-                return Err(format!(
-                    "file: refusing to remove {}: it was replaced during the operation",
-                    path.display()
-                ));
-            }
-            // The mounts are read again as the walk descends: a mount
-            // that appeared after the preflight must not be followed.
-            let mounts = super::mounts::mount_identities();
-            if super::mounts::is_mount_identity(
-                &mounts,
-                (super::floor::device(&opened), opened.st_ino),
-            ) {
-                // The entry carries the identity of a tree the kernel
-                // mounted: it is a mount point under another name.
-                return Err(format!(
-                    "file: refusing to remove {}: it holds the mount point {}",
-                    path.display(),
-                    name.to_string_lossy()
-                ));
-            }
-            if super::floor::is_mount_point(held.dev(), super::floor::device(&opened)) {
-                // The entry is on another device: it is a mount point,
-                // and the tree below it belongs to somewhere else.
-                return Err(format!(
-                    "file: refusing to remove {}: it holds the mount point {}",
-                    path.display(),
-                    name.to_string_lossy()
-                ));
-            }
-            remove_tree(&child, path)?;
-            unlinkat(dir, name, AtFlags::REMOVEDIR).map_err(|error| error.to_string())?;
-        } else {
-            unlinkat(dir, name, AtFlags::empty()).map_err(|error| error.to_string())?;
+        if !matches!(name.to_bytes(), b"." | b"..") {
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Opens the directory that holds the path, and the name of the entry in
@@ -357,19 +365,6 @@ pub(super) fn open_parent(path: &Path) -> Result<(OwnedFd, CString), OpenError> 
         })?;
     }
     Ok((current, name))
-}
-
-/// Whether a directory holds no entry.
-fn directory_is_empty(dir: &OwnedFd) -> Result<bool, String> {
-    let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
-    for entry in entries {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let name = entry.file_name();
-        if !matches!(name.to_bytes(), b"." | b"..") {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }
 
 /// The flags a directory is opened with.
