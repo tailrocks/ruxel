@@ -253,7 +253,16 @@ fn a_later_step_compares_the_home_against_the_planned_state() {
     // not against the host's unchanged one.
     let (name, entry, group) = live_account(true).expect("a live account on the host");
     let ctx = check_context();
-    let moved = format!("{}/ruxel-plan-moved", entry.home);
+    // The earlier task's destination lives under the operator's own
+    // tree: a missing home is created beneath its ancestors, so the
+    // plan admits the creation only under trusted ones — the live
+    // home's own parent may belong to another principal.
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-plan-moved-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    let moved = format!("{}/ruxel-plan-moved", anchor.display());
     run(&json!({"name": name, "group": group, "home": moved}), &ctx)
         .expect("the earlier move must plan");
     let back = run(
@@ -266,6 +275,7 @@ fn a_later_step_compares_the_home_against_the_planned_state() {
         Some(&json!(true)),
         "the home moves twice: {back}"
     );
+    std::fs::remove_dir_all(&anchor).unwrap();
 }
 
 #[test]

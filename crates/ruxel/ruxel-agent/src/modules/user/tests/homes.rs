@@ -171,17 +171,19 @@ fn the_home_walk_restarts_at_the_root_for_an_absolute_symlink() {
     // cannot rewrite — its directory is root's and unwritable to the
     // rest — so the scenario needs a root-owned directory tree: the
     // unprivileged lanes skip it, and the root lane proves the walk.
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let base = std::env::temp_dir().join(format!("ruxel-abs-walk-{}", std::process::id()));
+    // The tree stands directly under the root, whose every ancestor
+    // the missing home's trust check accepts; a shared-writable
+    // ancestor would refuse the creation before the walk runs.
+    if super::super::home::operating_uid() != 0 {
+        // Not the root lane: the admitted-symlink scenario cannot be
+        // staged unprivileged.
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let base = std::path::Path::new("/").join(format!("ruxel-abs-walk-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("mnt/homes")).unwrap();
     std::fs::create_dir_all(base.join("srv")).unwrap();
-    if std::fs::metadata(&base).unwrap().uid() != 0 {
-        // Not the root lane: the admitted-symlink scenario cannot be
-        // staged unprivileged.
-        std::fs::remove_dir_all(&base).unwrap();
-        return;
-    }
     for dir in [&base, &base.join("srv"), &base.join("mnt")] {
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     }

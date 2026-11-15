@@ -22,11 +22,11 @@ const HOME_MODE: Mode = Mode::from_raw_mode(0o750);
 /// write is a parent they may replace.
 const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 
-pub(super) use super::adoption::{
-    adoption_pinned, adoption_trusted, ancestors_usable, home_usable,
-};
 #[cfg(test)]
-pub(super) use super::adoption::{operating_uid, trusted_ancestors};
+pub(super) use super::adoption::operating_uid;
+pub(super) use super::adoption::{
+    adoption_pinned, adoption_trusted, ancestors_usable, home_usable, trusted_ancestors,
+};
 
 /// The home `useradd` creates for an account: the declared one, or the
 /// `/home/<name>` the lowering's footprint reserves. The base directory
@@ -62,7 +62,10 @@ pub(super) fn home_gid(
 /// agent's to create — and one that exists but drifted to another uid or
 /// gid is the agent's to reconcile, never a no-change early return. A
 /// symlink at the path is refused, every ancestor is inspected before
-/// the path is traversed, and ownership changes never follow a link
+/// the path is traversed, a missing home is created only under trusted
+/// ancestors — a parent a non-root principal can write could rename the
+/// fresh home aside and plant its contents at the passwd path — and
+/// ownership changes never follow a link
 /// (`lchown`), so neither a link at the path nor one above it can ever
 /// have a target handed to the account. The mutation itself runs on
 /// file descriptors the walk opened without following a link: a
@@ -105,6 +108,12 @@ pub(super) fn ensure_home(
         }
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // A missing home is created beneath its ancestors — and
+            // then owned — so the creation is admitted only under
+            // trusted ones, the way an adoption is, in check mode as
+            // much as in apply: the dry run may not report a creation
+            // that cannot succeed.
+            trusted_ancestors(home)?;
             if check_mode {
                 return Ok(true);
             }

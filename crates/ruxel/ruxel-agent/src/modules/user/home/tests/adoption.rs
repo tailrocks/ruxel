@@ -172,6 +172,19 @@ fn an_attacker_owned_home_under_a_shared_path_is_refused() {
             .expect_err("another principal's pre-created home must never be adopted");
         assert!(error.contains("adopt"), "{error}");
     }
+    // The missing leaf beneath another principal's directory: the
+    // creation would land under its ancestors, so the trust check
+    // refuses it the same way — and nothing is created.
+    let missing = parent.join("bob");
+    let error = home_usable(missing.to_str().unwrap())
+        .expect_err("a missing home beneath another principal must be refused");
+    assert!(error.contains("adopt"), "{error}");
+    for check_mode in [true, false] {
+        let error = ensure_home(missing.to_str().unwrap(), 0, 0, check_mode)
+            .expect_err("a missing home beneath another principal must never be created");
+        assert!(error.contains("adopt"), "{error}");
+    }
+    assert!(!missing.exists(), "the refused home is never created");
     let meta = std::fs::metadata(&home).unwrap();
     assert_eq!(
         meta.uid(),
