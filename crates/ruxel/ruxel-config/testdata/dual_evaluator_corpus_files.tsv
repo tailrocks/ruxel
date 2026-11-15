@@ -83,12 +83,15 @@ dual_evaluator
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
   tests/workflow/invalid/linux-group-removed-first.pkl
+  tests/workflow/invalid/linux-group-removed-supplementary-unrestored.pkl
   tests/workflow/invalid/linux-group-removed-while-primary.pkl
   tests/workflow/invalid/linux-group-removed-while-supplementary.pkl
   tests/workflow/invalid/linux-group-root-gid.pkl
   tests/workflow/invalid/linux-login-shell-user-colon.pkl
   tests/workflow/invalid/linux-login-shell-user-nul.pkl
+  tests/workflow/invalid/linux-sysctl-alias-same-file.pkl
   tests/workflow/invalid/linux-sysctl-boot-order-legacy.pkl
+  tests/workflow/invalid/linux-sysctl-boot-order-login-users.pkl
   tests/workflow/invalid/linux-sysctl-boot-order-precedence.pkl
   tests/workflow/invalid/linux-sysctl-clash-apt-repository.pkl
   tests/workflow/invalid/linux-sysctl-file-clash.pkl
@@ -106,6 +109,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-user-home-clash.pkl
   tests/workflow/invalid/linux-sysctl-value-newline.pkl
   tests/workflow/invalid/linux-sysctl-value-nul.pkl
+  tests/workflow/invalid/linux-sysctl-value-spaces-difference.pkl
   tests/workflow/invalid/linux-sysctl-value-vertical-tab-difference.pkl
   tests/workflow/invalid/linux-sysctl-values-differ.pkl
   tests/workflow/invalid/linux-user-default-home-conflict.pkl
@@ -120,6 +124,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-exact-path.pkl
   tests/workflow/invalid/linux-user-home-removed-later-stage.pkl
+  tests/workflow/invalid/linux-user-home-removed-nested-account.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
@@ -212,6 +217,9 @@ dual_evaluator
   tests/workflow/valid/linux-file-owner-renumbered-same-stage.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
   tests/workflow/valid/linux-group-gid-freed-by-departure.pkl
+  tests/workflow/valid/linux-group-removed-supplementary-restored.pkl
+  tests/workflow/valid/linux-sysctl-alias-watcher.pkl
+  tests/workflow/valid/linux-sysctl-boot-order-different-port.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
   tests/workflow/valid/linux-sysctl-equals.pkl
@@ -223,6 +231,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-shadow-same-stage-legacy.pkl
   tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
+  tests/workflow/valid/linux-sysctl-value-spaces.pkl
   tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl
   tests/workflow/valid/linux-sysctl.pkl
   tests/workflow/valid/linux-user-absent-fields-inactive.pkl
@@ -234,6 +243,7 @@ dual_evaluator
   tests/workflow/valid/linux-user-home-directory-cross-stage.pkl
   tests/workflow/valid/linux-user-home-recreated-by-account.pkl
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
+  tests/workflow/valid/linux-user-home-removed-self-provided.pkl
   tests/workflow/valid/linux-user-private-group-survives-for-member.pkl
   tests/workflow/valid/linux-user-removal-home-match.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl

@@ -557,14 +557,17 @@ function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String
 /// directories: a later stage that persists its value in a file loading
 /// before an earlier stage's hands the boot value back to the earlier
 /// stage — the live value follows the stages, the boot value would not.
-/// The comparison is per host: stages on disjoint hosts never share a
-/// boot, so their layouts are independent.
+/// The comparison is per endpoint and port (see `sameIdentityMachine`):
+/// the boot applies to the whole machine, so stages that reach one
+/// machine share one boot whatever login user each connects as, while
+/// stages on disjoint machines share none, so their layouts are
+/// independent.
 function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
-  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsShareIdentity(_stages[n], _stages[m]))
     .flatMap((m) -> bootClash(_stages[n], _indexes[n], _stages[m], _indexes[m])))
 
 /// A sysctl step manages the entries of its persistence file, never the
-/// file itself, so a later overlapping-host stage that writes the same
+/// file itself, so a later same-machine stage that writes the same
 /// path whole — a `File`, a `Symlink`, a checkout, an apt repository's
 /// source — replaces the file wholesale and removes the entry the
 /// earlier stage persists there: every apply re-clobbers it and the next
@@ -576,10 +579,11 @@ function sysctlBootOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>):
 /// file behind is safe before it: a `Directory`, a `Symlink` or a
 /// checkout cannot serve as the persistence file at all, and the sysctl
 /// task deterministically fails on it wherever it stands. The
-/// comparison is per host: stages on disjoint hosts never share a file
-/// system.
+/// comparison is per endpoint and port (see `sameIdentityMachine`): one
+/// machine keeps one file system whatever login user each stage connects
+/// as, while stages on disjoint machines share none.
 function sysctlOwnersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
-  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsShareIdentity(_stages[n], _stages[m]))
     .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
       + unusableEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
       + unusableEntries(_stages[m], _indexes[m], _stages[n], _indexes[n])))
@@ -1273,7 +1277,7 @@ const function sysctlKey(name: String): String =
 /// carriage return and NUL: space, tab, vertical tab and form feed.
 /// SysctlValue forbids only newline, carriage return and NUL, so a
 /// vertical tab reaches the comparison, and procps strips it there.
-function trimmedSysctlValue(value: String): String =
+const function trimmedSysctlValue(value: String): String =
   value.replaceAll(Regex("^[ \u{9}\u{B}\u{C}]+|[ \u{9}\u{B}\u{C}]+$"), "")
 
 /// An account needs the groups it names. A same-stage group step that
@@ -1794,12 +1798,15 @@ const function accountOwnsPath(s: core.Step, account: String): Boolean =
 /// the home of a new account (`useradd -m`) and reconciles the declared
 /// one of an existing account (`ensure_home`), so a present `User` step
 /// whose home covers the path restores the directory the removal took.
+/// The step itself counts where it is a covering directory: the
+/// directory operation creates every missing parent of its path, so the
+/// step provides the removed parents it writes into.
 const function recreatesHome(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, h: String, p: String): Boolean =
   sharedHosts(_stages[n], _stages[m]).every((host) ->
     positions(_indexes).filter((k) -> k > n && k <= m).any((k) ->
       stageRunsOn(_stages[k], host) && positions(_indexes[k].steps).any((j) ->
         let (s = _indexes[k].steps[j])
-        (k < m || j < i) && ((s is core.Directory && covers(h, p, s.path))
+        (k < m || j < i || (k == m && j == i && s is core.Directory)) && ((s is core.Directory && covers(h, p, s.path))
           || (s is linux.User && s.state == "present" && covers(h, p, if (s.home != null) s.home else "/home/\(s.user)"))))))
 
 /// A file's named owner keeps its number: `usermod -u` renumbers the
@@ -2150,7 +2157,12 @@ const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<Stage
 /// stage can leave the account on the group a later stage removes, and
 /// the apply then fails after the earlier stages have already mutated
 /// the host. An intervening account task that removes the account or
-/// takes it off the group lifts the refusal.
+/// takes it off the group lifts the refusal — and a later stage that
+/// recreates the group and restores the membership on every shared host
+/// lifts the supplementary one: the run ends with the membership the
+/// earlier stage declares. A primary membership is never lifted that
+/// way: `groupdel` refuses it, so the removal fails before any later
+/// stage runs.
 function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (g = _indexes[m].steps[i])
@@ -2166,14 +2178,43 @@ function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<Sta
 /// The accounts an earlier stage leaves keeping `group` on a host the
 /// removal runs on, where no intervening account task takes them off
 /// it before the removal. The pair names the account and how it keeps
-/// the group: `primary` or `supplementary`.
+/// the group: `primary` or `supplementary`. A supplementary keeping a
+/// later stage puts back on every shared host is not held: the group is
+/// recreated there and the membership restored (see
+/// `supplementaryRestored`), so the run ends with the declared state.
 function heldGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<List<String>> =
   positions(_indexes[n].steps).flatMap((j) ->
     let (u = _indexes[n].steps[j])
     if (!(u is linux.User) || u.state != "present" || !keepsGroup(u, group)) List()
     else if (sharedHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && stageRunsOn(_stages[k], h)
-      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesGroup(_indexes[k].steps[j2], u, group))))) List(List(u.user, if (primaryGroup(u).contains(group)) "primary" else "supplementary"))
+      && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesGroup(_indexes[k].steps[j2], u, group))))
+      && !supplementaryRestored(_stages, _indexes, n, m, u, group)) List(List(u.user, if (primaryGroup(u).contains(group)) "primary" else "supplementary"))
     else List())
+
+/// Whether the supplementary refusal is lifted: the account keeps the
+/// group as a supplementary membership only, and a later stage puts the
+/// group and the membership back on every host the removal and the
+/// earlier stage share, so the run ends with the membership the earlier
+/// stage declares. A primary membership is never lifted: `groupdel`
+/// refuses a group an account keeps as its primary one.
+function supplementaryRestored(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, u: linux.User, group: String): Boolean =
+  !primaryGroup(u).contains(group) && sharedHosts(_stages[n], _stages[m]).every((h) -> restoresMembership(_stages, _indexes, m, u.user, group, h))
+
+/// Whether a later stage puts the account's supplementary membership in
+/// `group` back on the host `h`: a stage after the removal declares the
+/// group present there and the account keeping it as a supplementary
+/// one, so the membership `groupdel` erased holds again at the end of
+/// the run.
+function restoresMembership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, account: String, group: String, h: core.Host): Boolean =
+  positions(_indexes).filter((k) -> k > m && stageRunsOn(_stages[k], h))
+    .any((k) -> identityPresent(_indexes[k], List(group, "group")) && restoresMembershipOn(_indexes[k], account, group))
+
+/// Whether the stage declares the account keeping the group as a
+/// supplementary one again: the account is present with an explicit
+/// listing that names the group. A listing that is unset leaves the
+/// memberships unmanaged, so the account keeps nothing back that way.
+const function restoresMembershipOn(ix: StageIndex, account: String, group: String): Boolean =
+  ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user == account && keepsSupplementary(s, group))
 
 /// The groups an account keeps: the primary one — the group it names
 /// or the one useradd creates with its login name — and the
@@ -2832,7 +2873,11 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["user"] = (s) -> fields(List(s.user, if (s.state == "present") optional(s.shell) else "-", if (s.state == "present" || s.removeHome) optional(s.home) else "-", optional(s.group), if (s.state == "present") (if (s.groups == null) "-" else fields(keyOrder.set(s.groups.toList()))) else "-", if (s.uid == null) "-" else "\(s.uid)", if (s.state == "present") "\(s.system)" else "-", s.state, if (s.state == "present") "-" else "\(s.removeHome)"))
   ["group"] = (s) -> fields(List(s.name, if (s.gid == null) "-" else "\(s.gid)", s.state))
   ["gitCheckout"] = (s) -> fields(List(s.repository, s.path, s.commit))
-  ["sysctl"] = (s) -> fields(List(s.name, s.value, s.path))
+  // The name is the parameter's canonical identity (the slash-first
+  // and dotted spellings of one parameter are one entry) and the value
+  // is trimmed the way procps reads it, so spellings and paddings of one
+  // ask are one state, not two.
+  ["sysctl"] = (s) -> fields(List(sysctlKey(s.name), trimmedSysctlValue(s.value), s.path))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -2853,7 +2898,10 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["directory"] = (s) -> List(s.path)
   ["symlink"] = (s) -> List(s.path)
   ["gitCheckout"] = (s) -> List(s.path)
-  ["sysctl"] = (s) -> List("the sysctl \(s.name) in \(s.path)")
+  // The canonical name: the slash-first and dotted spellings of one
+  // parameter manage one entry, so they are one subject — and one task
+  // once merged — whatever spelling each step writes.
+  ["sysctl"] = (s) -> List("the sysctl \(sysctlKey(s.name)) in \(s.path)")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
