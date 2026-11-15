@@ -128,6 +128,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
     + shellProvidersAcrossStages(_stages, _indexes)
+    + homeProvidersAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
@@ -1806,6 +1807,25 @@ function homeTypeClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, n:
       positions(_indexes[m].steps)
         .filter((j) -> (_indexes[m].steps[j] is core.File || _indexes[m].steps[j] is core.Symlink) && paths(_indexes[m].steps[j]).contains(h))
         .map((j) -> "'\(name(_indexes[m].steps[j]))' of stage \"\(_stages[m].title)\" manages \(h) as \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a whole file"), and '\(name(u))' of stage \"\(_stages[n].title)\" manages it as the account's home directory; one path cannot be both a directory and \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a file") whatever the order the stages run in, so give the home or the file another path"))
+
+/// A step that publishes inside an account's claimed home runs after the
+/// account's task creates the directory — across stages as much as inside
+/// one: `useradd -m` makes the missing home, so an earlier overlapping-host
+/// stage that writes beneath it fails on the absent parent at apply time,
+/// while the later account's task would have created it. A directory is the
+/// exception, as in the stage-local rule: the directory operation creates
+/// every missing parent of its path, so it provides the home it publishes
+/// inside.
+function homeProvidersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (u = _indexes[m].steps[i])
+    if (!(u is linux.User) || u.state != "present") List()
+    else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+      positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+        .flatMap((n) -> positions(_indexes[n].steps).flatMap((j) ->
+          let (inside = paths(_indexes[n].steps[j]).filter((p) -> p.startsWith(h + "/")))
+          if (inside.isEmpty || providesHome(_indexes[n].steps[j])) List()
+          else List("'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" manages \(inside.first) inside the home \(h) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" before the account's task creates the directory; useradd -m creates the missing home, so declare the account in a stage before that step")))))
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
