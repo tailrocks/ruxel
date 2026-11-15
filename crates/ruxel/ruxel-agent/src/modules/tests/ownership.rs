@@ -34,9 +34,11 @@ fn the_plan_s_requested_uid_wins_over_the_stale_live_entry() {
     };
     super::super::user::run(&json!({"name": name, "uid": planned}), &check)
         .expect("the earlier account step must plan");
-    let owned =
-        super::resolve_ownership(json!({"owner": name}).as_object().expect("params object"))
-            .expect("the plan's own renumbered account must resolve");
+    let owned = super::resolve_ownership(
+        json!({"owner": name}).as_object().expect("params object"),
+        true,
+    )
+    .expect("the plan's own renumbered account must resolve");
     assert_eq!(
         owned.uid,
         Some(planned),
@@ -67,9 +69,11 @@ fn the_plan_s_requested_gid_wins_over_the_stale_live_entry() {
     };
     super::super::user::group(&json!({"name": name, "gid": planned}), &check)
         .expect("the earlier group step must plan");
-    let owned =
-        super::resolve_ownership(json!({"group": name}).as_object().expect("params object"))
-            .expect("the plan's own renumbered group must resolve");
+    let owned = super::resolve_ownership(
+        json!({"group": name}).as_object().expect("params object"),
+        true,
+    )
+    .expect("the plan's own renumbered group must resolve");
     assert_eq!(
         owned.gid,
         Some(planned),
@@ -104,7 +108,8 @@ fn an_unnumbered_planned_identity_keeps_the_pending_ownership() {
         .as_object()
         .expect("params object")
         .clone();
-    let ownership = super::resolve_ownership(&obj).expect("the planned identities must resolve");
+    let ownership =
+        super::resolve_ownership(&obj, true).expect("the planned identities must resolve");
     assert!(ownership.uid.is_none() && ownership.uid_pending);
     assert!(ownership.gid.is_none() && ownership.gid_pending);
     // The file is otherwise correct — its mode is not part of this

@@ -124,6 +124,27 @@ pub(crate) fn managed_sysctl_entries(
     }
 }
 
+/// Whether the plan's own earlier steps moved the number of an
+/// identity this task names, so the task's cached result is stale.
+///
+/// `usermod -u` renumbers the account but leaves an arbitrary file at
+/// the old number, and the cached probe of a file weighs the file's
+/// numbers alone: the task would be served from the cache and skipped,
+/// and the file would keep the number the plan gave the account. The
+/// task names the identity whose number moved, so the plan's own
+/// record of it is what tells the cache is stale.
+pub(crate) fn ownership_cache_stale(module: &str, params: &Value) -> bool {
+    if !matches!(
+        module,
+        "file" | "copy" | "lineinfile" | "replace" | "blockinfile"
+    ) {
+        return false;
+    }
+    let owner = params.get("owner").and_then(Value::as_str);
+    let group = params.get("group").and_then(Value::as_str);
+    owner.is_some_and(user::user_number_changed) || group.is_some_and(user::group_number_changed)
+}
+
 pub(crate) fn execute(
     module: &str,
     params: &Value,
