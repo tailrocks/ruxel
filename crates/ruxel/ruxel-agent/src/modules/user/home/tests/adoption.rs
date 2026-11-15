@@ -294,7 +294,7 @@ fn an_attacker_owned_closed_leaf_is_refused() {
     // No passwd entry claims the scratch home, so no intended account
     // admits it: the preflight refuses before any mutation.
     assert_eq!(
-        super::super::adoption::intended_uid(home.to_str().unwrap()),
+        super::super::adoption::intended_claim(home.to_str().unwrap()),
         None,
         "the scratch home names no intended account"
     );
@@ -331,27 +331,68 @@ fn an_attacker_owned_closed_leaf_is_refused() {
 #[test]
 fn the_passwd_home_names_its_intended_account() {
     // The lookup the leaf rule weighs: the account whose home field
-    // names the path. Every host lists an account, so the hit is
-    // portable — and a scratch home misses, so the create flow's
-    // not-yet-existing account never fails a valid creation.
+    // names the path, name and number bound from the same line. Every
+    // host lists an account, so the hit is portable — and a scratch
+    // home misses, so the create flow's not-yet-existing account never
+    // fails a valid creation. The home must be solely claimed — system
+    // homes are shared in the wild, and a shared path names no one.
     let host = std::fs::read_to_string("/etc/passwd").unwrap();
-    let (claimed, uid) = host
+    let (name, uid, claimed) = host
         .lines()
-        .find_map(|line| {
+        .filter_map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
             let uid: u32 = fields.get(2)?.parse().ok()?;
-            Some((fields.get(5)?.to_string(), uid))
+            Some((fields.first()?.to_string(), uid, fields.get(5)?.to_string()))
         })
-        .expect("the host lists an account");
+        .find(|(name, uid, home)| {
+            super::super::adoption::intended_claim(home) == Some((name.clone(), *uid))
+        })
+        .expect("the host lists a solely claimed home");
     assert_eq!(
-        super::super::adoption::intended_uid(&claimed),
-        Some(uid),
+        super::super::adoption::intended_claim(&claimed),
+        Some((name, uid)),
         "the passwd home names its account"
     );
     let missing = std::env::temp_dir().join(format!("ruxel-adopt-miss-{}", std::process::id()));
     assert_eq!(
-        super::super::adoption::intended_uid(missing.to_str().unwrap()),
+        super::super::adoption::intended_claim(missing.to_str().unwrap()),
         None,
         "an unclaimed home names no intended account"
+    );
+}
+
+#[test]
+fn a_home_two_accounts_list_names_no_intended_account() {
+    // The finding's shape, over canned passwd content: both the victim's
+    // and the attacker's lines name the home. No first match may adopt
+    // another account's leaf; the shared path names no one.
+    let passwd =
+        "victim:x:1001:1001::/home/alice:/bin/sh\nattacker:x:1002:1002::/home/alice:/bin/sh\n";
+    assert_eq!(
+        super::super::adoption::sole_claimant(passwd, "/home/alice"),
+        None,
+        "a shared home cannot be attributed to either owner"
+    );
+    // The reverse order shares it the same way: no first match admits
+    // a leaf another account's line names.
+    let passwd =
+        "attacker:x:1002:1002::/home/alice:/bin/sh\nvictim:x:1001:1001::/home/alice:/bin/sh\n";
+    assert_eq!(
+        super::super::adoption::sole_claimant(passwd, "/home/alice"),
+        None,
+        "the order of the lines must not matter"
+    );
+    // A home one account lists still names it, name and number bound
+    // from the same line; an unlisted home names no one.
+    let passwd = "victim:x:1001:1001::/home/alice:/bin/sh\n";
+    assert_eq!(
+        super::super::adoption::sole_claimant(passwd, "/home/alice"),
+        Some(("victim".to_string(), 1001)),
+        "a solely claimed home names its account"
+    );
+    assert_eq!(
+        super::super::adoption::sole_claimant(passwd, "/home/bob"),
+        None,
+        "an unlisted home names no account"
     );
 }
