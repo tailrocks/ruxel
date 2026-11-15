@@ -2,6 +2,8 @@
 mod comments;
 #[path = "tests/identity.rs"]
 mod identity;
+#[path = "tests/options.rs"]
+mod options;
 #[path = "tests/rollback.rs"]
 mod rollback;
 
