@@ -108,6 +108,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-groups-invalid-name.pkl
   tests/workflow/invalid/linux-user-groups-unset-vs-empty.pkl
   tests/workflow/invalid/linux-user-home-conflict.pkl
+  tests/workflow/invalid/linux-user-home-file-ancestor.pkl
   tests/workflow/invalid/linux-user-home-file-before-account.pkl
   tests/workflow/invalid/linux-user-home-removed-deep-parent.pkl
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
@@ -117,6 +118,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
   tests/workflow/invalid/linux-user-home-vs-file.pkl
+  tests/workflow/invalid/linux-user-home-vs-repository.pkl
   tests/workflow/invalid/linux-user-implicit-group-clash.pkl
   tests/workflow/invalid/linux-user-mail-spool-location.pkl
   tests/workflow/invalid/linux-user-mail-spool.pkl
@@ -124,7 +126,10 @@ dual_evaluator
   tests/workflow/invalid/linux-user-needs-later-group.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
   tests/workflow/invalid/linux-user-private-group-member-removed-on-other-host.pkl
+  tests/workflow/invalid/linux-user-removal-home-mismatch.pkl
+  tests/workflow/invalid/linux-user-removal-uid-mismatch.pkl
   tests/workflow/invalid/linux-user-remove-home-conflict.pkl
+  tests/workflow/invalid/linux-user-remove-home-custom-spool.pkl
   tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl
   tests/workflow/invalid/linux-user-remove-home-mail.pkl
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
@@ -203,11 +208,16 @@ dual_evaluator
   tests/workflow/valid/linux-user-absent-home-inactive.pkl
   tests/workflow/valid/linux-user-groups-empty.pkl
   tests/workflow/valid/linux-user-groups-order.pkl
+  tests/workflow/valid/linux-user-home-directory-ancestor.pkl
   tests/workflow/valid/linux-user-home-directory-before-account.pkl
+  tests/workflow/valid/linux-user-home-directory-cross-stage.pkl
   tests/workflow/valid/linux-user-home-recreated-by-account.pkl
   tests/workflow/valid/linux-user-home-removed-recreated.pkl
+  tests/workflow/valid/linux-user-removal-home-match.pkl
   tests/workflow/valid/linux-user-removal-keeps-non-primary-group.pkl
+  tests/workflow/valid/linux-user-removal-uid-match.pkl
   tests/workflow/valid/linux-user-remove-home-inactive.pkl
+  tests/workflow/valid/linux-user-remove-home-other-spool-dir.pkl
   tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
   tests/workflow/valid/linux-user-uid-renumbered-frees-draw.pkl
   tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl

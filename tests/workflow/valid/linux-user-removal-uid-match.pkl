@@ -1,0 +1,21 @@
+// A removal that states the effective ids is consistent: the account
+// goes with the uid the workflow last declared for it, and the group
+// with the gid the workflow last declared for it. The group claims its
+// number before the account's private group draws, so no allocation
+// stands in the claim's way.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "group"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 2000 }
+  } }
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1001 }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+    new linux.Group { name = "staff"; gid = 2000; state = "absent" }
+  } }
+}
