@@ -97,6 +97,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl
   tests/workflow/invalid/linux-sysctl-stage-order.pkl
+  tests/workflow/invalid/linux-sysctl-user-home-clash.pkl
   tests/workflow/invalid/linux-sysctl-value-newline.pkl
   tests/workflow/invalid/linux-sysctl-value-nul.pkl
   tests/workflow/invalid/linux-sysctl-values-differ.pkl
@@ -121,6 +122,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-needs-later-account.pkl
   tests/workflow/invalid/linux-user-needs-later-group.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
+  tests/workflow/invalid/linux-user-private-group-member-removed-on-other-host.pkl
   tests/workflow/invalid/linux-user-remove-home-conflict.pkl
   tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl
   tests/workflow/invalid/linux-user-remove-home-mail.pkl
@@ -142,6 +144,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-auto-allocation-low-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
+  tests/workflow/invalid/linux-user-uid-auto-removal-claim-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
