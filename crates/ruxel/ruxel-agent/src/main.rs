@@ -133,8 +133,6 @@ fn serve() -> i32 {
             }
         };
         let is_hello = matches!(&envelope.msg, Some(Msg::Hello(_)));
-        // A plan frame starts a plan; a patch continues the plan it extends.
-        let is_plan = matches!(&envelope.msg, Some(Msg::Plan(_)));
         if is_hello == handshaken.load(Ordering::Relaxed) {
             log_event(
                 &mut stdout,
@@ -166,6 +164,10 @@ fn serve() -> i32 {
                     return 65;
                 }
                 handshaken.store(true, Ordering::Relaxed);
+                // The session's plans are one workflow's (the engine
+                // frames every task as its own Plan): state begins here.
+                ledger.begin_plan();
+                modules::begin_plan();
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
@@ -187,13 +189,8 @@ fn serve() -> i32 {
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
-                // A new plan begins: the previous verdict on what this
-                // workflow manages is void and the new plan may complete;
-                // the user/group maps reset beside the ledger, a patch keeps its maps.
-                if is_plan {
-                    ledger.begin_plan();
-                    modules::begin_plan();
-                }
+                // Every frame is one task of the session's workflow; the
+                // plan state began at Hello and every frame keeps it.
                 for task in &tasks {
                     let mut task = task.clone();
                     task.no_log |= sensitive_effects.is_marked();
@@ -353,6 +350,9 @@ fn execute_task(
                 Some(task.become_user.clone())
             },
         };
+        // The preflight's managed set: the plan's own declarations
+        // first, the ledger's retained entries behind them.
+        let managed = ledger.sysctl_preflight_managed(&task.module, plan_sysctl);
         let outcome = modules::execute(
             &task.module,
             &params,
@@ -360,7 +360,7 @@ fn execute_task(
             iteration.source_content.as_deref(),
             &ctx,
             system_state,
-            plan_sysctl.as_slice(),
+            &managed,
         );
         if !task_check_mode {
             if task.no_log {
