@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::{sysctl_key, trimmed_value};
+use super::sysctl_key;
 
 mod fingerprint;
 mod keys;
@@ -18,8 +18,8 @@ mod keys;
 pub(crate) use fingerprint::boot_fingerprint;
 #[cfg(test)]
 pub(crate) use fingerprint::fingerprint_of;
-
-use keys::{assigned_value, key_matches, named_keys, trim};
+use keys::{assigned_value, trim};
+pub(crate) use keys::{is_pattern, key_matches, named_keys};
 
 /// The recognized system directories, by precedence: the higher rank
 /// wins a file name shared between them. procps reads them in this
@@ -37,8 +37,12 @@ pub(super) const DIRS: [(&str, u8); 5] = [
 const LEGACY: &str = "/etc/sysctl.conf";
 
 /// Every file `sysctl --system` reads on this host: the `*.conf` files
-/// of the recognized system directories and `/etc/sysctl.conf`.
-pub(super) fn system_files() -> Vec<PathBuf> {
+/// of the recognized system directories and `/etc/sysctl.conf`. A
+/// directory that cannot be read is an unknown surface, not an empty
+/// one — only a missing directory reads as empty — so the error
+/// travels with the answer instead of hiding a later-loading
+/// assignment from the override preflight and the fingerprint.
+pub(super) fn system_files() -> Result<Vec<PathBuf>, String> {
     system_files_in(&DIRS)
 }
 
@@ -62,11 +66,19 @@ pub(super) fn system_files() -> Vec<PathBuf> {
 /// the same, so the names are compared as their raw bytes: a file
 /// whose name is not text is a boot file like any other and must weigh
 /// on the analysis.
-pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
+pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Result<Vec<PathBuf>, String> {
     let mut by_name: BTreeMap<Vec<u8>, PathBuf> = BTreeMap::new();
     for (dir, _) in dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            continue;
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            // A missing directory holds no names; a directory that
+            // exists but cannot be read (permissions, I/O) may hide a
+            // later-loading assignment, so it refuses instead of
+            // reading as empty.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!("cannot read the boot directory {dir}: {error}"));
+            }
         };
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -80,7 +92,7 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
     }
     let mut files: Vec<PathBuf> = by_name.into_values().collect();
     files.push(PathBuf::from(LEGACY));
-    files
+    Ok(files)
 }
 
 /// The bytes the boot reads from a selected entry: its content, or
@@ -167,7 +179,7 @@ pub(super) fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<Strin
 /// and only the answer that names a file spells it.
 pub(super) fn host_files() -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let mut host = Vec::new();
-    for path in system_files() {
+    for path in system_files()? {
         match boot_bytes(&path)? {
             Some(content) => host.push((path, content)),
             None => host.push((path, Vec::new())),
@@ -202,13 +214,17 @@ pub(super) fn boot_override(
 ) -> Option<(String, String)> {
     let key = sysctl_key(name);
     let named = named_assignments(file, name, host);
-    let want = trimmed_value(value);
+    // The comparison is on raw bytes: `from_utf8_lossy` collapses
+    // distinct values (`\xff` and U+FFFD both spell `�`) that procps
+    // passes to the kernel as different bytes. Lossy text below is
+    // for the diagnostic only.
+    let want = trim(value.as_bytes());
     let mut later: Vec<&(PathBuf, Vec<u8>)> = host
         .iter()
         .filter(|(path, _)| loads_after(file, path))
         .collect();
     later.sort_by(|a, b| load_order(&a.0).cmp(&load_order(&b.0)));
-    let mut effective: Option<(&Path, String)> = None;
+    let mut effective: Option<(&Path, &[u8])> = None;
     for (path, content) in later {
         if let Some(other) = final_assignment(content, &key, &named) {
             effective = Some((path, other));
@@ -220,10 +236,13 @@ pub(super) fn boot_override(
     if other == want {
         return None;
     }
-    if declared(path, &key, &other, managed) {
+    if declared(path, &key, other, managed) {
         return None;
     }
-    Some((path.to_string_lossy().into_owned(), other))
+    Some((
+        path.to_string_lossy().into_owned(),
+        String::from_utf8_lossy(other).into_owned(),
+    ))
 }
 
 /// The keys the boot sequence assigns by name, up to and including the
@@ -257,12 +276,12 @@ fn named_assignments(file: &str, name: &str, host: &[(PathBuf, Vec<u8>)]) -> Vec
 /// is a declared managed value, not an unmanaged boot override. The
 /// value must be the declared one — a managed file that drifted to
 /// another value carries an unmanaged assignment again.
-fn declared(path: &Path, key: &str, value: &str, managed: &[(String, String, String)]) -> bool {
+fn declared(path: &Path, key: &str, value: &[u8], managed: &[(String, String, String)]) -> bool {
     let bytes = path.as_os_str().as_bytes();
     managed.iter().any(|(file, name, declared_value)| {
         file.as_bytes() == bytes
             && sysctl_key(name) == key
-            && trimmed_value(declared_value) == value
+            && trim(declared_value.as_bytes()) == value
     })
 }
 
@@ -324,9 +343,10 @@ fn base_name_bytes(path: &[u8]) -> Option<&[u8]> {
 /// way), and a wildcard key assigns every key it expands to — except
 /// the keys the sequence assigns by name (`named`): procps keeps those
 /// out of the expansion of a pattern, whatever file order the two sit
-/// in.
-fn final_assignment(content: &[u8], key: &str, named: &[String]) -> Option<String> {
-    let mut last: Option<String> = None;
+/// in. The answer is the raw value bytes: lossy text would collapse
+/// distinct boot values, so it is for diagnostics only.
+fn final_assignment<'a>(content: &'a [u8], key: &str, named: &[String]) -> Option<&'a [u8]> {
+    let mut last: Option<&[u8]> = None;
     for line in content.split(|byte| *byte == b'\n') {
         let line = trim(line);
         if line.is_empty() || line[0] == b'#' {
@@ -347,7 +367,7 @@ fn final_assignment(content: &[u8], key: &str, named: &[String]) -> Option<Strin
         // name: procps excludes the explicitly configured keys from
         // the expansion of a pattern, so the managed key keeps its
         // named value and the pattern assigns none of it.
-        if (assigned.contains('*') || assigned.contains('?')) && named.iter().any(|k| k == key) {
+        if is_pattern(&assigned) && named.iter().any(|k| k == key) {
             continue;
         }
         last = Some(assigned_value(line));

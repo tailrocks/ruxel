@@ -54,7 +54,7 @@ fn a_link_to_a_directory_holds_the_name_at_boot() {
         .expect("operation succeeds");
     let (etc_dir, usr_dir) = dirs_of(&etc, &usr);
     let dirs: [(&str, u8); 2] = [(&etc_dir, 1), (&usr_dir, 0)];
-    let files = system_files_in(&dirs);
+    let files = system_files_in(&dirs).expect("the scratch directories read");
     assert!(
         files.iter().any(|file| file == &etc.join("99-vendor.conf")),
         "the link holds the name: {files:?}"
@@ -104,7 +104,7 @@ fn a_directory_holds_the_name_at_boot() {
         .expect("operation succeeds");
     let (etc_dir, usr_dir) = dirs_of(&etc, &usr);
     let dirs: [(&str, u8); 2] = [(&etc_dir, 1), (&usr_dir, 0)];
-    let files = system_files_in(&dirs);
+    let files = system_files_in(&dirs).expect("the scratch directories read");
     assert!(
         files.iter().any(|file| file == &etc.join("99-vendor.conf")),
         "the directory holds the name: {files:?}"
