@@ -126,6 +126,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + groupRemovalsAcrossStages(_stages, _indexes)
     + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
+    + shellProvidersAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
@@ -1121,6 +1122,115 @@ function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: S
   + (if (k > i)
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
   else List())
+
+/// A declared login shell must exist where the account's task runs,
+/// whatever stage manages it: `useradd` and `usermod` verify the shell
+/// path when the account's task runs, so when an earlier overlapping-host
+/// stage declares the account and a later stage creates the shell with a
+/// `File` or a `Symlink`, the account's task fails in `shell_allowed`
+/// before the later provider can run — even though the stage-local
+/// ordering check admits each stage on its own. A provider in an earlier
+/// stage runs first, so only a provider at or after the account's stage
+/// is refused. A managed `File` supplies the shell only where its mode
+/// makes it executable, whatever stage writes it: the mode check is the
+/// order-independent one the stage-local rule carries. A managed shell
+/// that is a link is only as good as its target chain, wherever its hops
+/// live: the account's task follows the whole chain and reads the target
+/// file's metadata, so a hop a later stage creates leaves the link
+/// dangling when the account runs, and a hop that is not executable for
+/// the account is refused wherever it is written.
+function shellProvidersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
+    let (u = _indexes[m].steps[i])
+    let (shell = if (u is linux.User) u.shell else null)
+    if (!(u is linux.User) || u.state != "present" || shell == null) List()
+    else shellProviderRels(_stages, _indexes, m, i, u, shell) + shellAncestorRels(_stages, _indexes, m, i, u, shell)))
+
+/// The refusals for the steps of other overlapping-host stages that
+/// manage the account's shell: a `File` or a `Symlink` at its path.
+function shellProviderRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String): List<String> =
+  positions(_indexes).filter((k) -> k != m && hostsOverlap(_stages[m], _stages[k]))
+    .flatMap((k) -> positions(_indexes[k].steps)
+      .filter((j) -> (_indexes[k].steps[j] is core.File || _indexes[k].steps[j] is core.Symlink) && paths(_indexes[k].steps[j]).contains(shell))
+      .flatMap((j) -> shellProviderRel(_stages, _indexes, m, i, u, shell, k, j)))
+
+/// The refusals for one step of another stage that manages the shell:
+/// the mode one where it names a non-executable file, and the ordering
+/// one where the provider's stage runs after the account's — and the
+/// target chain where the provider is a link.
+function shellProviderRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, k: Int, j: Int): List<String> =
+  let (s = _indexes[k].steps[j])
+  (if (s is core.File && !executableMode(s.mode))
+    List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages the shell \(shell) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" at mode \(s.mode), which does not make it executable for the account; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
+  else List())
+  + (if (k > m)
+    List("'\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names the shell \(shell), which '\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages; the account's task verifies the shell path at apply time, so list the shell's step in a stage before the account")
+  else List())
+  + shellChainAcrossStages(_stages, _indexes, m, i, u, shell, s, List(shell))
+
+/// The refusals for the target chain a managed shell link leads through,
+/// across the stages that share the account's hosts: only a link leads
+/// anywhere, and its target's steps are judged wherever they live — a
+/// hop at or after the account's stage runs too late, and a file hop
+/// carries an executable mode wherever it is written. `seen` stops a
+/// cycle of managed links.
+function shellChainAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, s: core.Step, seen: List<String>): List<String> =
+  if (!(s is core.Symlink)) List()
+  else shellLinkTargetsAcrossStages(_stages, _indexes, m, i, u, shell, s.target, seen)
+
+/// The refusals for one hop of the chain and everything behind it: every
+/// step of every overlapping-host stage that manages the hop's target,
+/// and the managed link hops among them lead the chain on.
+function shellLinkTargetsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, target: String, seen: List<String>): List<String> =
+  if (seen.contains(target)) List()
+  else positions(_indexes).filter((k) -> hostsOverlap(_stages[m], _stages[k]))
+    .flatMap((k) -> positions(_indexes[k].steps)
+      .filter((j) -> paths(_indexes[k].steps[j]).contains(target))
+      .flatMap((j) -> shellChainRelAcrossStages(_stages, _indexes, m, i, u, shell, target, k, j, seen)))
+
+/// The refusals for one managed hop of the chain: the mode one where it
+/// names a non-executable file, the ordering one where its stage runs at
+/// or after the account's (within the account's own stage, where its
+/// step comes after the account's), the chain beyond it where the hop is
+/// itself a link — and the managed ancestor directories above it, which
+/// the account's lookup must walk through wherever they are managed.
+function shellChainRelAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, target: String, k: Int, j: Int, seen: List<String>): List<String> =
+  let (t = _indexes[k].steps[j])
+  (if (t is core.File && !executableMode(t.mode))
+    List("'\(name(t))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages the target \(t.path) of the shell \(shell) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" at mode \(t.mode), which does not make it executable for the account; useradd and usermod follow the shell's link and read the file it names, so a managed shell target carries an executable mode")
+  else List())
+  + (if (k > m || (k == m && j > i))
+    List("'\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names the shell \(shell), whose target \(target) '\(name(t))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" creates; the account reads the target through the link, so list the target's step in a stage before the account")
+  else List())
+  + (if (t is core.Symlink) shellLinkTargetsAcrossStages(_stages, _indexes, m, i, u, shell, t.target, seen + List(target)) else List())
+  + shellAncestorRels(_stages, _indexes, m, i, u, target)
+
+/// The refusals for the managed ancestor directories above the path `p`
+/// — the shell's own or one of its link targets': every directory the
+/// account's lookup enters on its way to the shell must let it in, and
+/// the account's task judges each one by the other-search bit
+/// (`shell_allowed`), so a managed ancestor at a mode without it leaves
+/// the account unable to reach its shell after the earlier tasks have
+/// already mutated the host. Only managed directories are judged: the
+/// workflow cannot know the host's own.
+function shellAncestorRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, p: String): List<String> =
+  positions(_indexes).filter((k) -> hostsOverlap(_stages[m], _stages[k]))
+    .flatMap((k) -> positions(_indexes[k].steps).flatMap((j) ->
+      let (d = _indexes[k].steps[j])
+      if (d is core.Directory && p.startsWith(d.path + "/") && !searchableMode(d.mode))
+        List("'\(name(d))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages the directory \(d.path) above the shell \(u.shell) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" at mode \(d.mode), which does not let the account through; useradd and usermod verify the shell path and the account's task refuses a shell it cannot walk to, so a managed ancestor directory of a login shell carries a searchable mode")
+      else List()))
+
+/// Whether a mode lets an account the entry does not belong to pass
+/// through the directory: the other-search bit. Unix selects the
+/// permission class by the caller's identity, so an owner- or group-only
+/// mode serves only the entry's own owner or group — and the managed
+/// account runs as `other` wherever it owns nothing, which the lowering
+/// cannot know of a directory another step writes. The bit is the one
+/// `executableMode` reads: search on a directory, execute on a file —
+/// the same conservative class the account's task passes both through
+/// (`shell_allowed`).
+const function searchableMode(mode: String): Boolean = executableMode(mode)
 
 /// Whether a file mode makes the file executable for the account that
 /// does not own it: the other-execute bit. Unix selects the permission
