@@ -212,6 +212,67 @@ fn a_failed_repair_of_an_existing_home_restores_its_ownership() {
 }
 
 #[test]
+fn a_created_home_with_only_skeleton_contents_is_taken_back() {
+    // `useradd -m` populates the new home from a non-empty `/etc/skel`:
+    // the rollback of a failed reconciliation must take the
+    // operation-created home back with those skeleton contents — the old
+    // `remove_dir` path failed with `Directory not empty` and left the
+    // home behind. A home that holds only skeleton entries is removed
+    // recursively.
+    let scenario = format!("ruxel-created-skel-{}", std::process::id());
+    let skel = std::env::temp_dir().join(format!("{scenario}-skel"));
+    let home = std::env::temp_dir().join(format!("{scenario}-home"));
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(skel.join("docs")).unwrap();
+    std::fs::write(skel.join(".bashrc"), b"skeleton\n").unwrap();
+    std::fs::write(skel.join("docs/readme"), b"skeleton\n").unwrap();
+    // The home `useradd -m` made: the skeleton's entries, copied.
+    std::fs::create_dir_all(home.join("docs")).unwrap();
+    std::fs::write(home.join(".bashrc"), b"skeleton\n").unwrap();
+    std::fs::write(home.join("docs/readme"), b"skeleton\n").unwrap();
+    super::rollback_created_home_from(home.to_str().unwrap(), &skel)
+        .expect("skeleton contents must be taken back");
+    assert!(!home.exists(), "the skeleton-populated home is taken back");
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_created_home_with_planted_contents_is_kept_and_reported() {
+    // The foreign-content refusal survives the skeleton accounting: a
+    // concurrent writer's entry that the skeleton never held is kept and
+    // reported rather than deleted, even where the home also holds
+    // skeleton contents.
+    let scenario = format!("ruxel-created-planted-{}", std::process::id());
+    let skel = std::env::temp_dir().join(format!("{scenario}-skel"));
+    let home = std::env::temp_dir().join(format!("{scenario}-home"));
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&skel).unwrap();
+    std::fs::write(skel.join(".bashrc"), b"skeleton\n").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join(".bashrc"), b"skeleton\n").unwrap();
+    std::fs::write(home.join("planted"), b"planted\n").unwrap();
+    let error = super::rollback_created_home_from(home.to_str().unwrap(), &skel)
+        .expect_err("a planted entry must not be deleted");
+    assert!(
+        error.contains("take back created home"),
+        "the refusal names the take-back: {error}"
+    );
+    assert!(
+        home.join("planted").exists(),
+        "the planted contents are kept and reported"
+    );
+    assert!(
+        home.join(".bashrc").exists(),
+        "nothing is deleted behind the refusal"
+    );
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn a_failed_rollback_is_reported_with_the_original_error() {
     // The rollback itself can fail — the group is already gone, the
     // directory is held open. The task then reports both errors: the
