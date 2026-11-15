@@ -227,3 +227,162 @@ fn a_removal_verifies_the_uid_against_the_planned_number() {
     .expect("the removal must verify its declaration against the planned uid");
     assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
 }
+
+fn apply_context() -> ExecContext {
+    ExecContext {
+        check_mode: false,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    }
+}
+
+/// A uid no live account holds: the plan's own, fitting the request
+/// the creation records.
+fn free_uid() -> u64 {
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    (60000u64..61000)
+        .find(|uid| {
+            !passwd.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == uid.to_string())
+            })
+        })
+        .expect("a free uid on the host")
+}
+
+/// A live group nothing holds: no member of it, no account that holds
+/// it as its primary group, and no account of its own name — the
+/// removal's private-group scan finds it empty, while the group file
+/// still lists it after a faked `userdel`.
+fn empty_live_group() -> Option<(String, u64)> {
+    let groups = std::fs::read_to_string("/etc/group").ok()?;
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    let accounts: Vec<&str> = passwd
+        .lines()
+        .filter_map(|line| line.split(':').next())
+        .collect();
+    for line in groups.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() < 4 || f[2].parse::<u64>().is_err() {
+            continue;
+        }
+        if f[2] == "0" || !f[3].is_empty() || accounts.contains(&f[0]) {
+            continue;
+        }
+        let gid = f[2].parse::<u64>().unwrap_or(0);
+        if super::super::guards::primary_group_holder_from(&passwd, gid, f[0]).is_none() {
+            return Some((f[0].to_string(), gid));
+        }
+    }
+    None
+}
+
+#[test]
+fn apply_reinspects_the_group_file_after_userdel() {
+    // On a host that keeps an account's empty same-name group
+    // (`USERGROUPS_ENAB=no`), `userdel` leaves the group behind: the
+    // apply re-inspects the group database after the removal really ran
+    // and records no removal for a group that survived — a later
+    // `Group`-present step resolves the live entry instead of attempting
+    // `groupadd` on a group that exists. The host double is the live
+    // group database (read-only) with `userdel` faked: the group the
+    // fake deletion never touched is still listed.
+    let (name, _gid) = empty_live_group().expect("an empty live group on the host");
+    assert!(
+        passwd_entry(&name).unwrap().is_none(),
+        "no same-name account may exist on the host"
+    );
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let planned = free_uid();
+    run(
+        &json!({"name": name, "uid": planned, "create_home": false}),
+        &check,
+    )
+    .expect("the creation must plan");
+    // The fake absorbs `userdel`: the group file still lists the group,
+    // the way a host that keeps empty same-name groups leaves it.
+    super::super::test_hook::arm(vec![Ok(())]);
+    let removal = run(
+        &json!({"name": name, "state": "absent", "uid": planned}),
+        &apply_context(),
+    )
+    .expect("the removal must run");
+    assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
+    let calls = super::super::test_hook::take_calls();
+    assert_eq!(calls.len(), 1, "userdel ran once: {calls:?}");
+    assert_eq!(calls[0].0, "userdel");
+    assert_eq!(
+        calls[0].1,
+        vec![name.clone()],
+        "the removal takes the account without `-r`: {calls:?}"
+    );
+    assert!(
+        !super::super::entries::group_removed(&name),
+        "the surviving group is not recorded as removed"
+    );
+    // The later declaration resolves the live entry: no `groupadd`
+    // runs, and the step reports no change — the check-mode prediction
+    // with the tombstone would have attempted the creation instead.
+    super::super::test_hook::arm(vec![]);
+    let again = super::super::group(&json!({"name": name}), &apply_context())
+        .expect("the redeclaration must resolve");
+    assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
+    assert!(
+        super::super::test_hook::take_calls().is_empty(),
+        "groupadd never ran: the entry was compared, not created"
+    );
+}
+
+#[test]
+fn apply_records_the_removal_where_the_group_is_gone() {
+    // The mirror: the account's same-name group is not on the host, so
+    // the `userdel` the fake absorbs takes the last trace of it — the
+    // apply records the removal the way check mode predicts it.
+    let name = format!("ruxel-gone-group-{}", std::process::id());
+    assert!(
+        group_entry(&name).unwrap().is_none(),
+        "the group must not exist on the host"
+    );
+    assert!(
+        passwd_entry(&name).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let planned = free_uid();
+    run(
+        &json!({"name": name, "uid": planned, "create_home": false}),
+        &check,
+    )
+    .expect("the creation must plan");
+    super::super::test_hook::arm(vec![Ok(())]);
+    let removal = run(
+        &json!({"name": name, "state": "absent", "uid": planned}),
+        &apply_context(),
+    )
+    .expect("the removal must run");
+    assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
+    assert_eq!(
+        super::super::test_hook::take_calls().len(),
+        1,
+        "userdel ran once"
+    );
+    assert!(
+        super::super::entries::group_removed(&name),
+        "the group the removal took is recorded as removed"
+    );
+}
