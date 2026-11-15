@@ -42,6 +42,51 @@ fn a_replaced_ssh_directory_is_noticeable_when_the_key_is_absent() {
 }
 
 #[test]
+fn a_replaced_ssh_directory_is_noticeable_in_check_mode() {
+    let _arming = ARMING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = scratch("detached-check");
+    let meta = std::fs::metadata(&root).unwrap();
+    let ssh = root.join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    // The directory this operation opened holds the key ...
+    std::fs::write(
+        ssh.join("authorized_keys"),
+        "ssh-ed25519 AAAAC3Nzakeep\nssh-ed25519 AAAAC3Nzadrop\n",
+    )
+    .unwrap();
+    // ... and the replacement no longer holds it: check mode must
+    // refuse instead of promising a removal the run would not make.
+    let replaced = root.clone();
+    BEFORE_PUBLISH
+        .lock()
+        .unwrap()
+        .push(std::sync::Arc::new(move |home: &std::path::Path| {
+            if home != replaced {
+                return;
+            }
+            std::fs::rename(replaced.join(".ssh"), replaced.join(".ssh-detached")).unwrap();
+            std::fs::create_dir(replaced.join(".ssh")).unwrap();
+            std::fs::write(
+                replaced.join(".ssh/authorized_keys"),
+                "ssh-ed25519 AAAAC3Nzakeep\n",
+            )
+            .unwrap();
+        }));
+    let result = remove_key(
+        &root,
+        meta.uid(),
+        meta.gid(),
+        "ssh-ed25519 AAAAC3Nzadrop",
+        true,
+    );
+    let error = result.unwrap_err();
+    assert!(error.contains(".ssh changed"), "{error}");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn a_replaced_ssh_directory_stops_the_removal() {
     let _arming = ARMING
         .lock()

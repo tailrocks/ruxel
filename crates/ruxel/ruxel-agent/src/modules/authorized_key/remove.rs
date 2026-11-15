@@ -64,10 +64,13 @@ pub(super) fn remove_key(
         // file the user sees.
         ensure_attached(&home_file, &dir)?;
         publish_checked(&dir, &kept.concat(), uid, gid, identity)?;
-        // And once more before the removal is reported: the write must
-        // have landed in the directory that is still `.ssh`.
-        ensure_attached(&home_file, &dir)?;
     }
+    // The directory is checked once more before the removal is
+    // reported, in check mode as well: the key the detached directory
+    // holds may not be the one the attached one holds, and the write —
+    // or the reading the check mode answers for — must have landed in
+    // the directory that is still `.ssh`.
+    ensure_attached(&home_file, &dir)?;
     Ok(true)
 }
 
