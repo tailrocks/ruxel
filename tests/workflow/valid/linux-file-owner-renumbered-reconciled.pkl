@@ -1,0 +1,23 @@
+// A known renumbering is excused where the ownership is reconciled
+// after it: the file names Alice as its owner, the third stage renumbers
+// her from 1500 to 1600 — and the fourth stage declares the same file
+// with the same owner again, so the file task resolves the name after
+// the renumbering and writes the number it carries then.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "file"; hosts = inventory.workers; steps {
+    new File { path = "/tmp/x"; content = "keep\n"; owner = "alice" }
+  } }
+  new Stage { title = "renumber"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1600 }
+  } }
+  new Stage { title = "reconcile"; hosts = inventory.workers; steps {
+    new File { path = "/tmp/x"; content = "keep\n"; owner = "alice" }
+  } }
+}
