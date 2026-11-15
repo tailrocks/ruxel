@@ -83,6 +83,52 @@ async fn reached_rescue_and_always_skip_unselected_leaves_with_inherited_censors
 }
 
 #[tokio::test]
+async fn a_tagged_run_marks_its_recap_filtered() -> Result<()> {
+    // Tag selection omits tasks the workflow keeps: the recap latches
+    // the omission, so the run's end expires no records. A run that
+    // selects everything latches nothing.
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[
+        {"name":"chosen","tags":["chosen"],"operation":{"kind":"debug","msg":"selected"}},
+        {"name":"excluded","tags":["other"],"operation":{"kind":"debug","msg":"not selected"}}
+    ]}]});
+    let mut backend = Fake::default();
+    let options = Options {
+        tags: vec!["chosen".into()],
+        ..Options::default()
+    };
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &options,
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ok, 1);
+    assert_eq!(recap["h"].skipped, 1);
+    assert!(
+        recap["h"].filtered,
+        "a run that omits a tagged-out task is filtered"
+    );
+
+    let mut backend = Fake::default();
+    let recap = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recap["h"].ok, 2);
+    assert!(
+        !recap["h"].filtered,
+        "a run that selects every task is not filtered"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn always_is_selected_only_when_requested_or_inherited() -> Result<()> {
     let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[{"targets":["h"],"tasks":[
         {"name":"always leaf","tags":["always"],"operation":{"kind":"debug"}},

@@ -25,6 +25,10 @@ pub struct Recap {
     pub rescued: u64,
     pub ignored: u64,
     pub planned: u64,
+    /// Tag selection omitted tasks the workflow keeps: at least one
+    /// leaf was skipped for its tags, so the run is a filtered subset
+    /// and its end must expire nothing.
+    pub filtered: bool,
 }
 
 #[derive(Debug, Clone)]

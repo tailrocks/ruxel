@@ -7,6 +7,7 @@ mod system_state;
 
 use frames::{effective_check_mode, log_event, send_result};
 use ruxel_proto::PROTO_VERSION;
+use ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
@@ -103,9 +104,7 @@ fn serve() -> i32 {
     {
         let handshaken = handshaken.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(
-                ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS,
-            ));
+            std::thread::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
             if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
                 std::process::exit(67);
             }
@@ -179,10 +178,11 @@ fn serve() -> i32 {
                     return 64;
                 }
             }
-            Some(Msg::Done(_)) => {
-                // The session's plans ran to their end: the plan is complete,
-                // and may expire the records it never encountered.
-                ledger.complete_plan();
+            Some(Msg::Done(done)) => {
+                // Only a complete unfiltered plan expires unencountered records.
+                if !done.filtered {
+                    ledger.complete_plan();
+                }
                 ledger.flush();
                 return 0;
             }

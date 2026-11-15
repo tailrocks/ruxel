@@ -55,7 +55,12 @@ message Resume {
 }
 
 
-message Done {}
+message Done {
+  // The run omitted tasks the workflow keeps: tag selection skipped at
+  // least one leaf, so this end is no verdict on the records of the
+  // tasks it never sent and must expire nothing.
+  bool filtered = 1;
+}
 
 
 

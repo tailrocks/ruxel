@@ -57,6 +57,7 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         handling: false,
         recap: Recap::default(),
         next_id: 1,
+        filtered: false,
     };
     for (name, private) in [("public", false), ("guarded", true)] {
         let layer = ContextLayer {

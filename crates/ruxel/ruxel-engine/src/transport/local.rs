@@ -76,9 +76,9 @@ impl LocalConnection {
     }
     /// # Errors
     /// Returns stream errors or an unsuccessful subprocess exit.
-    pub async fn shutdown(mut self) -> Result<()> {
+    pub async fn shutdown(mut self, filtered: bool) -> Result<()> {
         self.send(&v1::Envelope {
-            msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered })),
         })
         .await?;
         let status = self.child.wait().await.context("wait for local agent")?;

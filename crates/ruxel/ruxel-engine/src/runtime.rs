@@ -161,12 +161,18 @@ pub async fn run(
     let mut shutdown_errors = Vec::new();
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
+        // A filtered run omits tasks the workflow keeps: its end is no
+        // verdict on the records of the tasks it never sent.
+        let filtered = match &result {
+            Ok(recap) => recap.get(&host).is_some_and(|total| total.filtered),
+            Err(_) => false,
+        };
         match Arc::try_unwrap(connection) {
             Err(_) => {
                 shutdown_errors.push((host, anyhow::anyhow!("agent connection still in use")));
             }
             Ok(connection) => {
-                if let Err(error) = connection.into_inner().shutdown().await {
+                if let Err(error) = connection.into_inner().shutdown(filtered).await {
                     shutdown_errors.push((host, error));
                 }
             }
