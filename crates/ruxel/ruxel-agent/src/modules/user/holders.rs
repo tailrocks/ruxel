@@ -136,13 +136,17 @@ pub(super) fn private_group_emptied_from(
 }
 
 /// The members the group `name` carries under the plan: the live
-/// members the plan has not moved away, and the live accounts the plan
-/// has moved onto the group. Check mode runs no `usermod`, so the
-/// host's group database still lists the set the plan has already left
-/// behind — an account an earlier task of the plan added to the group
-/// is a member the live file does not show, and one the plan moved off
-/// the group (or took away with the account) is a member the live file
-/// still shows.
+/// members the plan has not moved away, the live accounts the plan
+/// has moved onto the group, and the accounts the plan created with
+/// the group in their supplementary set. Check mode runs no `usermod`,
+/// so the host's group database still lists the set the plan has
+/// already left behind — an account an earlier task of the plan added
+/// to the group is a member the live file does not show, and one the
+/// plan moved off the group (or took away with the account) is a member
+/// the live file still shows. Check mode runs no `useradd` either, so
+/// a planned account is absent from the passwd scan the same way: the
+/// plan's own user record is consulted too, or a planned member is
+/// missed and the group is wrongly reported empty.
 pub(super) fn private_group_members_from(groups: &str, passwd: &str, name: &str) -> Vec<String> {
     let mut members = Vec::new();
     for member in super::entries::group_members_from(groups, name) {
@@ -176,6 +180,25 @@ pub(super) fn private_group_members_from(groups: &str, passwd: &str, name: &str)
         if super::plan::supplementary(f[0]).is_some_and(|set| set.iter().any(|group| group == name))
         {
             members.push(f[0].to_string());
+        }
+    }
+    // The accounts the plan created: check mode runs no `useradd`, so
+    // the passwd scan above cannot see them — but the plan's own record
+    // holds their supplementary sets, and a member the plan gave the
+    // group keeps it although no live entry names it.
+    for account in super::plan::users() {
+        if account == name || members.iter().any(|member| member == &account) {
+            continue;
+        }
+        // An account the plan has removed holds no group: check mode
+        // runs no `userdel`, so the passwd scan above still lists it.
+        if super::entries::account_removed(&account) {
+            continue;
+        }
+        if super::plan::supplementary(&account)
+            .is_some_and(|set| set.iter().any(|group| group == name))
+        {
+            members.push(account);
         }
     }
     members
