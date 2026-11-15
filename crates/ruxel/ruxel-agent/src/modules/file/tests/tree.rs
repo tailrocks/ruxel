@@ -63,3 +63,43 @@ fn an_entry_with_the_staging_prefix_is_removed_like_any_other() {
     drop(dir);
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn a_child_created_after_the_snapshot_is_taken_too() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let base = scratch("late-child");
+    let sub = base.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("file"), b"content").unwrap();
+    let meta = std::fs::symlink_metadata(&base).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    // The writer holds a descriptor and adds a child after the walk read
+    // the names: the walk reads the directory again and takes it too.
+    // The hook is scoped to the watched directory and fires once, so the
+    // walks of other tests never trip it.
+    let fired = Arc::new(AtomicBool::new(false));
+    let armed = fired.clone();
+    let watched = base.clone();
+    super::super::tree::AFTER_SNAPSHOT
+        .lock()
+        .unwrap()
+        .push(Arc::new(move |dir: &OwnedFd, _path: &std::path::Path| {
+            let held = rustix::fs::fstat(dir).unwrap();
+            if (super::super::floor::device(&held), held.st_ino) != identity {
+                return;
+            }
+            if armed.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            std::fs::write(watched.join("late"), b"late").unwrap();
+        }));
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::tree::remove_tree(&dir, &base).unwrap();
+    assert!(fired.load(Ordering::SeqCst), "the hook fired");
+    assert!(!base.join("late").exists(), "the late child is gone");
+    assert!(!sub.exists(), "the snapshotted tree is gone");
+    drop(dir);
+    std::fs::remove_dir_all(base).unwrap();
+}
