@@ -482,7 +482,7 @@ const function unusableAs(s: core.Step): String =
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
-    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
+    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && trimmedSysctlValue(x.value) != trimmedSysctlValue(y.value) && !(bootOrder(x.path) <= bootOrder(y.path)))
     .map((y) -> List(x, y))))
   if (pairs.isEmpty) List()
   else let (x = pairs.first.first) let (y = pairs.first.last)
@@ -1034,13 +1034,15 @@ const function sysctlClash(a: core.Step, b: core.Step): Boolean =
 /// one stage that ask for different values of one name would change it
 /// back and forth on every apply — and disagree at boot, where file
 /// precedence picks one — whatever files they persist in. Steps asking
-/// for the same value are fine; each persists its own entry. Names
+/// for the same value are fine — values compare with the syntax-level
+/// edge whitespace trimmed, the way procps and the runtime read them;
+/// each persists its own entry. Names
 /// compare canonicalized: the slash-first and dotted spellings of one
 /// parameter (`net/ipv4/ip_forward`, `net.ipv4.ip_forward`) address one
 /// kernel value.
 function sysctlValues(ix: StageIndex, i: Int): List<String> =
   if (!(ix.steps[i] is linux.Sysctl)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && ix.steps[j].value != ix.steps[i].value)
+  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && trimmedSysctlValue(ix.steps[j].value) != trimmedSysctlValue(ix.steps[i].value))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
 
 /// One parameter's identity: the `/proc/sys` path it addresses. Slash-
@@ -1049,6 +1051,17 @@ function sysctlValues(ix: StageIndex, i: Int): List<String> =
 /// compare equal — and a slash-first name with a literal dot (`enp3s0.200`)
 /// keeps its identity apart from the dotted spelling of another path.
 const function sysctlKey(name: String): String = if (name.contains("/")) name else name.split(".").join("/")
+
+/// One sysctl value with the syntax-level whitespace trimmed off both
+/// ends: procps strips the blanks around a value before it applies it,
+/// and the runtime compares the trimmed values too (`trimmed_value`), so
+/// `"1"` and `" 1 "` are one kernel value, while the blanks inside it
+/// stay — `kernel.hostname` holds `abc  def` as written. The trim is the
+/// ASCII one the runtime applies: space, tab and form feed, the only edge
+/// blanks the value's type admits beside the forbidden newline, carriage
+/// return and NUL.
+function trimmedSysctlValue(value: String): String =
+  value.replaceAll(Regex("^[ \u{9}\u{C}]+|[ \u{9}\u{C}]+$"), "")
 
 /// An account needs the groups it names. A same-stage group step that
 /// removes one contradicts the account whatever the order — one side ends
