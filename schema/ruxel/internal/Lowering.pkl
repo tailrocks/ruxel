@@ -1745,20 +1745,38 @@ function removalHomesAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 
 /// The stages before `k` whose last present declaration for the account
 /// on a host the removal runs on names another home than the removal:
-/// the live home the runtime compares the declaration against.
+/// the live home the runtime compares the declaration against. A stage
+/// the workflow removes the account on after it declares the home
+/// invalidates the history on the hosts it runs on: the account is gone
+/// there, so the live home the removal compares against is no longer
+/// the declared one — only a declaration no removal takes away still
+/// stands for it.
 function removalHomeClashStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, s: linux.User): List<Int> =
   _stages[k].hosts.toList().flatMap((h) ->
-    let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && presentHomeDeclared(_indexes[n], s.user) != null))
+    let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && presentHomeDeclared(_indexes[n], s.user) != null && !homeHistoryReset(_stages, _indexes, n, k, s.user, h)))
     if (declaring.isEmpty) List()
     else if (presentHomeDeclared(_indexes[declaring.last], s.user) == s.home) List()
     else List(declaring.last)).toSet().toList()
 
-/// The home the stage declares present for the account: the explicit
-/// home of its present step for it, or the default one `useradd -m`
-/// creates beside the account where the step states none.
+/// Whether the home the stage `n` declares present is stale before the
+/// removal at `k` on the host `h`: a stage between them runs there and
+/// removes the account, so the live home is gone and a later removal
+/// compares its declared home against a home the workflow cannot read.
+/// A removal on a disjoint host is another machine's account and
+/// invalidates nothing here.
+function homeHistoryReset(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, k: Int, account: String, h: core.Host): Boolean =
+  positions(_indexes).filter((n1) -> n1 > n && n1 < k).any((n1) -> stageRunsOn(_stages[n1], h) && identityGoneOn(_stages, _indexes, n1, List(account, "owner"), h))
+
+/// The home the stage declares present for the account at the end of
+/// the stage: the explicit home of its last present step for it, or the
+/// default one `useradd -m` creates beside the account where the step
+/// states none. The last word wins: a later present step redeclares the
+/// home, and a removal after the last present step leaves no declared
+/// home behind — the account is gone, so a later removal compares its
+/// declared home against a home the workflow cannot read.
 function presentHomeDeclared(ix: StageIndex, account: String): String? =
-  let (hits = positions(ix.steps).filter((j) -> ix.steps[j] is linux.User && ix.steps[j].state == "present" && ix.steps[j].user == account))
-  if (hits.isEmpty) null else declaredHome(ix.steps[hits.first], account)
+  let (hits = positions(ix.steps).filter((j) -> ix.steps[j] is linux.User && ix.steps[j].user == account))
+  if (hits.isEmpty) null else declaredHome(ix.steps[hits.last], account)
 
 /// The effective home a present step declares for the account.
 function declaredHome(s: core.Step, account: String): String? =
