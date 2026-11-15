@@ -1,0 +1,20 @@
+// expect: takes its uid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A renumbering on another machine leaves the draw where it is: Alice
+// draws a uid on the workers, the control-plane stage renumbers her to
+// 1600 — which frees nothing on the workers — so the workers' claim of
+// 1000 for Bob is still refused.
+stages {
+  new Stage { title = "draw"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice" }
+  } }
+  new Stage { title = "renumber"; hosts = inventory.controlPlanes; steps {
+    new linux.User { user = "alice"; uid = 1600 }
+  } }
+  new Stage { title = "claim"; hosts = inventory.workers; steps {
+    new linux.User { user = "bob"; uid = 1000 }
+  } }
+}
