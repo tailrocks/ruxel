@@ -400,6 +400,7 @@ inputs = [
   "tests/workflow/valid/linux-file-owner-renumbered-reconciled.pkl",
   "tests/workflow/valid/linux-group-gid-freed-by-departure.pkl",
   "tests/workflow/valid/linux-sysctl-local-lib-dir.pkl",
+  "tests/workflow/valid/linux-sysctl-shadow-legacy.pkl",
   "tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl",
   "tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl",
   "tests/workflow/valid/linux-user-home-directory-ancestor.pkl",
