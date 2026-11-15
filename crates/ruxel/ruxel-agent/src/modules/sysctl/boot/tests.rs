@@ -1,7 +1,7 @@
 //! The name is what the boot selects: every entry holds its
 //! basename even where it contributes no bytes.
 
-use super::{boot_bytes, boot_override, system_files_in};
+use super::{boot_bytes, boot_override, scan_error, system_files_in};
 use std::path::PathBuf;
 
 struct Scratch(PathBuf);
@@ -134,5 +134,26 @@ fn a_directory_holds_the_name_at_boot() {
         ),
         None,
         "the shadowed assignment must not hand the boot value away"
+    );
+}
+
+#[test]
+fn a_per_entry_scan_error_refuses_with_the_directory_named() {
+    // No portable fixture makes a healthy directory's iterator yield
+    // an I/O error: the failure needs a filesystem fault mid-scan —
+    // a directory deleted or replaced under the open handle, a remote
+    // filesystem failing between entries — so the mapping the
+    // iterator errors travel through is pinned directly. The refusal
+    // names the directory, the way the `read_dir` refusal does,
+    // instead of dropping the entry and hiding a later-loading
+    // assignment from the override probe and the fingerprint.
+    let error = scan_error("/etc/sysctl.d", &std::io::Error::other("stale file handle"));
+    assert!(
+        error.contains("cannot read the boot directory /etc/sysctl.d"),
+        "the refusal must name the directory: {error}"
+    );
+    assert!(
+        error.contains("stale file handle"),
+        "the refusal must carry the failure: {error}"
     );
 }
