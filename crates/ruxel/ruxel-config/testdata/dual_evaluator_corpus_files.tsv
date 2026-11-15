@@ -68,6 +68,7 @@ dual_evaluator
   tests/workflow/invalid/linux-file-owner-removed-later-stage.pkl
   tests/workflow/invalid/linux-file-owner-removed.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
+  tests/workflow/invalid/linux-file-owner-renumbered-same-stage-order.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-unknown.pkl
   tests/workflow/invalid/linux-file-owner-renumbered.pkl
   tests/workflow/invalid/linux-file-sysctl-clash.pkl
@@ -100,6 +101,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl
   tests/workflow/invalid/linux-sysctl-shadow-across-dirs.pkl
+  tests/workflow/invalid/linux-sysctl-shadow-same-stage.pkl
   tests/workflow/invalid/linux-sysctl-stage-order.pkl
   tests/workflow/invalid/linux-sysctl-user-home-clash.pkl
   tests/workflow/invalid/linux-sysctl-value-newline.pkl
@@ -140,6 +142,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
   tests/workflow/invalid/linux-user-root-group.pkl
   tests/workflow/invalid/linux-user-root-uid.pkl
+  tests/workflow/invalid/linux-user-shell-effective-provider-not-executable.pkl
   tests/workflow/invalid/linux-user-shell-group-exec-only.pkl
   tests/workflow/invalid/linux-user-shell-is-default-home.pkl
   tests/workflow/invalid/linux-user-shell-is-home.pkl
@@ -163,6 +166,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
   tests/workflow/invalid/linux-user-uid-draw-other-hosts.pkl
   tests/workflow/invalid/linux-user-uid-draw-recreated-after-removal.pkl
+  tests/workflow/invalid/linux-user-uid-history-reset-after-recreation.pkl
   tests/workflow/invalid/linux-user-uid-out-of-range.pkl
   tests/workflow/invalid/linux-user-uid-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl
@@ -205,6 +209,7 @@ dual_evaluator
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
   tests/workflow/valid/linux-file-owner-renumbered-reconciled.pkl
+  tests/workflow/valid/linux-file-owner-renumbered-same-stage.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
   tests/workflow/valid/linux-group-gid-freed-by-departure.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
@@ -215,6 +220,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-local-lib-dir.pkl
   tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
   tests/workflow/valid/linux-sysctl-shadow-legacy.pkl
+  tests/workflow/valid/linux-sysctl-shadow-same-stage-legacy.pkl
   tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
   tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl
@@ -234,8 +240,10 @@ dual_evaluator
   tests/workflow/valid/linux-user-removal-uid-match.pkl
   tests/workflow/valid/linux-user-remove-home-inactive.pkl
   tests/workflow/valid/linux-user-remove-home-other-spool-dir.pkl
+  tests/workflow/valid/linux-user-shell-obsolete-provider-replaced.pkl
   tests/workflow/valid/linux-user-shell-reconciled-later-stage.pkl
   tests/workflow/valid/linux-user-shell-symlink-chain-before-account.pkl
+  tests/workflow/valid/linux-user-uid-history-reset-reconciled.pkl
   tests/workflow/valid/linux-user-uid-login-users-same-account.pkl
   tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
   tests/workflow/valid/linux-user-uid-recreated-then-renumbered.pkl

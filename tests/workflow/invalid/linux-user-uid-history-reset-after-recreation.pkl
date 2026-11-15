@@ -1,0 +1,49 @@
+// expect: no stage declares the number it carried
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The numeric history resets when the identity is removed and recreated
+// without a number: Alice holds 1500, the removal takes her away, and
+// the unnumbered recreation draws a fresh number the schema cannot name
+// — so the file the fourth stage writes gets the allocator-drawn UID.
+// The fifth stage's `alice(uid=1500)` renumbers her from that unknown
+// number without repairing the file, and the stale pre-recreation 1500
+// must not classify it as unchanged.
+stages {
+  new Stage {
+    title = "numbered"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "recreate"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "file"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+  new Stage {
+    title = "renumber"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+}
