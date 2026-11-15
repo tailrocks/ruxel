@@ -60,14 +60,15 @@ fn the_home_repair_resolves_against_the_planned_uid() {
 }
 
 #[test]
-fn check_mode_plans_the_home_repair_against_the_planned_uid() {
+fn check_mode_refuses_the_home_repair_against_a_stale_claim() {
     // An earlier check-mode task renumbers an existing account, and a
     // later task declares the account's home without stating a
-    // number: check mode runs no `usermod`, so the host's entry still
-    // holds the old number — the home's repair must be planned
-    // against the number the apply ends up with, or the dry run
-    // reports no change while the apply chowns the home to the new
-    // number.
+    // number: the passwd claim still names the old number while the
+    // plan manages the new one, so the adoption refuses. The repair
+    // the old code planned is one the apply refuses once the
+    // renumbering really ran — the dry run must say so too, instead
+    // of planning a change the apply never performs.
+    begin_plan();
     let Some((name, uid, _, home, group)) = account_with_an_owned_home() else {
         // A host with no account whose home it owns: the repair's
         // ownership cannot be observed here.
@@ -90,14 +91,12 @@ fn check_mode_plans_the_home_repair_against_the_planned_uid() {
     };
     // The earlier task of the plan: the account's number changes.
     run(&json!({"name": name, "uid": moved}), &check).expect("the earlier renumbering must plan");
-    // The later task: the home is declared, the number is not.
-    let result = run(&json!({"name": name, "home": home, "group": group}), &check)
-        .expect("the later step must plan");
-    assert_eq!(
-        result.get("changed"),
-        Some(&json!(true)),
-        "the home's repair must be planned against the planned number: {result}"
-    );
+    // The later task: the home is declared, the number is not — and
+    // the claim no longer names the account the plan manages.
+    let error = run(&json!({"name": name, "home": home, "group": group}), &check)
+        .expect_err("the later step must be refused: the stale claim names the old number");
+    assert!(error.contains("refusing to adopt"), "{error}");
+    begin_plan();
 }
 
 #[test]

@@ -11,42 +11,36 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
-/// The mode a created home directory gets: the account's own, not the
-/// world's to read or write. The schema exposes no home-mode field, so
-/// the mode is the agent's policy — the conventional mode of a home
-/// directory (`useradd -D`'s `HOME_MODE`).
+/// The mode a created home directory gets: the account's own — the
+/// schema exposes no home-mode field, so the mode is the agent's
+/// policy (`useradd -D`'s `HOME_MODE`).
 const HOME_MODE: Mode = Mode::from_raw_mode(0o750);
 
-/// The mode a created parent of the home gets: the path to the home is
-/// traversable, and never world-writable — a parent that others may
-/// write is a parent they may replace.
+/// The mode a created parent of the home gets: traversable, and never
+/// world-writable — a parent others may write is one they may replace.
 const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 
 #[cfg(test)]
+pub(super) use super::adoption::managed_claim;
+#[cfg(test)]
 pub(super) use super::adoption::operating_uid;
 pub(super) use super::adoption::{
-    adoption_pinned, adoption_trusted, ancestors_usable, enforce_mode, home_usable,
+    ManagedAccount, adoption_pinned, adoption_trusted, ancestors_usable, enforce_mode, home_usable,
     symlink_target_trusted, trusted_ancestors,
 };
 
-/// The home `useradd` creates for an account: the declared one, or the
-/// `/home/<name>` the lowering's footprint reserves. The base directory
-/// is host configuration (`useradd -D`), so the creation passes the home
-/// explicitly: `useradd -m` without `-d` would put it wherever the
-/// host's configured base points, and a same-stage file at the reserved
-/// path would collide with account creation.
+/// The home `useradd` creates for an account: the declared one, or
+/// the footprint's `/home/<name>` — passed explicitly, never left to
+/// the host's configured base.
 pub(super) fn claimed_home(home: Option<&str>, name: &str) -> String {
     home.map_or_else(|| format!("/home/{name}"), str::to_string)
 }
 
 /// The gid the home directory is created with: the requested primary
-/// group's, whose `usermod -g` has already moved the account by the time
-/// the directory is created — the account's old gid would own it and no
-/// later apply would repair it — or the account's current one when the
+/// group's — `usermod -g` has already moved the account by the time
+/// the directory is created — or the account's current one when the
 /// step names no group. `None` is check mode's answer for a group that
-/// is not on the host yet (see `planned_gid`): the plan must not require
-/// the new group's live gid, and the directory's final owner is settled
-/// by the primary-group change the plan already reports.
+/// is not on the host yet (see `planned_gid`).
 pub(super) fn home_gid(
     group: Option<&str>,
     current_gid: u64,
@@ -58,29 +52,25 @@ pub(super) fn home_gid(
     }
 }
 
-/// The home's repair, traced: whether it changed anything, and every
-/// directory the repair created — what a later failure takes back.
-pub(super) type HomeRepair = (bool, Vec<PathBuf>);
-
 /// The declared home directory exists and belongs to the account:
 /// `usermod -d` moves the passwd field only, so the directory is the
-/// agent's to create — and one that exists but drifted to another uid or
-/// gid is the agent's to reconcile, never a no-change early return. A
-/// symlink at the path is refused, every ancestor is inspected before
-/// the path is traversed, a missing home is created only under trusted
-/// ancestors, and ownership changes never follow a link
-/// (`lchown`), so neither a link at the path nor one above it can ever
-/// have a target handed to the account. The mutation itself runs on
-/// file descriptors the walk opened without following a link: a
-/// directory renamed aside after `ancestors_usable` inspected it leaves
-/// the operation on the original inode, never on a replacement a
-/// non-root principal planted.
+/// agent's to create — and one that drifted to another gid is the
+/// agent's to reconcile. A symlink at the path is refused, every
+/// ancestor is inspected before the path is traversed, a missing home
+/// is created only under trusted ancestors, and ownership changes
+/// never follow a link, so no link can hand the account a target. The
+/// mutation runs on descriptors the walk opened without following a
+/// link. Every directory the repair creates is collected for the
+/// caller: a later failure takes back exactly what the repair added.
+/// The adoption admits the directory only for the managed account.
 pub(super) fn ensure_home(
     home: &str,
     uid: u64,
     gid: u64,
     check_mode: bool,
-) -> Result<HomeRepair, String> {
+    managed: &ManagedAccount<'_>,
+    created: &mut Vec<PathBuf>,
+) -> Result<bool, String> {
     ancestors_usable(home)?;
     let dir = Path::new(home);
     let uid =
@@ -93,20 +83,20 @@ pub(super) fn ensure_home(
             // An existing directory is adopted, never taken blindly:
             // a directory a non-root principal may have placed must
             // never become the account's home with its contents.
-            adoption_trusted(home, &meta)?;
+            adoption_trusted(home, &meta, managed)?;
             if meta.uid() == uid && meta.gid() == gid {
-                return Ok((false, Vec::new()));
+                return Ok(false);
             }
             if check_mode {
-                return Ok((true, Vec::new()));
+                return Ok(true);
             }
-            let (fd, created) = open_home(home, false)?;
+            let fd = open_home(home, false, created)?;
             // The adoption the descriptors pin, re-verified after the
             // open: the path the check above inspected may have been
             // replaced in between.
-            adoption_pinned(home, &fd)?;
+            adoption_pinned(home, &fd, managed)?;
             own_through(&fd, uid, gid, home)?;
-            Ok((true, created))
+            Ok(true)
         }
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -116,32 +106,25 @@ pub(super) fn ensure_home(
             // much as in apply.
             trusted_ancestors(home)?;
             if check_mode {
-                return Ok((true, Vec::new()));
+                return Ok(true);
             }
-            let (fd, created) = open_home(home, true)?;
+            let fd = open_home(home, true, created)?;
             // The adoption the descriptors pin, re-verified after the
             // open: the leaf the lookup found missing may have been
             // created in between — a directory a non-root principal
             // planted must never become the account's home with its
             // contents. A directory the creation just made is the
             // operator's own and passes.
-            adoption_pinned(home, &fd)?;
+            adoption_pinned(home, &fd, managed)?;
             own_through(&fd, uid, gid, home)?;
-            Ok((true, created))
+            Ok(true)
         }
         Err(error) => Err(format!("user: own home {home}: {error}")),
     }
 }
 
-/// The claimed home of the account the step created: the directory is
-/// reconciled with the account's final identity and takes the policy
-/// mode — `useradd -m` makes the home with the host's own creation
-/// mode, so the same run would otherwise report convergence on a home
-/// the module defines differently — and the account is taken back when
-/// the reconciliation fails. A home that cannot take the ownership or
-/// the mode — an immutable directory, a directory on a read-only
-/// mount — fails the reconciliation, and the account the step created
-/// must not stay behind in the passwd database when the task fails.
+/// The claimed home of the account the step created: reconciled, and
+/// the account taken back when the reconciliation fails.
 pub(super) fn reconcile_created_home(
     name: &str,
     home: &str,
@@ -149,8 +132,21 @@ pub(super) fn reconcile_created_home(
     check_mode: bool,
     remove_account: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<bool, String> {
+    // The created account claims the home; an oversized number matches none.
+    let managed = ManagedAccount {
+        name,
+        uid: u32::try_from(created.uid).ok(),
+    };
+    let mut added = Vec::new();
     let reconciled: Result<bool, String> = (|| {
-        let (ownership, _) = ensure_home(home, created.uid, created.gid, check_mode)?;
+        let ownership = ensure_home(
+            home,
+            created.uid,
+            created.gid,
+            check_mode,
+            &managed,
+            &mut added,
+        )?;
         let mode = enforce_created_mode(home, check_mode)?;
         Ok(ownership || mode)
     })();
@@ -166,14 +162,10 @@ pub(super) fn reconcile_created_home(
 }
 
 /// The mode of the claimed home of an account the step created: the
-/// policy's, not the host's creation default. The mode is read off the
-/// directory itself after the reconciliation owns it — the creation may
-/// have asked for the policy mode and still landed elsewhere — and
-/// check mode reports the pending repair. Only the creation reconciles
-/// the mode: an adopted home of an existing account keeps the mode its
-/// owner chose.
+/// policy's, not the host's creation default — read off the directory
+/// itself after the reconciliation owns it.
 fn enforce_created_mode(home: &str, check_mode: bool) -> Result<bool, String> {
-    let (fd, _) = open_home(home, false)?;
+    let fd = open_home(home, false, &mut Vec::new())?;
     let meta = fstat(&fd).map_err(|error| format!("user: own home {home}: {error}"))?;
     if Mode::from_raw_mode(meta.st_mode & 0o777) == HOME_MODE {
         return Ok(false);
@@ -187,10 +179,13 @@ fn enforce_created_mode(home: &str, check_mode: bool) -> Result<bool, String> {
 
 /// The home directory opened through its parent: the walk opens the
 /// directories of the path without following a link, and the leaf is
-/// created or opened as itself — never resolved through a link a
-/// concurrent rewrite plants at it, so the ownership below lands on
-/// the directory the path named, or on nothing at all.
-pub(super) fn open_home(home: &str, create: bool) -> Result<(OwnedFd, Vec<PathBuf>), String> {
+/// created or opened as itself — never resolved through a planted
+/// link, so the ownership below lands where the path named.
+pub(super) fn open_home(
+    home: &str,
+    create: bool,
+    created: &mut Vec<PathBuf>,
+) -> Result<OwnedFd, String> {
     let path = Path::new(home);
     let parent = path
         .parent()
@@ -199,7 +194,7 @@ pub(super) fn open_home(home: &str, create: bool) -> Result<(OwnedFd, Vec<PathBu
     let name = path
         .file_name()
         .ok_or_else(|| format!("user: home {home}: no directory name"))?;
-    let (dir, mut created) = open_chain(parent, home, create)?;
+    let dir = open_chain(parent, home, create, created)?;
     match statat(&dir, name, AtFlags::SYMLINK_NOFOLLOW) {
         // The leaf is judged from its own lstat, never from the open
         // that would follow it: a link planted here is refused, not
@@ -210,14 +205,14 @@ pub(super) fn open_home(home: &str, create: bool) -> Result<(OwnedFd, Vec<PathBu
         {
             Err(format!("user: home {home} exists and is a symlink"))
         }
-        Ok(_) => open_leaf(&dir, name, home).map(|leaf| (leaf, created)),
+        Ok(_) => open_leaf(&dir, name, home),
         Err(rustix::io::Errno::NOENT) if create => {
             mkdirat(&dir, name, HOME_MODE)
                 .map_err(|error| format!("user: create home {home}: {error}"))?;
             let leaf = open_leaf(&dir, name, home)?;
             enforce_mode(&leaf, HOME_MODE, home)?;
             created.push(PathBuf::from(home));
-            Ok((leaf, created))
+            Ok(leaf)
         }
         Err(error) => Err(format!("user: own home {home}: {error}")),
     }
@@ -228,10 +223,9 @@ fn open_leaf(dir: &OwnedFd, name: &OsStr, home: &str) -> Result<OwnedFd, String>
         .map_err(|error| format!("user: own home {home}: {error}"))
 }
 
-/// The flags every directory of the walk opens with: never following a
-/// link, so a component replaced after `ancestors_usable` inspected the
-/// path cannot redirect the operation to a target the account does not
-/// own.
+/// The flags every directory of the walk opens with: never following
+/// a link, so a component replaced after the inspection cannot
+/// redirect the operation to a target the account does not own.
 fn walk_flags() -> OFlags {
     OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
 }
@@ -246,20 +240,16 @@ fn track_resolved(resolved: &mut PathBuf, name: &OsStr) {
     }
 }
 
-/// Every directory of `path` opened from the root down, one component
-/// at a time through `openat` — creating the missing ones when
-/// `create`. A directory renamed aside after the walk passed it leaves
-/// the operation on the original inode, and a link planted where a
-/// non-root principal could rewrite it is refused rather than
-/// followed. A link only root can rewrite is the operator's
-/// configuration (`/var` on macOS, `/home`) — the admission
-/// `planted_in` grants it — and resolves by its target, whose own
-/// directories are trusted before the walk enters them.
+/// Every directory of `path` opened from the root down through
+/// `openat` — creating the missing ones when `create`, collecting
+/// every one it creates so a later failure takes them back. A link a
+/// non-root principal could rewrite is refused rather than followed.
 pub(super) fn open_chain(
     path: &Path,
     home: &str,
     create: bool,
-) -> Result<(OwnedFd, Vec<PathBuf>), String> {
+    created: &mut Vec<PathBuf>,
+) -> Result<OwnedFd, String> {
     let mut names: Vec<OsString> = Vec::new();
     for part in path.components() {
         match part {
@@ -280,9 +270,6 @@ pub(super) fn open_chain(
     .map_err(|error| format!("user: home {home}: {error}"))?;
     let mut expansions = 0;
     let mut index = 0;
-    // Every parent directory the repair created, outermost first: a
-    // later failure takes them back leaf-first.
-    let mut created: Vec<PathBuf> = Vec::new();
     while index < names.len() {
         let name = names[index].clone();
         match openat(&current, &name, walk_flags(), Mode::empty()) {
@@ -372,7 +359,7 @@ pub(super) fn open_chain(
             Err(error) => return Err(format!("user: home {home}: {error}")),
         }
     }
-    Ok((current, created))
+    Ok(current)
 }
 
 /// The ownership the walked directory is given, on the descriptor the

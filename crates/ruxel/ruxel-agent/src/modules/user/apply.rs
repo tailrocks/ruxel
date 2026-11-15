@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use super::PasswdEntry;
 use super::entries::group_entry;
 use super::guards::identity_change_allowed;
-use super::home::ensure_home;
+use super::home::{ManagedAccount, ensure_home};
 
 /// The command the agent runs for the account's change.
 pub(super) type Runner = dyn Fn(&str, &[&str]) -> Result<(), String>;
@@ -31,6 +31,9 @@ pub(super) struct Home {
     pub(super) path: String,
     pub(super) uid: u64,
     pub(super) owner: HomeOwner,
+    /// The account's own number the adoption weighs: the plan's where
+    /// it states one — an allocator-drawn number matches no claim.
+    pub(super) managed_uid: u64,
 }
 
 /// The changes the existing account's branch runs.
@@ -41,11 +44,8 @@ pub(super) enum Mutation {
     /// the host, and the list may name the group.
     GroupAdd(String),
     /// The home's repair. It runs before the account's own change: it
-    /// is that change's preflight — a repair that fails (an immutable
-    /// directory, a read-only parent, an identity that does not fit)
-    /// must leave the account as it was, not with its passwd field
-    /// moved onto a home that does not exist and its identity
-    /// changed.
+    /// is that change's preflight — a repair that fails must leave
+    /// the account as it was.
     Home(Home),
     /// The account's own change.
     UserMod(Vec<String>),
@@ -53,8 +53,7 @@ pub(super) enum Mutation {
 
 /// The changes the existing account's step runs. The identity guard
 /// runs here, before the first of them: a refused change plans no
-/// mutation at all, so the host keeps the private group the step
-/// would have created, exactly as it kept it before the refusal.
+/// mutation at all.
 pub(super) fn mutations(
     name: &str,
     current: &PasswdEntry,
@@ -89,10 +88,8 @@ pub(super) fn mutations(
 
 /// A mutation the apply has already performed: what a later failure
 /// takes back, so a refused change leaves the host as it was. The
-/// path-shape preflight (`home_usable`) runs before any mutation, but
-/// the mutation itself can still fail — an immutable directory, a
-/// read-only parent — and the mutations before it have already changed
-/// the host by then.
+/// mutation itself can still fail after changing the host — an
+/// immutable directory, a read-only parent.
 enum Completed {
     /// The private group the step created: taken back with `groupdel`.
     Group(String),
@@ -106,12 +103,10 @@ enum Completed {
 }
 
 /// The changes the existing account's step runs, in the order the plan
-/// made them. The home's repair runs before the account's own change:
-/// it is the preflight of that change, so a repair that fails leaves
-/// the account as it was. A mutation that fails takes back what the
-/// earlier ones did — the created group, the repaired home with every
-/// parent directory the repair created — so a refused change leaves
-/// the host as it was. Returns whether the
+/// made them. The home's repair is the preflight of the account's own
+/// change, so a repair that fails leaves the account as it was. A
+/// mutation that fails takes back what the earlier ones did, so a
+/// refused change leaves the host as it was. Returns whether the
 /// home's repair changed (or would change in check mode) anything.
 pub(super) fn run(
     name: &str,
@@ -145,15 +140,37 @@ pub(super) fn run(
                     } else {
                         prior_owner(&home.path)?
                     };
-                    let (changed, created) = ensure_home(&home.path, home.uid, gid, check_mode)?;
-                    if !check_mode {
-                        completed.push(Completed::Home {
-                            path: home.path,
-                            prior,
-                            created,
-                        });
+                    // The account the repair adopts for, and every
+                    // directory the repair creates: the rollback below
+                    // takes back the partial hierarchy of a repair that
+                    // fails after creating parents, so it must not
+                    // survive the refused change.
+                    let managed = ManagedAccount {
+                        name,
+                        uid: u32::try_from(home.managed_uid).ok(),
+                    };
+                    let mut created = Vec::new();
+                    let outcome = ensure_home(
+                        &home.path,
+                        home.uid,
+                        gid,
+                        check_mode,
+                        &managed,
+                        &mut created,
+                    );
+                    match outcome {
+                        Ok(changed) => {
+                            if !check_mode {
+                                completed.push(Completed::Home {
+                                    path: home.path,
+                                    prior,
+                                    created,
+                                });
+                            }
+                            Ok(changed)
+                        }
+                        Err(error) => Err(error),
                     }
-                    Ok(changed)
                 }
                 Mutation::UserMod(mut args) => {
                     if !check_mode {
@@ -179,12 +196,9 @@ pub(super) fn run(
 const SKEL_DIR: &str = "/etc/skel";
 
 /// The home `useradd -m` created for a new account, taken back: the
-/// directory the operation added goes with the account — including the
-/// skeleton contents `useradd` copied from it — while contents a
-/// concurrent writer planted are kept and reported rather than deleted.
-/// Only a home this operation created is removed: the caller checks it
-/// did not pre-exist, and a home that pre-existed is the host's,
-/// whatever it holds.
+/// directory the operation added goes with the account, while contents
+/// a concurrent writer planted are kept and reported rather than
+/// deleted. Only a home this operation created is removed.
 pub(super) fn rollback_created_home(home: &str) -> Result<(), String> {
     rollback_created_home_from(home, Path::new(SKEL_DIR))
 }
@@ -285,10 +299,7 @@ fn collect_relative(
 }
 /// The home's repair a later failure takes back: the ownership the
 /// repair found, restored — or every directory the repair created,
-/// removed leaf-first. The reversal runs on the descriptors the safe walk opens,
-/// never through a link a concurrent rewrite plants, for the repair's
-/// own reason. Removing the created directory takes back exactly what
-/// the repair added: the removal refuses a directory that is not
+/// removed leaf-first. The removal refuses a directory that is not
 /// empty, so contents a concurrent writer planted are kept and
 /// reported rather than deleted.
 pub(super) fn rollback_home(
@@ -325,16 +336,14 @@ pub(super) fn rollback_home(
         .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
     let gid = u32::try_from(gid)
         .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
-    let (fd, _) = super::home::open_home(path, false)?;
+    let fd = super::home::open_home(path, false, &mut Vec::new())?;
     super::home::own_through(&fd, uid, gid, path)
 }
 
-/// What the earlier mutations did, taken back in reverse order: the
-/// private group the step created is deleted, and the home's repair is
-/// reversed — the ownership it found restored, every directory it
-/// created removed leaf-first. A rollback that fails itself is reported with the error
-/// that caused it: the host keeps the partial change, and the task
-/// says so instead of reporting a clean refusal.
+/// What the earlier mutations did, taken back in reverse order. A
+/// rollback that fails itself is reported with the error that caused
+/// it: the host keeps the partial change, and the task says so
+/// instead of reporting a clean refusal.
 fn take_back(completed: &[Completed], run_cmd: &Runner, error: String) -> String {
     let mut failures = Vec::new();
     for done in completed.iter().rev() {
@@ -361,10 +370,8 @@ fn take_back(completed: &[Completed], run_cmd: &Runner, error: String) -> String
 }
 
 /// The number the home's owner group holds: the number the plan knows,
-/// and the number the plan's own group creation draws where the group
-/// does not exist yet — `None` where the group is not on the host and
-/// the plan creates none, which is check mode's answer for a group
-/// that is not on the host yet.
+/// or the number its own group creation draws — `None` where the group
+/// is not on the host and the plan creates none.
 fn owner_gid(owner: &HomeOwner, name: &str) -> Result<Option<u64>, String> {
     match owner {
         HomeOwner::Number(gid) => Ok(Some(*gid)),
@@ -374,10 +381,7 @@ fn owner_gid(owner: &HomeOwner, name: &str) -> Result<Option<u64>, String> {
 
 /// The ownership the home's repair finds, before it changes anything:
 /// what a later failure restores — `None` where the home is not there
-/// yet, so the repair creates it and the rollback takes it away. Any
-/// other lookup error fails the repair itself before anything mutates,
-/// and the rollback the failure triggers covers the mutations before
-/// this one.
+/// yet, so the repair creates it and the rollback takes it away.
 fn prior_owner(home: &str) -> Result<Option<(u64, u64)>, String> {
     use std::os::unix::fs::MetadataExt;
     match std::fs::symlink_metadata(home) {

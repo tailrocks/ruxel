@@ -21,6 +21,7 @@ fn home_mutation(path: &std::path::Path, uid: u64, gid: u64) -> Mutation {
         path: path.to_str().unwrap().to_string(),
         uid,
         owner: HomeOwner::Number(gid),
+        managed_uid: uid,
     })
 }
 
