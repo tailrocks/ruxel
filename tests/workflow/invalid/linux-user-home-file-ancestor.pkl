@@ -1,0 +1,18 @@
+// expect: cannot traverse the regular file to create the home
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A regular file above the home blocks the account's task: the earlier
+// stage leaves /srv as a whole file, and the later account's home
+// /srv/alice lies beneath it, which `ensure_home` cannot traverse to
+// create. Only paths below the home were checked before; a managed
+// ancestor of the home is refused the same way.
+stages {
+  new Stage { title = "file"; hosts = inventory.workers; steps {
+    new File { path = "/srv"; content = "not a directory\n" }
+  } }
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; home = "/srv/alice" }
+  } }
+}
