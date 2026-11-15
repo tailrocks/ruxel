@@ -1,0 +1,33 @@
+// The uid 1500 changes hands through a renumbering: stage 2 moves
+// `alice` itself to 1600, so 1500 is free before stage 3 assigns it to
+// `bob` — `usermod -u 1600` releases the old number on the hosts it
+// covers, and the later `useradd -u 1500` succeeds there the way it does
+// after a removal. An intervening renumbering of the same identity frees
+// the old number like a removal does.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1600 }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1500 }
+    }
+  }
+}
