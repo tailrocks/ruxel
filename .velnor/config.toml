@@ -1,48 +1,119 @@
-schema = 1
+schema = 2
 
 [workflow]
+name = "CI"
 policy = "consumer-v1"
 default_branch = "main"
+generator_validation = "bootstrap"
+max_parallel_jobs = 2
 crate_timeout_minutes = 20
-
+pull_request_cache_policy = "read-only"
 
 [workflow.verify]
 jobs = ["alint"]
+lychee_args = []
+
+[resources]
+compiler_process_budget = 2
+test_process_budget = 2
+
+[test_sharding]
+default_shards = 1
+
+[test_sharding.by_manifest]
+
+[stacks]
+ignore = []
 
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
 
+[[stacks.rust.configurations]]
+name = "default"
+features = ["default"]
+target = "host"
+
+[stacks.rust.release]
+enabled = false
+manifest_path = "Cargo.toml"
+packages = []
+publishable_workspace = false
+environment = "release"
+release_pr = true
+tag_name = "{{ package }}-v{{ version }}"
+
+[stacks.rust.binary_release]
+manifest_path = "Cargo.toml"
+version_package = ""
+version_env = ""
+publication_timeout_minutes = 5
+products = []
+companions = []
+
+[stacks.rust.binary_release.producer]
+task = ""
+output_directory = "dist/preview"
+manifest = "dist/preview/package-output.json"
+tools = []
+inputs = []
+runner = "linux-x64"
+timeout_minutes = 5
+build_jobs = 2
+
+[stacks.rust.binary_release.producer.source]
+mise_config = "mise.toml"
+working_directory = "."
+
+[stacks.rust.binary_release.evidence]
+profile = "signed-sbom-v1"
+
+[stacks.rust.binary_release.preview]
+enabled = false
+versioning = "package-preview-commit-count-sha7"
+environment = "preview-publish"
+
+[stacks.rust.binary_release.stable]
+enabled = false
+environment = "release"
+
 [[stacks.rust.inputs]]
-globs = [
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
-]
+globs = ["crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs", "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs", "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl", "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl", "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs"]
 packages = ["ruxel-acceptance-xfs"]
 
 [[stacks.rust.inputs]]
-globs = [
-  "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
-  "mise.lock",
-  "schema/ruxel/**/*.pkl",
-  "tests/schema/valid.pkl",
-  "tests/workflow/**/*.pkl",
-  "testdata/workloads/pr66/*.pkl",
-  "testdata/workloads/pr66/assets/template.pkl",
-  "tools/verify-pkl-artifact",
-]
+globs = ["crates/ruxel/ruxel-config/tests/dual_evaluator.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs", "mise.lock", "schema/ruxel/**/*.pkl", "tests/schema/valid.pkl", "tests/workflow/**/*.pkl", "testdata/workloads/pr66/*.pkl", "testdata/workloads/pr66/assets/template.pkl", "tools/verify-pkl-artifact"]
 packages = ["ruxel-config"]
+
+[discovery]
+exclude = []
+
+[actions.overrides]
+
+[execution]
+default_profile = "local"
+hosted_profile = "hosted"
+scale_set_profile = "local"
+
+[execution.profiles.hosted]
+kind = "github-hosted"
+label = "ubuntu-26.04"
+platform = "linux/amd64"
+
+[execution.profiles.local]
+kind = "github-scale-set"
+name = "ubuntu-26.04-scale-set"
+labels = ["velnor", "ubuntu-26.04-scale-set"]
+platform = "linux/amd64"
 
 [[checks]]
 id = "cargo-deny"
 task = "deny-ci"
+directory = "."
 inputs = ["Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-proto/Cargo.toml", "crates/ruxel/ruxel/Cargo.toml", "crates/ruxel/ruxel-agent/Cargo.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-engine/Cargo.toml", "crates/ruxel/ruxel-guard/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "deny.toml", "mise.toml", "mise.lock"]
 tools = ["rust", "cargo-deny"]
 timeout_minutes = 10
+
 [checks.runner]
 label = "ubuntu-26.04"
 platform = "linux_x64"
@@ -51,250 +122,11 @@ executor = "hosted"
 [[checks]]
 id = "acceptance-local"
 task = "acceptance-local"
-inputs = [
-  ".cargo/config.toml",
-  "Cargo.lock",
-  "Cargo.toml",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl",
-  "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs",
-  "mise.toml",
-  "schema/ruxel/Core.pkl",
-  "schema/ruxel/Debian.pkl",
-  "schema/ruxel/Linux.pkl",
-  "schema/ruxel/Systemd.pkl",
-  "schema/ruxel/Workflow.pkl",
-  "schema/ruxel/engine/Engine.pkl",
-  "schema/ruxel/internal/Lowering.pkl",
-  "testdata/workloads/pr66/README.md",
-  "testdata/workloads/pr66/assets/source.txt",
-  "testdata/workloads/pr66/assets/synthetic.txt",
-  "testdata/workloads/pr66/assets/template.pkl",
-  "testdata/workloads/pr66/become-environment.pkl",
-  "testdata/workloads/pr66/check-semantics.pkl",
-  "testdata/workloads/pr66/control-flow.pkl",
-  "testdata/workloads/pr66/controller-delegation.pkl",
-  "testdata/workloads/pr66/lazy-layers/block.pkl",
-  "testdata/workloads/pr66/lazy-layers/play.pkl",
-  "testdata/workloads/pr66/expectations.json",
-  "testdata/workloads/pr66/files-content.pkl",
-  "testdata/workloads/pr66/invalid/copy-source-and-content.pkl",
-  "testdata/workloads/pr66/invalid/file-path-and-dest.pkl",
-  "testdata/workloads/pr66/multihost.pkl",
-  "testdata/workloads/pr66/performance-snapshots.pkl",
-  "testdata/workloads/pr66/postgresql-ownership.pkl",
-  "testdata/workloads/pr66/restart-actions.pkl",
-  "testdata/workloads/pr66/shape-variants.pkl",
-  "testdata/workloads/pr66/storage-ext4.pkl",
-  "testdata/workloads/pr66/storage-two-tier.pkl",
-  "testdata/workloads/pr66/storage-xfs.pkl",
-  "testdata/workloads/pr66/system-surface.pkl",
-  "tools/acceptance-cache/Cargo.lock",
-  "tools/acceptance-cache/Cargo.toml",
-  "tools/acceptance-cache/README.md",
-  "tools/acceptance-cache/fixtures/cache.pkl",
-  "tools/acceptance-cache/fixtures/environment_module.pkl",
-  "tools/acceptance-cache/fixtures/failing.pkl",
-  "tools/acceptance-cache/fixtures/handler.pkl",
-  "tools/acceptance-cache/fixtures/module.pkl",
-  "tools/acceptance-cache/fixtures/template_module.pkl",
-  "tools/acceptance-cache/src/cache.rs",
-  "tools/acceptance-cache/src/common.rs",
-  "tools/acceptance-cache/src/common_tests.rs",
-  "tools/acceptance-cache/src/main.rs",
-  "tools/acceptance-cache/src/privacy.rs",
-  "tools/acceptance-cache/src/privacy_error.rs",
-  "tools/acceptance-cache/src/privacy_secondary.rs",
-  "tools/acceptance-cache/src/privacy_tests.rs",
-  "tools/acceptance-cache/src/process.rs",
-  "tools/acceptance-cache/src/process_guard.rs",
-  "tools/acceptance-cache/src/process_tests.rs",
-  "tools/acceptance-control/Cargo.lock",
-  "tools/acceptance-control/Cargo.toml",
-  "tools/acceptance-control/README.md",
-  "tools/acceptance-control/src/checks.rs",
-  "tools/acceptance-control/src/checks/semantics.rs",
-  "tools/acceptance-control/src/checks/tests.rs",
-  "tools/acceptance-control/src/main.rs",
-  "tools/acceptance-control/src/process.rs",
-  "tools/acceptance-copy/Cargo.lock",
-  "tools/acceptance-copy/Cargo.toml",
-  "tools/acceptance-copy/README.md",
-  "tools/acceptance-copy/src/binary.rs",
-  "tools/acceptance-copy/src/common.rs",
-  "tools/acceptance-copy/src/common/paths.rs",
-  "tools/acceptance-copy/src/common/tests.rs",
-  "tools/acceptance-copy/src/force.rs",
-  "tools/acceptance-copy/src/main.rs",
-  "tools/acceptance-copy/src/process.rs",
-  "tools/acceptance-copy/src/process/capture.rs",
-  "tools/acceptance-copy/src/process/group.rs",
-  "tools/acceptance-copy/src/process/tests.rs",
-  "tools/acceptance-copy/src/repeated.rs",
-  "tools/acceptance-files/Cargo.lock",
-  "tools/acceptance-files/Cargo.toml",
-  "tools/acceptance-files/README.md",
-  "tools/acceptance-files/src/common.rs",
-  "tools/acceptance-files/src/file_helpers.rs",
-  "tools/acceptance-files/src/file_helpers_tests.rs",
-  "tools/acceptance-files/src/lifecycle.rs",
-  "tools/acceptance-files/src/main.rs",
-  "tools/acceptance-files/src/process.rs",
-  "tools/acceptance-files/src/process_guard.rs",
-  "tools/acceptance-files/src/process_tests.rs",
-  "tools/acceptance-files/src/template.rs",
-  "tools/acceptance-isolation/Cargo.lock",
-  "tools/acceptance-isolation/Cargo.toml",
-  "tools/acceptance-isolation/README.md",
-  "tools/acceptance-isolation/fixtures/hosts.pkl",
-  "tools/acceptance-isolation/fixtures/partial.pkl",
-  "tools/acceptance-isolation/fixtures/shutdown.pkl",
-  "tools/acceptance-isolation/fixtures/two_plays.pkl",
-  "tools/acceptance-isolation/src/common.rs",
-  "tools/acceptance-isolation/src/helper.rs",
-  "tools/acceptance-isolation/src/hosts.rs",
-  "tools/acceptance-isolation/src/isolation.rs",
-  "tools/acceptance-isolation/src/isolation_tests.rs",
-  "tools/acceptance-isolation/src/main.rs",
-  "tools/acceptance-isolation/src/partial.rs",
-  "tools/acceptance-isolation/src/process.rs",
-  "tools/acceptance-isolation/src/process/capture.rs",
-  "tools/acceptance-isolation/src/process/group.rs",
-  "tools/acceptance-isolation/src/process/tests.rs",
-  "tools/acceptance-isolation/src/protocol.rs",
-  "tools/acceptance-manifest/.gitignore",
-  "tools/acceptance-manifest/Cargo.lock",
-  "tools/acceptance-manifest/Cargo.toml",
-  "tools/acceptance-manifest/README.md",
-  "tools/acceptance-manifest/become-contract.json",
-  "tools/acceptance-manifest/contracts.json",
-  "tools/acceptance-manifest/control-contract.json",
-  "tools/acceptance-manifest/control-oracles/cli-check.jsonl",
-  "tools/acceptance-manifest/control-oracles/cli-converged.jsonl",
-  "tools/acceptance-manifest/control-oracles/cli-diff.jsonl",
-  "tools/acceptance-manifest/control-oracles/cli-drift_repair.jsonl",
-  "tools/acceptance-manifest/control-oracles/cli-fresh.jsonl",
-  "tools/acceptance-manifest/examples/secret_dedup.rs",
-  "tools/acceptance-manifest/examples/secret_generation.rs",
-  "tools/acceptance-manifest/files-contract.json",
-  "tools/acceptance-manifest/postgres-contract.json",
-  "tools/acceptance-manifest/restart-contract.json",
-  "tools/acceptance-manifest/src/become_user.rs",
-  "tools/acceptance-manifest/src/checks.rs",
-  "tools/acceptance-manifest/src/checks_preview.rs",
-  "tools/acceptance-manifest/src/checks_tests.rs",
-  "tools/acceptance-manifest/src/contract.rs",
-  "tools/acceptance-manifest/src/contract_tests.rs",
-  "tools/acceptance-manifest/src/control_observer.rs",
-  "tools/acceptance-manifest/src/control_run.rs",
-  "tools/acceptance-manifest/src/delegation.rs",
-  "tools/acceptance-manifest/src/delegation_tests.rs",
-  "tools/acceptance-manifest/src/docker_fixture.rs",
-  "tools/acceptance-manifest/src/docker_fixture/policy.rs",
-  "tools/acceptance-manifest/src/docker_fixture/tests.rs",
-  "tools/acceptance-manifest/src/files_content.rs",
-  "tools/acceptance-manifest/src/host_fixture.rs",
-  "tools/acceptance-manifest/src/main.rs",
-  "tools/acceptance-manifest/src/pins.rs",
-  "tools/acceptance-manifest/src/plan.rs",
-  "tools/acceptance-manifest/src/plan_tests.rs",
-  "tools/acceptance-manifest/src/postgres_run.rs",
-  "tools/acceptance-manifest/src/process.rs",
-  "tools/acceptance-manifest/src/process_guard.rs",
-  "tools/acceptance-manifest/src/process_tests.rs",
-  "tools/acceptance-manifest/src/restart.rs",
-  "tools/acceptance-manifest/src/restart_lifecycle_tests.rs",
-  "tools/acceptance-manifest/src/restart_run.rs",
-  "tools/acceptance-manifest/src/restart_run_tests.rs",
-  "tools/acceptance-manifest/src/restart_tests.rs",
-  "tools/acceptance-manifest/src/runner.rs",
-  "tools/acceptance-manifest/src/state.rs",
-  "tools/acceptance-manifest/src/state_tests.rs",
-  "tools/acceptance-manifest/tests/unsupported.rs",
-  "tools/acceptance-plan/Cargo.lock",
-  "tools/acceptance-plan/Cargo.toml",
-  "tools/acceptance-plan/README.md",
-  "tools/acceptance-plan/pins.txt",
-  "tools/acceptance-plan/src/coverage/agent.rs",
-  "tools/acceptance-plan/src/coverage/controller.rs",
-  "tools/acceptance-plan/src/coverage/lex.rs",
-  "tools/acceptance-plan/src/coverage/mod.rs",
-  "tools/acceptance-plan/src/coverage/retry.rs",
-  "tools/acceptance-plan/src/coverage/schema.rs",
-  "tools/acceptance-plan/src/coverage/tests.rs",
-  "tools/acceptance-plan/src/http_preview.rs",
-  "tools/acceptance-plan/src/main.rs",
-  "tools/acceptance-plan/src/pins.rs",
-  "tools/acceptance-plan/src/plan.rs",
-  "tools/acceptance-plan/src/plan/privacy.rs",
-  "tools/acceptance-plan/src/plan/privacy_errors.rs",
-  "tools/acceptance-plan/src/plan/privacy_hosts.rs",
-  "tools/acceptance-plan/src/plan/resource_lifetime/aliases.rs",
-  "tools/acceptance-plan/src/plan/resource_lifetime/deferred.rs",
-  "tools/acceptance-plan/src/plan/resource_lifetime/fixture.rs",
-  "tools/acceptance-plan/src/plan/resource_lifetime/mod.rs",
-  "tools/acceptance-plan/src/process.rs",
-  "tools/acceptance-plan/src/process/capture.rs",
-  "tools/acceptance-plan/src/process/group.rs",
-  "tools/acceptance-plan/src/process/secrets_tests.rs",
-  "tools/acceptance-plan/src/process/tests.rs",
-  "tools/http-fixture/Cargo.lock",
-  "tools/http-fixture/Cargo.toml",
-  "tools/http-fixture/src/lib.rs",
-  "tools/http-fixture/src/main.rs",
-  "tools/acceptance-pty/Cargo.lock",
-  "tools/acceptance-pty/Cargo.toml",
-  "tools/acceptance-pty/README.md",
-  "tools/acceptance-pty/src/capture.rs",
-  "tools/acceptance-pty/src/child.rs",
-  "tools/acceptance-pty/src/helper.rs",
-  "tools/acceptance-pty/src/lib.rs",
-  "tools/acceptance-pty/src/main.rs",
-  "tools/acceptance-pty/src/readiness.rs",
-  "tools/acceptance-pty/src/runner.rs",
-  "tools/acceptance-pty/src/terminal.rs",
-  "tools/acceptance-pty/src/verify.rs",
-  "tools/acceptance-pty/tests/orphan_output.rs",
-  "tools/acceptance-pty/tests/partial_output.rs",
-  "tools/acceptance-pty/tests/terminal_anchor.rs",
-  "tools/acceptance-runtime/Cargo.lock",
-  "tools/acceptance-runtime/Cargo.toml",
-  "tools/acceptance-runtime/README.md",
-  "tools/acceptance-runtime/fixtures/control.pkl",
-  "tools/acceptance-runtime/fixtures/cross_play.pkl",
-  "tools/acceptance-runtime/fixtures/handler.pkl",
-  "tools/acceptance-runtime/fixtures/loop_task_vars.pkl",
-  "tools/acceptance-runtime/fixtures/nested_loops.pkl",
-  "tools/acceptance-runtime/fixtures/scope.pkl",
-  "tools/acceptance-runtime/src/control.rs",
-  "tools/acceptance-runtime/src/cross_play.rs",
-  "tools/acceptance-runtime/src/cross_play_tests.rs",
-  "tools/acceptance-runtime/src/cross_play/events.rs",
-  "tools/acceptance-runtime/src/handler.rs",
-  "tools/acceptance-runtime/src/handler/validate.rs",
-  "tools/acceptance-runtime/src/lazy_layers.rs",
-  "tools/acceptance-runtime/src/loops.rs",
-  "tools/acceptance-runtime/src/loops/check.rs",
-  "tools/acceptance-runtime/src/main.rs",
-  "tools/acceptance-runtime/src/process.rs",
-  "tools/acceptance-runtime/src/process/capture.rs",
-  "tools/acceptance-runtime/src/process/group.rs",
-  "tools/acceptance-runtime/src/process/tests.rs",
-  "tools/acceptance-runtime/src/proxy.rs",
-  "tools/acceptance-runtime/src/snapshot.rs",
-  "tools/acceptance-runtime/tests/proxy_entry.rs",
-  "tools/acceptance-xfs/Cargo.lock",
-  "tools/acceptance-xfs/Cargo.toml",
-  "tools/acceptance-xfs/README.md",
-  "tools/acceptance-xfs/src/lib.rs",
-  "tools/build-libblkid",
-  "tools/build-libblkid-source",
-  "tools/pkg-config-libblkid",
-]
+directory = "."
+inputs = [".cargo/config.toml", "Cargo.lock", "Cargo.toml", "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs", "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs", "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl", "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl", "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs", "mise.toml", "schema/ruxel/Core.pkl", "schema/ruxel/Debian.pkl", "schema/ruxel/Linux.pkl", "schema/ruxel/Systemd.pkl", "schema/ruxel/Workflow.pkl", "schema/ruxel/engine/Engine.pkl", "schema/ruxel/internal/Lowering.pkl", "testdata/workloads/pr66/README.md", "testdata/workloads/pr66/assets/source.txt", "testdata/workloads/pr66/assets/synthetic.txt", "testdata/workloads/pr66/assets/template.pkl", "testdata/workloads/pr66/become-environment.pkl", "testdata/workloads/pr66/check-semantics.pkl", "testdata/workloads/pr66/control-flow.pkl", "testdata/workloads/pr66/controller-delegation.pkl", "testdata/workloads/pr66/lazy-layers/block.pkl", "testdata/workloads/pr66/lazy-layers/play.pkl", "testdata/workloads/pr66/expectations.json", "testdata/workloads/pr66/files-content.pkl", "testdata/workloads/pr66/invalid/copy-source-and-content.pkl", "testdata/workloads/pr66/invalid/file-path-and-dest.pkl", "testdata/workloads/pr66/multihost.pkl", "testdata/workloads/pr66/performance-snapshots.pkl", "testdata/workloads/pr66/postgresql-ownership.pkl", "testdata/workloads/pr66/restart-actions.pkl", "testdata/workloads/pr66/shape-variants.pkl", "testdata/workloads/pr66/storage-ext4.pkl", "testdata/workloads/pr66/storage-two-tier.pkl", "testdata/workloads/pr66/storage-xfs.pkl", "testdata/workloads/pr66/system-surface.pkl", "tools/acceptance-cache/Cargo.lock", "tools/acceptance-cache/Cargo.toml", "tools/acceptance-cache/README.md", "tools/acceptance-cache/fixtures/cache.pkl", "tools/acceptance-cache/fixtures/environment_module.pkl", "tools/acceptance-cache/fixtures/failing.pkl", "tools/acceptance-cache/fixtures/handler.pkl", "tools/acceptance-cache/fixtures/module.pkl", "tools/acceptance-cache/fixtures/template_module.pkl", "tools/acceptance-cache/src/cache.rs", "tools/acceptance-cache/src/common.rs", "tools/acceptance-cache/src/common_tests.rs", "tools/acceptance-cache/src/main.rs", "tools/acceptance-cache/src/privacy.rs", "tools/acceptance-cache/src/privacy_error.rs", "tools/acceptance-cache/src/privacy_secondary.rs", "tools/acceptance-cache/src/privacy_tests.rs", "tools/acceptance-cache/src/process.rs", "tools/acceptance-cache/src/process_guard.rs", "tools/acceptance-cache/src/process_tests.rs", "tools/acceptance-control/Cargo.lock", "tools/acceptance-control/Cargo.toml", "tools/acceptance-control/README.md", "tools/acceptance-control/src/checks.rs", "tools/acceptance-control/src/checks/semantics.rs", "tools/acceptance-control/src/checks/tests.rs", "tools/acceptance-control/src/main.rs", "tools/acceptance-control/src/process.rs", "tools/acceptance-copy/Cargo.lock", "tools/acceptance-copy/Cargo.toml", "tools/acceptance-copy/README.md", "tools/acceptance-copy/src/binary.rs", "tools/acceptance-copy/src/common.rs", "tools/acceptance-copy/src/common/paths.rs", "tools/acceptance-copy/src/common/tests.rs", "tools/acceptance-copy/src/force.rs", "tools/acceptance-copy/src/main.rs", "tools/acceptance-copy/src/process.rs", "tools/acceptance-copy/src/process/capture.rs", "tools/acceptance-copy/src/process/group.rs", "tools/acceptance-copy/src/process/tests.rs", "tools/acceptance-copy/src/repeated.rs", "tools/acceptance-files/Cargo.lock", "tools/acceptance-files/Cargo.toml", "tools/acceptance-files/README.md", "tools/acceptance-files/src/common.rs", "tools/acceptance-files/src/file_helpers.rs", "tools/acceptance-files/src/file_helpers_tests.rs", "tools/acceptance-files/src/lifecycle.rs", "tools/acceptance-files/src/main.rs", "tools/acceptance-files/src/process.rs", "tools/acceptance-files/src/process_guard.rs", "tools/acceptance-files/src/process_tests.rs", "tools/acceptance-files/src/template.rs", "tools/acceptance-isolation/Cargo.lock", "tools/acceptance-isolation/Cargo.toml", "tools/acceptance-isolation/README.md", "tools/acceptance-isolation/fixtures/hosts.pkl", "tools/acceptance-isolation/fixtures/partial.pkl", "tools/acceptance-isolation/fixtures/shutdown.pkl", "tools/acceptance-isolation/fixtures/two_plays.pkl", "tools/acceptance-isolation/src/common.rs", "tools/acceptance-isolation/src/helper.rs", "tools/acceptance-isolation/src/hosts.rs", "tools/acceptance-isolation/src/isolation.rs", "tools/acceptance-isolation/src/isolation_tests.rs", "tools/acceptance-isolation/src/main.rs", "tools/acceptance-isolation/src/partial.rs", "tools/acceptance-isolation/src/process.rs", "tools/acceptance-isolation/src/process/capture.rs", "tools/acceptance-isolation/src/process/group.rs", "tools/acceptance-isolation/src/process/tests.rs", "tools/acceptance-isolation/src/protocol.rs", "tools/acceptance-manifest/.gitignore", "tools/acceptance-manifest/Cargo.lock", "tools/acceptance-manifest/Cargo.toml", "tools/acceptance-manifest/README.md", "tools/acceptance-manifest/become-contract.json", "tools/acceptance-manifest/contracts.json", "tools/acceptance-manifest/control-contract.json", "tools/acceptance-manifest/control-oracles/cli-check.jsonl", "tools/acceptance-manifest/control-oracles/cli-converged.jsonl", "tools/acceptance-manifest/control-oracles/cli-diff.jsonl", "tools/acceptance-manifest/control-oracles/cli-drift_repair.jsonl", "tools/acceptance-manifest/control-oracles/cli-fresh.jsonl", "tools/acceptance-manifest/examples/secret_dedup.rs", "tools/acceptance-manifest/examples/secret_generation.rs", "tools/acceptance-manifest/files-contract.json", "tools/acceptance-manifest/postgres-contract.json", "tools/acceptance-manifest/restart-contract.json", "tools/acceptance-manifest/src/become_user.rs", "tools/acceptance-manifest/src/checks.rs", "tools/acceptance-manifest/src/checks_preview.rs", "tools/acceptance-manifest/src/checks_tests.rs", "tools/acceptance-manifest/src/contract.rs", "tools/acceptance-manifest/src/contract_tests.rs", "tools/acceptance-manifest/src/control_observer.rs", "tools/acceptance-manifest/src/control_run.rs", "tools/acceptance-manifest/src/delegation.rs", "tools/acceptance-manifest/src/delegation_tests.rs", "tools/acceptance-manifest/src/docker_fixture.rs", "tools/acceptance-manifest/src/docker_fixture/policy.rs", "tools/acceptance-manifest/src/docker_fixture/tests.rs", "tools/acceptance-manifest/src/files_content.rs", "tools/acceptance-manifest/src/host_fixture.rs", "tools/acceptance-manifest/src/main.rs", "tools/acceptance-manifest/src/pins.rs", "tools/acceptance-manifest/src/plan.rs", "tools/acceptance-manifest/src/plan_tests.rs", "tools/acceptance-manifest/src/postgres_run.rs", "tools/acceptance-manifest/src/process.rs", "tools/acceptance-manifest/src/process_guard.rs", "tools/acceptance-manifest/src/process_tests.rs", "tools/acceptance-manifest/src/restart.rs", "tools/acceptance-manifest/src/restart_lifecycle_tests.rs", "tools/acceptance-manifest/src/restart_run.rs", "tools/acceptance-manifest/src/restart_run_tests.rs", "tools/acceptance-manifest/src/restart_tests.rs", "tools/acceptance-manifest/src/runner.rs", "tools/acceptance-manifest/src/state.rs", "tools/acceptance-manifest/src/state_tests.rs", "tools/acceptance-manifest/tests/unsupported.rs", "tools/acceptance-plan/Cargo.lock", "tools/acceptance-plan/Cargo.toml", "tools/acceptance-plan/README.md", "tools/acceptance-plan/pins.txt", "tools/acceptance-plan/src/coverage/agent.rs", "tools/acceptance-plan/src/coverage/controller.rs", "tools/acceptance-plan/src/coverage/lex.rs", "tools/acceptance-plan/src/coverage/mod.rs", "tools/acceptance-plan/src/coverage/retry.rs", "tools/acceptance-plan/src/coverage/schema.rs", "tools/acceptance-plan/src/coverage/tests.rs", "tools/acceptance-plan/src/http_preview.rs", "tools/acceptance-plan/src/main.rs", "tools/acceptance-plan/src/pins.rs", "tools/acceptance-plan/src/plan.rs", "tools/acceptance-plan/src/plan/privacy.rs", "tools/acceptance-plan/src/plan/privacy_errors.rs", "tools/acceptance-plan/src/plan/privacy_hosts.rs", "tools/acceptance-plan/src/plan/resource_lifetime/aliases.rs", "tools/acceptance-plan/src/plan/resource_lifetime/deferred.rs", "tools/acceptance-plan/src/plan/resource_lifetime/fixture.rs", "tools/acceptance-plan/src/plan/resource_lifetime/mod.rs", "tools/acceptance-plan/src/process.rs", "tools/acceptance-plan/src/process/capture.rs", "tools/acceptance-plan/src/process/group.rs", "tools/acceptance-plan/src/process/secrets_tests.rs", "tools/acceptance-plan/src/process/tests.rs", "tools/http-fixture/Cargo.lock", "tools/http-fixture/Cargo.toml", "tools/http-fixture/src/lib.rs", "tools/http-fixture/src/main.rs", "tools/acceptance-pty/Cargo.lock", "tools/acceptance-pty/Cargo.toml", "tools/acceptance-pty/README.md", "tools/acceptance-pty/src/capture.rs", "tools/acceptance-pty/src/child.rs", "tools/acceptance-pty/src/helper.rs", "tools/acceptance-pty/src/lib.rs", "tools/acceptance-pty/src/main.rs", "tools/acceptance-pty/src/readiness.rs", "tools/acceptance-pty/src/runner.rs", "tools/acceptance-pty/src/terminal.rs", "tools/acceptance-pty/src/verify.rs", "tools/acceptance-pty/tests/orphan_output.rs", "tools/acceptance-pty/tests/partial_output.rs", "tools/acceptance-pty/tests/terminal_anchor.rs", "tools/acceptance-runtime/Cargo.lock", "tools/acceptance-runtime/Cargo.toml", "tools/acceptance-runtime/README.md", "tools/acceptance-runtime/fixtures/control.pkl", "tools/acceptance-runtime/fixtures/cross_play.pkl", "tools/acceptance-runtime/fixtures/handler.pkl", "tools/acceptance-runtime/fixtures/loop_task_vars.pkl", "tools/acceptance-runtime/fixtures/nested_loops.pkl", "tools/acceptance-runtime/fixtures/scope.pkl", "tools/acceptance-runtime/src/control.rs", "tools/acceptance-runtime/src/cross_play.rs", "tools/acceptance-runtime/src/cross_play_tests.rs", "tools/acceptance-runtime/src/cross_play/events.rs", "tools/acceptance-runtime/src/handler.rs", "tools/acceptance-runtime/src/handler/validate.rs", "tools/acceptance-runtime/src/lazy_layers.rs", "tools/acceptance-runtime/src/loops.rs", "tools/acceptance-runtime/src/loops/check.rs", "tools/acceptance-runtime/src/main.rs", "tools/acceptance-runtime/src/process.rs", "tools/acceptance-runtime/src/process/capture.rs", "tools/acceptance-runtime/src/process/group.rs", "tools/acceptance-runtime/src/process/tests.rs", "tools/acceptance-runtime/src/proxy.rs", "tools/acceptance-runtime/src/snapshot.rs", "tools/acceptance-runtime/tests/proxy_entry.rs", "tools/acceptance-xfs/Cargo.lock", "tools/acceptance-xfs/Cargo.toml", "tools/acceptance-xfs/README.md", "tools/acceptance-xfs/src/lib.rs", "tools/build-libblkid", "tools/build-libblkid-source", "tools/pkg-config-libblkid"]
 tools = ["rust"]
 timeout_minutes = 30
+
 [checks.runner]
 label = "ubuntu-26.04"
 platform = "linux_x64"
@@ -303,332 +135,11 @@ executor = "hosted"
 [[checks]]
 id = "dual-evaluator"
 task = "dual-evaluator"
-inputs = [
-  ".cargo/config.toml",
-  "Cargo.lock",
-  "Cargo.toml",
-  "mise.lock",
-  "mise.toml",
-  "crates/ruxel/ruxel-config/Cargo.toml",
-  "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs",
-  "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs",
-  "crates/ruxel/ruxel-config/src/error.rs",
-  "crates/ruxel/ruxel-config/src/eval.rs",
-  "crates/ruxel/ruxel-config/src/eval/confined.rs",
-  "crates/ruxel/ruxel-config/src/eval/confined/tests.rs",
-  "crates/ruxel/ruxel-config/src/eval/confined/tests/roots.rs",
-  "crates/ruxel/ruxel-config/src/eval/confined/tests/symlinks.rs",
-  "crates/ruxel/ruxel-config/src/eval/templates.rs",
-  "crates/ruxel/ruxel-config/src/eval/templates/tests.rs",
-  "crates/ruxel/ruxel-config/src/eval/templates/tests/cases.rs",
-  "crates/ruxel/ruxel-config/src/eval/templates/tests/denial.rs",
-  "crates/ruxel/ruxel-config/src/eval/tests.rs",
-  "crates/ruxel/ruxel-config/src/lib.rs",
-  "crates/ruxel/ruxel-config/src/model.rs",
-  "crates/ruxel/ruxel-config/src/render.rs",
-  "crates/ruxel/ruxel-config/src/render/tests.rs",
-  "crates/ruxel/ruxel-config/src/schema.rs",
-  "crates/ruxel/ruxel-config/src/schema/export.rs",
-  "crates/ruxel/ruxel-config/src/schema/tests.rs",
-  "crates/ruxel/ruxel-config/src/schema/tests/fingerprints.rs",
-  "crates/ruxel/ruxel-config/src/upstream_pklr.rs",
-  "crates/ruxel/ruxel-config/src/upstream_pklr/tests.rs",
-  "crates/ruxel/ruxel-config/testdata/dual_evaluator_corpus_files.tsv",
-  "crates/ruxel/ruxel-config/testdata/eval/env.pkl",
-  "crates/ruxel/ruxel-config/testdata/eval/minimal.pkl",
-  "crates/ruxel/ruxel-config/testdata/eval/network.pkl",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator/corpus_files.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator/chain.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator/discovery.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator/join_separator.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator/retired_path.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
-  "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd/corpus_files.rs",
-  "crates/ruxel/ruxel-config/tests/eval.rs",
-  "crates/ruxel/ruxel-config/tests/render.rs",
-  "crates/ruxel/ruxel-config/tests/schema.rs",
-  "crates/ruxel/ruxel-config/tests/schema/constraints.rs",
-  "crates/ruxel/ruxel-config/tests/schema/controls.rs",
-  "crates/ruxel/ruxel-config/tests/schema/invalid.rs",
-  "crates/ruxel/ruxel-config/tests/schema/native.rs",
-  "crates/ruxel/ruxel-config/tests/schema/required.rs",
-  "crates/ruxel/ruxel-config/tests/schema_layers.rs",
-  "crates/ruxel/ruxel-config/tests/single_schema.rs",
-  "crates/ruxel/ruxel-config/tests/support/corpus_imports.rs",
-  "crates/ruxel/ruxel-config/tests/support/corpus_imports/tests.rs",
-  "crates/ruxel/ruxel-config/tests/support/harness_fixtures.rs",
-  "crates/ruxel/ruxel-config/tests/support/pkl_mask.rs",
-  "crates/ruxel/ruxel-config/tests/workflow.rs",
-  "crates/ruxel/ruxel-config/tests/workflow_copy.rs",
-  "crates/ruxel/ruxel-config/tests/workflow_secrets.rs",
-  "schema/ruxel/Core.pkl",
-  "schema/ruxel/Debian.pkl",
-  "schema/ruxel/Linux.pkl",
-  "schema/ruxel/Systemd.pkl",
-  "schema/ruxel/Workflow.pkl",
-  "schema/ruxel/engine/Engine.pkl",
-  "schema/ruxel/internal/Lowering.pkl",
-  "tools/verify-pkl-artifact",
-  "tests/workflow/README.md",
-  "tests/workflow/invalid/apt-empty-suite.pkl",
-  "tests/workflow/invalid/apt-field-newline.pkl",
-  "tests/workflow/invalid/apt-hold-conflicting-latest.pkl",
-  "tests/workflow/invalid/apt-hold-conflicting-pin.pkl",
-  "tests/workflow/invalid/apt-hold-moved-across-aliases.pkl",
-  "tests/workflow/invalid/apt-hold-moved-in-later-stage.pkl",
-  "tests/workflow/invalid/apt-hold-revision-moved-in-later-stage.pkl",
-  "tests/workflow/invalid/apt-hold-superseded-across-hosts.pkl",
-  "tests/workflow/invalid/apt-hold-superseded-partial-hosts.pkl",
-  "tests/workflow/invalid/apt-hold-unversioned-moved-by-pin-later-stage.pkl",
-  "tests/workflow/invalid/apt-hold-unversioned-moved-by-pin.pkl",
-  "tests/workflow/invalid/apt-hold-with-system-upgrade-later-stage.pkl",
-  "tests/workflow/invalid/apt-hold-with-system-upgrade.pkl",
-  "tests/workflow/invalid/apt-index-before-system-upgrade-later-stage.pkl",
-  "tests/workflow/invalid/apt-index-before-system-upgrade.pkl",
-  "tests/workflow/invalid/apt-pin-with-system-upgrade.pkl",
-  "tests/workflow/invalid/apt-preference-before-install.pkl",
-  "tests/workflow/invalid/apt-preference-before-latest-later-stage.pkl",
-  "tests/workflow/invalid/apt-preference-before-latest.pkl",
-  "tests/workflow/invalid/apt-preference-before-system-upgrade.pkl",
-  "tests/workflow/invalid/apt-preference-file-at-fragment.pkl",
-  "tests/workflow/invalid/apt-preference-fragment-child.pkl",
-  "tests/workflow/invalid/apt-preference-overlapping-arches.pkl",
-  "tests/workflow/invalid/apt-preference-overlapping-globs.pkl",
-  "tests/workflow/invalid/apt-preference-overlapping-selectors-later-stage.pkl",
-  "tests/workflow/invalid/apt-preference-overlapping-selectors.pkl",
-  "tests/workflow/invalid/apt-preference-package-selector-pin.pkl",
-  "tests/workflow/invalid/apt-preference-pin-blank.pkl",
-  "tests/workflow/invalid/apt-preference-pin-release-empty.pkl",
-  "tests/workflow/invalid/apt-preference-pin-release-unknown.pkl",
-  "tests/workflow/invalid/apt-preference-pin-source-version.pkl",
-  "tests/workflow/invalid/apt-preference-pin-type.pkl",
-  "tests/workflow/invalid/apt-preference-pin-version-whitespace.pkl",
-  "tests/workflow/invalid/apt-preference-priority-mismatch.pkl",
-  "tests/workflow/invalid/apt-preference-priority-range.pkl",
-  "tests/workflow/invalid/apt-preference-priority-zero.pkl",
-  "tests/workflow/invalid/apt-preference-pseudo-arch.pkl",
-  "tests/workflow/invalid/apt-repository-before-install.pkl",
-  "tests/workflow/invalid/apt-repository-before-install-later-stage.pkl",
-  "tests/workflow/invalid/apt-repository-before-system-upgrade-later-stage.pkl",
-  "tests/workflow/invalid/apt-repository-before-system-upgrade.pkl",
-  "tests/workflow/invalid/apt-system-upgrade-with-pin.pkl",
-  "tests/workflow/invalid/debconf-entry-bad-type.pkl",
-  "tests/workflow/invalid/debconf-entry-boolean-literal.pkl",
-  "tests/workflow/invalid/debconf-entry-package-glob.pkl",
-  "tests/workflow/invalid/debconf-entry-password-static.pkl",
-  "tests/workflow/invalid/debconf-entry-pseudo-arch.pkl",
-  "tests/workflow/invalid/debconf-entry-question-space.pkl",
-  "tests/workflow/invalid/debconf-entry-secret-as-static.pkl",
-  "tests/workflow/invalid/debconf-entry-secret-collision.pkl",
-  "tests/workflow/invalid/debconf-entry-shared-question.pkl",
-  "tests/workflow/invalid/debconf-entry-type-text.pkl",
-  "tests/workflow/invalid/debconf-value-multiline.pkl",
-  "tests/workflow/invalid/engine-apt-hold-latest.pkl",
-  "tests/workflow/invalid/engine-debconf-package-glob.pkl",
-  "tests/workflow/invalid/engine-debconf-question-space.pkl",
-  "tests/workflow/invalid/engine-debconf-value-multiline.pkl",
-  "tests/workflow/invalid/argument-with-nul.pkl",
-  "tests/workflow/invalid/capture-listed-later.pkl",
-  "tests/workflow/invalid/capture-listed-twice.pkl",
-  "tests/workflow/invalid/capture-not-in-stage.pkl",
-  "tests/workflow/invalid/capture-overwritten.pkl",
-  "tests/workflow/invalid/capture-run-on-null-host.pkl",
-  "tests/workflow/invalid/conflict-in-nested-recipe.pkl",
-  "tests/workflow/invalid/conflict-inside-recipe.pkl",
-  "tests/workflow/invalid/debian-apt-component-nul.pkl",
-  "tests/workflow/invalid/debian-apt-url-no-host.pkl",
-  "tests/workflow/invalid/debian-packages-nul.pkl",
-  "tests/workflow/invalid/duplicate-stage-host.pkl",
-  "tests/workflow/invalid/duplicate-step.pkl",
-  "tests/workflow/invalid/empty-program.pkl",
-  "tests/workflow/invalid/file-at-root.pkl",
-  "tests/workflow/invalid/file-contains-path.pkl",
-  "tests/workflow/invalid/file-empty-owner.pkl",
-  "tests/workflow/invalid/file-in-apt-repository.pkl",
-  "tests/workflow/invalid/flat-repository-with-components.pkl",
-  "tests/workflow/invalid/fractional-retry-delay.pkl",
-  "tests/workflow/invalid/host-conflict.pkl",
-  "tests/workflow/invalid/host-mapped-unspecified.pkl",
-  "tests/workflow/invalid/host-named-all.pkl",
-  "tests/workflow/invalid/host-unspecified-address.pkl",
-  "tests/workflow/invalid/ipv4-out-of-range.pkl",
-  "tests/workflow/invalid/ipv6-two-gaps.pkl",
-  "tests/workflow/invalid/keyring-directory-mode.pkl",
-  "tests/workflow/invalid/kubeadm-join-both-sources.pkl",
-  "tests/workflow/invalid/later-dependency.pkl",
-  "tests/workflow/invalid/linux-git-checkout-commit.pkl",
-  "tests/workflow/invalid/linux-git-checkout-path.pkl",
-  "tests/workflow/invalid/linux-login-shell-user-colon.pkl",
-  "tests/workflow/invalid/linux-login-shell-user-nul.pkl",
-  "tests/workflow/invalid/localhost-host.pkl",
-  "tests/workflow/invalid/login-shell-root.pkl",
-  "tests/workflow/invalid/missing-dependency.pkl",
-  "tests/workflow/invalid/old-ruxel-module.pkl",
-  "tests/workflow/invalid/owner-null-and-text.pkl",
-  "tests/workflow/invalid/package-glob.pkl",
-  "tests/workflow/invalid/package-listed-twice.pkl",
-  "tests/workflow/invalid/package-pseudo-arch.pkl",
-  "tests/workflow/invalid/package-versions-differ.pkl",
-  "tests/workflow/invalid/path-not-normal.pkl",
-  "tests/workflow/invalid/path-with-nul.pkl",
-  "tests/workflow/invalid/recipe-capture-used-twice.pkl",
-  "tests/workflow/invalid/recipe-dependency.pkl",
-  "tests/workflow/invalid/recipe-title.pkl",
-  "tests/workflow/invalid/reference-with-wrong-content.pkl",
-  "tests/workflow/invalid/reload-missing-dependency.pkl",
-  "tests/workflow/invalid/reload-stopped-service.pkl",
-  "tests/workflow/invalid/reread-in-recipe.pkl",
-  "tests/workflow/invalid/restart-stopped-service.pkl",
-  "tests/workflow/invalid/retry-delay-below-a-millisecond.pkl",
-  "tests/workflow/invalid/runtime-value-in-command.pkl",
-  "tests/workflow/invalid/runtime-value-in-path.pkl",
-  "tests/workflow/invalid/runtime-value-in-suite.pkl",
-  "tests/workflow/invalid/runtime-value-in-unless-output.pkl",
-  "tests/workflow/invalid/secret-bare-module-secret.pkl",
-  "tests/workflow/invalid/secret-decoder-oversized-prefix.pkl",
-  "tests/workflow/invalid/secret-empty-encoding.pkl",
-  "tests/workflow/invalid/secret-fetch-conflicting-source.pkl",
-  "tests/workflow/invalid/secret-fetch-key-malformed.pkl",
-  "tests/workflow/invalid/secret-file-mode-execute.pkl",
-  "tests/workflow/invalid/secret-file-mode-wide.pkl",
-  "tests/workflow/invalid/secret-fnox-key-malformed.pkl",
-  "tests/workflow/invalid/secret-forged-join-secret-separator.pkl",
-  "tests/workflow/invalid/secret-forged-join-separator.pkl",
-  "tests/workflow/invalid/secret-forged-op-reference.pkl",
-  "tests/workflow/invalid/secret-forged-op-selector-dot.pkl",
-  "tests/workflow/invalid/secret-forged-trailing-separator.pkl",
-  "tests/workflow/invalid/secret-generated-format.pkl",
-  "tests/workflow/invalid/secret-generated-in-capture.pkl",
-  "tests/workflow/invalid/secret-in-path.pkl",
-  "tests/workflow/invalid/secret-in-script.pkl",
-  "tests/workflow/invalid/secret-join-secret-separator.pkl",
-  "tests/workflow/invalid/secret-join-separator-control-character.pkl",
-  "tests/workflow/invalid/secret-join-separator-nul.pkl",
-  "tests/workflow/invalid/secret-malformed-encoding.pkl",
-  "tests/workflow/invalid/secret-op-field-dot.pkl",
-  "tests/workflow/invalid/secret-op-reference-dotted-selector.pkl",
-  "tests/workflow/invalid/secret-op-reference-selector-field.pkl",
-  "tests/workflow/invalid/secret-op-reference-trailing-slash.pkl",
-  "tests/workflow/invalid/secret-op-section-dot.pkl",
-  "tests/workflow/invalid/secret-placeholder-orphaned-runtime.pkl",
-  "tests/workflow/invalid/secret-placeholder-orphaned-secret.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-chain.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-empty-body.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-newline.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-prefix.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-punctuation-tagless.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-punctuation.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-underscore.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-malformed-whitespace.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix-encoding.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-unterminated-body.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
-  "tests/workflow/invalid/secret-placeholder-overlapping-unterminated.pkl",
-  "tests/workflow/invalid/secret-placeholder-vault.pkl",
-  "tests/workflow/invalid/secret-unterminated-placeholder.pkl",
-  "tests/workflow/invalid/separator-in-arguments.pkl",
-  "tests/workflow/invalid/service-both-triggers.pkl",
-  "tests/workflow/invalid/service-mixed-triggers.pkl",
-  "tests/workflow/invalid/service-name-space.pkl",
-  "tests/workflow/invalid/service-option-name.pkl",
-  "tests/workflow/invalid/service-socket-unit.pkl",
-  "tests/workflow/invalid/service-template-without-instance.pkl",
-  "tests/workflow/invalid/service-timer-name.pkl",
-  "tests/workflow/invalid/service-unit-alias.pkl",
-  "tests/workflow/invalid/silent-dependency.pkl",
-  "tests/workflow/invalid/ssh-host-null-and-text.pkl",
-  "tests/workflow/invalid/ssh-host-option.pkl",
-  "tests/workflow/invalid/systemd-timer-fractional-delay.pkl",
-  "tests/workflow/invalid/timer-boot-beyond-exact-limit-huge.pkl",
-  "tests/workflow/invalid/timer-boot-beyond-exact-limit-seconds.pkl",
-  "tests/workflow/invalid/timer-boot-beyond-exact-limit.pkl",
-  "tests/workflow/invalid/timer-boot-beyond-systemd-span.pkl",
-  "tests/workflow/invalid/timer-boot-fractional-huge-integer.pkl",
-  "tests/workflow/invalid/timer-boot-fractional-millisecond-huge.pkl",
-  "tests/workflow/invalid/timer-boot-fractional-millisecond-large.pkl",
-  "tests/workflow/invalid/timer-boot-fractional-millisecond.pkl",
-  "tests/workflow/invalid/timer-boot-half-nanosecond.pkl",
-  "tests/workflow/invalid/timer-boot-lost-fraction.pkl",
-  "tests/workflow/invalid/timer-boot-negative.pkl",
-  "tests/workflow/invalid/timer-boot-sub-millisecond.pkl",
-  "tests/workflow/invalid/timer-empty-calendar.pkl",
-  "tests/workflow/invalid/timer-enablement-symlink-conflict.pkl",
-  "tests/workflow/invalid/timer-file-inside.pkl",
-  "tests/workflow/invalid/timer-long-name-implicit-service.pkl",
-  "tests/workflow/invalid/timer-multiline-calendar.pkl",
-  "tests/workflow/invalid/timer-name-too-long.pkl",
-  "tests/workflow/invalid/timer-persistent-without-calendar.pkl",
-  "tests/workflow/invalid/timer-service-name.pkl",
-  "tests/workflow/invalid/timer-spaces-calendar.pkl",
-  "tests/workflow/invalid/timer-tab-calendar.pkl",
-  "tests/workflow/invalid/timezone-option-name.pkl",
-  "tests/workflow/invalid/unless-output-both.pkl",
-  "tests/workflow/invalid/upgrade-with-pin.pkl",
-  "tests/workflow/invalid/url-bad-ipv6.pkl",
-  "tests/workflow/invalid/url-port-out-of-range.pkl",
-  "tests/workflow/invalid/url-without-host.pkl",
-  "tests/workflow/invalid/validator-candidate-conflict.pkl",
-  "tests/workflow/inventory.pkl",
-  "tests/workflow/recipes.pkl",
-  "tests/workflow/recipes/api-proxy.pkl",
-  "tests/workflow/recipes/kubeadm-join.pkl",
-  "tests/workflow/resources/motd.txt",
-  "tests/workflow/valid/action-environment-order.pkl",
-  "tests/workflow/valid/apt-hold-equal-version.pkl",
-  "tests/workflow/valid/apt-hold-move-in-later-stage.pkl",
-  "tests/workflow/valid/apt-hold-non-movements.pkl",
-  "tests/workflow/valid/apt-hold-superseded.pkl",
-  "tests/workflow/valid/apt-hold.pkl",
-  "tests/workflow/valid/apt-preference-collision.pkl",
-  "tests/workflow/valid/apt-preference-different-hosts.pkl",
-  "tests/workflow/valid/apt-preference-disjoint-selectors.pkl",
-  "tests/workflow/valid/apt-preference-pin-forms.pkl",
-  "tests/workflow/valid/apt-preference.pkl",
-  "tests/workflow/valid/apt-repositories.pkl",
-  "tests/workflow/valid/apt-system-upgrade.pkl",
-  "tests/workflow/valid/composition.pkl",
-  "tests/workflow/valid/debconf-entry.pkl",
-  "tests/workflow/valid/edge-values.pkl",
-  "tests/workflow/valid/file-mode-spellings.pkl",
-  "tests/workflow/valid/long-chain.pkl",
-  "tests/workflow/valid/long-file-name.pkl",
-  "tests/workflow/valid/nested-checkouts.pkl",
-  "tests/workflow/valid/read-resource.pkl",
-  "tests/workflow/valid/repeat.pkl",
-  "tests/workflow/valid/repeated-runs.pkl",
-  "tests/workflow/valid/secret-creates-skip.pkl",
-  "tests/workflow/valid/secret-environment.pkl",
-  "tests/workflow/valid/secret-fetch.pkl",
-  "tests/workflow/valid/secret-file-short-mode.pkl",
-  "tests/workflow/valid/secret-file-unicode.pkl",
-  "tests/workflow/valid/secret-file-validate.pkl",
-  "tests/workflow/valid/secret-file.pkl",
-  "tests/workflow/valid/secret-generated.pkl",
-  "tests/workflow/valid/secret-join-newline.pkl",
-  "tests/workflow/valid/secret-join.pkl",
-  "tests/workflow/valid/secret-literal-prefix.pkl",
-  "tests/workflow/valid/secret-op-reference-dotted.pkl",
-  "tests/workflow/valid/secret-op-reference.pkl",
-  "tests/workflow/valid/secret-placeholder-shared-terminator.pkl",
-  "tests/workflow/valid/service-reload.pkl",
-  "tests/workflow/valid/shared-capture.pkl",
-  "tests/workflow/valid/systemd-timer-default-service.pkl",
-  "tests/workflow/valid/systemd-timer-delay-spellings.pkl",
-  "tests/workflow/valid/systemd-timer-exact-huge-delay.pkl",
-  "tests/workflow/valid/systemd-timer-large-delay.pkl",
-  "tests/workflow/valid/systemd-timer-long-name.pkl",
-  "tests/workflow/valid/systemd-timer.pkl",
-  "tests/workflow/valid/tags.pkl",
-  "tests/workflow/valid/user-missing-account.pkl",
-  "tests/workflow/valid/watch-chain.pkl",
-]
+directory = "."
+inputs = [".cargo/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "crates/ruxel/ruxel-config/Cargo.toml", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs", "crates/ruxel/ruxel-config/src/bin/check_deny_inputs/tests.rs", "crates/ruxel/ruxel-config/src/error.rs", "crates/ruxel/ruxel-config/src/eval.rs", "crates/ruxel/ruxel-config/src/eval/confined.rs", "crates/ruxel/ruxel-config/src/eval/confined/tests.rs", "crates/ruxel/ruxel-config/src/eval/confined/tests/roots.rs", "crates/ruxel/ruxel-config/src/eval/confined/tests/symlinks.rs", "crates/ruxel/ruxel-config/src/eval/templates.rs", "crates/ruxel/ruxel-config/src/eval/templates/tests.rs", "crates/ruxel/ruxel-config/src/eval/templates/tests/cases.rs", "crates/ruxel/ruxel-config/src/eval/templates/tests/denial.rs", "crates/ruxel/ruxel-config/src/eval/tests.rs", "crates/ruxel/ruxel-config/src/lib.rs", "crates/ruxel/ruxel-config/src/model.rs", "crates/ruxel/ruxel-config/src/render.rs", "crates/ruxel/ruxel-config/src/render/tests.rs", "crates/ruxel/ruxel-config/src/schema.rs", "crates/ruxel/ruxel-config/src/schema/export.rs", "crates/ruxel/ruxel-config/src/schema/tests.rs", "crates/ruxel/ruxel-config/src/schema/tests/fingerprints.rs", "crates/ruxel/ruxel-config/src/upstream_pklr.rs", "crates/ruxel/ruxel-config/src/upstream_pklr/tests.rs", "crates/ruxel/ruxel-config/testdata/dual_evaluator_corpus_files.tsv", "crates/ruxel/ruxel-config/testdata/eval/env.pkl", "crates/ruxel/ruxel-config/testdata/eval/minimal.pkl", "crates/ruxel/ruxel-config/testdata/eval/network.pkl", "crates/ruxel/ruxel-config/tests/dual_evaluator.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator/corpus_files.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator/chain.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator/discovery.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator/join_separator.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator/retired_path.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs", "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd/corpus_files.rs", "crates/ruxel/ruxel-config/tests/eval.rs", "crates/ruxel/ruxel-config/tests/render.rs", "crates/ruxel/ruxel-config/tests/schema.rs", "crates/ruxel/ruxel-config/tests/schema/constraints.rs", "crates/ruxel/ruxel-config/tests/schema/controls.rs", "crates/ruxel/ruxel-config/tests/schema/invalid.rs", "crates/ruxel/ruxel-config/tests/schema/native.rs", "crates/ruxel/ruxel-config/tests/schema/required.rs", "crates/ruxel/ruxel-config/tests/schema_layers.rs", "crates/ruxel/ruxel-config/tests/single_schema.rs", "crates/ruxel/ruxel-config/tests/support/corpus_imports.rs", "crates/ruxel/ruxel-config/tests/support/corpus_imports/tests.rs", "crates/ruxel/ruxel-config/tests/support/harness_fixtures.rs", "crates/ruxel/ruxel-config/tests/support/pkl_mask.rs", "crates/ruxel/ruxel-config/tests/workflow.rs", "crates/ruxel/ruxel-config/tests/workflow_copy.rs", "crates/ruxel/ruxel-config/tests/workflow_secrets.rs", "schema/ruxel/Core.pkl", "schema/ruxel/Debian.pkl", "schema/ruxel/Linux.pkl", "schema/ruxel/Systemd.pkl", "schema/ruxel/Workflow.pkl", "schema/ruxel/engine/Engine.pkl", "schema/ruxel/internal/Lowering.pkl", "tools/verify-pkl-artifact", "tests/workflow/README.md", "tests/workflow/invalid/apt-empty-suite.pkl", "tests/workflow/invalid/apt-field-newline.pkl", "tests/workflow/invalid/apt-hold-conflicting-latest.pkl", "tests/workflow/invalid/apt-hold-conflicting-pin.pkl", "tests/workflow/invalid/apt-hold-moved-across-aliases.pkl", "tests/workflow/invalid/apt-hold-moved-in-later-stage.pkl", "tests/workflow/invalid/apt-hold-revision-moved-in-later-stage.pkl", "tests/workflow/invalid/apt-hold-superseded-across-hosts.pkl", "tests/workflow/invalid/apt-hold-superseded-partial-hosts.pkl", "tests/workflow/invalid/apt-hold-unversioned-moved-by-pin-later-stage.pkl", "tests/workflow/invalid/apt-hold-unversioned-moved-by-pin.pkl", "tests/workflow/invalid/apt-hold-with-system-upgrade-later-stage.pkl", "tests/workflow/invalid/apt-hold-with-system-upgrade.pkl", "tests/workflow/invalid/apt-index-before-system-upgrade-later-stage.pkl", "tests/workflow/invalid/apt-index-before-system-upgrade.pkl", "tests/workflow/invalid/apt-pin-with-system-upgrade.pkl", "tests/workflow/invalid/apt-preference-before-install.pkl", "tests/workflow/invalid/apt-preference-before-latest-later-stage.pkl", "tests/workflow/invalid/apt-preference-before-latest.pkl", "tests/workflow/invalid/apt-preference-before-system-upgrade.pkl", "tests/workflow/invalid/apt-preference-file-at-fragment.pkl", "tests/workflow/invalid/apt-preference-fragment-child.pkl", "tests/workflow/invalid/apt-preference-overlapping-arches.pkl", "tests/workflow/invalid/apt-preference-overlapping-globs.pkl", "tests/workflow/invalid/apt-preference-overlapping-selectors-later-stage.pkl", "tests/workflow/invalid/apt-preference-overlapping-selectors.pkl", "tests/workflow/invalid/apt-preference-package-selector-pin.pkl", "tests/workflow/invalid/apt-preference-pin-blank.pkl", "tests/workflow/invalid/apt-preference-pin-release-empty.pkl", "tests/workflow/invalid/apt-preference-pin-release-unknown.pkl", "tests/workflow/invalid/apt-preference-pin-source-version.pkl", "tests/workflow/invalid/apt-preference-pin-type.pkl", "tests/workflow/invalid/apt-preference-pin-version-whitespace.pkl", "tests/workflow/invalid/apt-preference-priority-mismatch.pkl", "tests/workflow/invalid/apt-preference-priority-range.pkl", "tests/workflow/invalid/apt-preference-priority-zero.pkl", "tests/workflow/invalid/apt-preference-pseudo-arch.pkl", "tests/workflow/invalid/apt-repository-before-install.pkl", "tests/workflow/invalid/apt-repository-before-install-later-stage.pkl", "tests/workflow/invalid/apt-repository-before-system-upgrade-later-stage.pkl", "tests/workflow/invalid/apt-repository-before-system-upgrade.pkl", "tests/workflow/invalid/apt-system-upgrade-with-pin.pkl", "tests/workflow/invalid/debconf-entry-bad-type.pkl", "tests/workflow/invalid/debconf-entry-boolean-literal.pkl", "tests/workflow/invalid/debconf-entry-package-glob.pkl", "tests/workflow/invalid/debconf-entry-password-static.pkl", "tests/workflow/invalid/debconf-entry-pseudo-arch.pkl", "tests/workflow/invalid/debconf-entry-question-space.pkl", "tests/workflow/invalid/debconf-entry-secret-as-static.pkl", "tests/workflow/invalid/debconf-entry-secret-collision.pkl", "tests/workflow/invalid/debconf-entry-shared-question.pkl", "tests/workflow/invalid/debconf-entry-type-text.pkl", "tests/workflow/invalid/debconf-value-multiline.pkl", "tests/workflow/invalid/engine-apt-hold-latest.pkl", "tests/workflow/invalid/engine-debconf-package-glob.pkl", "tests/workflow/invalid/engine-debconf-question-space.pkl", "tests/workflow/invalid/engine-debconf-value-multiline.pkl", "tests/workflow/invalid/argument-with-nul.pkl", "tests/workflow/invalid/capture-listed-later.pkl", "tests/workflow/invalid/capture-listed-twice.pkl", "tests/workflow/invalid/capture-not-in-stage.pkl", "tests/workflow/invalid/capture-overwritten.pkl", "tests/workflow/invalid/capture-run-on-null-host.pkl", "tests/workflow/invalid/conflict-in-nested-recipe.pkl", "tests/workflow/invalid/conflict-inside-recipe.pkl", "tests/workflow/invalid/debian-apt-component-nul.pkl", "tests/workflow/invalid/debian-apt-url-no-host.pkl", "tests/workflow/invalid/debian-packages-nul.pkl", "tests/workflow/invalid/duplicate-stage-host.pkl", "tests/workflow/invalid/duplicate-step.pkl", "tests/workflow/invalid/empty-program.pkl", "tests/workflow/invalid/file-at-root.pkl", "tests/workflow/invalid/file-contains-path.pkl", "tests/workflow/invalid/file-empty-owner.pkl", "tests/workflow/invalid/file-in-apt-repository.pkl", "tests/workflow/invalid/flat-repository-with-components.pkl", "tests/workflow/invalid/fractional-retry-delay.pkl", "tests/workflow/invalid/host-conflict.pkl", "tests/workflow/invalid/host-mapped-unspecified.pkl", "tests/workflow/invalid/host-named-all.pkl", "tests/workflow/invalid/host-unspecified-address.pkl", "tests/workflow/invalid/ipv4-out-of-range.pkl", "tests/workflow/invalid/ipv6-two-gaps.pkl", "tests/workflow/invalid/keyring-directory-mode.pkl", "tests/workflow/invalid/kubeadm-join-both-sources.pkl", "tests/workflow/invalid/later-dependency.pkl", "tests/workflow/invalid/linux-git-checkout-commit.pkl", "tests/workflow/invalid/linux-git-checkout-path.pkl", "tests/workflow/invalid/linux-login-shell-user-colon.pkl", "tests/workflow/invalid/linux-login-shell-user-nul.pkl", "tests/workflow/invalid/localhost-host.pkl", "tests/workflow/invalid/login-shell-root.pkl", "tests/workflow/invalid/missing-dependency.pkl", "tests/workflow/invalid/old-ruxel-module.pkl", "tests/workflow/invalid/owner-null-and-text.pkl", "tests/workflow/invalid/package-glob.pkl", "tests/workflow/invalid/package-listed-twice.pkl", "tests/workflow/invalid/package-pseudo-arch.pkl", "tests/workflow/invalid/package-versions-differ.pkl", "tests/workflow/invalid/path-not-normal.pkl", "tests/workflow/invalid/path-with-nul.pkl", "tests/workflow/invalid/recipe-capture-used-twice.pkl", "tests/workflow/invalid/recipe-dependency.pkl", "tests/workflow/invalid/recipe-title.pkl", "tests/workflow/invalid/reference-with-wrong-content.pkl", "tests/workflow/invalid/reload-missing-dependency.pkl", "tests/workflow/invalid/reload-stopped-service.pkl", "tests/workflow/invalid/reread-in-recipe.pkl", "tests/workflow/invalid/restart-stopped-service.pkl", "tests/workflow/invalid/retry-delay-below-a-millisecond.pkl", "tests/workflow/invalid/runtime-value-in-command.pkl", "tests/workflow/invalid/runtime-value-in-path.pkl", "tests/workflow/invalid/runtime-value-in-suite.pkl", "tests/workflow/invalid/runtime-value-in-unless-output.pkl", "tests/workflow/invalid/secret-bare-module-secret.pkl", "tests/workflow/invalid/secret-decoder-oversized-prefix.pkl", "tests/workflow/invalid/secret-empty-encoding.pkl", "tests/workflow/invalid/secret-fetch-conflicting-source.pkl", "tests/workflow/invalid/secret-fetch-key-malformed.pkl", "tests/workflow/invalid/secret-file-mode-execute.pkl", "tests/workflow/invalid/secret-file-mode-wide.pkl", "tests/workflow/invalid/secret-fnox-key-malformed.pkl", "tests/workflow/invalid/secret-forged-join-secret-separator.pkl", "tests/workflow/invalid/secret-forged-join-separator.pkl", "tests/workflow/invalid/secret-forged-op-reference.pkl", "tests/workflow/invalid/secret-forged-op-selector-dot.pkl", "tests/workflow/invalid/secret-forged-trailing-separator.pkl", "tests/workflow/invalid/secret-generated-format.pkl", "tests/workflow/invalid/secret-generated-in-capture.pkl", "tests/workflow/invalid/secret-in-path.pkl", "tests/workflow/invalid/secret-in-script.pkl", "tests/workflow/invalid/secret-join-secret-separator.pkl", "tests/workflow/invalid/secret-join-separator-control-character.pkl", "tests/workflow/invalid/secret-join-separator-nul.pkl", "tests/workflow/invalid/secret-malformed-encoding.pkl", "tests/workflow/invalid/secret-op-field-dot.pkl", "tests/workflow/invalid/secret-op-reference-dotted-selector.pkl", "tests/workflow/invalid/secret-op-reference-selector-field.pkl", "tests/workflow/invalid/secret-op-reference-trailing-slash.pkl", "tests/workflow/invalid/secret-op-section-dot.pkl", "tests/workflow/invalid/secret-placeholder-orphaned-runtime.pkl", "tests/workflow/invalid/secret-placeholder-orphaned-secret.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-chain.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-empty-body.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-missing-colon.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-newline.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-prefix.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-punctuation-tagless.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-punctuation.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-underscore.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-unknown-tag.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-uppercase-tag.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-malformed-whitespace.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix-encoding.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-runtime-prefix.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-unterminated-body.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-unterminated-runtime.pkl", "tests/workflow/invalid/secret-placeholder-overlapping-unterminated.pkl", "tests/workflow/invalid/secret-placeholder-vault.pkl", "tests/workflow/invalid/secret-unterminated-placeholder.pkl", "tests/workflow/invalid/separator-in-arguments.pkl", "tests/workflow/invalid/service-both-triggers.pkl", "tests/workflow/invalid/service-mixed-triggers.pkl", "tests/workflow/invalid/service-name-space.pkl", "tests/workflow/invalid/service-option-name.pkl", "tests/workflow/invalid/service-socket-unit.pkl", "tests/workflow/invalid/service-template-without-instance.pkl", "tests/workflow/invalid/service-timer-name.pkl", "tests/workflow/invalid/service-unit-alias.pkl", "tests/workflow/invalid/silent-dependency.pkl", "tests/workflow/invalid/ssh-host-null-and-text.pkl", "tests/workflow/invalid/ssh-host-option.pkl", "tests/workflow/invalid/systemd-timer-fractional-delay.pkl", "tests/workflow/invalid/timer-boot-beyond-exact-limit-huge.pkl", "tests/workflow/invalid/timer-boot-beyond-exact-limit-seconds.pkl", "tests/workflow/invalid/timer-boot-beyond-exact-limit.pkl", "tests/workflow/invalid/timer-boot-beyond-systemd-span.pkl", "tests/workflow/invalid/timer-boot-fractional-huge-integer.pkl", "tests/workflow/invalid/timer-boot-fractional-millisecond-huge.pkl", "tests/workflow/invalid/timer-boot-fractional-millisecond-large.pkl", "tests/workflow/invalid/timer-boot-fractional-millisecond.pkl", "tests/workflow/invalid/timer-boot-half-nanosecond.pkl", "tests/workflow/invalid/timer-boot-lost-fraction.pkl", "tests/workflow/invalid/timer-boot-negative.pkl", "tests/workflow/invalid/timer-boot-sub-millisecond.pkl", "tests/workflow/invalid/timer-empty-calendar.pkl", "tests/workflow/invalid/timer-enablement-symlink-conflict.pkl", "tests/workflow/invalid/timer-file-inside.pkl", "tests/workflow/invalid/timer-long-name-implicit-service.pkl", "tests/workflow/invalid/timer-multiline-calendar.pkl", "tests/workflow/invalid/timer-name-too-long.pkl", "tests/workflow/invalid/timer-persistent-without-calendar.pkl", "tests/workflow/invalid/timer-service-name.pkl", "tests/workflow/invalid/timer-spaces-calendar.pkl", "tests/workflow/invalid/timer-tab-calendar.pkl", "tests/workflow/invalid/timezone-option-name.pkl", "tests/workflow/invalid/unless-output-both.pkl", "tests/workflow/invalid/upgrade-with-pin.pkl", "tests/workflow/invalid/url-bad-ipv6.pkl", "tests/workflow/invalid/url-port-out-of-range.pkl", "tests/workflow/invalid/url-without-host.pkl", "tests/workflow/invalid/validator-candidate-conflict.pkl", "tests/workflow/inventory.pkl", "tests/workflow/recipes.pkl", "tests/workflow/recipes/api-proxy.pkl", "tests/workflow/recipes/kubeadm-join.pkl", "tests/workflow/resources/motd.txt", "tests/workflow/valid/action-environment-order.pkl", "tests/workflow/valid/apt-hold-equal-version.pkl", "tests/workflow/valid/apt-hold-move-in-later-stage.pkl", "tests/workflow/valid/apt-hold-non-movements.pkl", "tests/workflow/valid/apt-hold-superseded.pkl", "tests/workflow/valid/apt-hold.pkl", "tests/workflow/valid/apt-preference-collision.pkl", "tests/workflow/valid/apt-preference-different-hosts.pkl", "tests/workflow/valid/apt-preference-disjoint-selectors.pkl", "tests/workflow/valid/apt-preference-pin-forms.pkl", "tests/workflow/valid/apt-preference.pkl", "tests/workflow/valid/apt-repositories.pkl", "tests/workflow/valid/apt-system-upgrade.pkl", "tests/workflow/valid/composition.pkl", "tests/workflow/valid/debconf-entry.pkl", "tests/workflow/valid/edge-values.pkl", "tests/workflow/valid/file-mode-spellings.pkl", "tests/workflow/valid/long-chain.pkl", "tests/workflow/valid/long-file-name.pkl", "tests/workflow/valid/nested-checkouts.pkl", "tests/workflow/valid/read-resource.pkl", "tests/workflow/valid/repeat.pkl", "tests/workflow/valid/repeated-runs.pkl", "tests/workflow/valid/secret-creates-skip.pkl", "tests/workflow/valid/secret-environment.pkl", "tests/workflow/valid/secret-fetch.pkl", "tests/workflow/valid/secret-file-short-mode.pkl", "tests/workflow/valid/secret-file-unicode.pkl", "tests/workflow/valid/secret-file-validate.pkl", "tests/workflow/valid/secret-file.pkl", "tests/workflow/valid/secret-generated.pkl", "tests/workflow/valid/secret-join-newline.pkl", "tests/workflow/valid/secret-join.pkl", "tests/workflow/valid/secret-literal-prefix.pkl", "tests/workflow/valid/secret-op-reference-dotted.pkl", "tests/workflow/valid/secret-op-reference.pkl", "tests/workflow/valid/secret-placeholder-shared-terminator.pkl", "tests/workflow/valid/service-reload.pkl", "tests/workflow/valid/shared-capture.pkl", "tests/workflow/valid/systemd-timer-default-service.pkl", "tests/workflow/valid/systemd-timer-delay-spellings.pkl", "tests/workflow/valid/systemd-timer-exact-huge-delay.pkl", "tests/workflow/valid/systemd-timer-large-delay.pkl", "tests/workflow/valid/systemd-timer-long-name.pkl", "tests/workflow/valid/systemd-timer.pkl", "tests/workflow/valid/tags.pkl", "tests/workflow/valid/user-missing-account.pkl", "tests/workflow/valid/watch-chain.pkl"]
 tools = ["rust"]
 timeout_minutes = 20
+
 [checks.runner]
 label = "ubuntu-26.04"
 platform = "linux_x64"
@@ -636,43 +147,86 @@ executor = "hosted"
 
 [[qualified_tools]]
 id = "cargo-deny"
-backend = { kind = "aqua", package = "EmbarkStudios/cargo-deny" }
 version = "0.20.2"
-options = { kind = "default" }
 depends_on = []
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "EmbarkStudios/cargo-deny"
+
+[qualified_tools.options]
+kind = "default"
+
 [[qualified_tools.platforms]]
 platform = "linux_x64"
-artifacts = [ { url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz", sha256 = "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f" } ]
 dependency_artifacts = []
 install_tree_sha256 = "9974db6df328c16cf4b9703be40659c42dc5fd04279f07b4b473feab0109cd72"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz"
+sha256 = "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+
 [[qualified_tools.platforms.executables]]
 name = "cargo-deny"
 path = "cargo-deny"
 sha256 = "b329e25933d01c36dd7c47d84ea5716694f9b7caf53a5003d45674703a8ed54a"
-probe = { kind = "version", expected = "cargo-deny 0.20.2" }
-[[qualified_tools]]
 
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "cargo-deny 0.20.2"
+
+[[qualified_tools]]
 id = "rust"
-backend = { kind = "core", tool = "rust" }
 version = "1.99.1"
-options = { kind = "rust", components = [], targets = [] }
 depends_on = []
+
+[qualified_tools.backend]
+kind = "core"
+tool = "rust"
+
+[qualified_tools.options]
+kind = "rust"
+components = []
+targets = []
+
 [[qualified_tools.platforms]]
 platform = "linux_x64"
-artifacts = [
-  { url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "53f3521949404d595efb06a55c12c5658d4ed1c75566f33d3d514eaebe70bd8a" },
-  { url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958" },
-  { url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-x86_64-unknown-linux-gnu.tar.xz", sha256 = "2ff05ff9c08a90861e7f6e4065b40a8b87463b4576186fd613871c3e37f2091f" },
-]
 dependency_artifacts = []
 install_tree_sha256 = "baa8089f830b6c49980b5c2274a0863d963d2eae8ef7f8ece56b90dfae8a8625"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "53f3521949404d595efb06a55c12c5658d4ed1c75566f33d3d514eaebe70bd8a"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "2ff05ff9c08a90861e7f6e4065b40a8b87463b4576186fd613871c3e37f2091f"
+
 [[qualified_tools.platforms.executables]]
 name = "cargo"
 path = "bin/cargo"
 sha256 = "a670e02cfa39ac2e53f77a2d911ca1fc9e2c479b0603ec956625be1daf24e3af"
-probe = { kind = "version", expected = "cargo 1.99.1 (5f94df478 2026-08-27)" }
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "cargo 1.99.1 (5f94df478 2026-08-27)"
+
 [[qualified_tools.platforms.executables]]
 name = "rustc"
 path = "bin/rustc"
 sha256 = "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853"
-probe = { kind = "rustc_verbose", expected = "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1" }
+
+[qualified_tools.platforms.executables.probe]
+kind = "rustc_verbose"
+expected = """
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1"""
