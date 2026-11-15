@@ -138,10 +138,6 @@ pub(super) fn bool_value(value: Option<&Value>, default: bool) -> bool {
     }
 }
 
-pub(super) fn normalized(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 pub(super) fn read_sysctl(name: &str) -> Option<String> {
     // Slash-first names keep their separators as written: the path is
     // the name beneath /proc/sys (see `proc_sys_path`).
@@ -174,7 +170,11 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
             if value.is_some() {
                 return None;
             }
-            value = Some(v.split_whitespace().collect::<Vec<_>>().join(" "));
+            // The value is the one the file holds: the blanks procps
+            // strips around it are gone, the blanks inside it are part
+            // of the value — `kernel.hostname` holds "abc  def" as it
+            // is written.
+            value = Some(crate::modules::trimmed_value(v).to_string());
         }
     }
     value

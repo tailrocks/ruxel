@@ -106,7 +106,23 @@ pub(crate) use copy::validate_source;
 #[cfg(test)]
 pub(super) use ownership::{OWNERSHIP_RESOLUTIONS, resolve_gid_from, resolve_uid_from};
 pub(super) use ownership::{Ownership, resolve_ownership};
-pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key};
+pub(crate) use sysctl::{boot_fingerprint, entry_key, proc_sys_path, sysctl_key, trimmed_value};
+
+/// The managed sysctl entries a task's module consumes: only the
+/// sysctl module reads them, and the scan they need weighs on every
+/// persisted record — so a workflow of ordinary tasks would pay
+/// 1+2+…+N inspections for a result none of them reads. The gate
+/// keeps the scan to the module that needs it.
+pub(crate) fn managed_sysctl_entries(
+    module: &str,
+    ledger: &crate::ledger::Ledger,
+) -> Vec<(String, String, String)> {
+    if module == "sysctl" {
+        ledger.managed_sysctl_entries()
+    } else {
+        Vec::new()
+    }
+}
 
 pub(crate) fn execute(
     module: &str,
@@ -288,6 +304,10 @@ pub(super) fn default_file_mode(status: &str) -> u32 {
         .unwrap_or(0o022);
     0o666 & !umask
 }
+
+#[cfg(test)]
+#[path = "tests/managed_entries.rs"]
+mod managed_entries_tests;
 
 #[cfg(test)]
 #[path = "tests/security.rs"]

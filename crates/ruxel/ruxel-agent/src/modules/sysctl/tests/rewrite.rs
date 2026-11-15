@@ -2,12 +2,17 @@
 //! spellings of one parameter, and the value's own equals signs.
 
 #[test]
-fn whitespace_normalization() {
-    assert_eq!(
-        super::super::normalized("1024\t65535"),
-        super::super::normalized("1024 65535")
+fn a_value_keeps_the_whitespace_inside_it() {
+    // The blanks inside a value are part of it: `kernel.hostname`
+    // holds "abc  def" as it is written, so a value that differs from
+    // it in its blanks is another value — the comparison trims the
+    // blanks around the value and nothing else.
+    assert_eq!(super::super::trimmed_value("1024\t65535"), "1024\t65535");
+    assert_eq!(super::super::trimmed_value(" 1 "), "1");
+    assert_ne!(
+        super::super::trimmed_value("abc  def"),
+        super::super::trimmed_value("abc def")
     );
-    assert_eq!(super::super::normalized(" 1 "), "1");
 }
 
 #[test]
@@ -21,9 +26,11 @@ fn rewrites_existing_key_or_appends_missing_key() {
         super::super::rewrite_file(b"# keep\n", "net.test", "new"),
         (b"# keep\nnet.test=new\n".to_vec(), true)
     );
+    // The blanks inside the value are part of it: the file holds
+    // another value, so the entry is rewritten with the requested one.
     assert_eq!(
         super::super::rewrite_file(b"net.test = 1  2\n", "net.test", "1\t2"),
-        (b"net.test = 1  2\n".to_vec(), false)
+        (b"net.test=1\t2\n".to_vec(), true)
     );
 }
 
@@ -133,4 +140,20 @@ fn unrelated_bytes_survive_the_rewrite_verbatim() {
         super::super::rewrite_file(b"# note \xff\nnet.test=1\n", "net.test", "1");
     assert!(!changed);
     assert_eq!(content, b"# note \xff\nnet.test=1\n".to_vec());
+}
+
+#[test]
+fn a_value_that_differs_in_its_blanks_is_rewritten() {
+    // The blanks inside a value are part of it: `kernel.hostname`
+    // holds "abc  def" as it is written, so the value that differs
+    // from it is a different value — a comparison that collapses the
+    // blanks reports no change where the host holds another value.
+    assert_eq!(
+        super::super::rewrite_file(
+            b"kernel.hostname = abc  def\n",
+            "kernel.hostname",
+            "abc def"
+        ),
+        (b"kernel.hostname=abc def\n".to_vec(), true)
+    );
 }

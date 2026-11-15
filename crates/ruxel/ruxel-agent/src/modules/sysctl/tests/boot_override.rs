@@ -3,6 +3,8 @@
 //! own — the boot value would come from there and the parameter reverts
 //! after reboot.
 
+use std::path::PathBuf;
+
 use super::super::boot;
 
 /// The later-loading file that overrides the managed entry, if any.
@@ -12,9 +14,9 @@ fn override_of(
     value: &str,
     host: &[(&str, &str)],
 ) -> Option<(String, String)> {
-    let host: Vec<(String, Vec<u8>)> = host
+    let host: Vec<(PathBuf, Vec<u8>)> = host
         .iter()
-        .map(|(path, content)| ((*path).to_string(), content.as_bytes().to_vec()))
+        .map(|(path, content)| (PathBuf::from(*path), content.as_bytes().to_vec()))
         .collect();
     boot::boot_override(file, name, value, &host, &[])
 }
@@ -135,7 +137,7 @@ fn a_boot_file_that_is_not_text_still_assigns() {
     let mut content = b"net.ipv4.ip_forward=0\n# comment ".to_vec();
     content.push(0xff);
     content.push(b'\n');
-    let host = vec![("/etc/sysctl.conf".to_string(), content)];
+    let host = vec![(PathBuf::from("/etc/sysctl.conf"), content)];
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/90-ruxel.conf",
@@ -155,7 +157,7 @@ fn a_declared_managed_file_is_not_an_unmanaged_override() {
     // not an unmanaged override, and the earlier stage must be able to
     // run again.
     let host = vec![(
-        "/etc/sysctl.d/99-new.conf".to_string(),
+        PathBuf::from("/etc/sysctl.d/99-new.conf"),
         b"net.ipv4.ip_forward=0\n".to_vec(),
     )];
     let managed = vec![(
@@ -212,10 +214,7 @@ fn the_cross_stage_transition_stays_idempotent() {
             "0".to_string()
         )]
     );
-    let host = vec![(
-        file.to_string_lossy().into_owned(),
-        b"net.ipv4.ip_forward=0\n".to_vec(),
-    )];
+    let host = vec![(file.clone(), b"net.ipv4.ip_forward=0\n".to_vec())];
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/10-old.conf",
@@ -235,7 +234,7 @@ fn a_managed_file_that_drifted_is_an_unmanaged_override() {
     // The declared value is the one ruxel manages there: a file that
     // drifted to another value carries an unmanaged assignment again.
     let host = vec![(
-        "/etc/sysctl.d/99-new.conf".to_string(),
+        PathBuf::from("/etc/sysctl.d/99-new.conf"),
         b"net.ipv4.ip_forward=2\n".to_vec(),
     )];
     let managed = vec![(
@@ -295,7 +294,7 @@ fn a_record_the_plan_never_encountered_expires() {
     let managed = ledger.managed_sysctl_entries();
     assert_eq!(managed, Vec::<(String, String, String)>::new());
     let host = vec![(
-        "/etc/sysctl.d/99-old.conf".to_string(),
+        PathBuf::from("/etc/sysctl.d/99-old.conf"),
         b"net.ipv4.ip_forward=0\n".to_vec(),
     )];
     assert_eq!(
@@ -352,4 +351,24 @@ fn a_declared_value_of_the_previous_plan_carries_the_next_transition() {
     ledger.flush();
     assert_eq!(ledger.managed_sysctl_entries(), vec![entry]);
     drop(std::fs::remove_dir_all(&dir));
+}
+
+#[test]
+fn the_final_boot_assignment_decides_the_boot_value() {
+    // The files load in order and the last assignment wins: a file
+    // that assigns another value and a file after it that restores the
+    // requested value leave the boot value the managed one — the
+    // intermediate assignment is overridden by the sequence itself.
+    assert_eq!(
+        override_of(
+            "/etc/sysctl.d/10-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "1",
+            &[
+                ("/etc/sysctl.d/50-mid.conf", "net.ipv4.ip_forward=0\n"),
+                ("/etc/sysctl.d/99-final.conf", "net.ipv4.ip_forward=1\n"),
+            ],
+        ),
+        None
+    );
 }
