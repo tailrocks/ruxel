@@ -12,15 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// The counter that keeps the staging names of the process apart.
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-/// The prefix of the names the process stages entries under: the names
-/// are its own, and the walk of a tree leaves them alone.
+/// The prefix of the names the process stages entries under: every name
+/// the process stages is tracked exactly where it is staged, and the
+/// prefix alone reserves nothing.
 const PREFIX: &str = ".ruxel-remove-";
-
-/// Whether a name is one the process stages entries under: the walk of
-/// a tree skips them, or it takes an entry of its own.
-pub(super) fn is_staging(name: &std::ffi::CStr) -> bool {
-    name.to_bytes().starts_with(PREFIX.as_bytes())
-}
 
 /// Takes the name of the target away: the entry is renamed to a name
 /// of its own inside the directory that holds it, so the name the

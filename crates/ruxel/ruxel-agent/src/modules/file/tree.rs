@@ -3,6 +3,7 @@
 //! never followed.
 
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat, unlinkat};
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::MetadataExt;
@@ -16,10 +17,12 @@ pub(super) fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
         .metadata()
         .map_err(|error| error.to_string())?;
     let held = held.dev();
+    // The names this walk stages entries under are tracked exactly: only
+    // a name this walk staged is left alone, and an entry a user named
+    // with the same prefix is an entry like any other.
+    let mut owned: HashSet<Vec<u8>> = HashSet::new();
     for name in names(dir)? {
-        // The names the process stages entries under are its own: the
-        // walk does not take them.
-        if super::attachment::is_staging(name.as_c_str()) {
+        if owned.contains(name.to_bytes()) {
             continue;
         }
         let meta = statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW)
@@ -33,7 +36,7 @@ pub(super) fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
                 Mode::empty(),
             )
             .map_err(|error| error.to_string())?;
-            take_nested(dir, &name, &child, identity, held, path)?;
+            take_nested(dir, &name, &child, identity, held, path, &mut owned)?;
         } else {
             take_plain(dir, &name, identity, path)?;
         }
@@ -52,6 +55,7 @@ pub(super) fn take_nested(
     identity: (u64, u64),
     held: u64,
     path: &Path,
+    owned: &mut HashSet<Vec<u8>>,
 ) -> Result<(), String> {
     let opened = rustix::fs::fstat(child).map_err(|error| error.to_string())?;
     let opened_id = (super::floor::device(&opened), opened.st_ino);
@@ -82,8 +86,10 @@ pub(super) fn take_nested(
         ));
     }
     // The name is taken away before the tree below it is emptied: a name
-    // that was replaced in between is not the tree that goes.
+    // that was replaced in between is not the tree that goes. The staged
+    // name is the walk's own, and the walk leaves it alone.
     let staging = super::attachment::take_entry(dir, name, identity, path)?;
+    owned.insert(staging.as_bytes().to_vec());
     let removed = (|| {
         remove_tree(child, path)?;
         unlinkat(dir, staging.as_c_str(), AtFlags::REMOVEDIR).map_err(|error| error.to_string())
