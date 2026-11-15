@@ -18,7 +18,7 @@ mod home;
 mod identity;
 mod plan;
 mod shell;
-use apply::{Home, HomeOwner, Mutation, rollback_home};
+use apply::{Home, HomeOwner, Mutation};
 use entries::{
     PasswdEntry, forget_planned_group, forget_planned_user, group_entry, groups_need_update,
     note_planned_group, note_planned_user, note_removed_account, note_removed_group, passwd_entry,
@@ -1283,12 +1283,12 @@ fn private_group_gone(emptied: bool, post_removal: Option<&(String, u64)>) -> bo
 /// was — the account the workflow never asked for is gone, and the
 /// directory the operation added goes with it. Only a home this
 /// operation created is removed: a pre-existing home is the host's,
-/// whatever it holds — and the removal refuses a directory that is not
-/// empty, so contents a concurrent writer planted are kept and reported
-/// rather than deleted. The home's repair and its rollback live a layer
-/// below (`apply::run` takes back the repairs of an existing account's
-/// change): this one covers the creation's own home only, so the two
-/// never take back the same directory.
+/// whatever it holds — and the removal keeps contents a concurrent
+/// writer planted while taking back the skeleton contents `useradd`
+/// copied from `/etc/skel`. The home's repair and its rollback live a
+/// layer below (`apply::run` takes back the repairs of an existing
+/// account's change): this one covers the creation's own home only, so
+/// the two never take back the same directory.
 fn take_back_created_account(
     account: &str,
     reused_private_group: Option<&(String, u64)>,
@@ -1306,7 +1306,7 @@ fn take_back_created_account(
         group_exists,
     )?;
     if !home_preexisted && std::fs::symlink_metadata(home).is_ok() {
-        rollback_home(home, None, &[])?;
+        apply::rollback_created_home(home)?;
     }
     Ok(())
 }

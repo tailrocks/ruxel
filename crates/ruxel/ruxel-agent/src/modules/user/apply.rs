@@ -2,7 +2,8 @@
 //! the private group the step claims, the home's repair, and the
 //! account's own change.
 
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use super::PasswdEntry;
 use super::entries::group_entry;
@@ -172,6 +173,110 @@ pub(super) fn run(
     Ok(changed)
 }
 
+/// The skeleton directory `useradd -m` populates a created home from:
+/// the host's own template, copied into every new home where it is
+/// non-empty.
+const SKEL_DIR: &str = "/etc/skel";
+
+/// The home `useradd -m` created for a new account, taken back: the
+/// directory the operation added goes with the account — including the
+/// skeleton contents `useradd` copied from it — while contents a
+/// concurrent writer planted are kept and reported rather than deleted.
+/// Only a home this operation created is removed: the caller checks it
+/// did not pre-exist, and a home that pre-existed is the host's,
+/// whatever it holds.
+pub(super) fn rollback_created_home(home: &str) -> Result<(), String> {
+    rollback_created_home_from(home, Path::new(SKEL_DIR))
+}
+
+/// The canned-skel counterpart of [`rollback_created_home`]: the
+/// skeleton root is the test's own, so populated-skel and
+/// planted-content cases run without touching the host's `/etc/skel`.
+pub(super) fn rollback_created_home_from(home: &str, skel: &Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(home)
+        .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+    if meta.is_symlink() {
+        return Err(format!(
+            "user: take back created home {home}: home is a symlink"
+        ));
+    }
+    if !meta.is_dir() {
+        return Err(format!(
+            "user: take back created home {home}: home is not a directory"
+        ));
+    }
+    let home_set = relative_entries(Path::new(home))
+        .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+    if home_set.is_empty() {
+        std::fs::remove_dir(home)
+            .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+        return Ok(());
+    }
+    // A missing skeleton means no template: any content is foreign.
+    // An unreadable one fails closed the same way — the rollback keeps
+    // the home and reports it rather than deleting contents it cannot
+    // prove `useradd` put there.
+    let skel_set = match relative_entries(skel) {
+        Ok(set) => set,
+        Err(_) if skel_missing(skel) => BTreeSet::new(),
+        Err(error) => {
+            return Err(format!("user: take back created home {home}: {error}"));
+        }
+    };
+    if home_set.iter().all(|entry| skel_set.contains(entry)) {
+        std::fs::remove_dir_all(home)
+            .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+        Ok(())
+    } else {
+        Err(format!(
+            "user: take back created home {home}: home contains contents a concurrent writer planted"
+        ))
+    }
+}
+
+/// Whether the skeleton root is absent: a missing template, so every
+/// entry the created home holds is foreign. The check runs off the
+/// path's own lookup, not the enumeration's error string.
+fn skel_missing(skel: &Path) -> bool {
+    matches!(
+        std::fs::symlink_metadata(skel),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
+}
+
+/// Every entry beneath `root`, relative to it, without following a
+/// link: directories recurse as themselves, and a link at any level is
+/// an entry of its own — never resolved to a target the account does
+/// not own.
+fn relative_entries(root: &Path) -> Result<BTreeSet<PathBuf>, String> {
+    let mut entries = BTreeSet::new();
+    collect_relative(root, root, &mut entries)?;
+    Ok(entries)
+}
+
+fn collect_relative(
+    root: &Path,
+    dir: &Path,
+    entries: &mut BTreeSet<PathBuf>,
+) -> Result<(), String> {
+    let listing = std::fs::read_dir(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    for entry in listing {
+        let entry = entry.map_err(|error| format!("{}: {error}", dir.display()))?;
+        let name = entry.file_name();
+        let relative = dir
+            .strip_prefix(root)
+            .map(|prefix| prefix.join(&name))
+            .map_err(|error| format!("{}: {error}", dir.display()))?;
+        entries.insert(relative.clone());
+        let full = dir.join(&name);
+        let meta = std::fs::symlink_metadata(&full)
+            .map_err(|error| format!("{}: {error}", full.display()))?;
+        if meta.is_dir() {
+            collect_relative(root, &full, entries)?;
+        }
+    }
+    Ok(())
+}
 /// The home's repair a later failure takes back: the ownership the
 /// repair found, restored — or every directory the repair created,
 /// removed leaf-first. The reversal runs on the descriptors the safe walk opens,
