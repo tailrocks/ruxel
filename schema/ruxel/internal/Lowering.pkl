@@ -1231,12 +1231,20 @@ function sysctlValues(ix: StageIndex, i: Int): List<String> =
   else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && trimmedSysctlValue(ix.steps[j].value) != trimmedSysctlValue(ix.steps[i].value))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
 
-/// One parameter's identity: the `/proc/sys` path it addresses. Slash-
-/// first notation keeps its separators as written and the dotted
-/// spelling translates its dots, so the two spellings of one parameter
-/// compare equal — and a slash-first name with a literal dot (`enp3s0.200`)
-/// keeps its identity apart from the dotted spelling of another path.
-const function sysctlKey(name: String): String = if (name.contains("/")) name else name.split(".").join("/")
+/// One parameter's identity: the `/proc/sys` path it addresses. The
+/// separators canonicalize the way procps reads them — the first
+/// separator decides (`slashdot` in procps-ng `src/sysctl.c` swaps
+/// every separator of a dot-first name and leaves a slash-first name
+/// alone) — so a dot-first mixed spelling
+/// (`net.ipv4.conf.enp3s0/200.forwarding`) compares equal to its slash
+/// form (`net/ipv4/conf/enp3s0.200/forwarding`), while a slash-first
+/// name with a literal dot (`enp3s0.200`) keeps its identity apart from
+/// the dotted spelling of another path.
+const function sysctlKey(name: String): String =
+  let (dot = name.indexOfOrNull("."))
+  let (slash = name.indexOfOrNull("/"))
+  if (dot == null || (slash != null && slash < dot)) name
+  else name.split("/").map((segment) -> segment.split(".").join("/")).join(".")
 
 /// One sysctl value with the syntax-level whitespace trimmed off both
 /// ends: procps strips the blanks around a value before it applies it

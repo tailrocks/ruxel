@@ -211,6 +211,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl
   tests/workflow/valid/linux-sysctl-equals.pkl
   tests/workflow/valid/linux-sysctl-hyphen.pkl
+  tests/workflow/valid/linux-sysctl-literal-dot-apart.pkl
   tests/workflow/valid/linux-sysctl-local-lib-dir.pkl
   tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
   tests/workflow/valid/linux-sysctl-shadow-legacy.pkl

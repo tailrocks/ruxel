@@ -291,6 +291,7 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-user-uid-recreated-then-renumbered.pkl",
     "invalid/linux-user-uid-across-login-users.pkl",
     "valid/linux-user-uid-login-users-same-account.pkl",
+    "valid/linux-sysctl-literal-dot-apart.pkl",
 ];
 
 /// The official `pkl` binary.
