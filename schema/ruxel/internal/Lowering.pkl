@@ -432,16 +432,34 @@ function renumberedDraw(ix: StageIndex, c: IdDraw): Boolean =
 /// a number only for an identity that is not there yet — `useradd`
 /// leaves the number of an account that exists alone, and the same holds
 /// for a group the host already has — so a draw of an identity an
-/// earlier overlapping-host stage already provided draws nothing, and a
+/// earlier overlapping-host stage still provides draws nothing, and a
 /// step of the draw's own stage that precedes the drawing one provides
-/// it the same way. A uid draw needs the account; a gid draw needs the
+/// it the same way. A provider an intervening stage removes is gone by
+/// the draw's stage (see `providesEffectiveIdentity`), so the draw's
+/// stage recreates the identity and the allocator draws a fresh number
+/// for it. A uid draw needs the account; a gid draw needs the
 /// group — or the account whose private group it is, which useradd
 /// creates beside the account (`USERGROUPS_ENAB`): redeclaring an
 /// account that names no primary group reuses its group and draws no
 /// new number for it.
 function drawNeededOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, h: core.Host): Boolean =
-  !positions(_indexes).filter((n) -> n < c.stage && identityRunsOn(_stages[n], h)).any((n) -> providesIdentity(_indexes[n], c))
+  !positions(_indexes).filter((n) -> n < c.stage && identityRunsOn(_stages[n], h)).any((n) -> providesEffectiveIdentity(_stages, _indexes, n, c, h))
     && !positions(_indexes[c.stage].steps).filter((j) -> j < c.step).any((j) -> providesIdentityStep(_indexes[c.stage].steps[j], c))
+
+/// Whether the stage `n` still provides the drawing identity on the
+/// host `h` when the draw's stage runs: a stage between the two that
+/// runs there and removes the identity (see `identityGoneOn`) takes
+/// the provider away, so the draw's stage recreates it and the
+/// allocator draws again — only a provider no removal takes away
+/// still suppresses the draw.
+function providesEffectiveIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, c: IdDraw, h: core.Host): Boolean =
+  providesIdentity(_indexes[n], c)
+    && !positions(_indexes).filter((k) -> k > n && k < c.stage).any((k) -> identityRunsOn(_stages[k], h) && identityGoneOn(_stages, _indexes, k, drawIdentity(c), h))
+
+/// The identity the draw would recreate, as the file-identity checks
+/// name it: the account for a uid draw, the group for a gid one.
+const function drawIdentity(c: IdDraw): List<String> =
+  List(c.name, if (c.kind == "uid") "owner" else "group")
 
 /// Whether the stage's steps already provide the drawing identity: a
 /// present account for a uid draw, and for a gid draw a present group
