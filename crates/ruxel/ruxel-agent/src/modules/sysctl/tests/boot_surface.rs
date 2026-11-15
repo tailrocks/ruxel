@@ -141,7 +141,7 @@ fn a_later_file_keeps_only_its_final_assignment() {
     // value `1`, so a task managing `1` must not be refused for the
     // intermediate value the file itself overrides again.
     let host = vec![(
-        "/etc/sysctl.conf".to_string(),
+        PathBuf::from("/etc/sysctl.conf"),
         b"net.ipv4.ip_forward=0\nnet.ipv4.ip_forward=1\n".to_vec(),
     )];
     assert_eq!(
@@ -156,7 +156,7 @@ fn a_later_file_keeps_only_its_final_assignment() {
     );
     // A final differing assignment still hands the boot value away.
     let host = vec![(
-        "/etc/sysctl.conf".to_string(),
+        PathBuf::from("/etc/sysctl.conf"),
         b"net.ipv4.ip_forward=1\nnet.ipv4.ip_forward=0\n".to_vec(),
     )];
     assert_eq!(
@@ -184,11 +184,11 @@ fn a_wildcard_stays_within_its_path_component() {
     // pattern's (see `boot_wildcards`).
     let host = vec![
         (
-            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            PathBuf::from("/etc/sysctl.d/90-ruxel.conf"),
             b"net.ipv4.ip_forward=1\n".to_vec(),
         ),
         (
-            "/etc/sysctl.conf".to_string(),
+            PathBuf::from("/etc/sysctl.conf"),
             b"net.*.rp_filter=0\n".to_vec(),
         ),
     ];
@@ -204,11 +204,11 @@ fn a_wildcard_stays_within_its_path_component() {
     );
     let host = vec![
         (
-            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            PathBuf::from("/etc/sysctl.d/90-ruxel.conf"),
             b"net.ipv4.ip_forward=1\n".to_vec(),
         ),
         (
-            "/etc/sysctl.conf".to_string(),
+            PathBuf::from("/etc/sysctl.conf"),
             b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
         ),
     ];
@@ -255,14 +255,9 @@ fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
     );
     // The assignments behind the mask do not weigh on the boot value:
     // the vendor file's value never hands it away.
-    let host: Vec<(String, Vec<u8>)> = files
+    let host: Vec<(PathBuf, Vec<u8>)> = files
         .iter()
-        .map(|file| {
-            (
-                file.to_string_lossy().into_owned(),
-                std::fs::read(file).unwrap_or_default(),
-            )
-        })
+        .map(|file| (file.clone(), std::fs::read(file).unwrap_or_default()))
         .collect();
     assert_eq!(
         boot::boot_override(
@@ -298,13 +293,13 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
     // procps keeps the keys a setting names outright out of the
     // expansion of a pattern, so the wildcard never reaches `all` and
     // the managed entry keeps the boot value.
-    let host: Vec<(String, Vec<u8>)> = vec![
+    let host: Vec<(PathBuf, Vec<u8>)> = vec![
         (
-            "/etc/sysctl.d/90-ruxel.conf".to_string(),
+            PathBuf::from("/etc/sysctl.d/90-ruxel.conf"),
             b"net.ipv4.conf.all.rp_filter=1\n".to_vec(),
         ),
         (
-            "/etc/sysctl.conf".to_string(),
+            PathBuf::from("/etc/sysctl.conf"),
             b"net.ipv4.conf.*.rp_filter=0\n".to_vec(),
         ),
     ];
@@ -327,7 +322,7 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
             "net.ipv4.conf.all.rp_filter",
             "1",
             &[(
-                "/etc/sysctl.conf".to_string(),
+                PathBuf::from("/etc/sysctl.conf"),
                 b"net.ipv4.conf.*.rp_filter=0\n".to_vec()
             )],
             &[],

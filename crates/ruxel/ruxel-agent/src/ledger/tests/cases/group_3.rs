@@ -33,8 +33,13 @@ fn cached_ok_misses_when_directory_mode_changes() {
 }
 
 #[test]
-fn sysctl_live_verification_normalizes_and_rejects_missing_values() {
-    assert_eq!(normalized("1\t2  3"), normalized("1 2 3"));
+fn sysctl_live_verification_keeps_the_value_exact_and_rejects_missing_values() {
+    // The blanks inside a value are part of it: the live value and the
+    // declared one are one value only when they read alike.
+    assert_ne!(
+        crate::modules::trimmed_value("1\t2  3"),
+        crate::modules::trimmed_value("1 2 3")
+    );
     assert!(
         !Probe::SysctlLive {
             name: "ruxel.test.nonexistent".to_string(),
@@ -190,4 +195,25 @@ fn old_schema_ledger_loads_empty() {
     )
     .expect("operation succeeds");
     assert!(Ledger::load(&dir.0).cached_ok("key").is_none());
+}
+
+#[test]
+fn the_sysctl_live_verification_trims_only_the_outer_blanks() {
+    // The syntax-level blanks around a value are procps's, the ones
+    // inside it are the value's.
+    assert_eq!(crate::modules::trimmed_value(" 1 "), "1");
+    assert_eq!(crate::modules::trimmed_value("1\t2  3"), "1\t2  3");
+}
+
+#[test]
+fn the_sysctl_file_value_keeps_the_blanks_inside_it() {
+    let dir = Scratch::new("sysctl-exact-value");
+    let file = dir.file("sysctl.conf", b"kernel.hostname = abc  def\n");
+    assert_eq!(
+        sysctl_file_value(
+            file.to_str().expect("operation succeeds"),
+            "kernel.hostname"
+        ),
+        Some("abc  def".to_string())
+    );
 }
