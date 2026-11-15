@@ -25,6 +25,8 @@ impl Ledger {
             records,
             encountered: HashSet::new(),
             dirty: false,
+            #[cfg(test)]
+            scans: std::cell::Cell::new(0),
         }
     }
 

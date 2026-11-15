@@ -1,7 +1,7 @@
 mod probe;
 mod store;
 
-use probe::{file_attrs, file_fingerprint, normalized, probe_for, read_sysctl, sysctl_file_value};
+use probe::{file_attrs, file_fingerprint, probe_for, read_sysctl, sysctl_file_value};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -83,9 +83,9 @@ impl Probe {
             Probe::SysctlKV { file, name, value } => {
                 sysctl_file_value(file, name).as_deref() == Some(value.as_str())
             }
-            Probe::SysctlLive { name, value } => {
-                read_sysctl(name).is_some_and(|current| normalized(&current) == normalized(value))
-            }
+            Probe::SysctlLive { name, value } => read_sysctl(name).is_some_and(|current| {
+                crate::modules::trimmed_value(&current) == crate::modules::trimmed_value(value)
+            }),
             Probe::SysctlBoot { fingerprint } => {
                 crate::modules::boot_fingerprint().as_deref() == Some(fingerprint.as_str())
             }
@@ -112,6 +112,10 @@ pub(crate) struct Ledger {
     /// the plan's from the history of tasks it does not run anymore.
     encountered: HashSet<String>,
     dirty: bool,
+    /// The number of scans of the persisted records: the cost the
+    /// module gate keeps away from the tasks that read none of them.
+    #[cfg(test)]
+    scans: std::cell::Cell<usize>,
 }
 
 pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
@@ -240,6 +244,10 @@ impl Ledger {
     /// it never encountered (see `flush`), so a task a previous plan ran
     /// and this one dropped leaves no declaration behind.
     pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
+        #[cfg(test)]
+        {
+            self.scans.set(self.scans.get() + 1);
+        }
         let mut entries: Vec<(String, String, String)> = self
             .records
             .values()
@@ -254,6 +262,13 @@ impl Ledger {
         entries.sort();
         entries.dedup();
         entries
+    }
+
+    /// The number of scans of the persisted records: the cost the
+    /// module gate keeps away from the tasks that read none of them.
+    #[cfg(test)]
+    pub(crate) fn scans(&self) -> usize {
+        self.scans.get()
     }
 
     fn storage_key(&self, controller_key: &str) -> Option<String> {

@@ -73,7 +73,7 @@ pub(super) fn run(
     // the persistence file.
     if sysctl_set {
         let live = read_sysctl(name)?;
-        if normalized(&live) != normalized(&value) {
+        if trimmed_value(&live) != trimmed_value(&value) {
             changed = true;
             if !ctx.check_mode {
                 let st = std::process::Command::new("sysctl")
@@ -271,8 +271,8 @@ fn rewrite_file(current: &[u8], name: &str, value: &str) -> (Vec<u8>, bool) {
             // The entry's delimiter is the FIRST equals sign: a value may
             // carry equals signs of its own (a core_pattern command's
             // --option=value), which a split at every one would truncate.
-            let existing = trimmed.split_once('=').map_or("", |x| x.1).trim();
-            if normalized(existing) == normalized(value) {
+            let existing = trimmed.split_once('=').map_or("", |x| trimmed_value(x.1));
+            if existing == trimmed_value(value) {
                 out_lines.push(raw.to_vec());
             } else {
                 changed = true;
@@ -316,8 +316,13 @@ fn trim(line: &[u8]) -> &[u8] {
     &line[start..end]
 }
 
-pub(super) fn normalized(v: &str) -> String {
-    v.split_whitespace().collect::<Vec<_>>().join(" ")
+/// A value with the syntax-level whitespace trimmed off both ends:
+/// procps strips the blanks around a value, and the blanks inside it
+/// are part of the value itself — `kernel.hostname` holds "abc  def"
+/// as it is written, so a value that differs from it in its blanks is
+/// another value.
+pub(crate) fn trimmed_value(value: &str) -> &str {
+    value.trim_matches(|c: char| c.is_ascii_whitespace())
 }
 
 /// The ignore-failure marker of an assignment line: procps reads a

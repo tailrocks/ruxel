@@ -3,6 +3,7 @@
 //! publishability probe's timing with the boot shadows, and the boot
 //! override's later-assignment refusal.
 
+mod boot_names;
 mod boot_override;
 mod boot_shadows;
 mod boot_surface;
