@@ -152,7 +152,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
 function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
   claims.flatMap((c) -> claims
-    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.number == c.number && d.name != c.name && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> d.stage > c.stage && d.kind == c.kind && d.number == c.number && d.name != c.name && hostsShareIdentity(_stages[c.stage], _stages[d.stage]))
     .filter((d) -> !numberFreed(_stages, _indexes, c, d))
     .map((d) -> numberClash(_stages[c.stage], c, _stages[d.stage], d)))
 
@@ -177,9 +177,9 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
 /// intersection and may be spread over several intervening stages, each
 /// covering one of its hosts.
 function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
-  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+  sharedIdentityHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumberedIdentity(_indexes[k], c))))
+      .any((k) -> identityRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumberedIdentity(_indexes[k], c))))
 
 /// Whether a stage renumbers the claimant's identity to another explicit
 /// number: a step that keeps the same account (for a gid claim, the
@@ -200,6 +200,31 @@ const function sharedHosts(a: core.Stage, b: core.Stage): List<core.Host> =
 /// Whether the stage runs on the machine `h`, by connection.
 const function stageRunsOn(s: core.Stage, h: core.Host): Boolean =
   s.hosts.toList().any((x) -> sameConnection(x, h))
+
+/// Whether two hosts are one machine for the host-wide identity-number
+/// checks: `useradd` mutates the host whatever login user opened the SSH
+/// connection, so two stages that connect to the same endpoint and port
+/// as different users still assign from one id space — a later
+/// `useradd -u` fails on the number the other stage took. Other checks
+/// keep `sameConnection`: a hold, a preference or a shell is about the
+/// connection that wrote it, not the host's id space.
+const function sameIdentityMachine(x: core.Host, y: core.Host): Boolean =
+  (x.sshHost ?? x.address) == (y.sshHost ?? y.address) && x.port == y.port
+
+/// The hosts both stages run on, for the identity-number checks: one
+/// machine when they reach one endpoint and port, whatever login user
+/// each connects as.
+const function sharedIdentityHosts(a: core.Stage, b: core.Stage): List<core.Host> =
+  a.hosts.toList().filter((x) -> b.hosts.toList().any((y) -> sameIdentityMachine(x, y)))
+
+/// Whether the stage runs on the machine `h`, for the identity-number
+/// checks: by endpoint and port, ignoring the SSH login user.
+const function identityRunsOn(s: core.Stage, h: core.Host): Boolean =
+  s.hosts.toList().any((x) -> sameIdentityMachine(x, h))
+
+/// Whether two stages share one machine for the identity-number checks.
+const function hostsShareIdentity(a: core.Stage, b: core.Stage): Boolean =
+  a.hosts.toList().any((x) -> b.hosts.toList().any((y) -> sameIdentityMachine(x, y)))
 
 /// Whether a stage removes the claimant with the number the claim
 /// holds: the removal declares its id (an account removal states its
@@ -327,7 +352,7 @@ function automaticNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<
   let (draws = positions(_indexes).flatMap((m) -> drawsOf(_indexes[m], m)))
   let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
   draws.flatMap((c) -> claims
-    .filter((d) -> d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high && drawsBefore(c, d) && hostsOverlap(_stages[c.stage], _stages[d.stage]))
+    .filter((d) -> d.kind == c.kind && d.name != c.name && c.low <= d.number && d.number <= c.high && drawsBefore(c, d) && hostsShareIdentity(_stages[c.stage], _stages[d.stage]))
     .filter((d) -> !drawFreed(_stages, _indexes, c, d))
     .map((d) -> numberDraw(_stages[c.stage], c, _stages[d.stage], d)))
 
@@ -380,7 +405,7 @@ function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot
 /// for it. The proof is per host: a removal that runs on another machine
 /// leaves the identity where it is on this one.
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
-  sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
+  sharedIdentityHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     !drawNeededOn(_stages, _indexes, c, h) || drawFreedOn(_stages, _indexes, c, d, h))
 
 /// Whether the draw's number is proven gone on the host `h` before the
@@ -390,7 +415,7 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// renumbering releases whatever the allocator drew for it.
 function drawFreedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
   positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-    .any((k) -> stageRunsOn(_stages[k], h) && (removedDraw(_stages, _indexes, k, c, h) || renumberedDraw(_indexes[k], c)))
+    .any((k) -> identityRunsOn(_stages[k], h) && (removedDraw(_stages, _indexes, k, c, h) || renumberedDraw(_indexes[k], c)))
 
 /// Whether a stage renumbers the drawing identity to another explicit
 /// number: a step that keeps the same account (for a gid draw, the same
@@ -415,7 +440,7 @@ function renumberedDraw(ix: StageIndex, c: IdDraw): Boolean =
 /// account that names no primary group reuses its group and draws no
 /// new number for it.
 function drawNeededOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, h: core.Host): Boolean =
-  !positions(_indexes).filter((n) -> n < c.stage && stageRunsOn(_stages[n], h)).any((n) -> providesIdentity(_indexes[n], c))
+  !positions(_indexes).filter((n) -> n < c.stage && identityRunsOn(_stages[n], h)).any((n) -> providesIdentity(_indexes[n], c))
     && !positions(_indexes[c.stage].steps).filter((j) -> j < c.step).any((j) -> providesIdentityStep(_indexes[c.stage].steps[j], c))
 
 /// Whether the stage's steps already provide the drawing identity: a
@@ -497,7 +522,7 @@ const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
 /// primary one, and by an explicit listing without it where it keeps it
 /// as a supplementary one (see `leavesGroup`).
 const function leftGroupBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, u: linux.User, n: String, h: core.Host): Boolean =
-  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> stageRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> leavesGroup(x, u, n)))
+  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> identityRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> leavesGroup(x, u, n)))
 
 /// Whether the account names the group `n` as its primary group or
 /// among its supplementary groups.
@@ -1723,7 +1748,7 @@ function renumberedIdentities(_stages: List<core.Stage>, _indexes: List<StageInd
 /// The refusals for a file whose owner or group a later stage
 /// renumbers.
 function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
-  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
+  positions(_indexes).filter((k) -> k > m && hostsShareIdentity(_stages[m], _stages[k]))
     .flatMap((k) -> renumberedIdentityRel(_stages, _indexes, m, i, k, p))
 
 /// The refusal for one renumbering: the number the later stage declares
@@ -1743,8 +1768,8 @@ function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageI
 function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
   let (after = identityNumberAt(_indexes[k], p))
   if (after == null) List()
-  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> renumbersKnown(_stages, _indexes, m, i, k, p, h, after) || renumbersUnknown(_stages, _indexes, m, i, k, p, h))) List()
-  else if (sharedHosts(_stages[m], _stages[k]).any((h) -> renumbersKnown(_stages, _indexes, m, i, k, p, h, after))) List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+  else if (!sharedIdentityHosts(_stages[m], _stages[k]).any((h) -> renumbersKnown(_stages, _indexes, m, i, k, p, h, after) || renumbersUnknown(_stages, _indexes, m, i, k, p, h))) List()
+  else if (sharedIdentityHosts(_stages[m], _stages[k]).any((h) -> renumbersKnown(_stages, _indexes, m, i, k, p, h, after))) List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
   else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); no stage declares the number it carried, so the renumbering may leave it with another owner: declare the file's \(p[1]) again after the renumbering")
 
 /// Whether the identity `p` is renumbered on the host `h` by the stage
@@ -1779,7 +1804,7 @@ function knownRenumbering(_stages: List<core.Stage>, _indexes: List<StageIndex>,
 /// the number its group carries then.
 function reconcilesOwnership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>, h: core.Host): Boolean =
   let (s = _indexes[m].steps[i])
-  positions(_indexes).filter((k2) -> k2 > k && stageRunsOn(_stages[k2], h)).any((k2) ->
+  positions(_indexes).filter((k2) -> k2 > k && identityRunsOn(_stages[k2], h)).any((k2) ->
     positions(_indexes[k2].steps).any((j) ->
       let (t = _indexes[k2].steps[j])
       if (s is core.File)
@@ -1805,7 +1830,7 @@ function identityNumberAt(ix: StageIndex, p: List<String>): Int? =
 /// The number the identity `p` carried on host `h` before the stage
 /// `k`: the number the last stage before it that runs on `h` declares.
 function identityNumberBeforeOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Int? =
-  let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && identityNumberAt(_indexes[n], p) != null))
+  let (declaring = positions(_indexes).filter((n) -> n < k && identityRunsOn(_stages[n], h) && identityNumberAt(_indexes[n], p) != null))
   if (declaring.isEmpty) null else identityNumberAt(_indexes[declaring.last], p)
 
 /// Whether the step declares the identity `p` with a number.
@@ -1877,8 +1902,8 @@ function fileIdentitiesAcrossStages(_stages: List<core.Stage>, _indexes: List<St
 
 /// The refusal for a file whose identity an earlier stage removed.
 function removedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
-  positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
-    .filter((n) -> sharedHosts(_stages[n], _stages[m]).any((h) -> identityGoneOn(_stages, _indexes, n, p, h)
+  positions(_indexes).filter((n) -> n < m && hostsShareIdentity(_stages[n], _stages[m]))
+    .filter((n) -> sharedIdentityHosts(_stages[n], _stages[m]).any((h) -> identityGoneOn(_stages, _indexes, n, p, h)
       && !recreatesIdentity(_stages, _indexes, n, m, p, h)))
     .map((n) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[n].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
 
@@ -1890,8 +1915,8 @@ function removedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageInde
 /// identity number — the name maps again at the end of the run, so the
 /// file's numeric owner keeps resolving to it.
 function removedIdentityRelsLater(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, p: List<String>): List<String> =
-  positions(_indexes).filter((k) -> k > m && hostsOverlap(_stages[m], _stages[k]))
-    .filter((k) -> sharedHosts(_stages[m], _stages[k]).any((h) -> identityGoneOn(_stages, _indexes, k, p, h)
+  positions(_indexes).filter((k) -> k > m && hostsShareIdentity(_stages[m], _stages[k]))
+    .filter((k) -> sharedIdentityHosts(_stages[m], _stages[k]).any((h) -> identityGoneOn(_stages, _indexes, k, p, h)
       && !restoresIdentity(_stages, _indexes, k, p, h)))
     .map((k) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) needs the \(p[1]) \(p[0]), which stage \"\(_stages[k].title)\" removes; a file cannot use a removed identity, so declare it present or drop it from the file")
 
@@ -1904,7 +1929,7 @@ function removedIdentityRelsLater(_stages: List<core.Stage>, _indexes: List<Stag
 /// no number draws another one and preserves nothing.
 function restoresIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, p: List<String>, h: core.Host): Boolean =
   let (before = identityNumberBeforeOn(_stages, _indexes, k, p, h) ?? removedNumberAt(_indexes[k], p))
-  before != null && positions(_indexes).filter((k2) -> k2 > k && stageRunsOn(_stages[k2], h))
+  before != null && positions(_indexes).filter((k2) -> k2 > k && identityRunsOn(_stages[k2], h))
     .any((k2) -> identityPresent(_indexes[k2], p) && identityNumberAt(_indexes[k2], p) == before)
 
 /// The number the removal proves the identity carried: the runtime
@@ -1936,7 +1961,7 @@ function identityGoneOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, n
   positions(_indexes[n].steps).any((j) ->
     let (s = _indexes[n].steps[j])
     providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "absent"
-      && !(p[1] == "group" && s is linux.User && privateGroupSurvives(_stages, _indexes, n, j, p[0], h)))
+      && !(p[1] == "group" && s is linux.User && identityPrivateGroupSurvives(_stages, _indexes, n, j, p[0], h)))
 
 /// Whether the step's removal of the group `group` takes it on the host
 /// `h`: an absent group step always does, while the absent account
@@ -1961,6 +1986,19 @@ function privateGroupSurvives(_stages: List<core.Stage>, _indexes: List<StageInd
       u is linux.User && u.state == "present" && u.user != group && keepsGroup(u, group)
         && !holderLeft(_stages, _indexes, m, j2, n, j, u, group, h)))
 
+/// Whether the same-name group an absent account would take with it
+/// survives the removal step `j` of stage `n` on the host `h`, for the
+/// identity-number checks: like `privateGroupSurvives`, but the stages
+/// meet on one endpoint and port whatever login user each connects as
+/// (see `sameIdentityMachine`), because the holder an account keeps
+/// there is one machine's membership.
+function identityPrivateGroupSurvives(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, j: Int, group: String, h: core.Host): Boolean =
+  positions(_indexes).filter((m) -> m <= n && identityRunsOn(_stages[m], h)).any((m) ->
+    positions(_indexes[m].steps).filter((j2) -> m < n || j2 < j).any((j2) ->
+      let (u = _indexes[m].steps[j2])
+      u is linux.User && u.state == "present" && u.user != group && keepsGroup(u, group)
+        && !identityHolderLeft(_stages, _indexes, m, j2, n, j, u, group, h)))
+
 /// Whether the holder is taken off the group between its declaration
 /// and the removal: a stage in between runs on the host `h` with a step
 /// that removes the holder or declares it present without the group —
@@ -1974,11 +2012,20 @@ const function holderLeft(_stages: List<core.Stage>, _indexes: List<StageIndex>,
     positions(_indexes[s].steps).filter((x) -> (s > m || (s == m && x > j2)) && (s < n || (s == n && x < j)))
       .any((x) -> leavesGroup(_indexes[s].steps[x], u, group)))
 
+/// Whether the holder is taken off the group between its declaration
+/// and the removal, for the identity-number checks: like `holderLeft`,
+/// but the stages meet on one endpoint and port whatever login user
+/// each connects as (see `sameIdentityMachine`).
+const function identityHolderLeft(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, j2: Int, n: Int, j: Int, u: linux.User, group: String, h: core.Host): Boolean =
+  positions(_indexes).filter((s) -> identityRunsOn(_stages[s], h)).any((s) ->
+    positions(_indexes[s].steps).filter((x) -> (s > m || (s == m && x > j2)) && (s < n || (s == n && x < j)))
+      .any((x) -> leavesGroup(_indexes[s].steps[x], u, group)))
+
 /// The identity is there again before the later stage: a stage between
 /// the removal and the file declares it present, on the same host.
 const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, p: List<String>, h: core.Host): Boolean =
   positions(_indexes).filter((k) -> k > n && k <= m)
-    .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
+    .any((k) -> identityRunsOn(_stages[k], h) && identityPresent(_indexes[k], p))
 
 /// A group an account keeps cannot go while the account is there: as
 /// the account's primary group `groupdel` refuses it — a passwd entry

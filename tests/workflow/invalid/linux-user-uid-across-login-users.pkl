@@ -1,0 +1,30 @@
+// expect: claim the uid 1500 for different accounts
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One machine keeps one identity per number whatever login user opened
+// the SSH connection: both stages reach 192.0.2.50:22, the first as
+// root and the second as deployer, so the two `useradd -u 1500` calls
+// assign from one id space and the second fails on the taken number.
+// The identity-number checks key the machine by endpoint and port, not
+// by the SSH login user.
+local webRoot = new Host { name = "web-root"; address = "192.0.2.50" }
+local webDeployer = new Host { name = "web-deployer"; address = "192.0.2.50"; user = "deployer" }
+
+stages {
+  new Stage {
+    title = "first"
+    hosts { webRoot }
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts { webDeployer }
+    steps {
+      new linux.User { user = "bob"; uid = 1500 }
+    }
+  }
+}
