@@ -1,6 +1,21 @@
 /// The ancestor walk itself: a shared-writable ancestor refuses the
 /// adoption whatever stands beneath it, and the operator's own tree
 /// accepts it — over paths the walk only inspects, never changes.
+///
+/// The repair and the preflight the tests drive: the account's number
+/// is unknown, so no intended claim can match it.
+fn managed() -> super::ManagedAccount<'static> {
+    super::ManagedAccount::unnumbered("test")
+}
+
+fn repair(home: &str, uid: u64, gid: u64, check: bool) -> Result<bool, String> {
+    super::ensure_home(home, uid, gid, check, &managed(), &mut Vec::new())
+}
+
+fn usable(home: &str) -> Result<(), String> {
+    super::home_usable(home, &managed())
+}
+
 #[test]
 fn untrusted_ancestors_refuse_the_adoption() {
     // The shared directory itself, resolved past any symlink: it
@@ -32,10 +47,8 @@ fn untrusted_ancestors_refuse_the_adoption() {
 
 /// A missing home beneath an attacker-writable ancestor: the repair
 /// would create the home there and then own it, so the parent could
-/// rename the fresh directory aside and plant its own contents at the
-/// passwd home path. The creation is refused in every mode before the
-/// account is touched — fresh evidence after the existing-home adoption
-/// fix, which left the missing leaf bypassing the ancestor trust check.
+/// rename the fresh directory aside and plant its own contents. The
+/// creation is refused in every mode before the account is touched.
 #[test]
 fn a_missing_home_beneath_an_attacker_writable_ancestor_is_refused() {
     use std::os::unix::fs::PermissionsExt;
@@ -47,11 +60,11 @@ fn a_missing_home_beneath_an_attacker_writable_ancestor_is_refused() {
     std::fs::create_dir_all(&parent).unwrap();
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
     let home = parent.join("alice");
-    let error = super::home_usable(home.to_str().unwrap())
+    let error = usable(home.to_str().unwrap())
         .expect_err("a missing home beneath a writable ancestor must be refused");
     assert!(error.contains("refusing to adopt"), "{error}");
     for check_mode in [true, false] {
-        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+        let error = repair(home.to_str().unwrap(), 0, 0, check_mode)
             .expect_err("a missing home beneath a writable ancestor must never be created");
         assert!(error.contains("refusing to adopt"), "{error}");
     }
@@ -75,19 +88,14 @@ fn a_missing_home_under_the_operators_own_tree_stays_usable() {
     let meta = std::fs::metadata(&probe).unwrap();
     let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
     std::fs::remove_file(&probe).unwrap();
-    super::home_usable(home.to_str().unwrap())
-        .expect("the operator's tree must accept the creation");
+    usable(home.to_str().unwrap()).expect("the operator's tree must accept the creation");
     assert!(
-        super::ensure_home(home.to_str().unwrap(), uid, gid, true)
-            .unwrap()
-            .0,
+        repair(home.to_str().unwrap(), uid, gid, true).unwrap(),
         "check mode reports the pending creation"
     );
     assert!(!home.exists(), "check mode creates nothing");
     assert!(
-        super::ensure_home(home.to_str().unwrap(), uid, gid, false)
-            .unwrap()
-            .0,
+        repair(home.to_str().unwrap(), uid, gid, false).unwrap(),
         "the missing home is created"
     );
     assert!(
@@ -99,9 +107,8 @@ fn a_missing_home_under_the_operators_own_tree_stays_usable() {
 
 /// Staging for the symlink-target findings: a root-owned tree holding
 /// an admitted link whose target a lower-privileged principal
-/// controls. Only the root lane can stage it — the admission rule
-/// admits only a link a non-root principal cannot rewrite — so the
-/// unprivileged lanes skip it.
+/// controls. Only the root lane can stage it, so the unprivileged
+/// lanes skip it.
 fn admitted_link_farm(scenario: &str) -> Option<std::path::PathBuf> {
     if super::operating_uid() != 0 {
         return None;
@@ -115,10 +122,8 @@ fn admitted_link_farm(scenario: &str) -> Option<std::path::PathBuf> {
 
 /// The adoption of a home pre-created beneath an admitted link's
 /// attacker-controlled target: the link stands where only the operator
-/// could have placed it, but the target leaf is another principal's
-/// with its login payload. The preflight and the repair refuse it in
-/// every mode — fresh evidence beyond the existing-home fix, which
-/// trusted only the link's own standing.
+/// could have placed it, but the target leaf is another principal's.
+/// The preflight and the repair refuse it in every mode.
 #[test]
 fn a_home_planted_beneath_an_admitted_links_target_is_refused() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -148,11 +153,11 @@ fn a_home_planted_beneath_an_admitted_links_target_is_refused() {
     std::fs::create_dir(&srv).unwrap();
     std::os::unix::fs::symlink(&evil, srv.join("homes")).unwrap();
     let claimed = srv.join("homes/alice");
-    let error = super::home_usable(claimed.to_str().unwrap())
+    let error = usable(claimed.to_str().unwrap())
         .expect_err("a home planted beneath an admitted link's target must be refused");
     assert!(error.contains("adopt"), "{error}");
     for check_mode in [true, false] {
-        let error = super::ensure_home(claimed.to_str().unwrap(), 0, 0, check_mode)
+        let error = repair(claimed.to_str().unwrap(), 0, 0, check_mode)
             .expect_err("a planted home beneath an admitted link's target must never be adopted");
         assert!(error.contains("adopt"), "{error}");
     }
@@ -170,11 +175,9 @@ fn a_home_planted_beneath_an_admitted_links_target_is_refused() {
     std::fs::remove_dir_all(&anchor).unwrap();
 }
 
-/// The full target chain of nested admitted links: a trusted link may
-/// point at a directory holding another trusted link, and that one at
-/// a farm a non-root principal controls. The ancestor check resolves
-/// and validates the complete chain — and still admits a chain that
-/// stays on the operator's own directories.
+/// The full target chain of nested admitted links: the ancestor check
+/// resolves and validates the complete chain — and still admits a
+/// chain that stays on the operator's own directories.
 #[test]
 fn a_nested_admitted_link_chain_is_resolved_and_validated() {
     let Some(anchor) = admitted_link_farm("nested") else {
@@ -225,13 +228,9 @@ fn a_symlink_loop_ends_the_walk_instead_of_the_operation() {
 #[test]
 fn the_home_walk_trusts_the_directories_a_target_leads_through() {
     // An operator-owned link points through an untrusted directory:
-    // the target's ordinary directories are attacker-controlled, so
     // the walk refuses before creating or owning anything beneath
-    // them. The adoption checks inspect the original spelling again,
-    // and the expansion must not let the target's directories through
-    // unchecked — fresh evidence beyond the planted-home fix, which
-    // trusted the link's own standing. Only the root lane can stage
-    // the admitted link, so the unprivileged lanes skip it.
+    // them. Only the root lane can stage the admitted link, so the
+    // unprivileged lanes skip it.
     if super::operating_uid() != 0 {
         return;
     }
@@ -254,14 +253,15 @@ fn the_home_walk_trusts_the_directories_a_target_leads_through() {
     std::os::unix::fs::symlink("../evil", srv.join("other")).unwrap();
     for link in ["homes", "other"] {
         let home = srv.join(link).join("alice");
+        let mut added = Vec::new();
         // The walk itself refuses the untrusted target: the walk
         // enters through the link, the way the repair's own open does.
-        let error = super::open_chain(&srv.join(link), home.to_str().unwrap(), true)
+        let error = super::open_chain(&srv.join(link), home.to_str().unwrap(), true, &mut added)
             .expect_err("the walk must refuse the untrusted symlink target");
         assert!(error.contains("adopt"), "{error}");
         // The repair refuses through the preflight the same way, and
         // nothing is created beneath the farm.
-        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, false)
+        let error = repair(home.to_str().unwrap(), 0, 0, false)
             .expect_err("the repair must refuse the untrusted symlink target");
         assert!(error.contains("adopt"), "{error}");
         assert!(
@@ -289,10 +289,9 @@ fn a_root_owned_home_under_trusted_ancestors_is_repaired() {
     let home = parent.join("alice");
     std::fs::create_dir(&home).unwrap();
     std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
-    super::home_usable(home.to_str().unwrap()).expect("the trusted home must be usable");
-    let repaired = super::ensure_home(home.to_str().unwrap(), 65534, 65534, false)
-        .expect("the trusted home must be adopted")
-        .0;
+    usable(home.to_str().unwrap()).expect("the trusted home must be usable");
+    let repaired = repair(home.to_str().unwrap(), 65534, 65534, false)
+        .expect("the trusted home must be adopted");
     assert!(repaired, "the ownership moves to the account");
     let meta = std::fs::metadata(&home).unwrap();
     assert_eq!(
@@ -322,11 +321,11 @@ fn an_operator_owned_leaf_under_a_writable_ancestor_is_refused() {
     std::fs::create_dir(&home).unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(home.join(".sentinel"), b"operator\n").unwrap();
-    let error = super::home_usable(home.to_str().unwrap())
+    let error = usable(home.to_str().unwrap())
         .expect_err("an operator leaf under a writable ancestor must be refused");
     assert!(error.contains("adopt"), "{error}");
     for check_mode in [true, false] {
-        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+        let error = repair(home.to_str().unwrap(), 0, 0, check_mode)
             .expect_err("the repair must never adopt through a writable ancestor");
         assert!(error.contains("adopt"), "{error}");
     }
@@ -356,7 +355,7 @@ fn a_replanted_operator_leaf_under_a_writable_ancestor_is_refused() {
     std::fs::create_dir(&home).unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
-    super::home_usable(home.to_str().unwrap())
+    usable(home.to_str().unwrap())
         .expect_err("the staged leaf under a writable ancestor must be refused");
     std::fs::rename(&home, parent.join("alice-orig")).unwrap();
     std::fs::create_dir(&home).unwrap();
@@ -371,7 +370,7 @@ fn a_replanted_operator_leaf_under_a_writable_ancestor_is_refused() {
     }
     let planted = std::fs::metadata(&home).unwrap();
     for check_mode in [true, false] {
-        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+        let error = repair(home.to_str().unwrap(), 0, 0, check_mode)
             .expect_err("the replanted home must never be adopted");
         assert!(error.contains("adopt"), "{error}");
     }
