@@ -158,42 +158,79 @@ pub(super) fn preflight_persistence(file: &str, content: &[u8], probe: bool) -> 
         .filter(|parent| parent.is_dir())
         .ok_or_else(|| format!("sysctl: cannot persist {file}: its directory does not exist"))?;
     if probe {
-        let probe = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&probe)
-            .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-        let result = match &live {
-            Some(live) => {
-                // The rehearsal's own names retire the link-aside pair:
-                // no step below renames the live file, so no step can
-                // strand the rewritten bytes at the live path.
-                let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
-                let second = dir.join(format!(".ruxel-sysctl-rehearse-b-{}", std::process::id()));
-                // A scratch name of a dead process reuses no live pid,
-                // so taking the names collides with no live rehearsal.
-                let _ = std::fs::remove_file(&first);
-                let _ = std::fs::remove_file(&second);
-                refuse_unreplaceable(path, file, dir)?;
-                let outcome = rehearse_replacement(file, live, &first, &second, content);
-                let _ = std::fs::remove_file(&first);
-                let _ = std::fs::remove_file(&second);
-                outcome
-            }
-            None => {
-                // The target is absent: there is no live file to rehearse
-                // against, so the probe itself carries the exact bytes the
-                // publish will write — a quota that fits an empty file but
-                // not the new content refuses here, before `sysctl -w`.
-                std::fs::write(&probe, content)
-                    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))
-            }
-        };
-        let _ = std::fs::remove_file(&probe);
-        result?;
+        // The probe carries its scratch name and is removed whatever the
+        // rehearsal reports: a refusal partway through must not strand it
+        // beside the live file.
+        let scratch = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
+        let outcome = stage_probe(file, &scratch, path, dir, live.as_ref(), content);
+        let _ = std::fs::remove_file(&scratch);
+        outcome?;
     }
     Ok(())
+}
+
+/// The publishability probe under its scratch name: a single retained
+/// handle, opened exclusively with no mode but the owner's, never
+/// reopened by name. Where the target is absent the handle itself
+/// carries the exact bytes the publish writes — a quota that fits an
+/// empty file but not the new content refuses here, before `sysctl -w`
+/// — and where the target lives the rehearsal stages the exact
+/// rewritten bytes under its own scratch names and renames one over
+/// the other. The caller removes the scratch name whatever this
+/// reports, so no refusal strands it. A refusal names the persistence
+/// file and the operating system's error, never the staged bytes.
+fn stage_probe(
+    file: &str,
+    scratch: &std::path::Path,
+    path: &std::path::Path,
+    dir: &std::path::Path,
+    live: Option<&std::fs::Metadata>,
+    content: &[u8],
+) -> Result<(), String> {
+    use std::io::Write;
+    // The handle stays open across the whole rehearsal: its scratch
+    // name is reserved, so no swap of the path between the open and
+    // the write can redirect the staged bytes.
+    let mut staged = open_probe(file, scratch)?;
+    if let Some(live) = live {
+        // The rehearsal's own names retire the link-aside pair:
+        // no step below renames the live file, so no step can
+        // strand the rewritten bytes at the live path.
+        let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
+        let second = dir.join(format!(".ruxel-sysctl-rehearse-b-{}", std::process::id()));
+        // A scratch name of a dead process reuses no live pid,
+        // so taking the names collides with no live rehearsal.
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        refuse_unreplaceable(path, file, dir)?;
+        let outcome = rehearse_replacement(file, live, &first, &second, content);
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        outcome
+    } else {
+        // The target is absent: there is no live file to rehearse
+        // against, so the handle carries the exact bytes the
+        // publish will write — a quota that fits an empty file but
+        // not the new content refuses here, before `sysctl -w`.
+        staged
+            .write_all(content)
+            .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+        Ok(())
+    }
+}
+
+/// The probe's own handle: one exclusive open carrying no mode but the
+/// owner's — the staged bytes are never world-readable on their way to
+/// the publish — and the publish never reopens the name, so the handle
+/// the rehearsal holds is the file the bytes reach.
+fn open_probe(file: &str, scratch: &std::path::Path) -> Result<std::fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(scratch)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))
 }
 
 /// Refuses a live file the atomic publish cannot replace, without
@@ -603,3 +640,138 @@ pub(crate) fn entry_key(text: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod probe_handle_tests {
+    //! The probe's single retained handle: opened once, exclusively,
+    //! with no mode but the owner's — never reopened by name — and
+    //! removed whatever the rehearsal reports, with no staged bytes in
+    //! the refusal.
+
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A scratch directory of its own: the rehearsal must leave nothing
+    /// behind in it, so the directory itself is the assertion surface.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-sysctl-probe-{name}-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::create_dir_all(&dir).expect("operation succeeds");
+        dir
+    }
+
+    /// Makes `path` append-only and whether this host could: the owner
+    /// sets the user append-only flag itself, so no privilege is needed
+    /// where the platform offers one.
+    fn lock_append(path: &std::path::Path) -> bool {
+        let (program, argument) = if cfg!(target_os = "linux") {
+            ("chattr", "+a")
+        } else {
+            ("chflags", "uappend")
+        };
+        std::process::Command::new(program)
+            .arg(argument)
+            .arg(path)
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    /// Puts the file back into the state `lock_append` took it out of.
+    fn unlock_append(path: &std::path::Path) {
+        let (program, argument) = if cfg!(target_os = "linux") {
+            ("chattr", "-a")
+        } else {
+            ("chflags", "nouappend")
+        };
+        let _ = std::process::Command::new(program)
+            .arg(argument)
+            .arg(path)
+            .status();
+    }
+
+    #[test]
+    fn the_probe_opens_owner_only_and_reserves_its_name() {
+        // One exclusive open with no mode but the owner's: the staged
+        // bytes are never world-readable on their way to the publish.
+        // The retained handle reserves the name — no second open, and
+        // no reopen by the stager, can take it.
+        let dir = scratch("mode");
+        let probe = dir.join("probe");
+        let handle = super::open_probe("net.test", &probe).expect("the probe must open");
+        let mode = std::fs::metadata(&probe)
+            .expect("operation succeeds")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "the probe must open owner-only: {mode:o}");
+        assert!(
+            super::open_probe("net.test", &probe).is_err(),
+            "the retained handle reserves the name"
+        );
+        drop(handle);
+        std::fs::remove_file(&probe).expect("operation succeeds");
+        std::fs::remove_dir(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn a_locked_files_refusal_leaves_no_probe_and_no_secret_in_the_error() {
+        // The append-only flag refuses the rehearsal at the read-only
+        // lock probe. The refusal travels the early-return path — the
+        // one that stranded the dropped handle's probe — so the scratch
+        // name must be gone, the live file untouched, and the staged
+        // bytes nowhere in the error.
+        let dir = scratch("locked");
+        let path = dir.join("x.conf");
+        std::fs::write(&path, "net.test=2\n").expect("operation succeeds");
+        if !lock_append(&path) {
+            unlock_append(&path);
+            std::fs::remove_dir_all(&dir).expect("operation succeeds");
+            return;
+        }
+        let text = path.to_str().expect("path is text").to_owned();
+        let content = b"net.test=1\n# probe-sekret-9f31\n".to_vec();
+        let error = super::preflight_persistence(&text, &content, true)
+            .expect_err("a locked file must refuse");
+        unlock_append(&path);
+        assert!(error.contains("cannot persist"), "{error}");
+        assert!(
+            !error.contains("sekret"),
+            "the refusal must not carry the staged bytes: {error}"
+        );
+        assert!(
+            !dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()))
+                .exists(),
+            "a refused rehearsal must leave no probe behind"
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("operation succeeds"),
+            b"net.test=2\n",
+            "a refused rehearsal must leave the live bytes alone"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn the_absent_target_stages_through_the_handle_and_leaves_nothing() {
+        // The target is absent, so the retained handle carries the exact
+        // bytes the publish would write; the rehearsal still publishes
+        // nothing and leaves no probe behind.
+        let dir = scratch("missing");
+        let path = dir.join("x.conf");
+        let text = path.to_str().expect("path is text").to_owned();
+        super::preflight_persistence(&text, b"net.test=1\n", true)
+            .expect("a writable directory must stage the new file's bytes");
+        assert!(
+            !path.exists(),
+            "the rehearsal must not publish the missing target"
+        );
+        assert!(
+            std::fs::read_dir(&dir)
+                .expect("operation succeeds")
+                .next()
+                .is_none(),
+            "the rehearsal must leave no probe behind"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+}
