@@ -7,6 +7,7 @@ use super::*;
 mod changes;
 mod collisions;
 mod creation;
+mod frames;
 mod group_plan;
 mod guards;
 mod holders;

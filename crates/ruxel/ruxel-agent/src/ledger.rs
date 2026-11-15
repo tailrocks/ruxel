@@ -308,13 +308,11 @@ impl Ledger {
 
     /// The sysctl entries ruxel manages on this host: every file a
     /// successful sysctl task wrote, with the key and the value ruxel
-    /// declared there. A later-loading file among them holds a declared
-    /// managed value, not an unmanaged boot override. The records are
-    /// the current plan's to report: the plan's end expires every record
-    /// it never encountered (see `flush`), so a task a previous plan ran
-    /// and this one dropped leaves no declaration behind. The live run
-    /// reads the plan's declarations instead (see `sysctl_plan_declaration`).
-    #[cfg(test)]
+    /// declared there. The plan's preflight reads these only behind
+    /// its own declarations (see `sysctl_preflight_managed`): a
+    /// dropped task's record authorizes its shadow for exactly one
+    /// run — the plan's end expires every record it never encountered
+    /// (see `flush`).
     pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
         #[cfg(test)]
         {
