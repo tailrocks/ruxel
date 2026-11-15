@@ -231,12 +231,14 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     // declared one.
     if state == "present" {
         note_planned_group(name, gid.and_then(|want| u32::try_from(want).ok()));
-        // Every creation the allocator numbers draws a number no probe
-        // has seen yet: the plan's record of the moved number is what
-        // tells an ownership cache it is stale — for the allocator's
-        // numbers as much as for the recreated ones below. A creation
-        // that states no number is one.
-        if group_created && gid.is_none() {
+        // Every creation draws a number no probe has seen yet — the
+        // allocator's where the step states none, the declared one
+        // where it does: the plan's record of the moved number is what
+        // tells an ownership cache it is stale — for the stated numbers
+        // as much as for the allocator's, and for the recreated ones
+        // below. A later declaration compares against the plan's own
+        // record and marks nothing.
+        if group_created {
             plan::note_changed_group(name);
         }
         // The plan removed the group and declares it present again:
@@ -1070,16 +1072,17 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // otherwise refuse the name the plan is about to create — and what
     // a later removal verifies its home against.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
-    // Every creation the allocator numbers draws a number no probe has
-    // seen yet: an account the host deleted outside the plan and
-    // creates again keeps no number, so a cached file the account owned
-    // passes its old numeric probe and stays with whoever claimed the
-    // freed number. The plan's record of the moved number is what tells
-    // the cache it is stale — for the allocator's numbers as much as
-    // for the recreated ones below. A creation the plan records without
-    // a number is one — while a later declaration compares against the
-    // plan's own record and marks nothing.
-    if created_account && uid.is_none() {
+    // Every creation draws a number no probe has seen yet — the
+    // allocator's where the step states none, the declared one where
+    // it does: an account the host deleted outside the plan and
+    // creates again keeps no number, so a cached file the account
+    // owned passes its old numeric probe and stays with whoever
+    // claimed the freed number. The plan's record of the moved number
+    // is what tells the cache it is stale — for the stated numbers as
+    // much as for the allocator's, and for the recreated ones below.
+    // A later declaration compares against the plan's own record and
+    // marks nothing.
+    if created_account {
         plan::note_changed_user(name);
     }
     // The plan removed the account and declares it present again: the
