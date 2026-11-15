@@ -123,3 +123,69 @@ fn a_plan_created_member_keeps_the_private_group() {
         "the group survives the removal while the plan's member holds it"
     );
 }
+
+#[test]
+fn usergroups_enab_decides_the_check_mode_prediction() {
+    // `USERGROUPS_ENAB=yes` hosts delete the empty same-name group with
+    // the account; `no` hosts retain it. The canned policy drives the
+    // check-mode prediction for both, and a missing or commented line
+    // fails closed — the group is predicted retained.
+    assert!(
+        super::super::holders::usergroups_enabled_from("USERGROUPS_ENAB yes\n"),
+        "yes enables the private-group deletion"
+    );
+    assert!(
+        super::super::holders::usergroups_enabled_from("USERGROUPS_ENAB YES\n"),
+        "the value compares case-insensitively"
+    );
+    assert!(
+        !super::super::holders::usergroups_enabled_from("USERGROUPS_ENAB no\n"),
+        "no retains the empty group"
+    );
+    assert!(
+        !super::super::holders::usergroups_enabled_from("SYS_GID_MAX 999\n"),
+        "an absent line fails closed"
+    );
+    assert!(
+        !super::super::holders::usergroups_enabled_from("#USERGROUPS_ENAB yes\n"),
+        "a commented line is not policy"
+    );
+    assert!(
+        super::super::holders::usergroups_enabled_from("USERGROUPS_ENAB yes # trailing\n"),
+        "a trailing comment does not disable the line"
+    );
+    assert!(
+        super::super::holders::usergroups_enabled_from("USERGROUPS_ENAB no\nUSERGROUPS_ENAB yes\n"),
+        "the last uncommented line wins"
+    );
+    assert!(
+        !super::super::holders::usergroups_enabled_from(
+            "USERGROUPS_ENAB yes\nUSERGROUPS_ENAB no\n"
+        ),
+        "the last uncommented line wins either way"
+    );
+}
+
+#[test]
+fn the_check_mode_prediction_consults_the_host_policy() {
+    // An empty same-name group disappears with the account only where
+    // the host policy deletes one: `USERGROUPS_ENAB=no` (or an
+    // unreadable policy) predicts the group retained, so a later
+    // `Group state=absent` still plans the removal the apply runs.
+    assert!(
+        super::super::holders::check_predicts_private_group_removal(true, true),
+        "an empty group on an enabled host is predicted gone"
+    );
+    assert!(
+        !super::super::holders::check_predicts_private_group_removal(true, false),
+        "an empty group on a disabled host is predicted retained"
+    );
+    assert!(
+        !super::super::holders::check_predicts_private_group_removal(false, true),
+        "a held group survives whatever the policy says"
+    );
+    assert!(
+        !super::super::holders::usergroups_enabled_from(""),
+        "an unreadable policy fails closed through the empty content"
+    );
+}

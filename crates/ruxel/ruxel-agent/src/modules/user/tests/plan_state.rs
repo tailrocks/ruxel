@@ -213,11 +213,13 @@ fn a_rollback_reports_a_reused_group_userdel_took() {
 #[test]
 fn an_account_removal_records_the_private_group_it_takes_with_it() {
     // The account's private group is the group the account holds as
-    // its primary group, and nothing else holds it: `userdel` deletes
-    // the empty same-name group with the account, so the plan's
-    // record says so — a later step that declares the group absent
-    // reports the no-op the apply performs, the group being gone
-    // before that step runs.
+    // its primary group, and nothing else holds it: on a host that
+    // deletes one (`USERGROUPS_ENAB`) `userdel` deletes the empty
+    // same-name group with the account, so the plan's record says so —
+    // a later step that declares the group absent reports the no-op
+    // the apply performs, the group being gone before that step runs.
+    // On a host that keeps the empty group the plan records no removal
+    // for it, so the later step reports the removal the apply runs.
     let group = live_empty_group().expect("a live group nothing holds");
     let ctx = check_context();
     // The plan's account: the group is the private group of the
@@ -232,11 +234,19 @@ fn an_account_removal_records_the_private_group_it_takes_with_it() {
     );
     let later = super::super::group(&json!({"name": group, "state": "absent"}), &ctx)
         .expect("the later group step must plan");
-    assert_eq!(
-        later.get("changed"),
-        Some(&json!(false)),
-        "the group is gone with the account: {later}"
-    );
+    if super::super::holders::usergroups_enabled() {
+        assert_eq!(
+            later.get("changed"),
+            Some(&json!(false)),
+            "the group is gone with the account: {later}"
+        );
+    } else {
+        assert_eq!(
+            later.get("changed"),
+            Some(&json!(true)),
+            "the host keeps the empty group, so the later removal still plans: {later}"
+        );
+    }
 }
 
 #[test]

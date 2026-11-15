@@ -420,17 +420,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // later step resolves the live entry instead of
             // attempting `groupadd` on a group that exists. Check
             // mode runs no `userdel`, so the pre-removal emptiness
-            // is the prediction the plan records; apply re-inspects
-            // the group database after the removal really ran.
-            let post_removal = if ctx.check_mode {
-                None
+            // plus the host policy is the prediction the plan records;
+            // an unreadable policy fails closed and predicts the group
+            // retained. Apply re-inspects the group database after the
+            // removal really ran, so it needs no policy consultation.
+            let emptied = private_group_emptied(name, private_gid)?;
+            let gone = if ctx.check_mode {
+                holders::check_predicts_private_group_removal(
+                    emptied,
+                    holders::usergroups_enabled(),
+                )
             } else {
-                group_entry(name)?
+                private_group_gone(emptied, group_entry(name)?.as_ref())
             };
-            if private_group_gone(
-                private_group_emptied(name, private_gid)?,
-                post_removal.as_ref(),
-            ) {
+            if gone {
                 note_removed_group(name);
                 forget_planned_group(name);
             }
