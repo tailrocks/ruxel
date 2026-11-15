@@ -393,3 +393,7 @@ fn final_assignment<'a>(content: &'a [u8], key: &str, named: &[String]) -> Optio
 #[cfg(test)]
 #[path = "boot/tests.rs"]
 mod selection_tests;
+
+#[cfg(test)]
+#[path = "boot/scratch.rs"]
+mod scratch;
