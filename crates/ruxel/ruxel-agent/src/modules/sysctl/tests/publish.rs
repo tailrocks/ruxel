@@ -5,6 +5,7 @@
 use super::super::boot;
 
 use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_write() {
@@ -34,19 +35,18 @@ fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_writ
 
 #[test]
 fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
-    // The probe is a write of its own (`.ruxel-sysctl-preflight-<pid>` in
-    // the file's directory): an idempotent no-op on a target that is
-    // never published to must not fail it — the file already holds the
-    // entry, so nothing is written even where the directory refuses
-    // writes. Where the file DOES need replacement the probe still runs
-    // before anything is published.
+    // The probe is a write of its own in the file's directory: an
+    // idempotent no-op on a target that is never published to must not
+    // fail it — the file already holds the entry, so nothing is written
+    // even where the directory refuses writes. Where the file DOES need
+    // replacement the probe still runs before anything is published. The
+    // directory refuses writes outright: the probe name is unique per
+    // attempt, so squatting one predictable name cannot block it.
     let dir = std::env::temp_dir().join(format!("ruxel-sysctl-probe-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("x.conf");
-    // A directory where the probe file would go: `create_new` fails on it
-    // whatever the user may write, so the probe is loud.
-    let blocker = dir.join(format!(".ruxel-sysctl-preflight-{}", std::process::id()));
-    std::fs::create_dir_all(&blocker).unwrap();
+    std::fs::write(&path, "net.test=1\n").unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
     let ctx = super::super::ExecContext {
         check_mode: false,
         diff_mode: false,
@@ -78,8 +78,8 @@ fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
         "net.test=2\n",
         "a refused publish must leave the file untouched"
     );
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::remove_file(&path).unwrap();
-    std::fs::remove_dir(&blocker).unwrap();
     std::fs::remove_dir(&dir).unwrap();
 }
 
