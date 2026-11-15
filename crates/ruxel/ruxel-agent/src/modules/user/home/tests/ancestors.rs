@@ -217,3 +217,53 @@ fn a_symlink_loop_ends_the_walk_instead_of_the_operation() {
     assert!(error.contains("too many symlinks"), "{error}");
     std::fs::remove_dir_all(&anchor).unwrap();
 }
+
+#[test]
+fn the_home_walk_trusts_the_directories_a_target_leads_through() {
+    // An operator-owned link points through an untrusted directory:
+    // the target's ordinary directories are attacker-controlled, so
+    // the walk refuses before creating or owning anything beneath
+    // them. The adoption checks inspect the original spelling again,
+    // and the expansion must not let the target's directories through
+    // unchecked — fresh evidence beyond the planted-home fix, which
+    // trusted the link's own standing. Only the root lane can stage
+    // the admitted link, so the unprivileged lanes skip it.
+    if super::operating_uid() != 0 {
+        return;
+    }
+    let anchor =
+        std::path::Path::new("/").join(format!("ruxel-walk-target-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    let evil = anchor.join("evil");
+    std::fs::create_dir_all(&evil).unwrap();
+    let stranger = 65534u32;
+    rustix::fs::chown(
+        &evil,
+        Some(rustix::fs::Uid::from_raw(stranger)),
+        Some(rustix::fs::Gid::from_raw(stranger)),
+    )
+    .unwrap();
+    let srv = anchor.join("srv");
+    std::fs::create_dir_all(&srv).unwrap();
+    // The absolute and the relative shape of the same farm.
+    std::os::unix::fs::symlink(&evil, srv.join("homes")).unwrap();
+    std::os::unix::fs::symlink("../evil", srv.join("other")).unwrap();
+    for link in ["homes", "other"] {
+        let home = srv.join(link).join("alice");
+        // The walk itself refuses the untrusted target: the walk
+        // enters through the link, the way the repair's own open does.
+        let error = super::open_chain(&srv.join(link), home.to_str().unwrap(), true)
+            .expect_err("the walk must refuse the untrusted symlink target");
+        assert!(error.contains("adopt"), "{error}");
+        // The repair refuses through the preflight the same way, and
+        // nothing is created beneath the farm.
+        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, false)
+            .expect_err("the repair must refuse the untrusted symlink target");
+        assert!(error.contains("adopt"), "{error}");
+        assert!(
+            !evil.join("alice").exists(),
+            "the refused home is never created beneath the farm"
+        );
+    }
+    std::fs::remove_dir_all(&anchor).unwrap();
+}
