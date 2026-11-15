@@ -70,7 +70,7 @@ fn a_shadowed_copy_of_a_name_is_not_part_of_the_boot_surface() {
         (etc.to_str().expect("path is text"), 1),
         (usr.to_str().expect("path is text"), 0),
     ];
-    let files = boot::system_files_in(&dirs);
+    let files = boot::system_files_in(&dirs).expect("the scratch directories read");
     assert_eq!(files.len(), 2, "one copy of the name, and the legacy file");
     assert!(
         files
@@ -126,7 +126,7 @@ fn a_file_whose_name_is_not_text_is_in_the_boot_surface() {
     std::fs::write(&path, "net.ipv4.ip_forward=0\n").expect("operation succeeds");
     let text = dir.to_str().expect("the scratch path is text").to_owned();
     let dirs = [(text.as_str(), 4u8)];
-    let files = boot::system_files_in(&dirs);
+    let files = boot::system_files_in(&dirs).expect("the scratch directories read");
     assert!(files.contains(&path), "{files:?}");
     // and the fingerprint over that surface is not the empty one
     let without = boot::fingerprint_of(&[]).expect("an empty surface fingerprints");
@@ -225,6 +225,79 @@ fn a_wildcard_stays_within_its_path_component() {
 }
 
 #[test]
+fn a_fifo_entry_never_blocks_the_fingerprint() {
+    // A selected `*.conf` entry may be a FIFO with no writer: opening
+    // it blocks indefinitely, so the fingerprint classifies entries
+    // the way the override probe does and never opens one. The FIFO
+    // holds the name but contributes no assignments — the surface
+    // over it is the empty surface's, and the boot value stands.
+    let scratch = Scratch::new("fifo");
+    let dir = scratch.dir("etc");
+    let fifo = dir.join("99-fifo.conf");
+    if !std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        // No FIFO support on this host: nothing to prove.
+        return;
+    }
+    assert_eq!(
+        boot::boot_bytes(&fifo).expect("the surface classifies"),
+        None,
+        "a fifo loads as nothing"
+    );
+    let files = vec![fifo.clone()];
+    assert_eq!(
+        boot::fingerprint_of(&files).expect("a fifo entry must not refuse the surface"),
+        boot::fingerprint_of(&[]).expect("an empty surface fingerprints"),
+        "a fifo contributes no assignments"
+    );
+    let host = vec![(fifo, Vec::new())];
+    assert_eq!(
+        boot::boot_override(
+            "/etc/sysctl.d/90-ruxel.conf",
+            "net.ipv4.ip_forward",
+            "0",
+            &host,
+            &[],
+        ),
+        None,
+        "the fifo assignment must not hand the boot value away"
+    );
+}
+
+#[test]
+fn an_unreadable_boot_directory_refuses_instead_of_reading_as_empty() {
+    // `read_dir` fails where the directory cannot be read — a path
+    // that is a file (`ENOTDIR`), permissions, I/O — and only a
+    // missing directory reads as empty: the boot loader reads the
+    // directory while the agent cannot, so its later-loading
+    // assignments are unknown and the surface refuses instead of
+    // hiding them from the override preflight and the fingerprint.
+    let scratch = Scratch::new("unreadable");
+    // A missing directory holds no names and reads as empty.
+    let missing = scratch.0.join("missing");
+    let text = missing.to_str().expect("path is text").to_owned();
+    let dirs = [(text.as_str(), 1u8)];
+    let files = boot::system_files_in(&dirs).expect("a missing directory reads as empty");
+    assert!(
+        files.iter().all(|file| !file.starts_with(&scratch.0)),
+        "a missing directory contributes no names: {files:?}"
+    );
+    // A path that cannot be listed refuses the surface.
+    let blocker = scratch.0.join("blocker");
+    std::fs::write(&blocker, "not a directory\n").expect("operation succeeds");
+    let text = blocker.to_str().expect("path is text").to_owned();
+    let dirs = [(text.as_str(), 1u8)];
+    let error = boot::system_files_in(&dirs).expect_err("an unreadable directory must refuse");
+    assert!(
+        error.contains("cannot read the boot directory"),
+        "the refusal must name the directory: {error}"
+    );
+}
+
+#[test]
 fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
     // sysctl.d(5) documents the same-name higher-precedence symlink to
     // `/dev/null` as the way to disable a vendor file: the mask holds
@@ -242,7 +315,7 @@ fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
         (etc.to_str().expect("path is text"), 1),
         (usr.to_str().expect("path is text"), 0),
     ];
-    let files = boot::system_files_in(&dirs);
+    let files = boot::system_files_in(&dirs).expect("the scratch directories read");
     assert!(
         files.iter().any(|file| file == &mask),
         "the mask holds the name: {files:?}"
@@ -274,7 +347,7 @@ fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
     // fingerprint the ledger weighs on its cached results.
     let masked = boot::fingerprint_of(&files).expect("fingerprint");
     std::fs::remove_file(&mask).expect("the mask is removable");
-    let files = boot::system_files_in(&dirs);
+    let files = boot::system_files_in(&dirs).expect("the scratch directories read");
     assert!(
         files.iter().any(|file| file == &vendor),
         "without the mask the vendor copy loads: {files:?}"
