@@ -11,6 +11,7 @@ use home::ensure_home;
 use home::{claimed_home, home_gid, home_usable, reconcile_created_home};
 use shell::shell_allowed;
 
+mod adoption;
 mod apply;
 mod entries;
 mod home;
@@ -207,6 +208,7 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
 }
 
 mod guards;
+mod holders;
 pub(super) use entries::{Requested, planned_group, planned_user};
 use guards::{
     gid_holder_in_use, group_change_allowed, group_provided, group_removal_allowed, planned_gid,
