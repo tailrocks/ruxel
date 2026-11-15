@@ -271,3 +271,125 @@ fn the_home_walk_trusts_the_directories_a_target_leads_through() {
     }
     std::fs::remove_dir_all(&anchor).unwrap();
 }
+
+#[test]
+fn a_root_owned_home_under_trusted_ancestors_is_repaired() {
+    // The finding's pass case: the operator's own leaf under trusted
+    // ancestors is adopted with its contents. Only the root lane stages
+    // root ownership, so the unprivileged lanes skip it.
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    if super::operating_uid() != 0 {
+        return;
+    }
+    let parent =
+        std::path::Path::new("/").join(format!("ruxel-adopt-trust-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&parent);
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let home = parent.join("alice");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
+    super::home_usable(home.to_str().unwrap()).expect("the trusted home must be usable");
+    let repaired = super::ensure_home(home.to_str().unwrap(), 65534, 65534, false)
+        .expect("the trusted home must be adopted")
+        .0;
+    assert!(repaired, "the ownership moves to the account");
+    let meta = std::fs::metadata(&home).unwrap();
+    assert_eq!(
+        (meta.uid(), meta.gid()),
+        (65534, 65534),
+        "the directory belongs to the account now"
+    );
+    std::fs::remove_dir_all(&parent).unwrap();
+}
+
+#[test]
+fn an_operator_owned_leaf_under_a_writable_ancestor_is_refused() {
+    // The finding's refuse case: the operator's own closed leaf under
+    // a writable ancestor — a non-root principal may rename it aside
+    // and plant a replacement there.
+    use std::os::unix::fs::PermissionsExt;
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-adopt-untrusted-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    std::fs::set_permissions(&anchor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let parent = anchor.join("shared");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let home = parent.join("alice");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(home.join(".sentinel"), b"operator\n").unwrap();
+    let error = super::home_usable(home.to_str().unwrap())
+        .expect_err("an operator leaf under a writable ancestor must be refused");
+    assert!(error.contains("adopt"), "{error}");
+    for check_mode in [true, false] {
+        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+            .expect_err("the repair must never adopt through a writable ancestor");
+        assert!(error.contains("adopt"), "{error}");
+    }
+    assert_eq!(
+        std::fs::read(home.join(".sentinel")).unwrap(),
+        b"operator\n",
+        "the refused leaf keeps its contents"
+    );
+    std::fs::remove_dir_all(&anchor).unwrap();
+}
+
+#[test]
+fn a_replanted_operator_leaf_under_a_writable_ancestor_is_refused() {
+    // The finding end to end: the staged leaf is renamed aside and
+    // replanted under a writable ancestor; both inodes are refused.
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let anchor = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-adopt-replant-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&anchor);
+    std::fs::create_dir(&anchor).unwrap();
+    std::fs::set_permissions(&anchor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let parent = anchor.join("shared");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let home = parent.join("alice");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
+    super::home_usable(home.to_str().unwrap())
+        .expect_err("the staged leaf under a writable ancestor must be refused");
+    std::fs::rename(&home, parent.join("alice-orig")).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(home.join(".profile"), b"evil\n").unwrap();
+    if super::operating_uid() == 0 {
+        rustix::fs::chown(
+            &home,
+            Some(rustix::fs::Uid::from_raw(65534)),
+            Some(rustix::fs::Gid::from_raw(65534)),
+        )
+        .unwrap();
+    }
+    let planted = std::fs::metadata(&home).unwrap();
+    for check_mode in [true, false] {
+        let error = super::ensure_home(home.to_str().unwrap(), 0, 0, check_mode)
+            .expect_err("the replanted home must never be adopted");
+        assert!(error.contains("adopt"), "{error}");
+    }
+    assert_eq!(
+        std::fs::read(parent.join("alice-orig/.profile")).unwrap(),
+        b"operator skeleton\n",
+        "the staged leaf survives aside"
+    );
+    assert_eq!(
+        std::fs::read(home.join(".profile")).unwrap(),
+        b"evil\n",
+        "the plant is preserved, never handed over"
+    );
+    let after = std::fs::metadata(&home).unwrap();
+    assert_eq!(
+        (after.uid(), after.gid()),
+        (planted.uid(), planted.gid()),
+        "the refused plant keeps its owner"
+    );
+    std::fs::remove_dir_all(&anchor).unwrap();
+}
