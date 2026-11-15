@@ -1,0 +1,23 @@
+// A slash-first name keeps the dots inside its components: procps
+// follows the FIRST separator, so `net/ipv4/conf/enp3s0.200/forwarding`
+// addresses the `enp3s0.200` component while the dotted spelling
+// `net.ipv4.conf.enp3s0.200.forwarding` addresses `enp3s0/200` — two
+// parameters, not one alias pair, so asking different values of the two
+// spellings in one stage is no conflict. (The dot-first mixed spelling
+// of the same path, `net.ipv4.conf.enp3s0/200.forwarding`, is one entry
+// with the slash form instead — see the agent's `sysctl_key` — but the
+// step names admit no mixed notation, so only boot files carry it.)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net/ipv4/conf/enp3s0.200/forwarding"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net.ipv4.conf.enp3s0.200.forwarding"; value = "0"; path = "/etc/sysctl.d/10-b.conf" }
+    }
+  }
+}

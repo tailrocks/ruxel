@@ -75,6 +75,33 @@ fn an_alias_spelling_is_the_same_entry() {
 }
 
 #[test]
+fn a_dot_first_mixed_spelling_is_the_same_entry() {
+    // procps follows the FIRST separator: a dot-first mixed spelling
+    // (`net.ipv4.conf.enp3s0/200.forwarding`) swaps every separator and
+    // addresses the slash form's path, so the file's slash-form line is
+    // the same entry and is rewritten to the managed spelling — never
+    // left beside it as a second assignment of one key.
+    assert_eq!(
+        super::super::rewrite_file(
+            b"net/ipv4/conf/enp3s0.200/forwarding=1\n",
+            "net.ipv4.conf.enp3s0/200.forwarding",
+            "0"
+        ),
+        (b"net.ipv4.conf.enp3s0/200.forwarding=0\n".to_vec(), true)
+    );
+    // The other way round: the file's dot-first mixed line is the
+    // slash-form entry too.
+    assert_eq!(
+        super::super::rewrite_file(
+            b"net.ipv4.conf.enp3s0/200.forwarding=1\n",
+            "net/ipv4/conf/enp3s0.200/forwarding",
+            "0"
+        ),
+        (b"net/ipv4/conf/enp3s0.200/forwarding=0\n".to_vec(), true)
+    );
+}
+
+#[test]
 fn a_dash_prefixed_entry_is_the_same_entry() {
     // procps reads a leading '-' as the ignore-failure marker: the
     // assignment happens either way, so the line is the entry itself. A
