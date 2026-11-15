@@ -1,7 +1,7 @@
 //! The plan's own state decides what a task changes: the presence of
 //! an account and of a group the plan has taken away, the passwd
-//! fields an earlier task of the plan has moved, and the private
-//! group a rollback must restore.
+//! fields an earlier task of the plan has moved, and the pre-existing
+//! group a rollback must leave in place.
 
 use super::super::*;
 use std::os::unix::fs::MetadataExt;
@@ -99,80 +99,114 @@ fn live_empty_group() -> Option<String> {
 }
 
 #[test]
-fn a_rollback_restores_the_private_group_it_reused() {
-    // The account the step created is taken back with `userdel`, and
-    // the deletion takes the account's private group with it on a
-    // host that deletes it (`USERGROUPS_ENAB`): a group the step
-    // reused — `useradd -g <name>` selects the host's group instead of
-    // creating one — is the host's, so the rollback restores it with
-    // the number it held.
+fn a_rollback_moves_the_doomed_account_off_a_reused_group() {
+    // A pre-existing same-name group the step reused predates the
+    // step — the host's own, or an earlier plan step's — and is never
+    // the rollback's to delete: `userdel` removes the same-name group
+    // only where it is the account's primary group, so the rollback
+    // moves the doomed account off it first, deletes the account, and
+    // verifies the group survived. Nothing recreates the group: a
+    // password the host's group held survives because the group is
+    // never deleted, and no hash ever crosses argv.
     let reused = ("alice".to_string(), 1500u64);
     let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    // The simulated host: a USERGROUPS_ENAB host whose `userdel` takes
+    // the same-name group only while it is the account's primary one.
+    let primary = std::cell::RefCell::new(true);
+    let group_present = std::cell::RefCell::new(true);
     take_back_account(
         "alice",
         Some(&reused),
         &|account| {
+            calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            *primary.borrow_mut() = false;
+            Ok(())
+        },
+        &|account| {
             calls.borrow_mut().push(format!("userdel {account}"));
+            if *primary.borrow() {
+                *group_present.borrow_mut() = false;
+            }
             Ok(())
         },
-        &|_name| Ok(false),
-        &|name, gid| {
-            calls.borrow_mut().push(format!("groupadd -g {gid} {name}"));
-            Ok(())
-        },
+        &|_name| Ok(*group_present.borrow()),
     )
     .expect("the rollback must succeed");
     assert_eq!(
         calls.borrow().clone(),
         vec![
-            "userdel alice".to_string(),
-            "groupadd -g 1500 alice".to_string()
+            "usermod -g 0 alice".to_string(),
+            "userdel alice".to_string()
         ],
-        "the group the step reused is the host's: the rollback restores it"
+        "the doomed account moves off the reused group before userdel runs, and nothing recreates the group"
     );
-    // A group the deletion left alone — another member holds it — is
-    // the host's still, and nothing is restored.
-    let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
-    take_back_account(
-        "alice",
-        Some(&reused),
-        &|account| {
-            calls.borrow_mut().push(format!("userdel {account}"));
-            Ok(())
-        },
-        &|_name| Ok(true),
-        &|name, gid| {
-            calls.borrow_mut().push(format!("groupadd -g {gid} {name}"));
-            Ok(())
-        },
-    )
-    .expect("the rollback must succeed");
-    assert_eq!(
-        calls.borrow().clone(),
-        vec!["userdel alice".to_string()],
-        "a group that survived the deletion is not restored"
+    assert!(
+        *group_present.borrow(),
+        "the group the step did not create survives the rollback"
     );
-    // A group the step created — `useradd -U` makes it — is the
-    // step's to remove, and nothing is restored.
+}
+
+#[test]
+fn a_rollback_may_take_the_group_the_step_created() {
+    // Where the host held no same-name group `useradd -U` created it,
+    // so it is the step's own: the rollback takes it with the account
+    // and moves nothing off first.
     let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     take_back_account(
         "alice",
         None,
         &|account| {
+            calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            Ok(())
+        },
+        &|account| {
             calls.borrow_mut().push(format!("userdel {account}"));
             Ok(())
         },
         &|_name| Ok(false),
-        &|name, gid| {
-            calls.borrow_mut().push(format!("groupadd -g {gid} {name}"));
-            Ok(())
-        },
     )
     .expect("the rollback must succeed");
     assert_eq!(
         calls.borrow().clone(),
         vec!["userdel alice".to_string()],
-        "a group the step created is not restored"
+        "a group the step created goes with the account; nothing moves off first"
+    );
+}
+
+#[test]
+fn a_rollback_reports_a_reused_group_userdel_took() {
+    // A host that takes the pre-existing group despite the move: the
+    // rollback reports the loss instead of recreating the group
+    // locked — no shadow utility restores a group password off the
+    // command line, and a hash in argv is a hash every local user can
+    // copy. Nothing recreates the group behind the error.
+    let reused = ("alice".to_string(), 1500u64);
+    let calls: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let error = take_back_account(
+        "alice",
+        Some(&reused),
+        &|account| {
+            calls.borrow_mut().push(format!("usermod -g 0 {account}"));
+            Ok(())
+        },
+        &|account| {
+            calls.borrow_mut().push(format!("userdel {account}"));
+            Ok(())
+        },
+        &|_name| Ok(false),
+    )
+    .expect_err("a group userdel took anyway must fail loudly");
+    assert!(
+        error.contains("alice"),
+        "the error names the group the host lost: {error}"
+    );
+    assert_eq!(
+        calls.borrow().clone(),
+        vec![
+            "usermod -g 0 alice".to_string(),
+            "userdel alice".to_string()
+        ],
+        "nothing recreates the group behind the error: {calls:?}"
     );
 }
 
@@ -324,73 +358,5 @@ fn a_later_step_compares_the_comment_against_the_planned_state() {
         back.get("changed"),
         Some(&json!(true)),
         "the comment moves twice: {back}"
-    );
-}
-
-#[test]
-fn a_rollback_never_passes_a_group_password_on_argv() {
-    // A password-bearing same-name group recreated during rollback:
-    // `/proc/*/cmdline` is readable across UIDs where procfs allows
-    // it, so a hash in `groupadd -p` argv is a hash every local user
-    // can copy for offline cracking. The restore carries the number,
-    // the members and the administrators only — the group stays locked
-    // instead of leaking its secret — and the captured argv proves no
-    // `-p` flag is ever emitted.
-    let reused = ("alice".to_string(), 1500u64);
-    let record = super::super::ReusedGroup {
-        members: vec!["carol".to_string()],
-        admins: vec!["root".to_string()],
-    };
-    let calls: std::cell::RefCell<Vec<Vec<String>>> = std::cell::RefCell::new(Vec::new());
-    super::super::take_back_account(
-        "alice",
-        Some(&reused),
-        &|account| {
-            calls.borrow_mut().push(vec![format!("userdel {account}")]);
-            Ok(())
-        },
-        &|_name| Ok(false),
-        &|name, gid| {
-            let (groupadd, administrators) =
-                super::super::restore_group_args(name, gid, Some(&record), "alice");
-            let argv: Vec<String> = std::iter::once("groupadd".to_string())
-                .chain(groupadd)
-                .collect();
-            calls.borrow_mut().push(argv);
-            if let Some(administrators) = administrators {
-                let argv: Vec<String> = std::iter::once("gpasswd".to_string())
-                    .chain(administrators)
-                    .collect();
-                calls.borrow_mut().push(argv);
-            }
-            Ok(())
-        },
-    )
-    .expect("the rollback must succeed");
-    let argv = calls.borrow().clone();
-    assert!(
-        argv.iter().flatten().all(|argument| argument != "-p"),
-        "no password flag may reach argv: {argv:?}"
-    );
-    assert_eq!(
-        argv,
-        vec![
-            vec!["userdel alice".to_string()],
-            vec![
-                "groupadd".to_string(),
-                "-g".to_string(),
-                "1500".to_string(),
-                "-U".to_string(),
-                "carol".to_string(),
-                "alice".to_string()
-            ],
-            vec![
-                "gpasswd".to_string(),
-                "-A".to_string(),
-                "root".to_string(),
-                "alice".to_string()
-            ],
-        ],
-        "the restore carries the number, the members and the administrators only"
     );
 }
