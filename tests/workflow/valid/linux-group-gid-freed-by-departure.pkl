@@ -1,0 +1,29 @@
+// The membership that blocks the private-group draw is the effective
+// one: Bob joins Alice's private group in the first stage and leaves it
+// again in the second (`groups = new Listing {}` names none of them),
+// so the account removal in the third stage takes the empty group with
+// it — and the fourth stage may claim its number explicitly. Bob keeps
+// an explicit primary group throughout, so only Alice's private group
+// draws.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "groups"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 2500 }
+  } }
+  new Stage { title = "join"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+    new linux.User { user = "bob"; uid = 1501; group = "staff"; groups = new Listing { "alice" } }
+  } }
+  new Stage { title = "leave"; hosts = inventory.workers; steps {
+    new linux.User { user = "bob"; uid = 1501; group = "staff"; groups = new Listing {} }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; state = "absent" }
+  } }
+  new Stage { title = "claim"; hosts = inventory.workers; steps {
+    new linux.Group { name = "team"; gid = 1000 }
+  } }
+}

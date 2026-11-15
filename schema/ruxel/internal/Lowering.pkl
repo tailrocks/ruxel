@@ -274,9 +274,11 @@ class IdDraw {
 
 /// The explicit claims an earlier stage's automatic allocations stand
 /// in the way of: a present account or group without a declared number
-/// reserves the allocator's range on every host the two stages share,
-/// and a later explicit claim of a number inside it is refused until a
-/// proven removal of the drawing identity frees the range. A claim of
+/// reserves the allocator's range on every host the two stages share
+/// where the draw happens at all (see `drawNeededOn`), and a later
+/// explicit claim of a number inside it is refused until a proven
+/// removal — or an explicit renumbering — of the drawing identity frees
+/// the range. A claim of
 /// the same name is the same identity redeclared — no second allocation
 /// happens for it — and a number outside the range is the allocator's
 /// never to hand out. The direction is the one the allocator runs in:
@@ -328,16 +330,70 @@ function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot
 /// Whether the drawing identity is proven gone before the later claim:
 /// the account — for a gid draw, the group or the account whose private
 /// group it is — is removed in a stage between the two, on every host
-/// both claimant stages share, with a removal the runtime can prove
+/// both claimant stages share where the draw happens at all (see
+/// `drawNeededOn`), with a removal the runtime can prove
 /// will succeed for the draw (see `removedDraw`): a removal that fails
 /// its live-entry verification frees nothing, and the later claim
-/// would collide on the number the draw still holds. The proof is per
-/// host: a removal that runs on another machine leaves the identity
-/// where it is on this one.
+/// would collide on the number the draw still holds. An explicit
+/// renumbering of the drawing identity frees the draw the same way an
+/// explicit claim's renumbering frees the number (see `renumberedDraw`):
+/// setting the identity's number releases whatever the allocator drew
+/// for it. The proof is per host: a removal that runs on another machine
+/// leaves the identity where it is on this one.
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
   sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
-    positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_stages, _indexes, k, c, h)))
+    !drawNeededOn(_stages, _indexes, c, h) || drawFreedOn(_stages, _indexes, c, d, h))
+
+/// Whether the draw's number is proven gone on the host `h` before the
+/// later claim: a stage between the two runs there and removes the
+/// drawing identity with a removal the runtime can prove will succeed
+/// for the draw, or states the identity's number explicitly — a
+/// renumbering releases whatever the allocator drew for it.
+function drawFreedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
+  positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
+    .any((k) -> stageRunsOn(_stages[k], h) && (removedDraw(_stages, _indexes, k, c, h) || renumberedDraw(_indexes[k], c)))
+
+/// Whether a stage renumbers the drawing identity to another explicit
+/// number: a step that keeps the same account (for a gid draw, the same
+/// group) present under a stated number — `usermod -u` (or `groupmod
+/// -g`) releases whatever the allocator drew for it on the hosts the
+/// stage covers, so the draw holds nothing back anymore. A redeclaration
+/// of the draw's own stage states nothing and frees nothing: only a
+/// stated number releases one.
+function renumberedDraw(ix: StageIndex, c: IdDraw): Boolean =
+  if (c.kind == "uid") ix.steps.any((s) -> s is linux.User && s.state == "present" && s.user == c.name && s.uid != null)
+  else ix.steps.any((s) -> s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null)
+
+/// Whether the draw happens on the host `h` at all: the allocator draws
+/// a number only for an identity that is not there yet — `useradd`
+/// leaves the number of an account that exists alone, and the same holds
+/// for a group the host already has — so a draw of an identity an
+/// earlier overlapping-host stage already provided draws nothing, and a
+/// step of the draw's own stage that precedes the drawing one provides
+/// it the same way. A uid draw needs the account; a gid draw needs the
+/// group — or the account whose private group it is, which useradd
+/// creates beside the account (`USERGROUPS_ENAB`): redeclaring an
+/// account that names no primary group reuses its group and draws no
+/// new number for it.
+function drawNeededOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, h: core.Host): Boolean =
+  !positions(_indexes).filter((n) -> n < c.stage && stageRunsOn(_stages[n], h)).any((n) -> providesIdentity(_indexes[n], c))
+    && !positions(_indexes[c.stage].steps).filter((j) -> j < c.step).any((j) -> providesIdentityStep(_indexes[c.stage].steps[j], c))
+
+/// Whether the stage's steps already provide the drawing identity: a
+/// present account for a uid draw, and for a gid draw a present group
+/// of that name — or a present account of that name that names no
+/// primary group, whose private group useradd creates beside it.
+function providesIdentity(ix: StageIndex, c: IdDraw): Boolean =
+  ix.steps.any((s) -> providesIdentityStep(s, c))
+
+/// Whether the step already provides the drawing identity: a present
+/// account for a uid draw, and for a gid draw a present group of that
+/// name — or a present account of that name that names no primary
+/// group, whose private group useradd creates beside it.
+const function providesIdentityStep(s: core.Step, c: IdDraw): Boolean =
+  if (c.kind == "uid") s is linux.User && s.state == "present" && s.user == c.name
+  else (s is linux.Group && s.state == "present" && s.name == c.name)
+    || (s is linux.User && s.state == "present" && s.user == c.name && s.group == null)
 
 /// Whether a stage removes the identity that drew the number with a
 /// removal the runtime can prove will succeed for the draw, on the
@@ -380,28 +436,34 @@ const function samePrimaryGroup(s: core.Step, n: String): Boolean =
   else s.group == null || s.group == n
 
 /// The group `n` still has a member when the removal of stage `k`
-/// runs: an account the workflow leaves present — its last word before
-/// the removal's stage — that names the group as its primary group or
-/// among its supplementary groups. An account removed in a stage
-/// between the one that declares it and the removal's stage has left
-/// the group already — where that stage runs on the host the proof is
-/// about: a removal on another machine leaves the membership here.
+/// runs: an account the workflow leaves present — its last word at or
+/// before the removal's stage — that names the group as its primary group
+/// or among its supplementary groups. An account a later declaration
+/// takes off the group has left it already — where that declaration
+/// runs on the host the proof is about: a redeclaration on another
+/// machine leaves the membership here. A removal of the account counts
+/// as taking it off every group: the account is gone.
 const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, n: String, h: core.Host): Boolean =
   positions(_indexes).filter((m) -> m <= k).any((m) -> positions(_indexes[m].steps).any((j) ->
     let (u = _indexes[m].steps[j])
     if (!(u is linux.User)) false
-    else u.state == "present" && u.user != n && holdsGroup(u, n) && !removedBetween(_stages, _indexes, m, k, u.user, h)))
+    else u.state == "present" && u.user != n && holdsGroup(u, n) && !leftGroupBetween(_stages, _indexes, m, k, u, n, h)))
+
+/// Whether the account is taken off the group `n` in a stage between
+/// the one that declares it and the removal's stage — on the host `h`:
+/// a stage that runs on another machine leaves the account where it is
+/// here. A step that removes the account takes it off every group, and
+/// a step that declares it present without the group takes it off that
+/// one — on another primary group where the account keeps it as its
+/// primary one, and by an explicit listing without it where it keeps it
+/// as a supplementary one (see `leavesGroup`).
+const function leftGroupBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, u: linux.User, n: String, h: core.Host): Boolean =
+  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> stageRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> leavesGroup(x, u, n)))
 
 /// Whether the account names the group `n` as its primary group or
 /// among its supplementary groups.
 const function holdsGroup(u: linux.User, n: String): Boolean =
   u.group == n || (u.groups != null && u.groups.toList().contains(n))
-
-/// Whether the account is removed in a stage between the one that
-/// declares it and the removal's stage — on the host `h`: a stage that
-/// runs on another machine leaves the account where it is here.
-const function removedBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, account: String, h: core.Host): Boolean =
-  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> stageRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> x is linux.User && x.state == "absent" && x.user == account))
 
 function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
   if (c.stage == d.stage)
