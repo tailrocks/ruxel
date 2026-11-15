@@ -51,7 +51,9 @@ fn a_created_home_gets_the_policy_mode_under_any_umask() {
     let meta = std::fs::metadata(&anchor).unwrap();
     let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
     assert!(
-        super::super::ensure_home(home.to_str().unwrap(), uid, gid, false).unwrap(),
+        super::super::ensure_home(home.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0,
         "the missing home is created"
     );
     let mode = std::fs::metadata(&home).unwrap().permissions().mode() & 0o777;

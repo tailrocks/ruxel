@@ -2,6 +2,8 @@
 //! the private group the step claims, the home's repair, and the
 //! account's own change.
 
+use std::path::PathBuf;
+
 use super::PasswdEntry;
 use super::entries::group_entry;
 use super::guards::identity_change_allowed;
@@ -94,10 +96,11 @@ enum Completed {
     /// The private group the step created: taken back with `groupdel`.
     Group(String),
     /// The home's repair: the ownership the repair found — restored —
-    /// or nothing, where the repair created the directory — removed.
+    /// or the directories the repair created — removed leaf-first.
     Home {
         path: String,
         prior: Option<(u64, u64)>,
+        created: Vec<PathBuf>,
     },
 }
 
@@ -105,8 +108,9 @@ enum Completed {
 /// made them. The home's repair runs before the account's own change:
 /// it is the preflight of that change, so a repair that fails leaves
 /// the account as it was. A mutation that fails takes back what the
-/// earlier ones did — the created group, the repaired home — so a
-/// refused change leaves the host as it was. Returns whether the
+/// earlier ones did — the created group, the repaired home with every
+/// parent directory the repair created — so a refused change leaves
+/// the host as it was. Returns whether the
 /// home's repair changed (or would change in check mode) anything.
 pub(super) fn run(
     name: &str,
@@ -132,22 +136,23 @@ pub(super) fn run(
                     };
                     // The ownership the repair finds: a later failure
                     // takes the repair back to it — or takes the created
-                    // directory away where the repair created it. Check
-                    // mode mutates nothing, so there is nothing to take
-                    // back.
+                    // directories away where the repair created them.
+                    // Check mode mutates nothing, so there is nothing to
+                    // take back.
                     let prior = if check_mode {
                         None
                     } else {
                         prior_owner(&home.path)?
                     };
-                    let repaired = ensure_home(&home.path, home.uid, gid, check_mode)?;
+                    let (changed, created) = ensure_home(&home.path, home.uid, gid, check_mode)?;
                     if !check_mode {
                         completed.push(Completed::Home {
                             path: home.path,
                             prior,
+                            created,
                         });
                     }
-                    Ok(repaired)
+                    Ok(changed)
                 }
                 Mutation::UserMod(mut args) => {
                     if !check_mode {
@@ -168,32 +173,51 @@ pub(super) fn run(
 }
 
 /// The home's repair a later failure takes back: the ownership the
-/// repair found, restored — or the directory the repair created,
-/// removed. The reversal runs on the descriptors the safe walk opens,
+/// repair found, restored — or every directory the repair created,
+/// removed leaf-first. The reversal runs on the descriptors the safe walk opens,
 /// never through a link a concurrent rewrite plants, for the repair's
 /// own reason. Removing the created directory takes back exactly what
 /// the repair added: the removal refuses a directory that is not
 /// empty, so contents a concurrent writer planted are kept and
 /// reported rather than deleted.
-fn rollback_home(path: &str, prior: Option<(u64, u64)>) -> Result<(), String> {
-    match prior {
-        Some((uid, gid)) => {
-            let uid = u32::try_from(uid)
-                .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
-            let gid = u32::try_from(gid)
-                .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
-            let fd = super::home::open_home(path, false)?;
-            super::home::own_through(&fd, uid, gid, path)
+fn rollback_home(path: &str, prior: Option<(u64, u64)>, created: &[PathBuf]) -> Result<(), String> {
+    let Some((uid, gid)) = prior else {
+        // Every parent directory the repair created, leaf first: the
+        // removal refuses a directory that is not empty, so contents
+        // a concurrent writer planted are kept and reported rather
+        // than deleted.
+        let mut targets = created.to_vec();
+        if targets.is_empty() {
+            targets.push(PathBuf::from(path));
         }
-        None => std::fs::remove_dir(path)
-            .map_err(|error| format!("user: take back created home {path}: {error}")),
-    }
+        let mut first: Option<String> = None;
+        for dir in targets.iter().rev() {
+            if let Err(error) = std::fs::remove_dir(dir)
+                && first.is_none()
+            {
+                first = Some(format!(
+                    "user: take back created home {}: {error}",
+                    dir.display()
+                ));
+            }
+        }
+        match first {
+            Some(error) => return Err(error),
+            None => return Ok(()),
+        }
+    };
+    let uid = u32::try_from(uid)
+        .map_err(|_| format!("user: take back home {path}: uid {uid} does not fit"))?;
+    let gid = u32::try_from(gid)
+        .map_err(|_| format!("user: take back home {path}: gid {gid} does not fit"))?;
+    let (fd, _) = super::home::open_home(path, false)?;
+    super::home::own_through(&fd, uid, gid, path)
 }
 
 /// What the earlier mutations did, taken back in reverse order: the
 /// private group the step created is deleted, and the home's repair is
-/// reversed — the ownership it found restored, the directory it created
-/// removed. A rollback that fails itself is reported with the error
+/// reversed — the ownership it found restored, every directory it
+/// created removed leaf-first. A rollback that fails itself is reported with the error
 /// that caused it: the host keeps the partial change, and the task
 /// says so instead of reporting a clean refusal.
 fn take_back(completed: &[Completed], run_cmd: &Runner, error: String) -> String {
@@ -203,7 +227,11 @@ fn take_back(completed: &[Completed], run_cmd: &Runner, error: String) -> String
             Completed::Group(group) => run_cmd("groupdel", &[group]).map_err(|rollback| {
                 format!("the group {group} could not be taken back: {rollback}")
             }),
-            Completed::Home { path, prior } => rollback_home(path, *prior)
+            Completed::Home {
+                path,
+                prior,
+                created,
+            } => { rollback_home(path, *prior, created) }
                 .map_err(|rollback| format!("the home {path} could not be taken back: {rollback}")),
         };
         if let Err(failure) = undone {

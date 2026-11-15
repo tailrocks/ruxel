@@ -144,7 +144,7 @@ fn the_home_walk_stays_on_the_directories_it_opened() {
     let target = base.join("target");
     std::fs::create_dir_all(&target).unwrap();
     let home = real.join("home");
-    let opened = super::super::home::open_chain(&real, home.to_str().unwrap(), false).unwrap();
+    let (opened, _) = super::super::home::open_chain(&real, home.to_str().unwrap(), false).unwrap();
     std::fs::rename(&real, base.join("real-moved")).unwrap();
     std::os::unix::fs::symlink(&target, &real).unwrap();
     rustix::fs::mkdirat(&opened, "home", rustix::fs::Mode::from_raw_mode(0o777)).unwrap();
@@ -161,6 +161,7 @@ fn the_home_walk_stays_on_the_directories_it_opened() {
 
 #[test]
 fn the_home_walk_restarts_at_the_root_for_an_absolute_symlink() {
+    use std::os::unix::fs::PermissionsExt;
     // A managed home traverses a root-owned absolute symlink below the
     // first component (`srv/homes -> /mnt/homes` for
     // `srv/homes/alice`): for an absolute target the walk restarts at
@@ -179,7 +180,6 @@ fn the_home_walk_restarts_at_the_root_for_an_absolute_symlink() {
         // staged unprivileged.
         return;
     }
-    use std::os::unix::fs::PermissionsExt;
     let base = std::path::Path::new("/").join(format!("ruxel-abs-walk-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("mnt/homes")).unwrap();
@@ -191,8 +191,10 @@ fn the_home_walk_restarts_at_the_root_for_an_absolute_symlink() {
     // walk, in a root-owned unwritable directory.
     std::os::unix::fs::symlink(base.join("mnt/homes"), base.join("srv/homes")).unwrap();
     let home = base.join("srv/homes/alice");
-    let created = super::super::ensure_home(home.to_str().unwrap(), 0, 0, false).unwrap();
-    assert!(created, "the missing home is created");
+    let changed = super::super::ensure_home(home.to_str().unwrap(), 0, 0, false)
+        .unwrap()
+        .0;
+    assert!(changed, "the missing home is created");
     assert!(
         base.join("mnt/homes/alice").is_dir(),
         "the walk must land on the absolute symlink's target, not under the already-walked prefix"
@@ -245,11 +247,15 @@ fn an_existing_home_directory_reports_drifted_ownership() {
     // to reconcile — the early return reported no change and left the
     // directory belonging to no one the account declares.
     assert!(
-        super::super::ensure_home(dir.to_str().unwrap(), uid + 1, gid + 1, true).unwrap(),
+        super::super::ensure_home(dir.to_str().unwrap(), uid + 1, gid + 1, true)
+            .unwrap()
+            .0,
         "check mode reports the pending repair"
     );
     assert!(
-        !super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false).unwrap(),
+        !super::super::ensure_home(dir.to_str().unwrap(), uid, gid, false)
+            .unwrap()
+            .0,
         "matching ownership is no change"
     );
     std::fs::remove_dir_all(&dir).unwrap();
