@@ -77,10 +77,14 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Result<Vec<PathBuf>, Strin
             // reading as empty.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
-                return Err(format!("cannot read the boot directory {dir}: {error}"));
+                return Err(scan_error(dir, &error));
             }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            // A per-entry failure refuses like an unreadable directory:
+            // dropping it would hide a later-loading assignment from
+            // the override probe.
+            let entry = entry.map_err(|error| scan_error(dir, &error))?;
             let name = entry.file_name();
             if Path::new(&name).extension().is_none_or(|ext| ext != "conf") {
                 continue;
@@ -93,6 +97,12 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Result<Vec<PathBuf>, Strin
     let mut files: Vec<PathBuf> = by_name.into_values().collect();
     files.push(PathBuf::from(LEGACY));
     Ok(files)
+}
+
+/// The refusal a boot-directory scan failure carries: `read_dir` and
+/// per-entry errors refuse identically.
+fn scan_error(dir: &str, error: &std::io::Error) -> String {
+    format!("cannot read the boot directory {dir}: {error}")
 }
 
 /// The bytes the boot reads from a selected entry: its content, or
