@@ -150,8 +150,9 @@ pub(super) fn reconcile_created_home(
     remove_account: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<bool, String> {
     let reconciled: Result<bool, String> = (|| {
-        let (changed, _) = ensure_home(home, created.uid, created.gid, check_mode)?;
-        Ok(changed || enforce_created_mode(home, check_mode)?)
+        let (ownership, _) = ensure_home(home, created.uid, created.gid, check_mode)?;
+        let mode = enforce_created_mode(home, check_mode)?;
+        Ok(ownership || mode)
     })();
     match reconciled {
         Ok(changed) => Ok(changed),

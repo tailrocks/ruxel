@@ -72,3 +72,82 @@ fn a_created_home_gets_the_policy_mode_under_any_umask() {
     );
     std::fs::remove_dir_all(&anchor).unwrap();
 }
+
+#[test]
+fn an_adopted_home_takes_the_policy_mode_with_the_ownership() {
+    // The short-circuit's shape: the creation reconciles an
+    // operator-staged 0755 home whose ownership drifts from the new
+    // account's — the ownership moves and the mode must still take the
+    // 0750 policy. The `||` used to skip the mode repair whenever the
+    // ownership moved, adopting the home world-readable.
+    let parent = std::env::temp_dir().join(format!("ruxel-adopt-mode-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&parent);
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let home = parent.join("alice");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(home.join(".profile"), b"operator skeleton\n").unwrap();
+    let staged = std::fs::metadata(&home).unwrap();
+    let (uid, gid) = (u64::from(staged.uid()), u64::from(staged.gid()));
+    assert_eq!(
+        staged.mode() & 0o777,
+        0o755,
+        "the staged home is world-readable"
+    );
+    // An ownership the test process may move without privilege: the
+    // root lane hands the staged home to the nobody account, any other
+    // lane drifts the group to one of its own.
+    let (owner, group) = if uid == 0 {
+        (65534u64, 65534u64)
+    } else if let Some(drifted) = member_gid_other_than(gid) {
+        (uid, drifted)
+    } else {
+        std::fs::remove_dir_all(&parent).unwrap();
+        return;
+    };
+    let changed = super::super::reconcile_created_home(
+        "ruxel-adopt-alice",
+        home.to_str().unwrap(),
+        &super::super::PasswdEntry {
+            uid: owner,
+            gid: group,
+            ..Default::default()
+        },
+        false,
+        &|_| panic!("the adoption must not take the account back"),
+    )
+    .expect("the operator's staged home must be adopted");
+    assert!(changed, "the ownership repair is a change");
+    let repaired = std::fs::metadata(&home).unwrap();
+    assert_eq!(
+        (u64::from(repaired.uid()), u64::from(repaired.gid())),
+        (owner, group),
+        "the adoption moves the ownership"
+    );
+    assert_eq!(
+        repaired.mode() & 0o777,
+        0o750,
+        "the adopted home takes the policy mode with the ownership"
+    );
+    assert_eq!(
+        std::fs::read(home.join(".profile")).unwrap(),
+        b"operator skeleton\n",
+        "the operator's contents survive the adoption"
+    );
+    std::fs::remove_dir_all(&parent).unwrap();
+}
+
+/// Another group the test process belongs to: a non-root lane cannot
+/// hand a directory to another uid, but it may move the group among
+/// its own — the ownership drift the adoption then repairs.
+fn member_gid_other_than(gid: u64) -> Option<u64> {
+    let output = std::process::Command::new("id").arg("-G").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    text.split_whitespace()
+        .filter_map(|field| field.parse::<u64>().ok())
+        .find(|candidate| *candidate != gid)
+}
