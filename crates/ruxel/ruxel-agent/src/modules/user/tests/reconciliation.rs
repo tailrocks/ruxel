@@ -195,3 +195,86 @@ fn an_existing_account_reconciles_its_implicit_primary_group() {
         "an account already on its same-name group is unchanged: {result}"
     );
 }
+
+#[test]
+fn a_removed_group_leaves_the_visible_supplementary_set() {
+    // The host's group database still lists the member while check mode
+    // runs — no `groupdel` — so the plan's own removal record is what
+    // filters the live set: the fixture is the canned group content
+    // with the removal recorded the way the removal step records it.
+    let groups = "wheel:x:10:alice\nstaff:x:20:alice,bob\n";
+    let live = super::super::entries::supplementary_groups_from(groups, "alice");
+    assert_eq!(live, vec!["wheel".to_string(), "staff".to_string()]);
+    super::super::entries::note_removed_group("wheel");
+    let visible = super::super::planned_visible_supplementary(live);
+    assert_eq!(
+        visible,
+        vec!["staff".to_string()],
+        "the group the plan took away is not a membership"
+    );
+}
+
+/// A live account with a live primary group, and two other live
+/// groups: the plan's own to set and to remove.
+fn account_with_other_groups() -> (String, String, String, String) {
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    let (name, gid) = passwd
+        .lines()
+        .find_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            (f.len() >= 7 && f[2].parse::<u64>().is_ok_and(|uid| uid != 0))
+                .then(|| (f[0].to_string(), f[3].parse::<u64>().unwrap()))
+        })
+        .expect("a non-root account on the host");
+    let primary = super::super::guards::group_name_of_gid_from(&groups, gid)
+        .expect("the account's primary group");
+    let mut others = groups.lines().filter_map(|line| {
+        let f: Vec<&str> = line.split(':').collect();
+        (f.len() >= 4
+            && f[2].parse::<u64>().is_ok_and(|number| number != 0)
+            && f[0] != primary
+            && !f[0].starts_with(['+', '#', '-']))
+        .then(|| f[0].to_string())
+    });
+    let first = others.next().expect("another group on the host");
+    let second = others.next().expect("a second group on the host");
+    (name, primary, first, second)
+}
+
+#[test]
+fn a_removed_group_neither_compares_nor_persists_in_the_planned_set() {
+    // An earlier task of the plan sets the account's supplementary set
+    // and a removal takes one group away: the later task compares its
+    // declaration against the set without the removed group — and the
+    // plan's own record keeps the union without it too, so a later
+    // emptiness check does not treat the account as a member the apply
+    // never retained.
+    let check = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    let (name, primary, removed, kept) = account_with_other_groups();
+    run(
+        &json!({"name": name, "group": primary, "groups": [removed]}),
+        &check,
+    )
+    .expect("the earlier set must plan");
+    // The plan's own removal, recorded the way the removal step
+    // records it; the guards it runs are covered elsewhere.
+    super::super::entries::note_removed_group(&removed);
+    let result = run(
+        &json!({"name": name, "group": primary, "groups": [kept], "append": true}),
+        &check,
+    )
+    .expect("the later set must plan");
+    assert_eq!(result.get("changed"), Some(&json!(true)), "{result}");
+    assert_eq!(
+        super::super::plan::supplementary(&name),
+        Some(vec![kept]),
+        "the stale member is not persisted in the plan's own set"
+    );
+}

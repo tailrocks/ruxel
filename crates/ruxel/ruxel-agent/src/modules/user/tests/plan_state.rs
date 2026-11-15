@@ -316,3 +316,71 @@ fn a_later_step_compares_the_comment_against_the_planned_state() {
         "the comment moves twice: {back}"
     );
 }
+
+#[test]
+fn a_rollback_never_passes_a_group_password_on_argv() {
+    // A password-bearing same-name group recreated during rollback:
+    // `/proc/*/cmdline` is readable across UIDs where procfs allows
+    // it, so a hash in `groupadd -p` argv is a hash every local user
+    // can copy for offline cracking. The restore carries the number,
+    // the members and the administrators only — the group stays locked
+    // instead of leaking its secret — and the captured argv proves no
+    // `-p` flag is ever emitted.
+    let reused = ("alice".to_string(), 1500u64);
+    let record = super::super::ReusedGroup {
+        members: vec!["carol".to_string()],
+        admins: vec!["root".to_string()],
+    };
+    let calls: std::cell::RefCell<Vec<Vec<String>>> = std::cell::RefCell::new(Vec::new());
+    super::super::take_back_account(
+        "alice",
+        Some(&reused),
+        &|account| {
+            calls.borrow_mut().push(vec![format!("userdel {account}")]);
+            Ok(())
+        },
+        &|_name| Ok(false),
+        &|name, gid| {
+            let (groupadd, administrators) =
+                super::super::restore_group_args(name, gid, Some(&record), "alice");
+            let argv: Vec<String> = std::iter::once("groupadd".to_string())
+                .chain(groupadd)
+                .collect();
+            calls.borrow_mut().push(argv);
+            if let Some(administrators) = administrators {
+                let argv: Vec<String> = std::iter::once("gpasswd".to_string())
+                    .chain(administrators)
+                    .collect();
+                calls.borrow_mut().push(argv);
+            }
+            Ok(())
+        },
+    )
+    .expect("the rollback must succeed");
+    let argv = calls.borrow().clone();
+    assert!(
+        argv.iter().flatten().all(|argument| argument != "-p"),
+        "no password flag may reach argv: {argv:?}"
+    );
+    assert_eq!(
+        argv,
+        vec![
+            vec!["userdel alice".to_string()],
+            vec![
+                "groupadd".to_string(),
+                "-g".to_string(),
+                "1500".to_string(),
+                "-U".to_string(),
+                "carol".to_string(),
+                "alice".to_string()
+            ],
+            vec![
+                "gpasswd".to_string(),
+                "-A".to_string(),
+                "root".to_string(),
+                "alice".to_string()
+            ],
+        ],
+        "the restore carries the number, the members and the administrators only"
+    );
+}
