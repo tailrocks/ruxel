@@ -219,11 +219,10 @@ pub(super) fn enforce_mode(fd: &OwnedFd, mode: Mode, home: &str) -> Result<(), S
 }
 
 /// Whether the directory is the operator's own and writable by no one
-/// else: only the operator could have created it and only the operator
-/// could have filled it, so its adoption hands the account no
-/// principal's contents but the operator's. The lexical ancestors and
-/// the resolved target take this rule; chain intermediaries take it or
-/// the privileged-group exception (`chain_dir_trusted`).
+/// else: only the operator could have created and filled it, so its
+/// adoption hands the account no principal's contents but the
+/// operator's. Lexical ancestors and the resolved target take this
+/// rule; chain intermediaries take it or the exception below.
 pub(super) fn own_directory(uid: u32, mode: u32) -> bool {
     (uid == 0 || uid == operating_uid()) && mode & 0o022 == 0
 }
@@ -293,17 +292,18 @@ fn probe_operating_uid() -> Result<u32, String> {
 }
 
 /// An existing home directory the account adopts: the directory is
-/// adopted only where it is the operator's own or stands where only
-/// the operator could have placed it. A directory under a path a
-/// non-root principal can write (`/tmp/alice`) may have been
-/// pre-created by that principal with contents the new account would
-/// then execute at login — `useradd -m` reuses the directory and the
-/// reconciliation only changes its ownership, preserving whatever the
-/// directory holds. Such an adoption is refused; the home is created
-/// fresh instead where it is missing (`mkdir` fails where a directory
-/// is already there, so a raced pre-creation is refused the same
-/// way). The operator's own staging — a leftover `/home/alice`, a
-/// same-stage file's directory — is adopted as before.
+/// adopted only where it is root's, the operator's own, or the
+/// intended account's — the account whose passwd home field names the
+/// path. A directory another principal owns may have been pre-created
+/// by that principal with contents the new account would then execute
+/// at login — `useradd -m` reuses the directory and the reconciliation
+/// only changes its ownership, preserving whatever the directory
+/// holds — so it is refused whatever its mode: a 0700 leaf under
+/// trusted ancestors is still another principal's. The operator's own
+/// staging — a leftover `/home/alice`, a same-stage file's directory —
+/// is adopted as before, and a creation whose account is not in the
+/// database yet misses the intended lookup and still takes the
+/// operator's rule, so the miss never fails a valid creation.
 pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     // The operator's own directory is adopted wherever it stands: no
@@ -311,27 +311,47 @@ pub(super) fn adoption_trusted(home: &str, leaf: &std::fs::Metadata) -> Result<(
     if own_directory(leaf.uid(), leaf.mode()) {
         return Ok(());
     }
-    // Anything else is adopted only under trusted ancestors — and only
-    // where it is itself writable by no one else, or anyone's contents
-    // in it would become the account's.
-    if leaf.mode() & 0o022 != 0 {
-        return Err(format!(
-            "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
-        ));
+    // The intended account's own leaf is adopted under trusted
+    // ancestors — and only where it is itself writable by no one
+    // else, or anyone's contents in it would become the account's.
+    if Some(leaf.uid()) == intended_uid(home) {
+        if leaf.mode() & 0o022 != 0 {
+            return Err(format!(
+                "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
+            ));
+        }
+        return trusted_ancestors(home);
     }
-    trusted_ancestors(home)
+    Err(format!(
+        "user: refusing to adopt the existing home {home}: the directory belongs to another principal, so its contents may be theirs, not the account's"
+    ))
+}
+
+/// The uid the host's passwd database intends the home for: the
+/// account whose home field names the path. `None` where no entry
+/// names it — the creation claims the home before the account exists —
+/// so a miss admits no one new: the leaf still takes the operator's
+/// rule, and a valid creation (a missing or operator-staged home)
+/// passes it.
+pub(super) fn intended_uid(home: &str) -> Option<u32> {
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    for line in passwd.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.get(5) == Some(&home) {
+            return fields.get(2).and_then(|uid| uid.parse().ok());
+        }
+    }
+    None
 }
 
 /// Every existing ancestor of the home path, trusted the way the
 /// symlinked-ancestor rule trusts a parent: root's — or the
 /// operator's own — and writable by no one else. A symlinked ancestor
-/// resolves through its whole target chain the same way: a link only
-/// root can replace is admitted, and every directory the target leads
-/// through must be trusted too. A directory a
-/// non-root principal can write is a directory that principal can
-/// plant the home under, so the adoption is refused there. A missing
-/// component ends the walk: the rest of the path does not exist yet,
-/// so nothing could have been planted under it.
+/// resolves through its whole target chain the same way; a directory a
+/// non-root principal can write is one that principal can plant the
+/// home under, so the adoption is refused there. A missing component
+/// ends the walk: the rest of the path does not exist yet, so nothing
+/// could have been planted under it.
 pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     let components: Vec<std::path::Component<'_>> =
@@ -366,26 +386,15 @@ pub(super) fn trusted_ancestors(home: &str) -> Result<(), String> {
 /// opened, re-verified after the open. The path the pre-open check
 /// inspected may have been replaced in between — a directory renamed
 /// aside where a writable ancestor allows it — so the trust decision
-/// is re-made on the inode the operation will own, never on the path:
-/// the operator's own directory is adopted, anything else only under
-/// trusted ancestors. A replacement the operator could not have made
-/// is refused; the descriptors name the replacement, so the refusal
-/// sees it.
+/// is re-made on the inode the operation will own, never on the path,
+/// under the same rule: the descriptors name the replacement, so the
+/// refusal sees it.
 pub(super) fn adoption_pinned(home: &str, fd: &OwnedFd) -> Result<(), String> {
-    use std::os::unix::fs::MetadataExt;
     let duplicate = fd
         .try_clone()
         .map_err(|error| format!("user: own home {home}: {error}"))?;
     let meta = std::fs::File::from(duplicate)
         .metadata()
         .map_err(|error| format!("user: own home {home}: {error}"))?;
-    if own_directory(meta.uid(), meta.mode()) {
-        return Ok(());
-    }
-    if meta.mode() & 0o022 != 0 {
-        return Err(format!(
-            "user: refusing to adopt the existing home {home}: the directory is writable by others, so its contents may be a non-root principal's"
-        ));
-    }
-    trusted_ancestors(home)
+    adoption_trusted(home, &meta)
 }
