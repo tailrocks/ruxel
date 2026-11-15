@@ -118,8 +118,9 @@ typealias TimezoneName = Name(matches(Regex("[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*"
 typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*"#)) || matches(Regex(#"[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+"#))) && !startsWith("-") && !split("/").any((segment) -> segment == "." || segment == ".."))
 
 /// A kernel parameter value: one line of text, with no line break in it, so
-/// one entry is one line of one file.
-typealias SysctlValue = Static(!contains("\n") && !contains("\r"))
+/// one entry is one line of one file. No NUL either: the value reaches the
+/// kernel through a process argument, and an argument cannot hold one.
+typealias SysctlValue = Static(!contains("\n") && !contains("\r") && !contains("\u{0}"))
 
 /// A sysctl persistence file: one the system loader reads at boot —
 /// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
