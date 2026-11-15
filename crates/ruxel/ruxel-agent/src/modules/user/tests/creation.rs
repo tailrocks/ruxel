@@ -235,3 +235,67 @@ fn a_requested_uid_another_account_holds_is_refused() {
     .expect_err("a gid another group holds must be refused");
     assert!(error.contains("holds that number"), "{error}");
 }
+
+/// A uid no live account holds: the plan's own, fitting the request
+/// the creation records.
+fn free_account_uid() -> u64 {
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    (60000u64..61000)
+        .find(|uid| {
+            !passwd.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == uid.to_string())
+            })
+        })
+        .expect("a free uid on the host")
+}
+
+#[test]
+fn a_planned_creation_is_compared_not_created_again() {
+    // Check mode runs no `useradd`: the first step's creation is the
+    // second step's live entry. An identical declaration reports no
+    // change — the apply created the account in the first stage and
+    // reports the later task unchanged — instead of creating it again.
+    // The plan's own record carries the requested home, shell and
+    // comment, while the numbers the plan never stated stay the
+    // allocator's to draw: no comparison runs against them.
+    let fresh = format!("ruxel-planned-account-{}", std::process::id());
+    assert!(
+        passwd_entry(&fresh).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    let first = run(&json!({"name": fresh}), &check_context()).expect("the creation must plan");
+    assert_eq!(first.get("changed"), Some(&json!(true)), "{first}");
+    let again =
+        run(&json!({"name": fresh}), &check_context()).expect("the redeclaration must plan");
+    assert_eq!(
+        again.get("changed"),
+        Some(&json!(false)),
+        "the planned creation compares, it does not create again: {again}"
+    );
+}
+
+#[test]
+fn a_numbered_creation_verifies_the_redeclaration_against_the_plan() {
+    // The plan's own record carries the requested number, so a later
+    // declaration stating it reports no change — the allocator draws
+    // nothing for it.
+    let fresh = format!("ruxel-planned-numbered-account-{}", std::process::id());
+    let planned = free_account_uid();
+    run(
+        &json!({"name": fresh, "uid": planned, "create_home": false}),
+        &check_context(),
+    )
+    .expect("the creation must plan");
+    let again = run(
+        &json!({"name": fresh, "uid": planned, "create_home": false}),
+        &check_context(),
+    )
+    .expect("the redeclaration must plan");
+    assert_eq!(
+        again.get("changed"),
+        Some(&json!(false)),
+        "the planned number compares: {again}"
+    );
+}
