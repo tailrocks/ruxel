@@ -123,14 +123,15 @@ typealias SysctlName = Static((matches(Regex(#"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*
 typealias SysctlValue = Static(!contains("\n") && !contains("\r") && !contains("\u{0}"))
 
 /// A sysctl persistence file: one the system loader reads at boot —
-/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
-/// `/usr/lib/sysctl.d`, the recognized configuration files `sysctl
-/// --system` loads. `/run/sysctl.d` is recognized too, but `/run` is
+/// `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d`,
+/// `/usr/local/lib/sysctl.d` or `/usr/lib/sysctl.d`, the recognized
+/// configuration files `sysctl --system` loads. `/run/sysctl.d` is
+/// recognized too, but `/run` is
 /// volatile runtime state (tmpfs), normally cleared at reboot, so a file
 /// written there is gone before the next boot's sysctl loading — it is
 /// not a persistence path. A file elsewhere is written but never read
 /// again: the parameter silently reverts after reboot.
-typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|usr/lib)/sysctl\.d/[^/]+\.conf)"#)))
+typealias SysctlFile = FilePath(matches(Regex(#"(/etc/sysctl\.conf|/(etc|usr/lib|usr/local/lib)/sysctl\.d/[^/]+\.conf)"#)))
 
 class Timezone extends core.Step {
   hidden fixed kind = "timezone"
@@ -156,8 +157,9 @@ class Sysctl extends core.Step {
   name: SysctlName
   value: SysctlValue
   /// The file that holds the entry: a file the system loader reads at
-  /// boot — `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d` or
-  /// `/usr/lib/sysctl.d`, which the agent reads and rewrites atomically.
+  /// boot — `/etc/sysctl.conf` or a `*.conf` of `/etc/sysctl.d`,
+  /// `/usr/local/lib/sysctl.d` or `/usr/lib/sysctl.d`, which the agent
+  /// reads and rewrites atomically.
   /// `/run/sysctl.d` is out: `/run` is volatile runtime state (tmpfs), so
   /// the entry would be gone before the next boot's sysctl loading. A
   /// file elsewhere would never be loaded again either, so the parameter

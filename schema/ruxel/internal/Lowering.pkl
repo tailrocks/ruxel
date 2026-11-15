@@ -124,6 +124,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + sysctlBootOrder(_stages, _indexes)
     + sysctlOwnersAcrossStages(_stages, _indexes)
     + sysctlNestedAcrossStages(_stages, _indexes)
+  + sysctlShadowAcrossStages(_stages, _indexes)
     + groupRemovalsAcrossStages(_stages, _indexes)
     + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
@@ -593,16 +594,20 @@ function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex)
 /// together by their file names — `/etc/sysctl.d/10-x.conf` before
 /// `/usr/lib/sysctl.d/50-y.conf` before `/etc/sysctl.d/99-z.conf` — and
 /// one name resolved in several directories is applied by directory
-/// precedence, `/usr/lib` before `/run` before `/etc`, so the `/etc`
+/// precedence, `/usr/lib` before `/usr/local/lib` before `/run` before
+/// `/etc`, so the `/etc`
 /// copy is applied last and wins. `/etc/sysctl.conf` loads after all of
 /// them. The key spells that order: an explicit rank first — the legacy
 /// file above every directory file, whatever name a valid file name
 /// carries (any character but `/` and NUL, so no character stands for
 /// the rank) — then the file name, the directory's rank behind a
-/// separator nothing in a file name carries.
+/// separator nothing in a file name carries: `3` for `/etc/sysctl.d`,
+/// `2` for `/run/sysctl.d`, `1` for `/usr/local/lib/sysctl.d`, and `0`
+/// for `/usr/lib/sysctl.d` (and `/lib/sysctl.d`, which the runtime
+/// reads but the schema never persists to).
 const function bootOrder(path: String): String =
   if (path == "/etc/sysctl.conf") "1\u{0}"
-  else "0\u{0}" + path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "2" else if (path.startsWith("/run/sysctl.d/")) "1" else "0")
+  else "0\u{0}" + path.split("/").last + "\u{0}" + (if (path.startsWith("/etc/sysctl.d/")) "3" else if (path.startsWith("/run/sysctl.d/")) "2" else if (path.startsWith("/usr/local/lib/sysctl.d/")) "1" else "0")
 
 const function sysctlsOf(ix: StageIndex): List<core.Step> = ix.steps.filter((s) -> s is linux.Sysctl)
 
@@ -1099,6 +1104,37 @@ function sysctlNestedAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
     .flatMap((m) -> positions(_indexes[n].steps).flatMap((j) -> positions(_indexes[m].steps).flatMap((i) ->
       sysctlNestedPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
 
+/// Two stages that persist different directories' files of one name
+/// collide at boot whatever keys they manage: `sysctl --system` loads
+/// one file per name — the copy in the highest-precedence directory
+/// that holds it — so the lower-precedence copy never loads and the
+/// keys only it carries revert after reboot, while the live values
+/// still follow the stages. The direction does not matter: the lower
+/// file's keys are lost where it loads first, and the runtime refuses
+/// the shadowed file where it loads last (`preflight_shadow`), so
+/// splitting the pair across stages helps nothing. Whether the managed
+/// keys match changes nothing: the shadow hides the whole file, not the
+/// clashing entries. The comparison is per host pair — stages on
+/// disjoint hosts never share a boot — and one shared file is the
+/// multi-entry model, not a shadow.
+function sysctlShadowAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> positions(_indexes[n].steps).flatMap((j) -> positions(_indexes[m].steps).flatMap((i) ->
+      sysctlShadowPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
+
+/// The refusal for one pair of sysctl steps of two stages that persist
+/// different directories' files of one name.
+function sysctlShadowPair(a: core.Stage, ia: StageIndex, j: Int, b: core.Stage, ib: StageIndex, i: Int): List<String> =
+  let (x = ia.steps[j])
+  let (y = ib.steps[i])
+  if (!(x is linux.Sysctl) || !(y is linux.Sysctl)) List()
+  else if (x.path == y.path || sysctlBase(x.path) != sysctlBase(y.path)) List()
+  else List("'\(name(x))' (\(where(ia.placed[j]))) of stage \"\(a.title)\" persists \(x.path), and '\(name(y))' (\(where(ib.placed[i]))) of stage \"\(b.title)\" persists \(y.path); sysctl --system loads one file per name from the highest-precedence directory, so the lower-precedence copy never loads and the keys only it carries revert after reboot; persist both entries in one directory's file")
+
+/// The file name of a sysctl persistence path: the segment after the
+/// last `/`. Shadowing is by name alone.
+const function sysctlBase(path: String): String = path.split("/").last
+
 /// The refusal for one step pair of two stages whose paths stand in the
 /// leaf/descendant relation with a sysctl's persistence file on one side:
 /// the file the sysctl writes is a regular file like any whole-file
@@ -1153,15 +1189,17 @@ function sysctlValues(ix: StageIndex, i: Int): List<String> =
 const function sysctlKey(name: String): String = if (name.contains("/")) name else name.split(".").join("/")
 
 /// One sysctl value with the syntax-level whitespace trimmed off both
-/// ends: procps strips the blanks around a value before it applies it,
-/// and the runtime compares the trimmed values too (`trimmed_value`), so
-/// `"1"` and `" 1 "` are one kernel value, while the blanks inside it
-/// stay — `kernel.hostname` holds `abc  def` as written. The trim is the
-/// ASCII one the runtime applies: space, tab and form feed, the only edge
-/// blanks the value's type admits beside the forbidden newline, carriage
-/// return and NUL.
+/// ends: procps strips the blanks around a value before it applies it
+/// (`isspace`: space, tab, vertical tab, form feed), and the runtime
+/// compares the trimmed values too (`trimmed_value`), so `"1"` and
+/// `" 1 "` are one kernel value, while the blanks inside it stay —
+/// `kernel.hostname` holds `abc  def` as written. The trim covers the
+/// edge blanks the value's type admits beside the forbidden newline,
+/// carriage return and NUL: space, tab, vertical tab and form feed.
+/// SysctlValue forbids only newline, carriage return and NUL, so a
+/// vertical tab reaches the comparison, and procps strips it there.
 function trimmedSysctlValue(value: String): String =
-  value.replaceAll(Regex("^[ \u{9}\u{C}]+|[ \u{9}\u{C}]+$"), "")
+  value.replaceAll(Regex("^[ \u{9}\u{B}\u{C}]+|[ \u{9}\u{B}\u{C}]+$"), "")
 
 /// An account needs the groups it names. A same-stage group step that
 /// removes one contradicts the account whatever the order — one side ends
@@ -1265,9 +1303,11 @@ function shellTargetRels(ix: StageIndex, u: linux.User, i: Int, j: Int): List<St
 /// The refusals for one hop of a managed shell chain and everything
 /// behind it: the hop's target step must precede the account and carry
 /// an executable file where it names one, and a managed link target
-/// leads the chain on. `seen` stops a cycle of managed links.
+/// leads the chain on. `seen` reports a cycle of managed links: reaching
+/// an already-seen target means the chain loops, which the account's
+/// task refuses.
 function shellLinkRels(ix: StageIndex, u: linux.User, i: Int, target: String, seen: List<String>): List<String> =
-  if (seen.contains(target)) List()
+  if (seen.contains(target)) List("'\(name(u))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose managed link chain leads back to \(target); the account's task follows the whole chain and fails resolving a cycle, so break it")
   else positions(ix.steps)
     .filter((k) -> paths(ix.steps[k]).contains(target))
     .flatMap((k) -> shellTargetRel(ix, u, i, k, target)
@@ -1294,7 +1334,10 @@ function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: S
 /// before the later provider can run — even though the stage-local
 /// ordering check admits each stage on its own. A provider in an earlier
 /// stage runs first, so only a provider at or after the account's stage
-/// is refused. A managed `File` supplies the shell only where its mode
+/// is refused — and a later provider is excused where an earlier
+/// effective one already made the shell available (see
+/// `shellProvidedOn`): it reconciles the same path rather than creating
+/// it. A managed `File` supplies the shell only where its mode
 /// makes it executable, whatever stage writes it: the mode check is the
 /// order-independent one the stage-local rule carries. A managed shell
 /// that is a link is only as good as its target chain, wherever its hops
@@ -1326,17 +1369,37 @@ function shellProviderRel(_stages: List<core.Stage>, _indexes: List<StageIndex>,
   (if (s is core.File && !executableMode(s.mode))
     List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages the shell \(shell) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" at mode \(s.mode), which does not make it executable for the account; useradd and usermod verify the shell path, so a managed shell file carries an executable mode")
   else List())
-  + (if (k > m)
+  + (if (k > m && sharedHosts(_stages[m], _stages[k]).any((h) -> !shellProvidedOn(_stages, _indexes, m, i, h, shell)))
     List("'\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names the shell \(shell), which '\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" manages; the account's task verifies the shell path at apply time, so list the shell's step in a stage before the account")
   else List())
   + shellChainAcrossStages(_stages, _indexes, m, i, u, shell, s, List(shell))
+
+/// Whether the shell is already provided on the host `h` before the
+/// account's task runs: an earlier overlapping-host stage manages it as
+/// a file the account can execute or as a link — or an earlier step of
+/// the account's own stage does. A later provider then reconciles the
+/// same path rather than creating it: the account's task reads the
+/// earlier file, and every apply converges. The chain behind a link is
+/// judged where its hops live (see `shellChainAcrossStages`); this is
+/// the existence of the path itself when the account runs.
+function shellProvidedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, h: core.Host, shell: String): Boolean =
+  positions(_indexes).filter((n) -> n < m && stageRunsOn(_stages[n], h)).any((n) ->
+    positions(_indexes[n].steps).any((j) -> shellProviding(_indexes[n].steps[j], shell)))
+  || positions(_indexes[m].steps).filter((j) -> j < i).any((j) -> shellProviding(_indexes[m].steps[j], shell))
+
+/// Whether the step provides the shell the way the account's task needs
+/// it: a file with a mode that makes it executable for the account, or
+/// a link (whose target chain is judged separately).
+const function shellProviding(s: core.Step, shell: String): Boolean =
+  paths(s).contains(shell) && ((s is core.Symlink) || (s is core.File && executableMode(s.mode)))
 
 /// The refusals for the target chain a managed shell link leads through,
 /// across the stages that share the account's hosts: only a link leads
 /// anywhere, and its target's steps are judged wherever they live — a
 /// hop at or after the account's stage runs too late, and a file hop
-/// carries an executable mode wherever it is written. `seen` stops a
-/// cycle of managed links.
+/// carries an executable mode wherever it is written. `seen` reports a
+/// cycle of managed links: reaching an already-seen target means the
+/// chain loops, which the account's task refuses.
 function shellChainAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, s: core.Step, seen: List<String>): List<String> =
   if (!(s is core.Symlink)) List()
   else shellLinkTargetsAcrossStages(_stages, _indexes, m, i, u, shell, s.target, seen)
@@ -1345,7 +1408,7 @@ function shellChainAcrossStages(_stages: List<core.Stage>, _indexes: List<StageI
 /// step of every overlapping-host stage that manages the hop's target,
 /// and the managed link hops among them lead the chain on.
 function shellLinkTargetsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User, shell: String, target: String, seen: List<String>): List<String> =
-  if (seen.contains(target)) List()
+  if (seen.contains(target)) List("'\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names the shell \(shell), whose managed link chain leads back to \(target); the account's task follows the whole chain and fails resolving a cycle, so break it")
   else positions(_indexes).filter((k) -> hostsOverlap(_stages[m], _stages[k]))
     .flatMap((k) -> positions(_indexes[k].steps)
       .filter((j) -> paths(_indexes[k].steps[j]).contains(target))
