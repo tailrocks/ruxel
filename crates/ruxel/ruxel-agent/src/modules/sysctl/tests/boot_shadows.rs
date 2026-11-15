@@ -48,7 +48,7 @@ fn a_broken_link_holds_the_name_at_boot() {
         (etc.to_str().expect("path is text"), 1),
         (usr.to_str().expect("path is text"), 0),
     ];
-    let files = boot::system_files_in(&dirs);
+    let files = boot::system_files_in(&dirs).expect("the scratch directories read");
     assert!(
         files.iter().any(|file| file == &broken),
         "the broken link holds the name: {files:?}"
