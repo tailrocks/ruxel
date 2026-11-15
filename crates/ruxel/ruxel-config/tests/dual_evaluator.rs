@@ -287,6 +287,8 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-group-gid-freed-by-departure.pkl",
     "valid/linux-user-uid-provided-before-draw.pkl",
     "valid/linux-user-uid-renumbered-frees-draw.pkl",
+    "invalid/linux-user-uid-across-login-users.pkl",
+    "valid/linux-user-uid-login-users-same-account.pkl",
 ];
 
 /// The official `pkl` binary.

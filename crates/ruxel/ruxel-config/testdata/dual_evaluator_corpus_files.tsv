@@ -153,6 +153,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-cycle.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
+  tests/workflow/invalid/linux-user-uid-across-login-users.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-low-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
@@ -233,6 +234,7 @@ dual_evaluator
   tests/workflow/valid/linux-user-remove-home-other-spool-dir.pkl
   tests/workflow/valid/linux-user-shell-reconciled-later-stage.pkl
   tests/workflow/valid/linux-user-shell-symlink-chain-before-account.pkl
+  tests/workflow/valid/linux-user-uid-login-users-same-account.pkl
   tests/workflow/valid/linux-user-uid-provided-before-draw.pkl
   tests/workflow/valid/linux-user-uid-renumbered-frees-draw.pkl
   tests/workflow/valid/linux-user-uid-reuse-split-removals.pkl
