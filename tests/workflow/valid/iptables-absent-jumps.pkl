@@ -1,0 +1,12 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The removal deletes the rule of the match whatever its jump: the
+// absent branch of the agent matches without the jump, so two removals
+// of one match declare one resulting state and lower to one task,
+// however they spell the jump.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; jump = "DROP"; state = "absent" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; jump = "ACCEPT"; state = "absent" }
+} } }

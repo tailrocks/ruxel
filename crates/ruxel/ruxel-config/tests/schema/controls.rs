@@ -111,7 +111,6 @@ fn file_recurse_requires_directory_or_deferred_state() -> Result {
     for state in [
         "",
         r#"state = "file";"#,
-        r#"state = "absent";"#,
         r#"state = "link"; src = "/tmp/source";"#,
     ] {
         assert!(
@@ -136,9 +135,20 @@ fn file_recurse_requires_directory_or_deferred_state() -> Result {
         r#"state = "directory"; recurse = false"#,
         r#"state = "directory"; recurse = new R.Ref { path { "vars"; "recursive" } }"#,
         r#"state = new R.Ref { path { "vars"; "state" } }; recurse = true"#,
+        // A removal may be recursive: it takes the tree with it.
+        r#"state = "absent"; recurse = true"#,
     ] {
         evaluate(&format!(
             r#"new R.File {{ path = "/tmp/fixture"; {fields} }}"#
+        ))?;
+    }
+    for recurse in [
+        "false",
+        "null",
+        r#"new R.Ref { path { "vars"; "recursive" } }"#,
+    ] {
+        evaluate(&format!(
+            r#"new R.File {{ path = "/tmp/fixture"; state = "absent"; recurse = {recurse} }}"#
         ))?;
     }
     Ok(())

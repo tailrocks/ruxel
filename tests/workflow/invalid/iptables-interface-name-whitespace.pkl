@@ -1,0 +1,13 @@
+// expect-pklr: expected InterfaceName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The kernel refuses an interface name that holds whitespace: it reads
+// the name with `isspace`, which knows the vertical tab and the form
+// feed beside the space and the tab, so such a name is refused at
+// apply and must be refused here.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "OUTPUT"; outInterface = "eth0\u{0B}"; jump = "DROP" }
+} } }

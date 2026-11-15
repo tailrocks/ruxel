@@ -47,6 +47,13 @@ fn root() -> PathBuf {
 /// its own wording.
 ///
 /// The user step that lowers to the engine's user operation is here too.
+///
+/// The absent forms are here too: two removals of one path must agree on
+/// the recursion, the same rule for IPv4 and IPv6 is two rules of two
+/// separate rule sets, two removals of one rule are one state however
+/// they name the jump, and a chain policy takes no state. The names the
+/// firewall reads are here too: a chain name that holds whitespace and an
+/// interface name longer in bytes than in characters are refused by both.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -141,6 +148,29 @@ const EXAMPLES: &[&str] = &[
     "invalid/secret-placeholder-overlapping-unterminated-runtime.pkl",
     "invalid/secret-placeholder-overlapping-unterminated-body.pkl",
     "valid/secret-placeholder-shared-terminator.pkl",
+    "invalid/absent-recursive-mismatch.pkl",
+    "valid/iptables-parallel-versions.pkl",
+    "valid/iptables-universal-destination.pkl",
+    "invalid/iptables-universal-destination-conflict.pkl",
+    "invalid/iptables-universal-destination-ipv6-conflict.pkl",
+    "invalid/engine-iptables-policy-state.pkl",
+    "invalid/iptables-chain-option-name.pkl",
+    "invalid/iptables-interface-name.pkl",
+    "invalid/iptables-interface-name-long.pkl",
+    "invalid/iptables-destination-syntax.pkl",
+    "invalid/iptables-destination-family.pkl",
+    "invalid/iptables-destination-masked-conflict.pkl",
+    "invalid/iptables-destination-host-conflict.pkl",
+    "invalid/iptables-destination-ipv6-spelling-conflict.pkl",
+    "valid/iptables-absent-jumps.pkl",
+    "invalid/iptables-icmp-version.pkl",
+    "invalid/iptables-icmpv6-version.pkl",
+    "invalid/iptables-input-out-interface.pkl",
+    "invalid/iptables-chain-name-whitespace.pkl",
+    "invalid/iptables-chain-name-newline.pkl",
+    "invalid/iptables-interface-name-bytes.pkl",
+    "invalid/iptables-interface-name-whitespace.pkl",
+    "invalid/absent-floor-system-alias.pkl",
 ];
 
 /// The official `pkl` binary.

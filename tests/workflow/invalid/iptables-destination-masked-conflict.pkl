@@ -1,0 +1,13 @@
+// expect: both manage the ipv4 iptables rule INPUT to 10.0.0.0/8 tcp with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The host bits of a destination are masked off: the agent and Netfilter
+// read `10.0.0.1/8` as `10.0.0.0/8`, so the two declarations name one
+// rule of one chain and match, and two jumps for it are a conflict — the
+// first terminal rule could otherwise shadow the second.
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.1/8"; jump = "DROP" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.0/8"; jump = "ACCEPT" }
+} } }

@@ -45,6 +45,7 @@ fn layer_typealias_copies_match_core() {
                 "FilePath",
                 "Account",
                 "CommitSha",
+                "Presence",
                 "HttpsUrl",
                 "isHttpsUrl",
                 "isAuthority",

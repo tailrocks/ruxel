@@ -6,6 +6,8 @@
 # (tests/dual_evaluator{,_systemd}/corpus_files.rs), so the file cannot
 # drift from the runtime truth.
 dual_evaluator
+  tests/workflow/invalid/absent-floor-system-alias.pkl
+  tests/workflow/invalid/absent-recursive-mismatch.pkl
   tests/workflow/invalid/apt-hold-conflicting-latest.pkl
   tests/workflow/invalid/apt-hold-conflicting-pin.pkl
   tests/workflow/invalid/apt-hold-moved-across-aliases.pkl
@@ -61,6 +63,24 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-package-glob.pkl
   tests/workflow/invalid/engine-debconf-question-space.pkl
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
+  tests/workflow/invalid/engine-iptables-policy-state.pkl
+  tests/workflow/invalid/iptables-chain-name-newline.pkl
+  tests/workflow/invalid/iptables-chain-name-whitespace.pkl
+  tests/workflow/invalid/iptables-chain-option-name.pkl
+  tests/workflow/invalid/iptables-destination-family.pkl
+  tests/workflow/invalid/iptables-destination-host-conflict.pkl
+  tests/workflow/invalid/iptables-destination-ipv6-spelling-conflict.pkl
+  tests/workflow/invalid/iptables-destination-masked-conflict.pkl
+  tests/workflow/invalid/iptables-destination-syntax.pkl
+  tests/workflow/invalid/iptables-icmp-version.pkl
+  tests/workflow/invalid/iptables-icmpv6-version.pkl
+  tests/workflow/invalid/iptables-input-out-interface.pkl
+  tests/workflow/invalid/iptables-interface-name-bytes.pkl
+  tests/workflow/invalid/iptables-interface-name-long.pkl
+  tests/workflow/invalid/iptables-interface-name-whitespace.pkl
+  tests/workflow/invalid/iptables-interface-name.pkl
+  tests/workflow/invalid/iptables-universal-destination-conflict.pkl
+  tests/workflow/invalid/iptables-universal-destination-ipv6-conflict.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
   tests/workflow/invalid/secret-op-reference-dotted-selector.pkl
   tests/workflow/invalid/secret-placeholder-orphaned-runtime.pkl
@@ -96,6 +116,9 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/iptables-absent-jumps.pkl
+  tests/workflow/valid/iptables-parallel-versions.pkl
+  tests/workflow/valid/iptables-universal-destination.pkl
   tests/workflow/valid/read-resource.pkl
   tests/workflow/valid/secret-literal-prefix.pkl
   tests/workflow/valid/secret-op-reference-dotted.pkl
