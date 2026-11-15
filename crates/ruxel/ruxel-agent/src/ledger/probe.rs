@@ -140,11 +140,21 @@ pub(super) fn bool_value(value: Option<&Value>, default: bool) -> bool {
 
 pub(super) fn read_sysctl(name: &str) -> Option<String> {
     // Slash-first names keep their separators as written: the path is
-    // the name beneath /proc/sys (see `proc_sys_path`).
+    // the name beneath /proc/sys (see `proc_sys_path`). The trim is the
+    // syntax-level one the comparison reads, so a no-break space at the
+    // edge stays value content through record and verify instead of
+    // `str::trim` stripping it at record time.
     let path = crate::modules::proc_sys_path(name);
     std::fs::read_to_string(path)
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| trim_live_value(&s).to_string())
+}
+
+/// The live `/proc/sys` value the probe pins, with the syntax blanks
+/// trimmed — the same four the comparison reads — so the record
+/// describes the value the host holds, whatever edge it carries.
+pub(super) fn trim_live_value(value: &str) -> &str {
+    crate::modules::trimmed_value(value)
 }
 
 pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
