@@ -91,7 +91,7 @@ exclude = []
 [actions.overrides]
 
 [execution]
-default_profile = "local"
+default_profile = "hosted"
 hosted_profile = "hosted"
 scale_set_profile = "local"
 
@@ -105,6 +105,94 @@ kind = "github-scale-set"
 name = "ubuntu-26.04-scale-set"
 labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
+
+[execution.overrides.check-acceptance-local]
+profile = "local"
+role = "verification"
+
+[execution.overrides.check-cargo-deny]
+profile = "local"
+role = "verification"
+
+[execution.overrides.check-dual-evaluator]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-cache]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-control]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-copy]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-files]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-isolation]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-manifest]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-plan]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-pty]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-restart-rootless]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-runtime]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-acceptance-xfs]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-agent]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-config]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-control-flow-assertions]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-engine]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-guard]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-http-fixture]
+profile = "local"
+role = "verification"
+
+[execution.overrides.rust-ruxel-proto]
+profile = "local"
+role = "verification"
 
 [[checks]]
 id = "cargo-deny"
