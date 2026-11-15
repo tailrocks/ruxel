@@ -60,8 +60,14 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
     while index < args.len() {
         let flag = &args[index];
         let value = args.get(index + 1);
-        if matches!(flag.as_str(), "-j" | "--jump" | "--comment") {
-            // The jump and the comment are not part of the match.
+        if matches!(flag.as_str(), "-j" | "--jump") {
+            // The target and its options are not part of the match:
+            // they say what happens to the packet, not which packets
+            // match. Everything past the jump is the target's own.
+            break;
+        }
+        if flag.as_str() == "--comment" {
+            // The comment is not part of the match.
             index += 2;
             continue;
         }
@@ -317,6 +323,38 @@ mod alias_tests {
         let (binary, file) = listing_stub(&dir, "-p ipv6-icmp -j DROP");
         let params = serde_json::json!({
             "chain": "INPUT", "protocol": "icmpv6", "jump": "DROP", "state": "absent"
+        });
+        let result = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn absent_mode_ignores_the_target_options_of_a_reject_rule() {
+        // The firewall serializes the REJECT target with `--reject-with`
+        // even for the default type: those target options are not packet
+        // matchers, and the listed rule is the declared one.
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-iptables-reject-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (binary, file) =
+            listing_stub(&dir, "-p tcp -j REJECT --reject-with icmp-net-unreachable");
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "jump": "REJECT", "state": "absent"
         });
         let result = run_with(
             &binary,
