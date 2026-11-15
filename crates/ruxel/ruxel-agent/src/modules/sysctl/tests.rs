@@ -11,6 +11,7 @@ mod boot_shadows;
 mod boot_surface;
 mod boot_surface_safety;
 mod boot_wildcards;
+mod fallback;
 mod live;
 mod names;
 mod no_log;
