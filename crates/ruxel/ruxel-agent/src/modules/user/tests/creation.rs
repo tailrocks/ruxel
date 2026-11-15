@@ -122,9 +122,8 @@ fn a_refused_identity_change_plans_no_group() {
         gid: 0,
         ..Default::default()
     };
-    let error =
-        super::super::existing_account_mutations("root", &current, true, true, &["-u", "1"])
-            .expect_err("the superuser's identity is the host's to keep");
+    let error = super::super::apply::mutations("root", &current, true, true, None, &["-u", "1"])
+        .expect_err("the superuser's identity is the host's to keep");
     assert!(
         error.contains("refusing to change the identity"),
         "the guard must refuse before any group is created: {error}"
@@ -142,13 +141,13 @@ fn the_private_group_is_created_before_the_account_change() {
         ..Default::default()
     };
     let mutations =
-        super::super::existing_account_mutations("alice", &current, false, true, &["-G", "alice"])
+        super::super::apply::mutations("alice", &current, false, true, None, &["-G", "alice"])
             .expect("an allowed change plans its mutations");
     assert_eq!(
         mutations,
         vec![
-            super::super::Mutation::GroupAdd("alice".to_string()),
-            super::super::Mutation::UserMod(vec!["-G".to_string(), "alice".to_string()]),
+            super::super::apply::Mutation::GroupAdd("alice".to_string()),
+            super::super::apply::Mutation::UserMod(vec!["-G".to_string(), "alice".to_string()]),
         ],
         "the group the step claims exists before the account's own change"
     );

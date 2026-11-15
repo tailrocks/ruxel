@@ -47,6 +47,22 @@ pub(super) fn planned_primary_of(
     }
 }
 
+/// The group's effective number under the plan: the number an earlier
+/// task of the plan gave it — check mode runs no `groupmod`, so the
+/// host's database still holds the number the plan has left behind —
+/// and the live one otherwise. The account's effective identity is
+/// resolved the same way: against the number the plan ends up with,
+/// not against the host's unchanged one.
+pub(super) fn effective_group_gid(name: &str, live_gid: u64, check_mode: bool) -> u64 {
+    if !check_mode {
+        return live_gid;
+    }
+    match super::entries::planned_group(name) {
+        Some(super::entries::Requested::Number(number)) => u64::from(number),
+        _ => live_gid,
+    }
+}
+
 /// The account's supplementary set under the plan: the declared one
 /// where the step sets it, and the union of the set the account holds
 /// and the declared one where the step appends.
