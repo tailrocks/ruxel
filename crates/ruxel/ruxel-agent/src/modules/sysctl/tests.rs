@@ -6,6 +6,7 @@
 mod boot_byte_values;
 mod boot_names;
 mod boot_override;
+mod boot_override_canonical;
 mod boot_shadows;
 mod boot_surface;
 mod boot_surface_safety;
