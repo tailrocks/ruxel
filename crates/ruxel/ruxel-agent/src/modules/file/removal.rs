@@ -201,10 +201,11 @@ fn take_directory(
         return Ok(true);
     }
     // The tree is walked before anything is taken away, so a mount
-    // point in it is refused before the removal starts.
-    let points: Vec<PathBuf> = mounts.iter().map(|mount| mount.point.clone()).collect();
-    if !points.is_empty() {
-        super::mounts::preflight(&child, path, &points)?;
+    // point in it is refused before the removal starts. The walk reads
+    // the identity each entry carries, so a mount point the path reaches
+    // under another name is a mount point all the same.
+    if !mounts.is_empty() {
+        super::mounts::preflight(&child, path, mounts)?;
     }
     if !check_mode {
         take_tree(parent, name, &child, path)?;

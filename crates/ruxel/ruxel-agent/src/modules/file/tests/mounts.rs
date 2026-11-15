@@ -1,6 +1,17 @@
+use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+
+fn scratch(tag: &str) -> PathBuf {
+    let base = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(format!("ruxel-file-mounts-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    base
+}
 
 fn mount(root: &str, point: &str, identity: (u64, u64)) -> super::super::mounts::Mount {
     super::super::mounts::Mount {
@@ -97,10 +108,35 @@ fn the_preflight_finds_a_mount_point_whose_name_is_not_text() {
     let name = std::ffi::OsString::from_vec(vec![b'm', b'o', b'u', b'n', b't', 0xff]);
     let point = base.join(&name);
     std::fs::create_dir(&point).unwrap();
-    let mounts = vec![point];
-    let dir = std::os::fd::OwnedFd::from(std::fs::File::open(&base).unwrap());
+    // The mount point is the path the kernel lists, with the identity
+    // of the directory it holds.
+    let meta = std::fs::metadata(&point).unwrap();
+    let mounts = vec![super::super::mounts::Mount {
+        root: point.clone(),
+        point,
+        identity: (meta.dev(), meta.ino()),
+    }];
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
     let error = super::super::mounts::preflight(&dir, &base, &mounts).unwrap_err();
     assert!(error.contains("mount point"), "{error}");
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn the_preflight_finds_a_mount_point_reached_through_an_alias() {
+    // The mount point is named elsewhere: the tree is reached through an
+    // alias (`tool` for `/usr/bin/tool`), so the spelling of the path
+    // misses it and only the identity the entry carries tells.
+    let base = scratch("alias-mount");
+    let tool = base.join("tool");
+    std::fs::create_dir(&tool).unwrap();
+    let meta = std::fs::metadata(&tool).unwrap();
+    let mounts = vec![mount("/usr/bin", "/usr/bin/tool", (meta.dev(), meta.ino()))];
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let error = super::super::mounts::preflight(&dir, &base, &mounts).unwrap_err();
+    assert!(error.contains("mount point"), "{error}");
+    // The tree is untouched.
+    assert!(tool.exists());
     std::fs::remove_dir_all(base).unwrap();
 }
 
