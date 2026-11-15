@@ -22,12 +22,28 @@ pub(crate) struct Ownership {
 /// The ids are resolved once and reused by the caller: a change to the
 /// passwd or group file between the resolution and the use of the ids
 /// cannot fail or mis-apply a publication that already succeeded.
-pub(crate) fn resolve_ownership(obj: &Map<String, Value>) -> Result<Ownership, String> {
-    let (uid, uid_pending) = match str_param(obj, "owner").map(resolve_uid).transpose()? {
+///
+/// The mode decides what an identity the plan creates without stating
+/// a number resolves to. Check mode runs no `useradd`, so the number
+/// is the allocator's to draw and the request stays pending. The apply
+/// creates the identity before the task that names it runs, so the live
+/// database holds the number it drew: the apply resolves it, or the
+/// file keeps the number of whoever claimed the freed one.
+pub(crate) fn resolve_ownership(
+    obj: &Map<String, Value>,
+    check_mode: bool,
+) -> Result<Ownership, String> {
+    let (uid, uid_pending) = match str_param(obj, "owner")
+        .map(|owner| resolve_uid(owner, check_mode))
+        .transpose()?
+    {
         Some((id, pending)) => (id, pending),
         None => (None, false),
     };
-    let (gid, gid_pending) = match str_param(obj, "group").map(resolve_gid).transpose()? {
+    let (gid, gid_pending) = match str_param(obj, "group")
+        .map(|group| resolve_gid(group, check_mode))
+        .transpose()?
+    {
         Some((id, pending)) => (id, pending),
         None => (None, false),
     };
@@ -54,7 +70,7 @@ fn count_ownership_resolution() {
     OWNERSHIP_RESOLUTIONS.with(|count| count.set(count.get() + 1));
 }
 
-fn resolve_uid(owner: &str) -> Result<(Option<u32>, bool), String> {
+fn resolve_uid(owner: &str, check_mode: bool) -> Result<(Option<u32>, bool), String> {
     #[cfg(test)]
     count_ownership_resolution();
     if let Ok(uid) = owner.parse::<u32>() {
@@ -75,7 +91,17 @@ fn resolve_uid(owner: &str) -> Result<(Option<u32>, bool), String> {
         // account is reported unchanged while the apply chowns it to
         // the number the allocator drew. The requested ownership is
         // PENDING, like any other unnumbered identity.
-        Some(super::user::Requested::Unnumbered) if super::user::user_recreated(owner) => {
+        //
+        // Check mode runs no `userdel` and no `useradd`, so the live
+        // entry is the stale one there and the request stays pending.
+        // The apply creates the account before the task that names it
+        // runs, so the live database holds the number the allocator
+        // drew: the apply resolves that number — a pending ownership
+        // would report a change and chown nothing, leaving the file
+        // owned by whoever claimed the freed number.
+        Some(super::user::Requested::Unnumbered)
+            if check_mode && super::user::user_recreated(owner) =>
+        {
             return Ok((None, true));
         }
         _ => {}
@@ -110,7 +136,7 @@ pub(crate) fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String>
     Err(format!("user {owner:?} not found"))
 }
 
-fn resolve_gid(group: &str) -> Result<(Option<u32>, bool), String> {
+fn resolve_gid(group: &str, check_mode: bool) -> Result<(Option<u32>, bool), String> {
     #[cfg(test)]
     count_ownership_resolution();
     if let Ok(gid) = group.parse::<u32>() {
@@ -124,8 +150,12 @@ fn resolve_gid(group: &str) -> Result<(Option<u32>, bool), String> {
         // The group counterpart of the recreated account: the plan
         // removed the group and declares it present again, so its
         // number is the allocator's to draw and the stale live entry
-        // must not stand in for it.
-        Some(super::user::Requested::Unnumbered) if super::user::group_recreated(group) => {
+        // must not stand in for it. Check mode keeps the request
+        // pending; the apply resolves the number the group database
+        // holds after the group is created anew.
+        Some(super::user::Requested::Unnumbered)
+            if check_mode && super::user::group_recreated(group) =>
+        {
             return Ok((None, true));
         }
         _ => {}

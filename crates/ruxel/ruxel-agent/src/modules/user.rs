@@ -84,6 +84,11 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
                     // scan reads — the host's passwd file still shows
                     // the old number while check mode runs.
                     plan::note_renumbered_group(name, live_gid, want);
+                    // The plan moved the group's number: the files
+                    // that hold it keep the old one, and a task that
+                    // names the group must not be served from a cache
+                    // that weighs their numbers alone.
+                    plan::note_changed_group(name);
                     if !ctx.check_mode {
                         run_cmd("groupmod", &["-g", &want.to_string(), name])?;
                     }
@@ -166,6 +171,13 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
     // declared one.
     if state == "present" {
         note_planned_group(name, gid.and_then(|want| u32::try_from(want).ok()));
+        // The plan removed the group and declares it present again:
+        // the apply takes the group away and creates it anew, so its
+        // number is the allocator's to draw and the files that hold
+        // the old one keep it.
+        if plan::group_recreated(name) {
+            plan::note_changed_group(name);
+        }
     } else {
         forget_planned_group(name);
     }
@@ -179,6 +191,7 @@ use guards::{
     primary_group_holder, primary_group_name, private_group_emptied, private_group_missing,
     removal_allowed, removal_home_allowed, removal_primary_group_allowed, uid_holder_in_use,
 };
+pub(crate) use plan::{group_number_changed, user_number_changed};
 pub(super) use plan::{group_recreated, user_recreated};
 
 pub(super) fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
@@ -586,6 +599,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 && u != effective.uid
             {
                 identity_change = true;
+                // The plan moved the account's number: the files that
+                // hold it keep the old one, and a task that names the
+                // account must not be served from a cache that weighs
+                // their numbers alone.
+                plan::note_changed_user(name);
                 // The number must be free on the host: `usermod -u`
                 // refuses a number another account holds, so the plan
                 // must say so before the change, in check mode as much
@@ -836,6 +854,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // otherwise refuse the name the plan is about to create — and what
     // a later removal verifies its home against.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
+    // The plan removed the account and declares it present again: the
+    // apply takes the account away and creates it anew, so its number
+    // is the allocator's to draw and the files that hold the old one
+    // keep it.
+    if plan::user_recreated(name) {
+        plan::note_changed_user(name);
+    }
     plan::note_home(name, &effective_home);
     plan::note_shell(name, effective_shell.as_deref());
     plan::note_comment(name, effective_comment.as_deref());

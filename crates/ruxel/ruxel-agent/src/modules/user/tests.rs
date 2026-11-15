@@ -18,6 +18,7 @@ mod parsing;
 mod plan_state;
 mod planned;
 mod reconciliation;
+mod recreated;
 mod removal;
 mod shells;
 
