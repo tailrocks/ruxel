@@ -130,6 +130,8 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + shellProvidersAcrossStages(_stages, _indexes)
     + homeProvidersAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
+  + removalIdsAcrossStages(_stages, _indexes)
+  + removalHomesAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
@@ -218,6 +220,42 @@ function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
 
 function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
   "stages \"\(a.title)\" and \"\(b.title)\" claim the \(c.kind) \(c.number) for different \(if (c.kind == "uid") "accounts" else "groups"): '\(c.name)' (\(c.spot)) and '\(d.name)' (\(d.spot)); one host keeps one identity per number, so remove '\(c.name)' before reusing its \(c.kind), or give '\(d.name)' another one"
+
+/// A removal states the id the runtime verifies against the live entry
+/// before it deletes anything: `userdel` refuses a declared uid that is
+/// not the account's — and `groupdel` a declared gid that is not the
+/// group's — so a removal that names another number than the one the
+/// workflow last declared for the identity on a host it runs on fails
+/// there deterministically, even where no later stage reuses the number
+/// (see `identityNumbersAcrossStages`, which only compares two claims).
+/// A group removal that states no gid frees by name — the runtime
+/// verifies only the id it is given — and an identity no earlier stage
+/// declares with a number on that host lives there with one the
+/// workflow cannot read. The comparison is per host: a declaration on a
+/// disjoint host is another machine's identity.
+function removalIdsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((k) -> positions(_indexes[k].steps).flatMap((j) ->
+    removalIdRels(_stages, _indexes, k, j)))
+
+/// The refusals for a removal that names another number than the
+/// workflow's last word for the identity on a host the removal runs on.
+function removalIdRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, j: Int): List<String> =
+  let (s = _indexes[k].steps[j])
+  if (s is linux.User && s.state == "absent" && s.uid != null)
+    removalIdClash(_stages, _indexes, k, j, s, List(s.user, "owner"), s.uid, "account", "uid")
+  else if (s is linux.Group && s.state == "absent" && s.gid != null)
+    removalIdClash(_stages, _indexes, k, j, s, List(s.name, "group"), s.gid, "group", "gid")
+  else List()
+
+/// The refusals for a removal that names another number than the last
+/// declaration before it: one per host the removal runs on where the
+/// workflow's last word carries another number.
+function removalIdClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, j: Int, s: core.Step, p: List<String>, declared: Int, what: String, kind: String): List<String> =
+  _stages[k].hosts.toList().flatMap((h) ->
+    let (before = identityNumberBeforeOn(_stages, _indexes, k, p, h))
+    if (before is Int && before != declared)
+      List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" removes the \(what) \(p.first) with \(kind) \(declared), but the workflow's last declaration for it on host \(h.name) carries \(kind) \(before); the runtime verifies the declared id against the live entry and refuses the removal, so state the effective \(kind)")
+    else List())
 
 /// An explicit identity number one stage's step claims.
 class IdClaim {
@@ -1454,6 +1492,42 @@ const function mailSpools(name: String): List<String> =
 const function removedHomes(ix: StageIndex): List<String> =
   ix.steps.flatMap((s) -> if (s is linux.User && s.state == "absent" && s.removeHome && s.home != null) List(s.home) else List())
 
+/// A recursive removal deletes the account's live home whatever path it
+/// declares: `userdel -r` removes the live home, and the runtime refuses
+/// a declared home that is not it (`removal_home_allowed`) — so a
+/// removal that names another home than the one the workflow last
+/// declared present for the account on a host it runs on fails there
+/// deterministically. An account no earlier stage declares present on
+/// that host lives there with a home the workflow cannot read. The
+/// comparison is per host: a declaration on a disjoint host is another
+/// machine's account.
+function removalHomesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((k) -> positions(_indexes[k].steps).flatMap((j) ->
+    let (s = _indexes[k].steps[j])
+    if (!(s is linux.User) || s.state != "absent" || !s.removeHome || s.home == null) List()
+    else removalHomeClashStages(_stages, _indexes, k, s).map((n) -> "'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" removes the account \(s.user) with home \(s.home), but stage \"\(_stages[n].title)\" declares its home as \(presentHomeDeclared(_indexes[n], s.user)); userdel -r deletes the live home and the runtime refuses a declared home that is not it, so state the effective home")))
+
+/// The stages before `k` whose last present declaration for the account
+/// on a host the removal runs on names another home than the removal:
+/// the live home the runtime compares the declaration against.
+function removalHomeClashStages(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, s: linux.User): List<Int> =
+  _stages[k].hosts.toList().flatMap((h) ->
+    let (declaring = positions(_indexes).filter((n) -> n < k && stageRunsOn(_stages[n], h) && presentHomeDeclared(_indexes[n], s.user) != null))
+    if (declaring.isEmpty) List()
+    else if (presentHomeDeclared(_indexes[declaring.last], s.user) == s.home) List()
+    else List(declaring.last)).toSet().toList()
+
+/// The home the stage declares present for the account: the explicit
+/// home of its present step for it, or the default one `useradd -m`
+/// creates beside the account where the step states none.
+function presentHomeDeclared(ix: StageIndex, account: String): String? =
+  let (hits = positions(ix.steps).filter((j) -> ix.steps[j] is linux.User && ix.steps[j].state == "present" && ix.steps[j].user == account))
+  if (hits.isEmpty) null else declaredHome(ix.steps[hits.first], account)
+
+/// The effective home a present step declares for the account.
+function declaredHome(s: core.Step, account: String): String? =
+  if (s is linux.User && s.state == "present" && s.user == account) presentHome(s).first else null
+
 /// The directory a path lives in: the path without its last segment.
 const function parentOf(p: String): String =
   if (p.lastIndexOf("/") <= 0) "/" else p.substring(0, p.lastIndexOf("/"))
@@ -1504,7 +1578,25 @@ function removedPathRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
     if (!(s is linux.User) || s.state != "absent" || !s.removeHome) List()
     else (if (s.home == null) List() else List(s.home))
       .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, s.user, "home directory", "deletes the directory and everything in it"))
-      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, s.user, "mail spool", "removes the spool and everything in it")))
+      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, s.user, "mail spool", "removes the spool and everything in it"))
+      + removedCustomSpoolRels(_stages, _indexes, n, m, s))
+
+/// The paths an earlier stage manages that a host's configured mail
+/// directory can turn into the removed account's spool: `userdel -r`
+/// deletes `<MAIL_DIR>/<name>` whatever directory the host points at —
+/// the setting is the host's own, which the workflow cannot read — so
+/// any earlier-stage path that carries the account's name can be the
+/// spool the removal deletes (`isMailSpool`), the same rule the
+/// same-stage check (`removedInside`) applies. The conventional spools
+/// are already covered by the directory loop above; this is the custom
+/// directory. The account's own steps are the exception, as above.
+function removedCustomSpoolRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, s: linux.User): List<String> =
+  let (reserved = (if (s.home == null) List() else List(s.home)) + mailSpools(s.user))
+  positions(_indexes[n].steps).flatMap((i) ->
+    let (t = _indexes[n].steps[i])
+    let (custom = paths(t).filter((p) -> isMailSpool(s.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/")) && !accountOwnsPath(t, s.user)))
+    if (custom.isEmpty) List()
+    else List("'\(name(t))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(custom.first), which stage \"\(_stages[m].title)\" removes with the account's mail spool; userdel -r removes the spool and everything in it, so the path does not survive the run"))
 
 /// The paths an earlier stage manages inside the directory a later
 /// stage's removal takes with it, and the refusal for them. The exact
@@ -1861,36 +1953,49 @@ function recreatesGroup(_stages: List<core.Stage>, _indexes: List<StageIndex>, n
   positions(_indexes).filter((k) -> k > n && k <= m)
     .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], List(group, "group")))
 
-/// A managed home is a directory: a whole-file owner at exactly the
-/// same path in another stage is a type conflict whichever side runs
-/// first — the user task leaves a directory where the file task writes
-/// a file, and `home_usable` refuses a regular file or a link as the
-/// home — so the two declarations can never both hold and splitting
-/// them across stages helps nothing. The comparison is per host pair:
+/// A managed home is a directory: a step that leaves a regular file at
+/// exactly the same path in another stage is a type conflict whichever
+/// side runs first — the user task leaves a directory where the file
+/// task writes a file, and `home_usable` refuses a regular file or a
+/// link as the home — so the two declarations can never both hold and
+/// splitting them across stages helps nothing. The check covers every
+/// path-bearing step that leaves a non-directory behind (`leaves`):
+/// a whole file, a link, an apt repository's source, a preference
+/// fragment, a timer's unit file or a sysctl's persistence file — not
+/// just the file and link kinds. A directory at the path reconciles
+/// with the account the way the stage-local rule reconciles it, and so
+/// does a checkout (which creates a directory) or another account step.
+/// The comparison is per host pair:
 /// stages on disjoint hosts never share a home.
 function homeTypesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
     .flatMap((m) -> homeTypeClash(_stages, _indexes, n, m) + homeTypeClash(_stages, _indexes, m, n)))
 
 /// The refusals for the managed homes of stage `n` whose path stage
-/// `m` manages as a whole file or a link.
+/// `m` leaves as a regular file or a link.
 function homeTypeClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
   positions(_indexes[n].steps).flatMap((i) ->
     let (u = _indexes[n].steps[i])
     if (!(u is linux.User) || u.state != "present") List()
     else let (h = if (u.home != null) u.home else "/home/\(u.user)")
       positions(_indexes[m].steps)
-        .filter((j) -> (_indexes[m].steps[j] is core.File || _indexes[m].steps[j] is core.Symlink) && paths(_indexes[m].steps[j]).contains(h))
+        .filter((j) -> leaves(_indexes[m].steps[j]).contains(h))
         .map((j) -> "'\(name(_indexes[m].steps[j]))' of stage \"\(_stages[m].title)\" manages \(h) as \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a whole file"), and '\(name(u))' of stage \"\(_stages[n].title)\" manages it as the account's home directory; one path cannot be both a directory and \(if (_indexes[m].steps[j] is core.Symlink) "a link" else "a file") whatever the order the stages run in, so give the home or the file another path"))
 
 /// A step that publishes inside an account's claimed home runs after the
 /// account's task creates the directory — across stages as much as inside
 /// one: `useradd -m` makes the missing home, so an earlier overlapping-host
 /// stage that writes beneath it fails on the absent parent at apply time,
-/// while the later account's task would have created it. A directory is the
+/// while the later account's task would have created it. The same holds
+/// above the home: an earlier stage that leaves a regular file at an
+/// ancestor of the home blocks the account's task, which cannot traverse
+/// the file to reach — let alone create — the home. A directory is the
 /// exception, as in the stage-local rule: the directory operation creates
 /// every missing parent of its path, so it provides the home it publishes
-/// inside.
+/// inside — and a managed directory above the home creates the path the
+/// account's task walks. Only regular files block: a link, a checkout or
+/// another account's home above it resolves to a directory the task can
+/// enter.
 function homeProvidersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (u = _indexes[m].steps[i])
@@ -1899,8 +2004,18 @@ function homeProvidersAcrossStages(_stages: List<core.Stage>, _indexes: List<Sta
       positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
         .flatMap((n) -> positions(_indexes[n].steps).flatMap((j) ->
           let (inside = paths(_indexes[n].steps[j]).filter((p) -> p.startsWith(h + "/")))
-          if (inside.isEmpty || providesHome(_indexes[n].steps[j])) List()
+          let (above = homeBlockingAncestor(_indexes[n].steps[j], h))
+          if (!above.isEmpty) List("'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" manages \(above.first) as a whole file above the home \(h) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\"; the account's task cannot traverse the regular file to create the home, so give the home or the file another path")
+          else if (inside.isEmpty || providesHome(_indexes[n].steps[j])) List()
           else List("'\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" manages \(inside.first) inside the home \(h) of '\(name(u))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" before the account's task creates the directory; useradd -m creates the missing home, so declare the account in a stage before that step")))))
+
+/// The regular files the step leaves at an ancestor of the home `h`:
+/// the paths `ensure_home` must traverse to create the home, where a
+/// regular file blocks it. Links resolve to whatever they point at, and
+/// directories, checkouts and account homes are directories already, so
+/// only the non-link leaves count.
+function homeBlockingAncestor(s: core.Step, h: String): List<String> =
+  if (s is core.Symlink) List() else leaves(s).filter((p) -> h.startsWith(p + "/"))
 
 /// Two package steps of a stage must agree on a package's version: pins that
 /// differ, or a pin and a `latest` step, would change it back and forth.
