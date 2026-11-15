@@ -1056,18 +1056,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // name the group — and after every guard, so a refused
             // change never leaves the group it would have created
             // behind.
-            // The plan's record of the declared primary group and
-            // supplementary set: check mode runs no `usermod`, so the
-            // record is made here in advance and later tasks resolve
-            // against it.
-            if ctx.check_mode {
-                if let Some(primary) = planned_primary.clone() {
-                    plan::note_primary(name, primary);
-                }
-                if let Some(supplementary) = planned_supplementary.clone() {
-                    plan::note_supplementary(name, supplementary);
-                }
-            }
             let mutations = apply::mutations(
                 name,
                 &current,
@@ -1080,18 +1068,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 .iter()
                 .any(|mutation| !matches!(mutation, Mutation::Home(_)));
             changed |= apply::run(name, mutations, ctx.check_mode, &run_cmd)?;
-            if !ctx.check_mode {
-                // The change succeeded: the plan's record follows the
-                // host's. A failed `usermod` records nothing, so a
-                // later task of a `halt_on_failure = false` plan
-                // compares against the host's unchanged state instead
-                // of a set the host never took.
-                if let Some(primary) = planned_primary {
-                    plan::note_primary(name, primary);
-                }
-                if let Some(supplementary) = planned_supplementary {
-                    plan::note_supplementary(name, supplementary);
-                }
+            // The plan's record of the declared primary group and
+            // supplementary set: check mode runs no `usermod`, so the
+            // record stands in for the host — but only where the change
+            // validates and runs. A refused change records nothing, so
+            // a later task of a `halt_on_failure = false` plan compares
+            // against the host's unchanged state instead of a set the
+            // host never took.
+            if let Some(primary) = planned_primary {
+                plan::note_primary(name, primary);
+            }
+            if let Some(supplementary) = planned_supplementary {
+                plan::note_supplementary(name, supplementary);
             }
         }
     }
