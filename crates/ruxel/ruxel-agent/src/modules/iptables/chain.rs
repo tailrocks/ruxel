@@ -40,10 +40,16 @@ pub(super) fn stale_rules(
 ) -> Result<Vec<Vec<String>>, String> {
     let jump = rule_jump(spec);
     let comment = rule_comment(spec);
+    let mut kept = false;
     let mut stale = Vec::new();
     for args in matching_rules(binary, chain, spec)? {
         if rule_jump(&args) == jump && rule_comment(&args) == comment {
-            continue;
+            // One exact copy is the declared rule; every further copy
+            // is stale, and each matching packet would cross it again.
+            if !kept {
+                kept = true;
+                continue;
+            }
         }
         stale.push(args);
     }
@@ -154,4 +160,68 @@ pub(super) fn exec_rule(binary: &str, args: &[&str]) -> Result<(), String> {
     command.args(args);
     run_checked(command)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod duplicate_tests {
+    use super::super::super::ExecContext;
+    use super::super::run_with;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A stub that keeps the rules of the chain, one per line.
+    fn chain_stub(dir: &std::path::Path, rules: &[&str]) -> (String, std::path::PathBuf) {
+        let file = dir.join("rules");
+        std::fs::write(&file, rules.join("\n") + "\n").unwrap();
+        let script = dir.join("iptables-stub");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; awk -v n=\"$*\" 'BEGIN{{done=0}} {{if (!done && $0 == n) {{done=1; next}} print}}' '{file}' > '{file}.tmp'; mv '{file}.tmp' '{file}';;\n  -A) shift 2; echo \"$*\" >> '{file}';;\nesac\nexit 0\n",
+                file = file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (script.to_str().unwrap().to_owned(), file)
+    }
+
+    #[test]
+    fn present_mode_keeps_one_copy_of_the_declared_rule() {
+        // Two exact copies of the declared rule: every copy satisfies
+        // the probe, but the second copy still logs every packet twice,
+        // so one copy must go.
+        let dir = std::env::temp_dir().join(format!("ruxel-iptables-dupe-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (binary, file) = chain_stub(
+            &dir,
+            &[
+                "-p tcp -d 10.0.0.0/8 -j DROP",
+                "-p tcp -d 10.0.0.0/8 -j DROP",
+            ],
+        );
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "destination": "10.0.0.0/8",
+            "jump": "DROP", "state": "present"
+        });
+        let result = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "-p tcp -d 10.0.0.0/8 -j DROP\n"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
