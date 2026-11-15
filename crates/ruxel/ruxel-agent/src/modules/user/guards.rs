@@ -116,7 +116,11 @@ pub(super) fn primary_group_holder(gid: u64, group: &str) -> Result<Option<Strin
 /// longer: the scan reads the plan's own record, so it skips the
 /// accounts the plan moved away and finds the ones the plan moved
 /// onto the group — the host's database still shows the old numbers
-/// while check mode runs.
+/// while check mode runs. The same holds for a group the plan
+/// renumbered: `groupmod -g` gives every account that holds the group
+/// as its primary group the new number, so the account holds the group
+/// under the plan even where the host's passwd entry still shows the
+/// old one.
 pub(super) fn primary_group_holder_from(passwd: &str, gid: u64, group: &str) -> Option<String> {
     for line in passwd.lines() {
         let f: Vec<&str> = line.split(':').collect();
@@ -132,9 +136,13 @@ pub(super) fn primary_group_holder_from(passwd: &str, gid: u64, group: &str) -> 
             let Ok(live) = f[3].parse::<u64>() else {
                 continue;
             };
+            // The number the account holds under the plan: the new
+            // number of the group the plan renumbered, and the live
+            // one where the plan renumbered no group.
+            let gid = super::plan::renumbered_gid(live).unwrap_or(live);
             super::plan::PlannedPrimary {
                 name: group.to_string(),
-                gid: Some(live),
+                gid: Some(gid),
             }
         };
         if primary.holds(gid, group) {
