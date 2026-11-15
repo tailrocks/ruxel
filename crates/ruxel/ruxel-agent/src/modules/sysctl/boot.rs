@@ -45,8 +45,14 @@ pub(super) fn system_files() -> Vec<PathBuf> {
 /// The boot files of `dirs`: one copy per name, from the
 /// highest-precedence directory that holds it. procps loads a name
 /// once (`PreloadSystem`), so a shadowed copy never reaches the kernel
-/// and must not weigh on the boot value. A name masked by a symlink to
-/// `/dev/null` — the mechanism `sysctl.d(5)` documents for disabling a
+/// and must not weigh on the boot value. The selection is the name
+/// alone: procps records each directory entry's basename before it
+/// tries to open it, so a higher entry holds the name whatever it is —
+/// a regular file, a mask to `/dev/null`, a broken link, a link to a
+/// directory, any other non-regular target — and no lower-precedence
+/// copy of the name ever loads. Whether the selected entry contributes
+/// its bytes is validated separately, over the selected entries (see
+/// `boot_bytes`). A name masked by a symlink to `/dev/null` — the
 /// lower-precedence file — holds its place like any other copy: the
 /// link opens as an empty file, the name is consumed, and the
 /// lower-precedence copies of it are the shadowed ones. A broken
@@ -63,16 +69,13 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
             continue;
         };
         for entry in entries.flatten() {
-            let path = entry.path();
-            if (!path.is_file() && !masked_by_dev_null(&path) && !broken_link(&path))
-                || path.extension().is_none_or(|ext| ext != "conf")
-            {
+            let name = entry.file_name();
+            if Path::new(&name).extension().is_none_or(|ext| ext != "conf") {
                 continue;
             }
-            let Some(name) = path.file_name() else {
-                continue;
-            };
-            by_name.entry(name.as_bytes().to_vec()).or_insert(path);
+            by_name
+                .entry(name.as_bytes().to_vec())
+                .or_insert(entry.path());
         }
     }
     let mut files: Vec<PathBuf> = by_name.into_values().collect();
@@ -80,26 +83,34 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
     files
 }
 
-/// Whether `path` is a file name masked by a symlink to `/dev/null`:
-/// the link opens as an empty file and consumes the name at boot —
-/// `sysctl.d(5)` documents the same-name higher-precedence symlink to
-/// `/dev/null` as the way to disable a vendor file — while `is_file`,
-/// which follows the link, answers false for the character device the
-/// link targets. The mask holds the name like any other copy: the
-/// lower-precedence files of it never load.
-fn masked_by_dev_null(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
-        && std::fs::canonicalize(path)
-            .is_ok_and(|target| std::fs::canonicalize("/dev/null").is_ok_and(|null| target == null))
-}
-
-/// Whether `path` is a symlink whose target is missing: procps selects
-/// the name all the same, reports that it cannot open the link, and
-/// never loads a lower-precedence copy of it — the link holds its
-/// place like the `/dev/null` mask above, loading as nothing.
-fn broken_link(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
-        && !path.exists()
+/// The bytes the boot reads from a selected entry: its content, or
+/// nothing where the entry loads as nothing. A directory, a link to
+/// one, and any other non-regular entry — a mask to `/dev/null`, a
+/// broken link — hold the name the way a regular file does but
+/// contribute no assignment, so the lower-precedence copies stay
+/// shadowed and no assignment weighs on the boot value. Reading is
+/// never attempted on those: a fifo would block the open the way it
+/// blocks procps. Only a regular file that cannot be read refuses —
+/// its assignments are unknown, and an unreadable boot file can
+/// restore any value.
+pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    if let Ok(meta) = std::fs::symlink_metadata(path) {
+        let kind = meta.file_type();
+        if kind.is_dir() || (!kind.is_file() && !kind.is_symlink()) {
+            return Ok(None);
+        }
+        if kind.is_symlink() && !std::fs::metadata(path).is_ok_and(|target| target.is_file()) {
+            return Ok(None);
+        }
+    }
+    match std::fs::read(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "cannot read the boot file {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 /// The same-named file in a higher-precedence system directory that
@@ -146,23 +157,20 @@ pub(super) fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<Strin
 
 /// The boot files and their contents, read as bytes: a boot file may
 /// hold a byte sequence that is not text, and dropping such a file
-/// would hide the assignments it makes. A file that cannot be read at
-/// all is refused — its assignments are unknown, and an unreadable
-/// boot file can restore any value. The paths keep their raw name
-/// bytes: the load order compares them as procps sorts them, and only
-/// the answer that names a file spells it.
+/// would hide the assignments it makes. A selected entry that loads as
+/// nothing — a directory, a link to one, a mask, a broken link — still
+/// holds its place: the lower-precedence copies never load, and only
+/// the selected entry's (empty) assignments weigh. A regular file that
+/// cannot be read at all is refused — its assignments are unknown, and
+/// an unreadable boot file can restore any value. The paths keep their
+/// raw name bytes: the load order compares them as procps sorts them,
+/// and only the answer that names a file spells it.
 pub(super) fn host_files() -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let mut host = Vec::new();
     for path in system_files() {
-        match std::fs::read(&path) {
-            Ok(content) => host.push((path, content)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(format!(
-                    "cannot read the boot file {}: {error}",
-                    path.display()
-                ));
-            }
+        match boot_bytes(&path)? {
+            Some(content) => host.push((path, content)),
+            None => host.push((path, Vec::new())),
         }
     }
     Ok(host)
@@ -345,4 +353,146 @@ fn final_assignment(content: &[u8], key: &str, named: &[String]) -> Option<Strin
         last = Some(assigned_value(line));
     }
     last
+}
+
+#[cfg(test)]
+mod selection_tests {
+    //! The name is what the boot selects: every entry holds its
+    //! basename even where it contributes no bytes.
+
+    use super::{boot_bytes, boot_override, system_files_in};
+    use std::path::PathBuf;
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("ruxel-sysctl-select-{}-{name}", std::process::id()));
+            drop(std::fs::remove_dir_all(&path));
+            std::fs::create_dir_all(&path).expect("operation succeeds");
+            Self(path)
+        }
+
+        fn dir(&self, name: &str) -> PathBuf {
+            let path = self.0.join(name);
+            std::fs::create_dir_all(&path).expect("operation succeeds");
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            drop(std::fs::remove_dir_all(&self.0));
+        }
+    }
+
+    fn dirs_of(etc: &std::path::Path, usr: &std::path::Path) -> (String, String) {
+        (
+            etc.to_str().expect("path is text").to_owned(),
+            usr.to_str().expect("path is text").to_owned(),
+        )
+    }
+
+    #[test]
+    fn a_link_to_a_directory_holds_the_name_at_boot() {
+        // procps records the entry's basename before it tries to open
+        // it: a higher-precedence `*.conf` link to an existing
+        // directory holds the name although `is_file`, following the
+        // link, answers false — the old scan dropped the name and
+        // admitted the lower-precedence copy, whose assignments procps
+        // never loads. The selection is the name alone; the unreadable
+        // entry loads as nothing.
+        let scratch = Scratch::new("dir-link");
+        let etc = scratch.dir("etc");
+        let usr = scratch.dir("usr");
+        let target = scratch.dir("target");
+        std::os::unix::fs::symlink(target, etc.join("99-vendor.conf"))
+            .expect("the link points at a directory");
+        std::fs::write(usr.join("99-vendor.conf"), "net.ipv4.ip_forward=1\n")
+            .expect("operation succeeds");
+        let (etc_dir, usr_dir) = dirs_of(&etc, &usr);
+        let dirs: [(&str, u8); 2] = [(&etc_dir, 1), (&usr_dir, 0)];
+        let files = system_files_in(&dirs);
+        assert!(
+            files.iter().any(|file| file == &etc.join("99-vendor.conf")),
+            "the link holds the name: {files:?}"
+        );
+        assert!(
+            !files.iter().any(|file| file.starts_with(&usr)),
+            "the shadowed copy must not load: {files:?}"
+        );
+        // The selected entry contributes no assignments, so the managed
+        // value stands: only the lower copy the boot never loads
+        // assigns another value.
+        let host: Vec<(PathBuf, Vec<u8>)> = files
+            .iter()
+            .map(|file| {
+                (
+                    file.clone(),
+                    boot_bytes(file)
+                        .expect("the surface classifies")
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            boot_override(
+                "/run/sysctl.d/10-ruxel.conf",
+                "net.ipv4.ip_forward",
+                "0",
+                &host,
+                &[]
+            ),
+            None,
+            "the shadowed assignment must not hand the boot value away"
+        );
+    }
+
+    #[test]
+    fn a_directory_holds_the_name_at_boot() {
+        // A real subdirectory named `*.conf` is no openable file
+        // either, and procps selects its basename all the same: the
+        // lower-precedence copy of the name never loads and weighs
+        // nothing on the boot value.
+        let scratch = Scratch::new("dir-entry");
+        let etc = scratch.dir("etc");
+        let usr = scratch.dir("usr");
+        std::fs::create_dir_all(etc.join("99-vendor.conf")).expect("operation succeeds");
+        std::fs::write(usr.join("99-vendor.conf"), "net.ipv4.ip_forward=1\n")
+            .expect("operation succeeds");
+        let (etc_dir, usr_dir) = dirs_of(&etc, &usr);
+        let dirs: [(&str, u8); 2] = [(&etc_dir, 1), (&usr_dir, 0)];
+        let files = system_files_in(&dirs);
+        assert!(
+            files.iter().any(|file| file == &etc.join("99-vendor.conf")),
+            "the directory holds the name: {files:?}"
+        );
+        assert!(
+            !files.iter().any(|file| file.starts_with(&usr)),
+            "the shadowed copy must not load: {files:?}"
+        );
+        let host: Vec<(PathBuf, Vec<u8>)> = files
+            .iter()
+            .map(|file| {
+                (
+                    file.clone(),
+                    boot_bytes(file)
+                        .expect("the surface classifies")
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            boot_override(
+                "/run/sysctl.d/10-ruxel.conf",
+                "net.ipv4.ip_forward",
+                "0",
+                &host,
+                &[]
+            ),
+            None,
+            "the shadowed assignment must not hand the boot value away"
+        );
+    }
 }
