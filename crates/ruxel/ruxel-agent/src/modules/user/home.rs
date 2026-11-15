@@ -9,7 +9,7 @@ use std::ffi::{OsStr, OsString};
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 /// The mode a created home directory gets: the account's own, not the
 /// world's to read or write. The schema exposes no home-mode field, so
@@ -25,7 +25,8 @@ const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 #[cfg(test)]
 pub(super) use super::adoption::operating_uid;
 pub(super) use super::adoption::{
-    adoption_pinned, adoption_trusted, ancestors_usable, home_usable, trusted_ancestors,
+    adoption_pinned, adoption_trusted, ancestors_usable, home_usable, symlink_target_trusted,
+    trusted_ancestors,
 };
 
 /// The home `useradd` creates for an account: the declared one, or the
@@ -242,16 +243,25 @@ fn walk_flags() -> OFlags {
     OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
 }
 
+/// The walk's resolved position follows the component it opened:
+/// `..` climbs back up, anything else descends.
+fn track_resolved(resolved: &mut PathBuf, name: &OsStr) {
+    if name.to_str() == Some("..") {
+        resolved.pop();
+    } else {
+        resolved.push(name);
+    }
+}
+
 /// Every directory of `path` opened from the root down, one component
 /// at a time through `openat` — creating the missing ones when
-/// `create`. The walk is anchored to the inodes it opened: a directory
-/// renamed aside and replaced after the walk passed it leaves the
-/// operation on the original inode, and a link planted where a
+/// `create`. A directory renamed aside after the walk passed it leaves
+/// the operation on the original inode, and a link planted where a
 /// non-root principal could rewrite it is refused rather than
 /// followed. A link only root can rewrite is the operator's
 /// configuration (`/var` on macOS, `/home`) — the admission
-/// `planted_in` grants it — and is resolved by its target, walked
-/// under the same no-follow rule.
+/// `planted_in` grants it — and resolves by its target, whose own
+/// directories are trusted before the walk enters them.
 pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedFd, String> {
     let mut names: Vec<OsString> = Vec::new();
     for part in path.components() {
@@ -262,6 +272,9 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
             Component::Prefix(_) => return Err(format!("user: home {home}: invalid path")),
         }
     }
+    // The walk's resolved position, lexically: `..` climbs back up —
+    // the directory a relative symlink target resolves against.
+    let mut resolved = PathBuf::from(if path.is_absolute() { "/" } else { "." });
     let mut current = open(
         if path.is_absolute() { "/" } else { "." },
         walk_flags(),
@@ -274,6 +287,7 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
         let name = names[index].clone();
         match openat(&current, &name, walk_flags(), Mode::empty()) {
             Ok(fd) => {
+                track_resolved(&mut resolved, &name);
                 current = fd;
                 index += 1;
             }
@@ -286,6 +300,7 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
                 })?;
                 current = openat(&current, &name, walk_flags(), Mode::empty())
                     .map_err(|error| format!("user: home {home}: {error}"))?;
+                track_resolved(&mut resolved, &name);
                 enforce_mode(&current, PARENT_MODE, home)?;
                 index += 1;
             }
@@ -322,16 +337,24 @@ pub(super) fn open_chain(path: &Path, home: &str, create: bool) -> Result<OwnedF
                         Path::new(&name).display()
                     ));
                 }
+                let target = readlinkat(&current, &name, Vec::new())
+                    .map_err(|error| format!("user: home {home}: {error}"))?;
+                let target = OsString::from_vec(target.into_bytes());
+                // The target's own directories are trusted the way
+                // ancestors are before the walk enters any of them.
+                symlink_target_trusted(&resolved, Path::new(&target), home)?;
                 expansions += 1;
                 if expansions > 8 {
                     return Err(format!("user: home {home}: too many symlink expansions"));
                 }
-                let target = readlinkat(&current, &name, Vec::new())
-                    .map_err(|error| format!("user: home {home}: {error}"))?;
-                let target = OsString::from_vec(target.into_bytes());
                 if Path::new(&target).is_absolute() {
                     current = open("/", walk_flags(), Mode::empty())
                         .map_err(|error| format!("user: home {home}: {error}"))?;
+                    // The walk restarts at the root with the target's
+                    // components: the resolved position restarts with
+                    // it, or a later relative target would resolve
+                    // against the already-walked prefix.
+                    resolved = PathBuf::from("/");
                 }
                 let mut replacement: Vec<OsString> = Path::new(&target)
                     .components()
