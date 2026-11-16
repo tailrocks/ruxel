@@ -1,0 +1,26 @@
+// expect: the persistence file must be a regular file
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The other side of the same relation: an earlier overlapping-host
+// stage that manages a path inside the sysctl's persistence path
+// leaves that path a directory, and the sysctl's entry cannot join a
+// directory — the sysctl task fails after the earlier tasks have
+// already changed the host.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d/90-ruxel.conf/child"; content = "x\n" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+}

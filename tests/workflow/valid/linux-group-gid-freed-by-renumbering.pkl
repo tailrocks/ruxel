@@ -1,0 +1,30 @@
+// The gid 1500 changes hands with proof: stage 2 renumbers the group
+// that held it — `groupmod -g 1600` releases 1500 — so stage 3 may
+// assign it to another group, exactly as a proven removal would.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "dev"; gid = 1500 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "dev"; gid = 1600 }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "ops"; gid = 1500 }
+    }
+  }
+}

@@ -129,7 +129,8 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
     + renumberedIdentities(_stages, _indexes)
-    + homeRemovalsAcrossStages(_stages, _indexes))
+    + homeRemovalsAcrossStages(_stages, _indexes)
+    + shellProvidersAcrossStages(_stages, _indexes))
 
 /// An explicit uid or gid is a persistent identity of one host: two
 /// stages that assign one number to different names are refused — the
@@ -156,10 +157,11 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
     else if (s is linux.Group && s.state == "present" && s.gid != null) List(new IdClaim { number = s.gid; name = s.name; kind = "gid"; stage = m; spot = where(ix.placed[i]); step = i })
     else List())
 
-/// Whether the earlier claimant's identity is proven removed before the
+/// Whether the earlier claimant's identity is proven gone before the
 /// later claim: a step removing the account (for a gid claim, the group)
 /// in a stage between the two claims — on every host both claimant
-/// stages run on. The number is freed per machine: a removal covering
+/// stages run on — or a step renumbering it, which releases the number
+/// it carried. The number is freed per machine: a removal covering
 /// only one of the shared hosts leaves the original holder present on
 /// the others, where the later `useradd -u` (or `groupadd -g`) still
 /// fails, so the proof covers the whole intersection and may be spread
@@ -167,7 +169,20 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
 function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
   sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedNumber(_indexes[k], c)))
+      .any((k) -> stageRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumbersNumber(_stages, _indexes, k, c, h))))
+
+/// The stage renumbers the identity that holds the number: it declares
+/// the identity present with another number, and the identity carried
+/// the claim's number on the host before this stage. `usermod -u` and
+/// `groupmod -g` release the number they replace, so the later claim
+/// of it succeeds — the same proof a removal of the holder gives. The
+/// history is host-scoped: the number the identity carried on another
+/// machine is another machine's identity and frees nothing here.
+function renumbersNumber(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, c: IdClaim, h: core.Host): Boolean =
+  let (p = if (c.kind == "uid") List(c.name, "owner") else List(c.name, "group"))
+  let (after = identityNumberAt(_indexes[k], p))
+  let (before = identityNumberBeforeOn(_stages, _indexes, k, p, h))
+  after != null && after != c.number && before != null && before == c.number
 
 /// The hosts both stages run on: one machine when they connect alike —
 /// the same identity `hostsOverlap` compares stages by.
@@ -300,14 +315,18 @@ function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot
 function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim): Boolean =
   sharedHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_indexes, k, c, d)))
+      .any((k) -> stageRunsOn(_stages[k], h) && removedDraw(_stages, _indexes, k, c, d, h)))
 
 /// Whether a stage removes the identity that drew the number with a
-/// removal the runtime can prove will succeed for the draw. The removal
-/// states the id the runtime verifies against the live entry, so a
-/// declaration that names another number fails the run rather than
-/// freeing the draw — the same match `removedNumber` demands of the
-/// claim — and an automatic system account is never freed at all: its
+/// removal the runtime can prove will succeed for the draw. The draw
+/// is no number the schema can name: the host's allocator chose it,
+/// and a removal that declares one possible value proves nothing — the
+/// runtime verifies the declared id against the live entry and refuses
+/// the removal when the draw took another number, so the run stops
+/// before the later claim ever runs. A removal that names no id at all
+/// frees by name: the runtime verifies only the id it is given, and
+/// the account is gone whatever number it held. An automatic system
+/// account is never freed at all: its
 /// drawn number is below 1000, where `userdel` refuses to remove the
 /// account and `groupdel` refuses the private group it still holds as
 /// its primary one. A group removal that states no gid frees by name:
@@ -315,14 +334,14 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// empty same-name group with the account, so an account removal frees
 /// a private-group draw where the account's uid is the declared one the
 /// removal verifies — but only where that group is the account's
-/// primary one and no other account keeps a membership in it: a group
-/// another account is a member of is left behind, and its number stays
-/// taken.
-const function removedDraw(_indexes: List<StageIndex>, k: Int, c: IdDraw, d: IdClaim): Boolean =
+/// primary one and no other account keeps a membership in it on the
+/// host: a group another account is a member of is left behind, and its
+/// number stays taken.
+const function removedDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
   if (c.low < 1000) false
-  else if (c.kind == "uid") _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
-  else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
-    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_indexes, k, c.name)))
+  else if (c.kind == "uid") _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == null)
+  else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, c.name, h)))
 
 /// The removal declares the same-name group as the account's primary
 /// one: `userdel` takes the same-name group with the account only
@@ -338,12 +357,14 @@ const function samePrimaryGroup(s: core.Step, n: String): Boolean =
 /// the removal's stage — that names the group as its primary group or
 /// among its supplementary groups. An account removed in a stage
 /// between the one that declares it and the removal's stage has left
-/// the group already.
-const function groupHeld(_indexes: List<StageIndex>, k: Int, n: String): Boolean =
+/// the group already — but only where that removal runs on the host
+/// the group is proved on: a membership the account loses on another
+/// machine is still there where the group is.
+const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, n: String, h: core.Host): Boolean =
   positions(_indexes).filter((m) -> m <= k).any((m) -> positions(_indexes[m].steps).any((j) ->
     let (u = _indexes[m].steps[j])
     if (!(u is linux.User)) false
-    else u.state == "present" && u.user != n && holdsGroup(u, n) && !removedBetween(_indexes, m, k, u.user)))
+    else u.state == "present" && u.user != n && holdsGroup(u, n) && !removedBetween(_stages, _indexes, m, k, u.user, h)))
 
 /// Whether the account names the group `n` as its primary group or
 /// among its supplementary groups.
@@ -351,9 +372,11 @@ const function holdsGroup(u: linux.User, n: String): Boolean =
   u.group == n || (u.groups != null && u.groups.toList().contains(n))
 
 /// Whether the account is removed in a stage between the one that
-/// declares it and the removal's stage.
-const function removedBetween(_indexes: List<StageIndex>, m: Int, k: Int, account: String): Boolean =
-  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> _indexes[s].steps.any((x) -> x is linux.User && x.state == "absent" && x.user == account))
+/// declares it and the removal's stage, on the host the group is
+/// proved on: a removal that runs on another machine leaves the
+/// membership where the group is.
+const function removedBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, account: String, h: core.Host): Boolean =
+  positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> stageRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> x is linux.User && x.state == "absent" && x.user == account))
 
 function numberDraw(a: core.Stage, c: IdDraw, b: core.Stage, d: IdClaim): String =
   if (c.stage == d.stage)
@@ -390,7 +413,9 @@ function sysctlOwnersAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
   positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
     .flatMap((m) -> overwrittenEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
       + unusableEntries(_stages[n], _indexes[n], _stages[m], _indexes[m])
-      + unusableEntries(_stages[m], _indexes[m], _stages[n], _indexes[n])))
+      + unusableEntries(_stages[m], _indexes[m], _stages[n], _indexes[n])
+      + nestedBelowSysctl(_stages[n], _indexes[n], _stages[m], _indexes[m])
+      + nestedAboveSysctl(_stages[m], _indexes[m], _stages[n], _indexes[n])))
 
 /// The refusals for the entries a later stage's whole-file writes
 /// overwrite.
@@ -404,9 +429,52 @@ function overwrittenEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: St
 /// file, so a directory, a link or a checkout at the path makes the
 /// sysctl task fail wherever the owner stands in the order.
 function unusableEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
-  sysctlsOf(ib).flatMap((x) -> positions(ia.steps)
-    .filter((j) -> !(ia.steps[j] is linux.Sysctl) && (ia.steps[j] is core.Directory || ia.steps[j] is core.Symlink || ia.steps[j] is linux.GitCheckout) && paths(ia.steps[j]).contains(x.path))
-    .map((j) -> "'\(name(ia.steps[j]))' of stage \"\(a.title)\" leaves \(x.path) as \(if (ia.steps[j] is core.Symlink) "a link" else if (ia.steps[j] is core.Directory) "a directory" else "a checkout"), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
+  positions(ib.steps).filter((i) -> ib.steps[i] is linux.Sysctl).flatMap((i) ->
+    let (x = ib.steps[i])
+    positions(ia.steps)
+      .filter((j) -> !(ia.steps[j] is linux.Sysctl) && unusableAt(ia.steps[j], x.path))
+      .map((j) -> "'\(name(ia.steps[j]))' (\(where(ia.placed[j]))) leaves \(x.path) as \(unusableKind(ia.steps[j])), and '\(name(x))' of stage \"\(b.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path"))
+
+/// The step leaves the path as something the sysctl's entry cannot
+/// join: a directory, a link, a checkout — or the home of a present
+/// account, which the account's task creates as a directory.
+const function unusableAt(s: core.Step, path: String): Boolean =
+  if (s is core.Directory || s is core.Symlink || s is linux.GitCheckout) paths(s).contains(path)
+  else s is linux.User && s.state == "present" && homeOf(s) == path
+
+/// What the step leaves at the path, as the refusal names it.
+const function unusableKind(s: core.Step): String =
+  if (s is core.Symlink) "a link"
+  else if (s is core.Directory) "a directory"
+  else if (s is linux.GitCheckout) "a checkout"
+  else "the account's home directory"
+
+/// The home of an account: the one it states, or the one useradd
+/// creates with its login name.
+const function homeOf(u: linux.User): String =
+  if (u.home != null) u.home else "/home/\(u.user)"
+
+/// The refusals for a path inside the persistence file of an earlier
+/// stage's sysctl: the sysctl's task leaves a regular file there, and
+/// a regular file holds nothing inside it — so the later step's task
+/// cannot create the path it manages. The same leaf/descendant relation
+/// the same-stage `nested` check uses, across stages.
+function nestedBelowSysctl(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  positions(ia.steps).filter((i) -> ia.steps[i] is linux.Sysctl).flatMap((i) ->
+    let (x = ia.steps[i])
+    positions(ib.steps).filter((j) -> !(ib.steps[j] is linux.Sysctl)).flatMap((j) ->
+      inside(List(x.path), paths(ib.steps[j]))
+        .map((pair) -> "'\(name(x))' (\(where(ia.placed[i]))) of stage \"\(a.title)\" keeps its entry in the file \(pair[0]), and '\(name(ib.steps[j]))' (\(where(ib.placed[j]))) of stage \"\(b.title)\" manages \(pair[1]) inside it; a regular file holds nothing inside it, so give the sysctl its own path")))
+
+/// The refusals for a later stage's sysctl whose persistence path
+/// holds a path an earlier stage manages: the earlier step's task
+/// leaves a directory there, and the sysctl's entry cannot join one.
+function nestedAboveSysctl(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  positions(ia.steps).filter((i) -> ia.steps[i] is linux.Sysctl).flatMap((i) ->
+    let (x = ia.steps[i])
+    positions(ib.steps).filter((j) -> !(ib.steps[j] is linux.Sysctl)).flatMap((j) ->
+      inside(List(x.path), paths(ib.steps[j]))
+        .map((pair) -> "'\(name(ib.steps[j]))' (\(where(ib.placed[j]))) of stage \"\(b.title)\" manages \(pair[1]), which leaves \(pair[0]) a directory, and '\(name(x))' (\(where(ia.placed[i]))) of stage \"\(a.title)\" writes its sysctl entry there: the persistence file must be a regular file the entry can join, so give the sysctl its own path")))
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
@@ -683,7 +751,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), groupRels(ix, i), shellRels(ix, i), shellAncestorRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1069,6 +1137,79 @@ function shellTargetRel(ix: StageIndex, u: linux.User, i: Int, k: Int, target: S
     List("'\(name(ix.steps[i]))' (\(where(ix.placed[i]))) names the shell \(u.shell), whose target \(target) '\(name(ix.steps[k]))' (\(where(ix.placed[k]))) creates; the account reads the target through the link, so list the target's step before the account")
   else List())
 
+/// A declared login shell must exist where the account's task runs:
+/// `useradd` and `usermod` verify the shell path, so the step that
+/// writes it must run before the account's task. The stages run in
+/// order, so a provider in a later overlapping-host stage comes too
+/// late: the earlier account's task fails in `shell_allowed` before
+/// the provider ever runs. The comparison is per host pair: stages on
+/// disjoint hosts never share a shell.
+function shellProvidersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> shellProviderRels(_stages[n], _indexes[n], _stages[m], _indexes[m])))
+
+/// The refusals for an account of an earlier stage whose shell a later
+/// stage provides, and for the target of a managed shell link the
+/// earlier stage declares.
+function shellProviderRels(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
+  positions(ia.steps).flatMap((i) ->
+    let (u = ia.steps[i])
+    if (!(u is linux.User) || u.state != "present" || u.shell == null) List()
+    else positions(ib.steps)
+      .filter((j) -> (ib.steps[j] is core.File || ib.steps[j] is core.Symlink) && paths(ib.steps[j]).contains(u.shell))
+      .flatMap((j) -> List("'\(name(u))' (\(where(ia.placed[i]))) of stage \"\(a.title)\" names the shell \(u.shell), which '\(name(ib.steps[j]))' (\(where(ib.placed[j]))) of stage \"\(b.title)\" manages; list the shell's step before the account"))
+      + shellTargetProviderRels(a, ia, b, ib, u, i))
+
+/// The refusal for a managed shell link of the earlier stage whose
+/// target a later stage creates: the account reads the target through
+/// the link, and the link dangles until the later stage runs.
+function shellTargetProviderRels(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex, u: linux.User, i: Int): List<String> =
+  positions(ia.steps).flatMap((k) ->
+    let (s = ia.steps[k])
+    if (s is core.Symlink && paths(s).contains(u.shell)) shellLinkProviderRels(a, ia, b, ib, u, i, s.target, List(u.shell))
+    else List())
+
+/// The refusals for a managed link's target that a later stage
+/// creates: the account reads the target through the link, and the
+/// link dangles until the later stage runs. The walk is the kernel's:
+/// a target that is itself a managed link leads the chain on.
+function shellLinkProviderRels(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex, u: linux.User, i: Int, target: String, seen: List<String>): List<String> =
+  if (seen.contains(target)) List()
+  else positions(ib.steps).flatMap((j) ->
+    let (s = ib.steps[j])
+    if ((s is core.File || s is core.Symlink) && paths(s).contains(target))
+      List("'\(name(u))' (\(where(ia.placed[i]))) of stage \"\(a.title)\" names the shell \(u.shell), whose target \(target) '\(name(s))' (\(where(ib.placed[j]))) of stage \"\(b.title)\" creates; the account reads the target through the link, so list the target's step before the account")
+        + (if (s is core.Symlink) shellLinkProviderRels(a, ia, b, ib, u, i, s.target, seen + List(target)) else List())
+    else List())
+
+/// The directories the account's lookup enters on its way to the shell
+/// must let the account in: the shell file's own bits decide nothing
+/// above it, and a shell the account cannot walk to — a file at mode
+/// 0755 beneath a directory at mode 0700 — leaves the login failing
+/// while the root-run apply reports success. The account is judged by
+/// the other-execute bit, the class the shell file itself is judged by
+/// (`executableMode`), and the walk is the kernel's: the targets of
+/// the managed links are walked too.
+function shellAncestorRels(ix: StageIndex, i: Int): List<String> =
+  let (u = ix.steps[i])
+  if (!(u is linux.User) || u.state != "present" || u.shell == null) List()
+  else shellChain(ix, u.shell).flatMap((p) -> positions(ix.steps).flatMap((j) ->
+    let (d = ix.steps[j])
+    if (!(d is core.Directory)) List()
+    else if (executableMode(d.mode)) List()
+    else if (!paths(d).any((x) -> p.startsWith(x + "/"))) List()
+    else List("'\(name(d))' (\(where(ix.placed[j]))) manages the directory \(d.path) at mode \(d.mode), which does not let the account search the \(if (p == u.shell) "shell \(u.shell)" else "target \(p)") of '\(name(u))' (\(where(ix.placed[i]))); the account's task needs every directory of the shell's path to let others in, so give the directory a searchable mode")))
+
+/// The paths the account's lookup enters on its way to the shell: the
+/// shell's own path and the target of every managed link it leads
+/// through — the chain the runtime walks before it reads the file. The
+/// chain is walked without recursion (P11): every pass over the steps
+/// extends it by one hop, and as many passes as there are steps reach
+/// its end.
+function shellChain(ix: StageIndex, path: String): List<String> =
+  positions(ix.steps).fold(List(path), (acc, k) -> positions(ix.steps).fold(acc, (a, j) ->
+    let (s = ix.steps[j])
+    if (s is core.Symlink && a.contains(s.path) && !a.contains(s.target)) a + List(s.target) else a))
 /// Whether a file mode makes the file executable for the account that
 /// does not own it: the other-execute bit. Unix selects the permission
 /// class by the caller's identity, so an owner- or group-execute bit

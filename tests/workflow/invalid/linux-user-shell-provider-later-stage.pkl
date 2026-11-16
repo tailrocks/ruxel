@@ -1,0 +1,27 @@
+// expect: names the shell /opt/esh, which 'Write /opt/esh'
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `useradd` and `usermod` verify the shell path, so the step that
+// writes the shell must run before the account's task. The stages run
+// in order, so a provider in a later overlapping-host stage comes too
+// late: the earlier account's task fails in `shell_allowed` before the
+// provider ever runs. The same-stage ordering rule applies across
+// stages.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/esh"; content = "#!/bin/sh\n"; mode = "0755" }
+    }
+  }
+}

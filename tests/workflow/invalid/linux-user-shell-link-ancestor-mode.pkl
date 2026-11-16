@@ -1,0 +1,22 @@
+// expect: does not let the account search
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The account's task follows the shell's link and walks the
+// directories of the target's path, not only of the shell's own: a
+// link to a file beneath a directory at mode 0700 is a file the
+// account cannot reach, so `shell_allowed` refuses the shell after the
+// earlier tasks have already changed the host.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/opt/private"; mode = "0700" }
+      new Symlink { path = "/opt/esh"; target = "/opt/private/appsh" }
+      new File { path = "/opt/private/appsh"; content = "#!/bin/sh\n"; mode = "0755" }
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}

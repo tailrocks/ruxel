@@ -247,6 +247,17 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-group-gid-auto-allocation-private-group-member.pkl",
     "invalid/linux-user-uid-auto-allocation-same-stage.pkl",
     "valid/linux-group-gid-auto-allocation-freed-by-removal.pkl",
+    "valid/linux-user-uid-freed-by-renumbering.pkl",
+    "valid/linux-group-gid-freed-by-renumbering.pkl",
+    "invalid/linux-user-uid-auto-removal-declares-number.pkl",
+    "invalid/linux-group-gid-auto-allocation-member-other-host.pkl",
+    "invalid/linux-sysctl-nested-path-later-stage.pkl",
+    "invalid/linux-sysctl-nested-path-earlier-stage.pkl",
+    "invalid/linux-user-home-sysctl-later-stage.pkl",
+    "invalid/linux-user-shell-provider-later-stage.pkl",
+    "invalid/linux-user-shell-link-target-later-stage.pkl",
+    "invalid/linux-user-shell-ancestor-mode.pkl",
+    "invalid/linux-user-shell-link-ancestor-mode.pkl",
 ];
 
 /// The official `pkl` binary.
