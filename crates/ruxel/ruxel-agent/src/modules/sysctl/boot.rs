@@ -174,16 +174,23 @@ pub(super) fn boot_override(
 /// `settinglist_findpath` finds), so a key named as the sequence loads
 /// keeps its value and a later wildcard never reaches it. The managed
 /// file's own entry is one such named assignment — the entry the task
-/// writes is an assignment by name — so where the managed file carries
-/// no content of its own yet, the entry under management stands for it.
+/// writes is an assignment by name — so where the file's current
+/// content lacks that named assignment (the file is absent, or holds
+/// no line for the key yet and `rewrite_file` is about to add one), the
+/// entry under management stands for it.
 fn named_assignments(file: &str, name: &str, host: &[(String, Vec<u8>)]) -> Vec<String> {
     let mut named: Vec<String> = host
         .iter()
         .filter(|(path, _)| !loads_after(file, path))
         .flat_map(|(_, content)| named_keys(content))
         .collect();
-    if !host.iter().any(|(path, _)| path == file) {
-        named.push(sysctl_key(name));
+    let key = sysctl_key(name);
+    let named_in_file = host
+        .iter()
+        .find(|(path, _)| path == file)
+        .is_some_and(|(_, content)| named_keys(content).contains(&key));
+    if !named_in_file {
+        named.push(key);
     }
     named
 }

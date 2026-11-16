@@ -86,21 +86,42 @@ pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> 
             }
         }
         "absent" => {
-            if let Some((_, current_gid)) = entry {
-                // A group a live account holds as its primary group is
-                // the account's to keep: `groupdel` refuses to delete
-                // one without `--force`, so the refusal comes before
-                // the utility runs, in check mode as much as in apply.
-                group_removal_allowed(
-                    name,
-                    gid,
-                    current_gid,
-                    primary_group_holder(current_gid)?.as_deref(),
-                )?;
-                changed = true;
-                if !ctx.check_mode {
-                    run_cmd("groupdel", &[name])?;
+            // The group's effective state at the removal: check mode
+            // runs no `groupadd` and no `groupmod`, so the live entry
+            // alone is stale — an earlier task of the plan may have
+            // created the group or renumbered it — and a planned group
+            // is a removal to report, not the no-op of a name the
+            // unchanged group file never had.
+            let planned = planned_group(name);
+            let exists = (entry.is_some() && !entries::group_removed(name)) || planned.is_some();
+            if exists {
+                // The gid the declaration is verified against: the
+                // planned number where an earlier step states one, and
+                // the live one where the host has it. A group the plan
+                // creates without a number gets one the schema cannot
+                // know, so the guards that need a number cannot run.
+                let effective_gid = match planned {
+                    Some(Requested::Number(number)) => Some(u64::from(number)),
+                    _ => entry.as_ref().map(|(_, current_gid)| *current_gid),
+                };
+                if let Some(effective_gid) = effective_gid {
+                    // A group a live account holds as its primary group is
+                    // the account's to keep: `groupdel` refuses to delete
+                    // one without `--force`, so the refusal comes before
+                    // the utility runs, in check mode as much as in apply.
+                    group_removal_allowed(
+                        name,
+                        gid,
+                        effective_gid,
+                        primary_group_holder(effective_gid)?.as_deref(),
+                    )?;
                 }
+            }
+            changed = exists;
+            if changed && !ctx.check_mode {
+                run_cmd("groupdel", &[name])?;
+            }
+            if changed {
                 // The removal frees the number for whatever the plan
                 // claims next, although the host's database still lists
                 // the group while check mode runs.
@@ -172,16 +193,44 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // group must be the live one: see `removal_primary_group_allowed`.
         let home = str_param(obj, "home");
         let remove = bool_param(obj, "remove", false);
-        if let Some(current) = &entry {
-            removal_allowed(name, uid, current)?;
-            removal_home_allowed(name, home, remove, &current.home)?;
-            removal_primary_group_allowed(
-                name,
-                str_param(obj, "group"),
-                primary_group_name(current.gid)?.as_deref(),
-            )?;
+        // The account's effective state at the removal: check mode runs
+        // no `useradd` and no `usermod`, so the live entry alone is
+        // stale — an earlier task of the plan may have created the
+        // account (it is there when the removal runs although the
+        // passwd file does not list it yet) or renumbered it (the
+        // planned number is the one `userdel` verifies the declaration
+        // against). A planned account is a removal to report, not the
+        // no-op of a name the unchanged passwd file never had.
+        let planned = planned_user(name);
+        let exists = (entry.is_some() && !entries::account_removed(name)) || planned.is_some();
+        if exists {
+            // The uid the declaration is verified against: the planned
+            // number where an earlier step states one, and the live one
+            // where the host has it. An account the plan creates
+            // without a number gets one the allocator draws at apply —
+            // unknown here, so the guards that need a number cannot
+            // run, the same unknown `planned_gid` plans around.
+            let effective_uid = match planned {
+                Some(Requested::Number(number)) => Some(u64::from(number)),
+                _ => entry.as_ref().map(|current| current.uid),
+            };
+            if let Some(effective_uid) = effective_uid {
+                let effective = PasswdEntry {
+                    uid: effective_uid,
+                    ..entry.clone().unwrap_or_default()
+                };
+                removal_allowed(name, uid, &effective)?;
+            }
+            if let Some(current) = &entry {
+                removal_home_allowed(name, home, remove, &current.home)?;
+                removal_primary_group_allowed(
+                    name,
+                    str_param(obj, "group"),
+                    primary_group_name(current.gid)?.as_deref(),
+                )?;
+            }
         }
-        let changed = entry.is_some();
+        let changed = exists;
         if changed && !ctx.check_mode {
             let mut args: Vec<&str> = Vec::new();
             if remove {
@@ -351,6 +400,23 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 args.push("-u");
                 args.push(&uid_s);
             }
+            let same_name = group_entry(name)?;
+            // The step's footprint claims the account's private group
+            // whenever it names no primary group — the same-name group
+            // — and the schema models that group as the account's
+            // primary one: an existing account left on another group
+            // keeps a state the workflow never declared, and the
+            // lowering's `primaryGroup` decisions downstream read it
+            // wrong. The move runs with the account's own change, after
+            // the group's creation where the host had none. The
+            // superuser's account keeps its primary group: a step for
+            // `root` may not declare one, and the implicit claim must
+            // not move it either.
+            let implicit_group_move = group.is_none()
+                && current.uid != 0
+                && same_name
+                    .as_ref()
+                    .is_none_or(|(_, gid)| *gid != current.gid);
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
@@ -372,6 +438,10 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                         }
                     }
                 }
+            } else if implicit_group_move {
+                identity_change = true;
+                args.push("-g");
+                args.push(name);
             }
             let groups_s;
             if let Some(gs) = &groups {
@@ -427,7 +497,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 name,
                 &current,
                 identity_change,
-                private_group_missing(group, group_entry(name)?.is_some()),
+                private_group_missing(group, same_name.is_some()),
                 &args,
             )?;
             changed |= !mutations.is_empty();
@@ -451,9 +521,16 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // the host yet: its gid decides the directory's owner, and
             // the primary-group change the plan already reports covers
             // the repair, so nothing is compared against a gid that
-            // does not exist.
+            // does not exist. The implicit claim's move counts the same
+            // way: the gid is the same-name group's, read after the
+            // mutations created it where the host had none.
+            let final_gid = if implicit_group_move {
+                group_entry(name)?.map(|(_, gid)| gid)
+            } else {
+                home_gid(group, current.gid, ctx.check_mode)?
+            };
             if let Some(h) = home
-                && let Some(gid) = home_gid(group, current.gid, ctx.check_mode)?
+                && let Some(gid) = final_gid
             {
                 changed |= ensure_home(h, uid.unwrap_or(current.uid), gid, ctx.check_mode)?;
             }
