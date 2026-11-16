@@ -246,7 +246,13 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-remove-home-mail-elsewhere.pkl",
     "invalid/linux-group-gid-auto-allocation-private-group-member.pkl",
     "invalid/linux-user-uid-auto-allocation-same-stage.pkl",
+    "invalid/linux-user-uid-auto-allocation-configured-range.pkl",
     "valid/linux-group-gid-auto-allocation-freed-by-removal.pkl",
+    "invalid/linux-user-home-removed-recreated-shallow.pkl",
+    "invalid/linux-file-owner-renumbered-unproven.pkl",
+    "valid/linux-file-owner-renumbered-reconciled.pkl",
+    "invalid/linux-user-needs-removed-group-earlier-stage.pkl",
+    "invalid/linux-user-remove-home-managed-home.pkl",
 ];
 
 /// The official `pkl` binary.

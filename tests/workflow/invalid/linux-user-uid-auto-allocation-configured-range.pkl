@@ -1,0 +1,27 @@
+// expect: takes its uid automatically, and the host's allocator can hand it 500
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The automatic allocation ranges are host settings: `login.defs` sets
+// UID_MIN/UID_MAX and their system counterparts, and a host configured
+// with UID_MIN=500 hands an unnumbered account a below-1000 uid. The
+// schema cannot read the host's settings, so a draw reserves the full
+// supported range — a later explicit claim of any number the allocator
+// may hand out collides with it.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 500 }
+    }
+  }
+}

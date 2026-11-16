@@ -68,6 +68,7 @@ dual_evaluator
   tests/workflow/invalid/linux-file-owner-removed-later-stage.pkl
   tests/workflow/invalid/linux-file-owner-removed.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
+  tests/workflow/invalid/linux-file-owner-renumbered-unproven.pkl
   tests/workflow/invalid/linux-file-sysctl-clash.pkl
   tests/workflow/invalid/linux-group-absent-after-user.pkl
   tests/workflow/invalid/linux-group-absent-root.pkl
@@ -107,6 +108,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-later-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-home-removed-recreated-shallow.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
   tests/workflow/invalid/linux-user-home-vs-file.pkl
@@ -115,10 +117,12 @@ dual_evaluator
   tests/workflow/invalid/linux-user-mail-spool.pkl
   tests/workflow/invalid/linux-user-needs-later-account.pkl
   tests/workflow/invalid/linux-user-needs-later-group.pkl
+  tests/workflow/invalid/linux-user-needs-removed-group-earlier-stage.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
   tests/workflow/invalid/linux-user-remove-home-conflict.pkl
   tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl
   tests/workflow/invalid/linux-user-remove-home-mail.pkl
+  tests/workflow/invalid/linux-user-remove-home-managed-home.pkl
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
   tests/workflow/invalid/linux-user-root-group.pkl
   tests/workflow/invalid/linux-user-root-uid.pkl
@@ -134,6 +138,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-auto-allocation-configured-range.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
@@ -178,6 +183,7 @@ dual_evaluator
   tests/workflow/valid/apt-preference.pkl
   tests/workflow/valid/apt-system-upgrade.pkl
   tests/workflow/valid/debconf-entry.pkl
+  tests/workflow/valid/linux-file-owner-renumbered-reconciled.pkl
   tests/workflow/valid/linux-group-gid-auto-allocation-freed-by-removal.pkl
   tests/workflow/valid/linux-sysctl-boot-order-disjoint.pkl
   tests/workflow/valid/linux-sysctl-boot-order-later-stage.pkl

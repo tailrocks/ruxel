@@ -1,0 +1,33 @@
+// The ownership is reconciled after the renumbering: the later stage
+// declares the file again with the same named owner, so its file task
+// chowns the file to the number the account carries at the end of the
+// run — `usermod -u` repairs no file it owns, but the re-declaration
+// after it does.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001 }
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1002 }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+}

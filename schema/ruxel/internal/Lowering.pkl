@@ -213,19 +213,25 @@ class IdClaim {
 
 /// An identity number an earlier stage allocates automatically: a
 /// present account or group that states no id lets the host's allocator
-/// draw one — `useradd alice` takes the first free number at UID_MIN
-/// (1000 on a clean default host), and `groupadd` and the private group
-/// draw the same way — so a later `useradd -u` (or `groupadd -g`) may
-/// claim exactly the number the draw took. The draw is no one number
-/// the schema can name: the host's free list decides, so every number
-/// of the allocator's range is the drawing account's until a proven
-/// removal frees it, and the range holds against a later explicit
-/// claim the way an explicit claim holds its own number.
+/// draw one — `useradd alice` takes the first free number at UID_MIN,
+/// and `groupadd` and the private group draw the same way — so a later
+/// `useradd -u` (or `groupadd -g`) may claim exactly the number the
+/// draw took. The draw is no one number the schema can name: the
+/// host's free list decides, and its bounds are host settings the
+/// workflow cannot read — `UID_MIN`/`UID_MAX`, `GID_MIN`/`GID_MAX` and
+/// their system counterparts are `login.defs` values any distribution
+/// may set — so every number of the supported range is the drawing
+/// account's until a proven removal frees it, and the range holds
+/// against a later explicit claim the way an explicit claim holds its
+/// own number.
 class IdDraw {
   name: String
   kind: String
   stage: Int
   spot: String
+  /// Whether the draw is an automatic system allocation (`useradd
+  /// --system`): the one whose removals can never be proven to free it.
+  system: Boolean
   low: Int
   high: Int
   /// The account's declared uid — the number the runtime verifies an
@@ -270,10 +276,12 @@ const function drawsBefore(c: IdDraw, d: IdClaim): Boolean =
 /// states none, and the gid of the private group a present account
 /// gets when it names no primary group (USERGROUPS_ENAB) — useradd
 /// creates that group beside the account and draws its number the same
-/// way. The range is the clean default host's: UID_MIN..UID_MAX
-/// (1000..60000) for a regular account, SYS_UID_MIN..SYS_UID_MAX
-/// (1..999) for a system one (`useradd --system`), the same split for
-/// the groups.
+/// way. The range is the full supported one: UID_MIN/UID_MAX,
+/// GID_MIN/GID_MAX and their system counterparts are `login.defs`
+/// settings the workflow cannot read, and a host may configure any of
+/// them — UID_MIN=500 hands an unnumbered account a below-1000 uid —
+/// so every draw reserves 1..60000, the allocator's whole supported
+/// range short of root's own number.
 function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
   positions(ix.steps).flatMap((i) ->
     let (s = ix.steps[i])
@@ -288,7 +296,7 @@ function drawsOf(ix: StageIndex, m: Int): List<IdDraw> =
 /// declared uid rides along: the number the runtime verifies an
 /// account removal's declaration against.
 function draw(_name: String, _kind: String, _system: Boolean, _stage: Int, _spot: String, _uid: Int?, _step: Int): IdDraw =
-  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; low = if (_system) 1 else 1000; high = if (_system) 999 else 60000; uid = _uid; step = _step }
+  new IdDraw { name = _name; kind = _kind; stage = _stage; spot = _spot; system = _system; low = 1; high = 60000; uid = _uid; step = _step }
 
 /// Whether the drawing identity is proven gone before the later claim:
 /// the account — for a gid draw, the group or the account whose private
@@ -307,10 +315,12 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// states the id the runtime verifies against the live entry, so a
 /// declaration that names another number fails the run rather than
 /// freeing the draw — the same match `removedNumber` demands of the
-/// claim — and an automatic system account is never freed at all: its
-/// drawn number is below 1000, where `userdel` refuses to remove the
-/// account and `groupdel` refuses the private group it still holds as
-/// its primary one. A group removal that states no gid frees by name:
+/// claim — and an automatic system account is never freed at all: the
+/// system allocator's bounds are the host's own, its numbers may fall
+/// below 1000 where the schema refuses every removal, and `groupdel`
+/// refuses the private group the account still holds as its primary
+/// one — no removal can be proven to free such a draw. A group removal
+/// that states no gid frees by name:
 /// the runtime verifies only the id it is given. `userdel` deletes the
 /// empty same-name group with the account, so an account removal frees
 /// a private-group draw where the account's uid is the declared one the
@@ -319,7 +329,7 @@ function drawFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdD
 /// another account is a member of is left behind, and its number stays
 /// taken.
 const function removedDraw(_indexes: List<StageIndex>, k: Int, c: IdDraw, d: IdClaim): Boolean =
-  if (c.low < 1000) false
+  if (c.system) false
   else if (c.kind == "uid") _indexes[k].steps.any((s) -> s is linux.User && s.state == "absent" && s.user == c.name && s.uid == d.number)
   else _indexes[k].steps.any((s) -> (s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == d.number))
     || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_indexes, k, c.name)))
@@ -1170,10 +1180,15 @@ const function removedHomes(ix: StageIndex): List<String> =
 const function parentOf(p: String): String =
   if (p.lastIndexOf("/") <= 0) "/" else p.substring(0, p.lastIndexOf("/"))
 
-/// The directory `d` is the one the path `p` needs: it lies at or below
-/// the removed home `h` and at or above the parent of `p`.
+/// The directory `d` is the one the path `p` needs: a step manages the
+/// path it declares and the parents that path needs — never anything
+/// below its own path — so it provides `p`'s parent only where it is
+/// that parent itself or lies beneath it. A step at the removed home's
+/// root creates only that root and lifts no file's claim to a deeper
+/// parent: the file writer opens the exact parent and fails where the
+/// step created only the root above it.
 const function covers(h: String, p: String, d: String): Boolean =
-  (d == h || d.startsWith(h + "/")) && (parentOf(p) == d || parentOf(p).startsWith(d + "/"))
+  (d == h || d.startsWith(h + "/")) && (parentOf(p) == d || d.startsWith(parentOf(p) + "/"))
 
 /// A removal with `removeHome` deletes the home directory of an earlier
 /// stage, so a later stage that manages a path inside it writes into a
@@ -1197,27 +1212,39 @@ function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, 
     else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
     else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
 
-/// The paths an earlier stage manages inside a home a later stage
-/// removes with the account: `userdel -r` deletes the home directory
-/// and everything in it, and the mail spool with them, so the path does
-/// not survive the run — the removal takes the earlier stage's file
-/// with it, although both stages report success. The comparison is per
-/// host pair, as the other direction's is.
+/// The paths an earlier stage manages that a later stage's removal
+/// takes with the account: `userdel -r` deletes the home directory
+/// itself and everything in it, and the mail spool with them, so the
+/// path does not survive the run — the removal takes the earlier
+/// stage's file with it, although both stages report success. The
+/// exact path counts as much as the ones inside it; the one exemption
+/// is the account's own lifecycle footprint — the home and mail spool
+/// its own user step claims, which the removal is supposed to take.
+/// The comparison is per host pair, as the other direction's is.
 function removedPathRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
   positions(_indexes[m].steps).flatMap((j) ->
     let (s = _indexes[m].steps[j])
     if (!(s is linux.User) || s.state != "absent" || !s.removeHome) List()
     else (if (s.home == null) List() else List(s.home))
-      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, h, "home directory", "deletes the directory and everything in it"))
-      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, spool, "mail spool", "removes the spool and everything in it")))
+      .flatMap((h) -> removedPathRelsFor(_stages, _indexes, n, m, s.user, h, "home directory", "deletes the directory and everything in it"))
+      + mailSpools(s.user).flatMap((spool) -> removedPathRelsFor(_stages, _indexes, n, m, s.user, spool, "mail spool", "removes the spool and everything in it")))
 
-/// The paths an earlier stage manages inside the directory a later
-/// stage's removal takes with it, and the refusal for them.
-function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, what: String, how: String): List<String> =
+/// The paths an earlier stage manages that are the directory a later
+/// stage's removal takes with it or lie inside it, and the refusal for
+/// them.
+function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, account: String, h: String, what: String, how: String): List<String> =
   positions(_indexes[n].steps).flatMap((i) ->
-    let (inside = paths(_indexes[n].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    let (inside = paths(_indexes[n].steps[i]).filter((p) -> p.startsWith(h + "/") || (p == h && !ownFootprint(_indexes[n].steps[i], account))))
     if (inside.isEmpty) List()
     else List("'\(name(_indexes[n].steps[i]))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
+
+/// Whether the earlier step is the account whose removal takes the
+/// path: the home and mail spool its own user step claims are the
+/// account's lifecycle footprint — the removal is supposed to take
+/// exactly those — so the exact path is not a managed thing the
+/// removal contradicts. Any other exact-path owner is.
+const function ownFootprint(s: core.Step, account: String): Boolean =
+  s is linux.User && s.user == account
 
 /// The home is there again before the later step: a step between the
 /// removal and it declares a directory that covers the path's parent —
@@ -1260,12 +1287,39 @@ function renumberedIdentityRels(_stages: List<core.Stage>, _indexes: List<StageI
 /// is not the one the identity carried on a host both stages share, so
 /// the file keeps the old one there. The history is host-scoped: a
 /// declaration on a disjoint host is another machine's identity and
-/// must not stand in for the one the file lives on.
+/// must not stand in for the one the file lives on — and an unknown
+/// prior number is a possible renumbering too: the account may exist
+/// on the host only, its live number unproven, and a live number that
+/// differs is renumbered without the file repaired. Either way the
+/// refusal lifts where the ownership is reconciled afterward.
 function renumberedIdentityRel(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>): List<String> =
   let (after = identityNumberAt(_indexes[k], p))
+  let (shared = sharedHosts(_stages[m], _stages[k]))
   if (after == null) List()
-  else if (!sharedHosts(_stages[m], _stages[k]).any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int && identityNumberBeforeOn(_stages, _indexes, k, p, h) != after)) List()
-  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" renumbers the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+  else if (!shared.any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) != after)) List()
+  else if (shared.every((h) -> reconcilesOwnership(_stages, _indexes, m, i, k, p, h))) List()
+  else List("'\(name(_indexes[k].steps[identityNumberStepAt(_indexes[k], p)]))' (\(where(_indexes[k].placed[identityNumberStepAt(_indexes[k], p)]))) of stage \"\(_stages[k].title)\" \(if (shared.any((h) -> identityNumberBeforeOn(_stages, _indexes, k, p, h) is Int)) "renumbers" else "may renumber") the \(p[1]) \(p[0]) to \(if (p[1] == "owner") "uid" else "gid") \(after), and '\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" names it as its \(p[1]); the number is not repaired in the files the identity owns, so declare the file's \(p[1]) again after the renumbering")
+
+/// The ownership is reconciled after the renumbering on the host `h`:
+/// a step that runs there after it manages the same subject naming the
+/// same identity again — the file task then chowns the file to the
+/// number the identity carries at the end of the run, and a later
+/// account step re-owns its managed home (`ensure_home`) the same way —
+/// so the declared ownership holds despite the renumbering.
+function reconcilesOwnership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, k: Int, p: List<String>, h: core.Host): Boolean =
+  positions(_indexes).filter((k2) -> k2 >= k && stageRunsOn(_stages[k2], h))
+    .any((k2) -> positions(_indexes[k2].steps).any((j2) ->
+      (k2 > k || j2 > identityNumberStepAt(_indexes[k], p)) && redeclares(_indexes[k2].steps[j2], _indexes[m].steps[i], p)))
+
+/// Whether the step re-declares the same ownership of the same subject:
+/// the file again with the same named owner or group, or the account
+/// again with the same managed home and primary group.
+const function redeclares(s2: core.Step, s1: core.Step, p: List<String>): Boolean =
+  (s1 is core.File && s2 is core.File && s2.path == s1.path
+    && (if (p[1] == "owner") s2.owner == p[0] else s2.group == p[0]))
+  || (s1 is linux.User && s2 is linux.User && s2.state == "present" && s2.user == s1.user
+    && primaryGroup(s2).contains(p[0])
+    && (if (s2.home != null) s2.home else "/home/\(s2.user)") == (if (s1.home != null) s1.home else "/home/\(s1.user)"))
 
 /// The step of the stage that declares the identity `p` with a number.
 function identityNumberStepAt(ix: StageIndex, p: List<String>): Int =
@@ -1407,18 +1461,36 @@ const function recreatesIdentity(_stages: List<core.Stage>, _indexes: List<Stage
 /// stage can leave the account on the group a later stage removes, and
 /// the apply then fails after the earlier stages have already mutated
 /// the host. An intervening account task that removes the account or
-/// takes it off the group lifts the refusal.
+/// takes it off the group lifts the refusal. The reverse order is the
+/// same lifecycle seen from the other side: a later account that needs
+/// a group an earlier stage removed runs its `useradd -g` (or
+/// `usermod -G`) after the `groupdel` has taken the group away.
 function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (g = _indexes[m].steps[i])
-    if (g is linux.Group && g.state == "absent")
+    (if (g is linux.Group && g.state == "absent")
       positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
         .flatMap((n) -> heldGroups(_stages, _indexes, n, m, i, g.name)
           .map((a) -> if (a.last == "primary")
             "stage \"\(_stages[n].title)\" leaves the account \(a.first) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"
             else
             "stage \"\(_stages[n].title)\" leaves the account \(a.first) in the group \(g.name), and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel succeeds but erases the account's membership in it, so remove the account or take it off the group first"))
-    else List()))
+    else List())
+    + (if (g is linux.User && g.state == "present") removedGroupNeeds(_stages, _indexes, m, i, g) else List())))
+
+/// The groups a later account needs that an earlier overlapping-host
+/// stage removed: the apply runs the `groupdel` first and the later
+/// `useradd -g` (or `usermod -G`) then fails on the missing group,
+/// while a check run still reads the stale live entry and accepts it.
+/// An intervening stage that declares the group present again on the
+/// shared hosts lifts the refusal, and the same-stage case is
+/// `groupRels`' own.
+function removedGroupNeeds(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, i: Int, u: linux.User): List<String> =
+  requiredGroups(u).flatMap((n) ->
+    positions(_indexes).filter((k) -> k < m && hostsOverlap(_stages[k], _stages[m]))
+      .filter((k) -> identityAbsent(_indexes[k], List(n, "group"))
+        && sharedHosts(_stages[k], _stages[m]).any((h) -> !recreatesIdentity(_stages, _indexes, k, m, List(n, "group"), h)))
+      .map((k) -> "'\(name(u))' (\(where(_indexes[m].placed[i]))) needs the group \(n), which stage \"\(_stages[k].title)\" removes; an account cannot keep a removed group, so declare the group present or drop it from the account"))
 
 /// The accounts an earlier stage leaves keeping `group` on a host the
 /// removal runs on, where no intervening account task takes them off

@@ -1,0 +1,26 @@
+// expect: needs the group staff, which stage "s1" removes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The reverse cross-stage lifecycle: an earlier stage removes the
+// group the later account names — `groupdel` runs first, and the later
+// `useradd -g` then fails on the missing group, while a check run
+// still sees the stale live entry. An intervening stage that recreates
+// the group lifts the refusal.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "staff"; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; group = "staff" }
+    }
+  }
+}
