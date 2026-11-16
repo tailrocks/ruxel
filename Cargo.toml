@@ -88,3 +88,6 @@ private_intra_doc_links = "deny"
 
 [profile.test.package."sha2:0.11.1"]
 opt-level = 3
+
+[patch."https://github.com/jdx/pklr"]
+pklr = { path = "../pr99-mutation-pklr" }
