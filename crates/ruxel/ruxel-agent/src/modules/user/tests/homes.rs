@@ -22,7 +22,7 @@ fn a_home_under_a_symlinked_ancestor_is_refused_never_traversed() {
     // follows it: `symlink_metadata` on the full path resolves the
     // ancestor, and `create_dir_all` and `lchown` are path-based — both
     // would build and chown the home beneath the link's target as root.
-    let error = super::super::home_usable(home.to_str().unwrap())
+    let error = super::super::home_usable(home.to_str().unwrap(), &[])
         .expect_err("a home under a symlinked ancestor must be refused");
     assert!(error.contains("home"), "{error}");
     let meta = std::fs::metadata(&target).unwrap();
@@ -223,7 +223,7 @@ fn a_home_that_is_a_regular_file_is_refused_before_the_account_changes() {
     .expect_err("a home that is a regular file must be refused before the account changes");
     assert!(error.contains("home"), "{error}");
     // The home helper refuses the same path in both modes.
-    assert!(super::super::home_usable(probe.to_str().unwrap()).is_err());
+    assert!(super::super::home_usable(probe.to_str().unwrap(), &[]).is_err());
     std::fs::remove_file(&probe).unwrap();
 }
 
@@ -269,7 +269,7 @@ fn a_declared_home_that_is_a_symlink_is_refused_never_chowned() {
     std::os::unix::fs::symlink(&target, &link).unwrap();
     let meta = std::fs::metadata(&target).unwrap();
     let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
-    assert!(super::super::home_usable(link.to_str().unwrap()).is_err());
+    assert!(super::super::home_usable(link.to_str().unwrap(), &[]).is_err());
     assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, true).is_err());
     assert!(super::super::ensure_home(link.to_str().unwrap(), uid, gid, false).is_err());
     let after = std::fs::metadata(&target).unwrap();
@@ -301,7 +301,7 @@ fn a_home_lookup_error_beyond_not_found_is_refused_before_the_account_changes() 
     let file = dir.join("f");
     std::fs::write(&file, b"").unwrap();
     let nested = dir.join("f/alice");
-    let error = super::super::home_usable(nested.to_str().unwrap())
+    let error = super::super::home_usable(nested.to_str().unwrap(), &[])
         .expect_err("NotADirectory must not be usable");
     assert!(error.contains("home"), "{error}");
     // The same path through the operation is refused before the account
@@ -374,4 +374,24 @@ fn a_failed_home_reconciliation_takes_the_created_account_back() {
     .expect_err("the reconciliation must fail");
     assert!(error.contains("could not be taken back"), "{error}");
     std::fs::remove_file(&file).unwrap();
+}
+
+#[test]
+fn an_existing_home_a_hostile_principal_could_have_filled_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = std::env::temp_dir().join(format!("ruxel-adopt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(home.join(".profile"), b"evil\n").unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let error = super::super::home_usable(home.to_str().unwrap(), &[])
+        .expect_err("a directory a hostile principal could have filled must be refused");
+    assert!(error.contains("refusing to adopt"), "{error}");
+    // The trust rule on synthetic metadata: root's or the account's,
+    // and not writable to group or other, whatever the owner.
+    assert!(super::super::home::adoptable("h", 0, 0o755, &[]).is_ok());
+    assert!(super::super::home::adoptable("h", 1234, 0o755, &[1234]).is_ok());
+    assert!(super::super::home::adoptable("h", 1234, 0o755, &[1]).is_err());
+    assert!(super::super::home::adoptable("h", 1234, 0o777, &[1234]).is_err());
+    std::fs::remove_dir_all(&home).unwrap();
 }

@@ -383,7 +383,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // step's to validate — while a declared home is validated for it
     // exactly like the claimed one, before `usermod` moves the field.
     if manages_home(entry.is_some(), home.is_some()) {
-        home_usable(&claimed_home(home, name))?;
+        // The account's own number and the step's requested one are the
+        // principals an existing home may belong to: the account before
+        // a renumbering owns its home like the account after it.
+        let mut owners: Vec<u64> = Vec::new();
+        owners.extend(uid);
+        owners.extend(entry.as_ref().map(|current| current.uid));
+        home_usable(&claimed_home(home, name), &owners)?;
     }
 
     // The home the account's passwd entry carries under the plan: the

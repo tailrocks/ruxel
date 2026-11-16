@@ -6,6 +6,7 @@ use super::PasswdEntry;
 use super::entries::group_entry;
 use super::guards::identity_change_allowed;
 use super::home::ensure_home;
+use std::os::unix::fs::MetadataExt;
 
 /// The command the agent runs for the account's change.
 pub(super) type Runner = dyn Fn(&str, &[&str]) -> Result<(), String>;
@@ -87,8 +88,13 @@ pub(super) fn mutations(
 /// The changes the existing account's step runs, in the order the plan
 /// made them. The home's repair runs before the account's own change:
 /// it is the preflight of that change, so a repair that fails leaves
-/// the account as it was. Returns whether the home's repair changed
-/// (or would change in check mode) anything.
+/// the account as it was. A later failure rolls the completed mutations
+/// back — in reverse, each to its state before the step: the home's
+/// repair is undone (the directory it created is removed, a re-owned
+/// one takes its old numbers back) and the private group the step
+/// created is deleted again, so a failed step leaves no mutation
+/// behind. Returns whether the home's repair changed (or would change
+/// in check mode) anything.
 pub(super) fn run(
     name: &str,
     mutations: Vec<Mutation>,
@@ -96,25 +102,69 @@ pub(super) fn run(
     run_cmd: &Runner,
 ) -> Result<bool, String> {
     let mut changed = false;
+    let mut created: Vec<String> = Vec::new();
+    let mut repaired: Option<(String, Option<(u32, u32)>)> = None;
     for mutation in mutations {
-        match mutation {
+        let outcome: Result<(), String> = match mutation {
             Mutation::GroupAdd(group) => {
-                if !check_mode {
-                    run_cmd("groupadd", &[&group])?;
+                if check_mode {
+                    Ok(())
+                } else {
+                    match run_cmd("groupadd", &[&group]) {
+                        Ok(()) => {
+                            created.push(group);
+                            Ok(())
+                        }
+                        Err(error) => Err(error),
+                    }
                 }
             }
             Mutation::Home(home) => {
-                if let Some(gid) = owner_gid(&home.owner, name)? {
-                    changed |= ensure_home(&home.path, home.uid, gid, check_mode)?;
+                let before = std::fs::symlink_metadata(&home.path)
+                    .ok()
+                    .map(|meta| (meta.uid(), meta.gid()));
+                match owner_gid(&home.owner, name) {
+                    Ok(Some(gid)) => match ensure_home(&home.path, home.uid, gid, check_mode) {
+                        Ok(done) => {
+                            changed |= done;
+                            if done && !check_mode {
+                                repaired = Some((home.path.clone(), before));
+                            }
+                            Ok(())
+                        }
+                        Err(error) => Err(error),
+                    },
+                    Ok(None) => Ok(()),
+                    Err(error) => Err(error),
                 }
             }
             Mutation::UserMod(mut args) => {
-                if !check_mode {
+                if check_mode {
+                    Ok(())
+                } else {
                     args.push(name.to_string());
                     let arguments: Vec<&str> = args.iter().map(String::as_str).collect();
-                    run_cmd("usermod", &arguments)?;
+                    run_cmd("usermod", &arguments)
                 }
             }
+        };
+        if let Err(error) = outcome {
+            let mut errors = vec![error];
+            if let Some((path, before)) = repaired.take() {
+                let back = match before {
+                    Some((uid, gid)) => run_cmd("chown", &[&format!("{uid}:{gid}"), &path]),
+                    None => run_cmd("rmdir", &[&path]),
+                };
+                if let Err(rollback) = back {
+                    errors.push(format!("the repaired home {path} could not be taken back: {rollback}"));
+                }
+            }
+            for group in created {
+                if let Err(rollback) = run_cmd("groupdel", &[&group]) {
+                    errors.push(format!("the created group {group} could not be taken back: {rollback}"));
+                }
+            }
+            return Err(errors.join("; "));
         }
     }
     Ok(changed)

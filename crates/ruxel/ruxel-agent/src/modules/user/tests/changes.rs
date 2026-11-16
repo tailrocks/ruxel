@@ -321,3 +321,78 @@ fn an_existing_account_reconciles_its_implicit_primary_group() {
         "the account is moved onto the same-name group the step claims: {result}"
     );
 }
+
+#[test]
+fn a_failed_change_rolls_the_completed_mutations_back() {
+    use super::super::apply::{Home, HomeOwner, Mutation};
+    use std::os::unix::fs::MetadataExt;
+    // The accepted reordering runs the private group's creation before
+    // the home's repair: a later failure must not leave the created
+    // group or the repaired home behind.
+    let base = std::env::temp_dir().join(format!("ruxel-rollback-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let meta = std::fs::metadata(&base).unwrap();
+    let home = base.join("home");
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let seen = std::rc::Rc::clone(&calls);
+    let runner = move |cmd: &str, args: &[&str]| -> Result<(), String> {
+        seen.borrow_mut().push_str(&format!("{cmd},"));
+        if cmd == "usermod" {
+            Err("usermod failed".to_string())
+        } else if cmd == "rmdir" {
+            // The home repair really created the directory; the
+            // rollback's removal must really take it back.
+            std::fs::remove_dir(args[0]).map_err(|error| error.to_string())
+        } else {
+            Ok(())
+        }
+    };
+    let error = super::super::apply::run(
+        "alice",
+        vec![
+            Mutation::GroupAdd("alice".to_string()),
+            Mutation::Home(Home {
+                path: home.to_str().unwrap().to_string(),
+                uid: u64::from(meta.uid()),
+                owner: HomeOwner::Number(u64::from(meta.gid())),
+            }),
+            Mutation::UserMod(vec!["-u".to_string(), "1500".to_string()]),
+        ],
+        false,
+        &runner,
+    )
+    .expect_err("the failed usermod must fail the step");
+    assert!(error.contains("usermod failed"), "{error}");
+    assert!(!home.exists(), "the created home must be taken back");
+    assert_eq!(*calls.borrow(), "groupadd,usermod,rmdir,groupdel,");
+}
+
+#[test]
+fn a_failed_home_repair_takes_the_created_group_back() {
+    use super::super::apply::{Home, HomeOwner, Mutation};
+    // The repair fails before it touches anything — the uid does not
+    // fit — and the group the step already created goes again.
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let seen = std::rc::Rc::clone(&calls);
+    let runner = move |cmd: &str, _args: &[&str]| -> Result<(), String> {
+        seen.borrow_mut().push_str(&format!("{cmd},"));
+        Ok(())
+    };
+    let error = super::super::apply::run(
+        "alice",
+        vec![
+            Mutation::GroupAdd("alice".to_string()),
+            Mutation::Home(Home {
+                path: format!("{}/ruxel-fit-{}", std::env::temp_dir().display(), std::process::id()),
+                uid: u64::MAX,
+                owner: HomeOwner::Number(0),
+            }),
+        ],
+        false,
+        &runner,
+    )
+    .expect_err("a failed home repair must fail the step");
+    assert!(error.contains("does not fit"), "{error}");
+    assert_eq!(*calls.borrow(), "groupadd,groupdel,");
+}

@@ -1,0 +1,27 @@
+// Sysctl values compare edge-trimmed: `SysctlValue` permits leading and
+// trailing ASCII whitespace, and procps and the runtime's
+// `trimmed_value` read `"1"` and `" 1 "` as one kernel value, so the
+// same-stage declarations and the cross-stage pair below all ask for
+// the identical kernel value and must merge rather than be refused as
+// contradictory — significant internal whitespace stays significant.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-a.conf" }
+      new linux.Sysctl { name = "net/ipv4/ip_forward"; value = " 1 "; path = "/etc/sysctl.d/90-b.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1 "; path = "/etc/sysctl.d/80-c.conf" }
+    }
+  }
+}

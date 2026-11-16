@@ -33,16 +33,28 @@ const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 /// path is usable: any other lookup error — an ancestor that is a
 /// regular file (`NotADirectory`), a permission refusal — propagates
 /// before any mutation, for `usermod -d` would otherwise move the passwd
-/// field first and leave a partially applied account behind.
-pub(super) fn home_usable(home: &str) -> Result<(), String> {
+/// field first and leave a partially applied account behind. An
+/// existing directory is usable only where it is trusted (`adoptable`).
+pub(super) fn home_usable(home: &str, owners: &[u64]) -> Result<(), String> {
     ancestors_usable(home)?;
     match std::fs::symlink_metadata(home) {
         Ok(meta) if meta.is_symlink() => Err(format!("user: home {home} exists and is a symlink")),
-        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(meta) if meta.is_dir() => adoptable(home, meta.uid(), meta.mode(), owners),
         Ok(_) => Err(format!("user: home {home} exists and is not a directory")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("user: home {home}: {error}")),
     }
+}
+
+/// An existing home is adopted only where root or the account owns it
+/// and no one else may write it: `useradd -m` reuses the directory as it
+/// is, and the repair chowns only the directory, so contents a hostile
+/// principal planted survive into the account's login.
+pub(super) fn adoptable(home: &str, uid: u32, mode: u32, owners: &[u64]) -> Result<(), String> {
+    if (uid != 0 && !owners.contains(&u64::from(uid))) || mode & 0o022 != 0 {
+        return Err(format!("user: home {home} exists and is not trusted: an adopted home is root's or the account's, and not group- or other-writable; refusing to adopt a directory a hostile user could have filled"));
+    }
+    Ok(())
 }
 
 /// Every ancestor of the home path, inspected without following it:

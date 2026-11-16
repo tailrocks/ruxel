@@ -80,8 +80,12 @@ fn creation_reuses_the_groups_the_host_already_has() {
     let home = std::env::temp_dir().join(format!("ruxel-create-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
+    // A pre-existing home is adopted only as the account's own (or
+    // root's): the step declares the number its owner holds.
+    use std::os::unix::fs::MetadataExt;
+    let uid = std::fs::metadata(&home).unwrap().uid();
     match run(
-        &json!({"name": name, "home": home.to_str().unwrap()}),
+        &json!({"name": name, "uid": uid, "home": home.to_str().unwrap()}),
         &apply_context(),
     ) {
         // A privileged host ran `useradd -g <name> …` for real: only

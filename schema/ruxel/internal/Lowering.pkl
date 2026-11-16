@@ -126,6 +126,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + groupRemovalsAcrossStages(_stages, _indexes)
     + groupNeedsAcrossStages(_stages, _indexes)
     + homeTypesAcrossStages(_stages, _indexes)
+    + homeNeedsAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
@@ -429,7 +430,7 @@ function unusableEntries(a: core.Stage, ia: StageIndex, b: core.Stage, ib: Stage
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
   let (pairs = sysctlsOf(ia).flatMap((x) -> sysctlsOf(ib)
-    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value != y.value && !(bootOrder(x.path) <= bootOrder(y.path)))
+    .filter((y) -> sysctlKey(x.name) == sysctlKey(y.name) && x.value.trim() != y.value.trim() && !(bootOrder(x.path) <= bootOrder(y.path)))
     .map((y) -> List(x, y))))
   if (pairs.isEmpty) List()
   else let (x = pairs.first.first) let (y = pairs.first.last)
@@ -949,13 +950,17 @@ const function sysctlClash(a: core.Step, b: core.Step): Boolean =
 /// one stage that ask for different values of one name would change it
 /// back and forth on every apply — and disagree at boot, where file
 /// precedence picks one — whatever files they persist in. Steps asking
-/// for the same value are fine; each persists its own entry. Names
-/// compare canonicalized: the slash-first and dotted spellings of one
-/// parameter (`net/ipv4/ip_forward`, `net.ipv4.ip_forward`) address one
-/// kernel value.
+/// for the same value are fine; each persists its own entry. Values
+/// compare edge-trimmed only — `SysctlValue` permits leading and
+/// trailing ASCII whitespace and procps and the runtime's
+/// `trimmed_value` read `"1"` and `" 1 "` as one kernel value — while
+/// significant internal whitespace stays significant. Names compare
+/// canonicalized: the slash-first and dotted spellings of one
+/// parameter (`net/ipv4/ip_forward`, `net.ipv4.ip_forward`) address
+/// one kernel value.
 function sysctlValues(ix: StageIndex, i: Int): List<String> =
   if (!(ix.steps[i] is linux.Sysctl)) List()
-  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && ix.steps[j].value != ix.steps[i].value)
+  else earlier(i).filter((j) -> ix.steps[j] is linux.Sysctl && sysctlKey(ix.steps[j].name) == sysctlKey(ix.steps[i].name) && ix.steps[j].value.trim() != ix.steps[i].value.trim())
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) ask for different values of the sysctl \(ix.steps[i].name) (\(ix.steps[j].value) and \(ix.steps[i].value)); the kernel holds one live value, so put the second value in a later stage")
 
 /// One parameter's identity: the `/proc/sys` path it addresses. Slash-
@@ -1602,6 +1607,32 @@ function recreatesGroup(_stages: List<core.Stage>, _indexes: List<StageIndex>, n
 function homeTypesAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
     .flatMap((m) -> homeTypeClash(_stages, _indexes, n, m) + homeTypeClash(_stages, _indexes, m, n)))
+
+/// A step that publishes inside an account's claimed home runs after
+/// the account's task creates the directory — the same order the
+/// same-stage `homeRels` demands, and for the same reason: `useradd -m`
+/// makes the missing home, so a step beneath it in an earlier
+/// overlapping-host stage fails on the absent parent on a clean host.
+/// Splitting the pair across stages must not admit what one stage
+/// refuses. A directory operation is the exception here as it is
+/// there: it creates every missing parent of its path, so it provides
+/// the home it publishes inside. The comparison is per host: stages on
+/// disjoint hosts never share a home.
+function homeNeedsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+    .flatMap((m) -> homeProviderOrder(_stages, _indexes, n, m)))
+
+/// The refusals for the steps of the earlier stage `n` that publish
+/// inside a home the later stage `m` creates.
+function homeProviderOrder(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
+  positions(_indexes[m].steps).flatMap((i) ->
+    let (u = _indexes[m].steps[i])
+    if (!(u is linux.User) || u.state != "present") List()
+    else let (h = if (u.home != null) u.home else "/home/\(u.user)")
+      positions(_indexes[n].steps).flatMap((j) ->
+        let (inside = paths(_indexes[n].steps[j]).filter((p) -> p.startsWith(h + "/")))
+        if (inside.isEmpty || providesHome(_indexes[n].steps[j])) List()
+        else List("'\(name(_indexes[n].steps[j]))' of stage \"\(_stages[n].title)\" manages \(inside.first) inside the home \(h) of '\(name(u))' of stage \"\(_stages[m].title)\" before the account's task creates the directory; useradd -m creates the missing home, so list the account's stage before that step")))
 
 /// The refusals for the managed homes of stage `n` whose path stage
 /// `m` manages as a whole file or a link.

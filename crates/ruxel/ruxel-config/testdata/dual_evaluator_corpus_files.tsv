@@ -63,6 +63,7 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
   tests/workflow/invalid/linux-directory-sysctl-clash.pkl
   tests/workflow/invalid/linux-file-above-sysctl.pkl
+  tests/workflow/invalid/linux-file-inside-home-later-stage.pkl
   tests/workflow/invalid/linux-file-owner-later.pkl
   tests/workflow/invalid/linux-file-owner-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-file-owner-removed-later-stage.pkl
@@ -191,6 +192,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-hyphen.pkl
   tests/workflow/valid/linux-sysctl-name-alias-same-value.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
+  tests/workflow/valid/linux-sysctl-value-edge-whitespace.pkl
   tests/workflow/valid/linux-sysctl.pkl
   tests/workflow/valid/linux-user-absent-fields-inactive.pkl
   tests/workflow/valid/linux-user-absent-home-inactive.pkl
