@@ -59,19 +59,21 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
             continue;
         }
         if let Some(value) = value {
-            // `-p all` is the default the listing leaves out, a host
-            // without a prefix carries its full mask in the listing, and
-            // the universal network is the destination the listing leaves
-            // out altogether.
-            if flag != "-p" || value != "all" {
-                let value = if flag == "-d" {
-                    printed_destination(value)
-                } else {
-                    value.clone()
-                };
-                if !(flag == "-d" && universal(&value)) {
-                    pairs.push((flag.clone(), value));
-                }
+            // The protocol is the number the firewall counts it by, so
+            // the names of one protocol are one protocol: the `icmpv6` a
+            // rule declares and the `ipv6-icmp` the listing shows are one
+            // match. The default the listing leaves out is the protocol
+            // zero, a host without a prefix carries its full mask in the
+            // listing, and the universal network is the destination the
+            // listing leaves out altogether.
+            let value = match flag {
+                "-p" => protocol_identity(value),
+                "-d" => printed_destination(value),
+                _ => value.clone(),
+            };
+            let omitted = (flag == "-p" && value == "0") || (flag == "-d" && universal(&value));
+            if !omitted {
+                pairs.push((flag.clone(), value));
             }
             index += 2;
             continue;

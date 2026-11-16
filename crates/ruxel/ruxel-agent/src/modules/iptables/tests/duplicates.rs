@@ -335,3 +335,27 @@ fn a_masked_destination_is_compared_the_way_the_firewall_prints_it() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_icmpv6_alias_is_the_protocol_the_firewall_prints() {
+    let dir = scratch("icmpv6");
+    // The firewall prints the ICMP of IPv6 as `ipv6-icmp`, the name it
+    // knows protocol 58 under first, and the request names the same
+    // protocol `icmpv6`: the two are one protocol, so the removal finds
+    // the rule Ruxel itself installed.
+    let (binary, file) = listing_stub(&dir, &["-p ipv6-icmp -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"icmpv6", "ip_version":"ipv6", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
