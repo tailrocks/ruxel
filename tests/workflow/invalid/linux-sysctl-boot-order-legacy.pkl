@@ -1,0 +1,28 @@
+// expect: their files' boot order reverses them
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `/etc/sysctl.conf` loads after every sysctl.d file whatever the file
+// names are: `sysctl --system` reads it last, so it holds the boot
+// value. A permitted non-ASCII basename such as `ÿ.conf` compares
+// beyond the character the legacy file's rank used to be, so a workflow
+// whose earlier stage writes `/etc/sysctl.conf` and whose later stage
+// writes the `ÿ.conf` value was admitted although the boot value
+// returns to the earlier stage's.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/ÿ.conf" }
+    }
+  }
+}

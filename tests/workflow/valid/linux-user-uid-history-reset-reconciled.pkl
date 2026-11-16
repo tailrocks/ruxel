@@ -1,0 +1,54 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The unknown renumbering is excused where the ownership is reconciled
+// after it: Alice holds 1500, the removal takes her away, the unnumbered
+// recreation draws a fresh number, the file names her as its owner, the
+// fifth stage renumbers her to 1500 — and the sixth stage declares the
+// same file with the same owner again, so the file task resolves the
+// name after the renumbering and writes the number it carries then.
+stages {
+  new Stage {
+    title = "numbered"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "recreate"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "file"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+  new Stage {
+    title = "renumber"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "reconcile"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+}

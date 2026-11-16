@@ -1,4 +1,5 @@
 use super::{Ledger, Path};
+use std::collections::HashSet;
 use std::io::{Read, Write};
 
 impl Ledger {
@@ -22,11 +23,39 @@ impl Ledger {
             path,
             host_key,
             records,
+            encountered: HashSet::new(),
+            aborted: false,
+            complete: false,
             dirty: false,
+            #[cfg(test)]
+            scans: std::cell::Cell::new(0),
         }
     }
 
-    pub(crate) fn flush(&self) {
+    /// The plan has ended: every record it never encountered is history
+    /// — a task a previous plan ran and this one does not — and expires
+    /// before what the plan still owns is persisted. A run that
+    /// encounters nothing expires nothing: with no task of its own it is
+    /// no plan's verdict on what this workflow manages.
+    ///
+    /// Only a complete plan may expire what it never encountered. A
+    /// plan that stopped early — a task failed and the plan halted on
+    /// the failure — leaves the tasks it never reached in the workflow,
+    /// and their records are the workflow's own: the next run must see
+    /// the earlier stage's declaration of a later task, or it treats
+    /// the later task's file as an unmanaged override and refuses the
+    /// earlier stage before the later task can run. A session that
+    /// ended without its end — the controller's stream closed mid-plan
+    /// — is an executed prefix, not a complete plan, and expires
+    /// nothing either.
+    pub(crate) fn flush(&mut self) {
+        if !self.encountered.is_empty() && self.complete && !self.aborted {
+            let before = self.records.len();
+            self.records.retain(|key, _| self.encountered.contains(key));
+            self.dirty |= self.records.len() != before;
+        }
+        // The plan is over: the next plan's encounters are its own.
+        self.encountered.clear();
         if !self.dirty {
             return;
         }

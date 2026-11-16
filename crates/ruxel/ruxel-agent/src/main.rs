@@ -7,6 +7,7 @@ mod system_state;
 
 use frames::{effective_check_mode, log_event, send_result};
 use ruxel_proto::PROTO_VERSION;
+use ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
@@ -103,9 +104,7 @@ fn serve() -> i32 {
     {
         let handshaken = handshaken.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(
-                ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS,
-            ));
+            std::thread::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
             if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
                 std::process::exit(67);
             }
@@ -117,6 +116,7 @@ fn serve() -> i32 {
     let mut no_cache = false;
     let mut ledger = ledger::Ledger::load(&dir);
     let mut system_state = system_state::SystemState::default();
+    let mut plan_sysctl: Vec<(String, String, String)> = Vec::new();
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -163,6 +163,10 @@ fn serve() -> i32 {
                     return 65;
                 }
                 handshaken.store(true, Ordering::Relaxed);
+                // The session's plans are one workflow's (the engine
+                // frames every task as its own Plan): state begins here.
+                ledger.begin_plan();
+                modules::begin_plan();
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
@@ -176,11 +180,17 @@ fn serve() -> i32 {
                     return 64;
                 }
             }
-            Some(Msg::Done(_)) => {
+            Some(Msg::Done(done)) => {
+                // Only a complete unfiltered plan expires unencountered records.
+                if !done.filtered {
+                    ledger.complete_plan();
+                }
                 ledger.flush();
                 return 0;
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
+                // Every frame is one task of the session's workflow; the
+                // plan state began at Hello and every frame keeps it.
                 for task in &tasks {
                     let mut task = task.clone();
                     task.no_log |= sensitive_effects.is_marked();
@@ -193,7 +203,11 @@ fn serve() -> i32 {
                         &mut ledger,
                         &mut system_state,
                         &mut sensitive_effects,
+                        &mut plan_sysctl,
                     ) {
+                        // The plan halted before its last task: the tasks it never reached are
+                        // still the workflow's, so their records must not expire at the plan's end.
+                        ledger.abort_plan();
                         break;
                     }
                 }
@@ -232,6 +246,7 @@ fn execute_task(
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
     sensitive_effects: &mut sensitivity::Marker,
+    plan_sysctl: &mut Vec<(String, String, String)>,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
@@ -266,6 +281,9 @@ fn execute_task(
         } else {
             serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
         };
+        // The plan has encountered this task whatever the run does with it — cache
+        // hit, check-mode run, unrecorded run — and its end expires only records it never saw.
+        ledger.encounter(&iteration.ledger_key);
         let params = match parsed.and_then(|params| {
             modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
             Ok(params)
@@ -288,17 +306,31 @@ fn execute_task(
             }
         };
 
+        // The plan's sysctl entries in delivery order, not the ledger's dropped-task history.
+        if let Some(declared) = modules::sysctl_plan_declaration(&task.module, &params)
+            && !plan_sysctl.contains(&declared)
+        {
+            plan_sysctl.push(declared);
+        }
+
+        // The preflight's managed set, shared with the cache below.
+        let managed = ledger.sysctl_preflight_managed(&task.module, plan_sysctl);
+        let key = &iteration.ledger_key;
         if !no_cache
             && task.become_user.is_empty()
             && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
-            && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
+            // The plan's own earlier steps can renumber an identity the
+            // task names: `usermod -u` leaves an arbitrary file at the
+            // old number, and the cached probe weighs the file's number
+            // alone — the file would keep the number the plan gave out.
+            && !modules::ownership_cache_stale(&task.module, &params)
+            && let Some(cached) = ledger.cached_ok_with_managed(key, system_state, &managed)
         {
-            // A forced task the ledger satisfies still observes the host:
-            // the predictions of its own dimension are reconciled here
-            // too, so no later task judges against one it made stale.
+            // A forced task the ledger satisfies still observes the host,
+            // reconciling its own predictions so no later task judges a stale one.
             if task.module == "systemd" {
                 modules::systemd::reconcile_predictions(&params, system_state);
             }
@@ -328,16 +360,28 @@ fn execute_task(
             iteration.source_content.as_deref(),
             &ctx,
             system_state,
+            &managed,
         );
-        if !task_check_mode && !task.no_log {
-            ledger.record_with_state(
-                &iteration.ledger_key,
-                &task.module,
-                &params,
-                outcome.status,
-                &outcome.result,
-                system_state,
-            );
+        if !task_check_mode {
+            if task.no_log {
+                // The result and its probes stay out of the ledger;
+                // the sysctl declaration is the workflow's own.
+                ledger.record_managed_declaration(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                );
+            } else {
+                ledger.record_with_state(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                    &outcome.result,
+                    system_state,
+                );
+            }
         }
         send_result(
             out,

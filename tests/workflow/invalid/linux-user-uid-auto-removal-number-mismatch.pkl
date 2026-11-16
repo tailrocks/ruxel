@@ -1,0 +1,35 @@
+// expect: takes its uid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An account draws its uid automatically and a later removal names
+// another number than the one the draw took: the runtime verifies the
+// removal's declared uid against the live entry and refuses it (the
+// host still holds the drawn number), so the draw is never freed and a
+// later explicit claim of a number the allocator can hand the draw
+// collides. Only a removal the runtime can prove will succeed for the
+// draw frees it.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 2000; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1000 }
+    }
+  }
+}

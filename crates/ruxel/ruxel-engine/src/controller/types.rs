@@ -25,6 +25,17 @@ pub struct Recap {
     pub rescued: u64,
     pub ignored: u64,
     pub planned: u64,
+    /// Tag selection omitted tasks the workflow keeps: at least one
+    /// leaf was skipped for its tags, so the run is a filtered subset
+    /// and its end must expire nothing.
+    pub filtered: bool,
+    /// The session stopped before its tasks were all sent: evaluation
+    /// or rendering failed mid-play, or the host failed and its later
+    /// plays never ran. The agent never receives those tasks and never
+    /// calls `abort_plan`, so the session's end is no verdict on their
+    /// records and must expire nothing — the same no-prune semantics as
+    /// a filtered run.
+    pub aborted: bool,
 }
 
 #[derive(Debug, Clone)]

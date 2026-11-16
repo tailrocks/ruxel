@@ -1,0 +1,25 @@
+// expect: needs the owner app, which stage "s2" removes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A file resolves its owner by name on the host: the account a later
+// stage removes leaves the first apply's file owned by the
+// now-unmapped numeric uid, and the next apply's file task fails
+// resolving the name before it can reach the later removal.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/app.conf"; content = "x\n"; owner = "app" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; state = "absent" }
+    }
+  }
+}

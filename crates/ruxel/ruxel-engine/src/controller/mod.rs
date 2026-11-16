@@ -144,6 +144,9 @@ struct Runner<'a, B> {
     handling: bool,
     recap: Recap,
     next_id: u64,
+    /// Tag selection omitted a task this workflow keeps: the run is a
+    /// filtered subset, so its end must expire nothing.
+    filtered: bool,
 }
 
 fn array<'a>(value: &'a Value, key: &str) -> &'a [Value] {
@@ -280,6 +283,7 @@ pub async fn run<B: Backend>(
                 handling: false,
                 recap: Recap::default(),
                 next_id: 1,
+                filtered: false,
             };
             if let Some(persisted) = set_facts.get(&host) {
                 runner.scope.insert("setFacts".into(), persisted.clone())?;
@@ -326,7 +330,12 @@ pub async fn run<B: Backend>(
             recap.skipped += runner.recap.skipped;
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;
+            recap.filtered |= runner.filtered;
             if let Err(error) = execution {
+                // The session stopped before its tasks were all sent:
+                // the agent never receives the rest and never calls
+                // `abort_plan`, so the shutdown must not prune them.
+                recap.aborted = true;
                 let error = if layer.control_sensitive || runner.backend.conservative_sensitive() {
                     anyhow::anyhow!("sensitive execution failed")
                 } else {

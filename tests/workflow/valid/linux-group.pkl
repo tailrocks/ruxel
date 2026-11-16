@@ -1,0 +1,18 @@
+// A group: the step manages one group, its id and whether it is there.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "Groups"
+    hosts = inventory.workers
+    steps {
+      new linux.Group {
+        name = "docker"
+        gid = 999
+        state = "present"
+      }
+    }
+  }
+}

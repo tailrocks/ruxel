@@ -126,7 +126,7 @@ pub(super) fn apply_attrs(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    let ownership = super::resolve_ownership(obj)?;
+    let ownership = super::resolve_ownership(obj, check_mode)?;
     apply_attrs_with(path, obj, &ownership, changed, check_mode)
 }
 
@@ -153,7 +153,7 @@ pub(super) fn apply_attrs_fd(
     changed: &mut bool,
     check_mode: bool,
 ) -> Result<(), String> {
-    let ownership = super::resolve_ownership(obj)?;
+    let ownership = super::resolve_ownership(obj, check_mode)?;
     apply_attrs_fd_with(fd, obj, &ownership, changed, check_mode)
 }
 
@@ -168,6 +168,13 @@ pub(super) fn apply_attrs_fd_with(
 ) -> Result<(), String> {
     let meta = rustix::fs::fstat(&fd).map_err(|e| e.to_string())?;
     regular_or_directory(meta.st_mode)?;
+    // The plan's unnumbered creations carry no id yet: the apply
+    // allocates one and chowns the file to it, so the requested
+    // ownership is a pending change — an otherwise-correct path must
+    // report it, never claim no owner constraint and stay silent.
+    if ownership.uid_pending || ownership.gid_pending {
+        *changed = true;
+    }
     let uid = ownership.uid;
     let gid = ownership.gid;
     if uid.is_some_and(|uid| uid != meta.st_uid) || gid.is_some_and(|gid| gid != meta.st_gid) {

@@ -1,0 +1,18 @@
+// expect: needs the group docker, which 'Remove group docker' (step 1) removes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// An account needs the groups it names: a group the same stage removes
+// contradicts the account whatever the order — one side ends the stage
+// needing a group the other removed.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "docker"; state = "absent" }
+      new linux.User { user = "app"; group = "docker" }
+    }
+  }
+}

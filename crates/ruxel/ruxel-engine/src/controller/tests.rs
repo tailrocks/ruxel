@@ -1,5 +1,6 @@
 use super::*;
 
+mod aborted;
 mod always_errors;
 mod assertion;
 mod block_check_mode;

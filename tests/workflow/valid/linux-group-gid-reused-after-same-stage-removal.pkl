@@ -1,0 +1,26 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The gid 1000 changes hands with proof inside the later stage itself:
+// the second stage removes the group that held it before claiming it
+// for another group — the steps of a stage run where the author wrote
+// them, so the `absent` listed before the claim releases the number the
+// later claim reuses, the way an intervening stage's removal would.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "alice"; gid = 1000 }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "alice"; state = "absent" }
+      new linux.Group { name = "bob"; gid = 1000 }
+    }
+  }
+}

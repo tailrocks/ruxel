@@ -58,10 +58,17 @@ pub(super) async fn run_plays(
                             total.skipped += recap.skipped;
                             total.rescued += recap.rescued;
                             total.ignored += recap.ignored;
+                            total.filtered |= recap.filtered;
+                            total.aborted |= recap.aborted;
                         }
                     }
                     super::connect::report_failure(execution, &host, "host_failed", &failure)?;
-                    totals.entry(host).or_default().failed += 1;
+                    let total = totals.entry(host).or_default();
+                    total.failed += 1;
+                    // The host's session stopped: its later plays never
+                    // run, so the shutdown must not prune the tasks it
+                    // never sent.
+                    total.aborted = true;
                 }
                 Ok(recaps) => {
                     for (host, recap) in recaps {
@@ -74,6 +81,8 @@ pub(super) async fn run_plays(
                         total.skipped += recap.skipped;
                         total.rescued += recap.rescued;
                         total.ignored += recap.ignored;
+                        total.filtered |= recap.filtered;
+                        total.aborted |= recap.aborted;
                     }
                 }
             }

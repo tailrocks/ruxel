@@ -1,0 +1,27 @@
+// expect: takes its gid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The order inside the later stage is the point: Alice's group draws
+// its gid in the first stage, and the claim for Bob runs before the
+// removal of her group — the allocator's number is still taken when
+// `groupadd -g` runs, so only a removal listed before the claim frees
+// the draw.
+stages {
+  new Stage {
+    title = "draw"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "alice" }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "bob"; gid = 1000 }
+      new linux.Group { name = "alice"; state = "absent" }
+    }
+  }
+}

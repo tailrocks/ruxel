@@ -1,0 +1,29 @@
+// expect: writes the whole file after it, which removes the entry again
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A Sysctl manages the entries of its persistence file, not the file
+// itself: a later overlapping-host stage that writes the same path
+// whole — the `File` here — replaces the file wholesale and removes the
+// entry again, so every apply re-clobbers it and the next boot loads the
+// file without the parameter, though the live value still follows the
+// stages. The stage-local clash check sees one stage at a time and
+// admits this workflow; the whole-file owner must come before the
+// sysctl, never after it.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d/90-ruxel.conf"; content = "# rewritten wholesale\n" }
+    }
+  }
+}

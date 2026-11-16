@@ -1,0 +1,19 @@
+// The slash-first and dotted spellings of one parameter address one
+// kernel value, and one value asked twice is one ask: the spellings
+// agree, so one entry is persisted and nothing changes the value back.
+// (Two spellings of one parameter with different values are refused —
+// see linux-sysctl-name-alias.)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net/ipv4/ip_forward"; value = "1"; path = "/etc/sysctl.d/10-b.conf" }
+    }
+  }
+}

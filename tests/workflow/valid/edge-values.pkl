@@ -1,6 +1,6 @@
 // Values at the edges of the types, and lowerings that guard them: a
 // link-local IPv6 address with a zone, a SHA-256 commit, literal text that
-// resembles a run-time value, a login shell (which lowers to the engine's
+// resembles a run-time value, an account (which lowers to the engine's
 // user operation alone), a command that reacts to another step (which
 // reports a change in check and diff when it would run), and a command with
 // both `creates` and `UnlessOutput`.

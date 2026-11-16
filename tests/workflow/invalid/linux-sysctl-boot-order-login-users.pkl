@@ -1,0 +1,30 @@
+// expect: their files' boot order reverses them
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One machine keeps one boot whatever login user opened the SSH
+// connection: both stages reach 192.0.2.50:22 — the first as root, the
+// second as deployer — so their files load in one order at boot, and the
+// later stage's earlier-sorting file hands the boot value back to the
+// earlier stage. The sysctl cross-stage checks key the machine by
+// endpoint and port, not by the SSH login user.
+local webRoot = new Host { name = "web-root"; address = "192.0.2.50" }
+local webDeployer = new Host { name = "web-deployer"; address = "192.0.2.50"; user = "deployer" }
+
+stages {
+  new Stage {
+    title = "first"
+    hosts { webRoot }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-old.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts { webDeployer }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/10-new.conf" }
+    }
+  }
+}
