@@ -57,7 +57,8 @@ fn evaluate_here(
     module_path: &[PathBuf],
 ) -> pklr::Result<serde_json::Value> {
     let mut modules = templates::Modules::new(files.clone());
-    let source = pklr::ModuleSource::read(&mut modules, path)?;
+    let _modules = &modules; // PROBE: stub GAP-4 preload
+    let source = String::new(); // PROBE: stub GAP-4
     let mut evaluator = pklr::Evaluator::with_capabilities(Resources(files));
     evaluator.set_allowed_resources(vec!["file:".to_owned(), "modulepath:".to_owned()]);
     evaluator.set_environment_variables(BTreeMap::new());
@@ -68,14 +69,15 @@ fn evaluate_here(
     // that each react to the one before (see `EVAL_STACK`).
     evaluator.set_max_depth(256);
     for (served, source) in crate::schema::modules() {
-        evaluator.add_module_path_source(served, source.as_str())?;
+        let _ = (served, source); // PROBE: stub GAP-3 in-memory source
     }
     for directory in module_path {
-        evaluator.add_module_path_directory(directory);
+        let _ = directory; // PROBE: stub GAP-3 incremental directory
     }
-    evaluator.set_module_source(modules);
+    let _ = &modules; // PROBE: stub GAP-4 set_module_source
     evaluator.set_base_path(path.parent().unwrap_or(Path::new("/")));
-    evaluator.eval_source_json_blocking(&source, path)
+    let _ = (&source, path); // PROBE: stub GAP-4 eval_source_json_blocking
+    Ok(serde_json::Value::Null)
 }
 
 /// Evaluate a module. Imports and `file:` resources must lie beneath

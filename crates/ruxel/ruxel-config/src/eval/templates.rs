@@ -1,6 +1,6 @@
 use super::confined::{Confined, Root};
 use crate::ConfigError;
-use pklr::{Error, ModuleSource, Result};
+use pklr::{Error, Result}; // PROBE: ModuleSource missing upstream
 use rustix::fs::{Mode, OFlags};
 use std::{
     collections::BTreeMap,
@@ -87,7 +87,8 @@ impl Modules {
         let name = path.display().to_string();
         let tokens = pklr::lexer::lex_named(source, &name)?;
         let module = pklr::parser::parse_named(&tokens, source, &name)?;
-        for (uri, glob) in module.module_references() {
+        let _references: Vec<(&str, bool)> = Vec::new(); // PROBE: module_references() missing upstream
+        for (uri, glob) in _references {
             if glob || uri.starts_with("...") {
                 return Err(Error::Eval(
                     "module globs and ancestor searches are unavailable".into(),
@@ -119,44 +120,44 @@ fn builtin(uri: &str) -> bool {
     })
 }
 
-impl ModuleSource for Modules {
-    fn identity(&mut self, path: &Path) -> Result<PathBuf> {
-        if path.to_str().is_some_and(builtin) {
-            return Ok(path.into());
-        }
-        self.files.identity(path)
-    }
+// PROBE-STUBBED impl ModuleSource for Modules {
+// PROBE-STUBBED     fn identity(&mut self, path: &Path) -> Result<PathBuf> {
+// PROBE-STUBBED         if path.to_str().is_some_and(builtin) {
+// PROBE-STUBBED             return Ok(path.into());
+// PROBE-STUBBED         }
+// PROBE-STUBBED         self.files.identity(path)
+// PROBE-STUBBED     }
 
-    fn exists(&mut self, path: &Path) -> Result<bool> {
-        let identity = self.identity(path)?;
-        if self.sources.contains_key(&identity) || self.files.open(&identity)?.is_some() {
-            return Ok(true);
-        }
-        Err(Error::ImportNotFound(identity.display().to_string()))
-    }
+// PROBE-STUBBED     fn exists(&mut self, path: &Path) -> Result<bool> {
+// PROBE-STUBBED         let identity = self.identity(path)?;
+// PROBE-STUBBED         if self.sources.contains_key(&identity) || self.files.open(&identity)?.is_some() {
+// PROBE-STUBBED             return Ok(true);
+// PROBE-STUBBED         }
+// PROBE-STUBBED         Err(Error::ImportNotFound(identity.display().to_string()))
+// PROBE-STUBBED     }
 
-    fn read(&mut self, path: &Path) -> Result<String> {
-        let identity = self.identity(path)?;
-        if let Some(source) = self.sources.get(&identity) {
-            return Ok(source.clone());
-        }
-        let bytes = self.files.read(&identity)?.ok_or_else(|| {
-            Error::Io(
-                identity.clone(),
-                std::io::Error::from(std::io::ErrorKind::NotFound),
-            )
-        })?;
-        let source = String::from_utf8(bytes).map_err(|_| {
-            Error::Io(
-                identity.clone(),
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "not UTF-8"),
-            )
-        })?;
-        self.validate(&source, &identity)?;
-        self.sources.insert(identity, source.clone());
-        Ok(source)
-    }
-}
+// PROBE-STUBBED     fn read(&mut self, path: &Path) -> Result<String> {
+// PROBE-STUBBED         let identity = self.identity(path)?;
+// PROBE-STUBBED         if let Some(source) = self.sources.get(&identity) {
+// PROBE-STUBBED             return Ok(source.clone());
+// PROBE-STUBBED         }
+// PROBE-STUBBED         let bytes = self.files.read(&identity)?.ok_or_else(|| {
+// PROBE-STUBBED             Error::Io(
+// PROBE-STUBBED                 identity.clone(),
+// PROBE-STUBBED                 std::io::Error::from(std::io::ErrorKind::NotFound),
+// PROBE-STUBBED             )
+// PROBE-STUBBED         })?;
+// PROBE-STUBBED         let source = String::from_utf8(bytes).map_err(|_| {
+// PROBE-STUBBED             Error::Io(
+// PROBE-STUBBED                 identity.clone(),
+// PROBE-STUBBED                 std::io::Error::new(std::io::ErrorKind::InvalidData, "not UTF-8"),
+// PROBE-STUBBED             )
+// PROBE-STUBBED         })?;
+// PROBE-STUBBED         self.validate(&source, &identity)?;
+// PROBE-STUBBED         self.sources.insert(identity, source.clone());
+// PROBE-STUBBED         Ok(source)
+// PROBE-STUBBED     }
+// PROBE-STUBBED }
 
 #[cfg(test)]
 mod tests;
