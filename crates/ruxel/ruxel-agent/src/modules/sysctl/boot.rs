@@ -6,12 +6,14 @@
 //! that holds it — and the names load together, sorted, with
 //! `/etc/sysctl.conf` after all of them.
 
+mod analysis;
+
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::{normalized, sysctl_key};
+pub(super) use analysis::boot_override;
 
 /// The recognized system directories, by precedence: the higher rank
 /// wins a file name shared between them. procps reads them in this
@@ -26,7 +28,7 @@ pub(super) const DIRS: [(&str, u8); 5] = [
 ];
 
 /// The legacy file, loaded after every directory file.
-const LEGACY: &str = "/etc/sysctl.conf";
+pub(super) const LEGACY: &str = "/etc/sysctl.conf";
 
 /// Every file `sysctl --system` reads on this host: the `*.conf` files
 /// of the recognized system directories and `/etc/sysctl.conf`.
@@ -47,25 +49,35 @@ pub(super) fn system_files() -> Vec<PathBuf> {
 /// not text is a boot file like any other and must weigh on the
 /// analysis.
 pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
-    let mut by_name: BTreeMap<Vec<u8>, PathBuf> = BTreeMap::new();
+    // The name a directory holds is claimed by the first directory
+    // that lists it: procps compares the directory entry names and
+    // never looks at what the entry opens as, so a broken link claims
+    // the name all the same and the copies below it are never loaded.
+    let mut claimed: BTreeMap<Vec<u8>, Option<PathBuf>> = BTreeMap::new();
     for (dir, _) in dirs {
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if (!path.is_file() && !masked_by_dev_null(&path))
-                || path.extension().is_none_or(|ext| ext != "conf")
-            {
+            if path.extension().is_none_or(|ext| ext != "conf") {
                 continue;
             }
             let Some(name) = path.file_name() else {
                 continue;
             };
-            by_name.entry(name.as_bytes().to_vec()).or_insert(path);
+            let key = name.as_bytes().to_vec();
+            if claimed.contains_key(&key) {
+                continue;
+            }
+            // Only a copy that opens as a file assigns anything: a
+            // broken link and a directory named `*.conf` hold the name
+            // and assign nothing.
+            let assigns = path.is_file() || masked_by_dev_null(&path);
+            claimed.insert(key, assigns.then_some(path));
         }
     }
-    let mut files: Vec<PathBuf> = by_name.into_values().collect();
+    let mut files: Vec<PathBuf> = claimed.into_values().flatten().collect();
     files.push(PathBuf::from(LEGACY));
     files
 }
@@ -77,7 +89,7 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Vec<PathBuf> {
 /// which follows the link, answers false for the character device the
 /// link targets. The mask holds the name like any other copy: the
 /// lower-precedence files of it never load.
-fn masked_by_dev_null(path: &std::path::Path) -> bool {
+fn masked_by_dev_null(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
         && std::fs::canonicalize(path)
             .is_ok_and(|target| std::fs::canonicalize("/dev/null").is_ok_and(|null| target == null))
@@ -93,40 +105,65 @@ fn masked_by_dev_null(path: &std::path::Path) -> bool {
 /// inside the recognized system directories are shadowed:
 /// `/etc/sysctl.conf` loads after all of them and is never skipped.
 pub(super) fn shadowing(file: &str) -> Option<String> {
-    shadow_candidates(file)
+    shadowing_in(file, &DIRS)
+}
+
+/// The shadow of `file` among `dirs`: the same name a
+/// higher-precedence directory holds.
+///
+/// The name is held by the entry the directory lists, not by what that
+/// entry opens as: procps claims a name by the directory entry
+/// (`PreloadSystem`), so a broken link holds the name like any other
+/// copy — procps selects it, reports that it cannot open it, and
+/// never loads the same name from the lower-precedence directory.
+pub(super) fn shadowing_in(file: &str, dirs: &[(&str, u8)]) -> Option<String> {
+    shadow_candidates_in(file, dirs)
         .into_iter()
-        .find(|candidate| std::path::Path::new(candidate).exists())
+        .find(|candidate| holds_name(candidate))
 }
 
 /// The paths that would shadow `file` at boot, highest precedence
 /// first: the file's base name in the system directories that outrank
 /// its own.
 pub(super) fn shadow_candidates(file: &str) -> Vec<String> {
+    shadow_candidates_in(file, &DIRS)
+}
+
+/// The paths that would shadow `file` at boot among `dirs`, highest
+/// precedence first: the file's base name in the system directories
+/// that outrank its own.
+fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<String> {
     let Some((dir, base)) = file.rsplit_once('/') else {
         return Vec::new();
     };
     let dir = format!("{dir}/");
-    let Some((_, rank)) = DIRS.iter().find(|(known, _)| *known == dir) else {
+    let Some((_, rank)) = dirs.iter().find(|(known, _)| *known == dir) else {
         return Vec::new();
     };
-    DIRS.iter()
+    dirs.iter()
         .filter(|(_, higher)| higher > rank)
         .map(|(known, _)| format!("{known}{base}"))
         .collect()
+}
+
+/// Whether the directory holds an entry with this name: the entry
+/// exists, whatever it opens as.
+fn holds_name(path: &str) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
 }
 
 /// The boot files and their contents, read as bytes: a boot file may
 /// hold a byte sequence that is not text, and dropping such a file
 /// would hide the assignments it makes. A file that cannot be read at
 /// all is refused — its assignments are unknown, and an unreadable
-/// boot file can restore any value. The paths are kept as their raw
-/// name bytes: the read follows them exactly, while the analysis keys
-/// on the lossy spelling only to name the file in an answer.
-pub(super) fn host_files() -> Result<Vec<(String, Vec<u8>)>, String> {
+/// boot file can restore any value. The paths keep the bytes the host
+/// spells them with: the load order compares those bytes, and only
+/// the answers that name a file spell it lossily.
+pub(super) fn host_files() -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let mut host = Vec::new();
     for path in system_files() {
         match std::fs::read(&path) {
-            Ok(content) => host.push((path.to_string_lossy().into_owned(), content)),
+            Ok(content) => host.push((path, content)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(format!(
@@ -137,233 +174,6 @@ pub(super) fn host_files() -> Result<Vec<(String, Vec<u8>)>, String> {
         }
     }
     Ok(host)
-}
-
-/// The later-loading host file that assigns `name` to a value of its
-/// own, if any: its path and the value. The host contents come from
-/// outside so the boot surface is provable without a system of its
-/// own. A file ruxel manages holds a declared managed value, not an
-/// unmanaged override, so `managed` — the file, key and value of every
-/// sysctl entry ruxel manages on this host — weighs on the answer. And
-/// a wildcard reaches no key the sequence assigns by name: procps
-/// keeps the keys a setting names outright out of the expansion of a
-/// pattern, so a later `net.ipv4.conf.*.rp_filter` cannot hand the boot
-/// value away from a key the managed file assigns by name.
-pub(super) fn boot_override(
-    file: &str,
-    name: &str,
-    value: &str,
-    host: &[(String, Vec<u8>)],
-    managed: &[(String, String, String)],
-) -> Option<(String, String)> {
-    let key = sysctl_key(name);
-    let named = named_assignments(file, name, host);
-    host.iter()
-        .filter(|(path, _)| loads_after(file, path))
-        .find_map(|(path, content)| {
-            assigns_other(content, &key, value, &named)
-                .into_iter()
-                .find(|other| !declared(path, &key, other, managed))
-                .map(|other| (path.clone(), other))
-        })
-}
-
-/// The keys the boot sequence assigns by name, up to and including the
-/// managed file: procps keeps a key a setting names outright out of the
-/// expansion of a pattern (`write_setting_list` skips a globbed path
-/// `settinglist_findpath` finds), so a key named as the sequence loads
-/// keeps its value and a later wildcard never reaches it. The managed
-/// file's own entry is one such named assignment — the entry the task
-/// writes is an assignment by name — so where the file's current
-/// content lacks that named assignment (the file is absent, or holds
-/// no line for the key yet and `rewrite_file` is about to add one), the
-/// entry under management stands for it.
-fn named_assignments(file: &str, name: &str, host: &[(String, Vec<u8>)]) -> Vec<String> {
-    let mut named: Vec<String> = host
-        .iter()
-        .filter(|(path, _)| !loads_after(file, path))
-        .flat_map(|(_, content)| named_keys(content))
-        .collect();
-    let key = sysctl_key(name);
-    let named_in_file = host
-        .iter()
-        .find(|(path, _)| path == file)
-        .is_some_and(|(_, content)| named_keys(content).contains(&key));
-    if !named_in_file {
-        named.push(key);
-    }
-    named
-}
-
-/// The keys `content` assigns by name: every assignment line whose key
-/// is no wildcard, in its canonical spelling with procps's
-/// ignore-failure marker off.
-fn named_keys(content: &[u8]) -> Vec<String> {
-    let mut keys = Vec::new();
-    for line in content.split(|byte| *byte == b'\n') {
-        let line = trim(line);
-        if line.is_empty() || line[0] == b'#' {
-            continue;
-        }
-        let Some(equals) = line.iter().position(|byte| *byte == b'=') else {
-            continue;
-        };
-        let assigned = trim(&line[..equals]);
-        let assigned = trim(assigned.strip_prefix(b"-").unwrap_or(assigned));
-        let assigned = String::from_utf8_lossy(assigned).into_owned();
-        if !assigned.contains('*') && !assigned.contains('?') {
-            keys.push(sysctl_key(&assigned));
-        }
-    }
-    keys
-}
-
-/// A file ruxel manages: an assignment of the key ruxel declared there
-/// is a declared managed value, not an unmanaged boot override. The
-/// value must be the declared one — a managed file that drifted to
-/// another value carries an unmanaged assignment again.
-fn declared(path: &str, key: &str, value: &str, managed: &[(String, String, String)]) -> bool {
-    managed.iter().any(|(file, name, declared_value)| {
-        file == path && sysctl_key(name) == key && normalized(declared_value) == value
-    })
-}
-
-/// Whether `candidate` loads after `file` at boot: the system files
-/// sort together by their base names, and `/etc/sysctl.conf` loads
-/// after all of them. One base name loads once, from its
-/// highest-precedence directory (see `system_files_in`), so a
-/// same-named copy is never a later load.
-fn loads_after(file: &str, candidate: &str) -> bool {
-    if candidate == file || file == LEGACY {
-        return false;
-    }
-    if candidate == LEGACY {
-        return true;
-    }
-    match (file.rsplit_once('/'), candidate.rsplit_once('/')) {
-        (Some((_, mine)), Some((_, theirs))) => theirs > mine,
-        _ => false,
-    }
-}
-
-/// The values `content` assigns the key to that differ from `value`.
-/// The file's effective value is its last matching assignment — procps
-/// applies the lines in order and the final one wins — so intermediate
-/// assignments of another value are overridden by the file itself and
-/// only a final differing value hands the boot value away. An alias
-/// spelling is the same entry, a leading `-` is procps's
-/// ignore-failure marker (the assignment happens either way), and a
-/// wildcard key assigns every key it expands to — except the keys the
-/// sequence assigns by name (`named`): procps keeps those out of the
-/// expansion of a pattern, whatever file order the two sit in.
-fn assigns_other(content: &[u8], key: &str, value: &str, named: &[String]) -> Vec<String> {
-    let want = normalized(value);
-    let mut last: Option<String> = None;
-    for line in content.split(|byte| *byte == b'\n') {
-        let line = trim(line);
-        if line.is_empty() || line[0] == b'#' {
-            continue;
-        }
-        let Some(equals) = line.iter().position(|byte| *byte == b'=') else {
-            continue;
-        };
-        let assigned = trim(&line[..equals]);
-        // procps reads a leading '-' as the ignore-failure marker: the
-        // assignment happens either way.
-        let assigned = trim(assigned.strip_prefix(b"-").unwrap_or(assigned));
-        let assigned = String::from_utf8_lossy(assigned).into_owned();
-        if !key_matches(&assigned, key) {
-            continue;
-        }
-        // A wildcard candidate reaches no key the sequence assigns by
-        // name: procps excludes the explicitly configured keys from
-        // the expansion of a pattern, so the managed key keeps its
-        // named value and the pattern assigns none of it.
-        if (assigned.contains('*') || assigned.contains('?')) && named.iter().any(|k| k == key) {
-            continue;
-        }
-        last = Some(normalized(&String::from_utf8_lossy(trim(
-            &line[equals + 1..],
-        ))));
-    }
-    match last {
-        Some(other) if other != want => vec![other],
-        _ => Vec::new(),
-    }
-}
-
-/// The ASCII whitespace trimmed off both ends of a line.
-fn trim(line: &[u8]) -> &[u8] {
-    let start = line
-        .iter()
-        .position(|byte| !byte.is_ascii_whitespace())
-        .unwrap_or(line.len());
-    let end = line
-        .iter()
-        .rposition(|byte| !byte.is_ascii_whitespace())
-        .map_or(start, |at| at + 1);
-    &line[start..end]
-}
-
-/// Whether the key a file assigns is the managed key: the two
-/// spellings of one parameter are one entry, and a wildcard key
-/// (`net.ipv4.conf.*.rp_filter`) assigns every key it expands to.
-fn key_matches(candidate: &str, key: &str) -> bool {
-    let canonical = sysctl_key(candidate);
-    if canonical == key {
-        return true;
-    }
-    if !candidate.contains('*') && !candidate.contains('?') {
-        return false;
-    }
-    glob_matches(&canonical, key)
-}
-
-/// A wildcard key against the managed key: `*` stands for any run of
-/// characters and `?` for one, both within a single path component —
-/// procps expands a pattern one segment at a time (`net.*.rp_filter`
-/// assigns no `net.ipv4.conf.all.rp_filter`), so the match stops at
-/// canonical-key `/` separators. The match is deliberately wide within
-/// a component — a wildcard that could expand to the managed key
-/// assigns it — so a later file that restores another value is never
-/// missed.
-fn glob_matches(pattern: &str, key: &str) -> bool {
-    let pattern: Vec<&str> = pattern.split('/').collect();
-    let key: Vec<&str> = key.split('/').collect();
-    pattern.len() == key.len()
-        && pattern
-            .iter()
-            .zip(key)
-            .all(|(part, name)| segment_matches(part, name))
-}
-
-/// One wildcard segment against one path component: `*` any run of
-/// characters inside the component, `?` any single one.
-fn segment_matches(pattern: &str, key: &str) -> bool {
-    let pattern: Vec<char> = pattern.chars().collect();
-    let key: Vec<char> = key.chars().collect();
-    let (mut at, mut index) = (0, 0);
-    let (mut star, mut resume) = (None, 0);
-    while index < key.len() {
-        if at < pattern.len() && (pattern[at] == '?' || pattern[at] == key[index]) {
-            at += 1;
-            index += 1;
-        } else if at < pattern.len() && pattern[at] == '*' {
-            star = Some(at);
-            resume = index;
-            at += 1;
-        } else if let Some(star_at) = star {
-            at = star_at + 1;
-            resume += 1;
-            index = resume;
-        } else {
-            return false;
-        }
-    }
-    while at < pattern.len() && pattern[at] == '*' {
-        at += 1;
-    }
-    at == pattern.len()
 }
 
 /// The fingerprint of the effective boot surface: the files that load
