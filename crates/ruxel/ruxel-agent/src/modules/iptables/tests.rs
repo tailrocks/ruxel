@@ -1,5 +1,7 @@
 #[path = "tests/duplicates.rs"]
 mod duplicates;
+#[path = "tests/match_identity.rs"]
+mod match_identity;
 #[path = "tests/present.rs"]
 mod present;
 use serde_json::json;

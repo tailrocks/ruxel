@@ -30,33 +30,29 @@ pub(super) fn remove(path: &Path, recurse: bool, check_mode: bool) -> Result<boo
 
 /// The removal, with the mount table of the host read through the
 /// listing it is given: a table that cannot be read is a refusal, and
-/// not an empty table the removal walks a tree with.
+/// not an empty table the removal walks a tree with. A mount is a tree
+/// that belongs to somewhere else, and the removal does not take it.
 pub(super) fn remove_with_listing(
     path: &Path,
     recurse: bool,
     check_mode: bool,
     listing: &super::mounts::Listing,
 ) -> Result<bool, String> {
-    let mounts = listing().map_err(|error| super::mounts::mount_table_failed(&error))?;
-    remove_with(path, recurse, check_mode, &mounts)
-}
-
-/// The removal with the mounts of the host given: a mount is a tree
-/// that belongs to somewhere else, and the removal does not take it.
-pub(super) fn remove_with(
-    path: &Path,
-    recurse: bool,
-    check_mode: bool,
-    mounts: &[Mount],
-) -> Result<bool, String> {
     let path = absolute(path)?;
-    refuse_before(&path, mounts)?;
+    let mounts = listing().map_err(|error| super::mounts::mount_table_failed(&error))?;
+    refuse_before(&path, &mounts)?;
     let (parent, name) = match open_parent(&path) {
         Ok(opened) => opened,
         // A missing ancestor means the target is not there either.
         Err(OpenError::Missing) => return Ok(false),
         Err(OpenError::Other(error)) => return Err(error),
     };
+    // A bind mount installed after the preflight would be entered by
+    // the walk that opened the parent although the checked table did
+    // not hold it: the covering mount is validated again from the
+    // opened parent, before anything is taken away.
+    let mounts = listing().map_err(|error| super::mounts::mount_table_failed(&error))?;
+    refuse_covered(&path, &mounts)?;
     // A bind mount aliases the directory it is mounted from: the
     // directory that holds the target has a system root's own identity,
     // and the path says nothing about it.
@@ -74,7 +70,7 @@ pub(super) fn remove_with(
         }
     };
     let identity = (super::floor::device(&meta), meta.st_ino);
-    refuse_target_mount(identity, mounts, &path)?;
+    refuse_target_mount(identity, &mounts, &path)?;
     if FileType::from_raw_mode(meta.st_mode) != FileType::Directory {
         // A file, and a link that points at one: the link itself is what
         // the removal takes.
@@ -83,7 +79,7 @@ pub(super) fn remove_with(
         }
         return Ok(true);
     }
-    take_directory(&parent, &name, &path, recurse, check_mode, mounts)
+    take_directory(&parent, &name, &path, recurse, check_mode, &mounts)
 }
 
 /// The path the removal works on: the absolute path, so the floor holds
@@ -125,6 +121,35 @@ fn refuse_before(path: &Path, mounts: &[Mount]) -> Result<(), String> {
     if mounts.iter().any(|mount| mount.point == path) {
         return Err(format!(
             "file: refusing to remove {}: it is a mount point",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// The refusal a removal makes when the covering mount names a tree of
+/// a system root: the mount says where the path lands, and the tree of
+/// a system root is the root's own tree, however the path names it.
+///
+/// This is asked twice: once before anything is opened, and once from
+/// the opened parent. A bind mount installed in between is entered by
+/// the walk that opened the parent although the table the first check
+/// read did not hold it.
+fn refuse_covered(path: &Path, mounts: &[Mount]) -> Result<(), String> {
+    if let Some(root) = super::mounts::bound_root_in(path, &super::floor::SYSTEM_ROOTS, mounts) {
+        return Err(format!(
+            "file: refusing to remove {}: it is bound to {root}, a system root",
+            path.display()
+        ));
+    }
+    // The directory that holds the target is the one the walk entered:
+    // where it lands is where the removal lands.
+    if let Some(parent) = path.parent()
+        && let Some(root) =
+            super::mounts::bound_root_in(parent, &super::floor::SYSTEM_ROOTS, mounts)
+    {
+        return Err(format!(
+            "file: refusing to remove {}: it is held by {root}, a system root",
             path.display()
         ));
     }

@@ -47,14 +47,55 @@ fn a_target_that_carries_the_identity_of_a_mount_point_is_refused() {
     // the path may reach it through an alias (`/bin/tool` for
     // `/usr/bin/tool`), and the identity of the opened target is what
     // tells.
-    let mounts = [super::super::mounts::Mount {
-        root: PathBuf::from("/usr/bin"),
-        point: PathBuf::from("/usr/bin/tool"),
-        identity: (meta.dev(), meta.ino()),
-    }];
-    let error = super::super::removal::remove_with(&file, false, false, &mounts).unwrap_err();
+    let identity = (meta.dev(), meta.ino());
+    let listing = move || {
+        Ok(vec![super::super::mounts::Mount {
+            root: PathBuf::from("/usr/bin"),
+            point: PathBuf::from("/usr/bin/tool"),
+            identity,
+        }])
+    };
+    let error =
+        super::super::removal::remove_with_listing(&file, false, false, &listing).unwrap_err();
     assert!(error.contains("mount point"), "{error}");
     // The tree of the mount point is not the removal's to take.
     assert!(file.exists());
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn a_bind_mount_installed_after_the_preflight_is_refused() {
+    // A bind mount of the system root is installed after the preflight
+    // but before the parent is opened: the descriptor walk enters the
+    // new mount although the checked table did not hold it, and the
+    // removal would take the file of the real system tree.
+    let base = scratch("late-bind-mount");
+    let dir = base.join("scratch/root/opt");
+    std::fs::create_dir_all(&dir).unwrap();
+    let data = dir.join("data");
+    std::fs::write(&data, b"content").unwrap();
+    let root_meta = std::fs::metadata("/").unwrap();
+    let point = base.join("scratch/root");
+    let calls = std::cell::Cell::new(0);
+    let listing = move || {
+        let call = calls.get();
+        calls.set(call + 1);
+        if call == 0 {
+            // The checked table holds no mount at the point yet.
+            Ok(Vec::new())
+        } else {
+            // The bind mount is in the table now: the walk entered it.
+            Ok(vec![super::super::mounts::Mount {
+                root: PathBuf::from("/"),
+                point: point.clone(),
+                identity: (root_meta.dev(), root_meta.ino()),
+            }])
+        }
+    };
+    let error =
+        super::super::removal::remove_with_listing(&data, false, false, &listing).unwrap_err();
+    assert!(error.contains("system root"), "{error}");
+    // The file of the real tree is still there.
+    assert_eq!(std::fs::read(&data).unwrap(), b"content");
     std::fs::remove_dir_all(base).unwrap();
 }

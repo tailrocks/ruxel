@@ -48,8 +48,14 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
     while index < args.len() {
         let flag = &args[index];
         let value = args.get(index + 1);
-        if matches!(flag.as_str(), "-j" | "--jump" | "--comment") {
-            // The jump and the comment are not part of the match.
+        if matches!(flag.as_str(), "-j" | "--jump") {
+            // The target begins here: the options the target carries
+            // (`--reject-with` and the like) belong to the target, and
+            // nothing after it is part of the match.
+            break;
+        }
+        if flag == "--comment" {
+            // The comment is not part of the match.
             index += 2;
             continue;
         }

@@ -75,7 +75,7 @@ fn listing() -> Result<Vec<u8>, String> {
 
 /// The mounts of the host, as the listing of the host lists them.
 fn parse(listing: &[u8]) -> Vec<Mount> {
-    let mut mounts = Vec::new();
+    let mut mounts: Vec<(u64, Mount)> = Vec::new();
     for line in listing.split(|byte| *byte == b'\n') {
         if line.is_empty() {
             continue;
@@ -84,6 +84,7 @@ fn parse(listing: &[u8]) -> Vec<Mount> {
         // the device, the tree that is mounted and the path it is
         // mounted at.
         let mut fields = line.split(|byte| *byte == b' ');
+        let mut id = None;
         let mut root = None;
         let mut point = None;
         for index in 0..5 {
@@ -91,6 +92,7 @@ fn parse(listing: &[u8]) -> Vec<Mount> {
                 break;
             };
             match index {
+                0 => id = Some(field),
                 3 => root = Some(field),
                 4 => point = Some(field),
                 _ => {}
@@ -99,16 +101,38 @@ fn parse(listing: &[u8]) -> Vec<Mount> {
         let (Some(root), Some(point)) = (root, point) else {
             continue;
         };
+        let id = id
+            .and_then(|id| std::str::from_utf8(id).ok())
+            .and_then(|id| id.parse::<u64>().ok())
+            .unwrap_or(0);
         let root = PathBuf::from(std::ffi::OsString::from_vec(unescape_mount_bytes(root)));
         let point = PathBuf::from(std::ffi::OsString::from_vec(unescape_mount_bytes(point)));
         let identity = std::fs::metadata(&point).map_or((0, 0), |meta| (meta.dev(), meta.ino()));
-        mounts.push(Mount {
-            root,
-            point,
-            identity,
-        });
+        mounts.push((
+            id,
+            Mount {
+                root,
+                point,
+                identity,
+            },
+        ));
     }
-    mounts
+    // Several mounts may be stacked at one mount point: the tree a walk
+    // enters is the one mounted last, and it is the one the greatest
+    // mount id names. The records of the hidden mounts are dropped: they
+    // name trees no walk reaches through the point any more, and keeping
+    // them would leave the table naming a tree the path does not land
+    // in.
+    let mut visible: Vec<(u64, Mount)> = Vec::new();
+    for (id, mount) in mounts {
+        let held = visible.iter().position(|kept| kept.1.point == mount.point);
+        match held {
+            Some(index) if id >= visible[index].0 => visible[index] = (id, mount),
+            Some(_) => {}
+            None => visible.push((id, mount)),
+        }
+    }
+    visible.into_iter().map(|(_, mount)| mount).collect()
 }
 
 /// The identity of every mount point of the host: the device and the
@@ -150,14 +174,16 @@ pub(super) fn bound_root(path: &Path, roots: &[&str]) -> Result<Option<String>, 
 /// The system root a path lands in, with the mounts of the host given.
 pub(super) fn bound_root_in(path: &Path, roots: &[&str], mounts: &[Mount]) -> Option<String> {
     // The mount that covers the path the deepest is the one that names
-    // where the path lands.
+    // where the path lands. Mounts stacked at one point have the same
+    // depth: the one listed last is the one mounted over the others, and
+    // it is the visible one.
     let mut covering: Option<&Mount> = None;
     for mount in mounts {
         if !path.starts_with(&mount.point) {
             continue;
         }
         let deeper = covering.is_some_and(|other| {
-            other.point.components().count() >= mount.point.components().count()
+            other.point.components().count() > mount.point.components().count()
         });
         if !deeper {
             covering = Some(mount);

@@ -72,6 +72,41 @@ fn a_mount_of_another_filesystem_is_not_a_crossing() {
 }
 
 #[test]
+fn a_mount_point_that_holds_several_mounts_shows_the_topmost_one() {
+    // A benign tree is mounted at the point, and a tree of the root is
+    // mounted over it: the tree a walk enters is the visible one, and
+    // the record of the hidden mount must not name where the path
+    // lands.
+    let listing = b"31 20 8:1 /benign /scratch/config rw - ext4 /dev/sda1 rw\n\
+32 20 8:1 /etc /scratch/config rw - ext4 /dev/sda1 rw\n";
+    let mounts = super::super::mounts::mounts_from(Ok(listing.to_vec())).unwrap();
+    assert_eq!(mounts.len(), 1, "{mounts:?}");
+    assert_eq!(mounts[0].root, PathBuf::from("/etc"));
+    assert_eq!(mounts[0].point, PathBuf::from("/scratch/config"));
+}
+
+#[test]
+fn the_visible_mount_of_a_stacked_point_names_where_the_path_lands() {
+    // Mounts stacked at one point have the same depth: the one mounted
+    // over the others is the visible one, and it is the one that names
+    // where the path lands. Reasoning from the hidden mount would
+    // permit the removal of a file of the root.
+    let mounts = [
+        mount("/benign", "/scratch/config", etc_identity()),
+        mount("/etc", "/scratch/config", etc_identity()),
+    ];
+    let roots = super::super::floor::SYSTEM_ROOTS;
+    assert_eq!(
+        super::super::mounts::bound_root_in(
+            Path::new("/scratch/config/ssh/sshd_config"),
+            &roots,
+            &mounts,
+        ),
+        Some("/etc".to_string())
+    );
+}
+
+#[test]
 fn the_path_of_an_entry_keeps_the_bytes_of_its_name() {
     // A name is not necessarily text: the path of the entry keeps the
     // bytes of the name, or the mount it names is missed and the tree
@@ -111,8 +146,7 @@ fn a_listing_that_cannot_be_read_is_not_an_empty_listing() {
     // that reads it refuses.
     let error =
         super::super::mounts::mounts_from(Err("the mount table cannot be read".to_string()))
-            .err()
-            .expect("the listing must fail");
+            .unwrap_err();
     assert!(error.contains("mount points of the host"), "{error}");
 }
 
