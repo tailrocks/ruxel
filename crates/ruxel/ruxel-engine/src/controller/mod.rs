@@ -307,10 +307,15 @@ pub async fn run<B: Backend>(
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
             let execution: Result<bool> = async {
-                let success = runner.tasks(array(play, "preTasks"), &layer).await?
+                // A handler that stops the flush without an
+                // execution error ends the session the same way a
+                // failed task does: the pending handlers are never
+                // sent, so the recap below carries the aborted mark
+                // and the shutdown filters Done.
+                let mut success = runner.tasks(array(play, "preTasks"), &layer).await?
                     && runner.tasks(array(play, "tasks"), &layer).await?;
                 if success {
-                    runner.run_handlers(&layer).await?;
+                    success = runner.run_handlers(&layer).await?;
                 }
                 Ok(success)
             }

@@ -118,3 +118,33 @@ async fn backward_handler_failure_stops_pending_known_handlers() -> Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn incomplete_handler_flush_marks_the_session_aborted() -> Result<()> {
+    // Thread 316: one notified handler stops the flush before another
+    // notified handler runs, so the session must carry the aborted
+    // mark — without it the shutdown sends an unfiltered completion
+    // and the agent prunes the pending handler's records.
+    let config = json!({"inventory":{"hosts":{"h":{}},"groups":{}},"plays":[{"targets":["h"],"tasks":[{"name":"trigger","notify":["first","second"],"operation":{"kind":"command","argv":["change"]}}],"handlers":[{"name":"first","failedWhen":true,"operation":{"kind":"command","argv":["first"]}},{"name":"second","operation":{"kind":"command","argv":["second"]}}]}]});
+    let mut backend = Fake::default();
+    let recaps = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    let names: Vec<_> = backend
+        .calls
+        .iter()
+        .map(|call| call.task.name.as_str())
+        .collect();
+    assert_eq!(names, ["trigger", "first"]);
+    assert_eq!(recaps["h"].failed, 1);
+    assert!(
+        recaps["h"].aborted,
+        "an incomplete handler flush is no verdict on the pending handler's records"
+    );
+    Ok(())
+}
