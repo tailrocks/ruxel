@@ -360,7 +360,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // where the recreated entry holds it.
             let effective_uid = match planned {
                 Some(Requested::Number(number)) => Some(u64::from(number)),
-                _ if plan::user_recreated(name) => None,
+                // The unknown-uid escape is check-mode-only: the apply
+                // recreated the account, so the live entry holds the
+                // allocator's choice, the way the group arm verifies a
+                // recreated group in apply mode.
+                _ if ctx.check_mode && plan::user_recreated(name) => None,
                 _ => entry.as_ref().map(|current| current.uid),
             };
             if let Some(effective_uid) = effective_uid {
