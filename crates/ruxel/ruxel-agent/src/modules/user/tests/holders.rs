@@ -193,6 +193,48 @@ fn a_shared_same_name_group_names_every_other_holder() {
 }
 
 #[test]
+fn a_plan_created_primary_holder_shares_the_same_name_group() {
+    // Thread 288: check mode runs no `useradd`, so an account the plan
+    // creates is absent from the passwd scan — but the plan's own
+    // record holds its primary group, and a planned holder of the
+    // same-name group keeps it the way a live one does. The dry run
+    // must see that `dave`, created with primary group `app`, shares
+    // the group instead of approving an implicit adoption of it.
+    begin_plan();
+    super::super::plan::note_user("ruxel-sharer-dave", Some(3001));
+    super::super::plan::note_primary(
+        "ruxel-sharer-dave",
+        super::super::plan::PlannedPrimary {
+            name: "app".to_string(),
+            gid: Some(2001),
+        },
+    );
+    let groups = "app:x:2001:bob\n";
+    let passwd = "app:x:2001:2001::/home/app:/bin/sh\nbob:x:2002:2001::/home/bob:/bin/sh\n";
+    let sharers = super::super::holders::same_name_group_sharers_from(groups, passwd, "app", 2001);
+    assert!(
+        sharers.contains(&"ruxel-sharer-dave".to_string()),
+        "the plan-created primary holder shares the group: {sharers:?}"
+    );
+    assert!(
+        sharers.contains(&"bob".to_string()),
+        "the live primary holder still shares the group: {sharers:?}"
+    );
+    assert!(
+        !sharers.iter().any(|sharer| sharer == "app"),
+        "the account itself is no sharer of its own group: {sharers:?}"
+    );
+    // A planned account the plan removed holds the group no longer.
+    super::super::plan::note_removed_account("ruxel-sharer-dave");
+    let sharers = super::super::holders::same_name_group_sharers_from(groups, passwd, "app", 2001);
+    assert!(
+        !sharers.contains(&"ruxel-sharer-dave".to_string()),
+        "a removed planned holder shares nothing: {sharers:?}"
+    );
+    begin_plan();
+}
+
+#[test]
 fn the_check_mode_prediction_consults_the_host_policy() {
     // An empty same-name group disappears with the account only where
     // the host policy deletes one: `USERGROUPS_ENAB=no` (or an

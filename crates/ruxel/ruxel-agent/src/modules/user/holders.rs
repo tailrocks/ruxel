@@ -98,6 +98,25 @@ pub(super) fn other_primary_group_holders_from(
             holders.push(f[0].to_string());
         }
     }
+    // The accounts the plan created: check mode runs no `useradd`, so
+    // a planned account is absent from the passwd scan — but the
+    // plan's own record holds its primary group, and a planned holder
+    // of this group keeps it the way a live one does. Without them the
+    // same-name check approves an implicit adoption of a shared group.
+    for account in super::plan::users() {
+        if account == name || holders.iter().any(|holder| holder == &account) {
+            continue;
+        }
+        // An account the plan has removed holds the group no longer:
+        // check mode runs no `userdel`, so the account the plan took
+        // away is skipped wherever the plan lists it.
+        if super::entries::account_removed(&account) {
+            continue;
+        }
+        if super::plan::primary(&account).is_some_and(|primary| primary.holds(gid, group)) {
+            holders.push(account);
+        }
+    }
     holders
 }
 
