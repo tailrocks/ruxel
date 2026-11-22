@@ -1,7 +1,7 @@
 //! A declared login shell exists and is executable by the account.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::PermissionsExt;
 
 thread_local! {
@@ -19,6 +19,15 @@ thread_local! {
     /// holds in check mode only.
     static PLANNED_SHELL_PROVIDERS: RefCell<BTreeSet<String>> =
         const { RefCell::new(BTreeSet::new()) };
+    /// The source each planned link declares: a managed link is only
+    /// as good as its target chain, which check mode never creates,
+    /// so the account's check-mode verification judges the effective
+    /// chain — the planned links, then the planned file or the live
+    /// filesystem — instead of the link's bare registration above. A
+    /// link the plan never manages has no entry here: only the `file`
+    /// state=link step writes this record.
+    static PLANNED_SHELL_LINKS: RefCell<BTreeMap<String, String>> =
+        const { RefCell::new(BTreeMap::new()) };
 }
 
 /// Records that a File or Symlink step of the plan manages `path`:
@@ -35,15 +44,31 @@ pub(crate) fn note_planned_shell_provider(path: &str) {
     });
 }
 
+/// Records that a `file` state=link step of the plan manages `path`
+/// as a link to `src`: the account's check-mode verification follows
+/// this declared chain instead of trusting the link's bare existence.
+/// The link registers as a provider too, so the registry still names
+/// the destination the plan manages.
+pub(crate) fn note_planned_shell_link(path: &str, src: &str) {
+    PLANNED_SHELL_LINKS.with(|links| {
+        links.borrow_mut().insert(path.to_string(), src.to_string());
+    });
+    note_planned_shell_provider(path);
+}
+
 /// Forgets that a step of the plan manages `path` as a shell: a `copy`
 /// or `file` task that leaves a non-executable file behind supersedes
 /// the executable provider the registry still names, the way the
 /// lowering refuses a managed shell file without an executable mode —
 /// the account's task reads the replacement, not the superseded
-/// provider.
+/// provider. A superseded link takes its declared chain with it, so a
+/// later lookup cannot follow a chain the plan no longer manages.
 pub(crate) fn forget_planned_shell_provider(path: &str) {
     PLANNED_SHELL_PROVIDERS.with(|providers| {
         providers.borrow_mut().remove(path);
+    });
+    PLANNED_SHELL_LINKS.with(|links| {
+        links.borrow_mut().remove(path);
     });
 }
 
@@ -64,6 +89,9 @@ pub(crate) fn note_managed_shell_file(path: &str, mode: Option<u32>) {
 }
 
 /// Whether an earlier step of the plan provides the shell `path`.
+/// Test-only: production judges the effective target chain (see
+/// `planned_shell_chain_ok`), not bare registration.
+#[cfg(test)]
 pub(super) fn planned_shell_provided(path: &str) -> bool {
     PLANNED_SHELL_PROVIDERS.with(|providers| providers.borrow().contains(path))
 }
@@ -74,6 +102,38 @@ pub(super) fn reset_planned_shell_providers() {
     PLANNED_SHELL_PROVIDERS.with(|providers| {
         providers.borrow_mut().clear();
     });
+    PLANNED_SHELL_LINKS.with(|links| {
+        links.borrow_mut().clear();
+    });
+}
+
+/// Whether the plan's declared providers make `shell` executable: the
+/// chain of planned links from the shell, resolved the way the
+/// account's lookup resolves them — a relative source against the
+/// link's own directory — down to a terminal the plan provides as a
+/// file, or the live filesystem where the plan provides nothing
+/// further. A dangling or non-executable terminal fails, a cycle or a
+/// chain past the lookup budget fails, and a link the plan never
+/// managed is not followed: only `note_planned_shell_link` declares.
+fn planned_shell_chain_ok(shell: &str) -> bool {
+    let mut current = std::path::PathBuf::from(shell);
+    for _ in 0..40 {
+        let key = current.to_string_lossy().into_owned();
+        let declared = PLANNED_SHELL_LINKS.with(|links| links.borrow().get(&key).cloned());
+        let Some(src) = declared else {
+            return PLANNED_SHELL_PROVIDERS.with(|providers| providers.borrow().contains(&key))
+                || shell_allowed(&key).is_ok();
+        };
+        let target = std::path::PathBuf::from(src);
+        current = if target.is_absolute() {
+            target
+        } else {
+            current
+                .parent()
+                .map_or(target.clone(), |dir| dir.join(target))
+        };
+    }
+    false
 }
 
 /// Whether the account may declare `shell` as its login shell: the
@@ -88,7 +148,7 @@ pub(super) fn shell_provided(shell: &str, check_mode: bool) -> Result<(), String
     match shell_allowed(shell) {
         Ok(()) => Ok(()),
         Err(error) => {
-            if check_mode && planned_shell_provided(shell) {
+            if check_mode && planned_shell_chain_ok(shell) {
                 Ok(())
             } else {
                 Err(error)

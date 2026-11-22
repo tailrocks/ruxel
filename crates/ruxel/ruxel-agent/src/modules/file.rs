@@ -84,11 +84,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
             // The task's own provider record, the link half of the
             // copy's: a managed link is only as good as its target
-            // chain, which the account's task verifies live — the
-            // lowering judges every hop — so the link's destination
-            // registers while the target's own step registers the
-            // target.
-            super::user::note_planned_shell_provider(path);
+            // chain, which the account's task verifies — the lowering
+            // judges every hop — so the link declares its destination
+            // while the target's own step registers the target. The
+            // bare destination alone proves nothing: check mode never
+            // creates the link, so a dangling declaration must fail
+            // the account instead of excusing it.
+            super::user::note_planned_shell_link(path, src);
             Ok(
                 json!({"dest": path, "src": src, "state": "link", "changed": changed, "failed": false}),
             )

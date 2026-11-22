@@ -32,7 +32,7 @@ use entries::{
 use identity::{effective, effective_group_gid, planned_primary_of, planned_set};
 use plan::PlannedPrimary;
 use serde_json::{Value, json};
-pub(crate) use shell::{note_managed_shell_file, note_planned_shell_provider};
+pub(crate) use shell::{note_managed_shell_file, note_planned_shell_link};
 
 pub(super) fn group(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;

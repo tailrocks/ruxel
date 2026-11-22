@@ -64,7 +64,7 @@ fn check_mode_consults_planned_file_and_symlink_providers() {
     let link = format!("/tmp/ruxel-shell-planned-link-{}", std::process::id());
     assert!(std::fs::symlink_metadata(&link).is_err());
     shell::note_planned_shell_provider(&target);
-    shell::note_planned_shell_provider(&link);
+    shell::note_planned_shell_link(&link, &target);
     let chained = run(
         &json!({"name": format!("ruxel-shell-planned-link-{}", std::process::id()), "shell": link}),
         &check_context(),
@@ -202,6 +202,100 @@ fn check_mode_registers_the_link_task_that_provides_the_shell() {
     let account = format!("ruxel-shell-wiring-link-{}", std::process::id());
     let planned = run(&json!({"name": account, "shell": link}), &check_context())
         .expect("check mode excuses the shell the executed link provides");
+    assert_eq!(planned.get("changed"), Some(&json!(true)), "{planned}");
+    let _ = std::fs::remove_dir_all(dir);
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn check_mode_refuses_a_link_to_a_missing_target() {
+    // Thread 303: a Symlink step registers its declared target
+    // chain, not its bare existence — a link to a target nothing
+    // provides is refused in check mode the way apply refuses it,
+    // instead of reporting a change the apply cannot perform.
+    use super::super::super::file;
+    shell::reset_planned_shell_providers();
+    let dir = std::env::temp_dir().join(format!("ruxel-shell-dangling-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let missing = dir.join("nowhere");
+    let missing = missing.to_str().unwrap().to_owned();
+    assert!(std::fs::symlink_metadata(&missing).is_err());
+    let link = dir.join("mysh");
+    let link = link.to_str().unwrap().to_owned();
+    file::run(
+        &json!({"path": link, "src": missing, "state": "link"}),
+        &check_context(),
+    )
+    .expect("the check-mode link succeeds");
+    let error = run(
+        &json!({"name": format!("ruxel-shell-dangling-{}", std::process::id()), "shell": link}),
+        &check_context(),
+    )
+    .expect_err("check mode must refuse a link to a target nothing provides");
+    assert!(error.contains("shell"), "{error}");
+    let _ = std::fs::remove_dir_all(dir);
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn check_mode_refuses_a_link_to_a_non_executable_target() {
+    // Thread 303, the live-target half: a link to an existing but
+    // non-executable file is no executable shell, so check mode
+    // refuses it the way `shell_allowed` refuses it live.
+    use super::super::super::file;
+    use std::os::unix::fs::PermissionsExt;
+    shell::reset_planned_shell_providers();
+    let dir = std::env::temp_dir().join(format!("ruxel-shell-noexec-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("nox");
+    std::fs::write(&target, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let (target, link) = (
+        target.to_str().unwrap().to_owned(),
+        dir.join("mysh").to_str().unwrap().to_owned(),
+    );
+    file::run(
+        &json!({"path": link, "src": target, "state": "link"}),
+        &check_context(),
+    )
+    .expect("the check-mode link succeeds");
+    let error = run(
+        &json!({"name": format!("ruxel-shell-noexec-{}", std::process::id()), "shell": link}),
+        &check_context(),
+    )
+    .expect_err("check mode must refuse a link to a non-executable target");
+    assert!(error.contains("shell"), "{error}");
+    let _ = std::fs::remove_dir_all(dir);
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn check_mode_excuses_a_link_chain_to_a_planned_file() {
+    // Thread 303, the positive half: a link to a target the plan
+    // itself provides is excused — the chain resolves through the
+    // planned link to the planned file, both still missing live.
+    use super::super::super::file;
+    shell::reset_planned_shell_providers();
+    let dir = std::env::temp_dir().join(format!("ruxel-shell-chain-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("real");
+    let target = target.to_str().unwrap().to_owned();
+    let link = dir.join("mysh");
+    let link = link.to_str().unwrap().to_owned();
+    shell::note_planned_shell_provider(&target);
+    file::run(
+        &json!({"path": link, "src": target, "state": "link"}),
+        &check_context(),
+    )
+    .expect("the check-mode link succeeds");
+    let planned = run(
+        &json!({"name": format!("ruxel-shell-chain-{}", std::process::id()), "shell": link}),
+        &check_context(),
+    )
+    .expect("check mode excuses a link to a target the plan provides");
     assert_eq!(planned.get("changed"), Some(&json!(true)), "{planned}");
     let _ = std::fs::remove_dir_all(dir);
     shell::reset_planned_shell_providers();
