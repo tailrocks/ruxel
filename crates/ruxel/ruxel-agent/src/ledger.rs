@@ -104,6 +104,14 @@ struct SysctlDecl {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Record {
     agent_version: String,
+    /// The workflow that wrote the record: the namespace the Hello
+    /// carried. The ledger is shared per host, so a session prunes
+    /// only its own workflow's dropped tasks — another workflow's
+    /// completion is no verdict on what this one manages. Records
+    /// written before namespacing carry none and are pruned by the
+    /// first complete plan that does not encounter them.
+    #[serde(default)]
+    workflow: String,
     status: String,
     result_json: Value,
     probes: Vec<Probe>,
@@ -140,6 +148,9 @@ pub(crate) struct Ledger {
     path: PathBuf,
     host_key: Option<[u8; 32]>,
     records: HashMap<String, Record>,
+    /// The workflow this session runs: the namespace the Hello
+    /// carried, scoping what the session's end may prune.
+    workflow: String,
     /// The storage keys the current plan has encountered. A task the
     /// plan runs marks its record here whatever the run does with it — a
     /// cache hit, a check-mode run and a run that records nothing are
@@ -266,6 +277,7 @@ impl Ledger {
             key,
             Record {
                 agent_version: env!("CARGO_PKG_VERSION").to_string(),
+                workflow: self.workflow.clone(),
                 status: status.to_string(),
                 result_json: result.clone(),
                 probes,
@@ -300,8 +312,11 @@ impl Ledger {
     }
 
     /// A new plan begins: the previous plan's verdict on what this
-    /// workflow manages is void, and the new plan may complete.
-    pub(crate) fn begin_plan(&mut self) {
+    /// workflow manages is void, and the new plan may complete. The
+    /// session runs one workflow — the namespace the Hello carried —
+    /// and its end prunes only that workflow's records.
+    pub(crate) fn begin_plan(&mut self, workflow: &str) {
+        self.workflow = workflow.to_string();
         self.aborted = false;
     }
 
@@ -318,12 +333,16 @@ impl Ledger {
     }
 
     /// The sysctl entries ruxel manages on this host: every file a
-    /// successful sysctl task wrote, with the key and the value ruxel
-    /// declared there. The plan's preflight reads these only behind
-    /// its own declarations (see `sysctl_preflight_managed`): a
-    /// dropped task's record authorizes its shadow for exactly one
-    /// run — the plan's end expires every record it never encountered
-    /// (see `flush`).
+    /// successful sysctl task of this workflow wrote, with the key and
+    /// the value ruxel declared there. The plan's preflight reads these
+    /// only behind its own declarations (see
+    /// `sysctl_preflight_managed`): a dropped task's record authorizes
+    /// its shadow for exactly one run — the plan's end expires every
+    /// record it never encountered (see `flush`). Records of other
+    /// workflows are not this plan's to consult: their declarations
+    /// would authorize shadows for keys this workflow never managed.
+    /// Records written before namespacing stay visible until the first
+    /// complete plan prunes or re-records them.
     pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
         #[cfg(test)]
         {
@@ -332,6 +351,7 @@ impl Ledger {
         let mut entries: Vec<(String, String, String)> = self
             .records
             .values()
+            .filter(|record| record.workflow.is_empty() || record.workflow == self.workflow)
             .flat_map(|record| {
                 let declared = record
                     .managed_sysctl

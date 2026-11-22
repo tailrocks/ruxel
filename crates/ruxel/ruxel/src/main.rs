@@ -63,10 +63,31 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
         hosts: args.hosts,
         tags: args.tags,
     };
+    // The workflow's stable identity for ledger namespacing: the
+    // canonical path of the configuration being run. Without it the
+    // agent cannot tell workflows apart on its shared ledger, so a
+    // run that cannot name its workflow refuses instead of pruning
+    // another workflow's records.
+    let workflow_namespace = match args.root.canonicalize() {
+        Ok(path) => path.to_string_lossy().into_owned(),
+        Err(error) => {
+            if writeln!(
+                std::io::stderr().lock(),
+                "cannot namespace the workflow at {}: {error}",
+                args.root.display()
+            )
+            .is_err()
+            {
+                return ExitCode::Internal;
+            }
+            return ExitCode::Config;
+        }
+    };
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
         jobs: usize::from(args.jobs),
         no_cache: args.no_cache,
+        workflow_namespace,
         connection: ruxel_engine::transport::ConnectOptions {
             keyfile: args.connection.ssh_key,
             known_hosts_file: args.connection.known_hosts,

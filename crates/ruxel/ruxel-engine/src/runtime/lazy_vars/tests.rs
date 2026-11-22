@@ -27,6 +27,7 @@ fn execution() -> Result<Execution> {
             local_state: None,
             local_agent: None,
             controller_state: None,
+            workflow_namespace: String::new(),
         },
         mode: Mode::Apply,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),

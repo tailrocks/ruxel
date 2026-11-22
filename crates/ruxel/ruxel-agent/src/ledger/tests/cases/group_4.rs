@@ -136,6 +136,55 @@ fn a_complete_plan_expires_the_records_it_never_encountered() {
 }
 
 #[test]
+fn a_complete_plan_prunes_only_its_own_workflow() {
+    // Thread 294: the ledger is shared per host while records carry
+    // the workflow that wrote them. Workflow B's completion must not
+    // delete workflow A's records — B was never A's new version — but
+    // must still expire B's own dropped tasks.
+    let dir = Scratch::new("namespaced-prune");
+    let file = dir.file("target", b"stable");
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow-a");
+    record_file(&mut ledger, "a-task", &file);
+    ledger.complete_plan();
+    ledger.flush();
+
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow-b");
+    record_file(&mut ledger, "b-task", &file);
+    ledger.complete_plan();
+    ledger.flush();
+
+    let probe = Ledger::load(&dir.0);
+    assert!(
+        probe.cached_ok("a-task").is_some(),
+        "another workflow's completion must not prune this workflow's records"
+    );
+    assert!(
+        probe.cached_ok("b-task").is_some(),
+        "the completing workflow keeps its own records"
+    );
+
+    // The same workflow's next run still expires what it dropped.
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow-b");
+    record_file(&mut ledger, "c-task", &file);
+    ledger.complete_plan();
+    ledger.flush();
+
+    let probe = Ledger::load(&dir.0);
+    assert!(
+        probe.cached_ok("b-task").is_none(),
+        "the workflow's own dropped task must still expire"
+    );
+    assert!(
+        probe.cached_ok("a-task").is_some(),
+        "the other workflow's records survive a namespaced prune"
+    );
+    assert!(probe.cached_ok("c-task").is_some());
+}
+
+#[test]
 fn a_plan_that_continues_past_its_failure_prunes_at_the_end() {
     // Thread 299: a failed task sets the abort, but the controller
     // rescues the failure and keeps sending tasks — each new plan
@@ -149,6 +198,7 @@ fn a_plan_that_continues_past_its_failure_prunes_at_the_end() {
     ledger.flush();
 
     let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow");
     ledger.encounter("earlier");
     ledger.abort_plan();
     ledger.continue_plan();

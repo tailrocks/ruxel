@@ -20,7 +20,7 @@ Before executing a sensitive external request, including a read or a check-mode
 request, the agent creates and syncs an empty, private `sensitive-effects`
 marker in its state directory. It contains no values or paths and is not cleared
 automatically. A failure to read or persist the marker stops the affected agent
-operation. Protocol version 3 requires agents to report their marker state at
+operation. Protocol version 4 requires agents to report their marker state at
 handshake; missing state or an incompatible version fails the connection.
 
 A later run that connects to a marked state directory treats the run

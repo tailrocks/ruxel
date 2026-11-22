@@ -164,8 +164,10 @@ fn serve() -> i32 {
                 }
                 handshaken.store(true, Ordering::Relaxed);
                 // The session's plans are one workflow's (the engine
-                // frames every task as its own Plan): state begins here.
-                ledger.begin_plan();
+                // frames every task as its own Plan): state begins here,
+                // namespaced by the workflow the Hello carries so the
+                // session's end prunes only its own records.
+                ledger.begin_plan(&hello.workflow_namespace);
                 modules::begin_plan();
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {

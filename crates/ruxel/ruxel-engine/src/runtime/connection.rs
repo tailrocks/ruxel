@@ -87,6 +87,7 @@ impl Execution {
                     check,
                     diff,
                     self.runtime.no_cache,
+                    &self.runtime.workflow_namespace,
                 )
                 .await?;
                 (Connection::Local(Box::new(c)), f, sensitive)
@@ -117,6 +118,7 @@ impl Execution {
                     "pkl",
                     check,
                     &transport_options,
+                    &self.runtime.workflow_namespace,
                 )
                 .await?;
                 (

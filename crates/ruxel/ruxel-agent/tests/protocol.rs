@@ -100,6 +100,57 @@ fn finish_agent(agent: &mut Child, stdin: &mut impl std::io::Write) {
     assert_eq!(agent.wait().unwrap().code(), Some(0));
 }
 
+fn hello_namespaced(run_id: &str, workflow: &str) -> v1::Envelope {
+    v1::Envelope {
+        msg: Some(Msg::Hello(v1::Hello {
+            proto_version: PROTO_VERSION,
+            run_id: run_id.into(),
+            workflow_namespace: workflow.into(),
+            ..Default::default()
+        })),
+    }
+}
+
+#[test]
+fn two_workflows_keep_their_own_ledger_records() {
+    // Thread 294 end-to-end: the ledger is shared per host, so two
+    // sessions of different workflows on one state dir must keep both
+    // workflows' records — the second completion must not prune the
+    // first workflow's, the way it would prune its own dropped tasks.
+    let dir = temp_dir("namespaces");
+    for (workflow, name) in [("workflow-a", "a.txt"), ("workflow-b", "b.txt")] {
+        let dest = dir.join(name);
+        let mut agent = spawn_agent(&dir);
+        let mut stdin = agent.stdin.take().unwrap();
+        let mut stdout = agent.stdout.take().unwrap();
+        write_frame(&mut stdin, &hello_namespaced(workflow, workflow)).unwrap();
+        let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+        write_frame(&mut stdin, &copy_plan(1, &dest, "content", workflow)).unwrap();
+        assert_eq!(read_task_result(&mut stdout).status, "changed");
+        finish_agent(&mut agent, &mut stdin);
+    }
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("ledger/ledger.json")).unwrap()).unwrap();
+    let mut workflows: Vec<&str> = ledger
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|record| {
+            record
+                .get("workflow")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+        })
+        .collect();
+    workflows.sort_unstable();
+    assert_eq!(
+        workflows,
+        vec!["workflow-a", "workflow-b"],
+        "both workflows' records survive both completions: {ledger}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn handshake_facts_clean_shutdown() {
     let dir = temp_dir("handshake");

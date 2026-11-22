@@ -71,6 +71,7 @@ fn controller_prefetches_distinct_items_concurrently_and_caches_fields() -> Resu
             local_state: None,
             local_agent: None,
             controller_state: None,
+            workflow_namespace: String::new(),
         },
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),

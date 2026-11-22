@@ -123,6 +123,7 @@ impl Ledger {
                     key,
                     Record {
                         agent_version: env!("CARGO_PKG_VERSION").to_string(),
+                        workflow: self.workflow.clone(),
                         status: status.to_string(),
                         result_json: Value::Null,
                         probes: Vec::new(),

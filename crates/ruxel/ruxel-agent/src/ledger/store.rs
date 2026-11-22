@@ -22,6 +22,7 @@ impl Ledger {
         Ledger {
             path,
             host_key,
+            workflow: String::new(),
             records,
             encountered: HashSet::new(),
             aborted: false,
@@ -32,11 +33,14 @@ impl Ledger {
         }
     }
 
-    /// The plan has ended: every record it never encountered is history
-    /// — a task a previous plan ran and this one does not — and expires
-    /// before what the plan still owns is persisted. A run that
-    /// encounters nothing expires nothing: with no task of its own it is
-    /// no plan's verdict on what this workflow manages.
+    /// The plan has ended: every record of its own workflow it never
+    /// encountered is history — a task a previous plan ran and this
+    /// one does not — and expires before what the plan still owns is
+    /// persisted. A run that encounters nothing expires nothing: with
+    /// no task of its own it is no plan's verdict on what this
+    /// workflow manages. Records of other workflows are never this
+    /// plan's verdict: the ledger is shared per host, so another
+    /// workflow's completion must not delete them.
     ///
     /// Only a complete plan may expire what it never encountered. A
     /// plan that stopped early — a task failed and the plan halted on
@@ -51,7 +55,11 @@ impl Ledger {
     pub(crate) fn flush(&mut self) {
         if !self.encountered.is_empty() && self.complete && !self.aborted {
             let before = self.records.len();
-            self.records.retain(|key, _| self.encountered.contains(key));
+            let workflow = self.workflow.clone();
+            self.records.retain(|key, record| {
+                self.encountered.contains(key)
+                    || (!record.workflow.is_empty() && record.workflow != workflow)
+            });
             self.dirty |= self.records.len() != before;
         }
         // The plan is over: the next plan's encounters are its own.

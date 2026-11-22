@@ -57,7 +57,7 @@ complete platform coverage.
    non-mutating checks where the operation supports them; a task with
    `checkMode = false` can execute changes in either mode. Apply performs changes.
 
-Controller and agent use protocol version 3 and reject older peers during
+Controller and agent use protocol version 4 and reject older peers during
 handshake. The agent reports its durable sensitivity state in the handshake;
 an omitted state is an error. See [Secret provenance](secret-provenance.md)
 for the marker's scope and output consequences. `Copy.src` is read as bytes on

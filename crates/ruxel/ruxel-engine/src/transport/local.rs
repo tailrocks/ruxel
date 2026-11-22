@@ -22,6 +22,7 @@ impl LocalConnection {
         check: bool,
         diff: bool,
         no_cache: bool,
+        workflow: &str,
     ) -> Result<(Self, v1::Facts, bool)> {
         let mut child = Command::new(binary)
             .env("RUXEL_STATE_DIR", state)
@@ -46,6 +47,7 @@ impl LocalConnection {
                     check_mode: check,
                     diff_mode: diff,
                     no_cache,
+                    workflow_namespace: workflow.into(),
                 })),
             })
             .await?;

@@ -320,7 +320,6 @@ fn is_mountpoint(path: &std::path::Path) -> bool {
 /// the pure comparison behind [`is_mountpoint`], split out so the
 /// table parsing is provable without a mount of its own.
 fn mountpoint_listed(table: &str, paths: &[std::path::PathBuf]) -> bool {
-    use std::os::unix::ffi::OsStrExt;
     table.lines().any(|line| {
         let Some(pre) = line.split(" - ").next() else {
             return false;
