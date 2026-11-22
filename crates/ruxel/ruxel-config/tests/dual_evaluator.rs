@@ -271,6 +271,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-sysctl-local-lib-boot-order.pkl",
     "invalid/linux-sysctl-shadow-across-dirs.pkl",
     "invalid/linux-sysctl-shadow-login-users.pkl",
+    "invalid/linux-sysctl-nested-login-users.pkl",
     "invalid/linux-sysctl-value-vertical-tab-difference.pkl",
     "invalid/linux-user-shell-later-stage-no-provider.pkl",
     "invalid/linux-user-shell-symlink-cycle.pkl",

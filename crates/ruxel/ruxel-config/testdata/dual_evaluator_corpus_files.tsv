@@ -103,6 +103,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-local-lib-boot-order.pkl
   tests/workflow/invalid/linux-sysctl-name-alias.pkl
   tests/workflow/invalid/linux-sysctl-name-dot-component.pkl
+  tests/workflow/invalid/linux-sysctl-nested-login-users.pkl
   tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl

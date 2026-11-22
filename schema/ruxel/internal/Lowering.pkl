@@ -1204,17 +1204,19 @@ const function keyringClash(a: core.Step, b: core.Step): Boolean =
 /// A regular file leaves no room for anything inside it, whatever stage
 /// manages the inside path: the stage-local `nested` check refuses the
 /// leaf/descendant pair inside one stage, and across the stages that
-/// share a file system the same relation fails the same way. A sysctl
-/// step writes its persistence file as a regular file, so a later
-/// overlapping-host stage that manages a path inside it fails when the
-/// parent turns out to be the sysctl's file — and where the earlier
-/// stage manages the inside path the sysctl's own file would land in a
-/// directory, so the sysctl task fails on it. Only pairs a sysctl step
-/// stands on are refused here: the persistence file is the sysctl's
-/// whole-file footprint, which the exact-path owners check does not see
-/// beneath.
+/// share a file system the same relation fails the same way. The
+/// comparison is per machine — stages on disjoint machines never share
+/// a file system — so the pair fails under different login users to
+/// the same endpoint and port. A sysctl step writes its persistence
+/// file as a regular file, so a later same-machine stage that manages
+/// a path inside it fails when the parent turns out to be the sysctl's
+/// file — and where the earlier stage manages the inside path the
+/// sysctl's own file would land in a directory, so the sysctl task
+/// fails on it. Only pairs a sysctl step stands on are refused here:
+/// the persistence file is the sysctl's whole-file footprint, which
+/// the exact-path owners check does not see beneath.
 function sysctlNestedAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
-  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsShareIdentity(_stages[n], _stages[m]))
     .flatMap((m) -> positions(_indexes[n].steps).flatMap((j) -> positions(_indexes[m].steps).flatMap((i) ->
       sysctlNestedPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
 
