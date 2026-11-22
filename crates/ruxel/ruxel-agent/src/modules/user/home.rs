@@ -138,6 +138,11 @@ pub(super) fn reconcile_created_home(
         uid: u32::try_from(created.uid).ok(),
     };
     let mut added = Vec::new();
+    // The ownership the home carries before the repair changes
+    // anything: a trusted pre-existing home goes back to it when the
+    // reconciliation fails, instead of staying owned by the deleted
+    // account's number the way an unrecorded home does.
+    let prior = prior_ownership(home);
     let reconciled: Result<bool, String> = (|| {
         let ownership = ensure_home(
             home,
@@ -155,15 +160,10 @@ pub(super) fn reconcile_created_home(
         Err(error) => {
             // Parents the failed repair created before it failed go
             // with the account: a retry must not inherit the partial
-            // hierarchy the refused change leaves behind.
-            let error = if added.is_empty() {
-                error
-            } else {
-                match super::apply::rollback_home(home, None, &added) {
-                    Ok(()) => error,
-                    Err(cleanup) => format!("{error}; {cleanup}"),
-                }
-            };
+            // hierarchy the refused change leaves behind — and a
+            // pre-existing home goes back to the ownership the repair
+            // found, but only where the repair moved it.
+            let error = restore_after_failure(home, prior, &added, error);
             match remove_account(name) {
                 Ok(()) => Err(error),
                 Err(rollback) => Err(format!(
@@ -171,6 +171,39 @@ pub(super) fn reconcile_created_home(
                 )),
             }
         }
+    }
+}
+
+/// The ownership the claimed home carries before the reconciliation
+/// changes anything: what a failed reconciliation restores — `None`
+/// where the home is not there yet, so the rollback takes back only
+/// what the repair created.
+fn prior_ownership(home: &str) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    match std::fs::symlink_metadata(home) {
+        Ok(meta) if meta.is_dir() => Some((u64::from(meta.uid()), u64::from(meta.gid()))),
+        _ => None,
+    }
+}
+
+/// The home's state a failed reconciliation leaves behind, taken back:
+/// a pre-existing home goes back to the ownership the repair found —
+/// but only where the repair or anything racing it actually moved it.
+/// A refusal before any change keeps its own error: a restoration the
+/// home does not need would only append a take-back failure to a
+/// refusal that changed nothing.
+fn restore_after_failure(
+    home: &str,
+    prior: Option<(u64, u64)>,
+    added: &[PathBuf],
+    error: String,
+) -> String {
+    if added.is_empty() && prior == prior_ownership(home) {
+        return error;
+    }
+    match super::apply::rollback_home(home, prior, added) {
+        Ok(()) => error,
+        Err(cleanup) => format!("{error}; {cleanup}"),
     }
 }
 
@@ -398,3 +431,9 @@ mod tests;
 #[cfg(test)]
 #[path = "home/tests/ancestors.rs"]
 mod ancestor_tests;
+
+/// The pre-existing home a failed reconciliation leaves behind: the
+/// ownership the repair found is restored, over scratch directories.
+#[cfg(test)]
+#[path = "home/tests/restore.rs"]
+mod restore_tests;
