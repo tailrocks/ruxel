@@ -24,7 +24,11 @@ pub(super) async fn run_plays(
             .into_iter()
             .filter(|host| totals.get(host).is_none_or(|recap| recap.failed == 0))
             .collect();
+        // Frames carry the full configuration's host-applicable static
+        // set, not the current play's: later plays hide from per-play scans.
+        let full_config = std::sync::Arc::new((*config).clone());
         let runs = hosts.into_iter().map(|host| {
+            let full_config = full_config.clone();
             let mut host_facts = BTreeMap::new();
             if let Some(facts) = set_facts.remove(&host) {
                 host_facts.insert(host.clone(), facts);
@@ -34,8 +38,15 @@ pub(super) async fn run_plays(
             options.hosts = vec![host.clone()];
             let config = &play_config;
             async move {
-                let result =
-                    controller::run(config, facts, &options, &mut backend, &mut host_facts).await;
+                let result = controller::run_with_full_config(
+                    config,
+                    &full_config,
+                    facts,
+                    &options,
+                    &mut backend,
+                    &mut host_facts,
+                )
+                .await;
                 (host, result, host_facts)
             }
         });
@@ -49,17 +60,7 @@ pub(super) async fn run_plays(
                 Err(failure) => {
                     if let Some(partial) = failure.downcast_ref::<controller::RunFailure>() {
                         for (name, recap) in &partial.recaps {
-                            let total = totals.entry(name.clone()).or_default();
-                            total.ok += recap.ok;
-                            total.planned += recap.planned;
-                            total.changed += recap.changed;
-                            total.failed += recap.failed;
-                            total.unreachable += recap.unreachable;
-                            total.skipped += recap.skipped;
-                            total.rescued += recap.rescued;
-                            total.ignored += recap.ignored;
-                            total.filtered |= recap.filtered;
-                            total.aborted |= recap.aborted;
+                            merge_recap(totals.entry(name.clone()).or_default(), recap);
                         }
                     }
                     super::connect::report_failure(execution, &host, "host_failed", &failure)?;
@@ -72,21 +73,27 @@ pub(super) async fn run_plays(
                 }
                 Ok(recaps) => {
                     for (host, recap) in recaps {
-                        let total = totals.entry(host).or_default();
-                        total.ok += recap.ok;
-                        total.planned += recap.planned;
-                        total.changed += recap.changed;
-                        total.failed += recap.failed;
-                        total.unreachable += recap.unreachable;
-                        total.skipped += recap.skipped;
-                        total.rescued += recap.rescued;
-                        total.ignored += recap.ignored;
-                        total.filtered |= recap.filtered;
-                        total.aborted |= recap.aborted;
+                        merge_recap(totals.entry(host).or_default(), &recap);
                     }
                 }
             }
         }
     }
     Ok(totals)
+}
+
+/// One recap folded into a host's total: the partial recaps a stopped
+/// session reports and the recaps a completed play reports merge the
+/// same way.
+fn merge_recap(total: &mut Recap, recap: &Recap) {
+    total.ok += recap.ok;
+    total.planned += recap.planned;
+    total.changed += recap.changed;
+    total.failed += recap.failed;
+    total.unreachable += recap.unreachable;
+    total.skipped += recap.skipped;
+    total.rescued += recap.rescued;
+    total.ignored += recap.ignored;
+    total.filtered |= recap.filtered;
+    total.aborted |= recap.aborted;
 }

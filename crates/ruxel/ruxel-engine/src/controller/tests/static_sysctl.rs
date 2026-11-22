@@ -73,6 +73,110 @@ fn tag_selection_gates_the_static_set() {
 }
 
 #[tokio::test]
+async fn every_frame_carries_later_plays_declarations() -> Result<()> {
+    // Thread 325: the declaration lives in a later play (a later
+    // workflow stage), not a later task of the same play. The first
+    // play's frames already carry it, so the agent's earlier preflight
+    // weighs it before the later stage executes — on a first run with
+    // no ledger history, where nothing declares it yet.
+    let config = json!({"inventory":{"hosts":{"h":{}}},"plays":[
+        {"targets":["h"],"tasks":[
+            {"name":"earlier","operation":{"kind":"command","argv":["true"]}}
+        ]},
+        {"targets":["h"],"tasks":[
+            {"name":"later","operation":{"kind":"sysctl","name":"net.test","value":"2","sysctl_file":"/etc/sysctl.d/99-b.conf"}}
+        ]}
+    ]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &std::collections::BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut std::collections::BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.calls.len(), 2);
+    assert_eq!(
+        backend.calls[0].plan_sysctl,
+        vec![decl("/etc/sysctl.d/99-b.conf", "net.test", "2")],
+        "the first play's frame carries the later play's declaration"
+    );
+    assert_eq!(
+        backend.calls[1].plan_sysctl,
+        vec![decl("/etc/sysctl.d/99-b.conf", "net.test", "2")],
+        "the declaring play's own frame carries it too"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn split_play_runs_carry_the_full_configs_declarations() -> Result<()> {
+    // Thread 325, the scheduler's shape: the controller run covers one
+    // play split out of the full configuration, and its frames still
+    // carry the full configuration's host-applicable set.
+    let full = json!({"inventory":{"hosts":{"h":{}}},"plays":[
+        {"targets":["h"],"tasks":[
+            {"name":"earlier","operation":{"kind":"command","argv":["true"]}}
+        ]},
+        {"targets":["h"],"tasks":[
+            {"name":"later","operation":{"kind":"sysctl","name":"net.test","value":"2","sysctl_file":"/etc/sysctl.d/99-b.conf"}}
+        ]}
+    ]});
+    let mut play_config = full.clone();
+    play_config["plays"] =
+        serde_json::Value::Array(vec![full["plays"].as_array().expect("plays")[0].clone()]);
+    let mut backend = Fake::default();
+    run_with_full_config(
+        &play_config,
+        &full,
+        &std::collections::BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut std::collections::BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(backend.calls.len(), 1);
+    assert_eq!(
+        backend.calls[0].plan_sysctl,
+        vec![decl("/etc/sysctl.d/99-b.conf", "net.test", "2")],
+        "the split play's frame carries the later play's declaration"
+    );
+    Ok(())
+}
+
+#[test]
+fn declarations_for_host_cover_only_the_plays_that_run_there() {
+    // Thread 325, per-host filtering: a declaration from a play that
+    // never runs on the host must not authorize that host's preflight
+    // — the machines share nothing, so the entry would be unmanaged
+    // there.
+    let config = json!({"inventory":{"hosts":{"h1":{},"h2":{}},"groups":{}},"plays":[
+        {"targets":["h1"],"tasks":[
+            {"name":"first","operation":{"kind":"sysctl","name":"net.test","value":"1","sysctl_file":"/etc/sysctl.d/10-a.conf"}}
+        ]},
+        {"targets":["h2"],"tasks":[
+            {"name":"second","operation":{"kind":"sysctl","name":"net.test","value":"2","sysctl_file":"/etc/sysctl.d/99-b.conf"}}
+        ]}
+    ]});
+    assert_eq!(
+        super::super::static_sysctl::static_sysctl_declarations_for_host(&config, "h1", &[]),
+        vec![decl("/etc/sysctl.d/10-a.conf", "net.test", "1")],
+        "h1 carries only its own play's declaration"
+    );
+    assert_eq!(
+        super::super::static_sysctl::static_sysctl_declarations_for_host(&config, "h2", &[]),
+        vec![decl("/etc/sysctl.d/99-b.conf", "net.test", "2")],
+        "h2 carries only its own play's declaration"
+    );
+    assert!(
+        super::super::static_sysctl::static_sysctl_declarations_for_host(&config, "elsewhere", &[])
+            .is_empty(),
+        "a host no play runs on declares nothing up front"
+    );
+}
+
+#[tokio::test]
 async fn every_frame_carries_the_full_static_set() -> Result<()> {
     // Thread 314 end-to-end at the controller seam: the first request
     // already carries the later stage's declaration, so the agent's

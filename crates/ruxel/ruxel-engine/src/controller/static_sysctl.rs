@@ -107,3 +107,46 @@ pub(super) fn static_sysctl_declarations(
     }
     declarations
 }
+
+/// The static declarations of the full configuration that run on
+/// `host`: the union of every play's set — deduplicated — over the
+/// plays whose targets reach the host. The scheduler splits the
+/// configuration play by play before the controller runs, so a
+/// per-play scan would never see declarations in later plays (workflow
+/// stages): an earlier stage's preflight would then treat a
+/// later-stage persistence file as unmanaged on a first run with no
+/// ledger history. A play whose targets do not expand here declares
+/// nothing up front: the per-play run refuses it later with the full
+/// validation, the way it does today.
+pub(crate) fn static_sysctl_declarations_for_host(
+    config: &Value,
+    host: &str,
+    selected_tags: &[String],
+) -> Vec<v1::SysctlDeclaration> {
+    let inventory = config.get("inventory");
+    let hosts = inventory
+        .map(|inventory| super::object(inventory, "hosts"))
+        .unwrap_or_default();
+    let groups = inventory
+        .map(|inventory| super::object(inventory, "groups"))
+        .unwrap_or_default();
+    let mut declarations = Vec::new();
+    for play in array(config, "plays") {
+        let selectors = array(play, "targets")
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>();
+        let targets = selectors.and_then(|selectors| {
+            super::selection::expand_selectors(&selectors, &hosts, &groups).ok()
+        });
+        if !targets.is_some_and(|targets| targets.contains(host)) {
+            continue;
+        }
+        for declared in static_sysctl_declarations(play, selected_tags) {
+            if !declarations.contains(&declared) {
+                declarations.push(declared);
+            }
+        }
+    }
+    declarations
+}

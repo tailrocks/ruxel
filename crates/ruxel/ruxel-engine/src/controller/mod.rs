@@ -147,10 +147,11 @@ struct Runner<'a, B> {
     /// Tag selection omitted a task this workflow keeps: the run is a
     /// filtered subset, so its end must expire nothing.
     filtered: bool,
-    /// The plan's static sysctl declarations: every unconditional
-    /// top-level sysctl task's entry, computed before the first task
-    /// executes, so each frame carries the full declaration list the
-    /// agent merges before running its task.
+    /// The full configuration's static sysctl declarations that run on
+    /// this host: every unconditional top-level sysctl task's entry in
+    /// every play the host runs, computed before the first task
+    /// executes, so each frame carries the declaration list the agent
+    /// merges before running its task.
     plan_sysctl: Vec<v1::SysctlDeclaration>,
 }
 
@@ -214,12 +215,31 @@ fn result_scope(scope: &TrackedValue, task: &Value, result: &TrackedValue) -> Re
 
 /// # Errors
 /// Returns an error if inventory, expression evaluation, or execution fails.
+pub async fn run<B: Backend>(
+    config: &Value,
+    facts: &BTreeMap<String, Value>,
+    options: &Options,
+    backend: &mut B,
+    set_facts: &mut BTreeMap<String, TrackedValue>,
+) -> Result<BTreeMap<String, Recap>> {
+    run_with_full_config(config, config, facts, options, backend, set_facts).await
+}
+
+/// The controller run over one play's configuration, with the static
+/// sysctl declarations of the full configuration the scheduler split
+/// the play out of: the per-play scan would never see declarations in
+/// later plays (workflow stages), so every frame carries the
+/// host-applicable set of the whole configuration instead.
+///
+/// # Errors
+/// Returns an error if inventory, expression evaluation, or execution fails.
 #[expect(
     clippy::too_many_lines,
     reason = "host execution preserves play order and shared scope"
 )]
-pub async fn run<B: Backend>(
+pub async fn run_with_full_config<B: Backend>(
     config: &Value,
+    full_config: &Value,
     facts: &BTreeMap<String, Value>,
     options: &Options,
     backend: &mut B,
@@ -284,7 +304,11 @@ pub async fn run<B: Backend>(
                 host: host.clone(),
                 scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
-                plan_sysctl: static_sysctl::static_sysctl_declarations(play, &options.tags),
+                plan_sysctl: static_sysctl::static_sysctl_declarations_for_host(
+                    full_config,
+                    &host,
+                    &options.tags,
+                ),
                 notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),
