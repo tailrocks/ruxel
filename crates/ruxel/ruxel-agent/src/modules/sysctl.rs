@@ -286,7 +286,7 @@ fn refuse_unreplaceable(
     // fails. The mountpoint itself decides, read from the kernel's
     // own table where it exists — elsewhere the device comparison
     // stands alone.
-    if is_mountpoint(path) {
+    if is_mountpoint(path).map_err(|error| format!("sysctl: cannot persist {file}: {error}"))? {
         return Err(format!(
             "sysctl: cannot persist {file}: the file is mounted over its path and cannot be replaced"
         ));
@@ -302,18 +302,39 @@ fn refuse_unreplaceable(
 /// is matched raw and canonicalized, since the table spells the
 /// kernel's resolved view. Where the table is absent — every
 /// non-Linux host — nothing is a mount point and the device comparison
-/// stands alone.
-fn is_mountpoint(path: &std::path::Path) -> bool {
-    let Ok(table) = std::fs::read_to_string("/proc/self/mountinfo") else {
-        return false;
+/// stands alone; where the table is present but unreadable the probe
+/// refuses instead of clearing a mount it cannot see.
+fn is_mountpoint(path: &std::path::Path) -> Result<bool, String> {
+    is_mountpoint_in(std::fs::read_to_string("/proc/self/mountinfo"), path)
+}
+
+/// Whether the mount table lists `path` as a mount point: the reader
+/// behind [`is_mountpoint`], split out so the unreadable table is
+/// provable without a mount of its own. A missing table reads as no
+/// mount point — a non-Linux host has no table, and the device
+/// comparison stands alone there — while a table the probe cannot
+/// read refuses: answering false would clear a bind-mounted file the
+/// publish cannot replace.
+fn is_mountpoint_in(
+    table: Result<String, std::io::Error>,
+    path: &std::path::Path,
+) -> Result<bool, String> {
+    let table = match table {
+        Ok(table) => table,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "cannot read the mount table /proc/self/mountinfo: {error}"
+            ));
+        }
     };
-    mountpoint_listed(
+    Ok(mountpoint_listed(
         &table,
         &[
             path.to_path_buf(),
             std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()),
         ],
-    )
+    ))
 }
 
 /// Whether the mount table lists any of `paths` as a mount point:
@@ -1004,10 +1025,48 @@ mod probe_handle_tests {
         let path = dir.join("x.conf");
         std::fs::write(&path, "net.test=1\n").expect("operation succeeds");
         assert!(
-            !super::is_mountpoint(&path),
+            !super::is_mountpoint(&path).expect("a readable table decides"),
             "an ordinary file is no mountpoint"
         );
         std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn an_unreadable_mount_table_refuses_instead_of_clearing_the_file() {
+        // Threads 286/300: a mount table the probe cannot read hides
+        // the bind mount the probe exists to refuse — the device
+        // comparison alone would clear a file the publish cannot
+        // replace. The probe refuses instead. A missing table is no
+        // refusal: a non-Linux host has no table, and the device
+        // comparison stands alone there.
+        let path = std::path::PathBuf::from("/etc/sysctl.d/x.conf");
+        let error = super::is_mountpoint_in(
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "denied",
+            )),
+            &path,
+        )
+        .expect_err("an unreadable mount table must refuse");
+        assert!(
+            error.contains("mount table"),
+            "the refusal must name the table: {error}"
+        );
+        assert!(
+            !super::is_mountpoint_in(
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
+                &path
+            )
+            .expect("a missing table reads as empty"),
+            "a missing table is no mountpoint"
+        );
+        let table = "30 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n\
+             31 30 8:1 /etc/sysctl.d/x.conf /etc/sysctl.d/x.conf rw,bind - ext4 /dev/sda1 rw\n";
+        assert!(
+            super::is_mountpoint_in(Ok(table.to_string()), &path)
+                .expect("a readable table decides"),
+            "a listed file is its own mountpoint"
+        );
     }
 
     #[test]
