@@ -276,6 +276,12 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 "diff" => Mode::Diff,
                 _ => Mode::Apply,
             };
+            let workflow_namespace = env
+                .module
+                .canonicalize()
+                .context("cannot namespace the observer workflow")?
+                .to_string_lossy()
+                .into_owned();
             let (connection, _, _) = LocalConnection::connect(
                 &env.agent,
                 &env.root.path().join("state"),
@@ -283,6 +289,7 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 preview,
                 phase == "diff",
                 true,
+                &workflow_namespace,
             )
             .await?;
             let resolver = Resolver::new(std::sync::Arc::new(ProcessBackend::default()))
@@ -314,7 +321,12 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 "observer recap mismatch"
             );
             verify(&observer.observed, &facts, phase, preview)?;
-            tokio::time::timeout(Duration::from_secs(5), observer.connection.shutdown()).await??;
+            let filtered = recap["fixture"].filtered || recap["fixture"].aborted;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                observer.connection.shutdown(filtered),
+            )
+            .await??;
             if preview {
                 ensure!(
                     state::snapshot(&env.payload)? == before
