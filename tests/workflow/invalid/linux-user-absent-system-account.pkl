@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // the removal of any account whose id is not stated, because the id may
 // be a system one.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "daemon"; state = "absent" } } } }
+
+name = "invalid/linux-user-absent-system-account.pkl"

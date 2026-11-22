@@ -22,3 +22,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-file-owner-removed-earlier-stage.pkl"

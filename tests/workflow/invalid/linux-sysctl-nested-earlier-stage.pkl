@@ -24,3 +24,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-nested-earlier-stage.pkl"

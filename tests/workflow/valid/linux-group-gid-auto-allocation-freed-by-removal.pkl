@@ -31,3 +31,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-group-gid-auto-allocation-freed-by-removal.pkl"

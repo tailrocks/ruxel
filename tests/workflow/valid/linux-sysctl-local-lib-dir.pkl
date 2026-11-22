@@ -14,3 +14,5 @@ stages {
     new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/99-x.conf" }
   } }
 }
+
+name = "valid/linux-sysctl-local-lib-dir.pkl"

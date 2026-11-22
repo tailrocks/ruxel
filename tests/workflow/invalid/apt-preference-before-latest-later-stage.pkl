@@ -17,3 +17,5 @@ stages {
     new debian.AptPackages { title = "Track nginx"; names { "nginx" }; latest = true }
   } }
 }
+
+name = "invalid/apt-preference-before-latest-later-stage.pkl"

@@ -16,6 +16,17 @@ extends "modulepath:/ruxel/Core.pkl"
 
 import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
 
+/// The workflow's stable identity: a name no other workflow that runs
+/// against the same machines may share. The agent namespaces its ledger
+/// by it, so two workflows with the same play and host names but
+/// different names never share ledger state — and two checkouts of one
+/// workflow share it, because the identity travels with the workflow,
+/// not the directory it was loaded from. Name it after what the
+/// workflow does (for example the repository and purpose); the corpus
+/// names its fixtures by their path, which is unique there for the
+/// same reason.
+name: String
+
 /// Stages run one after another.
 stages: Listing<Stage>
 
@@ -24,5 +35,5 @@ stages: Listing<Stage>
 hidden fixed servedFingerprint: String = "unserved"
 
 output {
-  value = Lowering.config(stages, servedFingerprint)
+  value = Lowering.config(stages, servedFingerprint, name)
 }

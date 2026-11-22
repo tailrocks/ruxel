@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-shell-symlink-chain-before-account.pkl"

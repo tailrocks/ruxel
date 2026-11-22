@@ -12,3 +12,5 @@ stages {
     }
   }
 }
+
+name = "invalid/timer-boot-fractional-millisecond-large.pkl"

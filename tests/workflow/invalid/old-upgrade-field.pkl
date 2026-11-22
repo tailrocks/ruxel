@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptPackages { names { "nginx" }; upgrade = true } } } }
+
+name = "invalid/old-upgrade-field.pkl"

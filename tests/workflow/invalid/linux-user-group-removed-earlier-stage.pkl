@@ -23,3 +23,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-group-removed-earlier-stage.pkl"

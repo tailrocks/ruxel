@@ -4,3 +4,4 @@ amends "modulepath:/ruxel/Workflow.pkl"
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Command { run { "" } } } } }
+name = "invalid/empty-program.pkl"

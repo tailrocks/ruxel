@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/app.conf"; content = "x\n"; owner = "app" }
   new linux.User { user = "app"; uid = 1500 }
 } } }
+
+name = "invalid/linux-file-owner-later.pkl"

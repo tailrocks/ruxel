@@ -6,3 +6,5 @@ local version = new Capture { bash = "cat /etc/debian_version" }
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/motd"; content = "Debian \(version.stdout())" }
 } } }
+
+name = "invalid/capture-not-in-stage.pkl"

@@ -20,3 +20,5 @@ stages {
     new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/50-ruxel.conf" }
   } }
 }
+
+name = "invalid/linux-sysctl-shadow-login-users.pkl"

@@ -16,3 +16,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   // diff never refresh the lists the simulation plans against.
   new debian.AptPackageIndex {}
 } } }
+
+name = "valid/apt-system-upgrade.pkl"

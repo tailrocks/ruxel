@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptRepository { name = "x"; url = "https://apt.example.test/"; suite = "stable"; components { "main\u{0}" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" } } } }
+
+name = "invalid/debian-apt-component-nul.pkl"

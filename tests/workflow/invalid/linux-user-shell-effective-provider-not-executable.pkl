@@ -31,3 +31,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-effective-provider-not-executable.pkl"

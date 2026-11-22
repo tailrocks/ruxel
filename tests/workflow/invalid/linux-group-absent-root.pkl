@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // account side refuses to remove root, and the group side refuses to
 // remove the superuser's primary group.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.Group { name = "root"; state = "absent" } } } }
+
+name = "invalid/linux-group-absent-root.pkl"

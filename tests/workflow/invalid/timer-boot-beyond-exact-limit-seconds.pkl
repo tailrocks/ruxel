@@ -11,3 +11,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { title = "The endless delay"; name = "postgresql-beyond-exact-limit-seconds"; onBoot = 20000000000000.s }
 } } }
+
+name = "invalid/timer-boot-beyond-exact-limit-seconds.pkl"

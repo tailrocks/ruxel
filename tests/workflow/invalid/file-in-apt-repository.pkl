@@ -13,3 +13,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   }
   new File { path = "/etc/apt/keyrings/example.asc"; content = "another key" }
 } } }
+
+name = "invalid/file-in-apt-repository.pkl"

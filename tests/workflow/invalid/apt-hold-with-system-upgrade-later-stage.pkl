@@ -15,3 +15,5 @@ stages {
     new debian.AptSystemUpgrade { title = "Upgrade the system" }
   } }
 }
+
+name = "invalid/apt-hold-with-system-upgrade-later-stage.pkl"

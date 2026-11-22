@@ -8,3 +8,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/motd"; content = "Debian \(release.stdout())" }
   release
 } } }
+
+name = "invalid/capture-listed-later.pkl"

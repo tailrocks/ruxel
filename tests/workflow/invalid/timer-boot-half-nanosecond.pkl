@@ -12,3 +12,5 @@ stages {
     }
   }
 }
+
+name = "invalid/timer-boot-half-nanosecond.pkl"

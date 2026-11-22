@@ -7,3 +7,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { name = "thing.service"; onCalendar = "daily" }
 } } }
+
+name = "invalid/timer-service-name.pkl"

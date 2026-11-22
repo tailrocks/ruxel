@@ -19,3 +19,5 @@ stages {
     new linux.Group { name = "staff"; gid = 2000; state = "absent" }
   } }
 }
+
+name = "valid/linux-user-removal-uid-match.pkl"

@@ -21,3 +21,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-ancestor-unsearchable.pkl"

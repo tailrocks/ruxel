@@ -26,3 +26,5 @@ stages {
     new linux.User { user = "bob"; uid = 1001 }
   } }
 }
+
+name = "valid/linux-user-uid-reuse-split-removals.pkl"

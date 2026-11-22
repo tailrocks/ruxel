@@ -8,3 +8,4 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   onTargets
   new File { path = "/etc/peer"; content = onNull.stdout() }
 } } }
+name = "invalid/capture-run-on-null-host.pkl"

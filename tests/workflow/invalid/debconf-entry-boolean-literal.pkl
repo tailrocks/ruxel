@@ -17,3 +17,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
     value = "yes"
   }
 } } }
+
+name = "invalid/debconf-entry-boolean-literal.pkl"

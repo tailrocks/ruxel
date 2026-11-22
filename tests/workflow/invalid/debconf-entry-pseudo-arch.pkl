@@ -10,3 +10,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.DebconfEntry { package = "curl:any"; question = "curl/x"; type = "string"; value = "x" }
 } } }
+
+name = "invalid/debconf-entry-pseudo-arch.pkl"

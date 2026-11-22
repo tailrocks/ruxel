@@ -12,3 +12,5 @@ stages { new Stage { title = "Motd"; hosts = inventory.workers; steps {
     content = read("../resources/motd.txt").text
   }
 } } }
+
+name = "valid/read-resource.pkl"

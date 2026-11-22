@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // `/` is the root directory, not an account's home: the home of an
 // account is a file path, any absolute path but `/` itself.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "app"; home = "/" } } } }
+
+name = "invalid/linux-user-home-root.pkl"

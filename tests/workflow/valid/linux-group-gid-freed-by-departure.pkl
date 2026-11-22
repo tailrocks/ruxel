@@ -27,3 +27,5 @@ stages {
     new linux.Group { name = "team"; gid = 1000 }
   } }
 }
+
+name = "valid/linux-group-gid-freed-by-departure.pkl"

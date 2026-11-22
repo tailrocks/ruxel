@@ -21,3 +21,5 @@ stages {
     new File { path = "/tmp/x"; content = "keep\n"; owner = "alice" }
   } }
 }
+
+name = "valid/linux-file-owner-renumbered-reconciled.pkl"

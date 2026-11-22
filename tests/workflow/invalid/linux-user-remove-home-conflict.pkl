@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/home/app/keep.txt"; content = "mine\n" }
   new linux.User { user = "app"; home = "/home/app"; state = "absent"; uid = 1500; removeHome = true }
 } } }
+
+name = "invalid/linux-user-remove-home-conflict.pkl"

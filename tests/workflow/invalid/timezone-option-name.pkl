@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.Timezone { name = "--help" } } } }
+
+name = "invalid/timezone-option-name.pkl"

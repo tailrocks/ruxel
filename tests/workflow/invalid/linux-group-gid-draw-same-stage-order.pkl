@@ -25,3 +25,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-gid-draw-same-stage-order.pkl"

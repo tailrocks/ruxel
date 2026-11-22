@@ -6,3 +6,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { run { "true" }; changes = new UnlessOutput { stdoutContains = "host \(module.currentHost.name)" } }
 } } }
+
+name = "invalid/runtime-value-in-unless-output.pkl"

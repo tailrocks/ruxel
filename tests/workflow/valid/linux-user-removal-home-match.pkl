@@ -13,3 +13,5 @@ stages {
     new linux.User { user = "alice"; uid = 1500; home = "/srv/alice"; state = "absent"; removeHome = true }
   } }
 }
+
+name = "valid/linux-user-removal-home-match.pkl"

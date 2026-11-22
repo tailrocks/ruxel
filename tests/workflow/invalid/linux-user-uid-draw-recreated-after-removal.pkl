@@ -41,3 +41,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-uid-draw-recreated-after-removal.pkl"

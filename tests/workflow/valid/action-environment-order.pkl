@@ -25,3 +25,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { title = "Restart first"; run { "app"; "restart" }; onChangeOf { firstView } }
   new Command { title = "Restart second"; run { "app"; "restart" }; onChangeOf { secondView } }
 } } }
+
+name = "valid/action-environment-order.pkl"

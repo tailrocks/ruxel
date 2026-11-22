@@ -27,3 +27,5 @@ stages {
     new Command { title = "Reload nginx again"; run { "echo"; "nginx" }; onChangeOf { new debian.AptPreference { package = "nginx:amd64"; pin = "release n=stable"; priority = 900 } } }
   } }
 }
+
+name = "valid/apt-preference.pkl"

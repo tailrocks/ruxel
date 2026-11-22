@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // change on the root account would move the superuser's identity away
 // from GID 0 and strand every file it owns.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "root"; group = "wheel" } } } }
+
+name = "invalid/linux-user-root-group.pkl"

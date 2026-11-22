@@ -10,3 +10,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { package = "curl=8.5.0-2"; pin = "version 8.5.0-*"; priority = 500 }
 } } }
+
+name = "invalid/apt-preference-package-selector-pin.pkl"

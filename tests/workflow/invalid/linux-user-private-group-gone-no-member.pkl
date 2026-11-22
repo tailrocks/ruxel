@@ -17,3 +17,5 @@ stages {
     new File { path = "/srv/app-team.txt"; content = "keep\n"; group = "alice" }
   } }
 }
+
+name = "invalid/linux-user-private-group-gone-no-member.pkl"

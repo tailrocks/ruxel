@@ -17,3 +17,5 @@ stages {
     new debian.AptSystemUpgrade { title = "Upgrade the system" }
   } }
 }
+
+name = "invalid/apt-index-before-system-upgrade-later-stage.pkl"

@@ -13,3 +13,5 @@ stages {
     new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
   } }
 }
+
+name = "valid/linux-user-remove-home-other-spool-dir.pkl"

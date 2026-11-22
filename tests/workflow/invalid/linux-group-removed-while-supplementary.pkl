@@ -26,3 +26,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-removed-while-supplementary.pkl"

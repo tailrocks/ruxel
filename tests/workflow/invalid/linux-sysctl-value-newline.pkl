@@ -13,3 +13,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-value-newline.pkl"

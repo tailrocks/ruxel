@@ -8,3 +8,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new linux.User { user = "app"; state = "absent"; uid = 1500; removeHome = true }
 } } }
+
+name = "invalid/linux-user-remove-home-no-home.pkl"

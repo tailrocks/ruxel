@@ -16,3 +16,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-ensured-before-user-removal.pkl"

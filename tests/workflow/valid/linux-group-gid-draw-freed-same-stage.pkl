@@ -25,3 +25,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-group-gid-draw-freed-same-stage.pkl"

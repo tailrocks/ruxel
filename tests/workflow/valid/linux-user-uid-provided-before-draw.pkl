@@ -17,3 +17,5 @@ stages {
     new linux.User { user = "bob"; uid = 1600 }
   } }
 }
+
+name = "valid/linux-user-uid-provided-before-draw.pkl"

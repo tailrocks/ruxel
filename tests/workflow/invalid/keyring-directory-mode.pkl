@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Directory { path = "/etc/apt/keyrings"; mode = "0700" }
   new debian.AptRepository { name = "example"; url = "https://apt.example.test/"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n" }
 } } }
+
+name = "invalid/keyring-directory-mode.pkl"

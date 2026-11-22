@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPackages { title = "Hold curl"; names { "curl" }; hold = true }
   new debian.AptSystemUpgrade { title = "Upgrade the system" }
 } } }
+
+name = "invalid/apt-hold-with-system-upgrade.pkl"

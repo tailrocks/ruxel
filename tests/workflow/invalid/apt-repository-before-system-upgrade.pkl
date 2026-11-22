@@ -12,3 +12,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
   new debian.AptSystemUpgrade { title = "Upgrade the system" }
 } } }
+
+name = "invalid/apt-repository-before-system-upgrade.pkl"

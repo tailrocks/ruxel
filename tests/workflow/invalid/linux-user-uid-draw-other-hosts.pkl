@@ -18,3 +18,5 @@ stages {
     new linux.User { user = "bob"; uid = 1600 }
   } }
 }
+
+name = "invalid/linux-user-uid-draw-other-hosts.pkl"

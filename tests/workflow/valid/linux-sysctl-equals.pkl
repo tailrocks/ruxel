@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-sysctl-equals.pkl"

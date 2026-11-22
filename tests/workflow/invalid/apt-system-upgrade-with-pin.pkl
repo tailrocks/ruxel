@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptSystemUpgrade { title = "Upgrade everything" }
   new debian.AptPackages { title = "Pin nginx"; names { "nginx=1.25.1-1" } }
 } } }
+
+name = "invalid/apt-system-upgrade-with-pin.pkl"

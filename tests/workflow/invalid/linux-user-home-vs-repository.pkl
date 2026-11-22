@@ -20,3 +20,5 @@ stages {
     new linux.User { user = "alice"; home = "/etc/apt/sources.list.d/docker.sources" }
   } }
 }
+
+name = "invalid/linux-user-home-vs-repository.pkl"

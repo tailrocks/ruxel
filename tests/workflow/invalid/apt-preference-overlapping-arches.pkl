@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin bash"; package = "bash"; pin = "version 5.2"; priority = 100 }
   new debian.AptPreference { title = "Pin bash amd64"; package = "bash:amd64"; pin = "version 5.1"; priority = 200 }
 } } }
+
+name = "invalid/apt-preference-overlapping-arches.pkl"

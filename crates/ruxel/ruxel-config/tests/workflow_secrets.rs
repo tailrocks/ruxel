@@ -314,6 +314,7 @@ fn an_exact_fetch_repeat_is_the_same_step() -> Result {
     std::fs::write(
         &root,
         r#"amends "modulepath:/ruxel/Workflow.pkl"
+name = "fetch-repeat"
 import "modulepath:/ruxel/Core.pkl" as core
 local web = new core.Host { name = "web"; address = "192.0.2.1" }
 stages { new Stage { title = "t"; hosts { web }; steps {

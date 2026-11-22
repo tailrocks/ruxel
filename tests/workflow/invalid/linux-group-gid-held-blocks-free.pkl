@@ -22,3 +22,5 @@ stages {
     new linux.Group { name = "team"; gid = 1000 }
   } }
 }
+
+name = "invalid/linux-group-gid-held-blocks-free.pkl"

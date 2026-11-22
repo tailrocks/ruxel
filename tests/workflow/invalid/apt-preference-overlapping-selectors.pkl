@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin the ba glob"; package = "ba*"; pin = "version 1.0"; priority = 100 }
   new debian.AptPreference { title = "Pin bash"; package = "bash"; pin = "version 2.0"; priority = 200 }
 } } }
+
+name = "invalid/apt-preference-overlapping-selectors.pkl"

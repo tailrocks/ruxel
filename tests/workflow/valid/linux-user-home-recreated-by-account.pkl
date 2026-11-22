@@ -18,3 +18,5 @@ stages {
     new File { path = "/home/alice/config"; content = "keep\n" }
   } }
 }
+
+name = "valid/linux-user-home-recreated-by-account.pkl"

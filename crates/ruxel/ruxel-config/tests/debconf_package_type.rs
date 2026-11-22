@@ -11,6 +11,7 @@ type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn refuses(name: &str) -> Result {
     let workflow = format!(
         "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
+         name = \"debconf-package-type-probe\"\n\
          import \"modulepath:/ruxel/Debian.pkl\" as debian\n\
          import \"inventory.pkl\"\n\
          \n\

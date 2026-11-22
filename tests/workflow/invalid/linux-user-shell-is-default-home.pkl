@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-is-default-home.pkl"

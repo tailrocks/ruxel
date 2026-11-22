@@ -33,3 +33,5 @@ stages {
     new linux.Group { name = "staff"; gid = 1000 }
   } }
 }
+
+name = "invalid/linux-user-private-group-member-removed-on-other-host.pkl"

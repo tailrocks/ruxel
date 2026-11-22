@@ -19,3 +19,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-home-directory-before-account.pkl"

@@ -24,3 +24,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-group-gid-reused-after-same-stage-removal.pkl"

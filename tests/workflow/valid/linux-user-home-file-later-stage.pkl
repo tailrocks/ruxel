@@ -22,3 +22,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-home-file-later-stage.pkl"

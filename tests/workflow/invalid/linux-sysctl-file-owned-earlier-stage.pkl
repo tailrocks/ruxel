@@ -14,3 +14,5 @@ stages {
     new linux.Sysctl { name = "vm.swappiness"; value = "10"; path = "/etc/sysctl.d/80-tuning.conf" }
   } }
 }
+
+name = "invalid/linux-sysctl-file-owned-earlier-stage.pkl"

@@ -16,3 +16,5 @@ stages {
     new linux.Group { name = "staff"; gid = 2000 }
   } }
 }
+
+name = "invalid/linux-user-home-renumbered-group.pkl"

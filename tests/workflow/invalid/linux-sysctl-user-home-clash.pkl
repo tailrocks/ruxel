@@ -24,3 +24,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-user-home-clash.pkl"

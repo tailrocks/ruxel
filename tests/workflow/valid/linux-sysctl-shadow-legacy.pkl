@@ -15,3 +15,5 @@ stages {
     new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/sysctl.conf" }
   } }
 }
+
+name = "valid/linux-sysctl-shadow-legacy.pkl"

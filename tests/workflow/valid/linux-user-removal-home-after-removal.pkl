@@ -30,3 +30,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-removal-home-after-removal.pkl"

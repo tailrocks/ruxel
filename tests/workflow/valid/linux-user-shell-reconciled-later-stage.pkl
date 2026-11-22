@@ -17,3 +17,5 @@ stages {
     new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
   } }
 }
+
+name = "valid/linux-user-shell-reconciled-later-stage.pkl"

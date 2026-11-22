@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.PackageIndex {} } } }
+
+name = "invalid/old-package-index.pkl"

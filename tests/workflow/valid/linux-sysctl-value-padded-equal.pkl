@@ -25,3 +25,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-sysctl-value-padded-equal.pkl"

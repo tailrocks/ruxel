@@ -4,3 +4,5 @@ import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts { inventory.worker1; inventory.worker1 }; steps { new linux.Timezone { name = "UTC" } } } }
+
+name = "invalid/duplicate-stage-host.pkl"

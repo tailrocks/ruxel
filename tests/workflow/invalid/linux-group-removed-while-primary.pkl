@@ -16,3 +16,5 @@ stages {
     new linux.Group { name = "staff"; state = "absent"; gid = 1501 }
   } }
 }
+
+name = "invalid/linux-group-removed-while-primary.pkl"

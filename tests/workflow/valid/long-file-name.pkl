@@ -12,3 +12,5 @@ stages {
     }
   }
 }
+
+name = "valid/long-file-name.pkl"

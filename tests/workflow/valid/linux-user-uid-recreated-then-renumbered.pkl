@@ -47,3 +47,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-uid-recreated-then-renumbered.pkl"

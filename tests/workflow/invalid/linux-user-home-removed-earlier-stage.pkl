@@ -22,3 +22,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-home-removed-earlier-stage.pkl"

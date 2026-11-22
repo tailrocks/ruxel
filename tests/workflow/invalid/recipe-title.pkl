@@ -6,3 +6,5 @@ import "../recipes.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new recipes.ApiProxy { title = "Proxy"; backends = inventory.controlPlanes }
 } } }
+
+name = "invalid/recipe-title.pkl"

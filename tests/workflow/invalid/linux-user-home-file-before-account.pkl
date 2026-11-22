@@ -19,3 +19,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-home-file-before-account.pkl"

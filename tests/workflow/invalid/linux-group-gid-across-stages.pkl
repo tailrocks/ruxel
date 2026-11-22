@@ -24,3 +24,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-gid-across-stages.pkl"

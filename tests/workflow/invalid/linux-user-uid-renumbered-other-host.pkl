@@ -18,3 +18,5 @@ stages {
     new linux.User { user = "bob"; uid = 1000 }
   } }
 }
+
+name = "invalid/linux-user-uid-renumbered-other-host.pkl"

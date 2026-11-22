@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-value-nul.pkl"

@@ -20,3 +20,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-removal-keeps-non-primary-group.pkl"

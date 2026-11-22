@@ -19,3 +19,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-not-executable.pkl"

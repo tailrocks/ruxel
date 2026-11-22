@@ -8,3 +8,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   config
   new systemd.Service { name = "app"; running = false; restartOnChangeOf { config } }
 } } }
+
+name = "invalid/restart-stopped-service.pkl"

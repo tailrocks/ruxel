@@ -34,3 +34,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-removed-supplementary-unrestored.pkl"

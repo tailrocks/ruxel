@@ -103,7 +103,7 @@ mod namespace_tests {
             std::fs::create_dir_all(root).expect("fixture root");
             std::fs::write(
                 root.join("workflow.pkl"),
-                "amends \"modulepath:/ruxel/Workflow.pkl\"\nstages {}\n",
+                "amends \"modulepath:/ruxel/Workflow.pkl\"\nname = \"synthetic-workflow\"\nstages {}\n",
             )
             .expect("fixture workflow");
         }

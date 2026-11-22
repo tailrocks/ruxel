@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-link-target-not-executable.pkl"

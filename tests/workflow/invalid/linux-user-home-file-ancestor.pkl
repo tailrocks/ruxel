@@ -16,3 +16,5 @@ stages {
     new linux.User { user = "alice"; home = "/srv/alice" }
   } }
 }
+
+name = "invalid/linux-user-home-file-ancestor.pkl"

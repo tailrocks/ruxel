@@ -30,3 +30,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-home-removed-deep-parent.pkl"

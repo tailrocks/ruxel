@@ -10,3 +10,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { package = "a-a-a-a-a+a+a-a-a+a-a+a-a-a-a+a-a+a-a"; pin = "release n=stable"; priority = 500 }
   new debian.AptPreference { package = "a-a-a+a-a+a-a+a-a+a-a-a-a+a+a-a+a+a-a"; pin = "release n=stable"; priority = 500 }
 } } }
+
+name = "valid/apt-preference-collision.pkl"

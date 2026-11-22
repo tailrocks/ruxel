@@ -23,3 +23,5 @@ stages {
     new linux.User { user = "bob"; uid = 1001 }
   } }
 }
+
+name = "invalid/linux-user-uid-reuse-partial-hosts.pkl"

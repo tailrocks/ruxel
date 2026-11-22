@@ -10,3 +10,5 @@ local account = new linux.User { user = "ruxel-app"; uid = 1500 }
 local verify = new Command { title = "Verify the account"; run { "true" }; onChangeOf { account } }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { account; verify } } }
+
+name = "valid/linux-user-watch.pkl"

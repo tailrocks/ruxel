@@ -25,3 +25,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-provided-later-stage.pkl"

@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptPackages { names { "curl\u{0}" } } } } }
+
+name = "invalid/debian-packages-nul.pkl"

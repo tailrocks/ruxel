@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // `/` is a directory, not a login shell: the shell of an account is a
 // file path, any absolute path but `/` itself.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "app"; shell = "/" } } } }
+
+name = "invalid/linux-user-shell-root.pkl"

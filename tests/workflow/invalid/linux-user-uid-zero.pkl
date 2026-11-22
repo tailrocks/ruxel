@@ -6,3 +6,5 @@ import "../inventory.pkl"
 // The superuser's id is never a managed account's id: the rule refuses it
 // outright, whatever the state of the account is.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "ruxel-app"; uid = 0 } } } }
+
+name = "invalid/linux-user-uid-zero.pkl"

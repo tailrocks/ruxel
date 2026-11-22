@@ -10,3 +10,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "  "; priority = 500 }
 } } }
+
+name = "invalid/apt-preference-pin-blank.pkl"

@@ -20,3 +20,5 @@ stages {
     new File { path = "/etc/sysctl.d/99-x.conf/child"; content = "x\n" }
   } }
 }
+
+name = "invalid/linux-sysctl-nested-login-users.pkl"

@@ -9,3 +9,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin curl"; package = "curl:any"; pin = "version 8.5.0-2"; priority = 500 }
 } } }
+
+name = "invalid/apt-preference-pseudo-arch.pkl"

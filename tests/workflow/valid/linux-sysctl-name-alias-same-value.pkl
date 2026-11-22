@@ -17,3 +17,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-sysctl-name-alias-same-value.pkl"

@@ -17,3 +17,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-name-dot-component.pkl"

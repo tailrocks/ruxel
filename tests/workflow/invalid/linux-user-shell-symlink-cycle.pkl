@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-shell-symlink-cycle.pkl"

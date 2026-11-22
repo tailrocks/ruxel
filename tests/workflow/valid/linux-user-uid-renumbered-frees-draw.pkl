@@ -17,3 +17,5 @@ stages {
     new linux.User { user = "bob"; uid = 1500 }
   } }
 }
+
+name = "valid/linux-user-uid-renumbered-frees-draw.pkl"

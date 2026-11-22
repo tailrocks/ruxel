@@ -21,3 +21,5 @@ stages {
     new debian.AptPackages { title = "Install the same bash"; names { "bash=1.0-0" } }
   } }
 }
+
+name = "valid/apt-hold-equal-version.pkl"

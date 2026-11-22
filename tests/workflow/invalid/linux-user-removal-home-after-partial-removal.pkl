@@ -31,3 +31,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-removal-home-after-partial-removal.pkl"

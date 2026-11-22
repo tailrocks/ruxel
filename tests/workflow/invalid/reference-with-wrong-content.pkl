@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/app.conf"; content = "real" }
   new systemd.Service { name = "app"; restartOnChangeOf { new File { path = "/etc/app.conf"; content = "invented" } } }
 } } }
+
+name = "invalid/reference-with-wrong-content.pkl"

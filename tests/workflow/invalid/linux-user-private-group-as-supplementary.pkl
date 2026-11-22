@@ -17,3 +17,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-private-group-as-supplementary.pkl"

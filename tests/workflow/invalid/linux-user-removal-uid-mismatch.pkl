@@ -15,3 +15,5 @@ stages {
     new linux.User { user = "alice"; uid = 1002; state = "absent" }
   } }
 }
+
+name = "invalid/linux-user-removal-uid-mismatch.pkl"

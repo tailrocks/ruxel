@@ -27,3 +27,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
     value = debian.secretAnswer(core.fnox("POSTFIX_RELAY_PW"))
   }
 } } }
+
+name = "valid/debconf-entry.pkl"

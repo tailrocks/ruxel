@@ -11,3 +11,5 @@ local class Join extends Recipe {
 }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { caHash; new Join { ca = caHash } } } }
+
+name = "invalid/capture-listed-twice.pkl"

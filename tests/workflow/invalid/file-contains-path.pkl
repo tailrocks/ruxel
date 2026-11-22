@@ -6,3 +6,4 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/app"; content = "a" }
   new Directory { path = "/etc/app/config" }
 } } }
+name = "invalid/file-contains-path.pkl"

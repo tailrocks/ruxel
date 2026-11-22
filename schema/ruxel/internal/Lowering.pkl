@@ -35,10 +35,13 @@ hidden servedFingerprint: String = "unserved"
 /// Otherwise one of the two is a copy, and it carries the copy's: a served
 /// fingerprint ends in `@<nonce>`, a copy's does not. So admission refuses a
 /// copy of either module, even an unmodified one, and names it as a copy.
-function config(stages: Listing<core.Stage>, workflowFingerprint: String): engine.Config =
+/// `workflowName` is the calling workflow's `name`: the stable identity
+/// the engine namespaces the ledger by, carried on the configuration so
+/// the checkout's location never becomes the identity.
+function config(stages: Listing<core.Stage>, workflowFingerprint: String, workflowName: String): engine.Config =
   let (copied = copiedClasses(stages.toList()))
   if (copied != null) throw(copied)
-  else (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages))) {
+  else (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages), workflowName)) {
     languageFingerprint = fingerprintOf(workflowFingerprint, servedFingerprint)
   }
 
@@ -759,7 +762,8 @@ const function optional(v: String?): String = if (v == null) "-" else "+" + v
 /// so no value, whatever characters it contains, can stand for two lists.
 const function fields(values: List<String>): String = values.map((v) -> "\(v.length):\(v)").join("")
 
-function configOf(_hosts: List<core.Host>, _stages: List<core.Stage>, _indexes: List<StageIndex>): engine.Config = new engine.Config {
+function configOf(_hosts: List<core.Host>, _stages: List<core.Stage>, _indexes: List<StageIndex>, _workflow: String): engine.Config = new engine.Config {
+  workflow = _workflow
   inventory { hosts { for (h in _hosts) { [h.name] = hostOf(h) } } }
   plays { for (n, s in _stages) { playOf(s.title, s.hosts.toList().map((h) -> h.name), _indexes[n]) } }
 }

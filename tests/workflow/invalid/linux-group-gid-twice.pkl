@@ -15,3 +15,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-group-gid-twice.pkl"

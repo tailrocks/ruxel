@@ -19,3 +19,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-implicit-group-clash.pkl"

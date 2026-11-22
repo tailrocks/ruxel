@@ -32,3 +32,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-uid-auto-system-draw.pkl"

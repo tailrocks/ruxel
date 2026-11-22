@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new linux.Group { name = "app"; state = "absent" }
   new linux.User { user = "app"; state = "absent"; uid = 1500 }
 } } }
+
+name = "invalid/linux-group-removed-first.pkl"

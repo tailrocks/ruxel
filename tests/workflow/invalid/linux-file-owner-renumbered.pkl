@@ -17,3 +17,5 @@ stages {
     new linux.User { user = "alice"; uid = 1600 }
   } }
 }
+
+name = "invalid/linux-file-owner-renumbered.pkl"

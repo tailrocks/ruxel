@@ -17,3 +17,5 @@ local class Upgrade extends Recipe {
 }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Upgrade {} } } }
+
+name = "invalid/reread-in-recipe.pkl"

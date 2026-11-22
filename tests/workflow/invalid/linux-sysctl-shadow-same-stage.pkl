@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-shadow-same-stage.pkl"

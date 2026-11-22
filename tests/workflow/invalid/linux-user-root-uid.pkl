@@ -7,3 +7,5 @@ import "../inventory.pkl"
 // disconnect the root name from UID 0 and strand every file the
 // superuser owns.
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new linux.User { user = "root"; uid = 1234 } } } }
+
+name = "invalid/linux-user-root-uid.pkl"

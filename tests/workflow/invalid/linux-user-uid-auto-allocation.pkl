@@ -26,3 +26,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-uid-auto-allocation.pkl"

@@ -18,3 +18,5 @@ stages {
     new File { path = "/srv/app-team.txt"; content = "keep\n"; group = "alice" }
   } }
 }
+
+name = "valid/linux-user-private-group-survives-for-member.pkl"

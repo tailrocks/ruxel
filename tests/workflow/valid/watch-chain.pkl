@@ -31,3 +31,5 @@ stages {
     }
   }
 }
+
+name = "valid/watch-chain.pkl"

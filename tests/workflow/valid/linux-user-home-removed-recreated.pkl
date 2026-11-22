@@ -29,3 +29,5 @@ stages {
     }
   }
 }
+
+name = "valid/linux-user-home-removed-recreated.pkl"

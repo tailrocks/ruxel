@@ -24,3 +24,5 @@ stages {
     new linux.User { user = "alice"; uid = 2000 }
   } }
 }
+
+name = "invalid/linux-user-uid-renumbered-disjoint-hosts.pkl"

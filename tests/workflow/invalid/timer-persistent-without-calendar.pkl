@@ -12,3 +12,5 @@ stages {
     }
   }
 }
+
+name = "invalid/timer-persistent-without-calendar.pkl"

@@ -34,3 +34,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-uid-auto-removal-claim-number.pkl"

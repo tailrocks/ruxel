@@ -16,3 +16,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-user-group-absent.pkl"

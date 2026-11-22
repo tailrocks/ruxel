@@ -9,3 +9,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/" }
 } } }
+
+name = "invalid/linux-sysctl-path-root.pkl"

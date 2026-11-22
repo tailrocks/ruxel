@@ -15,3 +15,5 @@ stages {
     new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
   } }
 }
+
+name = "invalid/linux-user-removal-home-mismatch.pkl"

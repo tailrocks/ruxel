@@ -5,3 +5,5 @@ import "modulepath:/ruxel/Systemd.pkl" as systemd
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new systemd.Service { name = "getty@.service"; running = true; enabled = true } } } }
+
+name = "invalid/service-template-without-instance.pkl"

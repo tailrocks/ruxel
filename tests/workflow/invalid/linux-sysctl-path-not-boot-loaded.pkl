@@ -18,3 +18,5 @@ stages {
     }
   }
 }
+
+name = "invalid/linux-sysctl-path-not-boot-loaded.pkl"

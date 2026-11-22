@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptRepository { title = "Add the repo"; name = "x"; url = "https://example.test"; suite = "stable"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
   new debian.AptPackages { title = "Install nginx"; names { "nginx" }; latest = true }
 } } }
+
+name = "invalid/apt-repository-before-install.pkl"
