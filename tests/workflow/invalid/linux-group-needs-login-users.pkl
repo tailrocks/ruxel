@@ -1,0 +1,22 @@
+// expect: needs the group docker, which 'Remove group docker' (step 1) of stage
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One machine keeps one group file whatever login user opened the SSH
+// connection: the first stage removes docker as root and the second
+// stage's account needs it as deployer — both reach 192.0.2.50:22, so
+// useradd refuses a group that is not there and the apply fails after
+// the removal ran. The group dependency check keys the machine by
+// endpoint and port, not by the SSH login user.
+local webRoot = new Host { name = "web-root"; address = "192.0.2.50" }
+local webDeployer = new Host { name = "web-deployer"; address = "192.0.2.50"; user = "deployer" }
+
+stages {
+  new Stage { title = "first"; hosts { webRoot }; steps {
+    new linux.Group { name = "docker"; state = "absent" }
+  } }
+  new Stage { title = "second"; hosts { webDeployer }; steps {
+    new linux.User { user = "app"; group = "docker" }
+  } }
+}

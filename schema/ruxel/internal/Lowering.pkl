@@ -1230,11 +1230,11 @@ function sysctlNestedAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 /// keys match changes nothing: the shadow hides the whole file, not the
 /// clashing entries. `/etc/sysctl.conf` is exempt: it loads after every
 /// directory file and is never skipped, so a legacy/dirfile pair of one
-/// name both loads. The comparison is per host pair — stages on
-/// disjoint hosts never share a boot — and one shared file is the
+/// name both loads. The comparison is per machine — stages on
+/// disjoint machines never share a boot — and one shared file is the
 /// multi-entry model, not a shadow.
 function sysctlShadowAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
-  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsOverlap(_stages[n], _stages[m]))
+  positions(_indexes).flatMap((n) -> positions(_indexes).filter((m) -> m > n && hostsShareIdentity(_stages[n], _stages[m]))
     .flatMap((m) -> positions(_indexes[n].steps).flatMap((j) -> positions(_indexes[m].steps).flatMap((i) ->
       sysctlShadowPair(_stages[n], _indexes[n], j, _stages[m], _indexes[m], i)))))
 
@@ -2168,13 +2168,13 @@ function identityGoneOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, n
     providerOf(s, p) && (s is linux.User || s is linux.Group) && s.state == "absent"
       && !(p[1] == "group" && s is linux.User && identityPrivateGroupSurvives(_stages, _indexes, n, j, p[0], h)))
 
-/// Whether the step's removal of the group `group` takes it on the host
-/// `h`: an absent group step always does, while the absent account
-/// whose same-name group `userdel` takes leaves a held one behind (see
-/// `privateGroupSurvives`).
+/// Whether the step's removal of the group `group` takes it on the
+/// machine `h`: an absent group step always does, while the absent
+/// account whose same-name group `userdel` takes leaves a held one
+/// behind (see `identityPrivateGroupSurvives`).
 function groupGoneAt(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, j: Int, group: String, h: core.Host): Boolean =
   removesGroup(_indexes[n].steps[j], group)
-    && !(_indexes[n].steps[j] is linux.User && privateGroupSurvives(_stages, _indexes, n, j, group, h))
+    && !(_indexes[n].steps[j] is linux.User && identityPrivateGroupSurvives(_stages, _indexes, n, j, group, h))
 
 /// Whether the same-name group an absent account would take with it
 /// survives the removal step `j` of stage `n` on the host `h`: another
@@ -2343,14 +2343,13 @@ const function leavesSupplementary(s: core.Step, account: String, group: String)
 /// apply fails after the earlier stage has already run `groupdel`. The
 /// stage-local rule sees only its own stage; across stages the
 /// removal and the account live in different stages. The comparison is
-/// per host pair, as the other cross-stage rules' is, and a stage
-/// between them that declares the group present again lifts the
-/// refusal.
+/// per machine, and a stage between them that declares the group present
+/// again lifts the refusal.
 function groupNeedsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (u = _indexes[m].steps[i])
     if (!(u is linux.User) || u.state != "present") List()
-    else requiredGroups(u).flatMap((g) -> positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+    else requiredGroups(u).flatMap((g) -> positions(_indexes).filter((n) -> n < m && hostsShareIdentity(_stages[n], _stages[m]))
       .flatMap((n) -> removedGroupRels(_stages, _indexes, n, m, i, g)))))
 
 /// The refusal for an account that needs a group an earlier stage
@@ -2359,7 +2358,7 @@ function groupNeedsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageI
 /// is (`userdel` takes that group with the account).
 function removedGroupRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, i: Int, group: String): List<String> =
   positions(_indexes[n].steps).filter((j) -> removesGroup(_indexes[n].steps[j], group))
-    .filter((j) -> sharedHosts(_stages[n], _stages[m]).any((h) -> groupGoneAt(_stages, _indexes, n, j, group, h) && !recreatesGroup(_stages, _indexes, n, m, group, h)))
+    .filter((j) -> sharedIdentityHosts(_stages[n], _stages[m]).any((h) -> groupGoneAt(_stages, _indexes, n, j, group, h) && !recreatesGroup(_stages, _indexes, n, m, group, h)))
     .map((j) -> "'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" needs the group \(group), which '\(name(_indexes[n].steps[j]))' (\(where(_indexes[n].placed[j]))) of stage \"\(_stages[n].title)\" removes: an account cannot keep a removed group, so declare the group present or drop it from the account")
 
 /// Whether the step removes the group `group`: a group step that
@@ -2371,11 +2370,11 @@ const function removesGroup(s: core.Step, group: String): Boolean =
     || (s is linux.User && s.user == group && s.state == "absent" && s.group == null)
 
 /// The group is there again before the later stage: a stage between
-/// the removal and it declares the group present, on the host they
+/// the removal and it declares the group present, on the machine they
 /// share.
 function recreatesGroup(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, group: String, h: core.Host): Boolean =
   positions(_indexes).filter((k) -> k > n && k <= m)
-    .any((k) -> stageRunsOn(_stages[k], h) && identityPresent(_indexes[k], List(group, "group")))
+    .any((k) -> identityRunsOn(_stages[k], h) && identityPresent(_indexes[k], List(group, "group")))
 
 /// A managed home is a directory: a step that leaves a regular file at
 /// exactly the same path in another stage is a type conflict whichever

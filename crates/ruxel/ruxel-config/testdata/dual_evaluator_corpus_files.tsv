@@ -84,6 +84,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-gid-twice.pkl
   tests/workflow/invalid/linux-group-gid-zero.pkl
   tests/workflow/invalid/linux-group-name.pkl
+  tests/workflow/invalid/linux-group-needs-login-users.pkl
   tests/workflow/invalid/linux-group-removed-first.pkl
   tests/workflow/invalid/linux-group-removed-supplementary-unrestored.pkl
   tests/workflow/invalid/linux-group-removed-while-primary.pkl
@@ -106,6 +107,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl
   tests/workflow/invalid/linux-sysctl-shadow-across-dirs.pkl
+  tests/workflow/invalid/linux-sysctl-shadow-login-users.pkl
   tests/workflow/invalid/linux-sysctl-shadow-same-stage.pkl
   tests/workflow/invalid/linux-sysctl-stage-order.pkl
   tests/workflow/invalid/linux-sysctl-user-home-clash.pkl
