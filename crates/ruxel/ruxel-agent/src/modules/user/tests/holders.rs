@@ -167,6 +167,31 @@ fn usergroups_enab_decides_the_check_mode_prediction() {
 }
 
 #[test]
+fn a_shared_same_name_group_names_every_other_holder() {
+    // Thread 288: implicit adoption must see every principal that
+    // holds the same-name group — a listed supplementary member and
+    // an account that holds it as its primary group — while the
+    // account itself is no sharer of its own group.
+    let groups = "app:x:2001:bob\nops:x:2002:\n";
+    let passwd = "app:x:2001:2001::/home/app:/bin/sh\nbob:x:2002:2001::/home/bob:/bin/sh\ncarol:x:2003:2003::/home/carol:/bin/sh\n";
+    let sharers = super::super::holders::same_name_group_sharers_from(groups, passwd, "app", 2001);
+    assert_eq!(
+        sharers,
+        vec!["bob".to_string()],
+        "the listed member and the primary holder share the group: {sharers:?}"
+    );
+    let exclusive = super::super::holders::same_name_group_sharers_from(groups, passwd, "ops", 2002);
+    assert!(
+        exclusive.iter().all(|sharer| sharer != "ops"),
+        "no account shares the exclusive group: {exclusive:?}"
+    );
+    assert!(
+        !exclusive.contains(&"carol".to_string()),
+        "an account on another group is no sharer: {exclusive:?}"
+    );
+}
+
+#[test]
 fn the_check_mode_prediction_consults_the_host_policy() {
     // An empty same-name group disappears with the account only where
     // the host policy deletes one: `USERGROUPS_ENAB=no` (or an

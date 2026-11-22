@@ -204,6 +204,37 @@ pub(super) fn private_group_members_from(groups: &str, passwd: &str, name: &str)
     members
 }
 
+/// The accounts that share the same-name group `name` with the account
+/// the step manages: its listed members and the accounts that hold it
+/// as their primary group, under the plan — apart from the account
+/// itself. A shared same-name group is the host's, not the account's
+/// to claim implicitly: an implicit `useradd` or `usermod -g` would
+/// hand the account a group another principal belongs to, and a home
+/// created for it that GID, so the step must declare the group to
+/// adopt a shared one.
+pub(super) fn same_name_group_sharers(name: &str, gid: u64) -> Result<Vec<String>, String> {
+    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
+    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
+    Ok(same_name_group_sharers_from(&groups, &passwd, name, gid))
+}
+
+/// The canned-content counterpart of [`same_name_group_sharers`]: the
+/// listed members and primary holders apart from the account itself.
+pub(super) fn same_name_group_sharers_from(
+    groups: &str,
+    passwd: &str,
+    name: &str,
+    gid: u64,
+) -> Vec<String> {
+    let mut sharers = private_group_members_from(groups, passwd, name);
+    for holder in other_primary_group_holders_from(passwd, gid, name, name) {
+        if !sharers.iter().any(|sharer| sharer == &holder) {
+            sharers.push(holder);
+        }
+    }
+    sharers
+}
+
 /// The account that holds `uid` on the host and that the plan has not
 /// freed: `useradd -u` and `usermod -u` refuse a number another
 /// account holds, so the request is checked against the live database —

@@ -58,7 +58,8 @@ fn creation_reuses_the_groups_the_host_already_has() {
     // that group as the new account's primary one with `-g`, because
     // `useradd -U` refuses to create a group that exists (exit 9) and
     // would fail the account creation — `-U` is the switch only where
-    // the same-name group is absent.
+    // the same-name group is absent. The reused group is exclusive: a
+    // shared same-name group is refused instead (see the next test).
     let groups = std::fs::read_to_string("/etc/group").unwrap();
     let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
     let name = groups
@@ -68,15 +69,17 @@ fn creation_reuses_the_groups_the_host_already_has() {
             let group = fields.next()?;
             let _password = fields.next()?;
             let gid = fields.next()?;
+            let members = fields.next().unwrap_or_default();
             let usable = !group.is_empty()
                 && !group.starts_with(['+', '#', '-'])
                 && gid.parse::<u64>().is_ok()
+                && members.is_empty()
                 && !passwd
                     .lines()
                     .any(|line| line.split(':').next() == Some(group));
             usable.then(|| group.to_string())
         })
-        .expect("a group without a same-name account");
+        .expect("an exclusive group without a same-name account");
     let home = std::env::temp_dir().join(format!("ruxel-create-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
@@ -108,6 +111,39 @@ fn creation_reuses_the_groups_the_host_already_has() {
         }
     }
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn creation_refuses_a_shared_same_name_group() {
+    // Thread 288: the host's same-name group with another member
+    // belongs to that member, and the creation would join it — a home
+    // created with that GID included. The check-mode creation must
+    // refuse and name the declaration that adopts the shared group.
+    // A host with no shared memberless-account group skips: the scan
+    // is the host's own.
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let Some(name) = groups.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let group = fields.next()?;
+        let _password = fields.next()?;
+        let gid = fields.next()?;
+        let members = fields.next().unwrap_or_default();
+        let shared = !group.is_empty()
+            && !group.starts_with(['+', '#', '-'])
+            && gid.parse::<u64>().is_ok()
+            && !members.is_empty()
+            && !passwd
+                .lines()
+                .any(|line| line.split(':').next() == Some(group));
+        shared.then(|| group.to_string())
+    }) else {
+        return;
+    };
+    let error = run(&json!({"name": name}), &check_context())
+        .expect_err("creation must not silently reuse a shared group");
+    assert!(error.contains("is shared with"), "{error}");
+    assert!(error.contains("declare group"), "{error}");
 }
 
 #[test]

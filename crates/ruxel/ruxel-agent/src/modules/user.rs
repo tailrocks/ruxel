@@ -635,6 +635,24 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 let removed = entries::group_removed(name);
                 removed || (!live && planned_group(name).is_none())
             };
+            // No silent reuse of a shared group: the host's same-name
+            // group with another member belongs to that member, and
+            // the creation would join it — a home created with that
+            // GID included. The step must declare the group to adopt
+            // a shared one; a declared group is the author's own
+            // choice. A group the plan's own removal recreates is the
+            // plan's to fill, not the host's to share — and the
+            // removal of a shared group is refused first.
+            if group.is_none()
+                && !entries::group_removed(name)
+                && let Some((_, gid)) = group_entry(name)?
+                && !holders::same_name_group_sharers(name, gid)?.is_empty()
+            {
+                let sharers = holders::same_name_group_sharers(name, gid)?.join(", ");
+                return Err(format!(
+                    "user: refusing to create {name}: the group {name} is shared with {sharers}, so declare group to create the account on it"
+                ));
+            }
             if !ctx.check_mode {
                 // The private group the account reuses: `useradd -g
                 // <name>` selects the host's group instead of creating
@@ -868,6 +886,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 && current.uid != 0
                 && ((same_name_gid.is_none() && !private_claim_holds)
                     || same_name_gid.is_some_and(|gid| u64::from(gid) != effective.gid));
+            // No silent move onto a shared group: a same-name group
+            // another principal holds is the host's, and the move
+            // would hand the account that GID — a home created for it
+            // included. The step must declare the group to adopt a
+            // shared one; a declared group is the author's own choice.
+            if implicit_group_move
+                && let Some((_, gid)) = same_name.as_ref()
+                && !holders::same_name_group_sharers(name, *gid)?.is_empty()
+            {
+                let sharers =
+                    holders::same_name_group_sharers(name, *gid)?.join(", ");
+                return Err(format!(
+                    "user: refusing to change {name}: the group {name} is shared with {sharers}, so declare group to move onto it"
+                ));
+            }
             // The plan's record of the primary group and the
             // supplementary set the step declares: check mode runs no
             // `usermod`, so the record is made in advance and later
