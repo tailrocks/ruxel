@@ -279,7 +279,86 @@ fn refuse_unreplaceable(
             "sysctl: cannot persist {file}: the file is mounted over its path and cannot be replaced"
         ));
     }
+    // A file bind-mounted over its own path shares its device with
+    // the parent, so the device comparison accepts a target the
+    // publish cannot replace: the scratch rename succeeds inside the
+    // parent directory while the atomic rename over the mountpoint
+    // fails. The mountpoint itself decides, read from the kernel's
+    // own table where it exists — elsewhere the device comparison
+    // stands alone.
+    if is_mountpoint(path) {
+        return Err(format!(
+            "sysctl: cannot persist {file}: the file is mounted over its path and cannot be replaced"
+        ));
+    }
     refuse_locked(path, file)
+}
+
+/// Whether `path` is itself a mount point, decided by the kernel's
+/// mount table: a bind mount over the persistence path fails the
+/// publish's atomic rename whatever device it reports. The table's
+/// mount-point field carries octal escapes for spaces and other
+/// special bytes, which are decoded before the comparison; the path
+/// is matched raw and canonicalized, since the table spells the
+/// kernel's resolved view. Where the table is absent — every
+/// non-Linux host — nothing is a mount point and the device comparison
+/// stands alone.
+fn is_mountpoint(path: &std::path::Path) -> bool {
+    let Ok(table) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return false;
+    };
+    mountpoint_listed(
+        &table,
+        &[
+            path.to_path_buf(),
+            std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()),
+        ],
+    )
+}
+
+/// Whether the mount table lists any of `paths` as a mount point:
+/// the pure comparison behind [`is_mountpoint`], split out so the
+/// table parsing is provable without a mount of its own.
+fn mountpoint_listed(table: &str, paths: &[std::path::PathBuf]) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    table.lines().any(|line| {
+        let Some(pre) = line.split(" - ").next() else {
+            return false;
+        };
+        let mut fields = pre.split_whitespace();
+        let mountpoint = match fields.nth(4) {
+            Some(field) => unescape_mountpoint(field),
+            None => return false,
+        };
+        paths
+            .iter()
+            .any(|path| path.as_os_str().as_encoded_bytes() == mountpoint.as_slice())
+    })
+}
+
+/// The mount table's octal escapes decoded: a space in a mount point
+/// spells `\040`, and the other special bytes spell their own.
+fn unescape_mountpoint(field: &str) -> Vec<u8> {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && i + 3 < bytes.len()
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            let code =
+                (bytes[i + 1] - b'0') * 64 + (bytes[i + 2] - b'0') * 8 + (bytes[i + 3] - b'0');
+            out.push(code);
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Refuses a file the operating system locks against replacement: the
@@ -370,8 +449,21 @@ fn rehearse_replacement(
     // The replacement the publish performs, over a scratch name: the
     // target exists, so the rename replaces — and a directory that
     // refuses renames refuses here, before `sysctl -w` changes the
-    // live value with no persistent entry behind it.
-    std::fs::write(second, b"").map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    // live value with no persistent entry behind it. The scratch name
+    // is predictable per pid, so the open is exclusive and follows no
+    // link: a planted symlink at the name refuses instead of handing
+    // the rehearsal's truncate to whatever it names.
+    let vacant = rustix::fs::open(
+        second,
+        rustix::fs::OFlags::WRONLY
+            | rustix::fs::OFlags::CREATE
+            | rustix::fs::OFlags::EXCL
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::from_raw_mode(0o600),
+    )
+    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    drop(vacant);
     std::fs::rename(first, second).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     Ok(())
 }
@@ -830,6 +922,91 @@ mod probe_handle_tests {
             std::fs::read(&path).expect("operation succeeds"),
             b"net.test=2\n",
             "a refused rehearsal must leave the live bytes alone"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn the_rehearsal_refuses_a_planted_symlink_instead_of_following_it() {
+        // Thread 286: the rehearsal's scratch names are predictable
+        // per pid, so a local user can recreate one as a symlink after
+        // the unlink — a following write would truncate the link's
+        // target before the rename. The rehearsal must open its names
+        // exclusively without following links, refusing the plant and
+        // leaving the target alone.
+        let dir = scratch("plant");
+        let live_path = dir.join("x.conf");
+        std::fs::write(&live_path, "net.test=2\n").expect("operation succeeds");
+        let live = std::fs::metadata(&live_path).expect("operation succeeds");
+        let victim = dir.join("victim");
+        std::fs::write(&victim, "precious\n").expect("operation succeeds");
+        let first = dir.join("first");
+        let second = dir.join("second");
+        std::os::unix::fs::symlink(&victim, &second).expect("operation succeeds");
+        let error =
+            super::rehearse_replacement("net.test", &live, &first, &second, b"net.test=1\n")
+                .expect_err("a planted symlink must refuse, not redirect the rehearsal");
+        assert!(error.contains("cannot persist"), "{error}");
+        assert_eq!(
+            std::fs::read(&victim).expect("operation succeeds"),
+            b"precious\n",
+            "the rehearsal must not write through the planted link"
+        );
+        // The caller retires the rehearsal's names whatever it reports,
+        // so no refusal strands them; the live file keeps its bytes.
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        assert_eq!(
+            std::fs::read(&live_path).expect("operation succeeds"),
+            b"net.test=2\n",
+            "a refused rehearsal must leave the live bytes alone"
+        );
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
+    fn a_same_device_bind_mount_is_its_own_mountpoint() {
+        // Thread 300: a file bind-mounted over its own path shares
+        // its device with the parent, so the device-id comparison
+        // accepts a target the publish cannot replace — the scratch
+        // rename succeeds inside the parent while the atomic rename
+        // over the mountpoint fails. The mountpoint itself decides,
+        // read from the kernel's table.
+        let table = "30 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n\
+             31 30 8:1 /etc/sysctl.d/x.conf /etc/sysctl.d/x.conf rw,bind - ext4 /dev/sda1 rw\n\
+             32 30 8:1 /srv/with\\040space /srv/with\\040space rw,bind - ext4 /dev/sda1 rw\n";
+        assert!(
+            super::mountpoint_listed(table, &[std::path::PathBuf::from("/etc/sysctl.d/x.conf")]),
+            "a bind-mounted file is its own mountpoint"
+        );
+        assert!(
+            super::mountpoint_listed(table, &[std::path::PathBuf::from("/srv/with space")]),
+            "octal escapes decode before the comparison"
+        );
+        assert!(
+            !super::mountpoint_listed(table, &[std::path::PathBuf::from("/etc/sysctl.d/y.conf")]),
+            "an unmounted file is no mountpoint"
+        );
+        assert!(
+            super::mountpoint_listed(table, &[std::path::PathBuf::from("/")]),
+            "the root itself is a mountpoint"
+        );
+        assert!(
+            !super::mountpoint_listed(table, &[std::path::PathBuf::from("/etc")]),
+            "a parent of mountpoints is no mountpoint itself"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_file_is_no_mountpoint() {
+        // A scratch file is never itself mounted over: the live
+        // check answers false without a mount of its own.
+        let dir = scratch("mountpoint");
+        let path = dir.join("x.conf");
+        std::fs::write(&path, "net.test=1\n").expect("operation succeeds");
+        assert!(
+            !super::is_mountpoint(&path),
+            "an ordinary file is no mountpoint"
         );
         std::fs::remove_dir_all(&dir).expect("operation succeeds");
     }
