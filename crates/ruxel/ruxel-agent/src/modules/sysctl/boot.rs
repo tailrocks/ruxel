@@ -110,23 +110,59 @@ fn scan_error(dir: &str, error: &std::io::Error) -> String {
 
 /// The bytes the boot reads from a selected entry: its content, or
 /// nothing where the entry loads as nothing. A directory, a link to
-/// one, and any other non-regular entry — a mask to `/dev/null`, a
-/// broken link — hold the name the way a regular file does but
-/// contribute no assignment, so the lower-precedence copies stay
-/// shadowed and no assignment weighs on the boot value. Reading is
-/// never attempted on those: a fifo would block the open the way it
-/// blocks procps. Only a regular file that cannot be read refuses —
-/// its assignments are unknown, and an unreadable boot file can
-/// restore any value.
+/// one, a mask to `/dev/null`, and a broken link hold the name the
+/// way a regular file does but contribute no assignment, so the
+/// lower-precedence copies stay shadowed and no assignment weighs on
+/// the boot value. Anything else the loader would block on or misread
+/// — a FIFO, a socket, a device that is not the null mask — refuses
+/// the surface instead: procps blocks opening a selected FIFO rather
+/// than skipping it, so the real loader never reaches later managed
+/// files, and approving persistence the apply cannot perform is worse
+/// than refusing it. Only a regular file that cannot be read refuses
+/// besides those — its assignments are unknown, and an unreadable
+/// boot file can restore any value.
 pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
-    if let Ok(meta) = std::fs::symlink_metadata(path) {
-        let kind = meta.file_type();
-        if kind.is_dir() || (!kind.is_file() && !kind.is_symlink()) {
+    let resolved = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(error) => {
+            // What the loader meets when the lookup fails: a missing
+            // file — or a link that dangles, loops, or points past an
+            // unreachable target — holds the name the way a regular
+            // file does but contributes no assignment, while a direct
+            // entry the loader cannot stat is an unknown surface.
+            let link =
+                std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
+            if error.kind() == std::io::ErrorKind::NotFound || link {
+                return Ok(None);
+            }
+            return Err(format!(
+                "cannot read the boot file {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    let kind = resolved.file_type();
+    if kind.is_dir() {
+        return Ok(None);
+    }
+    if !kind.is_file() {
+        // The null mask reads as empty wherever it stands; anything
+        // else the loader would block on or misread refuses.
+        if is_null_device(&resolved) {
             return Ok(None);
         }
-        if kind.is_symlink() && !std::fs::metadata(path).is_ok_and(|target| target.is_file()) {
-            return Ok(None);
-        }
+        use std::os::unix::fs::FileTypeExt;
+        let what = if kind.is_fifo() {
+            "a FIFO, which blocks the loader"
+        } else if kind.is_socket() {
+            "a socket, which holds no assignments"
+        } else {
+            "a device file, which the loader cannot apply"
+        };
+        return Err(format!(
+            "cannot read the boot file {}: it is {what}",
+            path.display()
+        ));
     }
     match std::fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -136,6 +172,19 @@ pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
             path.display()
         )),
     }
+}
+
+/// Whether the resolved entry is the null mask: the character device
+/// with `/dev/null`'s own device number, which reads as empty wherever
+/// it stands. Any other device refuses — opening it can block or carry
+/// side effects the loader never intends.
+fn is_null_device(resolved: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    if !resolved.file_type().is_char_device() {
+        return false;
+    }
+    std::fs::metadata("/dev/null")
+        .is_ok_and(|null| null.file_type().is_char_device() && null.rdev() == resolved.rdev())
 }
 
 /// The same-named file in a higher-precedence system directory that

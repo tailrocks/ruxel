@@ -17,11 +17,11 @@ pub(crate) fn boot_fingerprint() -> Option<String> {
 /// bytes and contents, so a file whose name is not text moves the
 /// fingerprint like any other. The bytes come from the same
 /// file-type-safe classification the override probe reads: an entry
-/// that loads as nothing — a directory, a FIFO, a mask, a broken
-/// link, a file that vanished — contributes no assignments and is
-/// never opened (a FIFO with no writer would block the open the way
-/// it blocks procps), while a regular file that cannot be read
-/// refuses the fingerprint — its assignments are unknown. Every field
+/// that loads as nothing — a directory, a mask, a broken link, a file
+/// that vanished — contributes no assignments, while a regular file
+/// that cannot be read refuses the fingerprint — its assignments are
+/// unknown — and so does a FIFO, a socket, or a device that is not
+/// the null mask, which the loader would block on or misread. Every field
 /// is length-framed: boot contents are arbitrary bytes and may hold a
 /// NUL, so bare separators are ambiguous — one file holding
 /// `X\0B\0Y` hashes like two files holding `X` and `Y` — and the

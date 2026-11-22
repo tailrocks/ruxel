@@ -1,6 +1,6 @@
 //! Symlink aliases of the managed boot file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Whether `candidate` is a symlink alias of the managed file: the
 /// entry resolves to the file itself, so it carries the managed bytes
@@ -27,10 +27,33 @@ pub(super) fn is_self_alias(candidate: &str, file: &str) -> bool {
         (Ok(into), Ok(managed)) => into == managed,
         // Neither side resolves — the link dangles at the managed
         // path the publish has yet to create — so the names compare
-        // lexically; a broken link anywhere else still shadows.
-        (Err(_), Err(_)) => resolved.as_path() == Path::new(file),
+        // lexically after resolving `.` and `..` without touching the
+        // filesystem: a relative alias such as
+        // `/etc/sysctl.d/../../usr/lib/sysctl.d/x.conf` is a genuine
+        // self-alias once the managed file is published, while a
+        // broken link anywhere else still shadows.
+        (Err(_), Err(_)) => lexical_normal(&resolved) == lexical_normal(Path::new(file)),
         _ => false,
     }
+}
+
+/// The path with `.` dropped and `..` applied lexically, without
+/// touching the filesystem: both sides dangle, so no component may be
+/// resolved through a link — the comparison is spelling, already
+/// proven to name the same file once the publish creates it.
+fn lexical_normal(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            _ => out.push(component),
+        }
+    }
+    out
 }
 
 pub(crate) fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<String> {

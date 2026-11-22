@@ -107,6 +107,82 @@ fn a_directory_holds_the_name_at_boot() {
 }
 
 #[test]
+fn a_fifo_in_the_boot_surface_refuses() {
+    // Thread 296: procps blocks opening a selected FIFO instead of
+    // skipping it, so the real loader never reaches later managed
+    // files — the agent must refuse the surface rather than approve
+    // persistence it cannot apply, and the FIFO must invalidate the
+    // cache the way an unreadable file does.
+    let scratch = Scratch::new("fifo");
+    let fifo = scratch.0.join("50-fifo.conf");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success(),
+        "the fixture is a real FIFO"
+    );
+    let error = boot_bytes(&fifo).expect_err("a FIFO must refuse, not load as empty");
+    assert!(error.contains("FIFO"), "{error}");
+    assert!(
+        super::fingerprint::fingerprint_of(std::slice::from_ref(&fifo)).is_none(),
+        "a FIFO invalidates the boot fingerprint"
+    );
+}
+
+#[test]
+fn a_null_mask_still_loads_as_nothing() {
+    // The standard mask is a symlink to the null device: it holds
+    // the name and contributes no assignments, whatever special type
+    // the target carries.
+    let scratch = Scratch::new("mask");
+    let mask = scratch.0.join("50-mask.conf");
+    std::os::unix::fs::symlink("/dev/null", &mask).expect("operation succeeds");
+    assert_eq!(
+        boot_bytes(&mask).expect("the null mask loads"),
+        None,
+        "the null mask holds the name and contributes nothing"
+    );
+}
+
+#[test]
+fn a_dangling_relative_alias_is_no_shadow() {
+    // Thread 297: a higher-precedence relative link to a managed file
+    // that does not exist yet compares literally and mismatches —
+    // normalizing the lexical `..` components admits the genuine
+    // self-alias the publish creates, instead of refusing a valid
+    // bootstrap layout as a shadow.
+    let scratch = Scratch::new("alias");
+    let etc = scratch.dir("etc");
+    let usr = scratch.dir("usr");
+    let candidate = etc.join("x.conf");
+    std::os::unix::fs::symlink("../usr/x.conf", &candidate).expect("operation succeeds");
+    let file = usr.join("x.conf");
+    assert!(
+        !file.exists(),
+        "both sides dangle: the managed file is not published yet"
+    );
+    assert!(
+        super::shadow::is_self_alias(
+            candidate.to_str().expect("path is text"),
+            file.to_str().expect("path is text")
+        ),
+        "the dangling relative alias is the managed file itself"
+    );
+    // A dangling link anywhere else is still a shadow.
+    let elsewhere = etc.join("y.conf");
+    std::os::unix::fs::symlink("../usr/z.conf", &elsewhere).expect("operation succeeds");
+    assert!(
+        !super::shadow::is_self_alias(
+            elsewhere.to_str().expect("path is text"),
+            file.to_str().expect("path is text")
+        ),
+        "a dangling link elsewhere still shadows"
+    );
+}
+
+#[test]
 fn a_per_entry_scan_error_refuses_with_the_directory_named() {
     // No portable fixture makes a healthy directory's iterator yield
     // an I/O error: the failure needs a filesystem fault mid-scan —
