@@ -183,6 +183,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-renumbered-disjoint-hosts.pkl
   tests/workflow/invalid/linux-user-uid-renumbered-other-host.pkl
   tests/workflow/invalid/linux-user-uid-reuse-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-uid-reused-without-home-removal.pkl
   tests/workflow/invalid/linux-user-uid-twice.pkl
   tests/workflow/invalid/secret-decoder-oversized-prefix.pkl
   tests/workflow/invalid/secret-op-reference-dotted-selector.pkl

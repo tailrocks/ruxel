@@ -218,6 +218,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-user-shell-group-exec-only.pkl",
     "invalid/linux-user-uid-across-stages.pkl",
     "invalid/linux-user-uid-reuse-partial-hosts.pkl",
+    "invalid/linux-user-uid-reused-without-home-removal.pkl",
     "invalid/linux-user-uid-removal-number-mismatch.pkl",
     "invalid/linux-group-gid-across-stages.pkl",
     "valid/linux-user-uid-reused-after-removal.pkl",

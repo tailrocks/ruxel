@@ -148,10 +148,11 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
 /// host pair: stages on disjoint hosts never share identities. A number
 /// is reused only after the earlier holder is proven gone from it: a
 /// step removing the account (for a gid claim, the group) in a stage
-/// between the two claims, or a step that keeps the same identity
-/// present under another explicit number — `usermod -u` releases the old
-/// number on the hosts it covers, so the later claim succeeds there the
-/// way it does after a removal.
+/// between the two claims — for a uid claim the removal takes the home
+/// with it, or the freed number still owns the holder's files — or a
+/// step that keeps the same identity present under another explicit
+/// number — `usermod -u` releases the old number on the hosts it covers,
+/// so the later claim succeeds there the way it does after a removal.
 function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
   claims.flatMap((c) -> claims
@@ -264,9 +265,12 @@ const function hostsShareIdentity(a: core.Stage, b: core.Stage): Boolean =
 /// holds: an account removal states its uid, and a declaration that
 /// names another number frees nothing — the runtime verifies the
 /// declared id against the live entry and refuses such a removal, so
-/// the later claim would never get its turn. A group removal that
-/// states no gid frees by name: the runtime verifies only the id it
-/// is given.
+/// the later claim would never get its turn. The removal also takes the
+/// account's home with it (`removeHome`): without that `userdel` leaves
+/// the home owned by the freed uid, and the later `useradd -u` hands
+/// another account the kernel ownership of Alice's files. A group
+/// removal that states no gid frees by name: the runtime verifies only
+/// the id it is given.
 function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
   ix.steps.any((s) -> removalFreesNumber(s, c))
 
@@ -274,11 +278,14 @@ function removedNumber(ix: StageIndex, c: IdClaim): Boolean =
 /// holds: an account removal states its uid, and a declaration that
 /// names another number frees nothing — the runtime verifies the
 /// declared id against the live entry and refuses such a removal, so
-/// the later claim would never get its turn. A group removal that
-/// states no gid frees by name: the runtime verifies only the id it
-/// is given.
+/// the later claim would never get its turn. The removal also takes the
+/// account's home with it (`removeHome`): without that `userdel` leaves
+/// the home owned by the freed uid, and the later `useradd -u` hands
+/// another account the kernel ownership of Alice's files. A group
+/// removal that states no gid frees by name: the runtime verifies only
+/// the id it is given.
 function removalFreesNumber(s: core.Step, c: IdClaim): Boolean =
-  if (c.kind == "uid") s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number
+  if (c.kind == "uid") s is linux.User && s.state == "absent" && s.user == c.name && s.uid == c.number && s.removeHome
   else s is linux.Group && s.state == "absent" && s.name == c.name && (s.gid == null || s.gid == c.number)
 
 function numberClash(a: core.Stage, c: IdClaim, b: core.Stage, d: IdClaim): String =
