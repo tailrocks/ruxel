@@ -11,11 +11,11 @@ pub struct RuntimeOptions {
     pub output: OutputFormat,
     pub log_file: Option<PathBuf>,
     pub source_dir: PathBuf,
-    /// The workflow's stable identity — the canonical path of the
-    /// configuration the controller runs — carried in every Hello so
-    /// the agent's shared ledger prunes only its own workflow's
-    /// dropped tasks. Tests use no workflow and keep legacy global
-    /// pruning.
+    /// The workflow's stable identity — the opaque digest of the
+    /// configuration's own structure (see `model::workflow_namespace`)
+    /// — carried in every Hello so the agent's shared ledger prunes
+    /// only its own workflow's dropped tasks. Tests use no workflow
+    /// and keep legacy global pruning.
     pub workflow_namespace: String,
     /// Apply-time fixture switch for local acceptance runs: resolve every
     /// lookup deterministically without running secret tools. `plan`,

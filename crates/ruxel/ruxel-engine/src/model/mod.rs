@@ -1,4 +1,6 @@
+mod namespace;
 pub(crate) mod notifications;
+pub use namespace::workflow_namespace;
 mod operations;
 mod shapes;
 use anyhow::{Context, Result, ensure};

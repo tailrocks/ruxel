@@ -137,6 +137,7 @@ fn onepassword_lookup_requires_vault_item_and_field_or_a_reference() -> Result<(
 mod block_controls;
 mod delegation;
 mod file_paths;
+mod namespace;
 mod notifications;
 mod validation;
 

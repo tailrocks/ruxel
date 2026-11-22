@@ -21,10 +21,10 @@ pub(crate) fn run(args: RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCo
         hosts: args.hosts,
         tags: args.tags,
     };
-    let workflow_namespace = match workflow_namespace(&args.root) {
-        Ok(namespace) => namespace,
-        Err(code) => return code,
-    };
+    // The ledger identity comes from the workflow itself, never the
+    // checkout's location: the same workflow from another directory
+    // owns the same records (see `workflow_namespace`).
+    let workflow_namespace = ruxel_engine::model::workflow_namespace(&value);
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
         jobs: usize::from(args.jobs),
@@ -86,27 +86,46 @@ fn source_dir(root: &std::path::Path) -> &std::path::Path {
         .unwrap_or_else(|| std::path::Path::new("."))
 }
 
-/// The workflow's stable identity for ledger namespacing: the
-/// canonical path of the configuration being run. Without it the
-/// agent cannot tell workflows apart on its shared ledger, so a
-/// run that cannot name its workflow refuses instead of pruning
-/// another workflow's records.
-fn workflow_namespace(root: &std::path::Path) -> Result<String, ExitCode> {
-    root.canonicalize()
-        .map_err(|error| {
-            if writeln!(
-                std::io::stderr().lock(),
-                "cannot namespace the workflow at {}: {error}",
-                root.display()
+#[cfg(test)]
+mod namespace_tests {
+    use super::super::config;
+
+    /// Threads 304 and 306: the namespace derives from the admitted
+    /// configuration, never the checkout — the same workflow file
+    /// under two roots owns one ledger identity, and the identity
+    /// carries no path for the remote agent to persist.
+    #[test]
+    fn same_workflow_under_two_roots_shares_its_namespace() {
+        let first = std::env::temp_dir().join("ruxel-namespace-first");
+        let second = std::env::temp_dir().join("ruxel-namespace-second");
+        for root in [&first, &second] {
+            drop(std::fs::remove_dir_all(root));
+            std::fs::create_dir_all(root).expect("fixture root");
+            std::fs::write(
+                root.join("workflow.pkl"),
+                "amends \"modulepath:/ruxel/Workflow.pkl\"\nstages {}\n",
             )
-            .is_err()
-            {
-                ExitCode::Internal
-            } else {
-                ExitCode::Config
-            }
-        })
-        .map(|path| path.to_string_lossy().into_owned())
+            .expect("fixture workflow");
+        }
+        let load = |root: &std::path::Path| {
+            let options = ruxel_config::EvalOptions::default();
+            let value =
+                config::admit(&root.join("workflow.pkl"), &options).expect("fixture admits");
+            ruxel_engine::model::validate_config(&value).expect("fixture validates")
+        };
+        let (first_value, second_value) = (load(&first), load(&second));
+        let (first_ns, second_ns) = (
+            ruxel_engine::model::workflow_namespace(&first_value),
+            ruxel_engine::model::workflow_namespace(&second_value),
+        );
+        assert_eq!(first_ns, second_ns, "one workflow is one ledger owner");
+        assert!(
+            first_ns.chars().all(|c| c.is_ascii_hexdigit()) && !first_ns.contains('/'),
+            "the namespace is an opaque digest, not a path: {first_ns}"
+        );
+        drop(std::fs::remove_dir_all(&first));
+        drop(std::fs::remove_dir_all(&second));
+    }
 }
 
 #[cfg(test)]
