@@ -17,6 +17,7 @@ mod entries;
 mod home;
 mod identity;
 mod plan;
+mod plan_system;
 mod shell;
 use apply::{Home, HomeOwner, Mutation};
 use entries::{
@@ -325,7 +326,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // declaration, or the plan's record of an earlier `useradd
         // --system` — the live entry carries no system bit, so the
         // plan's own record is what the guard verifies.
-        let system = bool_param(obj, "system", false) || plan::is_system(name);
+        let system = bool_param(obj, "system", false) || plan_system::is_system(name);
         // The account's effective state at the removal: check mode runs
         // no `useradd` and no `usermod`, so the live entry alone is
         // stale — an earlier task of the plan may have created the
@@ -458,7 +459,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
         forget_planned_user(name);
-        plan::forget_system(name);
+        plan_system::forget_system(name);
         plan::forget_home(name);
         plan::forget_primary(name);
         plan::forget_supplementary(name);
@@ -1158,7 +1159,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // so the plan's own record is what a later removal refuses on.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
     if system {
-        plan::note_system(name);
+        plan_system::note_system(name);
     }
     // Every creation draws a number no probe has seen yet — the
     // allocator's where the step states none, the declared one where

@@ -55,20 +55,15 @@ thread_local! {
     static CHANGED_USERS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     /// The groups whose number the plan has moved.
     static CHANGED_GROUPS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
-    /// The accounts the plan declared system accounts (`useradd
-    /// --system`): the host keeps those whatever uid the allocator
-    /// drew for them, so a later removal is refused even above the
-    /// uid-1000 fallback — the live passwd entry carries no system
-    /// bit to probe.
-    static SYSTEM_USERS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
 /// A new plan begins: the previous plan's verdict on what this
 /// workflow manages is void. Every map the plan's tasks recorded —
-/// numbers, homes, removals, renumbers, shells, comments — is cleared
-/// here, while `PlanPatch` frames keep them: a patch continues the
-/// plan it extends, so its tasks still read what the plan's own
-/// earlier tasks declared.
+/// numbers, homes, removals, renumbers, shells, comments, and the
+/// declared-system record `plan_system` keeps — is cleared here, while
+/// `PlanPatch` frames keep them: a patch continues the plan it
+/// extends, so its tasks still read what the plan's own earlier tasks
+/// declared.
 pub(super) fn reset() {
     GROUPS.with(|groups| groups.borrow_mut().clear());
     USERS.with(|users| users.borrow_mut().clear());
@@ -82,7 +77,7 @@ pub(super) fn reset() {
     COMMENTS.with(|comments| comments.borrow_mut().clear());
     CHANGED_USERS.with(|users| users.borrow_mut().clear());
     CHANGED_GROUPS.with(|groups| groups.borrow_mut().clear());
-    SYSTEM_USERS.with(|users| users.borrow_mut().clear());
+    super::plan_system::reset();
 }
 
 pub(super) fn note(name: &str, requested: Option<u32>) {
@@ -200,29 +195,6 @@ pub(super) fn note_changed_group(name: &str) {
 /// Whether the plan moved the group's number.
 pub(crate) fn group_number_changed(name: &str) -> bool {
     CHANGED_GROUPS.with(|groups| groups.borrow().contains(name))
-}
-
-/// The plan declared the account a system account: the host keeps it
-/// whatever number it holds, so the guard refuses its removal even
-/// where the allocator drew a regular-looking uid for it.
-pub(super) fn note_system(name: &str) {
-    SYSTEM_USERS.with(|users| {
-        users.borrow_mut().insert(name.to_string());
-    });
-}
-
-/// Whether the plan declared the account a system account.
-pub(super) fn is_system(name: &str) -> bool {
-    SYSTEM_USERS.with(|users| users.borrow().contains(name))
-}
-
-/// The record's counterpart when the plan removes the account: the
-/// deletion takes the account away, so a later declaration starts
-/// from no system flag again.
-pub(super) fn forget_system(name: &str) {
-    SYSTEM_USERS.with(|users| {
-        users.borrow_mut().remove(name);
-    });
 }
 
 /// What the plan's account step requested; `None`: undeclared.

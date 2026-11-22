@@ -31,7 +31,7 @@ fn declare_first_plan() {
     plan::note_comment(ACCOUNT, Some("reset"));
     plan::note_changed_user(ACCOUNT);
     plan::note_changed_group(GROUP);
-    plan::note_system(ACCOUNT);
+    plan_system::note_system(ACCOUNT);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn two_plans_in_one_session_do_not_share_user_and_group_state() {
     assert!(plan::comment(ACCOUNT).is_some());
     assert!(plan::user_number_changed(ACCOUNT));
     assert!(plan::group_number_changed(GROUP));
-    assert!(plan::is_system(ACCOUNT));
+    assert!(plan_system::is_system(ACCOUNT));
     // A second plan clears every map: the UID the first plan
     // recorded must not decide the second plan's comparison.
     begin_plan();
@@ -68,5 +68,5 @@ fn two_plans_in_one_session_do_not_share_user_and_group_state() {
     assert!(plan::comment(ACCOUNT).is_none());
     assert!(!plan::user_number_changed(ACCOUNT));
     assert!(!plan::group_number_changed(GROUP));
-    assert!(!plan::is_system(ACCOUNT));
+    assert!(!plan_system::is_system(ACCOUNT));
 }
