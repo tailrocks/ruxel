@@ -95,6 +95,7 @@ fn request() -> Request {
     Request {
         host: "fixture".into(),
         content_fingerprint: Some("abcd1234".to_owned()),
+        plan_sysctl: Vec::new(),
         task: v1::RenderedTask {
             task_id: 4,
             name: "Write the env file".into(),

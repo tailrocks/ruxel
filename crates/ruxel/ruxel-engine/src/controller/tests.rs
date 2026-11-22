@@ -42,6 +42,7 @@ mod retry_source;
 mod skipped_result;
 mod smoke;
 mod standard_expression;
+mod static_sysctl;
 mod until_sensitivity;
 mod url_timezone;
 

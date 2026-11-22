@@ -52,6 +52,7 @@ fn request(module: &str) -> Request {
     Request {
         host: "fixture".into(),
         content_fingerprint: None,
+        plan_sysctl: Vec::new(),
         task: v1::RenderedTask {
             task_id: 6,
             name: "Rotate the credentials".into(),

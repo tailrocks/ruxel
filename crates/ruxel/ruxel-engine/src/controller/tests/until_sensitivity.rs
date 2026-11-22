@@ -16,6 +16,7 @@ fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        plan_sysctl: Vec::new(),
     };
     let layer = ContextLayer {
         definitions: vec![
@@ -122,6 +123,7 @@ fn sensitivity_follows_the_visible_binding_for_cross_name_references() {
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        plan_sysctl: Vec::new(),
     };
     let private = json!({"kind":"lookup","provider":"synthetic","key":"fixture"});
     for (parent, child, sensitive) in [

@@ -110,11 +110,15 @@ fn read_bounded(reader: impl Read, limit: u64) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub(super) fn plan(task: v1::RenderedTask) -> Result<v1::Envelope> {
+pub(super) fn plan(
+    task: v1::RenderedTask,
+    sysctl: Vec<v1::SysctlDeclaration>,
+) -> Result<v1::Envelope> {
     let envelope = v1::Envelope {
         msg: Some(v1::envelope::Msg::Plan(v1::Plan {
             tasks: vec![task],
             blobs_referenced: vec![],
+            sysctl_declarations: sysctl,
         })),
     };
     ensure!(

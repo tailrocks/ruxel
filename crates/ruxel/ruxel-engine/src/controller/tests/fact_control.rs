@@ -58,6 +58,7 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        plan_sysctl: Vec::new(),
     };
     for (name, private) in [("public", false), ("guarded", true)] {
         let layer = ContextLayer {

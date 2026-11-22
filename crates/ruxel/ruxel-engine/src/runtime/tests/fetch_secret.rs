@@ -83,6 +83,7 @@ fn request() -> Request {
     Request {
         host: "fixture".into(),
         content_fingerprint: None,
+        plan_sysctl: Vec::new(),
         task: v1::RenderedTask {
             task_id: 9,
             name: "Store the cluster admin kubeconfig".into(),

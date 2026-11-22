@@ -136,6 +136,7 @@ fn request(host: &str) -> Request {
     Request {
         host: host.into(),
         content_fingerprint: None,
+        plan_sysctl: Vec::new(),
         task: v1::RenderedTask {
             task_id: 1,
             module: "stat".into(),

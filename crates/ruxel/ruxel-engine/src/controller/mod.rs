@@ -147,6 +147,11 @@ struct Runner<'a, B> {
     /// Tag selection omitted a task this workflow keeps: the run is a
     /// filtered subset, so its end must expire nothing.
     filtered: bool,
+    /// The plan's static sysctl declarations: every unconditional
+    /// top-level sysctl task's entry, computed before the first task
+    /// executes, so each frame carries the full declaration list the
+    /// agent merges before running its task.
+    plan_sysctl: Vec<v1::SysctlDeclaration>,
 }
 
 fn array<'a>(value: &'a Value, key: &str) -> &'a [Value] {
@@ -279,6 +284,7 @@ pub async fn run<B: Backend>(
                 host: host.clone(),
                 scope: TrackedValue::public(Value::Object(scope)),
                 handlers: array(play, "handlers").to_vec(),
+                plan_sysctl: static_sysctl::static_sysctl_declarations(play, &options.tags),
                 notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),
@@ -372,6 +378,7 @@ pub(crate) use failure::RunFailure;
 mod ledger;
 mod loop_result;
 mod selection;
+mod static_sysctl;
 pub use ledger::ledger_key;
 pub use selection::selected_hosts;
 use selection::{expand_selectors, group_hosts, ordered_groups};

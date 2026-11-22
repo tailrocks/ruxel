@@ -69,6 +69,7 @@ impl Backend for Observer {
                 msg: Some(v1::envelope::Msg::Plan(v1::Plan {
                     tasks: vec![request.task.clone()],
                     blobs_referenced: vec![],
+                    sysctl_declarations: request.plan_sysctl.clone(),
                 })),
             })
             .await?;

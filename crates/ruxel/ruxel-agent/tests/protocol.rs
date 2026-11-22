@@ -722,3 +722,66 @@ mod sensitive_check;
 
 #[path = "protocol/session_plans.rs"]
 mod session_plans;
+
+#[test]
+fn plan_frame_declarations_are_accepted_before_tasks_execute() {
+    // Thread 314: the frame carries the plan's full static sysctl
+    // declaration list, so the agent weighs later stages' files before
+    // their tasks execute. The frame decodes on the new field, the
+    // check-mode task runs without touching the system, and the
+    // declared later stage is part of the plan set it ran under.
+    let dir = temp_dir("frame-declarations");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("frame-decls", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    let file = dir.join("10-a.conf");
+    let params_json = serde_json::to_vec(&serde_json::json!({
+        "name": "net.test.stale314",
+        "value": "1",
+        "sysctl_file": file.to_string_lossy(),
+        "sysctl_set": false,
+        "reload": false,
+        "state": "present",
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![v1::RenderedTask {
+                    task_id: 1,
+                    name: "earlier sysctl".into(),
+                    module: "sysctl".into(),
+                    rendered: true,
+                    iterations: vec![v1::Iteration {
+                        params_json,
+                        ledger_key: "earlier".into(),
+                        ..Default::default()
+                    }],
+                    force_check_mode: true,
+                    ..Default::default()
+                }],
+                sysctl_declarations: vec![v1::SysctlDeclaration {
+                    file: dir.join("99-b.conf").to_string_lossy().into_owned(),
+                    name: "net.test.stale314".into(),
+                    value: "2".into(),
+                }],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+    let result = read_task_result(&mut stdout);
+    assert_eq!(
+        result.status, "changed",
+        "the check-mode task runs: {result:?}"
+    );
+    assert!(
+        !file.exists(),
+        "check mode stages nothing at the persistence path"
+    );
+    finish_agent(&mut agent, &mut stdin);
+    let _ = std::fs::remove_dir_all(&dir);
+}

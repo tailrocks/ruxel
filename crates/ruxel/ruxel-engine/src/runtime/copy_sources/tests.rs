@@ -42,7 +42,7 @@ fn sparse_oversize_rejects_and_binary_source_round_trips() -> Result<()> {
         small.iterations[0].source_content.as_deref(),
         Some([0xff, 0, 0x80].as_slice())
     );
-    let envelope = plan(small)?;
+    let envelope = plan(small, Vec::new())?;
     let encoded = ruxel_proto::frame::encode_frame(&envelope);
     let decoded: v1::Envelope =
         ruxel_proto::frame::read_frame(&mut encoded.as_slice())?.context("decoded plan")?;
@@ -57,13 +57,13 @@ fn aggregate_sources_and_complete_frame_are_bounded() -> Result<()> {
     std::fs::write(directory.path().join("extra"), [1])?;
     let mut combined = task("large");
     prepare(&mut combined, directory.path())?;
-    plan(combined.clone())?;
+    plan(combined.clone(), Vec::new())?;
     combined = task("large");
     combined.iterations.extend(task("extra").iterations);
     assert!(prepare(&mut combined, directory.path()).is_err());
     let mut oversized = task("unused");
     oversized.name = "x".repeat(usize::try_from(ruxel_proto::frame::MAX_FRAME_LEN)?);
-    assert!(plan(oversized).is_err());
+    assert!(plan(oversized, Vec::new()).is_err());
     Ok(())
 }
 

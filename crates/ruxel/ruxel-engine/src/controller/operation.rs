@@ -209,6 +209,7 @@ impl<B: Backend> Runner<'_, B> {
         let mut request = Request {
             host: destination,
             content_fingerprint,
+            plan_sysctl: self.plan_sysctl.clone(),
             task: v1::RenderedTask {
                 task_id: id,
                 name: string(task, "name").unwrap_or(kind).to_owned(),

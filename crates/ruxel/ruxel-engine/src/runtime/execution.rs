@@ -167,7 +167,7 @@ impl Backend for Execution {
             .iterations
             .first()
             .and_then(|iteration| serde_json::from_slice::<Value>(&iteration.params_json).ok());
-        let plan = copy_sources::plan(request.task)?;
+        let plan = copy_sources::plan(request.task, request.plan_sysctl)?;
         connection.send(&plan).await.inspect_err(|_| {
             self.connection_failures += 1;
         })?;

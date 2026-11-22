@@ -45,6 +45,25 @@ message Hello {
 message Plan {
   repeated RenderedTask tasks = 1;
   repeated string blobs_referenced = 2;
+  // The plan's full sysctl declaration list: every unconditional
+  // sysctl task's file, key and declared value, computed before the
+  // first task executes, so an earlier task's preflight weighs the
+  // later stages' persistence files on the first run — before any task
+  // executed and before the ledger holds anything. The agent merges
+  // these into its plan set at frame receipt, ahead of the frame's own
+  // executed declarations. Wire-compatible: an older agent ignores the
+  // field and keeps today's fail-safe refusal, and an older controller
+  // sends no declarations, which the agent reads as none — so mixed
+  // versions need no version bump.
+  repeated SysctlDeclaration sysctl_declarations = 3;
+}
+
+// One sysctl entry the plan declares: the persistence file, the key,
+// and the declared value, the same triple the agent's plan set carries.
+message SysctlDeclaration {
+  string file = 1;
+  string name = 2;
+  string value = 3;
 }
 
 
