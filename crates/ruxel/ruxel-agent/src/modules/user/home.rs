@@ -15,6 +15,7 @@ const HOME_MODE: Mode = Mode::from_raw_mode(0o750);
 const PARENT_MODE: Mode = Mode::from_raw_mode(0o755);
 
 #[cfg(test)]
+#[cfg(test)]
 pub(super) use super::adoption::managed_claim;
 #[cfg(test)]
 pub(super) use super::adoption::operating_uid;
