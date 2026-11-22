@@ -107,14 +107,6 @@ struct SysctlDecl {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Record {
     agent_version: String,
-    /// The workflow that wrote the record: the namespace the Hello
-    /// carried. The ledger is shared per host, so a session prunes
-    /// only its own workflow's dropped tasks — another workflow's
-    /// completion is no verdict on what this one manages. Records
-    /// written before namespacing carry none and are pruned by the
-    /// first complete plan that does not encounter them.
-    #[serde(default)]
-    workflow: String,
     status: String,
     result_json: Value,
     probes: Vec<Probe>,
@@ -150,7 +142,15 @@ impl Record {
 pub(crate) struct Ledger {
     path: PathBuf,
     host_key: Option<[u8; 32]>,
-    records: HashMap<String, Record>,
+    /// The records by owning workflow, then by task storage key: the
+    /// ledger is shared per host, so identical tasks from two
+    /// workflows never share a record — a session reads, writes and
+    /// prunes only its own workflow's map, and another workflow's
+    /// completion is no verdict on what this one manages. The store
+    /// format is the map itself, so an older single-key file fails to
+    /// parse and the ledger restarts empty — breaking, with no compat
+    /// layer, the way the namespace revision requires.
+    records: HashMap<String, HashMap<String, Record>>,
     /// The workflow this session runs: the namespace the Hello
     /// carried, scoping what the session's end may prune.
     workflow: String,
@@ -187,7 +187,7 @@ impl Ledger {
         system_state: &mut crate::system_state::SystemState,
     ) -> Option<Value> {
         let key = self.storage_key(key)?;
-        let rec = self.records.get(&key)?;
+        let rec = self.records.get(&self.workflow)?.get(&key)?;
         if rec.agent_version != env!("CARGO_PKG_VERSION") {
             return None;
         }
@@ -253,17 +253,19 @@ impl Ledger {
             return;
         };
         self.encountered.insert(key.clone());
-        self.records.insert(
-            key,
-            Record {
-                agent_version: env!("CARGO_PKG_VERSION").to_string(),
-                workflow: self.workflow.clone(),
-                status: status.to_string(),
-                result_json: result.clone(),
-                probes,
-                managed_sysctl,
-            },
-        );
+        self.records
+            .entry(self.workflow.clone())
+            .or_default()
+            .insert(
+                key,
+                Record {
+                    agent_version: env!("CARGO_PKG_VERSION").to_string(),
+                    status: status.to_string(),
+                    result_json: result.clone(),
+                    probes,
+                    managed_sysctl,
+                },
+            );
         self.dirty = true;
     }
 
@@ -319,10 +321,9 @@ impl Ledger {
     /// `sysctl_preflight_managed`): a dropped task's record authorizes
     /// its shadow for exactly one run — the plan's end expires every
     /// record it never encountered (see `flush`). Records of other
-    /// workflows are not this plan's to consult: their declarations
-    /// would authorize shadows for keys this workflow never managed.
-    /// Records written before namespacing stay visible until the first
-    /// complete plan prunes or re-records them.
+    /// workflows are never this plan's to consult: they live in their
+    /// own maps, so their declarations cannot authorize shadows for
+    /// keys this workflow never managed.
     pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
         #[cfg(test)]
         {
@@ -330,8 +331,9 @@ impl Ledger {
         }
         let mut entries: Vec<(String, String, String)> = self
             .records
-            .values()
-            .filter(|record| record.workflow.is_empty() || record.workflow == self.workflow)
+            .get(&self.workflow)
+            .into_iter()
+            .flat_map(|owned| owned.values())
             .flat_map(|record| {
                 let declared = record
                     .managed_sysctl

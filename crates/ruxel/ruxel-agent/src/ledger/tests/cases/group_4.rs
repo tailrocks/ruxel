@@ -155,11 +155,15 @@ fn a_complete_plan_prunes_only_its_own_workflow() {
     ledger.complete_plan();
     ledger.flush();
 
-    let probe = Ledger::load(&dir.0);
+    // Records are keyed by workflow and task: a probe names the
+    // workflow it reads, the way the session's Hello names it.
+    let mut probe = Ledger::load(&dir.0);
+    probe.begin_plan("workflow-a");
     assert!(
         probe.cached_ok("a-task").is_some(),
         "another workflow's completion must not prune this workflow's records"
     );
+    probe.begin_plan("workflow-b");
     assert!(
         probe.cached_ok("b-task").is_some(),
         "the completing workflow keeps its own records"
@@ -172,15 +176,18 @@ fn a_complete_plan_prunes_only_its_own_workflow() {
     ledger.complete_plan();
     ledger.flush();
 
-    let probe = Ledger::load(&dir.0);
+    let mut probe = Ledger::load(&dir.0);
+    probe.begin_plan("workflow-b");
     assert!(
         probe.cached_ok("b-task").is_none(),
         "the workflow's own dropped task must still expire"
     );
+    probe.begin_plan("workflow-a");
     assert!(
         probe.cached_ok("a-task").is_some(),
         "the other workflow's records survive a namespaced prune"
     );
+    probe.begin_plan("workflow-b");
     assert!(probe.cached_ok("c-task").is_some());
 }
 
@@ -194,6 +201,7 @@ fn a_plan_that_continues_past_its_failure_prunes_at_the_end() {
     let dir = Scratch::new("rescued-plan");
     let file = dir.file("target", b"stable");
     let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow");
     record_file(&mut ledger, "later", &file);
     ledger.flush();
 
@@ -206,8 +214,10 @@ fn a_plan_that_continues_past_its_failure_prunes_at_the_end() {
     ledger.complete_plan();
     ledger.flush();
 
+    let mut probe = Ledger::load(&dir.0);
+    probe.begin_plan("workflow");
     assert!(
-        Ledger::load(&dir.0).cached_ok("later").is_none(),
+        probe.cached_ok("later").is_none(),
         "the session ran to its end: the dropped record must expire"
     );
 }
@@ -256,5 +266,44 @@ fn an_unfinished_session_expires_nothing() {
     assert!(
         Ledger::load(&dir.0).cached_ok("later").is_some(),
         "an unfinished session must expire nothing"
+    );
+}
+
+#[test]
+fn identical_task_keys_in_two_workflows_stay_isolated() {
+    // Thread 305: records are keyed by workflow and task, so the same
+    // task key in two workflows never shares a record — the second
+    // workflow's run neither reads nor takes over the first's, and
+    // its completion prunes only its own map.
+    let dir = Scratch::new("workflow-isolation");
+    let file = dir.file("target", b"stable");
+    let params = json!({"path": file});
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow-a");
+    ledger.record("shared", "file", &params, "ok", &json!({"marker": "a"}));
+    ledger.complete_plan();
+    ledger.flush();
+
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.begin_plan("workflow-b");
+    ledger.record("shared", "file", &params, "ok", &json!({"marker": "b"}));
+    ledger.complete_plan();
+    ledger.flush();
+
+    let mut probe = Ledger::load(&dir.0);
+    probe.begin_plan("workflow-b");
+    assert_eq!(
+        probe
+            .cached_ok("shared")
+            .expect("the second workflow reads its own")["marker"],
+        json!("b")
+    );
+    probe.begin_plan("workflow-a");
+    assert_eq!(
+        probe
+            .cached_ok("shared")
+            .expect("the first workflow keeps its own")["marker"],
+        json!("a"),
+        "the second workflow's run must not take over the first's record"
     );
 }

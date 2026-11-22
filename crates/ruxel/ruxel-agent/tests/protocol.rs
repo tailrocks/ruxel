@@ -131,16 +131,13 @@ fn two_workflows_keep_their_own_ledger_records() {
     }
     let ledger: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("ledger/ledger.json")).unwrap()).unwrap();
+    // Records are keyed by workflow and task: the store's outer keys
+    // name the owning workflows.
     let mut workflows: Vec<&str> = ledger
         .as_object()
         .unwrap()
-        .values()
-        .map(|record| {
-            record
-                .get("workflow")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-        })
+        .keys()
+        .map(String::as_str)
         .collect();
     workflows.sort_unstable();
     assert_eq!(

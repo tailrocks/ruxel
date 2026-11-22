@@ -1,5 +1,5 @@
 use super::{Ledger, Path};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 
 impl Ledger {
@@ -38,9 +38,10 @@ impl Ledger {
     /// one does not — and expires before what the plan still owns is
     /// persisted. A run that encounters nothing expires nothing: with
     /// no task of its own it is no plan's verdict on what this
-    /// workflow manages. Records of other workflows are never this
-    /// plan's verdict: the ledger is shared per host, so another
-    /// workflow's completion must not delete them.
+    /// workflow manages. Records of other workflows live in their own
+    /// maps and are never this plan's verdict: the ledger is shared
+    /// per host, so another workflow's completion must not delete
+    /// them.
     ///
     /// Only a complete plan may expire what it never encountered. A
     /// plan that stopped early — a task failed and the plan halted on
@@ -54,13 +55,13 @@ impl Ledger {
     /// nothing either.
     pub(crate) fn flush(&mut self) {
         if !self.encountered.is_empty() && self.complete && !self.aborted {
-            let before = self.records.len();
-            let workflow = self.workflow.clone();
-            self.records.retain(|key, record| {
-                self.encountered.contains(key)
-                    || (!record.workflow.is_empty() && record.workflow != workflow)
-            });
-            self.dirty |= self.records.len() != before;
+            let before: usize = self.records.values().map(HashMap::len).sum();
+            if let Some(owned) = self.records.get_mut(&self.workflow) {
+                owned.retain(|key, _| self.encountered.contains(key));
+            }
+            self.records.retain(|_, owned| !owned.is_empty());
+            let after: usize = self.records.values().map(HashMap::len).sum();
+            self.dirty |= after != before;
         }
         // The plan is over: the next plan's encounters are its own.
         self.encountered.clear();

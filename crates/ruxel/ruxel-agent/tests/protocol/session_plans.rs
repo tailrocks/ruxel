@@ -20,6 +20,34 @@ fn check_hello(run_id: &str) -> v1::Envelope {
     greeting
 }
 
+/// The sysctl files the stored records still declare: records are
+/// keyed by workflow and task, so the read crosses the per-workflow
+/// maps first.
+fn managed_files(ledger: &serde_json::Value) -> Vec<String> {
+    let mut files: Vec<String> = ledger
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|owned| {
+            owned
+                .as_object()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .filter_map(|record| {
+            record
+                .get("managed_sysctl")?
+                .get("file")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 fn sysctl_params(file: &std::path::Path, value: &str) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "name": "net.ipv4.ruxel_session_key",
@@ -139,21 +167,8 @@ fn second_apply_replays_through_the_fallback_and_drops_expire() {
 
     let ledger: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("ledger/ledger.json")).unwrap()).unwrap();
-    let mut files: Vec<String> = ledger
-        .as_object()
-        .unwrap()
-        .values()
-        .filter_map(|record| {
-            record
-                .get("managed_sysctl")?
-                .get("file")?
-                .as_str()
-                .map(str::to_string)
-        })
-        .collect();
-    files.sort();
     assert_eq!(
-        files,
+        managed_files(&ledger),
         vec![second.to_string_lossy().into_owned()],
         "the dropped first stage expires at the plan's end"
     );

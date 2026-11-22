@@ -53,7 +53,12 @@ fn send_copy(
 fn ledger_records(state_dir: &std::path::Path) -> usize {
     let ledger = std::fs::read(state_dir.join("ledger/ledger.json")).unwrap();
     let records: serde_json::Value = serde_json::from_slice(&ledger).unwrap();
-    records.as_object().unwrap().len()
+    records
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|owned| owned.as_object().map_or(0, serde_json::Map::len))
+        .sum()
 }
 
 fn filtered_done_case(filtered: bool) {

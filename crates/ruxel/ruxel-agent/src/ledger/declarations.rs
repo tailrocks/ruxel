@@ -108,7 +108,7 @@ impl Ledger {
     /// declaration-only records with no probe — carry none.
     fn sysctl_entry(&self, key: &str) -> Option<(String, String, String)> {
         let key = self.storage_key(key)?;
-        let record = self.records.get(&key)?;
+        let record = self.records.get(&self.workflow)?.get(&key)?;
         record.probes.iter().find_map(|probe| match probe {
             super::Probe::SysctlKV { file, name, value } => {
                 Some((file.clone(), name.clone(), value.clone()))
@@ -140,16 +140,16 @@ impl Ledger {
             return;
         };
         self.encountered.insert(key.clone());
-        match self.records.get_mut(&key) {
+        let owned = self.records.entry(self.workflow.clone()).or_default();
+        match owned.get_mut(&key) {
             Some(record) => {
                 record.managed_sysctl = Some(managed_sysctl);
             }
             None => {
-                self.records.insert(
+                owned.insert(
                     key,
                     Record {
                         agent_version: env!("CARGO_PKG_VERSION").to_string(),
-                        workflow: self.workflow.clone(),
                         status: status.to_string(),
                         result_json: Value::Null,
                         probes: Vec::new(),
