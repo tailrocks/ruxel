@@ -150,6 +150,14 @@ fn an_unreadable_skel_keeps_everything_and_reports() {
     let error = rollback_created_home_from(home.to_str().unwrap(), &skel)
         .expect_err("an unreadable template proves nothing and must refuse");
     std::fs::set_permissions(&skel, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(
+        error.contains("take back created home"),
+        "the refusal names the take-back: {error}"
+    );
+    assert!(
+        home.join(".profile").exists(),
+        "nothing is deleted behind the refusal"
+    );
     let _ = std::fs::remove_dir_all(&skel);
     let _ = std::fs::remove_dir_all(&home);
 }
