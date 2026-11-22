@@ -186,11 +186,19 @@ fn chain_intermediates_trust_only_privileged_group_write() {
     // The strict base admits clean operator-owned directories ...
     assert!(adoption::chain_dir_trusted(operator, 0, 0o755));
     assert!(adoption::chain_dir_trusted(0, 0, 0o755));
-    // ... and the exception admits root-owned group writability by a
-    // privileged group.
+    // ... and on Linux nothing else admits: a lower-privileged member
+    // of the owning group can rename the target aside and plant a
+    // replacement home, so even root:root 0775 refuses there — while
+    // off Linux the exception still admits root-owned group
+    // writability by a privileged group. Both platform rules are
+    // pinned explicitly so the Linux one is proven on any host.
     assert!(
-        adoption::chain_dir_trusted(0, 0, 0o775),
-        "root:wheel admits"
+        !adoption::chain_dir_trusted_on(0, 0, 0o775, true),
+        "root:root 0775 refuses on Linux"
+    );
+    assert!(
+        adoption::chain_dir_trusted_on(0, 0, 0o775, false),
+        "root:wheel admits off Linux"
     );
     #[cfg(target_os = "macos")]
     assert!(

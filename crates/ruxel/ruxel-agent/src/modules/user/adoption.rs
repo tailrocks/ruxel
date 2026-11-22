@@ -200,15 +200,30 @@ pub(super) fn own_directory(uid: u32, mode: u32) -> bool {
 /// a root-owned directory whose group writability belongs to a
 /// privileged group — the owner is root, the group holds no
 /// unprivileged principal, and others cannot write, so no unprivileged
-/// principal can plant through it. The other-triplet check is
-/// other-write, not other-closed: others traverse every root-owned
-/// system directory already (including `/`), and traversal without
-/// write cannot rename anything aside. An other-closed check would
-/// refuse `root:admin 0775` layouts — macOS routes all of `/home`
-/// through one — without buying any privilege boundary.
+/// principal can plant through it. The exception is off-Linux only:
+/// on Linux a lower-privileged member of the owning group can rename
+/// the target aside and plant a replacement home, so even `root:root
+/// 0775` refuses there. The other-triplet check is other-write, not
+/// other-closed: others traverse every root-owned system directory
+/// already (including `/`), and traversal without write cannot rename
+/// anything aside. An other-closed check would refuse `root:admin
+/// 0775` layouts — macOS routes all of `/home` through one — without
+/// buying any privilege boundary.
 pub(super) fn chain_dir_trusted(uid: u32, gid: u32, mode: u32) -> bool {
+    chain_dir_trusted_on(uid, gid, mode, cfg!(target_os = "linux"))
+}
+
+/// The chain rule for the platform `strict` names: the Linux rule
+/// trusts the strict base alone, while other platforms keep the
+/// privileged-group exception. Split out so the Linux refusal is
+/// provable on any host.
+pub(super) fn chain_dir_trusted_on(uid: u32, gid: u32, mode: u32, strict: bool) -> bool {
     own_directory(uid, mode)
-        || (uid == 0 && mode & 0o002 == 0 && mode & 0o020 != 0 && privileged_gid(gid))
+        || (!strict
+            && uid == 0
+            && mode & 0o002 == 0
+            && mode & 0o020 != 0
+            && privileged_gid(gid))
 }
 
 /// Whether the group holds no unprivileged principal: root everywhere,
