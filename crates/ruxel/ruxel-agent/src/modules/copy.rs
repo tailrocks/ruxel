@@ -127,6 +127,21 @@ pub(super) fn run_in(
         }
     }
     result["changed"] = json!(changed);
+    // The task's own provider record: check mode runs no writes, so a
+    // shell an earlier copy manages is still missing from the live
+    // filesystem when the account's task verifies it — the registry
+    // stands in for it the way the plan's group record stands in for
+    // a group `groupadd` has not created yet. Only the mode the task
+    // declares decides: a declared executable mode registers the
+    // destination, a declared non-executable one unregisters it, and
+    // no declared mode preserves whatever the destination already is.
+    super::user::note_managed_shell_file(
+        dest,
+        obj.get("mode")
+            .map(super::parse_mode)
+            .transpose()
+            .map_err(|error| format!("copy: {error}"))?,
+    );
     Ok(result)
 }
 

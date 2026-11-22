@@ -141,6 +141,73 @@ fn apply_mode_verifies_the_live_shell_from_the_host() {
 }
 
 #[test]
+fn check_mode_registers_the_copy_task_that_provides_the_shell() {
+    // Threads 284 and 289: the provider record must be written by the
+    // File task itself when it runs — a `note_planned_shell_provider`
+    // with no production caller leaves the registry empty, so check
+    // mode refuses a workflow the apply performs. An executed `copy`
+    // with an executable mode registers its destination, and the
+    // account's check-mode task reads it instead of failing on the
+    // live filesystem the copy has not mutated yet.
+    use super::super::super::copy;
+    shell::reset_planned_shell_providers();
+    let dir = std::env::temp_dir().join(format!("ruxel-shell-wiring-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("mysh");
+    let dest = dest.to_str().unwrap().to_owned();
+    assert!(std::fs::symlink_metadata(&dest).is_err());
+    let mut state = crate::system_state::SystemState::default();
+    copy::run(
+        &json!({"dest": dest, "content": "#!/bin/sh\n", "mode": "0755"}),
+        None,
+        &check_context(),
+        &mut state,
+    )
+    .expect("the check-mode copy succeeds");
+    assert!(
+        shell::planned_shell_provided(&dest),
+        "the executed copy registers its destination"
+    );
+    let account = format!("ruxel-shell-wiring-copy-{}", std::process::id());
+    let planned = run(&json!({"name": account, "shell": dest}), &check_context())
+        .expect("check mode excuses the shell the executed copy provides");
+    assert_eq!(planned.get("changed"), Some(&json!(true)), "{planned}");
+    let _ = std::fs::remove_dir_all(dir);
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
+fn check_mode_registers_the_link_task_that_provides_the_shell() {
+    // Threads 284 and 289, the Symlink half: an executed `file`
+    // state=link task registers its destination the way the copy
+    // does, so the account's check-mode task follows the plan's own
+    // link instead of failing on the live filesystem.
+    use super::super::super::file;
+    shell::reset_planned_shell_providers();
+    let dir = std::env::temp_dir().join(format!("ruxel-shell-wiring-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let link = dir.join("mysh");
+    let link = link.to_str().unwrap().to_owned();
+    file::run(
+        &json!({"path": link, "src": "/bin/sh", "state": "link"}),
+        &check_context(),
+    )
+    .expect("the check-mode link succeeds");
+    assert!(
+        shell::planned_shell_provided(&link),
+        "the executed link registers its destination"
+    );
+    let account = format!("ruxel-shell-wiring-link-{}", std::process::id());
+    let planned = run(&json!({"name": account, "shell": link}), &check_context())
+        .expect("check mode excuses the shell the executed link provides");
+    assert_eq!(planned.get("changed"), Some(&json!(true)), "{planned}");
+    let _ = std::fs::remove_dir_all(dir);
+    shell::reset_planned_shell_providers();
+}
+
+#[test]
 fn a_new_plan_clears_the_shell_provider_record() {
     // A provider an earlier plan managed is not the next plan's to
     // rely on: `begin_plan` clears the shell-provider record beside

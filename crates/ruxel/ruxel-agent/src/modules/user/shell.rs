@@ -24,17 +24,43 @@ thread_local! {
 /// Records that a File or Symlink step of the plan manages `path`:
 /// the account's check-mode verification reads it instead of failing
 /// on the live filesystem the step has not mutated yet. The File and
-/// Symlink steps are the producers of this record; until their
-/// check-mode runs note what they manage, only the tests below call
-/// it — the producer wiring removes the `expect` when it notes here.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the File/Symlink producer wiring notes here")
-)]
-pub(super) fn note_planned_shell_provider(path: &str) {
+/// Symlink steps are the producers of this record: every executed
+/// `copy` and `file` state=link task notes what it manages, in check
+/// mode as much as in apply — the lowering orders every managed
+/// shell provider before the account, and apply verifies the live
+/// shell the provider created, so the record excuses nothing there.
+pub(crate) fn note_planned_shell_provider(path: &str) {
     PLANNED_SHELL_PROVIDERS.with(|providers| {
         providers.borrow_mut().insert(path.to_string());
     });
+}
+
+/// Forgets that a step of the plan manages `path` as a shell: a `copy`
+/// or `file` task that leaves a non-executable file behind supersedes
+/// the executable provider the registry still names, the way the
+/// lowering refuses a managed shell file without an executable mode —
+/// the account's task reads the replacement, not the superseded
+/// provider.
+pub(crate) fn forget_planned_shell_provider(path: &str) {
+    PLANNED_SHELL_PROVIDERS.with(|providers| {
+        providers.borrow_mut().remove(path);
+    });
+}
+
+/// The shell-provider record of an executed file-provisioning task:
+/// an executable mode registers the path the task leaves behind, a
+/// declared non-executable mode unregisters it — the task supersedes
+/// whatever the registry names — and no declared mode leaves the
+/// record alone, since the task preserves whatever is there. Only the
+/// other-execute bit admits: the account the shell serves runs as
+/// `other` unless it owns the file, the class `shell_allowed`
+/// judges by.
+pub(crate) fn note_managed_shell_file(path: &str, mode: Option<u32>) {
+    match mode {
+        Some(bits) if bits & 0o001 != 0 => note_planned_shell_provider(path),
+        Some(_) => forget_planned_shell_provider(path),
+        None => {}
+    }
 }
 
 /// Whether an earlier step of the plan provides the shell `path`.
