@@ -163,6 +163,53 @@ fn an_unreadable_skel_keeps_everything_and_reports() {
 }
 
 #[test]
+fn a_swapped_intermediate_symlink_is_refused_and_the_target_survives() {
+    // Thread 301: after the scan, a concurrent writer swaps the
+    // intermediate directory for a symlink to the skeleton — the
+    // pathname proof then compares the skeleton to itself and the
+    // removal deletes outside the home. The pinned walk refuses the
+    // swapped component instead, and the skeleton file survives.
+    let scenario = format!("ruxel-created-swap-{}", std::process::id());
+    let skel = std::env::temp_dir().join(format!("{scenario}-skel"));
+    let home = std::env::temp_dir().join(format!("{scenario}-home"));
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(skel.join("docs")).unwrap();
+    std::fs::write(skel.join("docs/readme"), b"skeleton\n").unwrap();
+    std::fs::create_dir_all(home.join("docs")).unwrap();
+    std::fs::write(home.join("docs/readme"), b"skeleton\n").unwrap();
+    // The scan the production rollback runs first: the tree proves.
+    let scanned = relative_entries(&home).unwrap();
+    assert!(
+        scanned.contains(&std::path::PathBuf::from("docs/readme")),
+        "the scan sees the template copy: {scanned:?}"
+    );
+    // The concurrent writer swaps the intermediate directory for a
+    // symlink to the skeleton after the scan and before the removal.
+    std::fs::remove_dir_all(home.join("docs")).unwrap();
+    std::os::unix::fs::symlink(skel.join("docs"), home.join("docs")).unwrap();
+    let error = remove_home_entries(home.to_str().unwrap(), &skel, &scanned)
+        .expect_err("a swapped intermediate symlink must stop the removal");
+    assert!(
+        error.contains("take back created home"),
+        "the refusal names the take-back: {error}"
+    );
+    assert_eq!(
+        std::fs::read(skel.join("docs/readme")).unwrap(),
+        b"skeleton\n",
+        "nothing outside the home is deleted"
+    );
+    assert!(
+        std::fs::symlink_metadata(home.join("docs"))
+            .unwrap()
+            .is_symlink(),
+        "the swapped link is kept and reported, never followed"
+    );
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn a_plant_between_scan_and_removal_is_kept_and_reported() {
     // Thread 301: the scan proved the tree, then a concurrent writer
     // planted before the removal ran — the removal proves each entry

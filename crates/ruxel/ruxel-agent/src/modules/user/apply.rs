@@ -3,7 +3,11 @@
 //! account's own change.
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::path::{Path, PathBuf};
+
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat, unlinkat};
 
 use super::PasswdEntry;
 use super::entries::group_entry;
@@ -238,39 +242,189 @@ pub(super) fn rollback_created_home_from(home: &str, skel: &Path) -> Result<(), 
 /// link: a symlink is unlinked itself, and a directory removal fails
 /// on anything planted inside it after its proof.
 fn remove_home_entries(home: &str, skel: &Path, entries: &BTreeSet<PathBuf>) -> Result<(), String> {
+    // Both roots are pinned before the first entry is touched: every
+    // proof and every removal below runs against these descriptors, so
+    // a concurrent writer that swaps an intermediate directory for a
+    // symlink after the scan cannot redirect the proof at the
+    // skeleton itself — the no-follow open of the swapped component
+    // fails and the rollback stops with the target untouched.
+    let home_fd = open_pinned_dir(Path::new(home), home)?;
+    if entries.is_empty() {
+        // Nothing to prove: the scan found no entry, so no skeleton
+        // read decides anything — the empty directory the operation
+        // created is taken back whatever template it came from.
+        drop(home_fd);
+        std::fs::remove_dir(home)
+            .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+        return Ok(());
+    }
+    let skel_fd = open_pinned_dir(skel, home)?;
     let mut ordered: Vec<&PathBuf> = entries.iter().collect();
     ordered.sort_by_key(|entry| std::cmp::Reverse(entry.components().count()));
     for entry in ordered {
-        if !skel_entry_matches(Path::new(home), skel, entry)? {
-            return Err(format!(
-                "user: take back created home {home}: home contains contents a concurrent writer planted"
-            ));
-        }
-        remove_home_entry(home, entry)?;
+        remove_pinned_entry(home, &home_fd, &skel_fd, entry)?;
     }
+    drop(home_fd);
+    drop(skel_fd);
+    // The final removal stays a single non-recursive `remove_dir`: it
+    // fails on a symlink and on anything planted inside after the
+    // proof, so a concurrent addition keeps the home instead of being
+    // deleted with it.
     std::fs::remove_dir(home)
         .map_err(|error| format!("user: take back created home {home}: {error}"))?;
     Ok(())
 }
 
-/// Removes one proven entry without following it: files and links are
-/// unlinked, and a directory removal refuses anything planted inside
-/// it after its proof.
-fn remove_home_entry(home: &str, entry: &Path) -> Result<(), String> {
-    let at_home = Path::new(home).join(entry);
-    let meta = std::fs::symlink_metadata(&at_home)
-        .map_err(|error| format!("user: take back created home {home}: {error}"))?;
-    if meta.is_dir() {
-        std::fs::remove_dir(&at_home)
-    } else {
-        std::fs::remove_file(&at_home)
+/// Opens a directory as itself: a trailing link is refused, never
+/// resolved to a target the account does not own.
+fn open_pinned_dir(path: &Path, home: &str) -> Result<OwnedFd, String> {
+    open(
+        path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|error| {
+        format!(
+            "user: take back created home {home}: {}: {error}",
+            path.display()
+        )
+    })
+}
+
+/// Proves one scanned entry against its parent descriptors and removes
+/// it by identity, never through a link: the parent chain is reopened
+/// from the pinned home for every entry, so a directory the scan saw
+/// that a concurrent writer has since swapped for a symlink fails the
+/// no-follow open and stops the rollback instead of proving — and
+/// deleting — the link's target. A symlink is unlinked itself, and a
+/// directory removal refuses anything planted inside it after its
+/// proof.
+fn remove_pinned_entry(
+    home: &str,
+    home_fd: &OwnedFd,
+    skel_fd: &OwnedFd,
+    entry: &Path,
+) -> Result<(), String> {
+    let planted = || {
+        format!(
+            "user: take back created home {home}: home contains contents a concurrent writer planted"
+        )
+    };
+    let gone = |error: rustix::io::Errno| {
+        format!(
+            "user: take back created home {home}: {}: {error}",
+            entry.display()
+        )
+    };
+    let name: &OsStr = entry.file_name().ok_or_else(planted)?;
+    let Some(parent) = entry.parent() else {
+        return Err(planted());
+    };
+    let home_parent = open_pinned_chain(home_fd, parent).map_err(|error| {
+        if error == rustix::io::Errno::NOENT {
+            gone(error)
+        } else {
+            planted()
+        }
+    })?;
+    let skel_parent = open_pinned_chain(skel_fd, parent).map_err(|_| planted())?;
+    // The leaf is judged from its own lstat against the parent
+    // descriptor, never through a resolved pathname.
+    let home_meta = statat(&home_parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| {
+        if error == rustix::io::Errno::NOENT {
+            gone(error)
+        } else {
+            planted()
+        }
+    })?;
+    let skel_meta = statat(&skel_parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|_| planted())?;
+    let (home_kind, skel_kind) = (
+        FileType::from_raw_mode(home_meta.st_mode),
+        FileType::from_raw_mode(skel_meta.st_mode),
+    );
+    match (home_kind, skel_kind) {
+        (FileType::Symlink, FileType::Symlink) => {
+            let home_target = readlinkat(&home_parent, name, Vec::new()).map_err(|_| planted())?;
+            let skel_target = readlinkat(&skel_parent, name, Vec::new()).map_err(|_| planted())?;
+            if home_target != skel_target {
+                return Err(planted());
+            }
+            unlinkat(&home_parent, name, AtFlags::empty())
+        }
+        (FileType::Directory, FileType::Directory) => {
+            unlinkat(&home_parent, name, AtFlags::REMOVEDIR)
+        }
+        (FileType::RegularFile, FileType::RegularFile) => {
+            if pinned_file_bytes(&home_parent, name).map_err(|_| planted())?
+                != pinned_file_bytes(&skel_parent, name).map_err(|_| planted())?
+            {
+                return Err(planted());
+            }
+            unlinkat(&home_parent, name, AtFlags::empty())
+        }
+        _ => return Err(planted()),
     }
     .map_err(|error| {
         format!(
             "user: take back created home {home}: {}: {error}",
-            at_home.display()
+            entry.display()
         )
     })
+}
+
+/// Every directory of `parent` opened from the pinned root down
+/// through `openat`, never following a link: a component a concurrent
+/// writer replaced after the scan answers `ELOOP` (a link) or
+/// `ENOTDIR` (a file where the scan saw a directory) and the caller
+/// refuses instead of entering the replacement.
+fn open_pinned_chain(root: &OwnedFd, parent: &Path) -> Result<OwnedFd, rustix::io::Errno> {
+    use std::path::Component;
+    let mut current: Option<OwnedFd> = None;
+    for component in parent.components() {
+        // Anything but a plain name fails closed: the scan only ever
+        // yields names, so an escape here is tampering, not content.
+        let Component::Normal(name) = component else {
+            return Err(rustix::io::Errno::INVAL);
+        };
+        let base: BorrowedFd<'_> = current
+            .as_ref()
+            .map_or_else(|| root.as_fd(), OwnedFd::as_fd);
+        current = Some(openat(
+            base,
+            name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?);
+    }
+    // The chain borrows the root where the entry stands at its top:
+    // reopening the root as itself keeps the leaf proof against the
+    // pinned descriptor rather than a resolved pathname.
+    match current {
+        Some(fd) => Ok(fd),
+        None => openat(
+            root,
+            c".",
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        ),
+    }
+}
+
+/// The bytes of the leaf the descriptor names, read from the open
+/// file itself: the content the proof compares is the inode the
+/// removal then unlinks by name.
+fn pinned_file_bytes(dir: &OwnedFd, name: &OsStr) -> Result<Vec<u8>, String> {
+    let fd = openat(
+        dir,
+        name,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(bytes)
 }
 
 /// Whether the home's entry is the template's own at the same name: the same
