@@ -156,7 +156,7 @@ async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Re
     assert!(
         error
             .to_string()
-            .contains("agent speaks proto v1, controller v3")
+            .contains("agent speaks proto v1, controller v4")
     );
     Ok(())
 }

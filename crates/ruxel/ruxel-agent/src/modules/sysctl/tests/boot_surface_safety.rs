@@ -7,10 +7,11 @@ use super::boot_surface::Scratch;
 #[test]
 fn a_fifo_entry_never_blocks_the_fingerprint() {
     // A selected `*.conf` entry may be a FIFO with no writer: opening
-    // it blocks indefinitely, so the fingerprint classifies entries
-    // the way the override probe does and never opens one. The FIFO
-    // holds the name but contributes no assignments — the surface
-    // over it is the empty surface's, and the boot value stands.
+    // it blocks indefinitely, so the surface classifies the entry by
+    // type and never opens one — and a FIFO refuses instead of loading
+    // as nothing, the way procps blocks on it instead of skipping it.
+    // The refusal travels the fail-safe path: the preflight refuses
+    // and the fingerprint misses, so no cache is served over it.
     let scratch = Scratch::new("fifo");
     let dir = scratch.dir("etc");
     let fifo = dir.join("99-fifo.conf");
@@ -22,28 +23,11 @@ fn a_fifo_entry_never_blocks_the_fingerprint() {
         // No FIFO support on this host: nothing to prove.
         return;
     }
-    assert_eq!(
-        boot::boot_bytes(&fifo).expect("the surface classifies"),
-        None,
-        "a fifo loads as nothing"
-    );
-    let files = vec![fifo.clone()];
-    assert_eq!(
-        boot::fingerprint_of(&files).expect("a fifo entry must not refuse the surface"),
-        boot::fingerprint_of(&[]).expect("an empty surface fingerprints"),
-        "a fifo contributes no assignments"
-    );
-    let host = vec![(fifo, Vec::new())];
-    assert_eq!(
-        boot::boot_override(
-            "/etc/sysctl.d/90-ruxel.conf",
-            "net.ipv4.ip_forward",
-            "0",
-            &host,
-            &[],
-        ),
-        None,
-        "the fifo assignment must not hand the boot value away"
+    let error = boot::boot_bytes(&fifo).expect_err("a FIFO must refuse, not load as empty");
+    assert!(error.contains("FIFO"), "{error}");
+    assert!(
+        boot::fingerprint_of(std::slice::from_ref(&fifo)).is_none(),
+        "a FIFO invalidates the boot fingerprint"
     );
 }
 

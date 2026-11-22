@@ -60,7 +60,14 @@ fn the_apply_resolves_a_recreated_account_from_the_live_database() {
         &check,
     )
     .expect("the removal must plan");
-    run(&json!({"name": name, "create_home": false}), &check).expect("the creation must plan");
+    // The recreation declares the group explicitly: a same-name group
+    // another principal holds is the host's, and the step must declare
+    // the group to adopt a shared one rather than joining it silently.
+    run(
+        &json!({"name": name, "group": primary, "create_home": false}),
+        &check,
+    )
+    .expect("the creation must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"owner": name}).as_object().expect("params object"),
         false,
@@ -254,7 +261,8 @@ fn a_reused_group_keeps_its_number() {
     // The mirror: the host holds the same-name group, so the creation
     // reuses it instead of drawing a number — its number is one probes
     // have seen, and a cached file naming the group stays served from
-    // the cache.
+    // the cache. The reused group is exclusive: a shared same-name
+    // group is refused unless the step declares it.
     begin_plan();
     let check = check_context();
     let groups = std::fs::read_to_string("/etc/group").unwrap();
@@ -266,9 +274,11 @@ fn a_reused_group_keeps_its_number() {
             let group = fields.next()?;
             let _password = fields.next()?;
             let gid = fields.next()?;
+            let members = fields.next().unwrap_or_default();
             let usable = !group.is_empty()
                 && !group.starts_with(['+', '#', '-'])
                 && gid.parse::<u64>().is_ok()
+                && members.is_empty()
                 && !passwd
                     .lines()
                     .any(|line| line.split(':').next() == Some(group));

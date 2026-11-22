@@ -278,7 +278,11 @@ fn an_existing_account_reconciles_its_claimed_private_group() {
 /// implicit claim resolves the group's number, and the account's move
 /// onto it is the change the step plans.
 fn live_account_with_its_own_group() -> (String, u64) {
+    // An exclusive same-name group: a shared one is refused to an
+    // implicit adoption, so the implicit claim is exercised where the
+    // host holds the group for the account alone.
     let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
     passwd
         .lines()
         .filter_map(|line| {
@@ -288,8 +292,16 @@ fn live_account_with_its_own_group() -> (String, u64) {
                 && f[3].parse::<u64>().is_ok())
             .then(|| (f[0].to_string(), f[3].parse::<u64>().unwrap()))
         })
-        .find(|(name, _)| group_entry(name).unwrap().is_some_and(|(_, gid)| gid != 0))
-        .expect("a live account whose same-name group the host has")
+        .find(|(name, _)| {
+            group_entry(name).unwrap().is_some_and(|(_, gid)| {
+                gid != 0
+                    && super::super::holders::same_name_group_sharers_from(
+                        &groups, &passwd, name, gid,
+                    )
+                    .is_empty()
+            })
+        })
+        .expect("a live account whose same-name group the host holds alone")
 }
 
 /// A gid no group on the host holds: the plan renumbers a group to it.

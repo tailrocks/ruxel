@@ -107,31 +107,6 @@ fn a_directory_holds_the_name_at_boot() {
 }
 
 #[test]
-fn a_fifo_in_the_boot_surface_refuses() {
-    // Thread 296: procps blocks opening a selected FIFO instead of
-    // skipping it, so the real loader never reaches later managed
-    // files — the agent must refuse the surface rather than approve
-    // persistence it cannot apply, and the FIFO must invalidate the
-    // cache the way an unreadable file does.
-    let scratch = Scratch::new("fifo");
-    let fifo = scratch.0.join("50-fifo.conf");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success(),
-        "the fixture is a real FIFO"
-    );
-    let error = boot_bytes(&fifo).expect_err("a FIFO must refuse, not load as empty");
-    assert!(error.contains("FIFO"), "{error}");
-    assert!(
-        super::fingerprint::fingerprint_of(std::slice::from_ref(&fifo)).is_none(),
-        "a FIFO invalidates the boot fingerprint"
-    );
-}
-
-#[test]
 fn a_null_mask_still_loads_as_nothing() {
     // The standard mask is a symlink to the null device: it holds
     // the name and contributes no assignments, whatever special type

@@ -254,8 +254,14 @@ fn a_recreated_account_keeps_the_pending_ownership() {
         &check,
     )
     .expect("the removal must plan");
-    // The intervening task creates the account again, without a number.
-    run(&json!({"name": name, "create_home": false}), &check).expect("the creation must plan");
+    // The intervening task creates the account again, without a number —
+    // declaring the group explicitly, since a shared same-name group
+    // is refused to an implicit adoption.
+    run(
+        &json!({"name": name, "group": primary, "create_home": false}),
+        &check,
+    )
+    .expect("the creation must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"owner": name}).as_object().expect("params object"),
         true,
