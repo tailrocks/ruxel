@@ -226,9 +226,51 @@ pub(super) fn rollback_created_home_from(home: &str, skel: &Path) -> Result<(), 
             ));
         }
     }
-    std::fs::remove_dir_all(home)
+    remove_home_entries(home, skel, &home_set)
+}
+
+/// Takes back a scanned home entry by entry, deepest first: each entry
+/// is proven the template's own again just before it is removed, so a
+/// concurrent writer that planted after the scan stops the rollback
+/// instead of being deleted — and the final removal is non-recursive,
+/// so a concurrent addition makes the rollback stop rather than
+/// deleting it. Entries are removed by identity, never through a
+/// link: a symlink is unlinked itself, and a directory removal fails
+/// on anything planted inside it after its proof.
+fn remove_home_entries(home: &str, skel: &Path, entries: &BTreeSet<PathBuf>) -> Result<(), String> {
+    let mut ordered: Vec<&PathBuf> = entries.iter().collect();
+    ordered.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
+    for entry in ordered {
+        if !skel_entry_matches(Path::new(home), skel, entry)? {
+            return Err(format!(
+                "user: take back created home {home}: home contains contents a concurrent writer planted"
+            ));
+        }
+        remove_home_entry(home, entry)?;
+    }
+    std::fs::remove_dir(home)
         .map_err(|error| format!("user: take back created home {home}: {error}"))?;
     Ok(())
+}
+
+/// Removes one proven entry without following it: files and links are
+/// unlinked, and a directory removal refuses anything planted inside
+/// it after its proof.
+fn remove_home_entry(home: &str, entry: &Path) -> Result<(), String> {
+    let at_home = Path::new(home).join(entry);
+    let meta = std::fs::symlink_metadata(&at_home)
+        .map_err(|error| format!("user: take back created home {home}: {error}"))?;
+    if meta.is_dir() {
+        std::fs::remove_dir(&at_home)
+    } else {
+        std::fs::remove_file(&at_home)
+    }
+    .map_err(|error| {
+        format!(
+            "user: take back created home {home}: {}: {error}",
+            at_home.display()
+        )
+    })
 }
 
 /// Whether the home's entry is the template's own at the same name: the same

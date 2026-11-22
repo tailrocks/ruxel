@@ -150,13 +150,54 @@ fn an_unreadable_skel_keeps_everything_and_reports() {
     let error = rollback_created_home_from(home.to_str().unwrap(), &skel)
         .expect_err("an unreadable template proves nothing and must refuse");
     std::fs::set_permissions(&skel, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_plant_between_scan_and_removal_is_kept_and_reported() {
+    // Thread 301: the scan proved the tree, then a concurrent writer
+    // planted before the removal ran — the removal proves each entry
+    // again just before removing it, so it stops at the plant instead
+    // of deleting it, and the non-recursive final removal stops at
+    // anything left behind rather than deleting it with the home.
+    let scenario = format!("ruxel-created-race-{}", std::process::id());
+    let skel = std::env::temp_dir().join(format!("{scenario}-skel"));
+    let home = std::env::temp_dir().join(format!("{scenario}-home"));
+    let _ = std::fs::remove_dir_all(&skel);
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&skel).unwrap();
+    std::fs::write(skel.join(".profile"), b"skeleton\n").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join(".profile"), b"skeleton\n").unwrap();
+    // The scan the production rollback runs first: the tree proves.
+    let scanned = relative_entries(&home).unwrap();
+    assert!(!scanned.is_empty(), "the scan sees the template copy");
+    // The concurrent writer plants after the scan and before the
+    // removal — the shape a pre-removal `remove_dir_all` would delete
+    // along with the home.
+    std::fs::write(home.join("planted"), b"concurrent\n").unwrap();
+    let error = remove_home_entries(home.to_str().unwrap(), &skel, &scanned)
+        .expect_err("a plant after the scan must stop the removal");
     assert!(
         error.contains("take back created home"),
         "the refusal names the take-back: {error}"
     );
+    assert_eq!(
+        std::fs::read(home.join("planted")).unwrap(),
+        b"concurrent\n",
+        "the planted entry is kept and reported"
+    );
+    // The proven entries the removal already took back are gone —
+    // they were the template's own — while the plant and the home
+    // that holds it stay.
     assert!(
-        home.join(".profile").exists(),
-        "nothing is deleted behind the refusal"
+        !home.join(".profile").exists(),
+        "the proven template entry is taken back"
+    );
+    assert!(
+        home.exists(),
+        "the home holding the plant is kept, not deleted with it"
     );
     let _ = std::fs::remove_dir_all(&skel);
     let _ = std::fs::remove_dir_all(&home);
