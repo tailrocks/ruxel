@@ -80,7 +80,9 @@ fn creation_reuses_the_groups_the_host_already_has() {
             usable.then(|| group.to_string())
         })
         .expect("an exclusive group without a same-name account");
-    let home = std::env::temp_dir().join(format!("ruxel-create-{}", std::process::id()));
+    let home = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-create-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
     match run(

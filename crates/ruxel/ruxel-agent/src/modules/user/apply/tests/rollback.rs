@@ -176,10 +176,18 @@ fn a_failed_repair_of_an_existing_home_restores_its_ownership() {
     // repair found. The directory already belongs to the test
     // process, so no ownership change is needed unprivileged — the
     // rollback runs the same path and keeps the directory.
-    let base = std::env::temp_dir().join(format!("ruxel-rollback-kept-{}", std::process::id()));
+    let base = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-rollback-kept-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
-    let (uid, gid) = own_identity("kept");
+    // The identity read from the staged home itself: a probe
+    // elsewhere can carry another group.
+    let (uid, gid) = {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(&base).unwrap();
+        (u64::from(meta.uid()), u64::from(meta.gid()))
+    };
     let group = format!("ruxel-rollback-group-{}", std::process::id());
     let mutations = vec![
         Mutation::GroupAdd(group.clone()),

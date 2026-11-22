@@ -13,6 +13,7 @@ mod guards;
 mod holders;
 mod home_modes;
 mod home_repair;
+mod home_repair_incidental;
 mod home_repair_takeback;
 mod homes;
 mod identity;

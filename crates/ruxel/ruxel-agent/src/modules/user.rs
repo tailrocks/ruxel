@@ -1369,14 +1369,31 @@ fn planned_home_repair(
             owner,
             managed_uid: effective_uid,
         }),
-        None if primary_gid_moves => owner.map(|owner| Home {
-            path: planned_home.to_string(),
-            uid: uid.unwrap_or(effective_uid),
-            owner,
-            managed_uid: effective_uid,
-        }),
+        None if primary_gid_moves && incidental_home_repairable(planned_home) => {
+            owner.map(|owner| Home {
+                path: planned_home.to_string(),
+                uid: uid.unwrap_or(effective_uid),
+                owner,
+                managed_uid: effective_uid,
+            })
+        }
         None => None,
     })
+}
+
+/// Whether the incidental repair of an undeclared home may run: the
+/// step claimed no home, so the passwd home it would repair is the
+/// host's, not the step's. A home that exists as anything but a plain
+/// directory — a symlink such as a usr-merged `/bin`, or a device or
+/// file a system account names — is not a directory this step may
+/// chown, and refusing it would block an unrelated group move for an
+/// account the step never asked to house. A missing home keeps the
+/// repair, and lookup errors keep surfacing from the repair itself.
+fn incidental_home_repairable(planned_home: &str) -> bool {
+    match std::fs::symlink_metadata(planned_home) {
+        Ok(meta) => meta.is_dir(),
+        Err(_) => true,
+    }
 }
 
 /// The owner the home's repair chowns to: the declared group's number,

@@ -228,14 +228,15 @@ fn a_home_that_is_a_regular_file_is_refused_before_the_account_changes() {
 fn an_existing_home_directory_reports_drifted_ownership() {
     use std::os::unix::fs::MetadataExt;
     // The identity the test process owns: a probe file of it.
-    let probe = std::env::temp_dir().join(format!("ruxel-home-drift-{}", std::process::id()));
-    std::fs::write(&probe, b"").unwrap();
-    let meta = std::fs::metadata(&probe).unwrap();
-    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
-    std::fs::remove_file(&probe).unwrap();
-    let dir = std::env::temp_dir().join(format!("ruxel-home-owned-{}", std::process::id()));
+    let dir = std::env::home_dir()
+        .expect("the test process runs with a home directory")
+        .join(format!("ruxel-home-owned-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir(&dir).unwrap();
+    // The identity the test process owns, read from the staged
+    // directory itself: a probe elsewhere can carry another group.
+    let meta = std::fs::metadata(&dir).unwrap();
+    let (uid, gid) = (u64::from(meta.uid()), u64::from(meta.gid()));
     // A home that drifted to another identity is the agent's to reconcile.
     assert!(
         repair(dir.to_str().unwrap(), uid + 1, gid + 1, true).unwrap(),
