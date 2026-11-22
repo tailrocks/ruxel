@@ -11,6 +11,11 @@ impl<B: Backend> Runner<'_, B> {
             && !self.options.tags.is_empty()
             && !super::super::tag_selection::selected(task, &parent.tags, &self.options.tags)
         {
+            // The omission latches where the rejection happens: an
+            // excluded block returns before any leaf is visited, so
+            // leaf-latched filtering would miss it and shutdown would
+            // prune the records of every task the block keeps.
+            self.filtered = true;
             if array(task, "block").is_empty() {
                 self.skip_tagged_leaf(task, layer)?;
             }
