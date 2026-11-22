@@ -32,6 +32,36 @@ fn a_fifo_entry_never_blocks_the_fingerprint() {
 }
 
 #[test]
+fn a_socket_entry_refuses_without_an_open_that_fails() {
+    // Thread 296: the surface reads from the descriptor it classified,
+    // never from a reopened pathname — opening a socket fails, so the
+    // classification of the open failure must still name the socket
+    // instead of hiding it behind a generic read error.
+    let scratch = Scratch::new("socket");
+    let dir = scratch.dir("etc");
+    let socket = dir.join("99-socket.conf");
+    let _held = std::os::unix::net::UnixListener::bind(&socket).expect("operation succeeds");
+    let error = boot::boot_bytes(&socket).expect_err("a socket must refuse, not load as empty");
+    assert!(
+        error.contains("socket"),
+        "the refusal must name the socket: {error}"
+    );
+}
+
+#[test]
+fn a_device_entry_is_judged_from_its_own_descriptor() {
+    // Thread 296: the null device loads as nothing wherever it stands,
+    // judged from the descriptor the open returned — not from a stat
+    // of a pathname a swap could have replaced in between.
+    let null = std::path::Path::new("/dev/null");
+    assert_eq!(
+        boot::boot_bytes(null).expect("the null device loads"),
+        None,
+        "the null device holds the name and contributes nothing"
+    );
+}
+
+#[test]
 fn an_unreadable_boot_directory_refuses_instead_of_reading_as_empty() {
     // `read_dir` fails where the directory cannot be read — a path
     // that is a file (`ENOTDIR`), permissions, I/O — and only a

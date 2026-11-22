@@ -74,7 +74,7 @@ fn pinned_lexical(path: &Path) -> Option<PathBuf> {
         // the loader runs in; an unjudgeable one names nothing.
         _ => std::env::current_dir().ok()?,
     };
-    let mut missing: Option<Vec<Component>> = None;
+    let mut missing: Option<Vec<Component<'_>>> = None;
     for component in path.components() {
         if let Some(tail) = missing.as_mut() {
             tail.push(component);
@@ -130,25 +130,6 @@ fn pinned_lexical(path: &Path) -> Option<PathBuf> {
         }
     }
     Some(resolved)
-}
-
-/// The path with `.` dropped and `..` applied lexically, without
-/// touching the filesystem: both sides dangle, so no component may be
-/// resolved through a link — the comparison is spelling, already
-/// proven to name the same file once the publish creates it.
-fn lexical_normal(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            _ => out.push(component),
-        }
-    }
-    out
 }
 
 pub(crate) fn shadow_candidates_in(file: &str, dirs: &[(&str, u8)]) -> Vec<String> {

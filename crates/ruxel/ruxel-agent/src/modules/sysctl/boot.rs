@@ -123,68 +123,87 @@ fn scan_error(dir: &str, error: &std::io::Error) -> String {
 /// besides those — its assignments are unknown, and an unreadable
 /// boot file can restore any value.
 pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
-    let resolved = match std::fs::metadata(path) {
-        Ok(meta) => meta,
-        Err(error) => {
-            // What the loader meets when the lookup fails: a missing
-            // file — or a link that dangles, loops, or points past an
-            // unreachable target — holds the name the way a regular
-            // file does but contributes no assignment, while a direct
-            // entry the loader cannot stat is an unknown surface.
-            let link =
-                std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
-            if error.kind() == std::io::ErrorKind::NotFound || link {
-                return Ok(None);
-            }
-            return Err(format!(
-                "cannot read the boot file {}: {error}",
-                path.display()
-            ));
-        }
+    // One open, never a pathname twice: the descriptor pins the entry
+    // the loader meets, so a swap between the type check and the read
+    // can redirect neither the bytes nor the refusal. The open never
+    // blocks: a FIFO with no writer would block the loader, so it
+    // refuses instead of loading as nothing. Links are followed: a
+    // mask to `/dev/null` and an alias load through the entry.
+    let fd = match rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(error) => return open_refusal(path, error),
     };
-    let kind = resolved.file_type();
+    let meta = rustix::fs::fstat(&fd).map_err(|error| cannot_read(path, &error.to_string()))?;
+    let kind = rustix::fs::FileType::from_raw_mode(meta.st_mode);
     if kind.is_dir() {
         return Ok(None);
     }
-    if !kind.is_file() {
-        // The null mask reads as empty wherever it stands; anything
-        // else the loader would block on or misread refuses.
-        if is_null_device(&resolved) {
-            return Ok(None);
-        }
-        let what = if kind.is_fifo() {
-            "a FIFO, which blocks the loader"
-        } else if kind.is_socket() {
-            "a socket, which holds no assignments"
-        } else {
-            "a device file, which the loader cannot apply"
-        };
-        return Err(format!(
-            "cannot read the boot file {}: it is {what}",
-            path.display()
-        ));
+    if kind.is_file() {
+        // The descriptor is already open, so the entry cannot vanish
+        // under the read the way a reopened pathname could.
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut content)
+            .map_err(|error| cannot_read(path, &error.to_string()))?;
+        return Ok(Some(content));
     }
-    match std::fs::read(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!(
-            "cannot read the boot file {}: {error}",
-            path.display()
-        )),
+    // The null mask reads as empty wherever it stands; anything else
+    // the loader would block on or misread refuses.
+    if is_null_device(&meta) {
+        return Ok(None);
     }
+    let what = if kind.is_fifo() {
+        "a FIFO, which blocks the loader"
+    } else if kind.is_socket() {
+        "a socket, which holds no assignments"
+    } else {
+        "a device file, which the loader cannot apply"
+    };
+    Err(cannot_read(path, &format!("it is {what}")))
 }
 
-/// Whether the resolved entry is the null mask: the character device
+/// The refusal the open failure carries: what the loader meets when
+/// the lookup fails. A missing file — or a link that dangles, loops,
+/// or points past an unreachable target — holds the name the way a
+/// regular file does but contributes no assignment, while a direct
+/// entry the loader cannot open is an unknown surface. A socket never
+/// opens, so its kind is read off the entry itself and refuses with
+/// its own name rather than a generic open error.
+fn open_refusal(path: &Path, error: rustix::io::Errno) -> Result<Option<Vec<u8>>, String> {
+    if error == rustix::io::Errno::NOENT
+        || std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return Ok(None);
+    }
+    if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket()) {
+        return Err(cannot_read(
+            path,
+            "it is a socket, which holds no assignments",
+        ));
+    }
+    Err(cannot_read(path, &error.to_string()))
+}
+
+/// The refusal a boot read carries, naming the file.
+fn cannot_read(path: &Path, why: &str) -> String {
+    format!("cannot read the boot file {}: {why}", path.display())
+}
+
+/// Whether the open descriptor is the null mask: the character device
 /// with `/dev/null`'s own device number, which reads as empty wherever
 /// it stands. Any other device refuses — opening it can block or carry
-/// side effects the loader never intends.
-fn is_null_device(resolved: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::{FileTypeExt, MetadataExt};
-    if !resolved.file_type().is_char_device() {
+/// side effects the loader never intends. Both numbers come from the
+/// same stat family, so no platform's device width leaks into the
+/// comparison.
+fn is_null_device(meta: &rustix::fs::Stat) -> bool {
+    use rustix::fs::FileType;
+    if FileType::from_raw_mode(meta.st_mode) != FileType::CharacterDevice {
         return false;
     }
-    std::fs::metadata("/dev/null")
-        .is_ok_and(|null| null.file_type().is_char_device() && null.rdev() == resolved.rdev())
+    rustix::fs::stat("/dev/null").is_ok_and(|null| null.st_rdev == meta.st_rdev)
 }
 
 /// The same-named file in a higher-precedence system directory that
