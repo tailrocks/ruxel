@@ -48,11 +48,19 @@ fn a_vertically_padded_file_entry_is_the_managed_value() {
 fn the_live_value_matches_across_vertical_tabs() {
     // The live value a VT-padded read holds is the bare value the
     // workflow asks for: no `sysctl -w` runs on an idempotent apply.
-    assert!(super::super::live_matches("\u{B}1", "1"));
-    assert!(super::super::live_matches("1\u{B}", "1"));
-    assert!(super::super::live_matches("\u{B}1\u{B}", "1"));
+    assert!(super::super::live_matches("kernel.hostname", "\u{B}1", "1"));
+    assert!(super::super::live_matches("kernel.hostname", "1\u{B}", "1"));
+    assert!(super::super::live_matches(
+        "kernel.hostname",
+        "\u{B}1\u{B}",
+        "1"
+    ));
     // A padded different value is still reconciled.
-    assert!(!super::super::live_matches("\u{B}2\u{B}", "1"));
+    assert!(!super::super::live_matches(
+        "kernel.hostname",
+        "\u{B}2\u{B}",
+        "1"
+    ));
 }
 
 #[test]
@@ -86,7 +94,7 @@ fn a_vertically_padded_later_file_holds_the_managed_value() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[]
+            &super::super::SysctlManaged::default()
         ),
         None,
         "the VT-padded later assignment is the managed value"
@@ -109,7 +117,7 @@ fn a_crlf_later_file_holds_the_managed_value() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[]
+            &super::super::SysctlManaged::default()
         ),
         None,
         "the CRLF later assignment is the managed value"

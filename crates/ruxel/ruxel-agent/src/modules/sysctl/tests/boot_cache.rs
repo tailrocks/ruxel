@@ -27,10 +27,10 @@ fn a_retained_declaration_keeps_the_cache_covered() {
     // Run 1: the removed task's retained declaration still authorizes
     // its file — the one-run bounded window the plan-first preflight
     // documents — so the earlier task is served from the cache.
-    let managed = vec![
-        (EARLY.to_string(), KEY.to_string(), "1".to_string()),
-        (LATE.to_string(), KEY.to_string(), "0".to_string()),
-    ];
+    let managed = super::super::SysctlManaged::testing(vec![
+        super::super::ManagedSysctl::plain(EARLY.to_string(), KEY.to_string(), "1".to_string()),
+        super::super::ManagedSysctl::plain(LATE.to_string(), KEY.to_string(), "0".to_string()),
+    ]);
     assert!(
         sysctl_cache_covered(EARLY, KEY, "1", &host(), &managed),
         "the retained declaration authorizes the leftover for exactly one run"
@@ -44,7 +44,11 @@ fn a_dropped_declaration_unveils_the_cache() {
     // unmanaged now. The surface is byte-identical — every probe still
     // matches — but the boot value comes from the leftover, and the
     // cache must miss so the task runs and its preflight refuses.
-    let managed = vec![(EARLY.to_string(), KEY.to_string(), "1".to_string())];
+    let managed = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
+        EARLY.to_string(),
+        KEY.to_string(),
+        "1".to_string(),
+    )]);
     assert!(
         !sysctl_cache_covered(EARLY, KEY, "1", &host(), &managed),
         "a dropped task's leftover must invalidate the earlier task's cache"
@@ -56,7 +60,11 @@ fn a_later_assignment_of_the_same_value_keeps_the_cache_covered() {
     // An unmanaged later file assigning the same value hands boot the
     // managed value — not an override — so the cache stands.
     let host = vec![(PathBuf::from(LATE), b"net.ipv4.ip_forward=1\n".to_vec())];
-    let managed = vec![(EARLY.to_string(), KEY.to_string(), "1".to_string())];
+    let managed = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
+        EARLY.to_string(),
+        KEY.to_string(),
+        "1".to_string(),
+    )]);
     assert!(
         sysctl_cache_covered(EARLY, KEY, "1", &host, &managed),
         "the same boot value is not an override"

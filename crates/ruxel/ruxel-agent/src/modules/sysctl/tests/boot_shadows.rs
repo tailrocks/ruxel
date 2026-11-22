@@ -96,7 +96,7 @@ fn the_preflight_passes_the_alias_and_refuses_other_links() {
     let etc_dir = format!("{}/", etc.to_str().expect("path is text"));
     let usr_dir = format!("{}/", usr.to_str().expect("path is text"));
     let dirs: [(&str, u8); 2] = [(etc_dir.as_str(), 1), (usr_dir.as_str(), 0)];
-    let empty: Vec<(String, String, String)> = Vec::new();
+    let empty = super::super::SysctlManaged::default();
 
     std::os::unix::fs::symlink(&managed, &link).expect("the link targets the managed file");
     assert!(

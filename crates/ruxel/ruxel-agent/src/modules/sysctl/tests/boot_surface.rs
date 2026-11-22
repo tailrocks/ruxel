@@ -150,7 +150,7 @@ fn a_later_file_keeps_only_its_final_assignment() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );
@@ -165,7 +165,7 @@ fn a_later_file_keeps_only_its_final_assignment() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
     );
@@ -198,7 +198,7 @@ fn a_wildcard_stays_within_its_path_component() {
             "net.ipv4.conf.all.rp_filter",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );
@@ -218,7 +218,7 @@ fn a_wildcard_stays_within_its_path_component() {
             "net.ipv4.conf.all.rp_filter",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );
@@ -265,7 +265,7 @@ fn a_name_masked_by_dev_null_does_not_load_from_a_lower_directory() {
             "net.ipv4.ip_forward",
             "0",
             &host,
-            &[]
+            &super::super::SysctlManaged::default()
         ),
         None,
         "the masked assignment must not override the managed value"
@@ -309,7 +309,7 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
             "net.ipv4.conf.all.rp_filter",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );
@@ -325,7 +325,7 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
                 PathBuf::from("/etc/sysctl.conf"),
                 b"net.ipv4.conf.*.rp_filter=0\n".to_vec()
             )],
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );
@@ -341,7 +341,7 @@ fn an_explicit_assignment_is_excluded_from_a_later_wildcard() {
             "net.ipv4.conf.eth0.rp_filter",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None
     );

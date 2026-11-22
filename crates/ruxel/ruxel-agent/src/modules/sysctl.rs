@@ -7,10 +7,95 @@ mod boot;
 
 pub(crate) use boot::boot_fingerprint;
 
+/// One sysctl entry the preflight treats as managed: the persistence
+/// file, the key, and the declared value. A `Plain` value is the
+/// workflow's own in the clear — this run's plan declarations and the
+/// retained entries of recorded tasks. A `Sealed` value is the HMAC
+/// commitment of a declaration-only record: a `no_log` task's value
+/// must never be stored or logged, so the ledger keeps only the digest
+/// and the preflight verifies it by sealing the candidate bytes with
+/// the same key. A sealed entry without a seal key fails closed: an
+/// unverifiable declaration authorizes nothing.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ManagedSysctl {
+    pub file: String,
+    pub name: String,
+    pub value: ManagedValue,
+}
+
+/// The declared value of a managed entry: in the clear, or sealed.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ManagedValue {
+    Plain(String),
+    Sealed(String),
+}
+
+impl ManagedSysctl {
+    pub(crate) fn plain(file: String, name: String, value: String) -> Self {
+        ManagedSysctl {
+            file,
+            name,
+            value: ManagedValue::Plain(value),
+        }
+    }
+}
+
+/// The managed set one preflight consults, with the key that verifies
+/// sealed entries: the ledger's host key, `None` where the ledger has
+/// none or the entries travel without one. The entries are the plan's
+/// own declarations first with the ledger's retained ones behind.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SysctlManaged {
+    pub entries: Vec<ManagedSysctl>,
+    pub seal: Option<[u8; 32]>,
+}
+
+impl SysctlManaged {
+    /// A seal-less managed set for tests: plain entries only, so the
+    /// byte comparison decides without a ledger key.
+    #[cfg(test)]
+    pub(crate) fn testing(entries: Vec<ManagedSysctl>) -> Self {
+        SysctlManaged {
+            entries,
+            seal: None,
+        }
+    }
+}
+
+/// The identity and value commitment of a declaration-only record: the
+/// HMAC-SHA256 of the file, the canonical key and the trimmed declared
+/// value under the ledger's host key, with a domain the result-cache
+/// key derivation never uses. The digest doubles as the record's
+/// storage key — stable across applies, since the inputs are — and as
+/// the value's seal: the value itself is never stored or logged, and
+/// only the candidate bytes that seal to the same digest verify
+/// (`None` where the seal cannot initialize, which fails closed
+/// downstream). The trimmed value is what the boot surface compares: the file rewrite
+/// and the boot reads trim the syntax blanks, so the seal covers the
+/// trimmed bytes on both sides.
+pub(crate) fn declaration_digest(
+    seal: &[u8; 32],
+    file: &str,
+    name: &str,
+    value: &[u8],
+) -> Option<String> {
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+    let mut mac = Hmac::<Sha256>::new_from_slice(seal).ok()?;
+    mac.update(b"ruxel-sysctl-decl-v1");
+    mac.update(&[0u8]);
+    mac.update(file.as_bytes());
+    mac.update(&[0u8]);
+    mac.update(sysctl_key(name).as_bytes());
+    mac.update(&[0u8]);
+    mac.update(value);
+    Some(crate::ledger::hex(&mac.finalize().into_bytes()))
+}
+
 pub(super) fn run(
     params: &Value,
     ctx: &ExecContext,
-    managed: &[(String, String, String)],
+    managed: &SysctlManaged,
 ) -> Result<Value, String> {
     let obj = params_object(params)?;
     let name = str_param(obj, "name").ok_or("sysctl: name required")?;
@@ -92,7 +177,7 @@ pub(super) fn run(
     // the persistence file.
     if sysctl_set {
         let live = read_sysctl(name)?;
-        if !live_matches(&live, &value) {
+        if !live_matches(name, &live, &value) {
             changed = true;
             if !ctx.check_mode {
                 let st = std::process::Command::new("sysctl")
@@ -421,16 +506,20 @@ fn refuse_locked(path: &std::path::Path, file: &str) -> Result<(), String> {
 
 /// Proves the publish's replacement mechanics under scratch names in
 /// the same directory, without ever renaming the live path: the exact
-/// rewritten bytes are staged carrying the live identity, and the
-/// rename of one scratch name over the other is the operation the
-/// publish performs — over a scratch name instead of the live file.
-/// The directory's own states (permissions, read-only mounts, quotas)
-/// refuse here the way they would refuse the publish; the live inode's
-/// own states are refused by the read-only probes, not exercised. A
-/// refusal leaves the live file exactly where it was: the path still
-/// holds it, so there is no restoration to fail — and an interruption
-/// strands at most scratch names, never rewritten bytes at the live
-/// path.
+/// rewritten bytes are staged carrying the live identity, linked into
+/// a private staging directory, and exchanged with a second scratch
+/// name — the `mkdirat`, hard link and exchange rename the atomic
+/// publish performs (`atomic/stage.rs`), over scratch names instead of
+/// the live file. The directory's own states (permissions, read-only
+/// mounts, quotas) refuse here the way they would refuse the publish —
+/// and a filesystem that permits file creation and rename but no
+/// subdirectory creation or hard links refuses here too, before
+/// `sysctl -w` changes the live value with no persistent entry behind
+/// it; the live inode's own states are refused by the read-only
+/// probes, not exercised. A refusal leaves the live file exactly where
+/// it was: the path still holds it, so there is no restoration to
+/// fail — and an interruption strands at most scratch names, never
+/// rewritten bytes at the live path.
 fn rehearse_replacement(
     file: &str,
     live: &std::fs::Metadata,
@@ -465,25 +554,96 @@ fn rehearse_replacement(
     stage
         .set_permissions(std::fs::Permissions::from_mode(live.mode() & 0o7777))
         .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    // The replacement the publish performs, over a scratch name: the
-    // target exists, so the rename replaces — and a directory that
-    // refuses renames refuses here, before `sysctl -w` changes the
-    // live value with no persistent entry behind it. The scratch name
-    // is predictable per pid, so the open is exclusive and follows no
-    // link: a planted symlink at the name refuses instead of handing
-    // the rehearsal's truncate to whatever it names.
-    let vacant = rustix::fs::open(
-        second,
-        rustix::fs::OFlags::WRONLY
-            | rustix::fs::OFlags::CREATE
-            | rustix::fs::OFlags::EXCL
-            | rustix::fs::OFlags::NOFOLLOW
-            | rustix::fs::OFlags::CLOEXEC,
-        rustix::fs::Mode::from_raw_mode(0o600),
+    // The replacement the publish performs, over scratch names: the
+    // staged bytes are linked into a private staging directory and
+    // exchanged with a second scratch name that exists, the way the
+    // publish exchanges its payload with the live name — and a
+    // directory that refuses any of the three primitives refuses here,
+    // before `sysctl -w` changes the live value with no persistent
+    // entry behind it. The scratch names are predictable per pid, so
+    // the opens are exclusive and follow no link: a planted symlink at
+    // a name refuses instead of handing the rehearsal's truncate to
+    // whatever it names.
+    let stage = std::path::PathBuf::from(format!("{}.stage", first.display()));
+    // A staging directory of a dead rehearsal reuses no live pid, so
+    // taking the name collides with no live rehearsal — and a file
+    // squatting on it refuses the `mkdirat` the publish needs.
+    let _ = std::fs::remove_dir(&stage);
+    create_stage_dir(file, &stage)?;
+    let payload = stage.join("payload");
+    let outcome = (|| {
+        link_payload(file, first, &payload)?;
+        let vacant = rustix::fs::open(
+            second,
+            rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::EXCL
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::from_raw_mode(0o600),
+        )
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+        drop(vacant);
+        exchange_names(file, &payload, second)
+    })();
+    // The staging directory goes with the rehearsal whatever it
+    // reports: the payload is a scratch name, and the caller retires
+    // the other two.
+    let _ = std::fs::remove_file(&payload);
+    let _ = std::fs::remove_dir(&stage);
+    outcome
+}
+
+/// The private staging directory of the rehearsal: the `mkdirat` the
+/// atomic publish performs, under the rehearsal's own scratch name.
+fn create_stage_dir(file: &str, stage: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::CString::new(stage.as_os_str().as_bytes())
+        .map_err(|_| format!("sysctl: cannot persist {file}: the staging name is not usable"))?;
+    rustix::fs::mkdirat(
+        rustix::fs::CWD,
+        &name,
+        rustix::fs::Mode::from_raw_mode(0o700),
     )
     .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    drop(vacant);
-    std::fs::rename(first, second).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    Ok(())
+}
+
+/// The staged bytes linked into the staging directory: the hard link
+/// the atomic publish performs before exchanging the payload into
+/// place.
+fn link_payload(
+    file: &str,
+    first: &std::path::Path,
+    payload: &std::path::Path,
+) -> Result<(), String> {
+    std::fs::hard_link(first, payload)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    Ok(())
+}
+
+/// The exchange the publish performs, over scratch names: both names
+/// exist, so the rename swaps them instead of replacing — a plain
+/// rename would prove nothing about the exchange the publish needs,
+/// which fails where the filesystem does not support it.
+fn exchange_names(
+    file: &str,
+    payload: &std::path::Path,
+    second: &std::path::Path,
+) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let payload = std::ffi::CString::new(payload.as_os_str().as_bytes())
+        .map_err(|_| format!("sysctl: cannot persist {file}: the staging name is not usable"))?;
+    let second = std::ffi::CString::new(second.as_os_str().as_bytes())
+        .map_err(|_| format!("sysctl: cannot persist {file}: the staging name is not usable"))?;
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        &payload,
+        rustix::fs::CWD,
+        &second,
+        rustix::fs::RenameFlags::EXCHANGE,
+    )
+    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
     Ok(())
 }
 
@@ -496,11 +656,7 @@ fn rehearse_replacement(
 /// `/etc/sysctl.d` after `/usr/lib/sysctl.d` — leaves the shadow's entry a
 /// declared managed value, and the earlier stage's task must be able to
 /// run again.
-fn preflight_shadow(
-    file: &str,
-    name: &str,
-    managed: &[(String, String, String)],
-) -> Result<(), String> {
+fn preflight_shadow(file: &str, name: &str, managed: &SysctlManaged) -> Result<(), String> {
     preflight_shadow_in(file, name, managed, &boot::DIRS)
 }
 
@@ -511,7 +667,7 @@ fn preflight_shadow(
 fn preflight_shadow_in(
     file: &str,
     name: &str,
-    managed: &[(String, String, String)],
+    managed: &SysctlManaged,
     dirs: &[(&str, u8)],
 ) -> Result<(), String> {
     if let Some(shadow) = boot::shadowing_in(file, dirs) {
@@ -531,10 +687,11 @@ fn preflight_shadow_in(
 /// stage's declared value is a transition the boot order settles — but
 /// the file must declare the key, or the shadow's assignment of it is
 /// an unmanaged boot value again.
-fn declared_shadow(shadow: &str, name: &str, managed: &[(String, String, String)]) -> bool {
-    managed.iter().any(|(file, managed_name, _)| {
-        file == shadow && sysctl_key(managed_name) == sysctl_key(name)
-    })
+fn declared_shadow(shadow: &str, name: &str, managed: &SysctlManaged) -> bool {
+    managed
+        .entries
+        .iter()
+        .any(|entry| entry.file == shadow && sysctl_key(&entry.name) == sysctl_key(name))
 }
 
 /// A persistence entry overridden later at boot is refused whatever the
@@ -553,7 +710,7 @@ fn preflight_override(
     file: &str,
     name: &str,
     value: &str,
-    managed: &[(String, String, String)],
+    managed: &SysctlManaged,
 ) -> Result<(), String> {
     let host = boot::host_files()?;
     match boot::boot_override(file, name, value, &host, managed) {
@@ -583,7 +740,7 @@ pub(crate) fn sysctl_cache_covered(
     name: &str,
     value: &str,
     host: &[(std::path::PathBuf, Vec<u8>)],
-    managed: &[(String, String, String)],
+    managed: &SysctlManaged,
 ) -> bool {
     boot::boot_override(file, name, value, host, managed).is_none()
 }
@@ -723,14 +880,18 @@ fn strip_live_ending(live: &str) -> &str {
 /// procps strips the syntax blanks around a value before applying it,
 /// so both sides compare trimmed — a vertically padded value is one
 /// kernel value with its bare spelling; internal separators compare
-/// token-wise for numeric vector values — `/proc/sys` separates port
-/// ranges with tabs where workflows write spaces — and exactly
-/// otherwise, so `kernel.hostname` keeps every blank of "abc  def".
-fn live_matches(live: &str, value: &str) -> bool {
+/// token-wise for known numeric vector values only —
+/// `/proc/sys` separates the port range with tabs where workflows
+/// write spaces — and exactly otherwise, so `kernel.core_pattern`
+/// keeps every blank of "12  34" instead of drifting silently.
+fn live_matches(name: &str, live: &str, value: &str) -> bool {
     let live = trimmed_value(strip_live_ending(live));
     let value = trimmed_value(value);
     if live == value {
         return true;
+    }
+    if !is_numeric_vector(name) {
+        return false;
     }
     let live_tokens: Vec<&str> = live.split_ascii_whitespace().collect();
     if live_tokens.len() < 2 {
@@ -740,6 +901,15 @@ fn live_matches(live: &str, value: &str) -> bool {
         && live_tokens
             .iter()
             .all(|token| token.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Whether the parameter is a known numeric vector: `/proc/sys`
+/// separates its values with tabs where workflows write spaces, so
+/// the live comparison folds the separators token-wise. Every other
+/// parameter — including string values that merely look numeric —
+/// compares exactly, since whitespace is content there.
+fn is_numeric_vector(name: &str) -> bool {
+    sysctl_key(name) == "net/ipv4/ip_local_port_range"
 }
 
 /// The ignore-failure marker of an assignment line: procps reads a
@@ -1069,6 +1239,40 @@ mod probe_handle_tests {
     }
 
     #[test]
+    fn the_rehearsal_refuses_a_symlink_at_the_staging_name() {
+        // Thread 312: `first` is the private staging directory the
+        // rehearsal creates with `mkdirat` — the publish's staging
+        // primitive. A symlink planted at that name must refuse before
+        // any byte is written: the retired create+write opened through
+        // the link and staged the payload at the link's target before
+        // renaming, while the publish it rehearses never follows it.
+        let dir = scratch("stage-link");
+        let ghost = dir.join("ghost");
+        let first = dir.join("first");
+        std::os::unix::fs::symlink(&ghost, &first).expect("operation succeeds");
+        let live_path = dir.join("x.conf");
+        std::fs::write(&live_path, "net.test=2\n").expect("operation succeeds");
+        let live = std::fs::metadata(&live_path).expect("operation succeeds");
+        let second = dir.join("second");
+        let error =
+            super::rehearse_replacement("net.test", &live, &first, &second, b"net.test=1\n")
+                .expect_err("a symlink at the staging name must refuse, not stage through it");
+        assert!(error.contains("cannot persist"), "{error}");
+        assert!(
+            !ghost.exists(),
+            "the rehearsal must not write through the planted link"
+        );
+        assert_eq!(
+            std::fs::read(&live_path).expect("operation succeeds"),
+            b"net.test=2\n",
+            "a refused rehearsal must leave the live bytes alone"
+        );
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        std::fs::remove_dir_all(&dir).expect("operation succeeds");
+    }
+
+    #[test]
     fn the_absent_target_stages_through_the_handle_and_leaves_nothing() {
         // The target is absent, so the retained handle carries the exact
         // bytes the publish would write; the rehearsal still publishes
@@ -1113,18 +1317,28 @@ mod stale_plan_tests {
     /// The whole-ledger scan after the workflow drops the `/etc` tasks:
     /// the retained records still declare the dropped files, with the
     /// values the previous apply wrote there.
-    fn stale_managed() -> Vec<(String, String, String)> {
-        vec![
-            (ETC.to_string(), KEY.to_string(), "1".to_string()),
-            (OLD.to_string(), KEY.to_string(), "0".to_string()),
-            (USR.to_string(), KEY.to_string(), "1".to_string()),
-        ]
+    fn stale_managed() -> super::SysctlManaged {
+        super::SysctlManaged {
+            entries: vec![
+                super::ManagedSysctl::plain(ETC.to_string(), KEY.to_string(), "1".to_string()),
+                super::ManagedSysctl::plain(OLD.to_string(), KEY.to_string(), "0".to_string()),
+                super::ManagedSysctl::plain(USR.to_string(), KEY.to_string(), "1".to_string()),
+            ],
+            seal: None,
+        }
     }
 
     /// The second plan's own declarations: the dropped tasks are gone,
     /// only the entries the plan still delivers authorize a shadow.
-    fn plan_managed() -> Vec<(String, String, String)> {
-        vec![(USR.to_string(), KEY.to_string(), "1".to_string())]
+    fn plan_managed() -> super::SysctlManaged {
+        super::SysctlManaged {
+            entries: vec![super::ManagedSysctl::plain(
+                USR.to_string(),
+                KEY.to_string(),
+                "1".to_string(),
+            )],
+            seal: None,
+        }
     }
 
     #[test]
@@ -1149,7 +1363,14 @@ mod stale_plan_tests {
         // assignment in the later-loading file is a declared transition
         // under the retained record and an unmanaged override under the
         // plan's own set.
-        let newcomer = vec![(NEW.to_string(), KEY.to_string(), "1".to_string())];
+        let newcomer = super::SysctlManaged {
+            entries: vec![super::ManagedSysctl::plain(
+                NEW.to_string(),
+                KEY.to_string(),
+                "1".to_string(),
+            )],
+            seal: None,
+        };
         let host = vec![(
             std::path::PathBuf::from(OLD),
             b"net.ipv4.ip_forward=0\n".to_vec(),

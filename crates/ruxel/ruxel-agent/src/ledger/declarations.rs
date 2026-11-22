@@ -23,6 +23,7 @@ pub(crate) fn sysctl_declaration(module: &str, params: &Value) -> Option<SysctlD
         file: file.to_string(),
         name: name.to_string(),
         value,
+        sealed_value: None,
     })
 }
 use serde_json::Value;
@@ -42,22 +43,27 @@ impl Ledger {
     pub(crate) fn sysctl_preflight_managed(
         &self,
         module: &str,
-        plan: &[(String, String, String)],
-    ) -> Vec<(String, String, String)> {
+        plan: &[crate::modules::ManagedSysctl],
+    ) -> crate::modules::SysctlManaged {
+        use crate::modules::SysctlManaged;
         if module != "sysctl" {
-            return Vec::new();
+            return SysctlManaged::default();
         }
         let mut merged = plan.to_vec();
         for entry in self.managed_sysctl_entries() {
-            let mentioned = plan.iter().any(|(file, name, _)| {
-                file == &entry.0
-                    && crate::modules::sysctl_key(name) == crate::modules::sysctl_key(&entry.1)
+            let mentioned = plan.iter().any(|planned| {
+                planned.file == entry.file
+                    && crate::modules::sysctl_key(&planned.name)
+                        == crate::modules::sysctl_key(&entry.name)
             });
             if !mentioned {
                 merged.push(entry);
             }
         }
-        merged
+        SysctlManaged {
+            entries: merged,
+            seal: self.host_key,
+        }
     }
 
     /// The cached result under the current managed set: the probes
@@ -76,7 +82,7 @@ impl Ledger {
         &self,
         key: &str,
         system_state: &mut crate::system_state::SystemState,
-        managed: &[(String, String, String)],
+        managed: &crate::modules::SysctlManaged,
     ) -> Option<Value> {
         let host = match self.sysctl_entry(key) {
             // Other modules never consult the boot surface.
@@ -93,7 +99,7 @@ impl Ledger {
         &self,
         key: &str,
         system_state: &mut crate::system_state::SystemState,
-        managed: &[(String, String, String)],
+        managed: &crate::modules::SysctlManaged,
         host: &[(PathBuf, Vec<u8>)],
     ) -> Option<Value> {
         let cached = self.cached_ok_with_state(key, system_state)?;
@@ -118,11 +124,19 @@ impl Ledger {
     }
 
     /// The declaration of a task whose result must stay unrecorded: a
-    /// `no_log` sysctl still declares the file/name/value entry it
-    /// manages — no cached result, no probes — so an earlier sensitive
-    /// task never hides the later sysctl stages from the boot override
-    /// preflight. A record the task already holds keeps its probes and
-    /// result; only the declaration is added.
+    /// `no_log` sysctl still declares the file/name entry it manages —
+    /// no cached result, no probes, and never the value itself — so an
+    /// earlier sensitive task never hides the later sysctl stages from
+    /// the boot override preflight. The retained entry keeps only the
+    /// value's seal: the preflight re-seals the candidate bytes with
+    /// the same key, so the commitment verifies without storing or
+    /// logging the secret. A task with no ledger key — the controller
+    /// disables the result cache for `no_log` — is recorded under the
+    /// seal itself: stable across applies, since the inputs are, and
+    /// independent of the result-cache key. A record the task already
+    /// holds keeps its probes and result; only the declaration is
+    /// added. The declaration lands in the encountered set either way,
+    /// so a complete plan retains what this run declared.
     pub(crate) fn record_managed_declaration(
         &mut self,
         key: &str,
@@ -130,30 +144,52 @@ impl Ledger {
         params: &Value,
         status: &str,
     ) {
-        if key.is_empty() || status == "failed" || status == "skipped" {
+        if status == "failed" || status == "skipped" {
             return;
         }
-        let Some(managed_sysctl) = sysctl_declaration(module, params) else {
+        let Some(declared) = sysctl_declaration(module, params) else {
             return;
         };
-        let Some(key) = self.storage_key(key) else {
+        let Some(seal) = self.host_key else {
             return;
         };
-        self.encountered.insert(key.clone());
+        let Some(digest) = crate::modules::declaration_digest(
+            &seal,
+            &declared.file,
+            &declared.name,
+            crate::modules::trimmed_value(&declared.value).as_bytes(),
+        ) else {
+            return;
+        };
+        let sealed = SysctlDecl {
+            file: declared.file,
+            name: declared.name,
+            value: String::new(),
+            sealed_value: Some(digest.clone()),
+        };
+        let storage = if key.is_empty() {
+            digest
+        } else {
+            let Some(storage) = self.storage_key(key) else {
+                return;
+            };
+            storage
+        };
+        self.encountered.insert(storage.clone());
         let owned = self.records.entry(self.workflow.clone()).or_default();
-        match owned.get_mut(&key) {
+        match owned.get_mut(&storage) {
             Some(record) => {
-                record.managed_sysctl = Some(managed_sysctl);
+                record.managed_sysctl = Some(sealed);
             }
             None => {
                 owned.insert(
-                    key,
+                    storage,
                     Record {
                         agent_version: env!("CARGO_PKG_VERSION").to_string(),
                         status: status.to_string(),
                         result_json: Value::Null,
                         probes: Vec::new(),
-                        managed_sysctl: Some(managed_sysctl),
+                        managed_sysctl: Some(sealed),
                     },
                 );
             }

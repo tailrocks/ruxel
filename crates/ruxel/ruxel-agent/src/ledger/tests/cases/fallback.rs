@@ -17,11 +17,11 @@ fn declare(ledger: &mut Ledger, key: &str, file: &str, name: &str, value: &str) 
     );
 }
 
-fn plan(entries: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+fn plan(entries: &[(&str, &str, &str)]) -> Vec<crate::modules::ManagedSysctl> {
     entries
         .iter()
         .map(|(file, name, value)| {
-            (
+            crate::modules::ManagedSysctl::plain(
                 (*file).to_string(),
                 (*name).to_string(),
                 (*value).to_string(),
@@ -48,13 +48,18 @@ fn the_fallback_covers_the_pairs_the_plan_does_not_mention() {
 
     let ledger = Ledger::load(&dir.0);
     let planned = plan(&[("/etc/sysctl.d/99-last.conf", "net.test", "2")]);
+    let merged = ledger.sysctl_preflight_managed("sysctl", &planned);
     assert_eq!(
-        ledger.sysctl_preflight_managed("sysctl", &planned),
+        merged.entries,
         plan(&[
             ("/etc/sysctl.d/99-last.conf", "net.test", "2"),
             ("/etc/sysctl.d/10-first.conf", "net.test", "1"),
         ]),
         "the plan leads, the retained earlier stage follows"
+    );
+    assert!(
+        merged.seal.is_some(),
+        "the managed set carries the seal for sealed entries"
     );
 }
 
@@ -77,7 +82,7 @@ fn the_plan_wins_where_it_mentions_the_key() {
     let ledger = Ledger::load(&dir.0);
     let planned = plan(&[("/etc/sysctl.d/10-first.conf", "net.ipv4.ip_forward", "1")]);
     assert_eq!(
-        ledger.sysctl_preflight_managed("sysctl", &planned),
+        ledger.sysctl_preflight_managed("sysctl", &planned).entries,
         planned,
         "the plan's spelling wins over the ledger's alias of the same key"
     );
@@ -101,7 +106,7 @@ fn other_modules_get_nothing_back() {
             "file",
             &plan(&[("/etc/sysctl.d/99-last.conf", "net.test", "2")])
         ),
-        Vec::new(),
+        crate::modules::SysctlManaged::default(),
         "no other module reads the managed set"
     );
 }
@@ -127,11 +132,9 @@ fn a_dropped_tasks_record_authorizes_exactly_one_run() {
     assert!(
         ledger
             .sysctl_preflight_managed("sysctl", &planned)
-            .contains(&(
-                "/etc/sysctl.d/10-first.conf".to_string(),
-                "net.test".to_string(),
-                "1".to_string()
-            )),
+            .entries
+            .iter()
+            .any(|entry| entry.file == "/etc/sysctl.d/10-first.conf" && entry.name == "net.test"),
         "the dropped task still covers the next run"
     );
     ledger.encounter("kept");
@@ -140,7 +143,7 @@ fn a_dropped_tasks_record_authorizes_exactly_one_run() {
 
     let ledger = Ledger::load(&dir.0);
     assert_eq!(
-        ledger.sysctl_preflight_managed("sysctl", &planned),
+        ledger.sysctl_preflight_managed("sysctl", &planned).entries,
         planned,
         "the plan's end expires what it never encountered"
     );

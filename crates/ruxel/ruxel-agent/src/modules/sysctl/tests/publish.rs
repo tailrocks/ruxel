@@ -27,7 +27,7 @@ fn a_persistence_target_that_cannot_be_published_is_refused_before_the_live_writ
     let error = super::super::run(
         &json!({"name":"ruxel.missing.key", "value":"1", "sysctl_file":path, "sysctl_set":true, "reload":false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect_err("an unpublishable persistence target must be refused");
     assert!(error.contains("persist"), "{error}");
@@ -60,7 +60,7 @@ fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
     super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect("an idempotent no-op must not probe publishability");
     // Replacement needed: the probe runs and its refusal is loud, before
@@ -69,7 +69,7 @@ fn the_publish_probe_runs_only_when_the_file_needs_replacement() {
     let error = super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect_err("a needed replacement must prove the target publishable");
     assert!(error.contains("persist"), "{error}");
@@ -136,7 +136,7 @@ fn a_refused_live_value_leaves_the_persistence_file_untouched() {
     let result = super::super::run(
         &json!({"name":"ruxel.missing.key", "value":"2", "sysctl_file":path, "sysctl_set":true, "reload":false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     );
     assert!(result.is_err(), "{result:?}");
     assert_eq!(
@@ -154,11 +154,11 @@ fn a_declared_same_name_shadow_is_not_an_unmanaged_shadow() {
     // leaves the shadow's entry a declared managed value of the
     // workflow's own, so the earlier stage's task runs again instead of
     // being refused for the file the later stage declares.
-    let managed = vec![(
+    let managed = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
         "/etc/sysctl.d/50-ruxel.conf".to_string(),
         "net.ipv4.ip_forward".to_string(),
         "1".to_string(),
-    )];
+    )]);
     assert!(super::super::declared_shadow(
         "/etc/sysctl.d/50-ruxel.conf",
         "net.ipv4.ip_forward",
@@ -176,7 +176,7 @@ fn a_declared_same_name_shadow_is_not_an_unmanaged_shadow() {
     assert!(!super::super::declared_shadow(
         "/etc/sysctl.d/50-ruxel.conf",
         "net.ipv4.ip_forward",
-        &[],
+        &super::super::SysctlManaged::default(),
     ));
     assert!(!super::super::declared_shadow(
         "/etc/sysctl.d/50-ruxel.conf",
@@ -206,7 +206,7 @@ fn a_managed_file_with_an_invalid_utf8_byte_is_still_published() {
     super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect("a managed file with an unrelated invalid byte must still be reconciled");
     let after = std::fs::read(&path).unwrap();
@@ -281,7 +281,7 @@ fn a_target_that_cannot_be_replaced_is_refused_before_the_live_write() {
     let error = super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect_err("a target that cannot be replaced must be refused");
     assert!(error.contains("cannot persist"), "{error}");

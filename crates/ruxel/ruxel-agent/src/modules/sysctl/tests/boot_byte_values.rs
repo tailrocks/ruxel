@@ -22,7 +22,7 @@ fn non_utf8_boot_values_compare_as_bytes() {
             "kernel.core_pattern",
             "\u{fffd}",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         Some(("/etc/sysctl.conf".to_string(), "\u{fffd}".to_string())),
         "a later byte sequence that is not the requested value overrides"
@@ -37,7 +37,7 @@ fn non_utf8_boot_values_compare_as_bytes() {
             "kernel.core_pattern",
             "\u{fffd}",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None,
         "the managed UTF-8 bytes are the requested value"

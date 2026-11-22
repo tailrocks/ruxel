@@ -18,7 +18,13 @@ fn override_of(
         .iter()
         .map(|(path, content)| (PathBuf::from(*path), content.as_bytes().to_vec()))
         .collect();
-    boot::boot_override(file, name, value, &host, &[])
+    boot::boot_override(
+        file,
+        name,
+        value,
+        &host,
+        &super::super::SysctlManaged::default(),
+    )
 }
 
 #[test]
@@ -144,7 +150,7 @@ fn a_boot_file_that_is_not_text_still_assigns() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         Some(("/etc/sysctl.conf".to_string(), "0".to_string()))
     );
@@ -160,11 +166,11 @@ fn a_declared_managed_file_is_not_an_unmanaged_override() {
         PathBuf::from("/etc/sysctl.d/99-new.conf"),
         b"net.ipv4.ip_forward=0\n".to_vec(),
     )];
-    let managed = vec![(
+    let managed = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
         "/etc/sysctl.d/99-new.conf".to_string(),
         "net.ipv4.ip_forward".to_string(),
         "0".to_string(),
-    )];
+    )]);
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/10-old.conf",
@@ -208,7 +214,7 @@ fn the_cross_stage_transition_stays_idempotent() {
     let managed = ledger.managed_sysctl_entries();
     assert_eq!(
         managed,
-        vec![(
+        vec![super::super::ManagedSysctl::plain(
             file.to_string_lossy().into_owned(),
             "net.ipv4.ip_forward".to_string(),
             "0".to_string()
@@ -221,7 +227,7 @@ fn the_cross_stage_transition_stays_idempotent() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &managed,
+            &super::super::SysctlManaged::testing(managed),
         ),
         None,
         "the later stage's declared value is not an unmanaged override"
@@ -237,11 +243,11 @@ fn a_managed_file_that_drifted_is_an_unmanaged_override() {
         PathBuf::from("/etc/sysctl.d/99-new.conf"),
         b"net.ipv4.ip_forward=2\n".to_vec(),
     )];
-    let managed = vec![(
+    let managed = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
         "/etc/sysctl.d/99-new.conf".to_string(),
         "net.ipv4.ip_forward".to_string(),
         "0".to_string(),
-    )];
+    )]);
     assert_eq!(
         boot::boot_override(
             "/etc/sysctl.d/10-old.conf",
@@ -295,7 +301,7 @@ fn a_record_the_plan_never_encountered_expires() {
     ledger.complete_plan();
     ledger.flush();
     let managed = ledger.managed_sysctl_entries();
-    assert_eq!(managed, Vec::<(String, String, String)>::new());
+    assert_eq!(managed, Vec::<super::super::ManagedSysctl>::new());
     let host = vec![(
         PathBuf::from("/etc/sysctl.d/99-old.conf"),
         b"net.ipv4.ip_forward=0\n".to_vec(),
@@ -306,7 +312,7 @@ fn a_record_the_plan_never_encountered_expires() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &managed,
+            &super::super::SysctlManaged::testing(managed),
         ),
         Some(("/etc/sysctl.d/99-old.conf".to_string(), "0".to_string())),
         "the leftover assignment is an unmanaged override again"
@@ -332,7 +338,7 @@ fn a_declared_value_of_the_previous_plan_carries_the_next_transition() {
         "value": "0",
         "sysctl_file": file.to_string_lossy(),
     });
-    let entry = (
+    let entry = super::super::ManagedSysctl::plain(
         file.to_string_lossy().into_owned(),
         "net.ipv4.ip_forward".to_string(),
         "0".to_string(),

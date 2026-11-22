@@ -61,7 +61,7 @@ fn an_append_only_target_is_refused_before_the_live_write() {
     let error = super::super::run(
         &json!({"name": "net.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect_err("an append-only target must be refused");
     assert!(error.contains("cannot persist"), "{error}");

@@ -36,7 +36,7 @@ fn a_name_that_is_not_text_loads_after_the_emoji() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         Some((later.to_string_lossy().into_owned(), "0".to_string())),
         "the file that loads after the managed one overrides it"
@@ -60,7 +60,7 @@ fn a_name_that_is_not_text_loads_before_the_emoji() {
             "net.ipv4.ip_forward",
             "1",
             &host,
-            &[],
+            &super::super::SysctlManaged::default(),
         ),
         None,
         "the file that loads before the managed one overrides nothing"

@@ -56,11 +56,13 @@ fn a_sysctl_declaration_survives_a_file_the_probe_cannot_read() {
         "the duplicate assignment is no cacheable result"
     );
     assert!(
-        ledger.managed_sysctl_entries().contains(&(
-            file.to_str().expect("operation succeeds").to_string(),
-            "net.test".to_string(),
-            "1".to_string()
-        )),
+        ledger
+            .managed_sysctl_entries()
+            .contains(&crate::modules::ManagedSysctl::plain(
+                file.to_str().expect("operation succeeds").to_string(),
+                "net.test".to_string(),
+                "1".to_string(),
+            ),),
         "the declaration of the task must survive: {:?}",
         ledger.managed_sysctl_entries()
     );
@@ -79,10 +81,10 @@ fn a_managed_declaration_does_not_need_a_cacheable_probe() {
     assert!(ledger.cached_ok("key").is_none());
     assert_eq!(
         ledger.managed_sysctl_entries(),
-        vec![(
+        vec![crate::modules::ManagedSysctl::plain(
             file.to_str().expect("operation succeeds").to_string(),
             "net.test".to_string(),
-            "1".to_string()
+            "1".to_string(),
         )]
     );
 }

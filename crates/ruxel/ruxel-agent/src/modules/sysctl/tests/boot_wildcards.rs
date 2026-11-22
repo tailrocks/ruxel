@@ -17,7 +17,13 @@ fn override_of(
         .iter()
         .map(|(path, content)| (PathBuf::from(*path), content.as_bytes().to_vec()))
         .collect();
-    boot::boot_override(file, name, value, &host, &[])
+    boot::boot_override(
+        file,
+        name,
+        value,
+        &host,
+        &super::super::SysctlManaged::default(),
+    )
 }
 
 #[test]
@@ -155,6 +161,25 @@ fn a_bracket_pattern_never_reaches_a_named_key() {
         ),
         None
     );
+}
+
+#[test]
+fn a_posix_character_class_is_a_possible_match() {
+    // Thread 307: libc `glob` resolves `[[:alpha:]]` against components
+    // such as `all`, but the class parser stopped at the inner `]` and
+    // reported a definite mismatch — missing a later-loading override
+    // that reverts the managed value on reboot. A class that opens with
+    // `[` is syntax this parser cannot model, so it reports a possible
+    // match instead of a definite mismatch.
+    assert!(boot::key_matches(
+        "net.ipv4.conf.[[:alpha:]]*.rp_filter",
+        "net/ipv4/conf/all/rp_filter"
+    ));
+    // An ordinary class that truly matches nothing still mismatches.
+    assert!(!boot::key_matches(
+        "net.ipv4.conf.[xyz].rp_filter",
+        "net/ipv4/conf/all/rp_filter"
+    ));
 }
 
 #[test]

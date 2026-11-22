@@ -102,6 +102,13 @@ struct SysctlDecl {
     file: String,
     name: String,
     value: String,
+    /// The value's commitment for a declaration-only record: a `no_log`
+    /// task's value is never stored, so the retained entry keeps only
+    /// the digest the preflight re-seals the candidate against. `None`
+    /// is a recorded task's entry — and every entry written before the
+    /// seal — whose value compares in the clear.
+    #[serde(default)]
+    sealed_value: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -324,25 +331,32 @@ impl Ledger {
     /// workflows are never this plan's to consult: they live in their
     /// own maps, so their declarations cannot authorize shadows for
     /// keys this workflow never managed.
-    pub(crate) fn managed_sysctl_entries(&self) -> Vec<(String, String, String)> {
+    pub(crate) fn managed_sysctl_entries(&self) -> Vec<crate::modules::ManagedSysctl> {
+        use crate::modules::{ManagedSysctl, ManagedValue};
         #[cfg(test)]
         {
             self.scans.set(self.scans.get() + 1);
         }
-        let mut entries: Vec<(String, String, String)> = self
+        let mut entries: Vec<ManagedSysctl> = self
             .records
             .get(&self.workflow)
             .into_iter()
             .flat_map(|owned| owned.values())
             .flat_map(|record| {
-                let declared = record
-                    .managed_sysctl
-                    .clone()
-                    .map(|decl| (decl.file, decl.name, decl.value));
+                let declared = record.managed_sysctl.clone().map(|decl| ManagedSysctl {
+                    file: decl.file,
+                    name: decl.name,
+                    value: match decl.sealed_value {
+                        Some(digest) => ManagedValue::Sealed(digest),
+                        None => ManagedValue::Plain(decl.value),
+                    },
+                });
                 let probed = record.probes.iter().filter_map(|probe| match probe {
-                    Probe::SysctlKV { file, name, value } => {
-                        Some((file.clone(), name.clone(), value.clone()))
-                    }
+                    Probe::SysctlKV { file, name, value } => Some(ManagedSysctl::plain(
+                        file.clone(),
+                        name.clone(),
+                        value.clone(),
+                    )),
                     _ => None,
                 });
                 declared.into_iter().chain(probed)

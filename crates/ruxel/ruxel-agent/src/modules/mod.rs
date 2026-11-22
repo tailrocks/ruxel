@@ -107,8 +107,8 @@ pub(crate) use copy::validate_source;
 pub(super) use ownership::{OWNERSHIP_RESOLUTIONS, resolve_gid_from, resolve_uid_from};
 pub(super) use ownership::{Ownership, resolve_ownership};
 pub(crate) use sysctl::{
-    boot_fingerprint, entry_key, proc_sys_path, sysctl_cache_covered, sysctl_host_files,
-    sysctl_key, trimmed_value,
+    ManagedSysctl, ManagedValue, SysctlManaged, boot_fingerprint, declaration_digest, entry_key,
+    proc_sys_path, sysctl_cache_covered, sysctl_host_files, sysctl_key, trimmed_value,
 };
 pub(crate) use user::begin_plan;
 
@@ -119,10 +119,7 @@ pub(crate) use user::begin_plan;
 /// reads the plan's own entries, not the ledger's retained history of a
 /// task the workflow dropped. A task that failed to parse declares
 /// nothing: its entry is unknown.
-pub(crate) fn sysctl_plan_declaration(
-    module: &str,
-    params: &Value,
-) -> Option<(String, String, String)> {
+pub(crate) fn sysctl_plan_declaration(module: &str, params: &Value) -> Option<ManagedSysctl> {
     if module != "sysctl" {
         return None;
     }
@@ -137,7 +134,11 @@ pub(crate) fn sysctl_plan_declaration(
         .get("sysctl_file")
         .and_then(Value::as_str)
         .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
-    Some((file.to_string(), name.to_string(), value))
+    Some(ManagedSysctl::plain(
+        file.to_string(),
+        name.to_string(),
+        value,
+    ))
 }
 
 /// The managed sysctl entries a task's module consumes: only the
@@ -149,7 +150,7 @@ pub(crate) fn sysctl_plan_declaration(
 pub(crate) fn managed_sysctl_entries(
     module: &str,
     ledger: &crate::ledger::Ledger,
-) -> Vec<(String, String, String)> {
+) -> Vec<ManagedSysctl> {
     if module == "sysctl" {
         ledger.managed_sysctl_entries()
     } else {
@@ -185,7 +186,7 @@ pub(crate) fn execute(
     source: Option<&[u8]>,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
-    managed: &[(String, String, String)],
+    managed: &SysctlManaged,
 ) -> Outcome {
     if ctx.become_user.is_some()
         && !matches!(

@@ -119,8 +119,11 @@ fn match_segment(pattern: &[char], key: &[char]) -> bool {
 /// `a-z` ranges and `[!...]`/`[^...]` negation, the way libc `glob`
 /// and `fnmatch` (flags 0, as procps calls them) read them. A `]` in
 /// first position is a literal member; a reversed range spans
-/// nothing. `None`: the class never terminates — unknown syntax, left
-/// to the caller's conservative answer.
+/// nothing. `None`: the class never terminates, or it uses bracket
+/// syntax this parser cannot model — a POSIX class (`[[:alpha:]]`),
+/// an equivalence or collation class (`[[=a=]]`, `[[.ch.]]`), or an
+/// escape — so the caller takes the conservative answer instead of a
+/// definite mismatch that would miss a later-loading override.
 fn match_class(pattern: &[char], key: &[char]) -> Option<bool> {
     let mut at = 1;
     let negate = matches!(pattern.get(at), Some('!' | '^'));
@@ -132,6 +135,9 @@ fn match_class(pattern: &[char], key: &[char]) -> Option<bool> {
     let end = loop {
         let next = pattern.get(at).copied()?;
         at += 1;
+        if next == '[' || next == '\\' {
+            return None;
+        }
         if next == ']' && !first {
             break at - 1;
         }
@@ -141,6 +147,9 @@ fn match_class(pattern: &[char], key: &[char]) -> Option<bool> {
             _ => None,
         };
         if let Some(hi) = range_hi {
+            if hi == '[' || hi == '\\' {
+                return None;
+            }
             at += 2;
             members.push((next, hi));
         } else {

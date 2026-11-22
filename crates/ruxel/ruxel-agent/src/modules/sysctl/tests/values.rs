@@ -24,7 +24,7 @@ fn a_value_with_a_nul_is_refused_and_the_file_is_untouched() -> std::io::Result<
     let error = super::super::run(
         &json!({"name":"net.test","value":"a\u{0}b","sysctl_file":path,"reload":false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .expect_err("a value with a NUL must be refused");
     assert!(

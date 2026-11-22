@@ -301,3 +301,35 @@ fn a_stranded_pid_only_probe_does_not_block_a_replacement() {
     );
     std::fs::remove_dir_all(&dir).expect("operation succeeds");
 }
+
+#[test]
+fn a_rehearsal_without_a_staging_directory_refuses_before_sysctl_w() {
+    // Thread 312: the publish stages through a private staging
+    // directory — `mkdirat` plus a hard link plus an exchange rename —
+    // so a filesystem that permits file creation and rename but no
+    // subdirectory creation must refuse before `sysctl -w` changes the
+    // live value. A file squatting on the staging directory's path
+    // proves the rehearsal mirrors the staging step: without it the
+    // rehearsal succeeds although the publish cannot stage.
+    let dir = scratch("no-stage-dir");
+    let (text, _) = live_bytes(&dir);
+    let path = std::path::Path::new(&text);
+    let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
+    std::fs::write(format!("{}.stage", first.display()), b"squat").expect("operation succeeds");
+    let before = std::fs::metadata(path).expect("operation succeeds");
+    let error = super::super::preflight_persistence(&text, b"net.test=1\n", true)
+        .expect_err("the rehearsal must refuse without its staging directory");
+    assert!(error.contains("cannot persist"), "{error}");
+    let after = std::fs::metadata(path).expect("operation succeeds");
+    assert_eq!(
+        (before.dev(), before.ino()),
+        (after.dev(), after.ino()),
+        "a refused rehearsal must leave the live inode where it was"
+    );
+    assert_eq!(
+        std::fs::read(path).expect("operation succeeds"),
+        b"net.test=2\n",
+        "a refused rehearsal must leave the live bytes alone"
+    );
+    std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}

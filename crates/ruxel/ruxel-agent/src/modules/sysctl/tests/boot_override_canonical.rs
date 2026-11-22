@@ -15,7 +15,13 @@ fn override_of(
         .iter()
         .map(|(path, content)| (PathBuf::from(*path), content.as_bytes().to_vec()))
         .collect();
-    boot::boot_override(file, name, value, &host, &[])
+    boot::boot_override(
+        file,
+        name,
+        value,
+        &host,
+        &super::super::SysctlManaged::default(),
+    )
 }
 
 #[test]

@@ -25,7 +25,7 @@ fn invalid_names_do_not_modify_the_sysctl_file() -> std::io::Result<()> {
             super::super::run(
                 &json!({"name":name,"value":"2","sysctl_file":path,"reload":false}),
                 &ctx,
-                &[],
+                &super::super::SysctlManaged::default(),
             )
             .is_err()
         );
@@ -56,7 +56,7 @@ fn invalid_existing_file_is_preserved_in_check_and_apply() -> std::io::Result<()
         let result = super::super::run(
             &json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}),
             &ctx,
-            &[],
+            &super::super::SysctlManaged::default(),
         )
         .map_err(std::io::Error::other)?;
         assert_eq!(result["changed"], true);
@@ -91,7 +91,7 @@ fn missing_file_is_planned_for_creation() -> std::io::Result<()> {
     let result = super::super::run(
         &json!({"name": "synthetic.test", "value": "1", "sysctl_file": path, "reload": false}),
         &ctx,
-        &[],
+        &super::super::SysctlManaged::default(),
     )
     .map_err(std::io::Error::other)?;
     assert_eq!(result["changed"], true);
@@ -153,9 +153,19 @@ fn rejects_newline_in_name_or_value_before_io() {
         become_user: None,
     };
     assert!(
-        super::super::run(&json!({"name": "safe\ninjected", "value": "1"}), &ctx, &[]).is_err()
+        super::super::run(
+            &json!({"name": "safe\ninjected", "value": "1"}),
+            &ctx,
+            &super::super::SysctlManaged::default()
+        )
+        .is_err()
     );
     assert!(
-        super::super::run(&json!({"name": "safe", "value": "1\rinjected"}), &ctx, &[]).is_err()
+        super::super::run(
+            &json!({"name": "safe", "value": "1\rinjected"}),
+            &ctx,
+            &super::super::SysctlManaged::default()
+        )
+        .is_err()
     );
 }

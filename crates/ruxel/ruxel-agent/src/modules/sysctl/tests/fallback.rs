@@ -53,7 +53,11 @@ fn a_replayed_stage_admits_through_the_carry_over() {
     // transition with the ledger's carry behind it.
     let dir = scratch("override");
     let ledger = seed(&dir, "earlier", OLD, "0");
-    let planned = vec![(NEW.to_string(), KEY.to_string(), "1".to_string())];
+    let planned = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
+        NEW.to_string(),
+        KEY.to_string(),
+        "1".to_string(),
+    )]);
     let host = host(&[(OLD, "net.ipv4.ip_forward=0\n")]);
     assert_eq!(
         boot::boot_override(NEW, KEY, "1", &host, &planned),
@@ -61,7 +65,11 @@ fn a_replayed_stage_admits_through_the_carry_over() {
         "the plan alone refuses the leftover: the reported failure"
     );
     let mut merged = planned.clone();
-    merged.extend(ledger.sysctl_preflight_managed("sysctl", &planned));
+    merged.entries.extend(
+        ledger
+            .sysctl_preflight_managed("sysctl", &planned.entries)
+            .entries,
+    );
     assert_eq!(
         boot::boot_override(NEW, KEY, "1", &host, &merged),
         None,
@@ -76,13 +84,21 @@ fn a_replayed_shadow_target_admits_through_the_carry_over() {
     // the shadowing file, the replay's plan only the shadowed target.
     let dir = scratch("shadow");
     let ledger = seed(&dir, "earlier", ETC, "1");
-    let planned = vec![(USR.to_string(), KEY.to_string(), "1".to_string())];
+    let planned = super::super::SysctlManaged::testing(vec![super::super::ManagedSysctl::plain(
+        USR.to_string(),
+        KEY.to_string(),
+        "1".to_string(),
+    )]);
     assert!(
         !super::super::declared_shadow(ETC, KEY, &planned),
         "the plan alone leaves the leftover shadow unmanaged"
     );
     let mut merged = planned.clone();
-    merged.extend(ledger.sysctl_preflight_managed("sysctl", &planned));
+    merged.entries.extend(
+        ledger
+            .sysctl_preflight_managed("sysctl", &planned.entries)
+            .entries,
+    );
     assert!(
         super::super::declared_shadow(ETC, KEY, &merged),
         "the carry-over declares the shadow's managed value"

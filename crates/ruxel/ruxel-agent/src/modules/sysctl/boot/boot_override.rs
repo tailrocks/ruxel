@@ -11,8 +11,10 @@ use std::path::{Path, PathBuf};
 /// The host contents come from outside so the boot surface is
 /// provable without a system of its own. A file ruxel manages holds a
 /// declared managed value, not an unmanaged override, so `managed` —
-/// the file, key and value of every sysctl entry ruxel manages on this
-/// host — weighs on the answer. And a wildcard reaches no key the
+/// every sysctl entry ruxel manages on this host — weighs on the
+/// answer. Plain entries compare their trimmed bytes; sealed entries
+/// (a `no_log` task's unstored value) verify by sealing the candidate
+/// with the set's key. And a wildcard reaches no key the
 /// sequence assigns by name: procps keeps the keys a setting names
 /// outright out of the expansion of a pattern, so a later
 /// `net.ipv4.conf.*.rp_filter` cannot hand the boot value away from a
@@ -28,7 +30,7 @@ pub(crate) fn boot_override(
     name: &str,
     value: &str,
     host: &[(PathBuf, Vec<u8>)],
-    managed: &[(String, String, String)],
+    managed: &super::super::SysctlManaged,
 ) -> Option<(String, String)> {
     let key = sysctl_key(name);
     let named = named_assignments(file, name, host);
@@ -94,12 +96,25 @@ fn named_assignments(file: &str, name: &str, host: &[(PathBuf, Vec<u8>)]) -> Vec
 /// is a declared managed value, not an unmanaged boot override. The
 /// value must be the declared one — a managed file that drifted to
 /// another value carries an unmanaged assignment again.
-fn declared(path: &Path, key: &str, value: &[u8], managed: &[(String, String, String)]) -> bool {
+fn declared(path: &Path, key: &str, value: &[u8], managed: &super::super::SysctlManaged) -> bool {
+    use super::super::{ManagedValue, declaration_digest};
     let bytes = path.as_os_str().as_bytes();
-    managed.iter().any(|(file, name, declared_value)| {
-        file.as_bytes() == bytes
-            && sysctl_key(name) == key
-            && trim(declared_value.as_bytes()) == value
+    managed.entries.iter().any(|entry| {
+        entry.file.as_bytes() == bytes
+            && sysctl_key(&entry.name) == key
+            && match &entry.value {
+                // The plan's own declarations and the retained entries
+                // of recorded tasks: the trimmed bytes compare.
+                ManagedValue::Plain(declared) => trim(declared.as_bytes()) == value,
+                // A declaration-only record of a `no_log` task: the
+                // value was never stored, so the candidate seals to the
+                // commitment with the same key — or the entry authorizes
+                // nothing. Without the seal the entry fails closed.
+                ManagedValue::Sealed(digest) => managed.seal.is_some_and(|seal| {
+                    declaration_digest(&seal, &entry.file, &entry.name, value)
+                        .is_some_and(|computed| computed == *digest)
+                }),
+            }
     })
 }
 

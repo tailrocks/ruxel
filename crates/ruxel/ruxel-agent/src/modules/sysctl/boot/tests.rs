@@ -52,7 +52,7 @@ fn a_link_to_a_directory_holds_the_name_at_boot() {
             "net.ipv4.ip_forward",
             "0",
             &host,
-            &[]
+            &super::super::SysctlManaged::default()
         ),
         None,
         "the shadowed assignment must not hand the boot value away"
@@ -99,7 +99,7 @@ fn a_directory_holds_the_name_at_boot() {
             "net.ipv4.ip_forward",
             "0",
             &host,
-            &[]
+            &super::super::SysctlManaged::default()
         ),
         None,
         "the shadowed assignment must not hand the boot value away"

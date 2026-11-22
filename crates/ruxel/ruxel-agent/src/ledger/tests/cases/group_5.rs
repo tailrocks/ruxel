@@ -37,10 +37,10 @@ fn a_dropped_sysctl_task_invalidates_the_earlier_tasks_cache() {
 
     // Run 1: the removed task's retained declaration still authorizes
     // its file — the one-run bounded window — so the cache serves.
-    let retained = vec![
-        (early_text.clone(), KEY.to_string(), "1".to_string()),
-        (LATE.to_string(), KEY.to_string(), "0".to_string()),
-    ];
+    let retained = crate::modules::SysctlManaged::testing(vec![
+        crate::modules::ManagedSysctl::plain(early_text.clone(), KEY.to_string(), "1".to_string()),
+        crate::modules::ManagedSysctl::plain(LATE.to_string(), KEY.to_string(), "0".to_string()),
+    ]);
     assert!(
         ledger
             .cached_ok_with_managed_in(
@@ -57,7 +57,12 @@ fn a_dropped_sysctl_task_invalidates_the_earlier_tasks_cache() {
     // is unmanaged. Every probe still matches, yet the cache must miss:
     // the boot value comes from the leftover now, and the task must
     // run so its preflight refuses it.
-    let pruned = vec![(early_text, KEY.to_string(), "1".to_string())];
+    let pruned =
+        crate::modules::SysctlManaged::testing(vec![crate::modules::ManagedSysctl::plain(
+            early_text,
+            KEY.to_string(),
+            "1".to_string(),
+        )]);
     assert!(
         ledger
             .cached_ok_with_managed_in(
@@ -84,7 +89,7 @@ fn a_non_sysctl_record_ignores_the_managed_set() {
             .cached_ok_with_managed_in(
                 "key",
                 &mut crate::system_state::SystemState::default(),
-                &[],
+                &crate::modules::SysctlManaged::default(),
                 &host()
             )
             .is_some(),

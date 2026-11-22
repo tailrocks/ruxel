@@ -9,19 +9,47 @@ fn tab_separated_vector_values_match_space_separated_ones() {
     // `/proc/sys` while the workflow writes it space-separated: the
     // two spellings hold the same list, so no change is reported and
     // no `sysctl -w` runs on an idempotent apply.
-    assert!(super::super::live_matches("32768\t60999", "32768 60999"));
-    assert!(super::super::live_matches("32768  60999", "32768\t60999"));
-    assert!(super::super::live_matches("4\t4\t1\t7", "4 4 1 7"));
+    assert!(super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768\t60999",
+        "32768 60999"
+    ));
+    assert!(super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768  60999",
+        "32768\t60999"
+    ));
+    assert!(super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "4\t4\t1\t7",
+        "4 4 1 7"
+    ));
 }
 
 #[test]
 fn vector_values_still_compare_exactly_where_they_differ() {
     // Token-wise is not value-blind: another list, another arity, or
     // a non-numeric token is a different value and is reconciled.
-    assert!(!super::super::live_matches("32768\t60999", "32768 61000"));
-    assert!(!super::super::live_matches("32768\t60999", "32768"));
-    assert!(!super::super::live_matches("32768\t60999", "32768 60999 1"));
-    assert!(!super::super::live_matches("abc\tdef", "abc def"));
+    assert!(!super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768\t60999",
+        "32768 61000"
+    ));
+    assert!(!super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768\t60999",
+        "32768"
+    ));
+    assert!(!super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768\t60999",
+        "32768 60999 1"
+    ));
+    assert!(!super::super::live_matches(
+        "kernel.core_pattern",
+        "abc\tdef",
+        "abc def"
+    ));
 }
 
 #[test]
@@ -29,9 +57,21 @@ fn scalar_strings_keep_every_blank() {
     // The blanks inside a scalar string are part of the kernel value:
     // `kernel.hostname` holds "abc  def" as written, so collapsing
     // the separators would skip a write the host still needs.
-    assert!(!super::super::live_matches("abc  def", "abc def"));
-    assert!(!super::super::live_matches("abc\tdef", "abc def"));
-    assert!(super::super::live_matches("abc  def", "abc  def"));
+    assert!(!super::super::live_matches(
+        "kernel.hostname",
+        "abc  def",
+        "abc def"
+    ));
+    assert!(!super::super::live_matches(
+        "kernel.core_pattern",
+        "abc\tdef",
+        "abc def"
+    ));
+    assert!(super::super::live_matches(
+        "kernel.hostname",
+        "abc  def",
+        "abc  def"
+    ));
 }
 
 #[test]
@@ -40,11 +80,19 @@ fn edge_whitespace_compares_exactly() {
     // holds the same value as "1" — but non-ASCII edge whitespace is
     // content the byte-level trim preserves: "nb\u{a0}" is another value
     // than "nb", reconciled rather than skipped.
-    assert!(super::super::live_matches("1 ", "1"));
-    assert!(super::super::live_matches(" 1 ", " 1 "));
-    assert!(super::super::live_matches("1", "1"));
-    assert!(!super::super::live_matches("nb\u{a0}", "nb"));
-    assert!(super::super::live_matches("nb\u{a0}", "nb\u{a0}"));
+    assert!(super::super::live_matches("kernel.hostname", "1 ", "1"));
+    assert!(super::super::live_matches("kernel.hostname", " 1 ", " 1 "));
+    assert!(super::super::live_matches("kernel.hostname", "1", "1"));
+    assert!(!super::super::live_matches(
+        "kernel.hostname",
+        "nb\u{a0}",
+        "nb"
+    ));
+    assert!(super::super::live_matches(
+        "kernel.hostname",
+        "nb\u{a0}",
+        "nb\u{a0}"
+    ));
 }
 
 #[test]
@@ -54,10 +102,14 @@ fn the_proc_line_ending_is_not_value_content() {
     // the workflow wrote reads back equal and no `sysctl -w` runs on
     // an idempotent apply — while another value under the same ending
     // still reconciles.
-    assert!(super::super::live_matches("1\n", "1"));
-    assert!(super::super::live_matches("1\r\n", "1"));
-    assert!(super::super::live_matches("32768\t60999\n", "32768 60999"));
-    assert!(!super::super::live_matches("2\n", "1"));
+    assert!(super::super::live_matches("kernel.hostname", "1\n", "1"));
+    assert!(super::super::live_matches("kernel.hostname", "1\r\n", "1"));
+    assert!(super::super::live_matches(
+        "net.ipv4.ip_local_port_range",
+        "32768\t60999\n",
+        "32768 60999"
+    ));
+    assert!(!super::super::live_matches("kernel.hostname", "2\n", "1"));
 }
 
 #[test]
@@ -76,11 +128,29 @@ fn the_live_read_strips_the_proc_line_ending() {
         let reread = super::super::read_live(&text).expect("the live file reads");
         assert_eq!(reread, want, "the read strips the ending: {payload:?}");
         assert!(
-            super::super::live_matches(&reread, "1"),
+            super::super::live_matches("kernel.hostname", &reread, "1"),
             "the reread value is a no-op against the desired one"
         );
     }
     std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}
+
+#[test]
+fn string_values_compare_whitespace_exactly() {
+    // Thread 318: a string-valued parameter whose value holds several
+    // numeric-looking words is still text — `kernel.core_pattern` keeps
+    // every blank of `12  34`, so a live `12 34` is drift, not a
+    // separator spelling, and the apply must reconcile it.
+    assert!(!super::super::live_matches(
+        "kernel.core_pattern",
+        "12  34",
+        "12 34"
+    ));
+    assert!(super::super::live_matches(
+        "kernel.core_pattern",
+        "12  34",
+        "12  34"
+    ));
 }
 
 #[test]
