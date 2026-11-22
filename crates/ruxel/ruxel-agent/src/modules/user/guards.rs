@@ -29,15 +29,32 @@ pub(super) fn group_change_allowed(name: &str, host_gid: u64) -> Result<(), Stri
 
 /// Whether the agent may remove the account whose host entry is `entry`.
 /// The deletion verifies the host entry rather than trusting the workflow
-/// value: the superuser's account and a system account below UID 1000 are
-/// the host's to keep whatever the workflow states, and a declared uid
-/// must match the host's — `user = "daemon"; uid = 1000` must not remove
-/// an account whose real UID is below 1000.
+/// value: the superuser's account is the host's to keep whatever the
+/// workflow states, as is an account the plan declared a system account
+/// — the live entry carries no system bit, so the plan's own record is
+/// what preserves a `--system` creation past the allocator's choice of
+/// uid — and an account below UID 1000, the host-policy fallback for a
+/// system account the workflow never declared. A declared uid must match
+/// the host's — `user = "daemon"; uid = 1000` must not remove an
+/// account whose real UID is below 1000.
 pub(super) fn removal_allowed(
     name: &str,
     declared: Option<u64>,
-    entry: &PasswdEntry,
+    entry: Option<&PasswdEntry>,
+    is_system: bool,
 ) -> Result<(), String> {
+    // A declared system account is refused on the declaration alone:
+    // the allocator draws its number at apply, so check mode has no
+    // number to verify — and the live entry carries no system bit to
+    // probe afterward.
+    if is_system {
+        return Err(format!(
+            "user: refusing to remove {name}: the account is a declared system account, which the host keeps"
+        ));
+    }
+    let Some(entry) = entry else {
+        return Ok(());
+    };
     if entry.uid == 0 {
         return Err(format!(
             "user: refusing to remove {name}: the superuser's account (uid 0) is the host's to keep"

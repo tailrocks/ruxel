@@ -59,20 +59,32 @@ fn a_system_account_is_never_removed_whatever_the_workflow_states() {
         gid: 1,
         ..PasswdEntry::default()
     };
-    assert!(removal_allowed("daemon", Some(1000), &daemon).is_err());
-    assert!(removal_allowed("daemon", None, &daemon).is_err());
+    assert!(removal_allowed("daemon", Some(1000), Some(&daemon), false).is_err());
+    assert!(removal_allowed("daemon", None, Some(&daemon), false).is_err());
     let toor = PasswdEntry {
         uid: 0,
         ..PasswdEntry::default()
     };
-    assert!(removal_allowed("toor", Some(0), &toor).is_err());
+    assert!(removal_allowed("toor", Some(0), Some(&toor), false).is_err());
     let app = PasswdEntry {
         uid: 1500,
         ..PasswdEntry::default()
     };
-    assert!(removal_allowed("app", Some(1500), &app).is_ok());
-    assert!(removal_allowed("app", Some(1000), &app).is_err());
-    assert!(removal_allowed("app", None, &app).is_ok());
+    assert!(removal_allowed("app", Some(1500), Some(&app), false).is_ok());
+    assert!(removal_allowed("app", Some(1000), Some(&app), false).is_err());
+    assert!(removal_allowed("app", None, Some(&app), false).is_ok());
+    // Thread 326: a declared system account is the host's to keep even
+    // where the allocator drew it a regular-looking uid — the live
+    // entry carries no system bit, so the plan's own record decides.
+    assert!(removal_allowed("app", Some(1500), Some(&app), true).is_err());
+    assert!(removal_allowed("app", None, Some(&app), true).is_err());
+    let error = removal_allowed("app", Some(1500), Some(&app), true)
+        .expect_err("a declared system account must not be removed");
+    assert!(error.contains("system account"), "{error}");
+    // With no entry at all nothing verifies — unless the plan declared
+    // a system account, which is refused on the declaration alone.
+    assert!(removal_allowed("app", None, None, false).is_ok());
+    assert!(removal_allowed("app", None, None, true).is_err());
     assert!(group_removal_allowed("app", Some(1500), 1500, None).is_ok());
     assert!(group_removal_allowed("app", Some(1000), 1500, None).is_err());
     assert!(group_removal_allowed("wheel", None, 0, None).is_err());
@@ -301,6 +313,40 @@ fn check_mode_still_skips_the_uid_guard_for_an_unnumbered_recreation() {
     let removal = run(&json!({"name": name, "state": "absent"}), &ctx)
         .expect("check mode must plan the recreated account's removal");
     assert_eq!(removal.get("changed"), Some(&json!(true)), "{removal}");
+    begin_plan();
+}
+
+#[test]
+fn a_declared_system_account_is_never_removed_whatever_its_uid() {
+    // Thread 326: a system account is not necessarily below UID 1000 —
+    // the allocator draws whatever number is free, and `login.defs`
+    // moves the ranges — so the plan records the declared system flag
+    // and the guard refuses the removal on that record, with the
+    // uid-1000 rule kept only as the fallback for accounts the
+    // workflow never declared.
+    begin_plan();
+    let name = format!("ruxel-system-{}", std::process::id());
+    assert!(
+        passwd_entry(&name).unwrap().is_none(),
+        "the account must not exist on the host"
+    );
+    let ctx = ExecContext {
+        check_mode: true,
+        diff_mode: false,
+        no_log: false,
+        environment: Vec::new(),
+        become_user: None,
+    };
+    run(
+        &json!({"name": name, "system": true, "create_home": false}),
+        &ctx,
+    )
+    .expect("the system creation must plan");
+    assert!(plan::is_system(&name));
+    let error = run(&json!({"name": name, "state": "absent"}), &ctx)
+        .expect_err("a declared system account must not be removed");
+    assert!(error.contains("refusing to remove"), "{error}");
+    assert!(error.contains("system account"), "{error}");
     begin_plan();
 }
 

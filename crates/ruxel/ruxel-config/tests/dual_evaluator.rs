@@ -172,6 +172,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-directory-sysctl-clash.pkl",
     "invalid/linux-user-home-conflict.pkl",
     "invalid/linux-group-needs-login-users.pkl",
+    "invalid/linux-user-absent-system.pkl",
     "invalid/linux-user-group-absent.pkl",
     "invalid/linux-group-absent-after-user.pkl",
     "invalid/linux-user-needs-later-group.pkl",

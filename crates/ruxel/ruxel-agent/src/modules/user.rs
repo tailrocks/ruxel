@@ -321,6 +321,11 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         // group must be the live one: see `removal_primary_group_allowed`.
         let home = str_param(obj, "home");
         let remove = bool_param(obj, "remove", false);
+        // Whether the account is a system account: the step's own
+        // declaration, or the plan's record of an earlier `useradd
+        // --system` — the live entry carries no system bit, so the
+        // plan's own record is what the guard verifies.
+        let system = bool_param(obj, "system", false) || plan::is_system(name);
         // The account's effective state at the removal: check mode runs
         // no `useradd` and no `usermod`, so the live entry alone is
         // stale — an earlier task of the plan may have created the
@@ -360,20 +365,26 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // where the recreated entry holds it.
             let effective_uid = match planned {
                 Some(Requested::Number(number)) => Some(u64::from(number)),
-                // The unknown-uid escape is check-mode-only: the apply
-                // recreated the account, so the live entry holds the
-                // allocator's choice, the way the group arm verifies a
-                // recreated group in apply mode.
+                // The plan removed the account and declares it present
+                // again without a number: in check mode nothing runs, so
+                // the allocator has drawn nothing yet and the stale live
+                // entry must not stand in — but the apply recreated it,
+                // so the live entry holds the allocator's choice and the
+                // declaration is verified against it, the way the group
+                // arm verifies a recreated group in apply mode.
                 _ if ctx.check_mode && plan::user_recreated(name) => None,
                 _ => entry.as_ref().map(|current| current.uid),
             };
-            if let Some(effective_uid) = effective_uid {
-                let effective = PasswdEntry {
-                    uid: effective_uid,
-                    ..entry.clone().unwrap_or_default()
-                };
-                removal_allowed(name, uid, &effective)?;
-            }
+            // The guard runs wherever the account exists under the plan:
+            // with a number to verify it checks the declaration against
+            // the entry, and a declared system account is refused on
+            // the declaration alone — the allocator draws its number at
+            // apply, so check mode has nothing to verify against.
+            let effective = effective_uid.map(|effective_uid| PasswdEntry {
+                uid: effective_uid,
+                ..entry.clone().unwrap_or_default()
+            });
+            removal_allowed(name, uid, effective.as_ref(), system)?;
             if let Some(effective_home) = &effective_home {
                 removal_home_allowed(name, home, remove, effective_home)?;
             }
@@ -447,6 +458,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             }
         }
         forget_planned_user(name);
+        plan::forget_system(name);
         plan::forget_home(name);
         plan::forget_primary(name);
         plan::forget_supplementary(name);
@@ -1141,8 +1153,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     // The plan's record of the account: what a later file's ownership
     // resolves against in check mode, which runs no `useradd` and would
     // otherwise refuse the name the plan is about to create — and what
-    // a later removal verifies its home against.
+    // a later removal verifies its home against. A declared system
+    // account is recorded as one: the live entry carries no system bit,
+    // so the plan's own record is what a later removal refuses on.
     note_planned_user(name, uid.and_then(|want| u32::try_from(want).ok()));
+    if system {
+        plan::note_system(name);
+    }
     // Every creation draws a number no probe has seen yet — the
     // allocator's where the step states none, the declared one where
     // it does: an account the host deleted outside the plan and

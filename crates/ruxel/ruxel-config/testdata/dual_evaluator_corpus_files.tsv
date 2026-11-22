@@ -117,6 +117,7 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-value-spaces-difference.pkl
   tests/workflow/invalid/linux-sysctl-value-vertical-tab-difference.pkl
   tests/workflow/invalid/linux-sysctl-values-differ.pkl
+  tests/workflow/invalid/linux-user-absent-system.pkl
   tests/workflow/invalid/linux-user-default-home-conflict.pkl
   tests/workflow/invalid/linux-user-group-absent.pkl
   tests/workflow/invalid/linux-user-group-removed-earlier-stage.pkl

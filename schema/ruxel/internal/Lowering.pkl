@@ -135,6 +135,7 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
     + homeProvidersAcrossStages(_stages, _indexes)
     + identityNumbersAcrossStages(_stages, _indexes)
   + removalIdsAcrossStages(_stages, _indexes)
+  + systemRemovalsAcrossStages(_stages, _indexes)
   + removalHomesAcrossStages(_stages, _indexes)
     + automaticNumbersAcrossStages(_stages, _indexes)
     + fileIdentitiesAcrossStages(_stages, _indexes)
@@ -326,6 +327,20 @@ function removalIdClash(_stages: List<core.Stage>, _indexes: List<StageIndex>, k
     if (before is Int && before != declared)
       List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" removes the \(what) \(p.first) with \(kind) \(declared), but the workflow's last declaration for it on host \(h.name) carries \(kind) \(before); the runtime verifies the declared id against the live entry and refuses the removal, so state the effective \(kind)")
     else List())
+
+/// A removal that states the account is a system account: a system
+/// account is the host's to keep whatever number the allocator drew
+/// for it — it is not necessarily below UID 1000 — so the runtime
+/// refuses the removal before `userdel` runs, and the agent refuses it
+/// on the plan's own system record with the uid-1000 rule kept only
+/// as the fallback. The refusal is unconditional: the flag on a
+/// removal can only name the victim's kind.
+function systemRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
+  positions(_indexes).flatMap((k) -> positions(_indexes[k].steps).flatMap((j) ->
+    let (s = _indexes[k].steps[j])
+    if (s is linux.User && s.state == "absent" && s.system)
+      List("'\(name(s))' (\(where(_indexes[k].placed[j]))) of stage \"\(_stages[k].title)\" removes the system account \(s.user); system accounts are the host's to keep whatever uid the allocator drew for them, so drop the removal or manage the account as present")
+    else List()))
 
 /// An explicit identity number one stage's step claims.
 class IdClaim {
