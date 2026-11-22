@@ -10,6 +10,7 @@ mod block_skip;
 mod block_tags;
 mod cases;
 mod change_aggregate;
+mod conditional_skip;
 mod content_fingerprint;
 mod creates_environment;
 mod excluded_vars;

@@ -29,6 +29,12 @@ impl<B: Backend> Runner<'_, B> {
         tasks: &[Value],
         parent: &ContextLayer,
     ) -> Result<()> {
+        // A `when:false` block omits tasks the workflow keeps: the
+        // omission latches here, where the rejection happens, the way
+        // a tag rejection latches where it happens — the leaves are
+        // never visited to latch it, and an unlatch run's end would
+        // prune the records of every task the block keeps.
+        self.filtered = true;
         for task in tasks {
             let layer = Self::layer(task, parent);
             if self.skip_unselected_task(task, parent, &layer)? {

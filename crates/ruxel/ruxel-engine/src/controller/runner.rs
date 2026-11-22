@@ -202,6 +202,12 @@ impl<B: Backend> Runner<'_, B> {
                 )?;
                 iteration_layer.control_sensitive |= condition.is_secret();
                 if !truth(&condition.value) {
+                    // A `when:false` leaf omits a task the workflow
+                    // keeps: the run is a filtered subset, the way a
+                    // tag rejection is, so the run's end must expire
+                    // nothing — an unlatched run would prune the
+                    // records of every task the condition skipped.
+                    self.filtered = true;
                     let skipped = json!({"skipped":true,"changed":false,"failed":false,"skip":{"cause":"condition_false"}});
                     let mut skipped = if iteration_layer.control_sensitive || iteration_layer.no_log
                     {

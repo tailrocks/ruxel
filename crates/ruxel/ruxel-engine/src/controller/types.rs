@@ -25,9 +25,9 @@ pub struct Recap {
     pub rescued: u64,
     pub ignored: u64,
     pub planned: u64,
-    /// Tag selection omitted tasks the workflow keeps: at least one
-    /// leaf was skipped for its tags, so the run is a filtered subset
-    /// and its end must expire nothing.
+    /// Selection omitted tasks the workflow keeps: at least one leaf
+    /// was skipped for its tags or its `when` condition, so the run
+    /// is a filtered subset and its end must expire nothing.
     pub filtered: bool,
     /// The session stopped before its tasks were all sent: evaluation
     /// or rendering failed mid-play, or the host failed and its later
