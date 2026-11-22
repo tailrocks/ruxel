@@ -390,9 +390,8 @@ fn unescape_mountpoint(field: &str) -> Vec<u8> {
 fn refuse_locked(path: &std::path::Path, file: &str) -> Result<(), String> {
     let live =
         std::fs::File::open(path).map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    let flags = match rustix::fs::ioctl_getflags(&live) {
-        Ok(flags) => flags,
-        Err(_) => return Ok(()),
+    let Ok(flags) = rustix::fs::ioctl_getflags(&live) else {
+        return Ok(());
     };
     if flags.intersects(rustix::fs::IFlags::APPEND | rustix::fs::IFlags::IMMUTABLE) {
         return Err(format!(
