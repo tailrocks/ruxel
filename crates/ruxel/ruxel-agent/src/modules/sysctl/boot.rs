@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
 use super::sysctl_key;
@@ -151,7 +152,6 @@ pub(super) fn boot_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
         if is_null_device(&resolved) {
             return Ok(None);
         }
-        use std::os::unix::fs::FileTypeExt;
         let what = if kind.is_fifo() {
             "a FIFO, which blocks the loader"
         } else if kind.is_socket() {

@@ -239,7 +239,7 @@ pub(super) fn rollback_created_home_from(home: &str, skel: &Path) -> Result<(), 
 /// on anything planted inside it after its proof.
 fn remove_home_entries(home: &str, skel: &Path, entries: &BTreeSet<PathBuf>) -> Result<(), String> {
     let mut ordered: Vec<&PathBuf> = entries.iter().collect();
-    ordered.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
+    ordered.sort_by_key(|entry| std::cmp::Reverse(entry.components().count()));
     for entry in ordered {
         if !skel_entry_matches(Path::new(home), skel, entry)? {
             return Err(format!(

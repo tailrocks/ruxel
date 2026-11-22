@@ -63,25 +63,9 @@ fn run(args: cli::RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCode {
         hosts: args.hosts,
         tags: args.tags,
     };
-    // The workflow's stable identity for ledger namespacing: the
-    // canonical path of the configuration being run. Without it the
-    // agent cannot tell workflows apart on its shared ledger, so a
-    // run that cannot name its workflow refuses instead of pruning
-    // another workflow's records.
-    let workflow_namespace = match args.root.canonicalize() {
-        Ok(path) => path.to_string_lossy().into_owned(),
-        Err(error) => {
-            if writeln!(
-                std::io::stderr().lock(),
-                "cannot namespace the workflow at {}: {error}",
-                args.root.display()
-            )
-            .is_err()
-            {
-                return ExitCode::Internal;
-            }
-            return ExitCode::Config;
-        }
+    let workflow_namespace = match workflow_namespace(&args.root) {
+        Ok(namespace) => namespace,
+        Err(code) => return code,
     };
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
@@ -142,6 +126,29 @@ fn source_dir(root: &std::path::Path) -> &std::path::Path {
     root.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."))
+}
+
+/// The workflow's stable identity for ledger namespacing: the
+/// canonical path of the configuration being run. Without it the
+/// agent cannot tell workflows apart on its shared ledger, so a
+/// run that cannot name its workflow refuses instead of pruning
+/// another workflow's records.
+fn workflow_namespace(root: &std::path::Path) -> Result<String, ExitCode> {
+    root.canonicalize()
+        .map_err(|error| {
+            if writeln!(
+                std::io::stderr().lock(),
+                "cannot namespace the workflow at {}: {error}",
+                root.display()
+            )
+            .is_err()
+            {
+                ExitCode::Internal
+            } else {
+                ExitCode::Config
+            }
+        })
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

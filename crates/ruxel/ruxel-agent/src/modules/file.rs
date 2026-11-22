@@ -28,17 +28,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 return Err(format!("file: {path} does not exist"));
             }
             apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
-            // The task's own provider record for a managed file, the
-            // same mode judgment the copy carries: an executable mode
-            // registers the path, a declared non-executable one
-            // unregisters it, and no declared mode changes nothing.
-            super::user::note_managed_shell_file(
-                path,
-                obj.get("mode")
-                    .map(super::parse_mode)
-                    .transpose()
-                    .map_err(|error| format!("file: {error}"))?,
-            );
+            note_shell_provider(obj, path)?;
             Ok(json!({"path": path, "state": "file", "changed": changed, "failed": false}))
         }
         "directory" => {
@@ -105,6 +95,21 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         }
         other => Err(format!("file: state {other:?} outside the closed surface")),
     }
+}
+
+/// The task's own shell-provider record for a managed file: the same
+/// mode judgment the copy carries — an executable mode registers the
+/// path, a declared non-executable one unregisters it, and no declared
+/// mode changes nothing.
+fn note_shell_provider(obj: &serde_json::Map<String, Value>, path: &str) -> Result<(), String> {
+    super::user::note_managed_shell_file(
+        path,
+        obj.get("mode")
+            .map(super::parse_mode)
+            .transpose()
+            .map_err(|error| format!("file: {error}"))?,
+    );
+    Ok(())
 }
 
 fn path_start(path: &Path) -> Result<OwnedFd, String> {
