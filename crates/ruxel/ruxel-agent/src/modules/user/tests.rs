@@ -21,6 +21,7 @@ mod plan_reset;
 mod plan_state;
 mod plan_state_later;
 mod planned;
+mod planned_check_mode;
 mod reconciliation;
 mod recreated;
 mod removal;

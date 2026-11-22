@@ -189,3 +189,26 @@ pub(super) fn sysctl_file_value(file: &str, name: &str) -> Option<String> {
     }
     value
 }
+
+pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
+    match module {
+        "file" => !bool_value(params.get("recurse"), false),
+        "apt" => {
+            !bool_value(params.get("update_cache"), false)
+                && !bool_value(params.get("autoremove"), false)
+                && !bool_value(params.get("hold"), false)
+                && params.get("upgrade").and_then(Value::as_str).is_none()
+                && params.get("state").and_then(Value::as_str) != Some("latest")
+        }
+        "systemd" => {
+            !bool_value(params.get("daemon_reload"), false)
+                && params.get("state").and_then(Value::as_str) != Some("restarted")
+                // A reload always acts when it runs, and the run that
+                // triggers it is the one that says whether it changed, so
+                // its result is never a fact about the host to cache.
+                && params.get("state").and_then(Value::as_str) != Some("reloaded")
+        }
+        "copy" | "template" | "lineinfile" | "replace" | "blockinfile" | "sysctl" => true,
+        _ => false,
+    }
+}

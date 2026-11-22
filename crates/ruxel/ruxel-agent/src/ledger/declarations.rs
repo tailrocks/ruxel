@@ -1,4 +1,30 @@
-use super::{Ledger, Record, sysctl_declaration};
+use super::{Ledger, Record, SysctlDecl};
+
+/// The managed declaration a sysctl task carries: the file it declares
+/// the key in, the key, and the value it declared there. The
+/// declaration is the task's own, not the file's current content: the
+/// task wrote the value it declared, whatever else the file holds.
+pub(crate) fn sysctl_declaration(module: &str, params: &Value) -> Option<SysctlDecl> {
+    if module != "sysctl" {
+        return None;
+    }
+    let name = params.get("name").and_then(Value::as_str)?;
+    let value = match params.get("value")? {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => if *value { "1" } else { "0" }.to_string(),
+        _ => return None,
+    };
+    let file = params
+        .get("sysctl_file")
+        .and_then(Value::as_str)
+        .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    Some(SysctlDecl {
+        file: file.to_string(),
+        name: name.to_string(),
+        value,
+    })
+}
 use serde_json::Value;
 use std::path::PathBuf;
 

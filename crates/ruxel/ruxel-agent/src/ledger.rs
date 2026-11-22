@@ -2,7 +2,10 @@ mod declarations;
 mod probe;
 mod store;
 
+use declarations::sysctl_declaration;
 use probe::{file_attrs, file_fingerprint, probe_for, read_sysctl, sysctl_file_value};
+
+pub(crate) use probe::cache_allowed;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -170,29 +173,6 @@ pub(crate) struct Ledger {
     /// module gate keeps away from the tasks that read none of them.
     #[cfg(test)]
     scans: std::cell::Cell<usize>,
-}
-
-pub(crate) fn cache_allowed(module: &str, params: &Value) -> bool {
-    match module {
-        "file" => !probe::bool_value(params.get("recurse"), false),
-        "apt" => {
-            !probe::bool_value(params.get("update_cache"), false)
-                && !probe::bool_value(params.get("autoremove"), false)
-                && !probe::bool_value(params.get("hold"), false)
-                && params.get("upgrade").and_then(Value::as_str).is_none()
-                && params.get("state").and_then(Value::as_str) != Some("latest")
-        }
-        "systemd" => {
-            !probe::bool_value(params.get("daemon_reload"), false)
-                && params.get("state").and_then(Value::as_str) != Some("restarted")
-                // A reload always acts when it runs, and the run that
-                // triggers it is the one that says whether it changed, so
-                // its result is never a fact about the host to cache.
-                && params.get("state").and_then(Value::as_str) != Some("reloaded")
-        }
-        "copy" | "template" | "lineinfile" | "replace" | "blockinfile" | "sysctl" => true,
-        _ => false,
-    }
 }
 
 impl Ledger {
@@ -391,32 +371,6 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests;
-
-/// The managed declaration a sysctl task carries: the file it declares
-/// the key in, the key, and the value it declared there. The
-/// declaration is the task's own, not the file's current content: the
-/// task wrote the value it declared, whatever else the file holds.
-fn sysctl_declaration(module: &str, params: &Value) -> Option<SysctlDecl> {
-    if module != "sysctl" {
-        return None;
-    }
-    let name = params.get("name").and_then(Value::as_str)?;
-    let value = match params.get("value")? {
-        Value::String(value) => value.clone(),
-        Value::Number(value) => value.to_string(),
-        Value::Bool(value) => if *value { "1" } else { "0" }.to_string(),
-        _ => return None,
-    };
-    let file = params
-        .get("sysctl_file")
-        .and_then(Value::as_str)
-        .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
-    Some(SysctlDecl {
-        file: file.to_string(),
-        name: name.to_string(),
-        value,
-    })
-}
 
 pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
