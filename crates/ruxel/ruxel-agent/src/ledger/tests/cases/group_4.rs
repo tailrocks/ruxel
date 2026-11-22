@@ -136,6 +136,33 @@ fn a_complete_plan_expires_the_records_it_never_encountered() {
 }
 
 #[test]
+fn a_plan_that_continues_past_its_failure_prunes_at_the_end() {
+    // Thread 299: a failed task sets the abort, but the controller
+    // rescues the failure and keeps sending tasks — each new plan
+    // frame is evidence the session continued past it. The abort must
+    // not survive to the session's end, or genuinely dropped records
+    // persist forever behind one rescued failure.
+    let dir = Scratch::new("rescued-plan");
+    let file = dir.file("target", b"stable");
+    let mut ledger = Ledger::load(&dir.0);
+    record_file(&mut ledger, "later", &file);
+    ledger.flush();
+
+    let mut ledger = Ledger::load(&dir.0);
+    ledger.encounter("earlier");
+    ledger.abort_plan();
+    ledger.continue_plan();
+    ledger.encounter("rescued");
+    ledger.complete_plan();
+    ledger.flush();
+
+    assert!(
+        Ledger::load(&dir.0).cached_ok("later").is_none(),
+        "the session ran to its end: the dropped record must expire"
+    );
+}
+
+#[test]
 fn a_filtered_done_prunes_nothing() {
     // A tagged run omits tasks the workflow keeps: its Done frame
     // carries the filtered flag, and the agent must not treat the

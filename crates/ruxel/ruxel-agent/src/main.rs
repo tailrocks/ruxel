@@ -190,7 +190,12 @@ fn serve() -> i32 {
             }
             Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
                 // Every frame is one task of the session's workflow; the
-                // plan state began at Hello and every frame keeps it.
+                // plan state began at Hello and every frame keeps it. A
+                // frame that arrives after a halted one is evidence the
+                // controller rescued the failure and continued, so the
+                // earlier abort clears: only the session's end decides
+                // what expires, never one failed frame.
+                ledger.continue_plan();
                 for task in &tasks {
                     let mut task = task.clone();
                     task.no_log |= sensitive_effects.is_marked();

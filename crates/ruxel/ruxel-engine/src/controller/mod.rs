@@ -306,13 +306,13 @@ pub async fn run<B: Backend>(
                 .collect();
             layer.environment = object(play, "environment");
             layer.become_user = string(play, "becomeUser").map(str::to_owned);
-            let execution: Result<()> = async {
+            let execution: Result<bool> = async {
                 let success = runner.tasks(array(play, "preTasks"), &layer).await?
                     && runner.tasks(array(play, "tasks"), &layer).await?;
                 if success {
                     runner.run_handlers(&layer).await?;
                 }
-                Ok(())
+                Ok(success)
             }
             .await;
             if let Some(persisted) = runner.scope.get("setFacts") {
@@ -331,17 +331,29 @@ pub async fn run<B: Backend>(
             recap.rescued += runner.recap.rescued;
             recap.ignored += runner.recap.ignored;
             recap.filtered |= runner.filtered;
-            if let Err(error) = execution {
+            match execution {
                 // The session stopped before its tasks were all sent:
                 // the agent never receives the rest and never calls
                 // `abort_plan`, so the shutdown must not prune them.
-                recap.aborted = true;
-                let error = if layer.control_sensitive || runner.backend.conservative_sensitive() {
-                    anyhow::anyhow!("sensitive execution failed")
-                } else {
-                    error
-                };
-                return Err(RunFailure::new(error, totals).into());
+                Err(error) => {
+                    recap.aborted = true;
+                    let error =
+                        if layer.control_sensitive || runner.backend.conservative_sensitive() {
+                            anyhow::anyhow!("sensitive execution failed")
+                        } else {
+                            error
+                        };
+                    return Err(RunFailure::new(error, totals).into());
+                }
+                // A task that stops the play without an execution
+                // error — an agent result overridden by `failedWhen`,
+                // or a controller-local fail — ends the session the
+                // same way: the later tasks are never sent, so the
+                // recap carries the aborted mark too.
+                Ok(false) => {
+                    recap.aborted = true;
+                }
+                Ok(true) => {}
             }
         }
     }

@@ -282,6 +282,17 @@ impl Ledger {
         self.aborted = true;
     }
 
+    /// The session sent another plan frame after the abort: the
+    /// controller rescued the failure and continued — through
+    /// `always`, handlers or later tasks — so the earlier halt is no
+    /// proof the session stopped. Only the controller's final outcome
+    /// decides incompleteness: a session that runs to its end prunes
+    /// what it never encountered, and a rescued failure must not
+    /// preserve dropped records forever.
+    pub(crate) fn continue_plan(&mut self) {
+        self.aborted = false;
+    }
+
     /// The session's plans ran to their end: the plan is complete, and
     /// a complete plan may expire the records it never encountered.
     pub(crate) fn complete_plan(&mut self) {

@@ -180,7 +180,8 @@ fn a_shared_same_name_group_names_every_other_holder() {
         vec!["bob".to_string()],
         "the listed member and the primary holder share the group: {sharers:?}"
     );
-    let exclusive = super::super::holders::same_name_group_sharers_from(groups, passwd, "ops", 2002);
+    let exclusive =
+        super::super::holders::same_name_group_sharers_from(groups, passwd, "ops", 2002);
     assert!(
         exclusive.iter().all(|sharer| sharer != "ops"),
         "no account shares the exclusive group: {exclusive:?}"

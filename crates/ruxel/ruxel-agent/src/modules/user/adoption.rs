@@ -219,11 +219,7 @@ pub(super) fn chain_dir_trusted(uid: u32, gid: u32, mode: u32) -> bool {
 /// provable on any host.
 pub(super) fn chain_dir_trusted_on(uid: u32, gid: u32, mode: u32, strict: bool) -> bool {
     own_directory(uid, mode)
-        || (!strict
-            && uid == 0
-            && mode & 0o002 == 0
-            && mode & 0o020 != 0
-            && privileged_gid(gid))
+        || (!strict && uid == 0 && mode & 0o002 == 0 && mode & 0o020 != 0 && privileged_gid(gid))
 }
 
 /// Whether the group holds no unprivileged principal: root everywhere,

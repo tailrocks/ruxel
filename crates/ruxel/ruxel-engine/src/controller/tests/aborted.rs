@@ -51,6 +51,34 @@ async fn a_mid_play_evaluation_failure_marks_the_session_aborted() -> Result<()>
 }
 
 #[tokio::test]
+async fn a_failed_task_without_an_error_marks_the_session_aborted() -> Result<()> {
+    // Thread 298: a task can stop the play by returning Ok(false)
+    // without an execution error — an agent result overridden by
+    // failedWhen — yet the later tasks are never sent all the same.
+    // The recap must carry the aborted mark, or shutdown reports the
+    // session complete and prunes the records of the unsent suffix.
+    let config = two_tasks(
+        &json!({"name":"doomed","failedWhen":true,"operation":{"kind":"debug","msg":"no"}}),
+    );
+    let mut backend = Fake::default();
+    let recaps = run(
+        &config,
+        &BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut BTreeMap::new(),
+    )
+    .await?;
+    assert_eq!(recaps["h"].failed, 1);
+    assert_eq!(recaps["h"].ok, 1, "only the task before the failed one ran");
+    assert!(
+        recaps["h"].aborted,
+        "a session stopped before its tasks were all sent is incomplete"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_complete_run_marks_nothing_aborted() -> Result<()> {
     // Every task sent and answered: the session ran to its end, so its
     // shutdown stays an authoritative verdict on the records it saw.

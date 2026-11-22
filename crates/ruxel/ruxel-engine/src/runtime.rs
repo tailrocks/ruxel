@@ -233,9 +233,14 @@ mod tests;
 /// the run itself failed before the shutdown could read a recap.
 fn session_incomplete(result: &Result<BTreeMap<String, Recap>>, host: &str) -> bool {
     match result {
+        // An opened connection with no recap is no complete session:
+        // a task that delegates to a host which is not itself a play
+        // target opens that host's connection, but the recap stays
+        // keyed to the play target — the miss must read as incomplete,
+        // or shutdown prunes the delegate's unseen records.
         Ok(recap) => recap
             .get(host)
-            .is_some_and(|total| total.filtered || total.aborted),
+            .is_none_or(|total| total.filtered || total.aborted),
         Err(_) => true,
     }
 }

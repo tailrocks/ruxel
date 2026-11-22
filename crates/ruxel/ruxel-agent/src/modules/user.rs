@@ -895,8 +895,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 && let Some((_, gid)) = same_name.as_ref()
                 && !holders::same_name_group_sharers(name, *gid)?.is_empty()
             {
-                let sharers =
-                    holders::same_name_group_sharers(name, *gid)?.join(", ");
+                let sharers = holders::same_name_group_sharers(name, *gid)?.join(", ");
                 return Err(format!(
                     "user: refusing to change {name}: the group {name} is shared with {sharers}, so declare group to move onto it"
                 ));

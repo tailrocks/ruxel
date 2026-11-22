@@ -20,7 +20,19 @@ fn recap(filtered: bool, aborted: bool) -> BTreeMap<String, Recap> {
 #[test]
 fn a_plain_complete_session_stays_authoritative() {
     assert!(!session_incomplete(&Ok(recap(false, false)), "h"));
-    assert!(!session_incomplete(&Ok(BTreeMap::new()), "h"));
+}
+
+#[test]
+fn a_connection_without_a_recap_is_no_complete_session() {
+    // Thread 291: a task that delegates to a host which is not itself
+    // a play target opens that host's agent connection, but the final
+    // recap stays keyed to the original play target — the lookup
+    // misses, and the miss must read as incomplete. A complete verdict
+    // would prune the delegate's records for tasks it never saw: a
+    // FetchSecret delegated off a workers play can erase the
+    // delegate's unrelated cache and managed-sysctl records.
+    assert!(session_incomplete(&Ok(BTreeMap::new()), "h"));
+    assert!(session_incomplete(&Ok(recap(false, false)), "delegate"));
 }
 
 #[test]
