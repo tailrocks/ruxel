@@ -590,13 +590,15 @@ const function samePrimaryGroup(s: core.Step, n: String): Boolean =
 /// The group `n` still has a member when the removal of stage `k`
 /// runs: an account the workflow leaves present — its last word at or
 /// before the removal's stage — that names the group as its primary group
-/// or among its supplementary groups. An account a later declaration
-/// takes off the group has left it already — where that declaration
-/// runs on the host the proof is about: a redeclaration on another
-/// machine leaves the membership here. A removal of the account counts
-/// as taking it off every group: the account is gone.
+/// or among its supplementary groups. Only a stage that runs on the host
+/// the proof is about declares a membership there: a declaration from a
+/// stage on another machine never held the group here. An account a later
+/// declaration takes off the group has left it already — where that
+/// declaration runs on the host the proof is about: a redeclaration on
+/// another machine leaves the membership here. A removal of the account
+/// counts as taking it off every group: the account is gone.
 const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, n: String, h: core.Host): Boolean =
-  positions(_indexes).filter((m) -> m <= k).any((m) -> positions(_indexes[m].steps).any((j) ->
+  positions(_indexes).filter((m) -> m <= k && identityRunsOn(_stages[m], h)).any((m) -> positions(_indexes[m].steps).any((j) ->
     let (u = _indexes[m].steps[j])
     if (!(u is linux.User)) false
     else u.state == "present" && u.user != n && holdsGroup(u, n) && !leftGroupBetween(_stages, _indexes, m, k, u, n, h)))

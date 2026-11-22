@@ -279,6 +279,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-file-owner-renumbered.pkl",
     "invalid/linux-user-private-group-gone-no-member.pkl",
     "valid/linux-file-owner-renumbered-reconciled.pkl",
+    "valid/linux-user-private-group-disjoint-member.pkl",
     "valid/linux-user-private-group-survives-for-member.pkl",
     "valid/linux-sysctl-shadow-legacy.pkl",
     "valid/linux-sysctl-shared-file-across-stages.pkl",
