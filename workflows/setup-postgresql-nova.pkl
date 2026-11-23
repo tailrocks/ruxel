@@ -1,0 +1,395 @@
+// Sets up postgresql-nova: the PostgreSQL host of the ChainArgos
+// `setup-postgresql-nova.yml` Ansible playbook, as a Ruxel workflow.
+//
+// Secrets are referenced, never inlined: 1Password lookups resolve at apply
+// time only, and every task that carries one is never logged. The cluster
+// listens on port 40000; the file the access rules render into is 0640
+// owned by postgres; the service reloads on either file and is never
+// restarted automatically.
+//
+// Several playbook steps wait on other phase-3 tracks and stand here as
+// comments naming what they wait on: the SSH git form (Track A), the mount
+// and line-editing steps, absent packages, recursive ownership, the daemon
+// reload of a plain service, and the timer interval. The secret public key
+// at 0644 waits on the secret-type choice the Wonder design owns: a secret
+// file is 0600 or narrower today, and the rendered access file is the only
+// 0640 exception the catalogue carries.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+
+// The nova host itself. The address stands in for the real inventory: the
+// proof harness replaces it with its disposable host the way the fixture
+// matrix does, and the operator inventories the real machine.
+local postgresqlNova = new Host { name = "postgresql-nova"; address = "192.0.2.10" }
+
+local sshPrivateKey = core.onePassword("ChainArgos", "postgresql-nova SSH", "private key", new core.OnePasswordOptions {})
+local chainargosPassword = core.onePassword("ChainArgos", "ChainArgos chainargos@titan PostgreSQL", "password", new core.OnePasswordOptions {})
+local kestraPassword = core.onePassword("ChainArgos", "ChainArgos kestra@titan PostgreSQL", "password", new core.OnePasswordOptions {})
+local lookerPassword = core.onePassword("ChainArgos", "ChainArgos looker@titan PostgreSQL", "password", new core.OnePasswordOptions {})
+local bitcoinUsername = core.onePassword("ChainArgos", "ChainArgos bitcoin@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+local bitcoinPassword = core.onePassword("ChainArgos", "ChainArgos bitcoin@postgresql-nova PostgreSQL", "password", new core.OnePasswordOptions {})
+local ethereumUsername = core.onePassword("ChainArgos", "ChainArgos ethereum@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+local ethereumPassword = core.onePassword("ChainArgos", "ChainArgos ethereum@postgresql-nova PostgreSQL", "password", new core.OnePasswordOptions {})
+local bscUsername = core.onePassword("ChainArgos", "ChainArgos bsc@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+local bscPassword = core.onePassword("ChainArgos", "ChainArgos bsc@postgresql-nova PostgreSQL", "password", new core.OnePasswordOptions {})
+local tronUsername = core.onePassword("ChainArgos", "ChainArgos tron@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+local tronPassword = core.onePassword("ChainArgos", "ChainArgos tron@postgresql-nova PostgreSQL", "password", new core.OnePasswordOptions {})
+
+// The access file and the main configuration: the service below reloads on
+// either, and never restarts on them.
+local pgHba = postgres.renderPgHba(new Listing {
+  new postgres.PgHbaRule { type = "local"; database = "all"; user = "postgres"; method = "peer" }
+  new postgres.PgHbaRule { type = "local"; database = "all"; user = "all"; method = "peer" }
+  new postgres.PgHbaRule { type = "host"; database = "all"; user = "postgres"; address = "127.0.0.1/32"; method = "trust" }
+  new postgres.PgHbaRule { type = "host"; database = "redshift"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "wallet-screening"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "bitcoin"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "ethereum"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "tron"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "base"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "bsc"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "transfer_monitor"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "bitcoin"; user = postgres.secretName(bitcoinUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "ethereum"; user = postgres.secretName(ethereumUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "bsc"; user = postgres.secretName(bscUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "tron"; user = postgres.secretName(tronUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_java_bitcoin"; user = postgres.secretName(bitcoinUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_rust_bitcoin"; user = postgres.secretName(bitcoinUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_java_eth"; user = postgres.secretName(ethereumUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_rust_eth"; user = postgres.secretName(ethereumUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_java_bsc"; user = postgres.secretName(bscUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_rust_bsc"; user = postgres.secretName(bscUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_java_tron"; user = postgres.secretName(tronUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "verify_rust_tron"; user = postgres.secretName(tronUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "kestra_delorean"; user = "kestra"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "kestra_pegasus"; user = "kestra"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "redshift"; user = "looker"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "lightdash"; user = "lightdash"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "all"; user = "all"; address = "0.0.0.0/0"; method = "reject" }
+}, "/etc/postgresql/18/main/pg_hba.conf")
+
+local pgConf = new File {
+  path = "/etc/postgresql/18/main/postgresql.conf"
+  content = read("postgresql-nova.conf").text
+  mode = "0644"
+  owner = "postgres"
+  group = "postgres"
+}
+
+// BLOCKED on the secret-type choice the Wonder design owns: a secret file is
+// 0600 or narrower, and only the rendered access file may hold secrets at
+// 0640. The playbook deploys the public key at 0644.
+// new File {
+//   path = "/root/.ssh/id_rsa.pub"
+//   mode = "0644"
+//   content = "\(core.onePassword("ChainArgos", "postgresql-nova SSH", "public key", new core.OnePasswordOptions {}))"
+// }
+
+// BLOCKED on Track A: the SSH clone of java-monorepo at branch main with
+// host-key acceptance needs the SshGitUrl and GitBranch signatures, and the
+// catalogue's accept-hostkey form. Drafted against those signatures; rebases
+// when Track A lands.
+// new linux.GitCheckout {
+//   repository = "git@github.com:ChainArgos/java-monorepo.git"
+//   path = "/projects/java-monorepo"
+//   branch = "main"
+// }
+
+// BLOCKED on the mount track: the UUID the capture learns feeds the mount
+// of the XFS volume at /var/lib/postgresql.
+local lvmUuid = new Capture {
+  title = "Learn the UUID of the data volume"
+  bash = "blkid -s UUID -o value /dev/data/data"
+}
+
+// BLOCKED on the line-editing catalogue: commenting swap out of /etc/fstab,
+// the pam_limits line, and the postgres memlock and nofile limits in
+// /etc/security/limits.conf have no catalogue step yet.
+
+// BLOCKED on the absent-packages catalogue: removing every PostgreSQL
+// server major except 18 (postgresql-13 through postgresql-17) has no
+// catalogue step yet.
+
+// BLOCKED on recursive ownership: chown -R postgres:postgres on
+// /var/lib/postgresql has no catalogue step yet (no recurse).
+
+// BLOCKED on the systemd track: the daemon reload before the service is
+// used has no plain-service form (timers reload it themselves).
+
+// The report the playbook warns from: the capture reads the settings a
+// reload could not adopt, and the notice carries them into the run.
+local pendingRestart = new Capture {
+  title = "Report settings that still require a restart"
+  bash = "psql -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+}
+
+stages {
+  new Stage { title = "Prepare the host"; hosts = new Listing { postgresqlNova }; steps {
+  new Directory { path = "/root/.ssh"; mode = "0700" }
+  new File {
+    path = "/root/.ssh/id_rsa"
+    mode = "0600"
+    content = "\(sshPrivateKey)"
+  }
+  // Trusting an already-trusted config changes nothing, so the command
+  // never reports a change: a first apply under-reports the one-time trust
+  // instead of reporting a change on every apply.
+  new Command { run { "mise"; "trust"; "/projects/java-monorepo/mise.toml" }; changes = "never" }
+  // Swap is already off on a configured host, so turning it off again
+  // changes nothing either.
+  new Command { run { "swapoff"; "-a" }; changes = "never" }
+  new linux.Sysctl { name = "vm.swappiness"; value = "0" }
+  // The playbook sets overcommit_memory to 2 and then to 1 in
+  // 10-postgres-overcommit.conf; the port keeps the effective 1, so the
+  // boot and the live value agree instead of disagreeing the way the
+  // playbook's two files do.
+  new linux.Sysctl { name = "vm.overcommit_memory"; value = "1"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
+  new linux.Sysctl { name = "vm.nr_hugepages"; value = "16384"; path = "/etc/sysctl.d/10-postgres-hugepages.conf" }
+  new linux.Sysctl { name = "vm.overcommit_ratio"; value = "100"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
+  // The base packages come from the stock sources, so they install before
+  // the PGDG repository is written: a stage that installs after a repository
+  // plans against candidates check and diff never see, and the lowering
+  // refuses it in this stage and in every later one on the host.
+  new debian.AptPackages {
+    names {
+      "apt-transport-https"
+      "ca-certificates"
+      "gnupg"
+      "lsb-release"
+      "iotop"
+      "git"
+      "curl"
+      "build-essential"
+      "clang"
+      "pkg-config"
+      "libssl-dev"
+      "libzstd-dev"
+      "liblz4-dev"
+      "libz-dev"
+    }
+  }
+  // python3-psycopg is a dependency of the Ansible modules, not of the
+  // host: the agent speaks SQL directly, so the port drops it.
+  new Directory { path = "/usr/share/postgresql-common/pgdg"; mode = "0755" }
+  // No catalogue step downloads a file, so curl stands in: it writes the
+  // key once, and the guard skips it once the key is there.
+  new Command {
+    run { "curl"; "-fsSL"; "-o"; "/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"; "https://www.postgresql.org/media/keys/ACCC4CF8.asc" }
+    creates = "/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"
+  }
+  new debian.AptRepository {
+    name = "pgdg"
+    url = "https://apt.postgresql.org/pub/repos/apt"
+    // The playbook reads the codename from facts; the catalogue suite is
+    // static text, so the operator sets the codename: trixie for Debian 13.
+    suite = "trixie-pgdg"
+    components { "main" }
+    signingKey = read("pgdg-apt-key.asc").text
+  }
+  // BLOCKED on the apt track: installing from a repository the workflow
+  // writes is refused in this stage and in every later one on the host
+  // (check and diff plan against candidates the host still has), so the
+  // PostgreSQL 18 installs wait on that track's design.
+  // new debian.AptPackages { names { "postgresql-18" } }
+  // new debian.AptPackages { names { "postgresql-server-dev-18" } }
+  } }
+  new Stage { title = "Set up postgresql-nova"; hosts = new Listing { postgresqlNova }; steps {
+  new Directory { path = "/var/lib/postgresql"; mode = "0755" }
+  lvmUuid
+  // pg_parquet 0.5.1 at its tag's commit (resolved at author time), built
+  // with cargo-pgrx 0.16.0: each step runs once, when its marker is absent.
+  new linux.GitCheckout {
+    repository = "https://github.com/CrunchyData/pg_parquet.git"
+    path = "/opt/pg_parquet"
+    commit = "253bfa2228a0d5323180455cdc9ae9301db38be5"
+  }
+  new Script {
+    bash = """
+      eval "$(mise activate bash)"
+      cargo install cargo-pgrx --version 0.16.0 --locked
+      """
+    creates = "/root/.cargo/bin/cargo-pgrx"
+  }
+  new Script {
+    bash = """
+      eval "$(mise activate bash)"
+      cargo pgrx init --pg18 /usr/bin/pg_config
+      """
+    creates = "/root/.pgrx"
+  }
+  new Script {
+    bash = """
+      cd /opt/pg_parquet
+      eval "$(mise activate bash)"
+      cargo pgrx install --release --features pg18
+      """
+    creates = "/usr/lib/postgresql/18/lib/pg_parquet.so"
+  }
+  new Directory { path = "/etc/systemd/system/postgresql@.service.d"; mode = "0755" }
+  new File {
+    path = "/etc/systemd/system/postgresql@.service.d/override.conf"
+    content = "[Service]\nLimitNOFILE=1048576\n"
+    mode = "0644"
+  }
+  pgConf
+  pgHba
+  new systemd.Service {
+    name = "postgresql@18-main"
+    enabled = true
+    running = true
+    reloadOnChangeOf { pgConf; pgHba }
+  }
+  // The report the playbook warns from: the capture reads the settings a
+  // reload could not adopt, and the notice carries them into the run. The
+  // notice never reports a change, and nothing ever restarts PostgreSQL.
+  pendingRestart
+  new postgres.PendingRestartNotice {
+    output = pendingRestart.stdout()
+    version = "18"
+  }
+  new File {
+    path = "/usr/local/sbin/chainargos-postgresql-multixact-monitor"
+    content = read("chainargos-postgresql-multixact-monitor").text
+    mode = "0755"
+    owner = "root"
+    group = "root"
+  }
+  new File {
+    path = "/etc/systemd/system/chainargos-postgresql-multixact-monitor.service"
+    content = read("chainargos-postgresql-multixact-monitor.service").text
+    mode = "0644"
+    owner = "root"
+    group = "root"
+  }
+  // The playbook's timer fires every 5 minutes past boot; the catalogue
+  // timer fires once 2 minutes past boot — the interval has no catalogue
+  // form yet (systemd track).
+  new systemd.SystemdTimer {
+    name = "chainargos-postgresql-multixact-monitor"
+    onBoot = 2.min
+    enabled = true
+  }
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(chainargosPassword)
+    roleAttrFlags = "SUPERUSER"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = postgres.secretName(bitcoinUsername)
+    password = postgres.secretPassword(bitcoinPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = postgres.secretName(ethereumUsername)
+    password = postgres.secretPassword(ethereumPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = postgres.secretName(bscUsername)
+    password = postgres.secretPassword(bscPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = postgres.secretName(tronUsername)
+    password = postgres.secretPassword(tronPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = "looker"
+    password = postgres.secretPassword(lookerPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = "kestra"
+    password = postgres.secretPassword(kestraPassword)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Database { name = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "wallet-screening"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "ethereum"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "base"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "transfer_monitor"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_java_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_rust_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_java_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_rust_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_java_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_rust_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_java_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "verify_rust_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "kestra_pegasus"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "kestra_delorean"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Schema { name = "wallet_tags"; loginDb = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "database"
+    privs = "CONNECT"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "schema"
+    privs = "USAGE"
+    objs = new Listing { "public"; "wallet_tags" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs = new Listing { "ALL_IN_SCHEMA" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs = new Listing { "ALL_IN_SCHEMA" }
+    schema = "wallet_tags"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "wallet_tags"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "setup-postgresql-nova"

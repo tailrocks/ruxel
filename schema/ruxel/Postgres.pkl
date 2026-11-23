@@ -1,0 +1,334 @@
+/// PostgreSQL objects and access: roles, databases, schemas, privileges,
+/// the host-based access file, and the restart report.
+///
+/// The ruxel binary serves this module at `modulepath:/ruxel/Postgres.pkl`.
+/// Workflow files import it beside `Core.pkl`, qualifying every class:
+///
+///     import "modulepath:/ruxel/Postgres.pkl" as postgres
+///     new postgres.Role {
+///       name = "chainargos"
+///       password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+///     }
+module Postgres
+
+import "modulepath:/ruxel/Core.pkl" as core
+
+// The `Static`, `StaticList`, `AbsolutePath` and `FilePath` typealiases
+// below are copied from Core.pkl; keep them in sync — pklr cannot share
+// typealiases across modules, and would silently drop the constraints of a
+// dotted alias such as `core.Static`. `Port`, `Name` and `Privileges` below
+// are Postgres's own: `Core.pkl` has no counterpart for them.
+
+/// Text known before the run. Run-time values (`currentHost`,
+/// `Capture.stdout()`) are allowed only in `File.content`; secrets
+/// (`module.fnox`, …) only in `File.content` and action `environment`
+/// values. Every other text field is `Static`, and neither a run-time value
+/// nor a secret reference can be one: they carry the reserved prefixes
+/// `__ruxel_rt_8d41.` and `__ruxel_secret_8d41.`, which nothing else may
+/// contain.
+///
+/// No NUL either: no path, argument or name can hold one.
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("__ruxel_secret_8d41.") && !contains("\u{0}"))
+
+/// A list of `Static` texts. The constraint is on the whole list because
+/// pklr does not check the elements of a `Listing`, and properties of this
+/// type need an explicit `= new {}` default, which pklr does not supply for a
+/// constrained `Listing` typealias.
+typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.") || a.contains("__ruxel_secret_8d41.") || a.contains("\u{0}")))
+
+/// An absolute path in normal form: no empty, `.` or `..` segments and no
+/// trailing `/`, so two spellings of one path are the same text. No NUL,
+/// which no Unix path can hold.
+typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !contains("\u{0}") && !split("/").any((segment) -> segment == "." || segment == ".."))
+
+/// An absolute path that can be a file: any but `/`, which is a directory.
+typealias FilePath = AbsolutePath(this != "/")
+
+/// A TCP port: 1 to 65535.
+typealias Port = Int(isBetween(1, 65535))
+
+/// A role name or an owner: static text, or a secret the store holds (a
+/// 1Password username). A secret name reaches the host resolved and never
+/// logged; the task that carries it is never logged either, and the plan
+/// names it without its reference.
+typealias Name = Static|SecretName
+
+/// A role password: a secret of `Core.pkl`, never static text. A literal
+/// password would be committed to the workflow and printed in the clear.
+///
+/// The union `Static|core.SecretText` cannot be written here: pklr loses the
+/// parent class of every class of a module that the module path serves when
+/// one of its property types names a class of another module — the step
+/// classes of this module would no longer be `core.Step`s, and the lowering
+/// would refuse every workflow that uses them. The repro is in
+/// `crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs`; official
+/// Pkl 0.33.0 evaluates the same files correctly. A class of this module in
+/// the union keeps the union closed and pklr whole; the secret reaches it
+/// through `secretPassword`, whose parameter names the secret class — a
+/// function parameter does not trigger the defect.
+class SecretPassword {
+  /// The secret's parts, encoded: what store each part is read from and, for
+  /// `join`, the separators between them. The Lowering decodes them, as it
+  /// does for an action's environment value; the secret itself is read from
+  /// the store at apply time.
+  hidden parts: String
+
+  /// The reference a secret interpolates as. Overridden so that a password
+  /// smuggled into static text fails fast: `Static` rejects the reserved
+  /// prefix, so the assignment is refused instead of reaching the host as
+  /// the rendered secret class.
+  function toString(): String = "__ruxel_secret_8d41.\(parts)__"
+}
+
+/// The secret password of a role. `secret` is a secret of `Core.pkl`
+/// (`core.fnox(…)`, `core.onePassword(…)`, …); it is the only way to make a
+/// `SecretPassword`, so a password is never forged by hand.
+function secretPassword(secret: core.SecretText): SecretPassword =
+  new SecretPassword { parts = secret.parts }
+
+/// A role name or an owner the secret store holds, such as a 1Password
+/// username. The same pklr shape as `SecretPassword`: a class of this
+/// module, made only by `secretName`.
+class SecretName {
+  /// The secret's parts, encoded like `SecretPassword.parts`.
+  hidden parts: String
+
+  /// The reference the name interpolates as. Step labels never print it: a
+  /// step with a secret name is described without it, so the plan names the
+  /// step and not its reference.
+  function toString(): String = "__ruxel_secret_8d41.\(parts)__"
+}
+
+/// The secret name of a role or an owner. `secret` is a secret of
+/// `Core.pkl`; it is the only way to make a `SecretName`.
+function secretName(secret: core.SecretText): SecretName =
+  new SecretName { parts = secret.parts }
+
+/// A PostgreSQL role. The password is a secret alone, and the task is never
+/// logged: the password reaches the host resolved and never reaches output,
+/// results or the ledger.
+class Role extends core.Step {
+  hidden fixed kind = "postgresRole"
+  /// The role's name, static or a secret the store holds.
+  name: Name
+  /// The role's password, a secret alone: a literal password would be
+  /// committed to the workflow and printed in the clear.
+  password: SecretPassword
+  /// Attribute flags such as `SUPERUSER`, comma- or space-separated. Unset
+  /// logs the role in, the way the agent does for a role that states none.
+  roleAttrFlags: Static? = null
+  /// The user the agent connects as. Unset connects the default way.
+  loginUser: Static? = null
+  /// The port the agent connects to, such as 40000. Unset connects to the
+  /// engine default.
+  loginPort: Port? = null
+}
+
+/// A PostgreSQL database, owned by a role. Its name is static text; its
+/// owner may be a secret the store holds.
+class Database extends core.Step {
+  hidden fixed kind = "postgresDatabase"
+  /// The database's name.
+  name: Static
+  /// The role that owns the database, static or a secret the store holds.
+  owner: Name? = null
+  /// The user the agent connects as. Unset connects the default way.
+  loginUser: Static? = null
+  /// The port the agent connects to, such as 40000. Unset connects to the
+  /// engine default.
+  loginPort: Port? = null
+}
+
+/// A PostgreSQL schema: a namespace inside one database. Its name is static
+/// text; its owner may be a secret the store holds.
+class Schema extends core.Step {
+  hidden fixed kind = "postgresSchema"
+  /// The schema's name.
+  name: Static
+  /// The database that holds the schema.
+  loginDb: Static
+  /// The role that owns the schema, static or a secret the store holds.
+  owner: Name? = null
+  /// The user the agent connects as. Unset connects the default way.
+  loginUser: Static? = null
+  /// The port the agent connects to, such as 40000. Unset connects to the
+  /// engine default.
+  loginPort: Port? = null
+}
+
+/// The kind of object a privilege grants on.
+typealias PrivilegeType = "database"|"schema"|"table"|"default_privs"
+
+/// The privileges granted: one, such as `CONNECT`, or several, such as
+/// `SELECT, INSERT`. `ALL` grants every privilege of the kind; `TEMP` spells
+/// `TEMPORARY`. Case does not matter.
+typealias Privileges = Static|StaticList
+
+/// A PostgreSQL grant: privileges of one kind for one role. A second grant
+/// for the same role, kind, objects and database with different privileges
+/// declares a second state for them and conflicts with the first: a stage
+/// declares one grant for each thing it manages.
+class Privilege extends core.Step {
+  hidden fixed kind = "postgresPrivilege"
+  /// The database the grant lives in.
+  loginDb: Static
+  /// The kind of object the grant is on: a database, schemas, tables, or the
+  /// default privileges of future tables.
+  type: PrivilegeType
+  /// The privileges granted, such as `CONNECT` or `SELECT`.
+  privs: Privileges
+  /// The objects granted on: databases take none and default to the database
+  /// itself, schemas name their names, tables name `ALL_IN_SCHEMA`. Empty
+  /// for default privileges, which name their schema instead.
+  objs: StaticList = new {}
+  /// The schema of the tables or the default privileges. Only for `table`
+  /// and `default_privs`.
+  schema: Static? = null
+  /// The role granted to, static or a secret the store holds.
+  role: Name
+  /// The roles whose future tables carry the default privileges. Only for
+  /// `default_privs`.
+  targetRoles: StaticList = new {}
+  /// The user the agent connects as. Unset connects the default way.
+  loginUser: Static? = null
+  /// The port the agent connects to, such as 40000. Unset connects to the
+  /// engine default.
+  loginPort: Port? = null
+}
+
+/// One line of `pg_hba.conf`: who may reach which database over what
+/// connection, and how they authenticate. Columns carry no whitespace: a
+/// space would split the column into two fields and misconfigure the line,
+/// and a line break would smuggle a second rule into the file.
+class PgHbaRule {
+  /// The connection type the rule matches.
+  type: "local"|"host"|"hostssl"|"hostnossl"
+  /// The databases the rule matches: `all`, `sameuser`, `samerole`,
+  /// `replication`, names, or a comma-separated list of them.
+  database: Static
+  /// The roles the rule matches: `all` or names, or a comma-separated list
+  /// of them — static, or a secret the store holds, such as a 1Password
+  /// username.
+  user: Name
+  /// The clients the rule matches: a CIDR range, an address, or a host name.
+  /// Required for every `host` rule, forbidden on a `local` one.
+  address: Static? = null
+  /// How the match authenticates: `trust`, `reject`, `md5`, `password`,
+  /// `scram-sha-256`, `gss`, `sspi`, `ident`, `peer`, `pam`, `ldap`,
+  /// `radius`, `cert` or `oauth`.
+  method: Static
+}
+
+/// The rendered access file: `pg_hba.conf` with its body filled in. Its mode
+/// is 0640 owned by postgres, so secret usernames may fill its body without
+/// leaking into logs. `core.File` is closed to extension, so the catalogue
+/// carries its own file-shaped step, lowered to the same engine operation.
+/// Only `renderPgHba` makes one; the task that writes it is never logged
+/// when its body holds a secret, like any file with secret content. A stage
+/// reloads PostgreSQL on it; it never restarts it.
+class PgHbaFile extends core.Step {
+  hidden fixed kind = "pgHbaFile"
+  /// The cluster's access file, such as `/etc/postgresql/18/main/pg_hba.conf`.
+  path: FilePath
+  /// The rendered body: the header and one line per rule, with secret
+  /// usernames as references evaluation never resolves.
+  content: String
+  fixed mode = "0640"
+  fixed owner = "postgres"
+  fixed group = "postgres"
+}
+
+/// The access methods `renderPgHba` accepts. pklr does not check a function
+/// parameter's type constraint, so the render checks the method itself, with
+/// this sentence.
+const local validMethods = List("trust", "reject", "md5", "password", "scram-sha-256", "gss", "sspi", "ident", "peer", "pam", "ldap", "radius", "cert", "oauth")
+
+/// Whether the text would split a `pg_hba.conf` column or smuggle another
+/// line into the file.
+const local function hasBlank(_text: String): Boolean =
+  List(" ", "\t", "\n", "\r", "\u{b}", "\u{c}").any((c) -> _text.contains(c))
+
+/// The rule the file carries: its columns checked the way the type
+/// constraints cannot — pklr does not check the elements of the listing the
+/// caller passes, so the render checks every rule itself, with a sentence
+/// that names the rule.
+function ruleChecked(_rule: PgHbaRule): PgHbaRule =
+  if (_rule.database.isEmpty || hasBlank(_rule.database))
+    throw("pg_hba database \"\(staticText(_rule.database))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
+  else if (isStatic(_rule.user) && (staticText(_rule.user).isEmpty || hasBlank(staticText(_rule.user))))
+    throw("pg_hba user \"\(staticText(_rule.user))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
+  else if (_rule.method.isEmpty || hasBlank(_rule.method))
+    throw("pg_hba method \"\(staticText(_rule.method))\" is empty or carries whitespace; a column holds one method and no line break")
+  else if (!validMethods.contains(_rule.method))
+    throw("pg_hba method \"\(staticText(_rule.method))\" is none of \(validMethods.join(", ")); an unknown method fails the reload that reads the file")
+  else if (_rule.type == "local" && _rule.address != null)
+    throw("a local pg_hba rule matches Unix-domain sockets, so it takes no address; drop the address or use a host rule")
+  else if (_rule.type != "local" && (_rule.address == null || _rule.address.isEmpty || hasBlank(_rule.address)))
+    throw("a \(_rule.type) pg_hba rule matches TCP clients, so it takes an address such as 127.0.0.1/32 or 0.0.0.0/0")
+  else _rule
+
+/// Whether the name is static text, rather than a secret the store holds.
+const function isStatic(_name: Name): Boolean = !(_name is SecretName)
+
+/// The text of a static name. Only for messages and static columns: a secret
+/// name never renders through here.
+const function staticText(_name: Name): String = if (_name is SecretName) "" else _name.toString()
+
+/// The text of a rule's user column: static text, or the secret reference a
+/// secret name interpolates as. The file's content carries the reference,
+/// never the value; evaluation contacts no store.
+const function userText(_user: Name): String = _user.toString()
+
+const local spaces = "                                                        "
+
+/// The column padded to its width, so the file reads like the stock one.
+/// Padding is computed on the reference, never the value: evaluation
+/// contacts no store, and one evaluation always renders one file.
+const local function padded(_text: String, _width: Int): String =
+  if (_text.length >= _width) _text + " " else _text + spaces.substring(0, _width - _text.length)
+
+/// One rendered rule: its columns in `pg_hba.conf` order.
+const function rendered(_rule: PgHbaRule): String =
+  padded(_rule.type, 8) + padded(_rule.database, 22) + padded(userText(_rule.user), 22) + padded(_rule.address ?? "", 22) + _rule.method
+
+/// The access file of these rules at this path: its body filled in, 0640
+/// owned by postgres, so secret usernames may fill it. The path is the
+/// cluster's file, such as `/etc/postgresql/18/main/pg_hba.conf`. Every rule
+/// is checked the way the constraints cannot (see `ruleChecked`).
+function renderPgHba(_rules: Listing<PgHbaRule>, _path: FilePath): PgHbaFile =
+  let (checked = _rules.toList().map((r) -> ruleChecked(r)))
+  new PgHbaFile {
+    path = _path
+    content = "# TYPE  DATABASE              USER                  ADDRESS                 METHOD\n" + checked.map((r) -> rendered(r)).join("\n") + "\n"
+  }
+
+/// The warning a restart report carries into the run. It reads one capture's
+/// output — the `pending_restart` names — and warns when it is not empty.
+/// It never reports a change: it informs, like the playbook's debug task.
+/// PostgreSQL is never restarted on it: a smart shutdown waits for every
+/// client to disconnect, and `pending_restart` counts drift predating the
+/// run, so an automatic restart would turn unrelated history into an outage.
+///
+/// The capture is the author's own `core.Capture` — a served layer module
+/// cannot build one (constructing another module's class costs every class
+/// of the module its parent under pklr; see
+/// `crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs`) — listed
+/// beside the notice, which reads its `stdout()`:
+///
+///     local report = new Capture {
+///       title = "Report settings that still require a restart"
+///       bash = "psql -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+///     }
+///     // …in the stage's steps…
+///     report
+///     new postgres.PendingRestartNotice { output = report.stdout(); version = "18" }
+class PendingRestartNotice extends core.Step {
+  hidden fixed kind = "pendingRestartNotice"
+  /// The capture output warned about: a capture's `stdout()`, never a
+  /// secret — a notice reads host state, not the secret store.
+  output: String
+  /// The major version restarted with, such as `18`.
+  version: Static
+  /// The cluster restarted, such as `main`.
+  cluster: Static = "main"
+}

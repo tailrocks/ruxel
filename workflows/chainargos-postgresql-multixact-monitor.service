@@ -1,0 +1,8 @@
+[Unit]
+Description=Check PostgreSQL MultiXact and stale verification sessions
+After=postgresql@18-main.service
+Requires=postgresql@18-main.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/chainargos-postgresql-multixact-monitor

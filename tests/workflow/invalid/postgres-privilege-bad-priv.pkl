@@ -1,0 +1,18 @@
+// Only the kind's own privileges are granted.
+// expect: privilege "DROP" is not a database privilege; grant one of CREATE, CONNECT, TEMPORARY, or ALL
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "database"
+    privs = "DROP"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-bad-priv.pkl"

@@ -1,0 +1,24 @@
+// The restart report: a capture reads the settings a reload could not
+// adopt, and a notice warns about them. The capture is the stage's own — a
+// served layer module cannot build one — and the notice reads its output,
+// firing only when the report names anything. The notice never reports a
+// change: it informs, the way the playbook's debug task does. PostgreSQL is
+// never restarted on it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+local report = new Capture {
+  title = "Report settings that still require a restart"
+  bash = "psql -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+}
+
+stages { new Stage { title = "PostgreSQL names what still needs a restart"; hosts = inventory.workers; steps {
+  report
+  new postgres.PendingRestartNotice {
+    output = report.stdout()
+    version = "18"
+  }
+} } }
+
+name = "valid/postgres-pending-restart.pkl"

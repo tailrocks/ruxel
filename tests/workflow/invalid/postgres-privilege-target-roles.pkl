@@ -1,0 +1,21 @@
+// Target roles ride default privileges alone.
+// expect: target roles ride default privileges alone; a table grant names no target roles
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ALL_IN_SCHEMA" }
+    schema = "public"
+    role = "looker"
+    targetRoles { "owner" }
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-target-roles.pkl"

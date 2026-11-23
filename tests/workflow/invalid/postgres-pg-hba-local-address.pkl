@@ -1,0 +1,15 @@
+// A local rule matches Unix-domain sockets, so it takes no address. The
+// render runs where the file is written, so a bad rule refuses with its own
+// sentence instead of hiding behind the local that would hold the file.
+// expect: a local pg_hba rule matches Unix-domain sockets, so it takes no address
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  postgres.renderPgHba(new Listing {
+    new postgres.PgHbaRule { type = "local"; database = "all"; user = "postgres"; address = "127.0.0.1/32"; method = "peer" }
+  }, "/etc/postgresql/18/main/pg_hba.conf")
+} } }
+
+name = "invalid/postgres-pg-hba-local-address.pkl"

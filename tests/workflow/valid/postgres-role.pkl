@@ -1,0 +1,25 @@
+// A PostgreSQL role with a secret password: fnox names the key here, and
+// only apply resolves it. The password is a secret alone, never static
+// text, and the task that carries it is never logged.
+//
+// The secret functions are reached through an import of Core, not through
+// `module.fnox(…)`: under pklr, calling a function through the workflow's own
+// amended module chain from inside a step duplicates every play in the
+// lowered configuration (the same defect mis-lowers `module.currentHost` in
+// file content). Through an import both evaluators lower it once.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Chainargos owns its databases"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    roleAttrFlags = "SUPERUSER"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "valid/postgres-role.pkl"

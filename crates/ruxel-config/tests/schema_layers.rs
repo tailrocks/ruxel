@@ -59,6 +59,10 @@ fn layer_typealias_copies_match_core() {
         ),
         ("Systemd", ["Static", "Name"].as_slice()),
         (
+            "Postgres",
+            ["Static", "StaticList", "AbsolutePath", "FilePath"].as_slice(),
+        ),
+        (
             "Debian",
             [
                 "Static",

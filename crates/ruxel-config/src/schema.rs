@@ -1,7 +1,7 @@
 //! The Ruxel Pkl modules, compiled into the binary and served to Pkl code
 //! under `modulepath:/ruxel/`: the workflow language
 //! (`modulepath:/ruxel/Workflow.pkl`, which extends `Core.pkl`; the layer
-//! modules `Linux.pkl`, `Systemd.pkl`, `Debian.pkl`, `Storage.pkl`; and
+//! modules `Linux.pkl`, `Systemd.pkl`, `Debian.pkl`, `Storage.pkl`, `Postgres.pkl`; and
 //! `modulepath:/ruxel/internal/Lowering.pkl`) and the engine schema
 //! (`modulepath:/ruxel/engine/Engine.pkl`).
 //!
@@ -53,6 +53,10 @@ pub(crate) const TREE: &[(&str, &str)] = &[
     (
         "/ruxel/Storage.pkl",
         include_str!("../../../schema/ruxel/Storage.pkl"),
+    ),
+    (
+        "/ruxel/Postgres.pkl",
+        include_str!("../../../../schema/ruxel/Postgres.pkl"),
     ),
     (
         "/ruxel/Workflow.pkl",

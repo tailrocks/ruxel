@@ -1,0 +1,18 @@
+// Role flags outside the closed surface never reach the agent.
+// expect: role attribute flags "SUPERUSER, FLY" are outside the closed surface
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    roleAttrFlags = "SUPERUSER, FLY"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-role-bad-flags.pkl"
