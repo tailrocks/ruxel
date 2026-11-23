@@ -21,6 +21,7 @@ const MAY_NAME_EMBEDDED: &[&str] = &[
     "crates/ruxel/ruxel-config/tests/single_schema.rs",
     "tools/acceptance-plan/src/coverage/mod.rs",
     ".velnor/rust-ci.toml",
+    ".velnor/rust-inputs.lock",
 ];
 /// `.ruxel` holds the ignored `ruxel schema export` the README documents.
 const SKIPPED: &[&str] = &[".git", "target", ".cache", ".ruxel"];
