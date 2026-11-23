@@ -284,6 +284,27 @@ fn unique_probe_name() -> String {
     )
 }
 
+/// The absent target's rehearsal from the probe that already carries
+/// the publish's bytes: the publish stages one inode and renames it
+/// into place, so the rehearsal links the staged bytes under the
+/// rehearsal's first name instead of writing a second full copy — a
+/// quota that fits one copy but not two fails the old rehearsal where
+/// the publish succeeds — then replays the exchange the publish
+/// performs over scratch names.
+fn rehearse_absent(
+    file: &str,
+    scratch: &std::path::Path,
+    staged: &std::fs::File,
+    first: &std::path::Path,
+    second: &std::path::Path,
+) -> Result<(), String> {
+    link_payload(file, scratch, first)?;
+    staged
+        .sync_all()
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    rehearse_exchange(file, first, second)
+}
+
 /// The publishability probe under its scratch name: a single retained
 /// handle, opened exclusively with no mode but the owner's, never
 /// reopened by name. Where the target is absent the handle itself
@@ -341,39 +362,12 @@ fn stage_probe(
         // so taking the names collides with no live rehearsal.
         let _ = std::fs::remove_file(&first);
         let _ = std::fs::remove_file(&second);
-        let outcome = (|| {
-            stage_plain(file, &first, content)?;
-            rehearse_exchange(file, &first, &second)
-        })();
+        let outcome = rehearse_absent(file, scratch, &staged, &first, &second);
         let _ = std::fs::remove_file(&first);
         let _ = std::fs::remove_file(&second);
         outcome?;
         Ok(())
     }
-}
-
-/// The staged bytes with no live identity to preserve: the missing
-/// target the publish creates carries no mode or owner to inherit, so
-/// the rehearsal stages the exact bytes the publish will write under
-/// an exclusive owner-only scratch name — a quota that fits an empty
-/// file but not the new content refuses here, the way the probe handle
-/// refuses it.
-fn stage_plain(file: &str, first: &std::path::Path, content: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut stage = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(first)
-        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    stage
-        .write_all(content)
-        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    stage
-        .sync_all()
-        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    Ok(())
 }
 
 /// The probe's own handle: one exclusive open carrying no mode but the
@@ -685,25 +679,48 @@ fn link_payload(
 /// exist, so the rename swaps them instead of replacing — a plain
 /// rename would prove nothing about the exchange the publish needs,
 /// which fails where the filesystem does not support it.
+/// Whether the exchange's failure is one the atomic publish recovers
+/// from: the publish falls back to removing the destination and
+/// renaming the payload into its place where the filesystem does not
+/// support the exchange — `EINVAL`, `ENOSYS` or `ENOTSUP` — so the
+/// rehearsal must prove that same pair instead of refusing a write the
+/// publish performs. Every other failure refuses the publish too.
+fn exchange_failed_unsupported(error: rustix::io::Errno) -> bool {
+    matches!(
+        error,
+        rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP
+    )
+}
+
 fn exchange_names(
     file: &str,
     payload: &std::path::Path,
     second: &std::path::Path,
 ) -> Result<(), String> {
     use std::os::unix::ffi::OsStrExt;
-    let payload = std::ffi::CString::new(payload.as_os_str().as_bytes())
+    let payload_name = std::ffi::CString::new(payload.as_os_str().as_bytes())
         .map_err(|_| format!("sysctl: cannot persist {file}: the staging name is not usable"))?;
-    let second = std::ffi::CString::new(second.as_os_str().as_bytes())
+    let second_name = std::ffi::CString::new(second.as_os_str().as_bytes())
         .map_err(|_| format!("sysctl: cannot persist {file}: the staging name is not usable"))?;
-    rustix::fs::renameat_with(
+    match rustix::fs::renameat_with(
         rustix::fs::CWD,
-        &payload,
+        &payload_name,
         rustix::fs::CWD,
-        &second,
+        &second_name,
         rustix::fs::RenameFlags::EXCHANGE,
-    )
-    .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    Ok(())
+    ) {
+        Ok(()) => Ok(()),
+        Err(error) if exchange_failed_unsupported(error) => {
+            // The publish's own fallback over scratch names: the
+            // destination goes away and the payload takes its place.
+            std::fs::remove_file(second)
+                .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+            std::fs::rename(payload, second)
+                .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+            Ok(())
+        }
+        Err(error) => Err(format!("sysctl: cannot persist {file}: {error}")),
+    }
 }
 
 /// A shadowed name is refused whatever the file holds: sysctl(8) applies

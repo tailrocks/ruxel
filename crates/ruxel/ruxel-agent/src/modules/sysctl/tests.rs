@@ -19,6 +19,7 @@ mod no_log;
 mod preflight;
 mod publish;
 mod publish_append_only;
+mod rehearsal;
 mod rewrite;
 mod trim;
 mod values;
