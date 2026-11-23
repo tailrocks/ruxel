@@ -7,9 +7,9 @@
 # run it on fork_runner like every other job.
 #
 # Gate note: this workflow has its own jobs outside rust-ci.yml, so the
-# Required gate does not wait for it. Keep the branch ruleset requiring
-# the acceptance-local job, or merging reverts to the pre-#120 state
-# where acceptance-local never blocks.
+# Required gate does not wait for it. The branch ruleset (protect-main)
+# requires the "Acceptance local" check context alongside Required, so
+# merging keeps the pre-#120 blocking behavior.
 
 [[workflow]]
 file = "acceptance-local"

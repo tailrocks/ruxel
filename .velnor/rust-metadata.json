@@ -219,16 +219,6 @@
               "requires_features": false
             },
             {
-              "name": "check-deny-inputs",
-              "kinds": [
-                "bin"
-              ],
-              "tests": true,
-              "doctest": false,
-              "source": "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs",
-              "requires_features": false
-            },
-            {
               "name": "debconf_package_type",
               "kinds": [
                 "test"
@@ -1600,7 +1590,7 @@
   "manifests": {
     "Cargo.toml": "3c0c3129d9ab31f2044fbb92b3db004ebf98afb81b5f6422dc61fee83d33138b",
     "crates/ruxel/ruxel-agent/Cargo.toml": "4162054fa9cb3502e944be05af5e77a5530311cd8f813ca819e4a76d47ee2f25",
-    "crates/ruxel/ruxel-config/Cargo.toml": "968ba45321d3bcd5981c26fabc49bf233558b61a6777084d5e72a03626d1a627",
+    "crates/ruxel/ruxel-config/Cargo.toml": "6b041475c3efc318c5bfc6b54918eab6494a07c82de83d4beac6232ab59078ff",
     "crates/ruxel/ruxel-engine/Cargo.toml": "fa0b2dd056a3b1434b5dd81ea43540cd463f8ec95c317abf2fda4cb442d26fd8",
     "crates/ruxel/ruxel-guard/Cargo.toml": "6860a7146b348234b2ff9edc9808e9fbecc0250e94b8af5821eaf37017526e71",
     "crates/ruxel/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
