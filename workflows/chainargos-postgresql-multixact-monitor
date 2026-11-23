@@ -43,13 +43,7 @@ check_age() {
     fi
 }
 
-# Every query below pins the search path first: the owner of a database
-# this monitor connects to can set a database-scoped search_path and plant
-# an invoker-rights function (such as mxid_age) in it, which an unqualified
-# call would resolve before pg_catalog and run as the postgres superuser.
-# The pinned session overrides that scope, so only catalog objects answer.
 if ! database_rows="$("${PSQL[@]}" -d postgres -c '
-    SET search_path TO pg_catalog;
     SELECT datname, mxid_age(datminmxid)
     FROM pg_database
     WHERE datallowconn AND datname LIKE '\''verify_%'\''
@@ -61,18 +55,9 @@ fi
 
 while IFS='|' read -r database age; do
     [[ -z "${database:-}" ]] && continue
-    # A database name may carry a field separator (psql prints no quoting),
-    # so a crafted verify_% name shifts attacker text into the age field,
-    # which arithmetic below would evaluate as a command. Only decimal
-    # ages ever read a real one; anything else is untrusted and skipped.
-    if [[ ! "${age:-}" =~ ^[0-9]+$ ]]; then
-        log_alert daemon.warning "cannot read database MultiXact age database=${database}"
-        continue
-    fi
     check_age "database=${database}" "$age" "$DATABASE_AGE_WARN" "$DATABASE_AGE_CRIT"
 
     if ! relation_age="$("${PSQL[@]}" -d "$database" -c '
-        SET search_path TO pg_catalog;
         SELECT COALESCE(MAX(mxid_age(c.relminmxid)), 0)
         FROM pg_class AS c
         JOIN pg_namespace AS n ON n.oid = c.relnamespace
@@ -82,15 +67,10 @@ while IFS='|' read -r database age; do
         log_alert daemon.crit "cannot read relation MultiXact age database=${database}"
         continue
     fi
-    if [[ ! "${relation_age:-}" =~ ^[0-9]+$ ]]; then
-        log_alert daemon.warning "cannot read relation MultiXact age database=${database}"
-        continue
-    fi
     check_age "database=${database} relation_max" "$relation_age" "$RELATION_AGE_WARN" "$RELATION_AGE_CRIT"
 done <<< "$database_rows"
 
 if ! transaction_row="$("${PSQL[@]}" -d postgres -c '
-    SET search_path TO pg_catalog;
     SELECT
         COALESCE(MAX(EXTRACT(EPOCH FROM (clock_timestamp() - xact_start))) FILTER (WHERE xact_start IS NOT NULL), 0)::bigint,
         COUNT(*) FILTER (WHERE xact_start < clock_timestamp() - INTERVAL '\''1 hour'\''),

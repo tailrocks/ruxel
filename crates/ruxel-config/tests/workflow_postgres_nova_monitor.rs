@@ -109,6 +109,9 @@ fn nova_monitor_reload_timer_and_hardening() -> Result {
         .find(|task| task["name"] == "Enable timer chainargos-postgresql-multixact-monitor")
         .ok_or("no timer enablement")?;
     assert_eq!(timer_enable["operation"]["state"], "started");
+    // The monitor script itself stays byte-identical to the live playbook
+    // script: hardening it is a live-script decision that the port then
+    // syncs, so the port carries no script-only divergence.
     let monitor = all
         .iter()
         .find(|task| {
@@ -118,7 +121,7 @@ fn nova_monitor_reload_timer_and_hardening() -> Result {
     assert!(
         monitor["operation"]["content"]
             .to_string()
-            .contains("SET search_path TO pg_catalog"),
+            .contains("verify_%"),
         "{}",
         monitor["operation"]["content"]
     );

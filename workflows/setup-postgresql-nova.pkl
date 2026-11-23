@@ -200,13 +200,9 @@ stages {
   }
   // python3-psycopg is a dependency of the Ansible modules, not of the
   // host: the agent speaks SQL directly, so the port drops it.
-  new Directory { path = "/usr/share/postgresql-common/pgdg"; mode = "0755" }
-  // No catalogue step downloads a file, so curl stands in: it writes the
-  // key once, and the guard skips it once the key is there.
-  new Command {
-    run { "curl"; "-fsSL"; "-o"; "/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"; "https://www.postgresql.org/media/keys/ACCC4CF8.asc" }
-    creates = "/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"
-  }
+  // The repository carries the committed key below instead of downloading
+  // it: nothing consumes a download, so no download runs and no key
+  // directory is managed.
   new debian.AptRepository {
     name = "pgdg"
     url = "https://apt.postgresql.org/pub/repos/apt"
