@@ -197,50 +197,50 @@ specifiers = ["rev:146a9960b0b41adf6612462d28982bff2c60a1c6"]
 crate = "velnor-gen"
 
 [[tools."github:asamarts/alint"]]
-version = "0.22.1"
+version = "0.23.0"
 backend = "github:asamarts/alint"
-specifiers = ["0.22.1"]
+specifiers = ["v0.23.0"]
 
 [tools."github:asamarts/alint"."platforms.linux-arm64"]
-checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+checksum = "sha256:cd3eef12f1a450d508f01e517db8d5c22df347b4d1453449522ec25ce551b136"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616836"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-arm64-musl"]
-checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+checksum = "sha256:cd3eef12f1a450d508f01e517db8d5c22df347b4d1453449522ec25ce551b136"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616836"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-x64"]
-checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+checksum = "sha256:31963e2a5eb2a8bae5558a0cd168a021f03c905c67fba0b02cd8ecae664c7140"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616879"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-x64-musl"]
-checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+checksum = "sha256:31963e2a5eb2a8bae5558a0cd168a021f03c905c67fba0b02cd8ecae664c7140"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616879"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.macos-arm64"]
-checksum = "sha256:f5c3ac8dd319dcb39a6b697eae95b0dc59079d819fe8d3d560f4eccbf193e609"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833603"
+checksum = "sha256:133c38233149718a74ff90015d75312651ee13bc6ae6143863492ec8a3b90002"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616825"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.macos-x64"]
-checksum = "sha256:f5b2248abd61d78ff4b68771629c1f220e8a05a46d586bf0596a74621c8103eb"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833609"
+checksum = "sha256:737275573f2eaf4b39c4d5d334917c73e495125adf2eab7e45099278ad353108"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616839"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.windows-x64"]
-checksum = "sha256:91fafae19acfea25e7b7136a7e45cb0b4bef20ffc010c82b018b009240ffc662"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-pc-windows-msvc.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833616"
+checksum = "sha256:167ba3fb504d8de1abfab09c41a360f41f871de76810ccd48b8b956847181f58"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616846"
 provenance = "github-attestations"
 
 [[tools."github:bnjbvr/cargo-machete"]]
