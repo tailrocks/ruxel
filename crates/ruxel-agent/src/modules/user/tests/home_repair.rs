@@ -95,6 +95,7 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
         false,
         true,
         true,
+        true,
     )
     .expect("the owner must resolve");
     assert_eq!(
@@ -106,6 +107,33 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
             managed_uid: 1500,
         }),
         "the declared home is repaired to the declared group's number"
+    );
+}
+
+#[test]
+fn an_explicit_no_create_home_repairs_nothing() {
+    // Thread 363: an existing account that declares a new home with
+    // `create_home: false` asks for no home at all — the flag is
+    // honored for created accounts (`-M` and no reconciliation), so
+    // the existing-account path must plan no repair either instead of
+    // creating or chowning the directory before `usermod -d` runs.
+    let (account, primary) = an_account_with_its_group();
+    let repair = super::super::planned_home_repair(
+        Some("/srv/alice"),
+        &account,
+        Some(&primary),
+        Some(1500),
+        1500,
+        999,
+        false,
+        true,
+        true,
+        false,
+    )
+    .expect("the declined repair must still plan");
+    assert_eq!(
+        repair, None,
+        "an explicit no-create-home repairs no declared home"
     );
 }
 
@@ -128,6 +156,7 @@ fn an_undeclared_home_plans_no_repair() {
         false,
         true,
         true,
+        true,
     )
     .expect("the group move must still plan");
     assert_eq!(
@@ -143,6 +172,7 @@ fn an_undeclared_home_plans_no_repair() {
         1500,
         gid,
         false,
+        true,
         true,
         true,
     )
@@ -167,6 +197,7 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
         true,
         false,
         true,
+        true,
     )
     .expect("the unknown numbers plan no repair");
     assert_eq!(
@@ -182,6 +213,7 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
         u64::MAX,
         true,
         false,
+        true,
         true,
     )
     .expect("the unknown numbers plan no repair");
@@ -214,6 +246,7 @@ fn a_missing_group_plans_no_repair_for_the_change_it_covers() {
         false,
         true,
         true,
+        true,
     )
     .expect("the pending group plans no repair");
     assert_eq!(repair, None, "a group with no number yet repairs nothing");
@@ -238,6 +271,7 @@ fn a_group_only_change_with_no_declared_home_repairs_nothing() {
         false,
         true,
         true,
+        true,
     )
     .expect("the group-only change must still plan");
     assert_eq!(
@@ -252,6 +286,7 @@ fn a_group_only_change_with_no_declared_home_repairs_nothing() {
         1500,
         999,
         false,
+        true,
         true,
         true,
     )

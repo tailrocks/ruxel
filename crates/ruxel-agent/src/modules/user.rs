@@ -1094,6 +1094,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 implicit_group_move,
                 numbers_known,
                 ctx.check_mode,
+                create_home,
             )?;
             // The step's footprint claims the account's private group
             // whenever it names no primary group, and the lowering's
@@ -1110,7 +1111,13 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 name,
                 &current,
                 identity_change,
-                claimed_private_group_missing(group, name, same_name.is_some(), ctx.check_mode),
+                claimed_private_group_missing(
+                    group,
+                    name,
+                    same_name.is_some(),
+                    ctx.check_mode,
+                    current.uid,
+                ),
                 home_repair,
                 &args,
             )?;
@@ -1285,17 +1292,22 @@ fn take_back_account(
 /// check mode an earlier task of the plan may provide it — check mode
 /// runs no `groupadd`, so the live entry is stale and the plan's own
 /// record decides with it. Apply runs the providing step first and
-/// resolves from the host alone.
+/// resolves from the host alone. The superuser's account keeps its
+/// primary group — the implicit move above never moves it either — so
+/// a UID-zero account claims no private group to create, whatever name
+/// its primary group carries.
 fn claimed_private_group_missing(
     group: Option<&str>,
     name: &str,
     live_present: bool,
     check_mode: bool,
+    current_uid: u64,
 ) -> bool {
-    private_group_missing(
-        group,
-        live_present || (check_mode && planned_group(name).is_some()),
-    )
+    current_uid != 0
+        && private_group_missing(
+            group,
+            live_present || (check_mode && planned_group(name).is_some()),
+        )
 }
 
 /// The switches that give a created account its primary group: the
@@ -1356,7 +1368,8 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
 /// stated are the allocator's to draw: the repair runs against none of
 /// them — the primary-group change the plan already reports covers it,
 /// the way a group that is not on the host yet does — so an unknown
-/// number plans no repair.
+/// number plans no repair. And an explicit no-create-home plans none
+/// either: the step asks for no home at all.
 #[expect(
     clippy::too_many_arguments,
     clippy::similar_names,
@@ -1372,7 +1385,15 @@ fn planned_home_repair(
     implicit_group_move: bool,
     numbers_known: bool,
     check_mode: bool,
+    create_home: bool,
 ) -> Result<Option<Home>, String> {
+    // An explicit no-create-home repairs nothing: the step asks for no
+    // home at all, so no directory is created or chowned on the
+    // existing-account path — the way the creation branch skips both
+    // `useradd -m` and the created-home reconciliation with `-M`.
+    if !create_home {
+        return Ok(None);
+    }
     let owner = if numbers_known {
         repair_owner(group, name, effective_gid, implicit_group_move, check_mode)?
     } else {
@@ -1980,16 +2001,16 @@ mod cat06_batch_b {
         // resolves from the host alone.
         let fresh = format!("ruxel-cat06-private-{}", std::process::id());
         assert!(
-            super::claimed_private_group_missing(None, &fresh, false, true),
+            super::claimed_private_group_missing(None, &fresh, false, true, 1500),
             "nothing provides the group yet"
         );
         super::entries::note_planned_group(&fresh, None);
         assert!(
-            !super::claimed_private_group_missing(None, &fresh, false, true),
+            !super::claimed_private_group_missing(None, &fresh, false, true, 1500),
             "check mode sees the planned group"
         );
         assert!(
-            super::claimed_private_group_missing(None, &fresh, false, false),
+            super::claimed_private_group_missing(None, &fresh, false, false, 1500),
             "apply resolves from the host alone"
         );
         super::entries::forget_planned_group(&fresh);
@@ -1999,14 +2020,38 @@ mod cat06_batch_b {
             Some("wheel"),
             &fresh,
             false,
-            true
+            true,
+            1500
         ));
         assert!(!super::claimed_private_group_missing(
-            None, &fresh, true, true
+            None, &fresh, true, true, 1500
         ));
         assert!(!super::claimed_private_group_missing(
-            None, &fresh, true, false
+            None, &fresh, true, false, 1500
         ));
+    }
+
+    #[test]
+    fn a_uid_zero_account_claims_no_private_group() {
+        // Thread 360: an existing UID-zero account whose primary group
+        // carries another name (for example, `toor` on the `root`
+        // group) reaches the reconciliation with the same-name group
+        // missing — but the implicit move above never moves the
+        // superuser's account either, so no `groupadd` is scheduled
+        // for it, in check mode as much as in apply.
+        let missing = format!("ruxel-cat06-toor-{}", std::process::id());
+        assert!(
+            super::claimed_private_group_missing(None, &missing, false, false, 1500),
+            "a nonzero account still claims its missing private group"
+        );
+        assert!(
+            !super::claimed_private_group_missing(None, &missing, false, false, 0),
+            "a UID-zero account claims no private group in apply"
+        );
+        assert!(
+            !super::claimed_private_group_missing(None, &missing, false, true, 0),
+            "a UID-zero account claims no private group in check mode"
+        );
     }
 }
 /// The test stand-in for the host's account utilities: apply-mode tests
