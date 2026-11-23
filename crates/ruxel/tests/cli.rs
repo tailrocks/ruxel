@@ -4,9 +4,10 @@ fn ruxel_bin() -> std::path::PathBuf {
     // Nextest archives relocate binaries: prefer its runtime
     // CARGO_BIN_EXE_ruxel over the compile-time baked path, which
     // names the build job's target directory.
-    std::env::var_os("CARGO_BIN_EXE_ruxel")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_ruxel")))
+    std::env::var_os("CARGO_BIN_EXE_ruxel").map_or_else(
+        || std::path::PathBuf::from(env!("CARGO_BIN_EXE_ruxel")),
+        std::path::PathBuf::from,
+    )
 }
 
 #[test]
