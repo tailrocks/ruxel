@@ -70,6 +70,7 @@ dual_evaluator
   tests/workflow/invalid/ensure-line-multiline.pkl
   tests/workflow/invalid/ensure-line-regexp-multiline.pkl
   tests/workflow/invalid/ensure-line-under-file.pkl
+  tests/workflow/invalid/ensure-replace-same-match.pkl
   tests/workflow/invalid/fetched-script-creates-dest.pkl
   tests/workflow/invalid/fetched-script-plain-http.pkl
   tests/workflow/invalid/git-branch-dash.pkl

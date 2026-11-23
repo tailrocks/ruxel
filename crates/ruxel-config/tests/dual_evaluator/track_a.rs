@@ -22,6 +22,7 @@ pub(super) const EXAMPLES: &[&str] = &[
     "invalid/ensure-line-multiline.pkl",
     "invalid/ensure-line-file-overwrite.pkl",
     "invalid/ensure-line-under-file.pkl",
+    "invalid/ensure-replace-same-match.pkl",
     "invalid/replace-line-empty-regexp.pkl",
     "invalid/notice-empty.pkl",
     "invalid/notice-host.pkl",
