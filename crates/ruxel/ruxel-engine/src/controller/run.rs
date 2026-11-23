@@ -108,6 +108,7 @@ pub async fn run_with_full_config<B: Backend>(
                     &host,
                     &options.tags,
                 ),
+                full_config,
                 notified: BTreeMap::new(),
                 handling: false,
                 recap: Recap::default(),

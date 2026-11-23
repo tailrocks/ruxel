@@ -111,6 +111,43 @@ async fn every_frame_carries_later_plays_declarations() -> Result<()> {
 }
 
 #[tokio::test]
+async fn delegated_requests_carry_the_destinations_declarations() -> Result<()> {
+    // Thread 327: the delegated request runs on the destination, so it
+    // carries the destination's static set — recomputed from the full
+    // configuration — not the source host's. A source-only declaration
+    // must never authorize the destination's preflight.
+    let config = json!({"inventory":{"hosts":{"h1":{},"h2":{}},"groups":{}},"plays":[
+        {"targets":["h1"],"tasks":[
+            {"name":"source-only","operation":{"kind":"sysctl","name":"net.test","value":"1","sysctl_file":"/etc/sysctl.d/10-a.conf"}},
+            {"name":"delegated","operation":{"kind":"command","argv":["true"]},"delegateTo":"h2","delegateAllow":["h2"]}
+        ]},
+        {"targets":["h2"],"tasks":[
+            {"name":"destination-only","operation":{"kind":"sysctl","name":"net.test","value":"2","sysctl_file":"/etc/sysctl.d/10-b.conf"}}
+        ]}
+    ]});
+    let mut backend = Fake::default();
+    run(
+        &config,
+        &std::collections::BTreeMap::new(),
+        &Options::default(),
+        &mut backend,
+        &mut std::collections::BTreeMap::new(),
+    )
+    .await?;
+    let delegated = backend
+        .calls
+        .iter()
+        .find(|call| call.host == "h2" && call.task.name == "delegated")
+        .expect("the delegated task reaches h2");
+    assert_eq!(
+        delegated.plan_sysctl,
+        vec![decl("/etc/sysctl.d/10-b.conf", "net.test", "2")],
+        "the delegated request carries h2's declarations, not h1's source-only set"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn split_play_runs_carry_the_full_configs_declarations() -> Result<()> {
     // Thread 325, the scheduler's shape: the controller run covers one
     // play split out of the full configuration, and its frames still

@@ -5,6 +5,7 @@ use super::*;
 fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
     let mut backend = Fake::default();
     let options = Options::default();
+    let empty_config = serde_json::json!({});
     let runner = Runner {
         backend: &mut backend,
         options: &options,
@@ -17,6 +18,7 @@ fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
         next_id: 1,
         filtered: false,
         plan_sysctl: Vec::new(),
+        full_config: &empty_config,
     };
     let layer = ContextLayer {
         definitions: vec![
@@ -112,6 +114,7 @@ fn nested_until_lookup_is_sensitive_before_dispatch() {
 fn sensitivity_follows_the_visible_binding_for_cross_name_references() {
     let mut backend = Fake::default();
     let options = Options::default();
+    let empty_config = serde_json::json!({});
     let runner = Runner {
         backend: &mut backend,
         options: &options,
@@ -124,6 +127,7 @@ fn sensitivity_follows_the_visible_binding_for_cross_name_references() {
         next_id: 1,
         filtered: false,
         plan_sysctl: Vec::new(),
+        full_config: &empty_config,
     };
     let private = json!({"kind":"lookup","provider":"synthetic","key":"fixture"});
     for (parent, child, sensitive) in [

@@ -153,6 +153,11 @@ struct Runner<'a, B> {
     /// executes, so each frame carries the declaration list the agent
     /// merges before running its task.
     plan_sysctl: Vec<v1::SysctlDeclaration>,
+    /// The full configuration the scheduler split the play out of: a
+    /// delegated request is scoped to its destination's declarations,
+    /// not the source host's, so that set is recomputed from this
+    /// at delegation time.
+    full_config: &'a Value,
 }
 
 fn array<'a>(value: &'a Value, key: &str) -> &'a [Value] {

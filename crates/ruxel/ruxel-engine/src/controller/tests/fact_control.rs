@@ -47,6 +47,7 @@ impl Backend for Precise {
 async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings() -> Result<()> {
     let mut backend = Fake::default();
     let options = Options::default();
+    let empty_config = serde_json::json!({});
     let mut runner = Runner {
         backend: &mut backend,
         options: &options,
@@ -59,6 +60,7 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         next_id: 1,
         filtered: false,
         plan_sysctl: Vec::new(),
+        full_config: &empty_config,
     };
     for (name, private) in [("public", false), ("guarded", true)] {
         let layer = ContextLayer {
