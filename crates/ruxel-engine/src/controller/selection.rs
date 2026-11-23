@@ -147,6 +147,32 @@ pub fn selected_hosts(config: &Value, options: &Options) -> Result<Vec<String>> 
     Ok(selected.into_iter().collect())
 }
 
+/// Whether `origin` is a target of `play`: the play's selectors
+/// expanded against the full configuration's inventory — the same
+/// expansion the run selects hosts with, so group and glob targets
+/// count — or the literal target list where the configuration carries
+/// no inventory. The scheduler's end-of-run revisit scopes its
+/// play-by-origin cross-product this way: an incomplete origin marks
+/// only the plays it actually ran in. An unresolvable target list
+/// answers true, keeping the old mark: the mark only delays expiry,
+/// while skipping a play the origin did run in would let an
+/// unfiltered Done prune another play's delegated records.
+pub(crate) fn origin_targeted(play: &Value, config: &Value, origin: &str) -> bool {
+    let selectors: Vec<&str> = array(play, "targets")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    let Some(inventory) = config.get("inventory") else {
+        return selectors.contains(&origin);
+    };
+    let hosts = object(inventory, "hosts");
+    let groups = object(inventory, "groups");
+    match expand_selectors(&selectors, &hosts, &groups) {
+        Ok(targets) => targets.contains(origin),
+        Err(_) => true,
+    }
+}
+
 #[cfg(test)]
 #[path = "selection/tests.rs"]
 mod tests;
