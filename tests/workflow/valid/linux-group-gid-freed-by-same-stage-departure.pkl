@@ -1,0 +1,27 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The departure the removal's own stage lists before it counts: Bob
+// leaves Alice's private group and Alice's removal takes the empty
+// group with it in one stage, so the draw is freed and the later
+// explicit claim takes its number — the steps of a stage run where
+// the author wrote them.
+stages {
+  new Stage { title = "groups"; hosts = inventory.workers; steps {
+    new linux.Group { name = "staff"; gid = 2500 }
+  } }
+  new Stage { title = "join"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+    new linux.User { user = "bob"; uid = 1501; group = "staff"; groups = new Listing { "alice" } }
+  } }
+  new Stage { title = "leave-remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "bob"; uid = 1501; group = "staff"; groups = new Listing {} }
+    new linux.User { user = "alice"; uid = 1500; state = "absent" }
+  } }
+  new Stage { title = "claim"; hosts = inventory.workers; steps {
+    new linux.Group { name = "team"; gid = 1000 }
+  } }
+}
+
+name = "valid/linux-group-gid-freed-by-same-stage-departure.pkl"

@@ -468,7 +468,7 @@ function drawFreedOn(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: I
 /// anything.
 function drawFreedBefore(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdDraw, d: IdClaim, h: core.Host): Boolean =
   positions(_indexes[d.stage].steps).filter((j) -> j < d.step)
-    .any((j) -> removalFreesDraw(_stages, _indexes, d.stage, _indexes[d.stage].steps[j], c, h) || renumberFreesDraw(_indexes[d.stage].steps[j], c))
+    .any((j) -> removalFreesDraw(_stages, _indexes, d.stage, j, c, h) || renumberFreesDraw(_indexes[d.stage].steps[j], c))
 
 /// Whether a stage renumbers the drawing identity to another explicit
 /// number: a step that keeps the same account (for a gid draw, the same
@@ -566,17 +566,18 @@ const function providesIdentityStep(s: core.Step, c: IdDraw): Boolean =
 /// `groupdel` refuses the private group it still holds as its primary
 /// one.
 const function removedDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, c: IdDraw, h: core.Host): Boolean =
-  _indexes[k].steps.any((s) -> removalFreesDraw(_stages, _indexes, k, s, c, h))
+  positions(_indexes[k].steps).any((j) -> removalFreesDraw(_stages, _indexes, k, j, c, h))
 
 /// Whether the step removes the drawing identity with a removal the
 /// runtime can prove will succeed for the draw, on the host `h` the
 /// proof is about (see `removedDraw` for why only a removal that frees
 /// by name frees the drawn gid).
-const function removalFreesDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, s: core.Step, c: IdDraw, h: core.Host): Boolean =
+const function removalFreesDraw(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, j: Int, c: IdDraw, h: core.Host): Boolean =
   if (c.system) false
   else if (c.kind == "uid") false
-  else (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
-    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, c.name, h))
+  else let (s = _indexes[k].steps[j])
+    (s is linux.Group && s.state == "absent" && s.name == c.name && s.gid == null)
+    || (s is linux.User && s.state == "absent" && s.user == c.name && c.uid != null && s.uid == c.uid && samePrimaryGroup(s, c.name) && !groupHeld(_stages, _indexes, k, j, c.name, h))
 
 /// The removal declares the same-name group as the account's primary
 /// one: `userdel` takes the same-name group with the account only
@@ -597,22 +598,27 @@ const function samePrimaryGroup(s: core.Step, n: String): Boolean =
 /// declaration runs on the host the proof is about: a redeclaration on
 /// another machine leaves the membership here. A removal of the account
 /// counts as taking it off every group: the account is gone.
-const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, n: String, h: core.Host): Boolean =
+const function groupHeld(_stages: List<core.Stage>, _indexes: List<StageIndex>, k: Int, i: Int, n: String, h: core.Host): Boolean =
   positions(_indexes).filter((m) -> m <= k && identityRunsOn(_stages[m], h)).any((m) -> positions(_indexes[m].steps).any((j) ->
     let (u = _indexes[m].steps[j])
     if (!(u is linux.User)) false
-    else u.state == "present" && u.user != n && holdsGroup(u, n) && !leftGroupBetween(_stages, _indexes, m, k, u, n, h)))
+    else u.state == "present" && u.user != n && holdsGroup(u, n) && !leftGroupBetween(_stages, _indexes, m, k, i, u, n, h)))
 
 /// Whether the account is taken off the group `n` in a stage between
 /// the one that declares it and the removal's stage — on the host `h`:
 /// a stage that runs on another machine leaves the account where it is
-/// here. A step that removes the account takes it off every group, and
+/// here. A step of the removal's own stage listed before the removal
+/// counts too: the steps of a stage run where the author wrote them,
+/// so a redeclaration before the removal takes the account off the
+/// group the same way an intervening stage's would. A step that removes
+/// the account takes it off every group, and
 /// a step that declares it present without the group takes it off that
 /// one — on another primary group where the account keeps it as its
 /// primary one, and by an explicit listing without it where it keeps it
 /// as a supplementary one (see `leavesGroup`).
-const function leftGroupBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, u: linux.User, n: String, h: core.Host): Boolean =
+const function leftGroupBetween(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, k: Int, i: Int, u: linux.User, n: String, h: core.Host): Boolean =
   positions(_indexes).filter((s) -> s >= m && s < k).any((s) -> identityRunsOn(_stages[s], h) && _indexes[s].steps.any((x) -> leavesGroup(x, u, n)))
+    || (identityRunsOn(_stages[k], h) && positions(_indexes[k].steps).filter((j) -> j < i).any((j) -> leavesGroup(_indexes[k].steps[j], u, n)))
 
 /// Whether the account names the group `n` as its primary group or
 /// among its supplementary groups.
