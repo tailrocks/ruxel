@@ -91,6 +91,7 @@ dual_evaluator
   tests/workflow/invalid/iptables-universal-destination-ipv6-conflict.pkl
   tests/workflow/invalid/linux-directory-sysctl-clash.pkl
   tests/workflow/invalid/linux-file-above-sysctl.pkl
+  tests/workflow/invalid/linux-file-inside-home-later-stage.pkl
   tests/workflow/invalid/linux-file-owner-later.pkl
   tests/workflow/invalid/linux-file-owner-removed-earlier-stage.pkl
   tests/workflow/invalid/linux-file-owner-removed-later-stage.pkl
@@ -105,6 +106,7 @@ dual_evaluator
   tests/workflow/invalid/linux-group-absent-root.pkl
   tests/workflow/invalid/linux-group-ensured-before-user-removal.pkl
   tests/workflow/invalid/linux-group-gid-across-stages.pkl
+  tests/workflow/invalid/linux-group-gid-auto-allocation-member-other-host.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation-private-group-member.pkl
   tests/workflow/invalid/linux-group-gid-auto-allocation.pkl
   tests/workflow/invalid/linux-group-gid-draw-same-stage-order.pkl
@@ -133,6 +135,8 @@ dual_evaluator
   tests/workflow/invalid/linux-sysctl-name-alias.pkl
   tests/workflow/invalid/linux-sysctl-name-dot-component.pkl
   tests/workflow/invalid/linux-sysctl-nested-login-users.pkl
+  tests/workflow/invalid/linux-sysctl-nested-path-earlier-stage.pkl
+  tests/workflow/invalid/linux-sysctl-nested-path-later-stage.pkl
   tests/workflow/invalid/linux-sysctl-path-not-boot-loaded.pkl
   tests/workflow/invalid/linux-sysctl-path-root.pkl
   tests/workflow/invalid/linux-sysctl-path-run.pkl
@@ -164,6 +168,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-removed-recreated-shallow.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
+  tests/workflow/invalid/linux-user-home-sysctl-later-stage.pkl
   tests/workflow/invalid/linux-user-home-vs-file.pkl
   tests/workflow/invalid/linux-user-home-vs-repository.pkl
   tests/workflow/invalid/linux-user-implicit-group-clash.pkl
@@ -186,6 +191,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
   tests/workflow/invalid/linux-user-root-group.pkl
   tests/workflow/invalid/linux-user-root-uid.pkl
+  tests/workflow/invalid/linux-user-shell-ancestor-mode.pkl
   tests/workflow/invalid/linux-user-shell-effective-provider-not-executable.pkl
   tests/workflow/invalid/linux-user-shell-group-exec-only.pkl
   tests/workflow/invalid/linux-user-shell-is-default-home.pkl
@@ -196,6 +202,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-not-absolute.pkl
   tests/workflow/invalid/linux-user-shell-not-executable.pkl
   tests/workflow/invalid/linux-user-shell-owner-execute-only.pkl
+  tests/workflow/invalid/linux-user-shell-provider-later-stage.pkl
   tests/workflow/invalid/linux-user-shell-root.pkl
   tests/workflow/invalid/linux-user-shell-symlink-chain.pkl
   tests/workflow/invalid/linux-user-shell-symlink-cycle.pkl
@@ -207,6 +214,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-claim-number.pkl
+  tests/workflow/invalid/linux-user-uid-auto-removal-declares-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-removal-number-mismatch.pkl
   tests/workflow/invalid/linux-user-uid-auto-system-draw.pkl
   tests/workflow/invalid/linux-user-uid-draw-other-hosts.pkl
@@ -279,6 +287,7 @@ dual_evaluator
   tests/workflow/valid/linux-sysctl-shadow-same-stage-legacy.pkl
   tests/workflow/valid/linux-sysctl-shared-file-across-stages.pkl
   tests/workflow/valid/linux-sysctl-slash.pkl
+  tests/workflow/valid/linux-sysctl-value-edge-whitespace.pkl
   tests/workflow/valid/linux-sysctl-value-spaces.pkl
   tests/workflow/valid/linux-sysctl-value-vertical-tab.pkl
   tests/workflow/valid/linux-sysctl.pkl

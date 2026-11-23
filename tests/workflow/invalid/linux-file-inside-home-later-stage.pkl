@@ -1,0 +1,29 @@
+// expect: inside the home /home/alice
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A step that publishes inside an account's claimed home runs after the
+// account's task creates the directory: `useradd -m` makes the missing
+// home, so the earlier stage's file task here fails on a clean host
+// because its parent does not exist yet. The same-stage `homeRels`
+// check refuses this ordering within one stage; splitting it across
+// stages must not admit it either.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/alice/config"; content = "x\n" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+}
+
+name = "invalid/linux-file-inside-home-later-stage.pkl"
