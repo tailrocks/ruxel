@@ -429,6 +429,26 @@
               "requires_features": false
             },
             {
+              "name": "workflow_postgres",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_postgres.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_postgres_nova",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_postgres_nova.rs",
+              "requires_features": false
+            },
+            {
               "name": "workflow_secrets",
               "kinds": [
                 "test"
@@ -456,16 +476,6 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel-config/tests/workflow_systemd_timer_delay.rs",
-              "requires_features": false
-            },
-            {
-              "name": "workflow_track_a",
-              "kinds": [
-                "test"
-              ],
-              "tests": true,
-              "doctest": false,
-              "source": "crates/ruxel-config/tests/workflow_track_a.rs",
               "requires_features": false
             }
           ]
@@ -1651,5 +1661,5 @@
     "crates/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
     "crates/ruxel/Cargo.toml": "958bcee539704880984357a6d2a5baccfa98c37f09f10fbc4e3fb0e6d4d57981"
   },
-  "layout": "69a5df1a751c900526c5e70feb424b92da0feb9812bd060f5c7c25da78ec4fb9"
+  "layout": "f6a7915a0589ac3c2803804105f47877fafd2783f84513980e481b2074d14376"
 }
