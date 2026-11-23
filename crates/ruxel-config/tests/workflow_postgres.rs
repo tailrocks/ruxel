@@ -12,15 +12,11 @@ use std::path::{Path, PathBuf};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn root() -> PathBuf {
-    Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../tests/workflow"
-    ))
-    .to_path_buf()
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/workflow")).to_path_buf()
 }
 
 fn workflows() -> PathBuf {
-    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../workflows")).to_path_buf()
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../workflows")).to_path_buf()
 }
 
 fn options() -> ruxel_config::EvalOptions {
