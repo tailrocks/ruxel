@@ -55,7 +55,10 @@ async fn a_filtered_origin_marks_its_delegation_destination() -> Result<()> {
         "the destination inherits the origin's incompleteness"
     );
     assert!(
-        backend.calls.iter().all(|call| call.host != "b" || call.task.name == "direct"),
+        backend
+            .calls
+            .iter()
+            .all(|call| call.host != "b" || call.task.name == "direct"),
         "nothing was delegated this run: the mark comes from the play's literal target"
     );
     Ok(())

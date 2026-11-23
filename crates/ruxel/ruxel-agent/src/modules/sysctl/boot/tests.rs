@@ -155,7 +155,8 @@ fn a_dot_conf_dotfile_is_a_boot_file() {
     let usr = scratch.dir("usr");
     std::fs::write(etc.join(".conf"), "net.ipv4.ip_forward=1\n").expect("operation succeeds");
     std::fs::write(etc.join("README"), "not a sysctl file\n").expect("operation succeeds");
-    std::fs::write(etc.join("stray.conf.bak"), "net.ipv4.ip_forward=1\n").expect("operation succeeds");
+    std::fs::write(etc.join("stray.conf.bak"), "net.ipv4.ip_forward=1\n")
+        .expect("operation succeeds");
     let (etc_dir, usr_dir) = dirs_of(&etc, &usr);
     let dirs: [(&str, u8); 2] = [(&etc_dir, 1), (&usr_dir, 0)];
     let files = system_files_in(&dirs).expect("the scratch directories read");

@@ -76,10 +76,7 @@ fn empty_workflow_names_are_refused_before_namespacing() {
         "an empty workflow name is refused"
     );
     let mut missing = workflow(json!({"kind": "debug", "msg": "one"}));
-    missing
-        .as_object_mut()
-        .expect("config")
-        .remove("workflow");
+    missing.as_object_mut().expect("config").remove("workflow");
     assert!(
         validate_config(&missing).is_err(),
         "a missing workflow name is refused"

@@ -85,7 +85,10 @@ pub(super) async fn run_plays(
         // still shut down filtered, or its unfiltered Done prunes the
         // delegated records the origin never resent.
         for host in &play_hosts {
-            if totals.get(host).is_some_and(|total| total.filtered || total.aborted) {
+            if totals
+                .get(host)
+                .is_some_and(|total| total.filtered || total.aborted)
+            {
                 controller::mark_delegation_destinations(&mut totals, play, host);
             }
         }

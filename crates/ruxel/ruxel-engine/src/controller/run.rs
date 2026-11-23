@@ -177,9 +177,7 @@ pub async fn run_with_full_config<B: Backend>(
                     Err(error) => {
                         recap.aborted = true;
                         Some(
-                            if layer.control_sensitive
-                                || runner.backend.conservative_sensitive()
-                            {
+                            if layer.control_sensitive || runner.backend.conservative_sensitive() {
                                 anyhow::anyhow!("sensitive execution failed")
                             } else {
                                 error
@@ -202,7 +200,10 @@ pub async fn run_with_full_config<B: Backend>(
             // too: the destination's shutdown must not read only its
             // unrelated origin recap and prune another play's records
             // with an unfiltered Done.
-            if totals.get(&host).is_some_and(|total| total.filtered || total.aborted) {
+            if totals
+                .get(&host)
+                .is_some_and(|total| total.filtered || total.aborted)
+            {
                 mark_delegation_destinations(&mut totals, play, &host);
             }
             if let Some(error) = failure {

@@ -11,11 +11,11 @@ use super::home::{ManagedAccount, ensure_home};
 
 mod rollback_created;
 
-pub(crate) use rollback_created::{rollback_created_home, skel_configured, skel_dir};
 #[cfg(test)]
 pub(crate) use rollback_created::{
     relative_entries, remove_home_entries, rollback_created_home_from, skel_dir_from,
 };
+pub(crate) use rollback_created::{rollback_created_home, skel_configured, skel_dir};
 
 /// The command the agent runs for the account's change.
 pub(super) type Runner = dyn Fn(&str, &[&str]) -> Result<(), String>;
