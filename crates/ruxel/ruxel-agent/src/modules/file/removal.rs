@@ -104,19 +104,18 @@ pub(super) fn remove_opened(
         // the removal takes.
         if !check_mode {
             take_file(parent, name, identity, path)?;
-            // The parent may have been renamed and replaced while the
-            // entry went: then the removal took the old tree while the
-            // visible path still holds its replacement.
-            recheck::verify_attached(parent, path)?;
         }
+        // The parent may have been renamed and replaced while the entry
+        // went — or while the check read it: then the removal took (or
+        // approved) the old tree while the visible path still holds its
+        // replacement.
+        recheck::verify_attached(parent, path)?;
         return Ok(true);
     }
     let taken = take_directory(parent, name, path, recurse, check_mode, mounts)?;
-    if !check_mode {
-        // As above: a detached parent makes the reported removal name
-        // a tree it did not take.
-        recheck::verify_attached(parent, path)?;
-    }
+    // As above: a detached parent makes the reported removal name
+    // a tree it did not take, in check mode as in the run.
+    recheck::verify_attached(parent, path)?;
     Ok(taken)
 }
 

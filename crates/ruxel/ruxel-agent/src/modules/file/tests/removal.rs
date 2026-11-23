@@ -179,3 +179,48 @@ fn an_attached_parent_verifies() {
     super::super::removal::recheck::verify_attached(&parent, &base.join("target")).unwrap();
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn a_detached_parent_is_refused_in_check_mode_too() {
+    // The held directory is renamed away and replaced before the check
+    // reads the target: the check reads the old entry while the visible
+    // path holds the replacement, so approving it would plan what the
+    // run refuses.
+    let base = scratch("detached-check");
+    let target = base.join("target");
+    std::fs::write(&target, b"content").unwrap();
+    let parent = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let name = CString::new("target").unwrap();
+    std::fs::rename(&base, base.with_extension("moved")).unwrap();
+    std::fs::create_dir(&base).unwrap();
+    std::fs::write(base.join("target"), b"replacement").unwrap();
+    let mounts: Vec<super::super::mounts::Mount> = Vec::new();
+    let error =
+        super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
+            .unwrap_err();
+    assert!(error.contains("replaced"), "{error}");
+    assert_eq!(std::fs::read(base.join("target")).unwrap(), b"replacement");
+    std::fs::remove_dir_all(base.with_extension("moved")).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_detached_parent_of_a_directory_is_refused_in_check_mode_too() {
+    // As above, for a target the check walks rather than reads: the
+    // directory the check approves is not the one the path holds.
+    let base = scratch("detached-check-dir");
+    let target = base.join("target");
+    std::fs::create_dir(&target).unwrap();
+    let parent = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let name = CString::new("target").unwrap();
+    std::fs::rename(&base, base.with_extension("moved")).unwrap();
+    std::fs::create_dir(&base).unwrap();
+    std::fs::create_dir(base.join("target")).unwrap();
+    let mounts: Vec<super::super::mounts::Mount> = Vec::new();
+    let error =
+        super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
+            .unwrap_err();
+    assert!(error.contains("replaced"), "{error}");
+    std::fs::remove_dir_all(base.with_extension("moved")).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}
