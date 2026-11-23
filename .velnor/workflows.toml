@@ -18,7 +18,7 @@ runner = "ubuntu-26.04"
 hosted = true
 
 [workflow.concurrency]
-group = "${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
+group = "${{ github.workflow }}-${{ github.event.pull_request.number || github.head_ref || github.run_id }}"
 cancel_in_progress = true
 
 [workflow.on]
@@ -30,7 +30,7 @@ merge_group = true
 branches = ["main"]
 
 [workflow.on.pull_request]
-types = ["opened", "synchronize", "reopened", "ready_for_review"]
+types = ["opened", "synchronize", "reopened", "ready_for_review", "edited"]
 branches = ["main"]
 
 [[workflow.job]]
