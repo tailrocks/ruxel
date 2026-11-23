@@ -254,3 +254,16 @@ fn a_filesystem_relative_root_outside_every_root_is_not_a_crossing() {
         None
     );
 }
+
+#[test]
+fn the_preflight_walks_a_plain_tree_without_a_table() {
+    // The platform writes no mount table to read: the walk still runs
+    // over the whole tree and finds no mount point in ordinary entries.
+    let base = scratch("no-table");
+    std::fs::create_dir(base.join("child")).unwrap();
+    std::fs::write(base.join("child/tool"), b"content").unwrap();
+    std::os::unix::fs::symlink("child/tool", base.join("link")).unwrap();
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::mounts::preflight(&dir, &base, &[]).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}

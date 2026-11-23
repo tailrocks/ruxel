@@ -1,7 +1,71 @@
 use super::super::chain::delete_matching;
-use super::super::rules::{full_mask, rule_spec};
+use super::super::rules::{full_mask, match_pairs, rule_jump, rule_spec};
 use super::*;
 use serde_json::json;
+
+/// One argument per item: the token lists the option tests hand to the
+/// match and jump readers.
+fn tokens(items: &[&str]) -> Vec<String> {
+    items.iter().map(std::string::ToString::to_string).collect()
+}
+
+#[test]
+fn an_ipv6_zone_is_canonicalized_away() {
+    // The firewall stores the address and the mask but not the zone, so
+    // the zone is dropped and the bare address is masked.
+    assert_eq!(full_mask("fe80::1%eth0").unwrap(), "fe80::1/128");
+    assert_eq!(full_mask("fe80::1%eth0/10").unwrap(), "fe80::/10");
+    assert_eq!(full_mask("::1%lo").unwrap(), "::1/128");
+}
+
+#[test]
+fn a_comment_value_is_not_the_jump() {
+    // A comment that spells a jump flag is a value: the target is the
+    // flag past it, in both spellings of the flag and the comment.
+    assert_eq!(
+        rule_jump(&tokens(&[
+            "-p",
+            "tcp",
+            "-m",
+            "comment",
+            "--comment",
+            "-j",
+            "-j",
+            "DROP"
+        ]))
+        .as_deref(),
+        Some("DROP")
+    );
+    assert_eq!(
+        rule_jump(&tokens(&["-p", "tcp", "--comment", "--jump", "-j", "DROP"])).as_deref(),
+        Some("DROP")
+    );
+}
+
+#[test]
+fn a_goto_ends_the_match() {
+    // `-g` hands the packet to another chain the way `-j` does: what
+    // follows is the target's own, in both spellings.
+    assert_eq!(
+        match_pairs(&tokens(&["-p", "tcp", "-g", "ALLOW"])),
+        vec![("-p".to_string(), "tcp".to_string())]
+    );
+    assert_eq!(
+        match_pairs(&tokens(&["-p", "tcp", "--goto", "ALLOW"])),
+        vec![("-p".to_string(), "tcp".to_string())]
+    );
+}
+
+#[test]
+fn protocol_zero_matches_the_omitted_default() {
+    // The firewall reads protocol `0` as `all` and prints no `-p` for
+    // it, so neither spelling is part of the match.
+    assert_eq!(match_pairs(&tokens(&["-p", "0", "-j", "DROP"])), Vec::new());
+    assert_eq!(
+        match_pairs(&tokens(&["-p", "all", "-j", "DROP"])),
+        Vec::new()
+    );
+}
 
 #[test]
 fn normalizes_destinations_and_refuses_malformed_ones() {
@@ -323,6 +387,74 @@ fn a_masked_destination_is_compared_the_way_the_firewall_prints_it() {
     let params = json!({
         "chain":"INPUT", "protocol":"tcp", "destination":"10.0.0.1/8", "jump":"DROP",
         "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_goto_rule_is_the_declared_match_of_absent_mode() {
+    let dir = scratch("goto");
+    // The listing hands the packet to another chain: `-g` ends the match
+    // the way `-j` does, so the rule is the declared match and absent
+    // mode takes it away instead of reporting it gone.
+    let (binary, file) = listing_stub(&dir, &["-p tcp -g ALLOW"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "jump":"DROP", "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn protocol_zero_is_the_omitted_default_of_absent_mode() {
+    let dir = scratch("proto-zero");
+    // `iptables` reads protocol `0` as `all` and prints no `-p` for it,
+    // so the declared zero is the listed rule without a protocol: absent
+    // mode takes it away instead of reporting it gone.
+    let (binary, file) = listing_stub(&dir, &["-d 10.0.0.0/8 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"0", "destination":"10.0.0.0/8", "jump":"DROP",
+        "state":"absent"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn an_ipv6_zone_is_dropped_before_the_match_is_compared() {
+    let dir = scratch("zone");
+    // The firewall stores the address and the mask but not the zone, so
+    // the declared zone is the listed rule without one: absent mode takes
+    // it away instead of reporting it gone.
+    let (binary, file) = listing_stub(&dir, &["-d fe80::1/128 -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "destination":"fe80::1%eth0", "jump":"DROP",
+        "ip_version":"ipv6", "state":"absent"
     });
     let result = run_with(
         &binary,

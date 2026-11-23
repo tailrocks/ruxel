@@ -51,6 +51,16 @@ pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
             "file: refusing to remove {written}: a removal never takes a system root"
         ));
     }
+    // A spelling the string list misses still names the same directory:
+    // a case-insensitive filesystem folds `/USERS` into `/Users`, and a
+    // symlinked ancestor carries the path into the root's own tree. The
+    // identity of each ancestor is held against the identity of every
+    // root, without following a final link: taking a link takes nothing.
+    if let Some(root) = reaches_root_by_identity(path) {
+        return Err(format!(
+            "file: refusing to remove {written}: it reaches {root}, a system root"
+        ));
+    }
     // The system's own layout (`/var` -> `/private/var`, `/bin` ->
     // `/usr/bin`) is a first component and is not a crossing.
     if !crosses_symlink(path) {
@@ -90,6 +100,61 @@ pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// The system root a path reaches whatever its spelling: the identity
+/// of each ancestor against the identity of every root. A filesystem
+/// that folds case lets `/USERS` name `/Users`, and the traversal of a
+/// symlinked ancestor lands on the root's own directory, while the
+/// written spelling names neither. A final link is not followed
+/// (`symlink_metadata`): the link itself is what a removal of it takes.
+/// An ancestor that names the root's tree as written is skipped: a path
+/// below a root is the removal's own business, and only the root itself
+/// — or a spelling that hides it — is refused here.
+fn reaches_root_by_identity(path: &Path) -> Option<String> {
+    reaches_root_by_identity_in(path, &SYSTEM_ROOTS[..])
+}
+
+pub(super) fn reaches_root_by_identity_in(path: &Path, roots: &[&str]) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    // A root is held by the name it was written under and by the name it
+    // resolves to: `/var` and `/private/var` are one root, and a path
+    // that already names either spelling is the path the written floor
+    // holds, not a spelling that hides one.
+    let mut guarded: Vec<(String, Vec<String>, (u64, u64))> = Vec::with_capacity(roots.len());
+    for root in roots {
+        let Ok(meta) = std::fs::metadata(root) else {
+            continue;
+        };
+        let mut spellings = vec![root.to_string()];
+        if let Ok(canonical) = std::fs::canonicalize(root) {
+            let canonical = canonical.to_string_lossy().to_string();
+            if canonical != *root {
+                spellings.push(canonical);
+            }
+        }
+        guarded.push((root.to_string(), spellings, (meta.dev(), meta.ino())));
+    }
+    for ancestor in path.ancestors() {
+        let Ok(meta) = std::fs::symlink_metadata(ancestor) else {
+            continue;
+        };
+        let identity = (meta.dev(), meta.ino());
+        let ancestor_written = written_path(ancestor);
+        for (root, spellings, root_identity) in &guarded {
+            if *root_identity != identity {
+                continue;
+            }
+            if spellings
+                .iter()
+                .any(|spelling| inside(&ancestor_written, spelling))
+            {
+                continue;
+            }
+            return Some(root.clone());
+        }
+    }
+    None
 }
 
 /// Whether a path is a root or lies inside it.

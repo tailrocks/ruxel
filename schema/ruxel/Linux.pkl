@@ -72,7 +72,7 @@ typealias ChainName = Static(!isEmpty && length <= 28 && isAscii(this) && !start
 /// interface-name limit (`IFNAMSIZ` is 16, the name and its terminator),
 /// and without what the kernel refuses in a name: the `/`, the `:`, and
 /// the whitespace, and never the exact names `.` and `..`.
-typealias InterfaceName = Static(!isEmpty && length < 16 && isAscii(this) && !contains("/") && !contains(":") && !hasWhitespace(this) && this != "." && this != "..")
+typealias InterfaceName = Static(!isEmpty && length < 16 && isAscii(this) && !contains("/") && !contains(":") && !hasWhitespace(this) && !endsWith("+") && this != "." && this != "..")
 
 /// Whether the text is ASCII: the firewall measures the names it takes in
 /// bytes — the chain name's length and the interface name's limit are byte

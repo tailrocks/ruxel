@@ -281,3 +281,86 @@ fn a_line_with_a_refused_option_value_is_a_dead_line() {
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn an_empty_command_is_options_but_an_empty_from_is_not() {
+    // sshd reads `command` as far as the quotes reach, even when nothing
+    // is between them: an active line with an empty command carries its
+    // key, in both the text and the byte readers.
+    assert_eq!(
+        key_material("command=\"\" ssh-ed25519 AAAAC3Nza"),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+    assert_eq!(
+        key_material_bytes(b"command=\"\" ssh-ed25519 AAAAC3Nza"),
+        Some((b"ssh-ed25519".to_vec(), b"AAAAC3Nza".to_vec()))
+    );
+    // `from` and `principals` with an empty value are no value at all:
+    // the line carries no key.
+    assert_eq!(key_material("from=\"\" ssh-ed25519 AAAAC3Nza"), None);
+    assert_eq!(key_material("principals=\"\" ssh-ed25519 AAAAC3Nza"), None);
+    assert_eq!(key_material_bytes(b"from=\"\" ssh-ed25519 AAAAC3Nza"), None);
+}
+
+#[test]
+fn a_repeated_singleton_option_hides_the_key() {
+    // sshd rejects a line that names `command`, `principals` or `from`
+    // twice: the key-looking pair behind the second one is not an active
+    // key.
+    for options in [
+        "command=\"one\",command=\"two\"",
+        "COMMAND=\"one\",command=\"two\"",
+        "from=\"a\",FROM=\"b\"",
+        "principals=\"a\",principals=\"b\"",
+        "command=\"one\",from=\"a\",command=\"two\"",
+    ] {
+        assert_eq!(
+            key_material(&format!("{options} ssh-ed25519 AAAAC3Nza")),
+            None,
+            "{options} repeats a singleton"
+        );
+        assert_eq!(
+            key_material_bytes(format!("{options} ssh-ed25519 AAAAC3Nza").as_bytes()),
+            None,
+            "{options} repeats a singleton"
+        );
+    }
+    // Each singleton once is options: the line carries its key. A
+    // repeated option that is not a singleton stays valid the way sshd
+    // reads it.
+    assert_eq!(
+        key_material("command=\"one\",from=\"a\",principals=\"b\" ssh-ed25519 AAAAC3Nza"),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+    assert_eq!(
+        key_material("permitopen=\"a:80\",permitopen=\"b:81\" ssh-ed25519 AAAAC3Nza"),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+}
+
+#[test]
+fn a_key_behind_an_empty_command_is_removed_by_absence() {
+    let root = scratch("empty-command");
+    let meta = std::fs::metadata(&root).unwrap();
+    let ssh = root.join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    // The key is active behind the empty command: absence removes it
+    // instead of reporting it unchanged, and the line is gone whole.
+    let live = "command=\"\" ssh-ed25519 AAAAC3Nzadrop\n";
+    std::fs::write(ssh.join("authorized_keys"), live).unwrap();
+    assert!(
+        remove::remove_key(
+            &root,
+            meta.uid(),
+            meta.gid(),
+            "ssh-ed25519 AAAAC3Nzadrop",
+            false
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        std::fs::read_to_string(ssh.join("authorized_keys")).unwrap(),
+        ""
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}

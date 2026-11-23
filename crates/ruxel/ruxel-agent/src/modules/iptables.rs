@@ -71,15 +71,14 @@ fn run_with(
     let shadowed = chain::stale_rules(binary, chain, &spec)?;
     let changed = !present || !shadowed.is_empty();
     if changed && !ctx.check_mode {
-        // The replacement is installed before the stale rules go: `-D`
-        // and `-A` are separate commands, so deleting first and then
-        // failing to append would leave the match unfiltered.
-        if !present {
-            let mut append: Vec<&str> = vec!["-A", chain];
-            append.extend(spec.iter().map(String::as_str));
-            chain::exec_rule(binary, &append)?;
-        }
-        chain::delete_rules(binary, chain, &shadowed, MAX_DELETIONS)?;
+        // The replacement is committed in one restore transaction: the
+        // chain is flushed and re-added with the declared rule at the
+        // position of the first stale rule, so the packets never cross a
+        // half-replaced chain and a later terminating rule cannot shadow
+        // the replacement. The apply lists the chain again after every
+        // restore and converges over a writer that changed it in between,
+        // failing instead of reporting a rule it did not install.
+        chain::apply_present(binary, chain, &spec)?;
     }
     Ok(json!({"changed": changed, "failed": false, "chain": chain}))
 }
@@ -93,33 +92,34 @@ mod replacement_first_tests {
     use super::run_with;
     use std::os::unix::fs::PermissionsExt;
 
-    /// A stub whose append always fails: the lock is held, the target is
-    /// missing, or the command itself errors.
-    fn failing_append_stub(dir: &std::path::Path) -> (String, std::path::PathBuf) {
+    /// A stub whose restore always fails on the lock: the firewall is
+    /// held by another writer, so no transaction ever commits.
+    fn failing_restore_stub(dir: &std::path::Path) -> (String, std::path::PathBuf) {
         let file = dir.join("rules");
         std::fs::write(&file, "-p tcp -d 10.0.0.0/8 -j ACCEPT\n").unwrap();
         let script = dir.join("iptables-stub");
         std::fs::write(
             &script,
             format!(
-                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\n  -A) echo 'iptables: Resource temporarily unavailable' >&2; exit 4;;\nesac\nexit 0\n",
+                "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  *-restore) echo 'iptables-restore: Resource temporarily unavailable' >&2; exit 4;;\nesac\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\nesac\nexit 0\n",
                 file = file.display()
             ),
         )
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::os::unix::fs::symlink(&script, dir.join("iptables-stub-restore")).unwrap();
         (script.to_str().unwrap().to_owned(), file)
     }
 
     #[test]
     fn a_failed_replacement_leaves_the_stale_rule_behind() {
-        // The chain holds only the stale jump and the append fails: the
+        // The chain holds only the stale jump and no restore commits: the
         // old rule must still filter while apply reports the failure.
         let dir =
             std::env::temp_dir().join(format!("ruxel-iptables-replace-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (binary, file) = failing_append_stub(&dir);
+        let (binary, file) = failing_restore_stub(&dir);
         let params = serde_json::json!({
             "chain": "INPUT", "protocol": "tcp", "destination": "10.0.0.0/8",
             "jump": "DROP", "state": "present"
@@ -137,7 +137,7 @@ mod replacement_first_tests {
             },
         )
         .unwrap_err();
-        assert!(error.contains("temporarily unavailable"), "{error}");
+        assert!(error.contains("did not converge"), "{error}");
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "-p tcp -d 10.0.0.0/8 -j ACCEPT\n"

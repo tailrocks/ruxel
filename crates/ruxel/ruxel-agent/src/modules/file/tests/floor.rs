@@ -209,3 +209,42 @@ fn a_system_link_is_a_system_root() {
         assert!(error.contains("system root"), "{root}: {error}");
     }
 }
+
+#[test]
+fn an_identity_the_spelling_hides_still_reaches_the_root() {
+    let base = scratch("identity-hidden");
+    let real = base.join("real");
+    std::fs::create_dir(&real).unwrap();
+    // The ancestor is a link to the scratch root: the path below it
+    // lands in the root's own directory while naming neither it nor the
+    // root the plan wrote.
+    std::os::unix::fs::symlink(&base, base.join("alias")).unwrap();
+    let roots = [real.to_str().unwrap().to_string()];
+    let roots: Vec<&str> = roots.iter().map(String::as_str).collect();
+    assert_eq!(
+        super::super::floor::reaches_root_by_identity_in(&base.join("alias/real"), &roots),
+        Some(real.to_string_lossy().to_string())
+    );
+    // A path that names the root as written is not the hidden one: the
+    // written floor holds it, and the identity walk leaves it alone.
+    assert_eq!(
+        super::super::floor::reaches_root_by_identity_in(&real, &roots),
+        None
+    );
+    assert_eq!(
+        super::super::floor::reaches_root_by_identity_in(&real.join("sub"), &roots),
+        None
+    );
+    // A final link to the root is a link: taking it takes nothing.
+    std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+    assert_eq!(
+        super::super::floor::reaches_root_by_identity_in(&base.join("link"), &roots),
+        None
+    );
+    // The whole system root is never hidden from itself.
+    assert_eq!(
+        super::super::floor::reaches_root_by_identity_in(std::path::Path::new("/"), &["/"]),
+        None
+    );
+    std::fs::remove_dir_all(&base).unwrap();
+}

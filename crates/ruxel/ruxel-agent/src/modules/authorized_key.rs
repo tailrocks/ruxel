@@ -222,16 +222,45 @@ fn first_field_span(line: &[u8]) -> &[u8] {
 /// comma-separated list of the options sshd accepts, where a comma
 /// inside quotes stays in the value. A leading field that is neither a
 /// key type nor valid options makes sshd reject the line, so the line
-/// carries no key.
+/// carries no key. A repeated singleton (`command`, `principals`,
+/// `from`) is refused the way sshd refuses it: the second one ends the
+/// line.
 fn is_options_bytes(field: &[u8]) -> bool {
     let mut any = false;
+    let mut singletons = [false; 3];
     for option in split_options_bytes(field) {
         if !is_option_bytes(option) {
             return false;
         }
+        if let Some(seen) = singleton_seen(option) {
+            if singletons[seen] {
+                return false;
+            }
+            singletons[seen] = true;
+        }
         any = true;
     }
     any
+}
+
+/// The slot of a singleton option sshd accepts once: `command`,
+/// `principals` and `from` may each appear once, and a second one makes
+/// sshd reject the line. The name matches the way sshd matches it,
+/// without regard to case.
+fn singleton_seen(option: &[u8]) -> Option<usize> {
+    let name = match option.iter().position(|byte| *byte == b'=') {
+        Some(at) => &option[..at],
+        None => option,
+    };
+    if name.eq_ignore_ascii_case(b"command") {
+        Some(0)
+    } else if name.eq_ignore_ascii_case(b"principals") {
+        Some(1)
+    } else if name.eq_ignore_ascii_case(b"from") {
+        Some(2)
+    } else {
+        None
+    }
 }
 
 /// The options of the field, split on the commas that are not quoted.
@@ -274,7 +303,10 @@ fn is_option_bytes(option: &[u8]) -> bool {
     let Some(inner) = value.and_then(dequoted) else {
         return false;
     };
-    !inner.is_empty() && valid_valued_option(name, &inner)
+    // The emptiness a grammar requires is the grammar's own: `command`
+    // accepts what `opt_dequote` returns, even empty, while every other
+    // valued option refuses an empty value where its grammar does.
+    valid_valued_option(name, &inner)
 }
 
 /// Whether the name is a flag sshd accepts: `restrict` and
@@ -328,18 +360,15 @@ fn dequoted(value: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Whether the quoted value holds the grammar the valued option
-/// requires: sshd reads `command`, `from` and `principals` as far as
-/// the quotes reach, and checks the grammar of every other value.
+/// requires: sshd reads `command` as far as the quotes reach, even when
+/// nothing is between them, and checks the grammar of every other value,
+/// where an empty value is no value at all.
 fn valid_valued_option(name: &[u8], value: &[u8]) -> bool {
-    if [
-        b"command".as_slice(),
-        b"from".as_slice(),
-        b"principals".as_slice(),
-    ]
-    .iter()
-    .any(|known| name.eq_ignore_ascii_case(known))
-    {
+    if name.eq_ignore_ascii_case(b"command") {
         return true;
+    }
+    if name.eq_ignore_ascii_case(b"from") || name.eq_ignore_ascii_case(b"principals") {
+        return !value.is_empty();
     }
     if name.eq_ignore_ascii_case(b"expiry-time") {
         return valid_expiry_time(value);

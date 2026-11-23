@@ -79,15 +79,23 @@ pub(super) fn remove_with(
     };
     let identity = (super::floor::device(&meta), meta.st_ino);
     refuse_target_mount(identity, mounts, &path)?;
-    if FileType::from_raw_mode(meta.st_mode) != FileType::Directory {
+    if FileType::from_raw_mode(meta.st_mode) == FileType::Directory {
+        take_directory(&parent, &name, &path, recurse, check_mode, mounts)?;
+    } else if !check_mode {
         // A file, and a link that points at one: the link itself is what
         // the removal takes.
-        if !check_mode {
-            take_file(&parent, &name, identity, &path)?;
-        }
-        return Ok(true);
+        take_file(&parent, &name, identity, &path)?;
     }
-    take_directory(&parent, &name, &path, recurse, check_mode, mounts)
+    // The parent is rechecked once the work is done: a parent renamed
+    // and replaced while the removal ran detaches the held descriptor,
+    // and the removal must not report on a path it no longer holds.
+    // Best effort by construction: a swap between this check and the
+    // report races the same way every check-then-act does, but a swap
+    // during the (longer) mutation itself is caught here.
+    if !check_mode {
+        revalidate_parent(&parent, &path)?;
+    }
+    Ok(true)
 }
 
 /// The path the removal works on: the absolute path, so the floor holds
@@ -207,10 +215,10 @@ fn take_directory(
     // The tree is walked before anything is taken away, so a mount
     // point in it is refused before the removal starts. The walk reads
     // the identity each entry carries, so a mount point the path reaches
-    // under another name is a mount point all the same.
-    if !mounts.is_empty() {
-        super::mounts::preflight(&child, path, mounts)?;
-    }
+    // under another name is a mount point all the same, and an entry on
+    // another device is refused even when the platform writes no mount
+    // table to read.
+    super::mounts::preflight(&child, path, mounts)?;
     if !check_mode {
         take_tree(parent, name, &child, path)?;
     }
@@ -269,19 +277,7 @@ fn take_tree(parent: &OwnedFd, name: &CString, child: &OwnedFd, path: &Path) -> 
 fn recheck_mounts(parent: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(), String> {
     // The held directory is still the one the path names: a directory
     // that was replaced in between is not the one the removal checked.
-    let held = fstat(parent).map_err(|error| error.to_string())?;
-    let held = (super::floor::device(&held), held.st_ino);
-    let Some(written) = path.parent() else {
-        return Err(format!(
-            "file: cannot read {}: no parent directory",
-            path.display()
-        ));
-    };
-    let named = std::fs::metadata(written)
-        .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
-    if (named.dev(), named.ino()) != held {
-        return Err(super::attachment::replaced(path));
-    }
+    revalidate_parent(parent, path)?;
     // The path through the mounts given: a covering mount the first read
     // missed lands the path in a system root.
     if let Some(root) = super::mounts::bound_root_in(path, &super::floor::SYSTEM_ROOTS, mounts) {
@@ -300,6 +296,28 @@ fn recheck_mounts(parent: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(),
             "file: refusing to remove {}: it is bound to {root}, a system root",
             path.display()
         ));
+    }
+    Ok(())
+}
+
+/// Whether the directory that holds the target still holds it: the
+/// removal pins the parent before it mutates anything, and a parent
+/// renamed and replaced in between detaches the held descriptor. The
+/// held identity is checked against the one the path names now, the same
+/// way the pre-open check does.
+pub(super) fn revalidate_parent(parent: &OwnedFd, path: &Path) -> Result<(), String> {
+    let held = fstat(parent).map_err(|error| error.to_string())?;
+    let held = (super::floor::device(&held), held.st_ino);
+    let Some(written) = path.parent() else {
+        return Err(format!(
+            "file: cannot read {}: no parent directory",
+            path.display()
+        ));
+    };
+    let named = std::fs::metadata(written)
+        .map_err(|error| format!("file: cannot read {}: {error}", path.display()))?;
+    if (named.dev(), named.ino()) != held {
+        return Err(super::attachment::replaced(path));
     }
     Ok(())
 }

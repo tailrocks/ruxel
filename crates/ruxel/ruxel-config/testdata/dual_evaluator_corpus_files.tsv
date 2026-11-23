@@ -82,6 +82,7 @@ dual_evaluator
   tests/workflow/invalid/iptables-interface-name-dot.pkl
   tests/workflow/invalid/iptables-interface-name-dotdot.pkl
   tests/workflow/invalid/iptables-interface-name-long.pkl
+  tests/workflow/invalid/iptables-interface-name-trailing-plus.pkl
   tests/workflow/invalid/iptables-interface-name-whitespace.pkl
   tests/workflow/invalid/iptables-interface-name.pkl
   tests/workflow/invalid/iptables-prerouting-out-interface.pkl

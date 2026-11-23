@@ -1,7 +1,7 @@
 //! The mount points of the host: a tree that belongs to somewhere else
 //! is not the removal's to take.
 
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, openat, statat};
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
@@ -308,8 +308,12 @@ pub(super) fn child_path(dir: &Path, name: &std::ffi::CStr) -> PathBuf {
 /// A mount point is the path the kernel lists, and the identity the
 /// mounted tree carries: the path says nothing when the tree is reached
 /// under another name (`/bin/tool` for `/usr/bin/tool`), and only the
-/// identity the entry carries tells then.
+/// identity the entry carries tells then. An entry on another device is
+/// refused even when the platform writes no mount table to read: the
+/// tree below it belongs to somewhere else all the same.
 pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(), String> {
+    let held = fstat(dir).map_err(|error| error.to_string())?;
+    let held = super::floor::device(&held);
     let identities = identities(mounts);
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
@@ -331,6 +335,15 @@ pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<
         }
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
+        // A mount the table does not list: the entry is on another
+        // device, so the tree below it belongs to somewhere else.
+        if super::floor::is_mount_point(held, super::floor::device(&meta)) {
+            return Err(format!(
+                "file: refusing to remove {}: it holds the mount point {}",
+                path.display(),
+                child_path.display()
+            ));
+        }
         // A bind mount keeps the identity of the tree it is mounted
         // from: the entry carries the identity of a mount point under
         // another name, and the spelling of the path says nothing.

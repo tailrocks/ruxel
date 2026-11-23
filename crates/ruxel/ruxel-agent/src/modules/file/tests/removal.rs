@@ -82,3 +82,29 @@ fn a_mount_installed_after_the_first_read_is_read_again() {
     assert!(target.exists(), "the system file is untouched");
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn a_parent_replaced_after_the_work_is_refused() {
+    let outer = scratch("revalidate-parent");
+    let base = outer.join("base");
+    std::fs::create_dir(&base).unwrap();
+    // The parent the removal holds is renamed away, and a new directory
+    // takes its name: the held descriptor no longer holds the path, so
+    // the post-op revalidation refuses instead of reporting the path.
+    let parent = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    std::fs::rename(&base, outer.join("moved")).unwrap();
+    std::fs::create_dir(&base).unwrap();
+    let error = super::super::removal::revalidate_parent(&parent, &base.join("tool")).unwrap_err();
+    assert!(error.contains("replaced"), "{error}");
+    std::fs::remove_dir_all(&outer).unwrap();
+}
+
+#[test]
+fn an_attached_parent_passes_the_post_op_revalidation() {
+    // Nothing replaced the parent while the removal ran: the recheck
+    // after the work reports the path it holds.
+    let base = scratch("revalidate-attached");
+    let parent = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::removal::revalidate_parent(&parent, &base.join("tool")).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}

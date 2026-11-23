@@ -358,6 +358,7 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-chain-name-newline.pkl",
     "invalid/iptables-interface-name-bytes.pkl",
     "invalid/iptables-interface-name-whitespace.pkl",
+    "invalid/iptables-interface-name-trailing-plus.pkl",
     "invalid/absent-floor-system-alias.pkl",
 ];
 

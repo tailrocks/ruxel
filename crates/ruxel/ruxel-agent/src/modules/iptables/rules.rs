@@ -60,10 +60,12 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
     while index < args.len() {
         let flag = &args[index];
         let value = args.get(index + 1);
-        if matches!(flag.as_str(), "-j" | "--jump") {
+        if matches!(flag.as_str(), "-j" | "--jump" | "-g" | "--goto") {
             // The target and its options are not part of the match:
             // they say what happens to the packet, not which packets
-            // match. Everything past the jump is the target's own.
+            // match. Everything past the jump — or past a goto, which
+            // hands the packet to another chain the same way — is the
+            // target's own.
             break;
         }
         if flag.as_str() == "--comment" {
@@ -77,11 +79,14 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
             continue;
         }
         if let Some(value) = value {
-            // `-p all` is the default the listing leaves out, a host
+            // `-p all` is the default the listing leaves out, and `0` is
+            // the same protocol in its numeric spelling: the firewall
+            // reads `all` as protocol zero and prints no `-p` for it, so
+            // neither spelling is part of the match. A host
             // without a prefix carries its full mask in the listing, and
             // the universal network is the destination the listing leaves
             // out altogether.
-            if flag != "-p" || value != "all" {
+            if flag != "-p" || (value != "all" && value != "0") {
                 let value = if flag == "-p" {
                     canonical_protocol(value).to_owned()
                 } else if flag == "-d" {
@@ -104,12 +109,30 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
 
 /// The jump of a rule: the target it hands the packet to. It is not part
 /// of the match, but it is what a stale rule shadows the declared one
-/// with.
+/// with. The option values a rule carries are skipped the way the match
+/// is: a comment that spells a jump flag (`--comment "-j"`) is a value,
+/// not the target.
 pub(super) fn rule_jump(args: &[String]) -> Option<String> {
+    jump_at(args).and_then(|index| args.get(index + 1).cloned())
+}
+
+/// The position of the jump flag: the target the rule hands the packet
+/// to. The option values a rule carries are skipped the way the match
+/// is: a comment that spells a jump flag (`--comment "-j"`) is a value,
+/// not the target.
+pub(super) fn jump_at(args: &[String]) -> Option<usize> {
     let mut index = 0;
     while index < args.len() {
         if matches!(args[index].as_str(), "-j" | "--jump") {
-            return args.get(index + 1).cloned();
+            return Some(index);
+        }
+        if args[index] == "--comment" {
+            index += 2;
+            continue;
+        }
+        if args[index] == "-m" && args.get(index + 1).map(String::as_str) == Some("comment") {
+            index += 4;
+            continue;
         }
         index += 1;
     }
@@ -188,11 +211,11 @@ pub(super) fn full_mask(destination: &str) -> Result<String, String> {
         Some((address, prefix)) => (address, Some(prefix)),
         None => (destination, None),
     };
-    // An IPv6 address may carry the zone it belongs to.
-    let (bare, zone) = match address.split_once('%') {
-        Some((bare, zone)) => (bare, Some(zone)),
-        None => (address, None),
-    };
+    // An IPv6 address may carry the zone it belongs to. The firewall
+    // stores only the address and the mask, and serializes the rule
+    // without the zone, so the zone is dropped and the bare address is
+    // masked the way an unzoned one is.
+    let bare = address.split('%').next().unwrap_or(address);
     if let Ok(bits) = bare.parse::<std::net::Ipv4Addr>() {
         let prefix = prefix_bits(prefix, 32, destination)?;
         let mask = if prefix == 0 {
@@ -208,11 +231,6 @@ pub(super) fn full_mask(destination: &str) -> Result<String, String> {
     }
     if let Ok(bits) = bare.parse::<std::net::Ipv6Addr>() {
         let prefix = prefix_bits(prefix, 128, destination)?;
-        if let Some(zone) = zone {
-            // The zone belongs to the address, not to the network, so a
-            // zoned address keeps its host bits.
-            return Ok(format!("{bare}%{zone}/{prefix}"));
-        }
         let mask = if prefix == 0 {
             0
         } else {
@@ -371,6 +389,99 @@ mod alias_tests {
         .unwrap();
         assert_eq!(result["changed"], true);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A stub that lists one rule and answers the probe the way the
+    /// firewall does: `-C` fills the REJECT default the way the firewall
+    /// fills it, so a declared default-less rule is the listed one that
+    /// carries the serialized default. The restore sibling is a link to
+    /// this script: it commits the `-A` lines it reads.
+    fn reject_stub(dir: &std::path::Path, rule: &str) -> (String, std::path::PathBuf) {
+        let file = dir.join("rules");
+        std::fs::write(&file, format!("{rule}\n")).unwrap();
+        let script = dir.join("iptables-stub");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  *-restore) tmp='{file}.new'; : > \"$tmp\"; while IFS= read -r line; do case \"$line\" in -A\\ *) rest=\"${{line#-A }}\"; echo \"${{rest#* }}\" >> \"$tmp\";; esac; done; mv \"$tmp\" '{file}'; exit 0;;\nesac\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; n=\"$*\"; n=\"${{n% --reject-with icmp-net-unreachable}}\"; if sed -e 's/ --reject-with icmp-net-unreachable$//' '{file}' | grep -q -F -x -e \"$n\"; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\nesac\nexit 0\n",
+                file = file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::os::unix::fs::symlink(&script, dir.join("iptables-stub-restore")).unwrap();
+        (script.to_str().unwrap().to_owned(), file)
+    }
+
+    #[test]
+    fn present_mode_keeps_a_reject_rule_with_the_serialized_default() {
+        // The firewall serializes the default `--reject-with` even for
+        // the declared default-less rule: the listed rule is the declared
+        // one, and nothing changes.
+        let dir =
+            std::env::temp_dir().join(format!("ruxel-iptables-reject-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (binary, file) =
+            reject_stub(&dir, "-p tcp -j REJECT --reject-with icmp-net-unreachable");
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "jump": "REJECT", "state": "present"
+        });
+        let result = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], false);
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "-p tcp -j REJECT --reject-with icmp-net-unreachable\n"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn present_mode_replaces_a_reject_rule_with_other_target_options() {
+        // `tcp-reset` is not the declared default: the listed rule ends
+        // the match before the declared one is ever read, so it goes and
+        // the declared rule takes its position.
+        let dir = std::env::temp_dir().join(format!(
+            "ruxel-iptables-reject-replace-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (binary, file) = reject_stub(&dir, "-p tcp -j REJECT --reject-with tcp-reset");
+        let params = serde_json::json!({
+            "chain": "INPUT", "protocol": "tcp", "jump": "REJECT", "state": "present"
+        });
+        let result = run_with(
+            &binary,
+            "INPUT",
+            params.as_object().unwrap(),
+            &ExecContext {
+                check_mode: false,
+                diff_mode: false,
+                no_log: false,
+                environment: vec![],
+                become_user: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "-p tcp -j REJECT\n"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
