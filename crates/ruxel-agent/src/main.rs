@@ -27,8 +27,7 @@ fn main() {
             .unwrap_or_else(|| "panic with non-string payload".into());
         let location = info
             .location()
-            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-            .unwrap_or_default();
+            .map_or_default(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()));
         let crash = v1::Event {
             msg: Some(v1::event::Msg::Crash(v1::CrashReport { message, location })),
         };

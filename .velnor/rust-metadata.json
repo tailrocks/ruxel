@@ -447,6 +447,16 @@
               "doctest": false,
               "source": "crates/ruxel-config/tests/workflow_systemd.rs",
               "requires_features": false
+            },
+            {
+              "name": "workflow_systemd_timer_delay",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_systemd_timer_delay.rs",
+              "requires_features": false
             }
           ]
         },
@@ -1610,7 +1620,7 @@
     }
   },
   "manifests": {
-    "Cargo.toml": "d8c24c445c7f7435ec2d7a91895b587fc885921064f3200b80ccb43ed357abab",
+    "Cargo.toml": "2fa958d5bf2a3d2752b8865cf51482fbd68b10d7656d04490f0bc095252e8186",
     "crates/ruxel-acceptance-cache/Cargo.toml": "f563da366f98de3b6a9ce9b49745f3fcb89e26250bcad16c432a096924be4fc7",
     "crates/ruxel-acceptance-control/Cargo.toml": "9056fc983a922a4bb51a8f949a28080c7c7abfd2a1951664b11c831b5dc48bb3",
     "crates/ruxel-acceptance-copy/Cargo.toml": "6c25cdda44257f338833fa17df75ab5613ba7b35e0955eccbc2d77b6129874b5",
@@ -1631,5 +1641,5 @@
     "crates/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
     "crates/ruxel/Cargo.toml": "958bcee539704880984357a6d2a5baccfa98c37f09f10fbc4e3fb0e6d4d57981"
   },
-  "layout": "a6b330b9d459f96c22330185dbff8ce708d3cebbcad0073986c481e983c67660"
+  "layout": "1c92fc91fcb74f265cff0ca3fd568f072aa8bd0c2145b9f1f55a72be202b8b85"
 }

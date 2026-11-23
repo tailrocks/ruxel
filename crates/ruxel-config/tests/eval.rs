@@ -36,8 +36,7 @@ fn exported_engine() -> String {
     ruxel_config::schema::exported_modules()
         .iter()
         .find(|(path, _)| path.ends_with("/engine/Engine.pkl"))
-        .map(|(_, text)| text.clone())
-        .unwrap_or_default()
+        .map_or_default(|(_, text)| text.clone())
 }
 
 fn config(import: &str) -> String {

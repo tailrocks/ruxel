@@ -36,7 +36,7 @@ ruxel-proto = { path = "crates/ruxel-proto", version = "0.1.0" }
 ruxel-guard = { path = "crates/ruxel-guard", version = "0.1.0" }
 ruxel-engine = { path = "crates/ruxel-engine", version = "0.1.0" }
 
-base64 = "0.22"
+base64 = "0.23"
 percent-encoding = "2"
 pbkdf2 = "0.13"
 md5 = { package = "md-5", version = "0.11.0" }

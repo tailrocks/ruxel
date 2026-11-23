@@ -50,6 +50,9 @@ const EXAMPLES: &[(&str, bool)] = &[
     ("invalid/timer-boot-fractional-millisecond-huge.pkl", false),
     ("invalid/timer-boot-half-nanosecond.pkl", false),
     ("invalid/timer-boot-negative.pkl", false),
+    ("invalid/timer-repeat-negative.pkl", false),
+    ("invalid/timer-repeat-zero.pkl", false),
+    ("invalid/timer-repeat-fractional-millisecond.pkl", false),
     ("invalid/timer-boot-fractional-huge-integer.pkl", false),
     ("invalid/timer-boot-lost-fraction.pkl", false),
     ("invalid/systemd-timer-fractional-delay.pkl", false),
@@ -132,8 +135,7 @@ impl Modules {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default();
+            .map_or_default(|elapsed| elapsed.as_nanos());
         let path = std::env::temp_dir().join(format!(
             "ruxel-dual-evaluator-{}-{}-{}",
             std::process::id(),

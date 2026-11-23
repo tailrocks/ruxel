@@ -1,0 +1,13 @@
+// expect: device "ruxel-nova-disk-1" is not an absolute path in normal form; name the by-id path
+// A volume group's devices are by-id paths in normal form: a relative
+// spelling names no disk, and two spellings of one disk must be the same
+// text for the repeat to merge.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+name = "invalid/storage-volume-group-device-path.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new storage.VolumeGroup { title = "Name the relative group"; vg = "ruxel_nova"; devices { "ruxel-nova-disk-1" } }
+} } }

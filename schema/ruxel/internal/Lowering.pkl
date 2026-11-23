@@ -24,6 +24,7 @@ import "modulepath:/ruxel/Core.pkl" as core
 import "modulepath:/ruxel/Debian.pkl" as debian
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "modulepath:/ruxel/Storage.pkl" as storage
 import "modulepath:/ruxel/engine/Engine.pkl" as engine
 
 /// Replaced by the ruxel binary that serves this module, like the engine's
@@ -81,6 +82,10 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["recipe"] = (s) -> s is core.Recipe
   ["service"] = (s) -> s is systemd.Service
   ["systemdTimer"] = (s) -> s is systemd.SystemdTimer
+  ["volumeGroup"] = (s) -> s is storage.VolumeGroup
+  ["logicalVolume"] = (s) -> s is storage.LogicalVolume
+  ["filesystem"] = (s) -> s is storage.Filesystem
+  ["mount"] = (s) -> s is storage.Mount
   ["packageIndex"] = (s) -> s is debian.AptPackageIndex
   ["packages"] = (s) -> s is debian.AptPackages
   ["aptSystemUpgrade"] = (s) -> s is debian.AptSystemUpgrade
@@ -1022,6 +1027,16 @@ function settings(s: core.Step): List<String> =
     List(onBootRefusal(s))
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMicros(s.onBoot) == null)
     List(onBootRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && s.repeat.value == 0)
+    List("'\(name(s))': repeat \(s.repeat) is zero; a timer fires after its last firing, not at it")
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootNegative(s.repeat))
+    List("'\(name(s))': repeat \(s.repeat) is negative; a timer fires after its last firing, not before it")
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootTooLong(s.repeat))
+    List(repeatTooLongRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootUntrusted(s.repeat))
+    List(repeatRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootMicros(s.repeat) == null)
+    List(repeatRefusal(s))
   else if (s is systemd.SystemdTimer && s.service == null && s.name.length > 247)
     List("'\(name(s))': a timer name of \(s.name.length) characters without a service of its own would name the \(s.name.length + 8)-character unit \(timerTarget(s)), past systemd's 255; a timer name without a service may be at most 247 characters")
   else if (s is debian.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
@@ -1102,6 +1117,19 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': gid = \(s.gid) is rejected for root: the root group keeps gid 0, and a change would strand every file it owns")
   else if (s is linux.Group && s.state == "absent" && s.name == "root")
     List("'\(name(s))': state = \"absent\" is rejected for the root group: the superuser's primary group is the host's to keep")
+  // A volume group step declares the full device set and never extends, so
+  // `allowExtend = true` has no lowering: it would silently `vgextend` an
+  // existing group. Each device is a by-id path in normal form (pklr does
+  // not check the elements of a `Listing`, so the shape is checked here).
+  else if (s is storage.VolumeGroup && s.allowExtend)
+    List("'\(name(s))': allowExtend is true; a volume group step never extends an existing group — declare the full device set and keep allowExtend = false")
+  else if (s is storage.VolumeGroup && storageDeviceProblem(s.devices.toList()) != null)
+    List("'\(name(s))': \(storageDeviceProblem(s.devices.toList()))")
+  // A mount source is `UUID=<value>`, or carries a `blkid` capture's output
+  // that prints one; anything else would resolve to another device than the
+  // formatted one.
+  else if (s is storage.Mount && mountSourceProblem(s.src) != null)
+    List("'\(name(s))': \(mountSourceProblem(s.src))")
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -2934,6 +2962,8 @@ function canReportChange(s: core.Step): Boolean =
 function capturesUsed(s: core.Step): List<String> =
   if (s is core.File) placeholder.findMatchesIn(s.content).map((m) -> m.groups[1].value)
     .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
+  else if (s is storage.Mount) placeholder.findMatchesIn(s.src).map((m) -> m.groups[1].value)
+    .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
   else List()
 
 // ── Identity, names and tags ────────────────────────────────────────────────
@@ -3060,7 +3090,15 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
-  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), "\(s.persistent)", "\(s.enabled)"))
+  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), onBootText(s.repeat), "\(s.persistent)", "\(s.enabled)"))
+  // A volume group is its name plus the full device set: a second
+  // declaration for one group with another set is another state, not a
+  // repeat. A mount is its resolved source: a static `UUID=` text, or the
+  // capture output that prints one.
+  ["volumeGroup"] = (s) -> fields(List(s.vg, fields(s.devices.toList()), "\(s.allowExtend)"))
+  ["logicalVolume"] = (s) -> fields(List(s.vg, s.lv, s.size, "\(s.resizefs)"))
+  ["filesystem"] = (s) -> fields(List(s.dev, "\(s.resizefs)"))
+  ["mount"] = (s) -> fields(List(s.src, s.path, s.fstype, s.opts))
   ["capture"] = (s) -> s.id()
 }
 
@@ -3122,6 +3160,15 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // stanza writes is managed too: a `File` at that path would write a
   // second state for the same file, overwriting the stanza on every apply.
   ["aptPreference"] = (s) -> List("the apt preference of \(s.package)", preferencePath(s.package))
+  // One volume group, one logical volume, one filesystem, one mount per
+  // name: a second declaration for the same thing with different settings
+  // is refused, and an exact repeat merges. The fstab line is shared by
+  // every mount of the stage, so no mount owns it — unlike a timer, which
+  // owns its unit file.
+  ["volumeGroup"] = (s) -> List("the volume group \(s.vg)")
+  ["logicalVolume"] = (s) -> List("the logical volume \(s.vg)/\(s.lv)")
+  ["filesystem"] = (s) -> List("the filesystem on \(s.dev)")
+  ["mount"] = (s) -> List("the mount at \(s.path)")
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
@@ -3163,6 +3210,7 @@ function timerContent(t: systemd.SystemdTimer): String =
     "[Timer]"
     when (t.onCalendar != null) { "OnCalendar=\(t.onCalendar)" }
     when (t.onBoot != null) { "OnBootSec=\(onBootSpan(t))" }
+    when (t.repeat != null) { "OnUnitActiveSec=\(repeatSpan(t))" }
     // The unit the timer activates when it fires: a timer that names no
     // service starts the service of its own name.
     "Unit=\(timerTarget(t))"
@@ -3195,6 +3243,30 @@ const function onBootSpan(t: systemd.SystemdTimer): String =
 /// refuse one, so that the refusal reads the same wherever it is found.
 const function onBootRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot \(t.onBoot) must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds"
+
+/// The repeat interval as the unit systemd reads it: whole seconds, or
+/// whole milliseconds — the same whole-millisecond contract as the boot
+/// delay, so no fraction of one is ever emitted.
+///
+/// The interval has been checked before the timer is lowered —
+/// `settings` refuses one that is not provably the interval the author
+/// wrote — so the count of microseconds is there. The throw is the
+/// backstop that keeps a wrong interval from being written: each refusal
+/// is refused, never rounded to another interval.
+const function repeatSpan(t: systemd.SystemdTimer): String =
+  let (micros = onBootMicros(t.repeat))
+  if (onBootTooLong(t.repeat)) throw(repeatTooLongRefusal(t))
+  else if (onBootUntrusted(t.repeat)) throw(repeatRefusal(t))
+  else if (micros == null) throw(repeatRefusal(t))
+  else if (micros % 1000000 == 0) "\(micros ~/ 1000000)"
+  else "\(micros ~/ 1000)ms"
+
+/// The sentence that refuses a repeat interval that is not a whole
+/// number of milliseconds this schema can carry. One sentence for both
+/// places that refuse one, so that the refusal reads the same wherever
+/// it is found.
+const function repeatRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': repeat \(t.repeat) must be a whole number of milliseconds; a systemd timer reads the interval in seconds or milliseconds"
 
 /// The largest count of milliseconds whose every integer a `Float` can
 /// hold exactly: 2^53. A boot delay at or beyond it is refused whole,
@@ -3277,6 +3349,14 @@ const function onBootUntrusted(d: Duration): Boolean =
 /// one, so the refusal reads the same wherever it is found.
 const function onBootTooLongRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote"
+
+/// The sentence that refuses a repeat interval this schema cannot hold
+/// exactly. It names the bound and deliberately not the interval: the
+/// interval in the message would be the value the evaluators rounded,
+/// not the one the author wrote. One sentence for both places that
+/// refuse one, so the refusal reads the same wherever it is found.
+const function repeatTooLongRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': repeat is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer interval arrives from the evaluators already rounded, and would fire at a time the author never wrote"
 
 /// The whole-microsecond count of a delay whose value is an integer in
 /// its own unit, taken in whole-number arithmetic and still a whole
@@ -3362,10 +3442,11 @@ const function roundedMicrosOf(unit: String, micros: Float): Float =
 /// Whether a boot delay is before the boot: a timer fires after it.
 const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0
 
-/// The boot delay as the text that identifies the step: the delay in
+/// A delay as the text that identifies the step: the delay in
 /// whole milliseconds, so that two spellings of one delay — `1.001.s` and
 /// `1001.ms` — are one step, and not two steps that manage the same unit
-/// file with different settings. A delay that is not a whole number of
+/// file with different settings. Serves the boot delay and the repeat
+/// interval alike. A delay that is not a whole number of
 /// milliseconds, or not provable, keeps its own text, so that it is
 /// never the same step as a delay it is not.
 const function onBootText(d: Duration?): String =
@@ -3459,6 +3540,10 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["sysctl"] = (s) -> "Set sysctl \(s.name) to \(s.value) in \(s.path)"
   ["service"] = (s) -> (if (s.running) "Start " else "Stop ") + s.name + (if (s.enabled) ", enabled at boot" else ", disabled at boot")
   ["systemdTimer"] = (s) -> "Manage timer " + s.name + (if (s.onCalendar == null) "" else " on \(s.onCalendar)")
+  ["volumeGroup"] = (s) -> "Create volume group \(s.vg)"
+  ["logicalVolume"] = (s) -> "Create logical volume \(s.vg)/\(s.lv)"
+  ["filesystem"] = (s) -> "Format \(s.dev) as xfs"
+  ["mount"] = (s) -> "Mount \(s.path)"
   ["command"] = (s) -> "Run " + s.run.join(" ")
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
@@ -3622,6 +3707,10 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["iptablesRule"] = (s, m) -> List(task(m, firewall(s), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
+  ["volumeGroup"] = (s, m) -> List(task(m, volumeGroup(s.vg, s.devices.toList()), null, null))
+  ["logicalVolume"] = (s, m) -> List(task(m, logicalVolume(s.vg, s.lv, s.size, s.resizefs), null, null))
+  ["filesystem"] = (s, m) -> List(task(m, filesystem(s.dev, s.resizefs), null, null))
+  ["mount"] = (s, m) -> List(task(m, mount(s.src, s.path, s.fstype, s.opts), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
@@ -4018,6 +4107,79 @@ function command(_argv: List<String>, _creates: String?, _runIfChanged: engine.E
   when (_creates != null) { creates = _creates }
   when (_runIfChanged != null) { run_if_changed = _runIfChanged }
 }
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+//
+// Track B owns this region: the `storage.*` steps of `Storage.pkl` lower to
+// the engine's volume group, logical volume, filesystem and mount
+// operations, in the order the stage lists them (G6: Stat and Assert on the
+// disks, then `vg` → `lv` → `fs` → `mount`, with the disks resolved by a
+// `readlink` capture (G7) and the mount source learned by a `blkid` capture
+// (G8)). No other track adds lines here; the dispatch tables above carry one
+// line per storage kind each, line-disjoint from the other tracks' lines.
+
+/// The volume group with its full declared device set: one literal list, so
+/// the group is created from the set the author stated, never grown from a
+/// partial one. The stage resolved and asserted the by-id paths before this
+/// step (G6/G7).
+function volumeGroup(_vg: String, _devices: List<String>): engine.VolumeGroup = new engine.VolumeGroup {
+  vg = _vg
+  pvs = new Listing { for (d in _devices) { d } }
+}
+
+/// The logical volume taking the whole free space of its group. The size is
+/// closed to `+100%FREE` by `Storage.pkl` itself: no other spelling reaches
+/// this constructor.
+function logicalVolume(_vg: String, _lv: String, _size: String, _resizefs: Boolean): engine.LogicalVolume = new engine.LogicalVolume {
+  lv = _lv
+  vg = _vg
+  size = _size
+  resizefs = if (_resizefs) true else null
+}
+
+/// The XFS filesystem on the device. The type is closed by `Storage.pkl`
+/// itself: no other filesystem reaches this constructor.
+function filesystem(_dev: String, _resizefs: Boolean): engine.Filesystem = new engine.Filesystem {
+  dev = _dev
+  fstype = "xfs"
+  resizefs = if (_resizefs) true else null
+}
+
+/// The mounted filesystem: `state = "mounted"` always — the language has no
+/// unmount — with the fstab entry (`0 0`, the agent's closed choice) and the
+/// source the author stated (`UUID=<value>`) or learned on the host (a
+/// `blkid` capture's `stdout()`, rendered into the same source).
+function mount(_src: String, _path: String, _fstype: String, _opts: String): engine.Mount = new engine.Mount {
+  fstype = _fstype
+  opts = _opts
+  path = _path
+  src = runtimeText(_src)
+  state = "mounted"
+}
+
+/// The first device of the set that is not an absolute path in normal form
+/// (`Storage.pkl` keeps `devices` a whole-list `StaticList`, because pklr
+/// does not check the elements of a `Listing`). `null` when every device is
+/// one.
+const function storageDeviceProblem(devices: List<String>): String? =
+  let (bad = devices.filter((d) -> !isStorageDevice(d)))
+  if (bad.isEmpty) null else "device \"\(bad.first)\" is not an absolute path in normal form; name the by-id path, such as /dev/disk/by-id/usb-Serial-0:0"
+
+/// Whether a device path is absolute and in normal form: no empty, `.` or
+/// `..` segments and no trailing `/`, so two spellings of one disk are the
+/// same text. Devices are never `/` itself.
+const function isStorageDevice(device: String): Boolean =
+  device != "/" && device.matches(Regex("(/[^/]+)+")) && !device.split("/").any((segment) -> segment == "." || segment == "..")
+
+/// Why a mount source cannot select the formatted device: a static source
+/// must spell the `UUID=` name the agent resolves with `blkid`, and a
+/// source carrying a run-time value must be what a `blkid` capture learned
+/// (`runtimeText` refuses any other run-time value when it renders).
+/// `null` when the source is one of those.
+const function mountSourceProblem(src: String): String? =
+  if (src.contains("__ruxel_rt_8d41.")) null
+  else if (src.startsWith("UUID=") && src.length > 5 && !hasSpace(src)) null
+  else "source \"\(src)\" is not a UUID= source; name the device as UUID=<value>, or carry a blkid capture's stdout() that prints one"
 
 // ── Run-time and secret text ────────────────────────────────────────────────
 

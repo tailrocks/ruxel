@@ -1,0 +1,27 @@
+// expect: manages /home/alice, which stage "s2" removes with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel -r` deletes the home directory itself, not only what lies
+// inside it: an earlier stage that manages the exact home path loses
+// it to the removal. Only the account's own lifecycle footprint — its
+// own home and mail spool, claimed by its own user step — is exempt.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/alice"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+    }
+  }
+}
+
+name = "invalid/linux-user-remove-home-managed-home.pkl"

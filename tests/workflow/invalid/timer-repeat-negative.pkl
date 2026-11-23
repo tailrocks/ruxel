@@ -1,0 +1,16 @@
+// expect: 'The impatient check': repeat -5.min is negative; a timer fires after its last firing, not before it
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer repeats before its last firing"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The impatient check"; name = "postgresql-impatient-check"; service = "postgresql-impatient-check"; onCalendar = "daily"; repeat = -5.min }
+    }
+  }
+}
+
+name = "invalid/timer-repeat-negative.pkl"

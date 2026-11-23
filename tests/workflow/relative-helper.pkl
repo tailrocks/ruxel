@@ -1,0 +1,4 @@
+// The helper the example imports: it extends the base beside it, so
+// the example's closure must follow `extends` as well as `import` to
+// reach `base.pkl` — the evaluator opens it for every run.
+extends "base.pkl"

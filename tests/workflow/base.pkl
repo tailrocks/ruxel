@@ -1,0 +1,5 @@
+// The base the helper extends: an open module beside the corpus,
+// reached only through the helper's relative `extends` — no example
+// imports it, so an import-only closure never sees this file.
+open module base
+greeting: String = "hello from base"

@@ -137,50 +137,50 @@ url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/ca
 url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674833"
 
 [[tools.cargo-binstall]]
-version = "1.26.2"
+version = "1.28.0"
 backend = "aqua:cargo-bins/cargo-binstall"
-specifiers = ["1.26.2"]
+specifiers = ["1.28.0"]
 
 [tools.cargo-binstall."platforms.linux-arm64"]
-checksum = "sha256:027438af19e7d9d90accabbb047101c8636c40253f760e92e84cf2f90feddad3"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-aarch64-unknown-linux-gnu.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695465531"
+checksum = "sha256:b70ef4098ca891c042028cd1c9ce80128c7a35d4c5dc64d55f4ec5d963c45e69"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-aarch64-unknown-linux-gnu.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036072"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-arm64-musl"]
-checksum = "sha256:a235250cd684af9bf1e3a1e4c216b1d36e6c553553d5d789744f27689d81c2d6"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-aarch64-unknown-linux-musl.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695465354"
+checksum = "sha256:a2fc44f58416eecd6091eb55b21bda968283fc7cae7712679cbb4f490c8a1489"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036091"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64"]
-checksum = "sha256:4f28eba175325f67f7c4bb8ae8686914d2d88fead279c0b8c4d3125264d7a512"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464312"
+checksum = "sha256:6de9f8fef45a831a7a31e8829e8d73479a67cb6007964ac0b2aa651eebb1eefd"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036306"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-musl"]
-checksum = "sha256:9e0e064f189a9abb9f8df5fb93c3c810ef5cc19e7212d998c7a64c9e4d3527d5"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464185"
+checksum = "sha256:dad3d904258f50b0cc5ac34e6a6e8cefbada8bf65ab3da063faa1d6b534ad28a"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036348"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.macos-arm64"]
-checksum = "sha256:0f9ddd602d439ea64f03a5c188c59656d5ef389ecdcbff044c8d373e51c0e2b3"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-aarch64-apple-darwin.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695465979"
+checksum = "sha256:e76299031c8240273cbb5d3244c133f6219f92b0d7704853759686c92345cda8"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-aarch64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036009"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.macos-x64"]
-checksum = "sha256:a114e207a9cd116f97708f175ba5e4f0a37836ff9c4d1ea63c8364436decf70f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-x86_64-apple-darwin.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464551"
+checksum = "sha256:d5bab1d79645dc1b92fb050c7fafef6b6fa37122c36ae7266e2054ebeec2be65"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-x86_64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036232"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.windows-x64"]
-checksum = "sha256:c377a4977ffdbdcbf58dd263055b2f1d56ba873c69fbd6bfc60bef98256183a3"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464456"
+checksum = "sha256:72b0b451ea85173c6b7d484913051dd53bfa2155f065fce8ee4494ff54d95aa4"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.28.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/776036265"
 provenance = "github-attestations"
 
 [[tools."cargo:cargo-deny"]]
@@ -197,50 +197,50 @@ specifiers = ["rev:146a9960b0b41adf6612462d28982bff2c60a1c6"]
 crate = "velnor-gen"
 
 [[tools."github:asamarts/alint"]]
-version = "0.22.1"
+version = "0.23.0"
 backend = "github:asamarts/alint"
-specifiers = ["0.22.1"]
+specifiers = ["v0.23.0"]
 
 [tools."github:asamarts/alint"."platforms.linux-arm64"]
-checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+checksum = "sha256:cd3eef12f1a450d508f01e517db8d5c22df347b4d1453449522ec25ce551b136"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616836"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-arm64-musl"]
-checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+checksum = "sha256:cd3eef12f1a450d508f01e517db8d5c22df347b4d1453449522ec25ce551b136"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616836"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-x64"]
-checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+checksum = "sha256:31963e2a5eb2a8bae5558a0cd168a021f03c905c67fba0b02cd8ecae664c7140"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616879"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.linux-x64-musl"]
-checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+checksum = "sha256:31963e2a5eb2a8bae5558a0cd168a021f03c905c67fba0b02cd8ecae664c7140"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616879"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.macos-arm64"]
-checksum = "sha256:f5c3ac8dd319dcb39a6b697eae95b0dc59079d819fe8d3d560f4eccbf193e609"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833603"
+checksum = "sha256:133c38233149718a74ff90015d75312651ee13bc6ae6143863492ec8a3b90002"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616825"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.macos-x64"]
-checksum = "sha256:f5b2248abd61d78ff4b68771629c1f220e8a05a46d586bf0596a74621c8103eb"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833609"
+checksum = "sha256:737275573f2eaf4b39c4d5d334917c73e495125adf2eab7e45099278ad353108"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616839"
 provenance = "github-attestations"
 
 [tools."github:asamarts/alint"."platforms.windows-x64"]
-checksum = "sha256:91fafae19acfea25e7b7136a7e45cb0b4bef20ffc010c82b018b009240ffc662"
-url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-pc-windows-msvc.tar.gz"
-url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833616"
+checksum = "sha256:167ba3fb504d8de1abfab09c41a360f41f871de76810ccd48b8b956847181f58"
+url = "https://github.com/asamarts/alint/releases/download/v0.23.0/alint-v0.23.0-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/777616846"
 provenance = "github-attestations"
 
 [[tools."github:bnjbvr/cargo-machete"]]
@@ -370,44 +370,44 @@ url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8
 url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378333178"
 
 [[tools.hk]]
-version = "2.12.0"
+version = "2.13.0"
 backend = "packslip:github.com/jdx/hk"
-specifiers = ["2.12.0"]
+specifiers = ["2.13.0"]
 unsupported_platforms = ["macos-x64"]
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:0f4e44802c3fcf98461b6608281353ae1944b82fd12f4a683f8e2e6683e562f3"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:490196a4e638991c671f42941d72ade4d00b14750145f34fc64377b49fc070bb"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:82758b9671b4b3627f126dc8e9803bb156c23893b4f9ec212797f81c4d242e50"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:cff2d433a82104ace7084a23970ff05b0bf3ca529e00c61da20780104106a3dd"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:db98f893b882f064c1f7abcc96f4ccc31e8154fd1ba0f7f94823d371c2c4fdad"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8ff0b29c9925d73df9b14af7fc43ace86de03db73eafa3046750fce5c39e1955"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:cab1ba30c605444112b4499790a97bd28dda83ffc352baa4aa87d5abfb12c668"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:3d5ae62e2befe95fa6fc7ffd63a0876c3efe3409634fbd6561b8bb0be787eeae"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:269c17d47e884c19adb77144d5957e854fc5fc6a1a6f9c1a0a5b19431e2fabb8"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:64efc441dc0858a175909fd6253ddd6c540da80e7d1bd2a2ad0ec9c0cdab3d97"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:052f2ea36dc679cae7fbbd57f75c2b4e5c4cd7bb6711f7bf6b9a147524ffe9f9"
-url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:2908de6281368b8128f1d4d7a03905d3ab0eb86a82641d6055be88806bf9ffac"
+url = "https://github.com/jdx/hk/releases/download/v2.13.0/hk-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
@@ -592,9 +592,9 @@ url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/764100352"
 provenance = "github-attestations"
 
 [[tools.rust]]
-version = "1.99.1"
+version = "1.100.0"
 backend = "core:rust"
-specifiers = ["1.99.1"]
+specifiers = ["1.100.0"]
 
 [tools.rust.options]
 components = "clippy,rustfmt"

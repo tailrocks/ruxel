@@ -1,0 +1,21 @@
+// The nova disk play in the catalogue language: the packages the storage
+// steps need (`lvm2`, `xfsprogs`) are composed as ordinary package steps,
+// the three by-id disks are resolved and asserted by a readlink capture
+// (G7), and the volume group, the logical volume of `+100%FREE` and the XFS
+// filesystem follow in that order (G6).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+local disks = new Capture { title = "Resolve nova disks"; bash = "readlink -e /dev/disk/by-id/ruxel-nova-disk-1 /dev/disk/by-id/ruxel-nova-disk-2 /dev/disk/by-id/ruxel-nova-disk-3" }
+
+name = "valid/storage-nova-drives.pkl"
+
+stages { new Stage { title = "nova disks"; hosts = inventory.workers; steps {
+  new debian.AptPackages { title = "Install the storage tools"; names { "lvm2"; "xfsprogs" } }
+  disks
+  new storage.VolumeGroup { title = "Create the nova volume group"; vg = "ruxel_nova"; devices { "/dev/disk/by-id/ruxel-nova-disk-1"; "/dev/disk/by-id/ruxel-nova-disk-2"; "/dev/disk/by-id/ruxel-nova-disk-3" } }
+  new storage.LogicalVolume { title = "Create the nova logical volume"; vg = "ruxel_nova"; lv = "data" }
+  new storage.Filesystem { title = "Format the nova volume"; dev = "/dev/ruxel_nova/data" }
+} } }

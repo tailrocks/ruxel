@@ -1,0 +1,150 @@
+/// Linux storage: a volume group, a logical volume of `+100%FREE`, an XFS
+/// filesystem, and a mount by UUID.
+///
+/// The ruxel binary serves this module at `modulepath:/ruxel/Storage.pkl`.
+/// Workflow files import it beside `Core.pkl`, qualifying every class:
+///
+///     import "modulepath:/ruxel/Storage.pkl" as storage
+///     new storage.VolumeGroup { vg = "ruxel_nova"; devices { "/dev/disk/by-id/…" } }
+///
+/// The steps follow the order the play they model runs in: the disks are
+/// resolved and asserted first (a `Capture` running `readlink`, G7), then
+/// `VolumeGroup`, `LogicalVolume`, `Filesystem`, and — in the mount play —
+/// `Mount` with the UUID a `blkid` capture learned on the host (G8). The
+/// lowered tasks keep that order: Stat and Assert on the disks, then
+/// `vg` → `lv` → `fs` → `mount` (G6).
+///
+/// Fail-closed: a volume group step declares the full device set and never
+/// extends (`allowExtend` stays `false`); a logical volume is `+100%FREE`
+/// and nothing else; a filesystem is `xfs` and nothing else, and is never
+/// written over a different signature; a mount names a `UUID=` source. The
+/// packages the steps need (`lvm2`, `xfsprogs`) are composed by the author
+/// with `debian.AptPackages`, not installed behind the author's back.
+module Storage
+
+import "modulepath:/ruxel/Core.pkl" as core
+
+// The typealiases and functions below are copied from Core.pkl; keep them in
+// sync — pklr cannot share typealiases across modules, and would silently
+// drop the constraints of a dotted alias such as `core.Static`.
+
+/// Text known before the run. Run-time values (`currentHost`,
+/// `Capture.stdout()`) are allowed only in `File.content` and in
+/// `Mount.src`; secrets (`module.fnox`, …) only in `File.content` and
+/// action `environment` values. Every other text field is `Static`, and
+/// neither a run-time value nor a secret reference can be one: they carry
+/// the reserved prefixes `__ruxel_rt_8d41.` and `__ruxel_secret_8d41.`,
+/// which nothing else may contain.
+///
+/// No NUL either: no path, argument or name can hold one.
+typealias Static = String(!contains("__ruxel_rt_8d41.") && !contains("__ruxel_secret_8d41.") && !contains("\u{0}"))
+
+/// A list of `Static` texts. The constraint is on the whole list because
+/// pklr does not check the elements of a `Listing`, and properties of this
+/// type need an explicit `= new {}` default, which pklr does not supply for a
+/// constrained `Listing` typealias.
+typealias StaticList = Listing<String>(!toList().any((a) -> a.contains("__ruxel_rt_8d41.") || a.contains("__ruxel_secret_8d41.") || a.contains("\u{0}")))
+
+/// An absolute path in normal form: no empty, `.` or `..` segments and no
+/// trailing `/`, so two spellings of one path are the same text. No NUL,
+/// which no Unix path can hold.
+typealias AbsolutePath = Static(this == "/" || matches(Regex("(/[^/]+)+")) && !contains("\u{0}") && !split("/").any((segment) -> segment == "." || segment == ".."))
+
+/// An absolute path that can be a file: any but `/`, which is a directory.
+typealias FilePath = AbsolutePath(this != "/")
+
+/// The name of a service or an account: not empty, and not starting with
+/// `-`, which the tools that take it would read as an option.
+typealias Name = Static(!isEmpty && !startsWith("-"))
+
+/// Text that fits on one line: no line break, so one field cannot smuggle a
+/// second entry into the line it is written on.
+typealias OneLine = Static(!contains("\n") && !contains("\r"))
+
+/// An LVM volume group or logical volume name: letters, digits, dots,
+/// underscores, dashes and plus signs, not starting with a dash, which the
+/// LVM tools would read as an option.
+typealias VolumeName = Name(matches(Regex("[A-Za-z0-9_+.-]+")))
+
+/// The size of a logical volume: the whole free space of the group, and
+/// nothing else. A closed union of one, so the language cannot spell a
+/// size the agent would refuse (`lvol` grows relatively only by
+/// `+100%FREE`).
+typealias VolumeSize = Static(this == "+100%FREE")
+
+/// A mount source: either the static text `UUID=<value>` the agent resolves
+/// with `blkid`, or text carrying exactly what a `blkid` capture learned on
+/// the host (`Capture.stdout()`), which the lowering renders into the same
+/// `UUID=` source. A secret may never select the mounted device, and no
+/// NUL may hide in one.
+typealias MountSource = String(!contains("__ruxel_secret_8d41.") && !contains("\u{0}") && !isEmpty)
+
+/// A volume group with its full device set.
+///
+/// The step declares every physical volume: `vgcreate` runs unforced and
+/// never wipes signatures, so a disk that already carries a signature fails
+/// instead of being taken over, matching the playbook. An existing group
+/// with exactly this set converges; anything else is a second state for the
+/// group and is refused. The group never grows behind the author's back:
+/// `allowExtend` stays `false` (the Lowering refuses `true`), so a disk
+/// added later is a new declaration in a later stage, never a silent
+/// `vgextend`.
+class VolumeGroup extends core.Step {
+  hidden fixed kind = "volumeGroup"
+  vg: VolumeName
+  /// The group's physical volumes, as by-id paths. Inputs, not hardcoded
+  /// serials: the stage resolves them (a `readlink` capture) and asserts
+  /// them before this step.
+  devices: StaticList(!isEmpty)
+  /// Always `false`: a volume group step creates with the full set, never
+  /// extends.
+  allowExtend: Boolean = false
+}
+
+/// A logical volume taking the whole free space of its group.
+///
+/// The only size the language spells is `+100%FREE`: the play this step
+/// models fills the group, and a second apply with free space left extends
+/// the volume (and, with `resizefs`, its filesystem) instead of reporting
+/// no change where the playbook would grow.
+class LogicalVolume extends core.Step {
+  hidden fixed kind = "logicalVolume"
+  vg: VolumeName
+  lv: VolumeName
+  /// The whole free space of the group, and nothing else.
+  size: VolumeSize = "+100%FREE"
+  /// Grow the filesystem with the volume when the volume grows.
+  resizefs: Boolean = true
+}
+
+/// An XFS filesystem on a device.
+///
+/// `mkfs.xfs` runs only on a device with no signature: a device that
+/// already carries another filesystem is refused instead of overwritten
+/// (the agent's closed surface has no force flag). With `resizefs`, a
+/// second apply grows the filesystem to the device instead of reporting
+/// no change where the playbook would grow. The mount of this filesystem
+/// is a `Mount` of its own, in the mount play.
+class Filesystem extends core.Step {
+  hidden fixed kind = "filesystem"
+  dev: FilePath
+  /// Grow the filesystem to the device when the device grew.
+  resizefs: Boolean = true
+}
+
+/// A mounted filesystem, named by UUID.
+///
+/// The source is `UUID=<value>`: the stable name the agent resolves with
+/// `blkid`, written to `/etc/fstab` with `0 0` and mounted at `path`. The
+/// UUID is learned from the host in the same run: a `blkid` capture reads
+/// it, and this step carries its `stdout()` in `src`. A static source
+/// spells the `UUID=` text itself. The fstab line is shared by every
+/// mount of the stage: each `Mount` manages its own path, never the file.
+class Mount extends core.Step {
+  hidden fixed kind = "mount"
+  src: MountSource
+  path: AbsolutePath
+  fstype: OneLine = "xfs"
+  /// Mount options, such as `logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k`.
+  opts: OneLine = "defaults"
+}
