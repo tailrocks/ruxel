@@ -453,9 +453,9 @@ fn valid_environment(value: &[u8]) -> bool {
 }
 
 /// Whether the value permits what sshd would let through: a host and a
-/// port, where the port is `*` or a number, and a bare port for
-/// `permitlisten`, which listens anywhere. The host holds fewer than
-/// the 1025 bytes the lookup needs.
+/// port, where the port is `*`, a number, or a service name the
+/// services db holds, and a bare port for `permitlisten`, which listens
+/// anywhere. The host holds fewer than the 1025 bytes the lookup needs.
 fn valid_permit(value: &[u8], allow_bare_port: bool) -> bool {
     const HOST_LIMIT: usize = 1025;
     let (host, port) = if let Some(pair) = split_permit(value) {
@@ -487,16 +487,53 @@ fn split_permit(value: &[u8]) -> Option<(&[u8], &[u8])> {
 }
 
 /// Whether the port is one sshd dials or listens on: `*` is anywhere,
-/// and a number is a port only inside the sixteen bits.
+/// a number is a port only inside the sixteen bits, and a name is a
+/// port where the services db names it — the way sshd's own lookup
+/// reads it.
 fn valid_port(port: &[u8]) -> bool {
-    !port.is_empty()
-        && port.iter().all(u8::is_ascii_digit)
-        && port.len() <= 5
-        && matches!(
-            port.iter()
-                .fold(0u32, |acc, byte| acc * 10 + u32::from(*byte - b'0')),
-            1..=65535
-        )
+    if !port.is_empty() && port.iter().all(u8::is_ascii_digit) {
+        return port.len() <= 5
+            && matches!(
+                port.iter()
+                    .fold(0u32, |acc, byte| acc * 10 + u32::from(*byte - b'0')),
+                1..=65535
+            );
+    }
+    service_port_in(port, &system_services())
+}
+
+/// The services db of the host, as sshd reads it: empty when the table
+/// cannot be read, and then only numbers are ports.
+fn system_services() -> String {
+    std::fs::read_to_string("/etc/services").unwrap_or_default()
+}
+
+/// Whether the services text names the port: the name or one of its
+/// aliases, on a `tcp` or `udp` line. A comment names nothing, and a
+/// service name holds no whitespace, so the first two fields are the
+/// whole entry.
+fn service_port_in(port: &[u8], services: &str) -> bool {
+    if port.is_empty()
+        || !port
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_' || *byte == b'.')
+    {
+        return false;
+    }
+    services.lines().any(|line| {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let mut fields = line.split_whitespace();
+        let (Some(service), Some(portproto)) = (fields.next(), fields.next()) else {
+            return false;
+        };
+        let Some((_, proto)) = portproto.split_once('/') else {
+            return false;
+        };
+        if proto != "tcp" && proto != "udp" {
+            return false;
+        }
+        service.as_bytes() == port || fields.any(|alias| alias.as_bytes() == port)
+    })
 }
 
 /// Whether the value names a tunnel device sshd takes: `any`, or the

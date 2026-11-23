@@ -306,6 +306,56 @@ fn an_empty_command_is_a_command_sshd_reads() {
 }
 
 #[test]
+fn a_service_name_is_a_port_where_the_db_names_it() {
+    // The validator reads the services db the way sshd does: a name the
+    // db holds on a `tcp` or `udp` line is a port, with its aliases, and
+    // a name the db never holds is not.
+    let db = "ssh 22/udp\nssh 22/tcp\nhttp 80/tcp www www-http\n";
+    assert!(super::super::service_port_in(b"ssh", db));
+    assert!(super::super::service_port_in(b"http", db));
+    assert!(super::super::service_port_in(b"www", db));
+    assert!(!super::super::service_port_in(b"smtp", db));
+    assert!(!super::super::service_port_in(b"", db));
+    assert!(!super::super::service_port_in(b"22/tcp", db));
+    // A comment names nothing, and a line without a protocol is not a
+    // service entry.
+    let commented = "# ssh 22/tcp\nsmtp 25/tcp # mail\nbroken\n";
+    assert!(!super::super::service_port_in(b"ssh", commented));
+    assert!(super::super::service_port_in(b"smtp", commented));
+}
+
+#[test]
+fn a_permit_with_a_service_name_carries_the_key() {
+    // Whatever the host names in its services db is a port sshd dials:
+    // the first `tcp` or `udp` name the file holds still carries the
+    // key, the way a number does.
+    let Ok(text) = std::fs::read_to_string("/etc/services") else {
+        return;
+    };
+    let mut named = text.lines().filter_map(|line| {
+        let line = line.split('#').next()?.trim();
+        let mut fields = line.split_whitespace();
+        let service = fields.next()?;
+        let (_, proto) = fields.next()?.split_once('/')?;
+        (proto == "tcp" || proto == "udp").then(|| service.to_string())
+    });
+    let Some(name) = named.next() else { return };
+    assert_eq!(
+        key_material(&format!(
+            "permitopen=\"{name}\" ssh-ed25519 AAAAC3Nza"
+        )),
+        None,
+        "a bare name is not a host and a port"
+    );
+    assert_eq!(
+        key_material(&format!(
+            "permitopen=\"db:{name}\" ssh-ed25519 AAAAC3Nza"
+        )),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+}
+
+#[test]
 fn a_repeated_singleton_is_a_line_sshd_rejects() {
     // sshd reads `command`, `principals` and `from` once: a line that
     // repeats one is rejected, so the key behind it is not managed.
