@@ -40,6 +40,7 @@ impl<'a> Harness<'a> {
         let text = format!(
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-copy/common"
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "copy acceptance"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}
 }} }}

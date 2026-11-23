@@ -34,6 +34,7 @@ fn fixture(temp: &TempDir, name: &str, tasks: &str) -> Result<PathBuf> {
     let source = format!(
         r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-control/checks"
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}
 }} }}

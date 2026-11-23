@@ -44,6 +44,7 @@ impl<'a> Fixture<'a> {
             format!(
                 r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-plan/resource-lifetime"
  inventory {{ hosts {{ ["a"] {{ address = "127.0.0.1" }}; ["b"] {{ address = "127.0.0.1" }} }} }}
  plays {{ {plays} }}
 }} }}"#

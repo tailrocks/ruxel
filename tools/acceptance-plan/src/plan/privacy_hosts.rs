@@ -15,6 +15,7 @@ pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
         &public,
         r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "acceptance-plan/privacy-hosts-public"
  inventory { hosts { ["public-fixture"] { address = "127.0.0.1" } } }
  plays { new { name = "fixture"; targets { "public-fixture" }; tasks {
   new { name = "visible task"; operation = new Ruxel.Debug { msg = "public" } }
@@ -44,6 +45,7 @@ output { value = new Ruxel.Config {
         format!(
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-plan/privacy-hosts-write"
  inventory {{ hosts {{ ["{MARKER}"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "{MARKER}" }}; tasks {{
   new {{ name = "private"; noLog = true; operation = new Ruxel.Copy {{ dest = {dest}; content = "{MARKER}" }} }}
@@ -69,6 +71,7 @@ output {{ value = new Ruxel.Config {{
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({uri}).text
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-plan/privacy-hosts-read"
  inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ key }}; tasks {{
   new {{ name = key; operation = new Ruxel.Debug {{ msg = "public" }} }}
