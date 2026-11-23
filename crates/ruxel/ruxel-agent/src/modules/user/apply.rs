@@ -127,6 +127,16 @@ pub(super) fn run(
         let step: Result<bool, String> = (|| {
             match mutation {
                 Mutation::GroupAdd(group) => {
+                    // The allocator draws the recreated number: a file
+                    // the group owned keeps the old one, so the plan's
+                    // record of the moved number is what tells an
+                    // ownership cache it is stale — the new-account
+                    // branch marks its implicit creation the same way.
+                    // The mark lands before the creation runs, the way
+                    // check mode records before it executes: a failed
+                    // `groupadd` only over-invalidates, never wrongly
+                    // validates a cache.
+                    super::plan::note_changed_group(&group);
                     if !check_mode {
                         run_cmd("groupadd", &[&group])?;
                         completed.push(Completed::Group(group));

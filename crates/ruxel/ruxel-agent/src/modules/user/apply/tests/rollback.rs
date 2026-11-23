@@ -348,3 +348,39 @@ fn a_home_repair_that_fails_after_creating_parents_takes_them_back() {
     );
     std::fs::remove_dir_all(&anchor).unwrap();
 }
+
+#[test]
+fn a_created_private_group_marks_the_group_number_changed() {
+    // Thread 334: the existing-account path recreates a missing
+    // same-name group through `Mutation::GroupAdd` — the allocator
+    // draws a new GID while a cached file still holds the old number.
+    // The new-account branch marks its implicit creation changed, and
+    // this path must too, or a later file task passes its ownership
+    // cache through the obsolete numeric probe.
+    for check_mode in [false, true] {
+        let group = format!("ruxel-groupadd-changed-{}-{check_mode}", std::process::id());
+        let calls = std::rc::Rc::new(RefCell::new(Vec::new()));
+        run(
+            "ruxel-groupadd-alice",
+            vec![Mutation::GroupAdd(group.clone())],
+            check_mode,
+            &{
+                let calls = std::rc::Rc::clone(&calls);
+                move |cmd: &str, args: &[&str]| {
+                    calls.borrow_mut().push(format!("{cmd} {}", args.join(" ")));
+                    Ok(())
+                }
+            },
+        )
+        .expect("the group creation plans");
+        assert!(
+            super::super::plan::group_number_changed(&group),
+            "the recreated group is marked changed in check mode {check_mode}"
+        );
+        assert_eq!(
+            calls.borrow().len(),
+            usize::from(!check_mode),
+            "check mode runs no groupadd"
+        );
+    }
+}
