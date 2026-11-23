@@ -5,8 +5,8 @@ It invokes the supplied Ruxel CLI and agent in local mode with disposable tempor
 paths; it does not use a server. Run from the repository root after building both:
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-acceptance-files/Cargo.toml
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-files/Cargo.toml -- \
+cargo test --locked -p ruxel-acceptance-files
+cargo run --locked -p ruxel-acceptance-files -- \
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent \
   --asset testdata/workloads/pr66/assets/template.pkl
 ```

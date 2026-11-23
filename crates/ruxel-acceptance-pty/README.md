@@ -7,8 +7,8 @@ or real credentials. The crate has a separate lockfile and forbids unsafe code.
 From the repository root, after building the CLI and agent:
 
 ```sh
-cargo test --offline --locked --manifest-path crates/ruxel-acceptance-pty/Cargo.toml
-cargo run --offline --locked --manifest-path crates/ruxel-acceptance-pty/Cargo.toml -- \
+cargo test --locked -p ruxel-acceptance-pty
+cargo run --locked -p ruxel-acceptance-pty -- \
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 

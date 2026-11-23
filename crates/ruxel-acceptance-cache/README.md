@@ -5,8 +5,8 @@ checks. It invokes the real CLI and agent with disposable paths, synthetic
 values, local mode, and no credentials. Build the binaries first, then run:
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-acceptance-cache/Cargo.toml
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-cache/Cargo.toml -- \
+cargo test --locked -p ruxel-acceptance-cache
+cargo run --locked -p ruxel-acceptance-cache -- \
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 

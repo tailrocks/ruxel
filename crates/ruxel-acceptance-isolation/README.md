@@ -6,9 +6,9 @@ crate runs the supplied real CLI and agent through local pipes only. It creates
 synthetic local inventories and never invokes an SSH or network transport.
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-acceptance-isolation/Cargo.toml
-cargo clippy --locked --offline --manifest-path crates/ruxel-acceptance-isolation/Cargo.toml --all-targets -- -D warnings
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-isolation/Cargo.toml -- \
+cargo test --locked -p ruxel-acceptance-isolation
+cargo clippy --locked -p ruxel-acceptance-isolation --all-targets -- -D warnings
+cargo run --locked -p ruxel-acceptance-isolation -- \
   --ruxel target/debug/ruxel --agent target/debug/ruxel-agent
 ```
 

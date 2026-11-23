@@ -10,7 +10,7 @@ Aggregate execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRIN
 From the repository root:
 
 ```sh
-cargo run --offline --locked --manifest-path crates/ruxel-acceptance-copy/Cargo.toml -- \
+cargo run --locked -p ruxel-acceptance-copy -- \
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
@@ -34,6 +34,6 @@ deadline after cleanup. These synthetic scenarios do not establish remote or
 privileged provider behavior.
 
 ```sh
-cargo test --offline --locked --manifest-path crates/ruxel-acceptance-copy/Cargo.toml
-cargo clippy --offline --locked --manifest-path crates/ruxel-acceptance-copy/Cargo.toml --all-targets -- -D warnings
+cargo test --locked -p ruxel-acceptance-copy
+cargo clippy --locked -p ruxel-acceptance-copy --all-targets -- -D warnings
 ```

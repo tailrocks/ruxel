@@ -9,7 +9,7 @@ check/diff non-mutation, drift repair, and per-host cross-play private facts wit
 variables, including wire-level item labels.
 
 ```sh
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-runtime/Cargo.toml -- \
+cargo run --locked -p ruxel-acceptance-runtime -- \
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 

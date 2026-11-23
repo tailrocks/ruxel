@@ -34,8 +34,8 @@ preview non-mutation. The fixture executes a synthetic no-op script; it does not
 test real service restarts.
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml -- \
+cargo test --locked -p ruxel-acceptance-manifest
+cargo run --locked -p ruxel-acceptance-manifest -- \
   --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent \
   --scenario check-semantics --scenario multihost --scenario controller-delegation
 ```
@@ -84,7 +84,7 @@ negative control. It checks selected role attributes, not full workload state,
 and does not establish performance-snapshots acceptance.
 
 ```sh
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml \
+cargo run --locked -p ruxel-acceptance-manifest \
   --example postgres_session -- /absolute/Linux/ruxel /absolute/Linux/ruxel-agent \
   sha256:REPLACE_WITH_LOCAL_IMAGE_ID
 ```
@@ -92,7 +92,7 @@ cargo run --locked --offline --manifest-path crates/ruxel-acceptance-manifest/Ca
 Run the host driver:
 
 ```sh
-cargo run --locked --offline --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml \
+cargo run --locked -p ruxel-acceptance-manifest \
   --features ruxel-engine/pure -- \
   --root . --ruxel /absolute/Linux/ruxel --agent /absolute/Linux/ruxel-agent \
   --fixture-image sha256:COMPLETE_LOCAL_IMAGE_ID \

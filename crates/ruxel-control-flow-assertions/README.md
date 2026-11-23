@@ -11,6 +11,6 @@ This explicit dependency avoids account-directory or network lookups inside the
 library. Symlink leaves and paths resolving outside the fixture root are rejected.
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-control-flow-assertions/Cargo.toml
-cargo clippy --locked --offline --manifest-path crates/ruxel-control-flow-assertions/Cargo.toml --all-targets -- -D warnings
+cargo test --locked -p ruxel-control-flow-assertions
+cargo clippy --locked -p ruxel-control-flow-assertions --all-targets -- -D warnings
 ```
