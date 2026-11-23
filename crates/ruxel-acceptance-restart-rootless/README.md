@@ -26,7 +26,7 @@ counts for the no-op script.
 Run with reviewed binaries built from the exact source checkout:
 
 ```sh
-cargo run --locked --offline --manifest-path tools/acceptance-restart-rootless/Cargo.toml -- \
+cargo run --locked --offline --manifest-path crates/ruxel-acceptance-restart-rootless/Cargo.toml -- \
   --root /absolute/repo --ruxel /absolute/ruxel --agent /absolute/ruxel-agent
 ```
 

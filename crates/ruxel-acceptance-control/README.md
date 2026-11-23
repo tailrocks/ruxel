@@ -10,7 +10,7 @@ execution remains blocked as documented in `docs/RUST-ACCEPTANCE-WIRING.md`.
 From the repository root, using already-built matching binaries:
 
 ```sh
-cargo run --locked --offline --manifest-path tools/acceptance-control/Cargo.toml -- \
+cargo run --locked --offline --manifest-path crates/ruxel-acceptance-control/Cargo.toml -- \
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
@@ -31,6 +31,6 @@ exercise remote hosts, or establish privileged provider behavior.
 Unit checks can be run independently:
 
 ```sh
-cargo test --locked --offline --manifest-path tools/acceptance-control/Cargo.toml
-cargo clippy --locked --offline --manifest-path tools/acceptance-control/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --offline --manifest-path crates/ruxel-acceptance-control/Cargo.toml
+cargo clippy --locked --offline --manifest-path crates/ruxel-acceptance-control/Cargo.toml --all-targets -- -D warnings
 ```

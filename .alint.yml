@@ -13,26 +13,37 @@ ignore:
   # each line is removed in the commit that deletes or rewrites the
   # path. Never add live code here.
   - "tools/**"
-  - "crates/ruxel/ruxel/build.rs"
-  - "crates/ruxel/ruxel-agent/src/main.rs"
-  - "crates/ruxel/ruxel-agent/src/facts.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/apt_repository.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/authorized_key.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/blockinfile.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/command.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/copy.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/get_url.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/lvg.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/slurp.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/sysctl.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/systemd.rs"
-  - "crates/ruxel/ruxel-agent/src/modules/user.rs"
-  - "crates/ruxel/ruxel-agent/tests/protocol.rs"
+  - "crates/ruxel/build.rs"
+  - "crates/ruxel-agent/src/main.rs"
+  - "crates/ruxel-agent/src/facts.rs"
+  - "crates/ruxel-agent/src/modules/apt_repository.rs"
+  - "crates/ruxel-agent/src/modules/authorized_key.rs"
+  - "crates/ruxel-agent/src/modules/blockinfile.rs"
+  - "crates/ruxel-agent/src/modules/command.rs"
+  - "crates/ruxel-agent/src/modules/copy.rs"
+  - "crates/ruxel-agent/src/modules/get_url.rs"
+  - "crates/ruxel-agent/src/modules/lvg.rs"
+  - "crates/ruxel-agent/src/modules/slurp.rs"
+  - "crates/ruxel-agent/src/modules/sysctl.rs"
+  - "crates/ruxel-agent/src/modules/systemd.rs"
+  - "crates/ruxel-agent/src/modules/user.rs"
+  - "crates/ruxel-agent/tests/protocol.rs"
 
 extends:
   - url: https://raw.githubusercontent.com/tailrocks/rust-repository-policy/v0.1.3/modules/layout.yml#sha256-1cea31bc9e3ddb9604108d972017eae63d6222ca534b5a8d3b3e7aab686e1d51
+    except:
+      # The workspace is flat by design (velnor-new layout): every crate
+      # lives directly under crates/<package> in the one root workspace,
+      # so depth-1 manifests are the rule, not a violation.
+      - layout-no-flat-crate-manifest
   - url: https://raw.githubusercontent.com/tailrocks/rust-repository-policy/v0.1.3/modules/cargo.yml#sha256-b16eceea03709ab24ba7dc7d13ebe8e8890dda891c11bdabbd3a429b7d59d85c
   - url: https://raw.githubusercontent.com/tailrocks/rust-repository-policy/v0.1.3/modules/tests.yml#sha256-8afde3ff3a62cfd767dd8ea2d0b0e1123455392cedfb86539912569607e7bd32
+    except:
+      # Depth-2 select assumes crates/<group>/<package>; with the flat
+      # layout it matches each crate's subdirectories as pseudo-packages
+      # (the profile's own fail-closed noise case), so the per-crate
+      # tests/ requirement cannot be evaluated this way.
+      - tests-dir-present
   - url: https://raw.githubusercontent.com/tailrocks/rust-repository-policy/v0.1.3/modules/docs.yml#sha256-4f92baceb6a4344c85d5ced9942ee2cc21dab35374ae7610ad2a0ab42943dbe2
   - url: https://raw.githubusercontent.com/tailrocks/rust-repository-policy/v0.1.3/modules/toolchain.yml#sha256-448732f88d93932fb2ba9ffaa48a0fa8e2294787fdd5cfd9367629bbbe39166b
     except:

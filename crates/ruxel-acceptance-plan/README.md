@@ -9,7 +9,7 @@ fixture changes require reviewing and updating `pins.txt`. It does not run
 against servers or establish apply behavior.
 
 ```sh
-cargo run --locked --offline --manifest-path tools/acceptance-plan/Cargo.toml -- \
+cargo run --locked --offline --manifest-path crates/ruxel-acceptance-plan/Cargo.toml -- \
   --ruxel /absolute/path/to/ruxel --agent /absolute/path/to/ruxel-agent
 ```
 
@@ -17,6 +17,6 @@ Optional `--root` selects the checkout. Linux and macOS are supported. A
 bounded-output process group is terminated on each outcome; descendants that
 create a separate process group or session are outside that cleanup boundary.
 Tests run with `cargo test --locked --offline --manifest-path
-tools/acceptance-plan/Cargo.toml`. The candidate `acceptance-local` task runs both
+crates/ruxel-acceptance-plan/Cargo.toml`. The candidate `acceptance-local` task runs both
 commands; aggregate execution remains blocked as documented in
 `docs/RUST-ACCEPTANCE-WIRING.md`.

@@ -7,8 +7,8 @@ complete platform coverage.
 
 ## Components
 
-- `crates/ruxel/ruxel` provides the command-line interface and exit codes.
-- `crates/ruxel/ruxel-config` evaluates Pkl using pklr. The evaluator receives
+- `crates/ruxel` provides the command-line interface and exit codes.
+- `crates/ruxel-config` evaluates Pkl using pklr. The evaluator receives
   no inherited environment variables or external properties and no network.
   Module imports and `file:` resources are confined to the root directory
   (`--root-dir`, default the root module's directory) and the `--module-path`
@@ -34,10 +34,10 @@ complete platform coverage.
   admits only a configuration that carries this process's fingerprint and
   removes the property; the error echoes a fingerprint only if it is well formed. `ruxel-engine` then validates
   the evaluated value as well.
-- `crates/ruxel/ruxel-engine` contains the model, controller, expression and
+- `crates/ruxel-engine` contains the model, controller, expression and
   secret resolution, runtime, and SSH transport.
-- `crates/ruxel/ruxel-proto` defines messages shared by controller and agent.
-- `crates/ruxel/ruxel-agent` executes host operations and returns results.
+- `crates/ruxel-proto` defines messages shared by controller and agent.
+- `crates/ruxel-agent` executes host operations and returns results.
 
 ## Execution
 
