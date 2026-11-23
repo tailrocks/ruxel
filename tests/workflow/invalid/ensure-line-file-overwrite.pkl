@@ -1,0 +1,13 @@
+// expect: manages a line of /etc/motd, which 'Write the motd'
+// Line entries compose after their file: a whole-file write after the
+// entries replaces the file they composed, so the declared lines are
+// absent at the end and the author lists the writer first.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "day" }
+  new File { title = "Write the motd"; path = "/etc/motd"; content = "night\n" }
+} } }
+
+name = "invalid/ensure-line-file-overwrite.pkl"

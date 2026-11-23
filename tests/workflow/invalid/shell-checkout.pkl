@@ -1,0 +1,14 @@
+// expect: manages as a checkout
+// A login shell is a file or a link: a branch checkout at its path
+// leaves a directory, so no ordering can satisfy the account and the
+// shell names a managed file instead.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "git@git.example.test:holla/holla.git"; path = "/opt/holla"; branch = "main" }
+  new linux.User { title = "Run holla"; user = "holla"; shell = "/opt/holla" }
+} } }
+
+name = "invalid/shell-checkout.pkl"

@@ -1,0 +1,13 @@
+// expect-pkl: isSshGitUrl(this)
+// expect-pklr: expected SshGitUrl
+// An SSH URL names its host: an empty authority reaches no machine, so
+// the checkout refuses a URL with nothing between the user and the path.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "ssh://git@:/holla/holla.git"; path = "/opt/holla"; branch = "main" }
+} } }
+
+name = "invalid/git-branch-ssh-no-host.pkl"

@@ -703,6 +703,7 @@ const function leavesUnusable(s: core.Step, p: String): Boolean =
   (s is core.Directory && paths(s).contains(p))
   || (s is core.Symlink && paths(s).contains(p))
   || (s is linux.GitCheckout && paths(s).contains(p))
+  || (s is linux.GitBranch && paths(s).contains(p))
   || (s is linux.User && s.state == "present" && presentHome(s).contains(p))
 
 /// The home a present account's task leaves behind: the home the step
@@ -715,7 +716,7 @@ const function presentHome(s: linux.User): List<String> =
 const function unusableAs(s: core.Step): String =
   if (s is core.Symlink) "a link"
   else if (s is core.Directory) "a directory"
-  else if (s is linux.GitCheckout) "a checkout"
+  else if (s is linux.GitCheckout || s is linux.GitBranch) "a checkout"
   else "the account's home directory"
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
@@ -1007,7 +1008,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), absentFloor(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), linesOverwritten(ix, i), absentFloor(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1237,19 +1238,42 @@ function conflicts(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
+/// A line entry the stage's later whole-file writer overwrites: the
+/// writer replaces the file the entries composed, so the declared lines
+/// are absent at the end and both sides report changes on every apply.
+/// A writer that precedes the entries composes with them — it seeds the
+/// file the entries then manage — so only the reversed ordering is
+/// refused, and the author lists the writer first.
+function linesOverwritten(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is core.File || ix.steps[i] is core.Symlink)) List()
+  else earlier(i).filter((j) -> (ix.steps[j] is core.EnsureLine || ix.steps[j] is core.ReplaceLine) && linePath(ix.steps[j]) == ix.steps[i].path)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages a line of \(linePath(ix.steps[j])), which '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) rewrites after it; list the whole-file writer before the line entries it seeds")
+
+/// The file a line entry manages.
+const function linePath(s: core.Step): String =
+  if (s is core.EnsureLine) s.path else if (s is core.ReplaceLine) s.path else throw("not a line entry")
+
 /// A regular file or a link leaves no room for anything inside it, so no
 /// other step of the stage may manage a path beneath one. A Git checkout is
 /// not such a leaf: steps may manage paths inside it that the repository
 /// ignores (Oh My Zsh's `custom/plugins`), which no evaluation can tell
-/// from tracked ones.
+/// from tracked ones. A line entry's file counts among the managed paths:
+/// an entry beneath a regular file's path fails where the file step left
+/// no directory (`nestedPaths`), while the entry's synthetic subject
+/// keeps composing per match.
 function nested(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
-    let (byEarlier = inside(leaves(ix.steps[j]), paths(ix.steps[i])))
-    let (byLater = inside(leaves(ix.steps[i]), paths(ix.steps[j])))
+    let (byEarlier = inside(leaves(ix.steps[j]), nestedPaths(ix.steps[i])))
+    let (byLater = inside(leaves(ix.steps[i]), nestedPaths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
     let (leafAbsent = if (byEarlier.isEmpty) ix.steps[i].kind == "absent" else ix.steps[j].kind == "absent")
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is " + (if (leafAbsent) "removed, so" else "a file, so") + " \(pair.first.last) cannot be inside it"))
+
+/// The file-system locations a step manages: whole-file subjects and
+/// sysctl files, and a line entry's file, which no subject names.
+const function nestedPaths(s: core.Step): List<String> =
+  paths(s) + (if (s is core.EnsureLine || s is core.ReplaceLine) List(s.path) else List())
 
 /// Paths a step writes as a regular file or a link, or removes: its
 /// whole-file subjects, and a sysctl's entry file — the entries are its
@@ -1514,6 +1538,9 @@ function shellRels(ix: StageIndex, i: Int): List<String> =
   else positions(ix.steps)
     .filter((j) -> (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
     .flatMap((j) -> shellRel(ix, u, i, j))
+    + positions(ix.steps)
+      .filter((j) -> (ix.steps[j] is linux.GitCheckout || ix.steps[j] is linux.GitBranch) && ix.steps[j].path == u.shell)
+      .map((j) -> "'\(name(u))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages as a checkout; a checkout is a directory, and the account's task runs where no shell can be one, so give the account a file or a link")
 
 function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   let (s = ix.steps[j])
@@ -2963,8 +2990,13 @@ const function listed(s: core.Step): List<core.Step> =
 /// `recipeDeps`.
 function watched(s: core.Step): List<core.Step> = listed(s).filter((w) -> !(w is core.Recipe))
 
+/// Whether watching the step can fire: a capture, a package index, a
+/// silenced action and a notice never report one. A fetched script always
+/// can: its download registers beside the run, so a changed download
+/// with a skipped run still reports the step's change (`anyChanged`
+/// reads both).
 function canReportChange(s: core.Step): Boolean =
-  !(s is core.Capture || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
+  s is core.FetchedScript || !(s is core.Capture || s is core.Notice || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
 
 /// Ids of the captures whose output this step's content uses.
 function capturesUsed(s: core.Step): List<String> =
@@ -3195,7 +3227,7 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // pinned checkout does, so the two are two states for one tree.
   ["fetchedScript"] = (s) -> List(s.dest)
   ["ensureLine"] = (s) -> List("the line matching \(lineMatch(s)) in \(s.path)")
-  ["replaceLine"] = (s) -> List("the replacement of \(s.regexp) in \(s.path)")
+  ["replaceLine"] = (s) -> List("the line matching \(s.regexp) in \(s.path)")
   ["notice"] = (_) -> List()
   ["gitBranch"] = (s) -> List(s.path)
   ["command"] = (_) -> List()
@@ -3746,7 +3778,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["filesystem"] = (s, m) -> List(task(m, filesystem(s.dev, s.resizefs), null, null))
   ["mount"] = (s, m) -> List(task(m, mount(s.src, s.path, s.fstype, s.opts), null, null))
   ["fetchedScript"] = (s, m) -> fetchedScriptTasks(s, m)
-  ["ensureLine"] = (s, m) -> List(task(m, lineEntry(s.path, s.line, lineMatch(s)), null, null))
+  ["ensureLine"] = (s, m) -> List(task(m, lineEntry(s.path, s.line, s.regexp), null, null))
   ["replaceLine"] = (s, m) -> List(task(m, replaceEntry(s.path, s.regexp, s.replace), null, null))
   ["notice"] = (s, m) -> List(task(m, noticeDebug(s), noticeWhen(s), lit(false)))
   ["gitBranch"] = (s, m) -> List(task(m, gitBranchCheckout(s.repository, s.path, s.branch, s.acceptHostKey), null, null))
@@ -4258,6 +4290,10 @@ const function trackAApplies(s: core.Step): Boolean =
 function trackASettings(s: core.Step): List<String> =
   if (s is core.EnsureLine && (s.line.contains("\n") || s.line.contains("\r")))
     List("'\(name(s))': the line is more than one line; a line break would write a second entry into \(s.path), so keep the line to one line")
+  else if (s is core.EnsureLine && s.line.isEmpty)
+    List("'\(name(s))': the line is empty; an empty entry names no line of \(s.path), so state the line to ensure")
+  else if (s is core.EnsureLine && s.regexp != null && (s.regexp.contains("\n") || s.regexp.contains("\r")))
+    List("'\(name(s))': the match is more than one line; the entry is matched against one line of \(s.path) at a time, so keep the match to one line")
   else if (s is core.EnsureLine && s.regexp != null && s.regexp.isEmpty)
     List("'\(name(s))': the match is empty; an empty match names every line of \(s.path), so name the match or drop it and match the line itself")
   else if (s is core.ReplaceLine && s.regexp.isEmpty)
@@ -4268,16 +4304,22 @@ function trackASettings(s: core.Step): List<String> =
     List("'\(name(s))': the message carries a secret; a notice prints on the controller, so read a capture's output instead")
   else if (s is core.Notice && trackANoticeRefs(s).length > 1)
     List("'\(name(s))': the message reads \(trackANoticeRefs(s).length) captures; a notice reads at most one capture's output")
+  else if (s is core.Notice && !noticeNonCaptureRefs(s).isEmpty)
+    List("'\(name(s))': the message reads a run-time value; a notice renders static text with at most one capture's output, so read the value with a capture first")
+  else if (s is core.FetchedScript && s.creates != null && s.creates == s.dest)
+    List("'\(name(s))': the marker is the destination; the probe sees the downloaded \(s.dest) and skips the run on every apply, so the fetched script never runs")
   else if (s is linux.GitBranch && looksLikeCommitSha(s.branch))
     List("'\(name(s))': branch \"\(s.branch)\" looks like a commit SHA; resolve a tag to its SHA at author time and pin it with GitCheckout, and follow a branch here")
   else List()
 
-/// Whether the branch spells a commit SHA: 40 or 64 lowercase hex
-/// characters. Such a name never floats: it is pinned with GitCheckout,
+/// Whether the branch spells a commit SHA: 40 or 64 hex characters of
+/// either case. Such a name never floats: it is pinned with GitCheckout,
 /// and a tag is resolved to its SHA at author time and pinned the same
-/// way.
+/// way. The case is the agent's: its object test reads hex of either
+/// case, so an uppercase SHA would silently pin where the author asked
+/// to follow.
 const function looksLikeCommitSha(branch: String): Boolean =
-  branch.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))
+  branch.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"))
 
 /// The run of an action in its identity: the argv of a command, the
 /// script of a script, the download, destination and arguments of a
@@ -4303,12 +4345,22 @@ const function fetchedScriptShape(s: core.FetchedScript): String =
 const function lineMatch(s: core.EnsureLine): String = s.regexp ?? s.line
 
 /// The ids of the captures a notice reads: at most one, enforced by
-/// `trackASettings`. The same scan `capturesUsed` runs for files and
-/// mounts; a secret placeholder never matches it, and a secret in the
-/// message is refused before the lowering reads it.
+/// `trackASettings`. One entry per capture: a message repeating one
+/// capture reads one report, not two. The same scan `capturesUsed` runs
+/// for files and mounts; a secret placeholder never matches it, and a
+/// secret in the message is refused before the lowering reads it.
 function trackANoticeRefs(s: core.Notice): List<String> =
+  let (refs = placeholder.findMatchesIn(s.message).map((m) -> m.groups[1].value)
+    .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1]))
+  refs.fold(List(), (seen, r) -> if (seen.contains(r)) seen else seen + List(r))
+
+/// The run-time values in a notice that are no capture's output: the
+/// host's own state, which a notice may not render. `Static` already
+/// refuses these everywhere but in file content; a notice is not file
+/// content, and its contract is static text with at most one capture.
+function noticeNonCaptureRefs(s: core.Notice): List<String> =
   placeholder.findMatchesIn(s.message).map((m) -> m.groups[1].value)
-    .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
+    .filter((p) -> !p.startsWith("results."))
 
 /// A fetched script as the engine sees it: the download converging the
 /// destination, then the guarded run. The download registers beside the
@@ -4337,8 +4389,10 @@ function fetchedGetUrl(_dest: String, _url: String): engine.GetUrl = new engine.
 }
 
 /// The engine's line entry: the line present in the file under its
-/// match.
-function lineEntry(_path: String, _line: String, _match: String): engine.LineInFile = new engine.LineInFile {
+/// match, or under an exact comparison when the author named no match.
+/// A named match is a regular expression; an omitted one is the literal
+/// line itself, which must not be read as a pattern.
+function lineEntry(_path: String, _line: String, _match: String?): engine.LineInFile = new engine.LineInFile {
   path = _path
   line = _line
   regexp = _match

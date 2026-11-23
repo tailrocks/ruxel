@@ -109,7 +109,8 @@ fn line_entries_lower_to_their_operations() -> Result {
         .ok_or("no port entry")?;
     assert_eq!(
         port["operation"],
-        serde_json::json!({"kind": "lineinfile", "path": "/etc/holla/holla.conf", "line": "port = 8080", "regexp": "port = 8080", "state": "present"}),
+        serde_json::json!({"kind": "lineinfile", "path": "/etc/holla/holla.conf", "line": "port = 8080", "state": "present"}),
+        "the literal entry carries no match: {port:#?}",
     );
     let host = lines
         .iter()

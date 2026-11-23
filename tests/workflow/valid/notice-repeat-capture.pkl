@@ -1,0 +1,15 @@
+// A notice reads one report twice as one: the same capture rendered in
+// two places is still one capture's output, so the notice prints where
+// the report stands and always prints when it is static otherwise.
+// Host.user defaults to root, so no step names another account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local terminfo = new Capture { title = "Read the controller terminfo"; runOn = inventory.cp1; bash = "infocmp" }
+
+name = "valid/notice-repeat-capture.pkl"
+
+stages { new Stage { title = "Holla"; hosts = inventory.workers; steps {
+  terminfo
+  new Notice { title = "Report the terminal twice"; message = "Controller terminfo:\n\(terminfo.stdout())\nAgain:\n\(terminfo.stdout())" }
+} } }

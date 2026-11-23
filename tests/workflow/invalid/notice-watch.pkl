@@ -1,0 +1,14 @@
+// expect: 'Show the banner' depends on 'Report readiness', which never reports a change
+// A notice never reports a change: a step that reacts to one would never
+// fire, so nothing lists a notice in its change dependencies.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local ready = new Notice { title = "Report readiness"; message = "Holla is ready" }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  ready
+  new Command { title = "Show the banner"; run { "cat"; "/etc/motd" }; onChangeOf { ready } }
+} } }
+
+name = "invalid/notice-watch.pkl"

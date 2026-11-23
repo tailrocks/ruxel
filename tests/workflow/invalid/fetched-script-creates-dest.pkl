@@ -1,0 +1,12 @@
+// expect: 'Fetch and run the holla installer': the marker is the destination; the probe sees the downloaded /opt/holla-install.sh and skips the run on every apply, so the fetched script never runs
+// A fetched script's marker guards its run: the marker is the
+// destination, the probe sees the download and skips the run on every
+// apply, so the fetched script never runs.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new FetchedScript { title = "Fetch and run the holla installer"; url = "https://get.example.test/holla/install.sh"; dest = "/opt/holla-install.sh"; creates = "/opt/holla-install.sh"; onChangeOf {} }
+} } }
+
+name = "invalid/fetched-script-creates-dest.pkl"

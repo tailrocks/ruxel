@@ -134,21 +134,46 @@ const local function isSshSchemeUrl(s: String): Boolean =
     let (rest = s.substring(7, s.length))
     let (at = rest.indexOf("@"))
     let (slash = if (rest.contains("/")) rest.indexOf("/") else rest.length)
-    at > 0 && slash > at + 1 && slash < rest.length - 1)
+    let (authority = rest.substring(at + 1, slash))
+    at > 0 && slash > at + 1 && slash < rest.length - 1
+      && !sshAuthorityHost(authority).isEmpty
+      && (sshAuthorityPort(authority) == null || sshAuthorityPort(authority).matches(Regex("[0-9]+"))))
+
+/// The host of an `ssh://` authority: the bracketed IPv6 literal, or the
+/// text before the port's colon. Empty when the authority names no host,
+/// as in `ssh://git@:/repo`, which the Git agent could only fail to
+/// resolve.
+const local function sshAuthorityHost(authority: String): String =
+  if (authority.startsWith("[")) (
+    if (!authority.contains("]")) "" else authority.substring(1, authority.indexOf("]")))
+  else if (authority.contains(":")) authority.substring(0, authority.indexOf(":"))
+  else authority
+
+/// The port of an `ssh://` authority, or null when it names none. A colon
+/// with nothing after it, as in `ssh://git@host:/repo`, names no port the
+/// agent could dial.
+const local function sshAuthorityPort(authority: String?): String? =
+  if (authority == null || authority.startsWith("[")) (
+    if (authority != null && authority.contains("]") && authority.substring(authority.indexOf("]") + 1, authority.length).startsWith(":"))
+      authority.substring(authority.indexOf("]") + 2, authority.length)
+    else null)
+  else if (authority.contains(":")) authority.substring(authority.indexOf(":") + 1, authority.length)
+  else null
 
 const local function isScpGitUrl(s: String): Boolean =
   let (at = s.indexOf("@"))
   let (rest = if (at < 0) "" else s.substring(at + 1, s.length))
   let (colon = rest.indexOf(":"))
-  !s.contains("://") && at > 0 && colon > 0 && colon < rest.length - 1
+  !s.contains("://") && !s.startsWith("-") && at > 0 && colon > 0 && colon < rest.length - 1
 
 /// A Git branch name: letters, digits, `.`, `_`, `/` and `-`, never an
-/// empty component and never `.` or `..` beside a separator, and never a
-/// `.lock` suffix, the way `git check-ref-format` reads one. A 40- or
-/// 64-character lowercase hex string also matches, but the Lowering
-/// refuses it there: that spells a commit SHA, which is pinned with
-/// `GitCheckout`, never followed here.
-typealias BranchName = Static(matches(Regex("[A-Za-z0-9._/-]+")) && !contains("..") && !startsWith("/") && !endsWith("/") && !contains("//") && this != "." && !startsWith("./") && !endsWith("/.") && !contains("/./") && !endsWith(".lock"))
+/// empty component and never `.` or `..` beside a separator, never a
+/// `.lock` suffix, and never a leading dash, which the Git agent refuses
+/// as a flag-like positional, the way `git check-ref-format` reads one.
+/// A 40- or 64-character lowercase hex string also matches, but the
+/// Lowering refuses it there: that spells a commit SHA, which is pinned
+/// with `GitCheckout`, never followed here.
+typealias BranchName = Static(matches(Regex("[A-Za-z0-9._/-]+")) && !contains("..") && !startsWith("/") && !startsWith("-") && !endsWith("/") && !contains("//") && this != "." && !startsWith("./") && !endsWith("/.") && !contains("/./") && !endsWith(".lock"))
 
 /// `https://`, a host name, IPv4 address or bracketed IPv6 address, an
 /// optional port from 1 to 65535, and an optional path without spaces.
