@@ -968,6 +968,8 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 function sameStanza(q: Placed, p: Placed): Placed =
   if (q.step is debian.AptPreference && p.step is debian.AptPreference && q.step.priority != p.step.priority)
     throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) pin \(q.step.package) with \(q.step.pin) at different priorities (\(q.step.priority) and \(p.step.priority)); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage")
+  else if (q.step is linux.User && p.step is linux.User && q.step.state == "absent" && p.step.state == "absent" && q.step.user == p.step.user && q.step.system != p.step.system)
+    throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) remove the account \(q.step.user) with different system flags (\(q.step.system) and \(p.step.system)); an absent declaration merges with an exact repeat, so the merge would keep the first and hide the system removal from the system-account refusal — state one flag or put the second removal in a later stage")
   else q
 
 /// A step that manages a thing merges with an exact repeat. Package steps,
