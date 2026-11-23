@@ -26,7 +26,7 @@ pub fn workflow_namespace(config: &Value) -> Option<String> {
     let mut plays: Vec<(&str, Vec<&str>)> = config
         .get("plays")
         .and_then(Value::as_array)
-        .map(|plays| {
+        .map_or_default(|plays| {
             plays
                 .iter()
                 .map(|play| {
@@ -34,14 +34,14 @@ pub fn workflow_namespace(config: &Value) -> Option<String> {
                     let mut targets: Vec<&str> = play
                         .get("targets")
                         .and_then(Value::as_array)
-                        .map(|targets| targets.iter().filter_map(Value::as_str).collect())
-                        .unwrap_or_default();
+                        .map_or_default(|targets| {
+                            targets.iter().filter_map(Value::as_str).collect()
+                        });
                     targets.sort_unstable();
                     (name, targets)
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     plays.sort_unstable();
     // Every part is length-prefixed and tagged, and every list carries
     // its length: no value, whatever separators or NULs it holds, can
