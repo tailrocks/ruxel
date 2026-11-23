@@ -27,6 +27,48 @@ fn tab_separated_vector_values_match_space_separated_ones() {
 }
 
 #[test]
+fn numeric_list_sysctls_compare_token_wise() {
+    // Thread 329: the kernel renders every numeric-list sysctl with
+    // tabs, not only the port range — a space-separated declaration of
+    // one is the converged value, so the second apply is a no-op and no
+    // `sysctl -w` reruns. The canonical key decides, so the slash
+    // spelling of a dotted name folds the same way.
+    for name in [
+        "net.ipv4.tcp_rmem",
+        "net/ipv4/tcp_rmem",
+        "net.ipv4.tcp_wmem",
+        "net.ipv4.tcp_mem",
+        "net.ipv4.udp_mem",
+        "net.ipv4.ping_group_range",
+    ] {
+        assert!(
+            super::super::live_matches(name, "4096\t131072\t6291456", "4096 131072 6291456"),
+            "{name} folds the separators"
+        );
+        assert!(
+            !super::super::live_matches(name, "4096\t131072\t6291456", "4096 131072 6291457"),
+            "{name} still reconciles another list"
+        );
+        assert!(
+            !super::super::live_matches(name, "4096\t131072", "4096 131072 6291456"),
+            "{name} still reconciles another arity"
+        );
+    }
+    assert!(super::super::live_matches(
+        "net.ipv4.ping_group_range",
+        "0\t2147483647",
+        "0 2147483647"
+    ));
+    // A separator spelling of a parameter outside the known set is
+    // drift, not convergence: string lists keep every blank.
+    assert!(!super::super::live_matches(
+        "net.ipv4.tcp_available_congestion_control",
+        "cubic\treno",
+        "cubic reno"
+    ));
+}
+
+#[test]
 fn vector_values_still_compare_exactly_where_they_differ() {
     // Token-wise is not value-blind: another list, another arity, or
     // a non-numeric token is a different value and is reconciled.

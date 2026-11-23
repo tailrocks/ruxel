@@ -881,7 +881,7 @@ fn strip_live_ending(live: &str) -> &str {
 /// so both sides compare trimmed — a vertically padded value is one
 /// kernel value with its bare spelling; internal separators compare
 /// token-wise for known numeric vector values only —
-/// `/proc/sys` separates the port range with tabs where workflows
+/// `/proc/sys` separates numeric lists with tabs where workflows
 /// write spaces — and exactly otherwise, so `kernel.core_pattern`
 /// keeps every blank of "12  34" instead of drifting silently.
 fn live_matches(name: &str, live: &str, value: &str) -> bool {
@@ -905,11 +905,22 @@ fn live_matches(name: &str, live: &str, value: &str) -> bool {
 
 /// Whether the parameter is a known numeric vector: `/proc/sys`
 /// separates its values with tabs where workflows write spaces, so
-/// the live comparison folds the separators token-wise. Every other
-/// parameter — including string values that merely look numeric —
-/// compares exactly, since whitespace is content there.
+/// the live comparison folds the separators token-wise. The set is the
+/// kernel's numeric-list sysctls (`ip_local_port_range`,
+/// `ping_group_range`, the `tcp_rmem`/`tcp_wmem`/`tcp_mem` triples and
+/// `udp_mem`): every other parameter — including string values that
+/// merely look numeric — compares exactly, since whitespace is content
+/// there.
 fn is_numeric_vector(name: &str) -> bool {
-    sysctl_key(name) == "net/ipv4/ip_local_port_range"
+    matches!(
+        sysctl_key(name).as_str(),
+        "net/ipv4/ip_local_port_range"
+            | "net/ipv4/ping_group_range"
+            | "net/ipv4/tcp_mem"
+            | "net/ipv4/tcp_rmem"
+            | "net/ipv4/tcp_wmem"
+            | "net/ipv4/udp_mem"
+    )
 }
 
 /// The ignore-failure marker of an assignment line: procps reads a
