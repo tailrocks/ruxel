@@ -1625,8 +1625,8 @@
     "tools/acceptance-pty/Cargo.toml": "c6b4303a05bf2f763c5b45104fe352374723d5e1b19b8d908d317e4937dc49fc",
     "tools/acceptance-restart-rootless/Cargo.toml": "837ca5587dd9819d08a5b1d7946fb6551aea1ae07a34c04a339018570bde2da9",
     "tools/acceptance-runtime/Cargo.toml": "665ea36d22a4d0e018faf7646d7f71538df9c194aa0d0dd8d2994d117ae751d2",
-    "tools/acceptance-xfs/Cargo.toml": "2e3af23683f3e46750a6a00dbbbbf91955b2fef8ff08f294a62154a2e12c1897",
-    "tools/control-flow-assertions/Cargo.toml": "78a047f0079ca2ec30d0ec35edbe0a133049f1ae28c992c0e0894149d187fda5",
+    "tools/acceptance-xfs/Cargo.toml": "d6f66617c812a1f8c37c034f9306e4f8a1b6e92ec7dc1155d9858fc61f940b04",
+    "tools/control-flow-assertions/Cargo.toml": "82560ba764fc1d50e6ec5e9a8f44f8ad25346801b60d4c2e8122a9918beaec66",
     "tools/http-fixture/Cargo.toml": "b8e1fd62c9f9901e809d14361169b006d039d92d580115d17b1a6c8e9ad6ca59"
   },
   "layout": "0d3d8cc67bf3e59abf596d6d56e52e271634bfca181f6050f2a2c28c40543c0e"

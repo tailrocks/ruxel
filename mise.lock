@@ -545,9 +545,9 @@ url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-windows-amd64.e
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714757051"
 
 [[tools.rumdl]]
-version = "0.3.5"
+version = "v0.3.5"
 backend = "aqua:rvben/rumdl"
-specifiers = ["0.3.5"]
+specifiers = ["v0.3.5"]
 
 [tools.rumdl."platforms.linux-arm64"]
 checksum = "sha256:3adec6780fe6e2295d634ff06601104e3e775005cdf98dd19b1817711f801502"
