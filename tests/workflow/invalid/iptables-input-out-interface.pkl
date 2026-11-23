@@ -1,0 +1,12 @@
+// expect: the INPUT chain takes no outgoing interface
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A packet on its way in has no outgoing interface, so a rule of the
+// INPUT chain that names one can never match.
+name = "invalid/iptables-input-out-interface.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; outInterface = "eth0"; jump = "DROP" }
+} } }

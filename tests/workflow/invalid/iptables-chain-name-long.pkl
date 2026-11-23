@@ -1,0 +1,14 @@
+// expect-pklr: expected ChainName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Upstream refuses chain names of 29 bytes and more: `XT_EXTENSION_MAXNAMELEN`
+// is 29, so the largest chain name the firewall takes is 28 bytes, and a
+// 29-character name is refused at apply and must be refused here.
+name = "invalid/iptables-chain-name-long.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; jump = "DROP" }
+} } }

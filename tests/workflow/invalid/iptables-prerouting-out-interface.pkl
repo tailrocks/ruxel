@@ -1,0 +1,13 @@
+// expect: the PREROUTING chain takes no outgoing interface
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A packet before the routing decision has no outgoing interface, so a
+// rule of the PREROUTING chain that names one can never match: iptables
+// refuses `-o` there, as it does for INPUT.
+name = "invalid/iptables-prerouting-out-interface.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "PREROUTING"; outInterface = "eth0"; jump = "DROP" }
+} } }

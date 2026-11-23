@@ -1,13 +1,63 @@
-//! The two evaluators' answers and the comparison the corpus runs: both
-//! must refuse or accept every example alike and lower a valid one to
-//! the same engine input, and the outcome must be the one the corpus
-//! declares.
+//! A sibling of `dual_evaluator.rs`: the two evaluations one
+//! example is compared with, and the comparison itself.
 
+use super::*;
 use serde_json::Value;
-use std::path::Path;
-use std::process::Command;
 
-use super::Result;
+/// The official `pkl` binary.
+///
+/// `RUXEL_PKL` is the whole resolution: the absolute path `tools/verify-pkl-artifact` hashed
+/// against the committed checksum and printed, which the mise `dual-evaluator` task exports to
+/// this suite. There is no fallback to look the binary up on the `PATH` or in the places an
+/// operator's tools live: verification and execution must resolve to one binary, so a `pkl` the
+/// verifier never hashed may never run, and where no verified path is supplied the suite fails
+/// loudly instead of picking one of its own. A named binary that does not run is a loud failure
+/// too: the check is mandatory, and a skipped check would pass every regression the corpus was
+/// added to cover.
+pub(super) fn pkl() -> Result<PathBuf> {
+    let Some(path) = std::env::var_os("RUXEL_PKL") else {
+        return Err(
+            "no verified official pkl was supplied: RUXEL_PKL must name the artifact that \
+             tools/verify-pkl-artifact hashed and printed; the dual-evaluator check is \
+             mandatory and executes exactly the verified binary, never one a PATH lookup \
+             happens to find"
+                .into(),
+        );
+    };
+    let path = PathBuf::from(path);
+    if runs(&path) {
+        Ok(path)
+    } else {
+        Err(format!(
+            "RUXEL_PKL points at {}, which is not a working official pkl",
+            path.display()
+        )
+        .into())
+    }
+}
+
+/// Whether the binary answers `--version`: the probe that separates the
+/// official CLI from an arbitrary file of the same name.
+pub(super) fn runs(candidate: &Path) -> bool {
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+/// The served modules as files, for the official CLI: it serves them under
+/// `modulepath:/ruxel/`, as the binary does.
+pub(super) fn modules() -> Result<PathBuf> {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let directory = std::env::temp_dir().join(format!(
+        "ruxel-dual-evaluator-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&directory)?;
+    ruxel_config::schema::export(&directory)?;
+    Ok(directory)
+}
 
 /// What an evaluator answered: the value it lowered to, or the error it
 /// refused the file with.

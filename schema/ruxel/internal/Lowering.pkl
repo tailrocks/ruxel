@@ -92,6 +92,8 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["gitCheckout"] = (s) -> s is linux.GitCheckout
   ["sysctl"] = (s) -> s is linux.Sysctl
   ["group"] = (s) -> s is linux.Group
+  ["absent"] = (s) -> s is core.Absent
+  ["iptablesRule"] = (s) -> s is linux.IptablesRule
 }
 
 /// Whether the step's class is the served class of its kind, or a subclass
@@ -970,12 +972,19 @@ function mergeOne(kept: List<Placed>, p: Placed): List<Placed> =
 /// The kept step of a merge. Two preferences that share the identity —
 /// the package plus the pin (BB §3.7) — are one step, but their priorities
 /// must then agree: the priority is not part of the identity, so a mismatch
-/// would silently collapse the two stanzas into one and drop a priority.
+/// would silently collapse the two stanzas into one and drop a priority. Two
+/// removals of one path are one removal for the same reason: the recursion
+/// is how deep the removal goes, not which path it takes away, so a mismatch
+/// would silently collapse the two removals into one and keep the shallower
+/// one — and that removal fails on the directory the author asked to take
+/// with everything in it.
 function sameStanza(q: Placed, p: Placed): Placed =
   if (q.step is debian.AptPreference && p.step is debian.AptPreference && q.step.priority != p.step.priority)
     throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) pin \(q.step.package) with \(q.step.pin) at different priorities (\(q.step.priority) and \(p.step.priority)); one stanza sets the priority of a package and a pin, so keep one priority or put the second in a later stage")
   else if (q.step is linux.User && p.step is linux.User && q.step.state == "absent" && p.step.state == "absent" && q.step.user == p.step.user && q.step.system != p.step.system)
     throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) remove the account \(q.step.user) with different system flags (\(q.step.system) and \(p.step.system)); an absent declaration merges with an exact repeat, so the merge would keep the first and hide the system removal from the system-account refusal — state one flag or put the second removal in a later stage")
+  else if (q.step is core.Absent && p.step is core.Absent && q.step.recursive != p.step.recursive)
+    throw("'\(name(q.step))' (\(where(q))) and '\(name(p.step))' (\(where(p))) remove \(q.step.path) with different recursion (\(q.step.recursive) and \(p.step.recursive)); two removals of one path are one removal, so keep one recursion or put the second in a later stage")
   else q
 
 /// A step that manages a thing merges with an exact repeat. Package steps,
@@ -988,7 +997,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), absentFloor(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1037,6 +1046,14 @@ function settings(s: core.Step): List<String> =
     List("'\(name(s))': \(s.path) holds a secret, so its mode must be 0600 or narrower, not \(s.mode)")
   else if (s is core.FetchSecret && !s.fnoxKey.matches(Regex("[A-Z][A-Z0-9_]{1,127}")))
     List("fnox key \"\(s.fnoxKey)\" is malformed: uppercase letters, digits and underscores only, starting with a letter, 2 to 128 characters")
+  else if (s is linux.IptablesRule && s.protocol == "icmp" && s.ipVersion == "ipv6")
+    List("'\(name(s))': protocol icmp is the ICMP of IPv4; the ICMP of IPv6 is icmpv6, and ip6tables administers the IPv6 rules")
+  else if (s is linux.IptablesRule && s.protocol == "icmpv6" && s.ipVersion == "ipv4")
+    List("'\(name(s))': protocol icmpv6 is the ICMP of IPv6; the ICMP of IPv4 is icmp, and iptables administers the IPv4 rules")
+  else if (s is linux.IptablesRule && s.destination != null && s.destination.contains(":") != (s.ipVersion == "ipv6"))
+    List("'\(name(s))': destination \(s.destination) is an \(if (s.destination.contains(":")) "IPv6" else "IPv4") address, but the rule is an \(s.ipVersion) rule; iptables administers the IPv4 rules and ip6tables the IPv6 ones")
+  else if (s is linux.IptablesRule && (s.chain == "INPUT" || s.chain == "PREROUTING") && s.outInterface != null)
+    List("'\(name(s))': the \(s.chain) chain takes no outgoing interface, because a packet there has none yet; the rule can never match")
   else if (s is debian.DebconfEntry && s.type == "password" && !(s.value is debian.SecretAnswer))
     List("'\(name(s))': a password's answer is a secret (debian.secretAnswer(…)), never static text; a literal password would be committed to the workflow and printed in the clear")
   else if (s is debian.DebconfEntry && s.type == "boolean" && !(s.value is debian.SecretAnswer) && s.value != "true" && s.value != "false")
@@ -1194,17 +1211,42 @@ function nested(ix: StageIndex, i: Int): List<String> =
     let (byEarlier = inside(leaves(ix.steps[j]), paths(ix.steps[i])))
     let (byLater = inside(leaves(ix.steps[i]), paths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
+    let (leafAbsent = if (byEarlier.isEmpty) ix.steps[i].kind == "absent" else ix.steps[j].kind == "absent")
     if (pair.isEmpty) List()
-    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is a file, so \(pair.first.last) cannot be inside it"))
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is " + (if (leafAbsent) "removed, so" else "a file, so") + " \(pair.first.last) cannot be inside it"))
 
-/// Paths a step writes as a regular file or a link: its whole-file
-/// subjects, and a sysctl's entry file — the entries are its subjects,
-/// but the file it writes is a regular file of its own. A timer writes
-/// its unit file, which is a regular file like any other.
+/// Paths a step writes as a regular file or a link, or removes: its
+/// whole-file subjects, and a sysctl's entry file — the entries are its
+/// subjects, but the file it writes is a regular file of its own. A timer
+/// writes its unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
   if (s is linux.Sysctl) List(s.path)
-  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer").contains(s.kind)) subjectsOf(s)
+  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer", "absent").contains(s.kind)) subjectsOf(s)
   else List()
+
+/// A removal never takes a system root, and never takes a directory that
+/// holds a path another step of the same stage manages: a stage declares
+/// one state for each thing, and a system root is no thing to declare.
+function absentFloor(ix: StageIndex, i: Int): List<String> =
+  if (ix.steps[i] is core.Absent) floorProblems(ix, i, ix.steps[i]) else List()
+
+/// The floor rules for one `Absent` step.
+function floorProblems(ix: StageIndex, i: Int, s: core.Step): List<String> =
+  if (s is core.Absent)
+    let (path = s.path)
+    if (floorRoots.contains(path))
+      List("'\(name(s))' would remove \(path), which is a system root; a removal never takes /, /etc, /var, /root, /home, /usr, /boot, /dev, /proc or /sys, nor the system's own links into the merged tree: /bin, /sbin, /lib, /lib32, /lib64, /libx32, nor the roots of the platform the agent also runs on: /private, /Users, /Library, /System, /Applications, /Volumes")
+    else
+      let (held = positions(ix.steps).filter((j) -> j != i).flatMap((j) -> paths(ix.steps[j]).filter((p) -> p.startsWith(path + "/"))))
+      if (held.isEmpty) List()
+      else List("'\(name(s))' would remove \(path), which holds \(held.first), which another step of this stage manages; remove that path instead, or move the removal to a later stage")
+  else List()
+
+/// The system roots a removal never takes: the filesystem root, the
+/// directories the system itself lives in, the system's own links into
+/// the merged tree, and the roots of the platform the agent also runs on
+/// — the agent's `SYSTEM_ROOTS` holds the same twenty-two.
+const local floorRoots: List<String> = List("/", "/etc", "/var", "/root", "/home", "/usr", "/boot", "/dev", "/proc", "/sys", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/private", "/Users", "/Library", "/System", "/Applications", "/Volumes")
 
 /// Apt repositories manage `/etc/apt/keyrings` (0755, one shared task), so
 /// a `Directory` there would declare a second state for it.
@@ -3005,6 +3047,16 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // is trimmed the way procps reads it, so spellings and paddings of one
   // ask are one state, not two.
   ["sysctl"] = (s) -> fields(List(sysctlKey(s.name), trimmedSysctlValue(s.value), s.path))
+  // A removal's state is the path it takes away: `recursive` is a means,
+  // not a state, so two removals of one path are one state.
+  ["absent"] = (s) -> fields(List(s.path))
+  // The jump is not part of an absent rule's state: the removal deletes
+  // the rule of the match whatever the jump names, so two removals of
+  // one match are one state however they spell the jump. For a present
+  // rule the jump is the state it declares. The destination is
+  // canonical (`10.0.0.1/8` and `10.0.0.0/8` are one network), so one
+  // network carries one state whatever spelling names it.
+  ["iptablesRule"] = (s) -> fields(List(s.chain, optional(if (s.destination == null || universalDestination(s)) null else canonicalDestination(s.destination)), s.protocol, optional(s.outInterface), optional(if (s.state == "absent") null else s.jump), s.ipVersion, s.state))
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
@@ -3029,6 +3081,12 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   // parameter manage one entry, so they are one subject — and one task
   // once merged — whatever spelling each step writes.
   ["sysctl"] = (s) -> List("the sysctl \(sysctlKey(s.name)) in \(s.path)")
+  ["absent"] = (s) -> List(s.path)
+  // The rule sets are separate: `iptables` and `ip6tables` hold their own
+  // rules, so the version is part of the thing a rule manages. The same
+  // rule for both versions is two rules, and a stage declares them side by
+  // side.
+  ["iptablesRule"] = (s) -> List("the \(s.ipVersion) iptables rule \(s.chain) \(iptablesMatch(s))")
   ["aptRepository"] = (s) -> List(sourcesPath(s), keyringPath(s))
   ["service"] = (s) -> List("service \(unitName(s.name))")
   ["systemdTimer"] = (s) -> List(timerPath(s.name), timerEnablePath(s.name))
@@ -3405,7 +3463,116 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
   ["fetchSecret"] = (s) -> "Fetch \(s.fromPath) into fnox"
+  ["absent"] = (s) -> "Remove \(s.path)"
+  ["iptablesRule"] = (s) -> (if (s.state == "absent") "Remove iptables rule from " else "Add iptables rule to ") + s.chain
 }
+
+/// The match of an iptables rule, without its jump: the chain and the match
+/// are the rule's identity, so two rules that match the same way in the same
+/// chain are one rule. The destination is spelled canonically (`10.0.0.1/8`
+/// and `10.0.0.0/8` name one network), and the universal destination is
+/// spelled the way the firewall leaves it out, so `0.0.0.0/0` and the
+/// omitted destination are one identity.
+const function iptablesMatch(s: linux.IptablesRule): String =
+  (if (s.destination == null || universalDestination(s)) "" else "to " + canonicalDestination(s.destination) + " ") + s.protocol + (if (s.outInterface == null) "" else " via " + s.outInterface)
+
+/// The universal network is the omitted destination: Netfilter documents
+/// that `/0` has the same effect as omitting the address option, so a rule
+/// that names it and a rule that omits it match the same way. The spelling
+/// is read canonically: a `/0` masks every address to the universal
+/// network whichever address it names (`10.0.0.1/0` is `0.0.0.0/0`).
+const function universalDestination(s: linux.IptablesRule): Boolean =
+  s.destination != null && (let (network = canonicalDestination(s.destination)) network == "0.0.0.0/0" || network == "0:0:0:0:0:0:0:0/0")
+
+/// The destination in the one spelling one network has, the way the
+/// agent and Netfilter read it: the host bits are masked off, a host
+/// without a prefix carries its full prefix, and an IPv6 address is
+/// spelled in full lowercase groups without leading zeros. So
+/// `10.0.0.1/8`, `10.0.0.0/8`, a host and its `/32`, and an IPv6
+/// address and its equivalent spelling are one identity: the firewall
+/// matches one rule where the lowering must find one rule.
+const function canonicalDestination(destination: String): String =
+  let (slash = if (destination.contains("/")) destination.indexOf("/") else destination.length)
+  let (address = destination.substring(0, slash))
+  let (prefix = if (destination.contains("/")) destination.substring(slash + 1, destination.length).toInt() else (if (address.contains(":")) 128 else 32))
+  (if (address.contains(":")) ipv6Network(address, prefix) else ipv4Network(address, prefix)) + "/\(prefix)"
+
+/// The IPv4 network: the four octets, each masked to the top bits the
+/// prefix leaves it.
+const function ipv4Network(address: String, prefix: Int): String =
+  positions(List(0, 0, 0, 0)).map((i) -> maskedOctet(address.split(".")[i], keptBits(prefix - 8 * i, 8))).join(".")
+
+/// The IPv6 network: the eight groups, each masked and spelled without
+/// leading zeros. An IPv4 tail is the two groups it spells
+/// (`::ffff:1.2.3.4` is `…:ffff:102:304`), and `::` is the groups it
+/// stands for. Split keeps or drops empty pieces as it pleases — pklr
+/// drops a trailing one the way Java does — so the empties are filtered
+/// and the gap is found by `::`, never by position.
+const function ipv6Network(address: String, prefix: Int): String =
+  let (gap = if (address.contains("::")) address.indexOf("::") else -1)
+  let (head = ipv6Words((if (gap >= 0) address.substring(0, gap) else address).split(":")))
+  let (tail = ipv6Words((if (gap >= 0) address.substring(gap + 2, address.length) else "").split(":")))
+  let (back = 8 - tail.length)
+  positions(List(0, 0, 0, 0, 0, 0, 0, 0)).map((i) -> maskedGroup((if (i < head.length) head[i] else (if (i < back) "0" else tail[i - back])), keptBits(prefix - 16 * i, 16))).join(":")
+
+/// The groups as written: the empty pieces around `::` are not groups,
+/// and the last group is the two a trailing IPv4 address spells.
+const function ipv6Words(pieces: List<String>): List<String> =
+  let (words = pieces.filter((g) -> !g.isEmpty))
+  if (words.isEmpty || !words.last.contains(".")) words
+  else positions(words).filter((i) -> i < words.length - 1).map((i) -> words[i]) + ipv4Words(words.last)
+
+/// The two hex groups an IPv4 tail spells: `1.2.3.4` is `0102:0304`.
+const function ipv4Words(tail: String): List<String> =
+  let (octets = tail.split("."))
+  List(hexGroup(octets[0], octets[1]), hexGroup(octets[2], octets[3]))
+
+/// The four hex digits of two octets: `1.2` is `0102`.
+const function hexGroup(high: String, low: String): String =
+  hexDigit((high.toInt() - high.toInt() % 16) ~/ 16) + hexDigit(high.toInt() % 16) + hexDigit((low.toInt() - low.toInt() % 16) ~/ 16) + hexDigit(low.toInt() % 16)
+
+/// The octet in decimal, masked to the top bits the prefix leaves it.
+const function maskedOctet(octet: String, kept: Int): String =
+  let (value = octet.toInt())
+  "\(value - value % octetSteps[kept])"
+
+/// The group in lowercase hex without leading zeros, masked to the top
+/// bits the prefix leaves it. A mask that lands inside one digit keeps
+/// the top bits of that digit alone.
+const function maskedGroup(group: String, kept: Int): String =
+  let (padded = group.toLowerCase().padStart(4, "0"))
+  stripZeros(positions(List(0, 0, 0, 0)).map((j) -> maskedDigit(padded, j, kept)).join(""))
+
+/// The digit, masked to the top bits of its own four the prefix leaves
+/// it.
+const function maskedDigit(padded: String, j: Int, kept: Int): String =
+  let (value = hexValue(padded.substring(j, j + 1)))
+  hexDigit(value - value % hexSteps[keptBits(kept - 4 * j, 4)])
+
+/// The bits a unit keeps: the whole unit while the prefix reaches past
+/// it, the top of it where the prefix lands inside, none past the
+/// prefix.
+const function keptBits(remaining: Int, width: Int): Int =
+  if (remaining <= 0) 0 else (if (remaining >= width) width else remaining)
+
+const function hexValue(digit: String): Int = "0123456789abcdef".indexOf(digit.toLowerCase())
+
+const function hexDigit(value: Int): String = "0123456789abcdef".substring(value, value + 1)
+
+/// The spelling without the zeros a group carries in front: `0db8` is
+/// `db8`, and a group of all zeros is `0`.
+const function stripZeros(group: String): String =
+  if (group.startsWith("0000")) "0"
+  else if (group.startsWith("000")) group.substring(3, 4)
+  else if (group.startsWith("00")) group.substring(2, 4)
+  else if (group.startsWith("0")) group.substring(1, 4)
+  else group
+
+/// What masking one unit subtracts to zero the bits past `kept`: a
+/// unit's width is its top bit, so `2^(width - kept)` is the value of
+/// the first zeroed bit and the remainder below it is what goes.
+const local octetSteps: List<Int> = List(256, 128, 64, 32, 16, 8, 4, 2, 1)
+const local hexSteps: List<Int> = List(16, 8, 4, 2, 1)
 
 /// A table, not an `if … else if` chain: pklr counts each `else if` against
 /// its depth limit of 32 (P3).
@@ -3451,6 +3618,8 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["group"] = (s, m) -> List(task(m, group(s.name, s.gid, s.state), null, null))
   ["gitCheckout"] = (s, m) -> List(task(m, git(s.repository, s.path, s.commit), null, null))
   ["sysctl"] = (s, m) -> List(task(m, sysctl(s.name, s.value, s.path), null, null))
+  ["absent"] = (s, m) -> List(task(m, absent(s.path, s.recursive), null, null))
+  ["iptablesRule"] = (s, m) -> List(task(m, firewall(s), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
   ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
@@ -3721,6 +3890,16 @@ function copyText(_dest: String, _content: String): engine.Copy =
   new engine.Copy { dest = _dest; content = _content; mode = "0644"; owner = "root"; group = "root" }
 
 function directory(_path: String, _mode: String): engine.File = new engine.File { path = _path; state = "directory"; mode = canonicalMode(_mode) }
+function absent(_path: String, _recursive: Boolean): engine.File = new engine.File { path = _path; state = "absent"; recurse = _recursive }
+function firewall(s: linux.IptablesRule): engine.Firewall = new engine.Firewall {
+  chain = s.chain
+  destination = s.destination
+  protocol = s.protocol
+  out_interface = s.outInterface
+  jump = s.jump
+  ip_version = s.ipVersion
+  state = s.state
+}
 function symlink(_path: String, _target: String): engine.File = new engine.File { path = _path; src = _target; state = "link" }
 function apt(_names: List<String>, _upgrade: Boolean, _hold: Boolean): engine.Apt = new engine.Apt {
   name = if (_names.length == 1) _names.first else new Listing { for (n in _names) { n } }
