@@ -36,12 +36,15 @@ impl Ledger {
     /// The plan has ended: every record of its own workflow it never
     /// encountered is history — a task a previous plan ran and this
     /// one does not — and expires before what the plan still owns is
-    /// persisted. A run that encounters nothing expires nothing: with
-    /// no task of its own it is no plan's verdict on what this
-    /// workflow manages. Records of other workflows live in their own
-    /// maps and are never this plan's verdict: the ledger is shared
-    /// per host, so another workflow's completion must not delete
-    /// them.
+    /// persisted. A complete plan that encountered nothing still
+    /// expires everything of its own workflow: a workflow that dropped
+    /// its last agent task runs no task of its own, and keeping its
+    /// old records would leave them trusted — a removed sysctl
+    /// declaration would keep authorizing its dropped task's
+    /// still-present later file. Records of other workflows live in
+    /// their own maps and are never this plan's verdict: the ledger is
+    /// shared per host, so another workflow's completion must not
+    /// delete them.
     ///
     /// Only a complete plan may expire what it never encountered. A
     /// plan that stopped early — a task failed and the plan halted on
@@ -54,7 +57,7 @@ impl Ledger {
     /// — is an executed prefix, not a complete plan, and expires
     /// nothing either.
     pub(crate) fn flush(&mut self) {
-        if !self.encountered.is_empty() && self.complete && !self.aborted {
+        if self.complete && !self.aborted {
             let before: usize = self.records.values().map(HashMap::len).sum();
             if let Some(owned) = self.records.get_mut(&self.workflow) {
                 owned.retain(|key, _| self.encountered.contains(key));
