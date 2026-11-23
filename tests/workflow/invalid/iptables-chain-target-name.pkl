@@ -1,0 +1,15 @@
+// expect-pklr: expected ChainName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The firewall reads a chain name that clashes with a target name as the
+// target, not the chain: `xtables_find_target` claims `LOG` before the
+// chain is ever looked up, so a rule for a chain named `LOG` is refused
+// at apply and must be refused here.
+name = "invalid/iptables-chain-target-name.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "LOG"; jump = "DROP" }
+} } }
