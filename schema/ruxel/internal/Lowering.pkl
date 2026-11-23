@@ -1027,6 +1027,16 @@ function settings(s: core.Step): List<String> =
     List(onBootRefusal(s))
   else if (s is systemd.SystemdTimer && s.onBoot != null && onBootMicros(s.onBoot) == null)
     List(onBootRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && s.repeat.value == 0)
+    List("'\(name(s))': repeat \(s.repeat) is zero; a timer fires after its last firing, not at it")
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootNegative(s.repeat))
+    List("'\(name(s))': repeat \(s.repeat) is negative; a timer fires after its last firing, not before it")
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootTooLong(s.repeat))
+    List(repeatTooLongRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootUntrusted(s.repeat))
+    List(repeatRefusal(s))
+  else if (s is systemd.SystemdTimer && s.repeat != null && onBootMicros(s.repeat) == null)
+    List(repeatRefusal(s))
   else if (s is systemd.SystemdTimer && s.service == null && s.name.length > 247)
     List("'\(name(s))': a timer name of \(s.name.length) characters without a service of its own would name the \(s.name.length + 8)-character unit \(timerTarget(s)), past systemd's 255; a timer name without a service may be at most 247 characters")
   else if (s is debian.AptRepository && s.components.isEmpty != s.suite.endsWith("/"))
@@ -3080,7 +3090,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
-  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), "\(s.persistent)", "\(s.enabled)"))
+  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), onBootText(s.repeat), "\(s.persistent)", "\(s.enabled)"))
   // A volume group is its name plus the full device set: a second
   // declaration for one group with another set is another state, not a
   // repeat. A mount is its resolved source: a static `UUID=` text, or the
@@ -3200,6 +3210,7 @@ function timerContent(t: systemd.SystemdTimer): String =
     "[Timer]"
     when (t.onCalendar != null) { "OnCalendar=\(t.onCalendar)" }
     when (t.onBoot != null) { "OnBootSec=\(onBootSpan(t))" }
+    when (t.repeat != null) { "OnUnitActiveSec=\(repeatSpan(t))" }
     // The unit the timer activates when it fires: a timer that names no
     // service starts the service of its own name.
     "Unit=\(timerTarget(t))"
@@ -3232,6 +3243,30 @@ const function onBootSpan(t: systemd.SystemdTimer): String =
 /// refuse one, so that the refusal reads the same wherever it is found.
 const function onBootRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot \(t.onBoot) must be a whole number of milliseconds; a systemd timer reads the delay in seconds or milliseconds"
+
+/// The repeat interval as the unit systemd reads it: whole seconds, or
+/// whole milliseconds — the same whole-millisecond contract as the boot
+/// delay, so no fraction of one is ever emitted.
+///
+/// The interval has been checked before the timer is lowered —
+/// `settings` refuses one that is not provably the interval the author
+/// wrote — so the count of microseconds is there. The throw is the
+/// backstop that keeps a wrong interval from being written: each refusal
+/// is refused, never rounded to another interval.
+const function repeatSpan(t: systemd.SystemdTimer): String =
+  let (micros = onBootMicros(t.repeat))
+  if (onBootTooLong(t.repeat)) throw(repeatTooLongRefusal(t))
+  else if (onBootUntrusted(t.repeat)) throw(repeatRefusal(t))
+  else if (micros == null) throw(repeatRefusal(t))
+  else if (micros % 1000000 == 0) "\(micros ~/ 1000000)"
+  else "\(micros ~/ 1000)ms"
+
+/// The sentence that refuses a repeat interval that is not a whole
+/// number of milliseconds this schema can carry. One sentence for both
+/// places that refuse one, so that the refusal reads the same wherever
+/// it is found.
+const function repeatRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': repeat \(t.repeat) must be a whole number of milliseconds; a systemd timer reads the interval in seconds or milliseconds"
 
 /// The largest count of milliseconds whose every integer a `Float` can
 /// hold exactly: 2^53. A boot delay at or beyond it is refused whole,
@@ -3314,6 +3349,14 @@ const function onBootUntrusted(d: Duration): Boolean =
 /// one, so the refusal reads the same wherever it is found.
 const function onBootTooLongRefusal(t: systemd.SystemdTimer): String =
   "'\(label(t))': onBoot is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer delay arrives from the evaluators already rounded, and would fire at a time the author never wrote"
+
+/// The sentence that refuses a repeat interval this schema cannot hold
+/// exactly. It names the bound and deliberately not the interval: the
+/// interval in the message would be the value the evaluators rounded,
+/// not the one the author wrote. One sentence for both places that
+/// refuse one, so the refusal reads the same wherever it is found.
+const function repeatTooLongRefusal(t: systemd.SystemdTimer): String =
+  "'\(label(t))': repeat is beyond the \(maxExactMillis - 1)ms this schema can hold exactly; a longer interval arrives from the evaluators already rounded, and would fire at a time the author never wrote"
 
 /// The whole-microsecond count of a delay whose value is an integer in
 /// its own unit, taken in whole-number arithmetic and still a whole
@@ -3399,10 +3442,11 @@ const function roundedMicrosOf(unit: String, micros: Float): Float =
 /// Whether a boot delay is before the boot: a timer fires after it.
 const function onBootNegative(d: Duration): Boolean = d.value.toFloat() < 0
 
-/// The boot delay as the text that identifies the step: the delay in
+/// A delay as the text that identifies the step: the delay in
 /// whole milliseconds, so that two spellings of one delay — `1.001.s` and
 /// `1001.ms` — are one step, and not two steps that manage the same unit
-/// file with different settings. A delay that is not a whole number of
+/// file with different settings. Serves the boot delay and the repeat
+/// interval alike. A delay that is not a whole number of
 /// milliseconds, or not provable, keeps its own text, so that it is
 /// never the same step as a delay it is not.
 const function onBootText(d: Duration?): String =

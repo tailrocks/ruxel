@@ -447,6 +447,16 @@
               "doctest": false,
               "source": "crates/ruxel/ruxel-config/tests/workflow_systemd.rs",
               "requires_features": false
+            },
+            {
+              "name": "workflow_systemd_timer_delay",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_systemd_timer_delay.rs",
+              "requires_features": false
             }
           ]
         },
@@ -1650,5 +1660,5 @@
     "tools/control-flow-assertions/Cargo.toml": "82560ba764fc1d50e6ec5e9a8f44f8ad25346801b60d4c2e8122a9918beaec66",
     "tools/http-fixture/Cargo.toml": "b8e1fd62c9f9901e809d14361169b006d039d92d580115d17b1a6c8e9ad6ca59"
   },
-  "layout": "1ed0a41d3f3d1b7761e37ea6c738889c38896e176535edb8b41d8f76b536e84c"
+  "layout": "77c85d79a46c062db9929fded7e2d3668f50adfe98714fa6d4e88504561ccc76"
 }
