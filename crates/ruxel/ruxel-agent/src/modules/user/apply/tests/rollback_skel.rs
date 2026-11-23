@@ -260,25 +260,47 @@ fn a_plant_between_scan_and_removal_is_kept_and_reported() {
 
 #[test]
 fn the_configured_skel_wins_over_the_shadow_default() {
-    // Thread 330: `useradd -m` populates the home from the host's
-    // configured `SKEL`, so the creation pins it with `-k` and the
-    // rollback compares against it — a valid skeleton file must never
-    // read as concurrently planted. The last uncommented `SKEL` line
-    // wins, `USERGROUPS_ENAB`-style, and anything else is the default.
+    // Thread 330, corrected by thread 342: `useradd -m` populates the
+    // home from the host's configured `SKEL` in `/etc/default/useradd`
+    // (`KEY=VALUE`, `useradd -D`), not `/etc/login.defs` — so the
+    // creation pins it with `-k` and the rollback compares against it.
+    // A valid skeleton file must never read as concurrently planted.
+    // The last uncommented `SKEL=` line wins, and anything else is the
+    // default.
     assert_eq!(
-        skel_dir_from("SKEL /srv/skel\n"),
+        skel_dir_from("SKEL=/srv/skel\n"),
         "/srv/skel",
         "the configured template is the rollback's"
     );
     assert_eq!(
-        skel_dir_from("#SKEL /srv/ignored\nSKEL /srv/a\nSKEL /srv/b # trailing\n"),
+        skel_dir_from("#SKEL=/srv/ignored\nSKEL=/srv/a\nSKEL=/srv/b # trailing\n"),
         "/srv/b",
         "the last uncommented SKEL line wins"
     );
     assert_eq!(
-        skel_dir_from("# only a comment\nUSERGROUPS_ENAB yes\n"),
+        skel_dir_from("# only a comment\nSHELL=/bin/bash\n"),
         "/etc/skel",
         "no SKEL line is the shadow default"
+    );
+    assert_eq!(
+        skel_dir_from("SKEL=\"/srv/quoted\"\n"),
+        "/srv/quoted",
+        "a quoted assignment is the template without its quotes"
+    );
+    assert_eq!(
+        skel_dir_from("export SKEL=/srv/exported\n"),
+        "/srv/exported",
+        "an exported assignment is the template"
+    );
+    assert_eq!(
+        skel_dir_from("SKEL=/srv/kept\nSKEL=\n"),
+        "/srv/kept",
+        "an empty assignment keeps the previous template"
+    );
+    assert_eq!(
+        skel_dir_from("SKEL /srv/space-separated\n"),
+        "/etc/skel",
+        "the login.defs spelling is not useradd configuration"
     );
     assert_eq!(
         skel_dir_from(""),

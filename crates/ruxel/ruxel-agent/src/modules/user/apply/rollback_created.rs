@@ -14,19 +14,21 @@ use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, stat
 const DEFAULT_SKEL_DIR: &str = "/etc/skel";
 
 /// The skeleton directory `useradd -m` populates a created home from:
-/// the host's configured `SKEL` in `/etc/login.defs`, the shadow
-/// default where the host configures none. An unreadable policy fails
-/// to the default: `useradd` would populate from it in the same case.
+/// the host's configured `SKEL` in `/etc/default/useradd` (`KEY=VALUE`,
+/// the `useradd -D` defaults file), the shadow default where the host
+/// configures none. An unreadable policy fails to the default:
+/// `useradd` would populate from it in the same case.
 pub(crate) fn skel_dir() -> String {
-    match std::fs::read_to_string("/etc/login.defs") {
+    match std::fs::read_to_string("/etc/default/useradd") {
         Ok(content) => skel_dir_from(&content),
         Err(_) => DEFAULT_SKEL_DIR.to_string(),
     }
 }
 
 /// The canned-content counterpart of [`skel_dir`]: the last uncommented
-/// `SKEL` line wins, and anything else — including absent — is the
-/// shadow default.
+/// `SKEL=...` line wins, and anything else — including absent — is the
+/// shadow default. Values may be quoted; an empty assignment keeps the
+/// previous value.
 pub(crate) fn skel_dir_from(content: &str) -> String {
     let mut skel = DEFAULT_SKEL_DIR.to_string();
     for line in content.lines() {
@@ -34,11 +36,15 @@ pub(crate) fn skel_dir_from(content: &str) -> String {
         if stripped.is_empty() {
             continue;
         }
-        let mut fields = stripped.split_whitespace();
-        if fields.next() == Some("SKEL")
-            && let Some(dir) = fields.next()
-        {
-            skel = dir.to_string();
+        let assignment = stripped.strip_prefix("export ").map_or(stripped, str::trim);
+        if let Some(value) = assignment.strip_prefix("SKEL=") {
+            let value = value
+                .trim()
+                .trim_matches(|cell: char| cell == '"' || cell == '\'')
+                .trim();
+            if !value.is_empty() {
+                skel = value.to_string();
+            }
         }
     }
     skel
