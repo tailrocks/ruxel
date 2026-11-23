@@ -1,0 +1,14 @@
+// expect: uses the output of a Capture that this stage does not list; list the capture earlier in the stage
+// A mount that carries a capture's output lists the capture earlier: the
+// UUID is learned on the host before the mount uses it, in the same stage.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+local uuid = new Capture { title = "Read the nova volume UUID"; bash = "uuid=$(blkid -s UUID -o value /dev/ruxel_nova/data); printf 'UUID=%s' \"$uuid\"" }
+
+name = "invalid/storage-mount-unlisted-capture.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new storage.Mount { title = "Mount the nova volume"; src = uuid.stdout(); path = "/var/lib/postgresql" }
+} } }

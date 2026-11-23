@@ -1,0 +1,14 @@
+// expect: 'Extend the nova volume group': allowExtend is true; a volume group step never extends an existing group
+// A volume group step declares the full device set and never grows it
+// behind the author's back: extending an existing group is a new
+// declaration in a later stage, so `allowExtend = true` has no lowering
+// and is refused here.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+name = "invalid/storage-volume-group-extend.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new storage.VolumeGroup { title = "Extend the nova volume group"; vg = "ruxel_nova"; devices { "/dev/disk/by-id/ruxel-nova-disk-1" }; allowExtend = true }
+} } }
