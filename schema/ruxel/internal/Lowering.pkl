@@ -982,7 +982,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1690,6 +1690,33 @@ const function providesHome(s: core.Step): Boolean =
 
 /// A removal with `removeHome` deletes the home directory and everything
 /// in it (`userdel -r`), so no step may manage a path at or inside it.
+/// A present account's mail spool in a host-configured mail
+/// directory: `useradd` writes `<MAIL_DIR>/<name>` wherever the host
+/// points `MAIL_DIR`, so a step that manages a path carrying the
+/// account's name declares a second state for it — the way a
+/// conventional spool conflicts through the creation footprint
+/// (`conflicts`) — while the footprint claims only the conventional
+/// directories. The conventional spools, the home, and the account's
+/// own steps are already covered, so only the custom directory reports
+/// here: a removal-side check (`removedCustomSpoolRels`) covers the
+/// same rule for recursive removals across stages.
+function customSpoolRels(ix: StageIndex, i: Int): List<String> =
+  earlier(i).flatMap((j) ->
+    let (byEarlier = customSpoolInside(ix.steps[j], ix.steps[i]))
+    let (byLater = customSpoolInside(ix.steps[i], ix.steps[j]))
+    let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
+    if (pair.isEmpty) List()
+    else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: both manage the mail spool of \(pair.first.last) (\(pair.first.first)); useradd creates <MAIL_DIR>/\(pair.first.last) wherever the host points MAIL_DIR, so a stage declares one state for it — remove the path or manage it through the account"))
+
+/// The mail-spool candidates of `b` that can be the present account
+/// `a`'s spool: paths carrying the account's name outside the
+/// footprint's conventional spools and home, and outside the account's
+/// own steps.
+const function customSpoolInside(a: core.Step, b: core.Step): List<List<String>> =
+  if (!(a is linux.User) || a.state != "present") List()
+  else let (reserved = (if (a.home != null) List(a.home) else List("/home/\(a.user)")) + mailSpools(a.user))
+    paths(b).filter((q) -> isMailSpool(a.user, q) && !accountOwnsPath(b, a.user) && !reserved.any((h) -> q == h || q.startsWith(h + "/"))).map((q) -> List(q, a.user))
+
 function homeRemovals(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
     let (byEarlier = removedInside(ix.steps[j], paths(ix.steps[i])))
