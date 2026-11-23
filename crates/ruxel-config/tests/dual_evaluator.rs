@@ -24,7 +24,6 @@ mod join_separator;
 
 #[path = "dual_evaluator/retired_path.rs"]
 mod retired_path;
-
 #[path = "dual_evaluator/track_a.rs"]
 mod track_a;
 
@@ -382,11 +381,7 @@ const EXAMPLES: &[&str] = &[
 fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
     let pkl = pkl()?;
     let modules = modules()?;
-    let examples = EXAMPLES
-        .iter()
-        .copied()
-        .chain(track_a::EXAMPLES.iter().copied());
-    for example in examples {
+    for example in EXAMPLES.iter().chain(track_a::EXAMPLES).copied() {
         compare(
             example,
             &root().join(example),
