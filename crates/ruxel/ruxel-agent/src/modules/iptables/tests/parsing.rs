@@ -53,6 +53,27 @@ fn a_goto_ends_the_match_like_a_jump() {
 }
 
 #[test]
+fn numeric_protocol_aliases_meet_the_printed_names() {
+    // The firewall prints the first name of the protocol number, so a
+    // declared number meets the listed name.
+    for (number, name) in [
+        ("1", "icmp"),
+        ("2", "igmp"),
+        ("6", "tcp"),
+        ("17", "udp"),
+        ("47", "gre"),
+        ("50", "esp"),
+        ("51", "ah"),
+        ("58", "ipv6-icmp"),
+        ("132", "sctp"),
+    ] {
+        let declared = args(&["-p", number, "-j", "DROP"]);
+        let listed = args(&["-p", name, "-j", "DROP"]);
+        assert_eq!(match_pairs(&declared), match_pairs(&listed), "{number}");
+    }
+}
+
+#[test]
 fn builds_rule_spec_and_parses_policy() {
     let params = serde_json::json!({"protocol":"tcp", "destination":"10.0.0.0/8", "jump":"ACCEPT", "comment":"allow"});
     let spec = super::super::rules::rule_spec(params.as_object().unwrap()).unwrap();
@@ -63,12 +84,12 @@ fn builds_rule_spec_and_parses_policy() {
             "tcp",
             "-d",
             "10.0.0.0/8",
-            "-j",
-            "ACCEPT",
             "-m",
             "comment",
             "--comment",
-            "allow"
+            "allow",
+            "-j",
+            "ACCEPT"
         ]
     );
     assert_eq!(

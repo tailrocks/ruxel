@@ -88,3 +88,27 @@ fn check_mode_reports_the_stale_jump_and_touches_nothing() {
     assert_eq!(left, "-p tcp -d 10.0.0.0/8 -j ACCEPT\n", "{left}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_commented_rule_the_firewall_lists_is_already_there() {
+    let dir = scratch("comment-converges");
+    // The firewall prints the match info before the target: a declared
+    // commented rule the chain already holds is there, not stale, so a
+    // reapply changes nothing and never deletes the only rule.
+    let (binary, file) = chain_stub(&dir, &["-p tcp -m comment --comment hello -j DROP"]);
+    let params = json!({
+        "chain":"INPUT", "protocol":"tcp", "jump":"DROP", "comment":"hello",
+        "state":"present"
+    });
+    let result = run_with(
+        &binary,
+        "INPUT",
+        params.as_object().unwrap(),
+        &context(false),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], false);
+    let left = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(left, "-p tcp -m comment --comment hello -j DROP\n", "{left}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

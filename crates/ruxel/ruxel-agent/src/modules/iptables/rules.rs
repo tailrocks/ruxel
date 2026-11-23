@@ -17,7 +17,6 @@ pub(super) fn rule_spec(obj: &serde_json::Map<String, Value>) -> Result<Vec<Stri
         ("-p", str_param(obj, "protocol")),
         ("-d", str_param(obj, "destination")),
         ("-o", str_param(obj, "out_interface")),
-        ("-j", str_param(obj, "jump")),
     ] {
         if let Some(value) = value {
             if flag == "-d" {
@@ -27,6 +26,10 @@ pub(super) fn rule_spec(obj: &serde_json::Map<String, Value>) -> Result<Vec<Stri
             spec.extend([flag.into(), value.into()]);
         }
     }
+    // The firewall prints the match info before the target, so the
+    // declared comment stands before the jump too: a comment past the
+    // jump would read as target options, and every listed rule would
+    // look stale next to it.
     if let Some(comment) = str_param(obj, "comment") {
         spec.extend([
             "-m".into(),
@@ -34,6 +37,9 @@ pub(super) fn rule_spec(obj: &serde_json::Map<String, Value>) -> Result<Vec<Stri
             "--comment".into(),
             comment.into(),
         ]);
+    }
+    if let Some(jump) = str_param(obj, "jump") {
+        spec.extend(["-j".into(), jump.into()]);
     }
     Ok(spec)
 }
@@ -50,7 +56,20 @@ fn canonical_protocol(protocol: &str) -> &str {
         // listing, the way it omits `all`.
         "all"
     } else {
-        protocol
+        // The firewall prints the first name of a protocol number, so
+        // a declared number meets the listed name here.
+        match protocol {
+            "1" => "icmp",
+            "2" => "igmp",
+            "6" => "tcp",
+            "17" => "udp",
+            "47" => "gre",
+            "50" => "esp",
+            "51" => "ah",
+            "58" => "ipv6-icmp",
+            "132" => "sctp",
+            _ => protocol,
+        }
     }
 }
 
@@ -179,6 +198,11 @@ fn step_option(args: &[String], index: usize) -> usize {
 /// listing is in the form of `iptables-save`, so a value with whitespace
 /// in it is quoted and stays one argument.
 pub(super) fn rule_arguments(rule: &str, chain: &str) -> Option<Vec<String>> {
+    // A rule with no arguments is listed as exactly `-A CHAIN`, with no
+    // trailing space: it is the empty rule, not a line to skip.
+    if rule == format!("-A {chain}") {
+        return Some(Vec::new());
+    }
     let rest = rule.strip_prefix(&format!("-A {chain} "))?;
     Some(split_arguments(rest))
 }

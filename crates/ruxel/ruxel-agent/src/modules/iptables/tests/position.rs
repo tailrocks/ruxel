@@ -206,10 +206,10 @@ fn a_rule_whose_comment_names_a_jump_is_the_declared_rule() {
     // The comment is `-j`: the declared rule is already there, so
     // the run changes nothing and, above all, does not delete the
     // only rule that filters the match. The listed line is in the
-    // order the declaration uses: the stub matches the probe by
+    // order the firewall prints: the stub matches the probe by
     // exact string, while the real firewall parses the arguments.
     let dir = fresh_dir("comment-jump");
-    let (binary, file) = position_stub(&dir, &["-p tcp -j DROP -m comment --comment -j"]);
+    let (binary, file) = position_stub(&dir, &["-p tcp -m comment --comment -j -j DROP"]);
     let result = run_with(
         &binary,
         "INPUT",
@@ -223,7 +223,7 @@ fn a_rule_whose_comment_names_a_jump_is_the_declared_rule() {
     assert_eq!(result["changed"], false);
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
-        "-p tcp -j DROP -m comment --comment -j\n"
+        "-p tcp -m comment --comment -j -j DROP\n"
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
