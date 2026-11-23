@@ -8,8 +8,9 @@
 # cache-prune.yml). Every old ci.yml job is covered: the root workspace and
 # the 13 standalone tool roots below via Rust lanes, cargo-deny via the
 # policy job (deny.toml), cargo-machete via the policy job (mise pin),
-# dual-evaluator and acceptance-local via [[lint]] mise tasks, Alint and
-# Jactionlint via [[lint]]. Dropped with no replacement: state-seal.yml
+# dual-evaluator via [[lint]] mise task, acceptance-local via the declared
+# .velnor/workflows.toml workflow (hosted ubuntu-26.04; [[lint]] cannot
+# select a runner), Alint and Jactionlint via [[lint]]. Dropped with no replacement: state-seal.yml
 # (old-engine state attestation, no velnor-gen equivalent) and
 # cache-prune.yml (superseded by generator-owned rust-cache-trim.yml).
 
@@ -33,27 +34,14 @@ cainfo = "/opt/velnor/crates-mirror/ca-bundle.pem"
 [public_sources]
 git = ["https://github.com/donbeave/pklr", "https://github.com/jdx/pklr"]
 
-# The 13 standalone tool workspaces share one job set and one build folder
-# (target-velnor/tools), as CONFIG.md intends for many small workspaces.
+# The 13 standalone tool workspaces keep their own jobs (no workspace
+# group): a group would share one target directory with the root lane's
+# ambient and velnor-ci would refuse it ("cannot be told apart"). Each
+# subdir root builds into target/velnor-roots/<root> (helper 0.1.107+),
+# apart from the repository root's target, so the root lane no longer
+# claims the nested roots and every root has its own target directory.
 # The root workspace (ruxel, ruxel-agent, ruxel-config, ruxel-engine,
 # ruxel-guard, ruxel-proto) keeps its own jobs.
-[[workspace_groups]]
-name = "tools"
-roots = [
-  "tools/acceptance-cache",
-  "tools/acceptance-control",
-  "tools/acceptance-copy",
-  "tools/acceptance-files",
-  "tools/acceptance-isolation",
-  "tools/acceptance-manifest",
-  "tools/acceptance-plan",
-  "tools/acceptance-pty",
-  "tools/acceptance-restart-rootless",
-  "tools/acceptance-runtime",
-  "tools/acceptance-xfs",
-  "tools/control-flow-assertions",
-  "tools/http-fixture",
-]
 
 # Files outside any Cargo root, mapped to the package whose tests read them
 # (mirrors the old [[stacks.rust.inputs]] selection). Input globs are literal
@@ -213,12 +201,8 @@ task = "dual-evaluator"
 tools = ["rust"]
 timeout_minutes = 20
 
-# No native equivalent: native lanes run nextest per crate, while this task
-# drives the built binaries through end-to-end acceptance scenarios.
-[[lint]]
-kind = "mise-task"
-id = "acceptance-local"
-name = "Acceptance local"
-task = "acceptance-local"
-tools = ["rust"]
-timeout_minutes = 30
+# Acceptance local moved to .velnor/workflows.toml: [[lint]] cannot
+# select a runner, and the task needs hosted ubuntu-26.04 (get_url
+# refuses the scale-set overlayfs). The declared acceptance-local.yml
+# workflow runs the same mise task on the hosted runner; keep its job
+# required in the branch ruleset so the gate stays as strong.
