@@ -1,0 +1,34 @@
+// expect: manages /home/app/deep/config, which stage "s1" removes with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The directory declaration recreates only its own path: a Directory
+// step at the home root creates that root and the parents it needs,
+// never the deeper parent the file writer opens. Only a step that
+// provides the file's complete parent lifts the removal conflict.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s1b"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/app"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/app/deep/config"; content = "x\n" }
+    }
+  }
+}
+
+name = "invalid/linux-user-home-removed-recreated-shallow.pkl"
