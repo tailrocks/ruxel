@@ -256,8 +256,7 @@ fn the_write_lock_serializes_holders() {
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default(),
+            .map_or_default(|elapsed| elapsed.as_nanos()),
     ));
     fs::create_dir_all(&directory).expect("create lock directory");
     let backend = ProcessBackend::with_programs("fnox", "op").with_lock_dir(&directory);

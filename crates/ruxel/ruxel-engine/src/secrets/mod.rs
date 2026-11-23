@@ -170,8 +170,7 @@ pub(super) fn select_field(
     };
     let candidates: Vec<&serde_json::Value> = document
         .as_array()
-        .map(|fields| fields.iter().collect())
-        .unwrap_or_default();
+        .map_or_default(|fields| fields.iter().collect());
     let hits: Vec<&serde_json::Value> = candidates
         .iter()
         .filter(|candidate| {

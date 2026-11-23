@@ -48,8 +48,7 @@ fn watched_results(expr: &serde_json::Value) -> Vec<String> {
     let nested = |key: &str| {
         expr[key]
             .as_array()
-            .map(|items| items.iter().flat_map(watched_results).collect())
-            .unwrap_or_default()
+            .map_or_default(|items| items.iter().flat_map(watched_results).collect())
     };
     match expr["kind"].as_str() {
         Some("ref") => expr["path"]
@@ -57,8 +56,7 @@ fn watched_results(expr: &serde_json::Value) -> Vec<String> {
             .filter(|path| {
                 path.first().and_then(|v| v.as_str()) == Some("results") && path.len() >= 2
             })
-            .map(|path| vec![path[1].as_str().unwrap_or_default().to_owned()])
-            .unwrap_or_default(),
+            .map_or_default(|path| vec![path[1].as_str().unwrap_or_default().to_owned()]),
         Some("call") => nested("args"),
         Some("list") => nested("items"),
         _ => Vec::new(),

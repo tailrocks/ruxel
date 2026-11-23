@@ -203,12 +203,8 @@ pub(crate) fn static_sysctl_declarations_for_host(
     selected_tags: &[String],
 ) -> Vec<v1::SysctlDeclaration> {
     let inventory = config.get("inventory");
-    let hosts = inventory
-        .map(|inventory| super::object(inventory, "hosts"))
-        .unwrap_or_default();
-    let groups = inventory
-        .map(|inventory| super::object(inventory, "groups"))
-        .unwrap_or_default();
+    let hosts = inventory.map_or_default(|inventory| super::object(inventory, "hosts"));
+    let groups = inventory.map_or_default(|inventory| super::object(inventory, "groups"));
     let mut declarations = Vec::new();
     for play in array(config, "plays") {
         let selectors = array(play, "targets")

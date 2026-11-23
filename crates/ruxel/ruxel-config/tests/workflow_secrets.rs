@@ -306,8 +306,7 @@ fn an_exact_fetch_repeat_is_the_same_step() -> Result {
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default(),
+            .map_or_default(|elapsed| elapsed.as_nanos()),
     ));
     std::fs::create_dir_all(&directory)?;
     let root = directory.join("repeat.pkl");
