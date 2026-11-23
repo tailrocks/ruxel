@@ -20,9 +20,7 @@ const MAY_NAME_EMBEDDED: &[&str] = &[
     "crates/ruxel/ruxel-config/tests/eval.rs",
     "crates/ruxel/ruxel-config/tests/single_schema.rs",
     "tools/acceptance-plan/src/coverage/mod.rs",
-    ".velnor/config.toml",
-    ".github/workflows/ci.yml",
-    ".github/workflows/state-seal.yml",
+    ".velnor/rust-ci.toml",
 ];
 /// `.ruxel` holds the ignored `ruxel schema export` the README documents.
 const SKIPPED: &[&str] = &[".git", "target", ".cache", ".ruxel"];
