@@ -31,8 +31,7 @@ fn staging_files_containing(marker: &str) -> Vec<PathBuf> {
         }
         let candidates: Vec<PathBuf> = if path.is_dir() {
             std::fs::read_dir(&path)
-                .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
-                .unwrap_or_default()
+                .map_or_default(|entries| entries.flatten().map(|entry| entry.path()).collect())
         } else {
             vec![path]
         };

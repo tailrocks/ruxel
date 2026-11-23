@@ -27,7 +27,7 @@ fn the_task_environment_reaches_the_selections_reader() -> Result<(), String> {
         return Err("the reader did not answer".into());
     };
     let answer = answer_of(&text, "nginx", "nginx/nginx-user");
-    let seen = answer.map(|answer| answer.value).unwrap_or_default();
+    let seen = answer.map_or_default(|answer| answer.value);
     std::fs::remove_dir_all(&directory).map_err(|error| error.to_string())?;
     assert_eq!(seen, "present", "the reader must see the task environment");
     Ok(())

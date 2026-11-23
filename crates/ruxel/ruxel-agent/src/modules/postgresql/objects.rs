@@ -296,9 +296,8 @@ pub(crate) fn schema(params: &Value, ctx: &ExecContext) -> Result<Value, String>
     if current_owner.is_empty() {
         changed = true;
         if !ctx.check_mode {
-            let authorization = owner
-                .map(|value| format!(" AUTHORIZATION {}", ident(value)))
-                .unwrap_or_default();
+            let authorization =
+                owner.map_or_default(|value| format!(" AUTHORIZATION {}", ident(value)));
             psql(
                 ctx,
                 &port,

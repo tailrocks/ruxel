@@ -107,8 +107,7 @@ impl Lookups {
     fn patterns(&self) -> Vec<String> {
         self.patterns
             .lock()
-            .map(|patterns| patterns.clone())
-            .unwrap_or_default()
+            .map_or_default(|patterns| patterns.clone())
     }
 
     /// The keyed fingerprint a changed secret-bearing file shows in check

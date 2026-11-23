@@ -90,16 +90,14 @@ fn sensitive_failures_are_generic_and_public_errors_remain_useful() {
     let invalid = call("base64Decode", &[lookup()]);
     let error = eval(invalid, &empty_scope())
         .err()
-        .map(|e| e.to_string())
-        .unwrap_or_default();
+        .map_or_default(|e| e.to_string());
     assert_eq!(error, "sensitive expression failed");
     let error = eval(
         call("base64Decode", &[json!({"kind":"literal", "value":"%"})]),
         &empty_scope(),
     )
     .err()
-    .map(|e| e.to_string())
-    .unwrap_or_default();
+    .map_or_default(|e| e.to_string());
     assert_ne!(error, "sensitive expression failed");
     assert_ne!(error, "");
 }
