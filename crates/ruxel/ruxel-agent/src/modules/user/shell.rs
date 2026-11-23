@@ -121,9 +121,23 @@ fn planned_shell_chain_ok(shell: &str) -> bool {
         let key = current.to_string_lossy().into_owned();
         let declared = PLANNED_SHELL_LINKS.with(|links| links.borrow().get(&key).cloned());
         let Some(src) = declared else {
-            return PLANNED_SHELL_PROVIDERS.with(|providers| providers.borrow().contains(&key))
-                || shell_allowed(&key).is_ok();
+            // A planned terminal the live filesystem still lacks is only
+            // as good as the walk to it: apply's account task judges the
+            // existing ancestors searchable, so the dry run must refuse
+            // an unsearchable live directory instead of excusing it.
+            if !PLANNED_SHELL_PROVIDERS.with(|providers| providers.borrow().contains(&key))
+                && shell_allowed(&key).is_err()
+            {
+                return false;
+            }
+            return planned_ancestors_searchable(shell, &key);
         };
+        // The link itself is the plan's to create, but the directories
+        // the walk enters to reach it are the host's: an unsearchable
+        // live ancestor fails the apply the same way.
+        if !planned_ancestors_searchable(shell, &key) {
+            return false;
+        }
         let target = std::path::PathBuf::from(src);
         current = if target.is_absolute() {
             target
@@ -134,6 +148,84 @@ fn planned_shell_chain_ok(shell: &str) -> bool {
         };
     }
     false
+}
+
+/// Whether the live walk to the planned path `path` lets the account
+/// through wherever the plan does not provide it: the plan creates the
+/// missing entries, so only the portions that exist on the host are
+/// judged — an unsearchable live directory fails the way apply's
+/// `ancestors_searchable` fails it, while a missing one is the plan's
+/// own to create. Links the walk meets are followed the way the kernel
+/// follows them, within the same budget.
+fn planned_ancestors_searchable(shell: &str, path: &str) -> bool {
+    let mut pending = vec![std::path::PathBuf::from(path)];
+    let mut followed = 0;
+    'resolution: while let Some(full) = pending.pop() {
+        let components: Vec<std::path::Component<'_>> = full.components().collect();
+        let mut dir = if full.is_absolute() {
+            std::path::PathBuf::from("/")
+        } else {
+            std::path::PathBuf::new()
+        };
+        // Every directory the lookup enters before the planned entry
+        // itself, which the plan provides.
+        let last = components.len().saturating_sub(1);
+        for (index, component) in components.iter().enumerate() {
+            if *component == std::path::Component::RootDir {
+                continue;
+            }
+            // The lookup of every entry — the planned one included —
+            // happens in its parent, which must let the account in.
+            if searchable(&dir, shell).is_err() {
+                // A missing directory is the plan's to create — the walk
+                // cannot judge what is not there — but an existing
+                // unsearchable one fails the apply.
+                let probe = if dir.as_os_str().is_empty() {
+                    std::path::Path::new(".")
+                } else {
+                    dir.as_path()
+                };
+                if std::fs::symlink_metadata(probe).is_ok() {
+                    return false;
+                }
+            }
+            // The planned entry itself is the plan's to create: only the
+            // directories the walk enters are judged.
+            if index >= last {
+                continue 'resolution;
+            }
+            let entry = dir.join(component);
+            let meta = match std::fs::symlink_metadata(&entry) {
+                Ok(meta) => meta,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    continue 'resolution;
+                }
+                Err(_) => return false,
+            };
+            if meta.file_type().is_symlink() {
+                followed += 1;
+                if followed > 40 {
+                    return false;
+                }
+                let Ok(target) = std::fs::read_link(&entry) else {
+                    return false;
+                };
+                let mut rest = std::path::PathBuf::new();
+                rest.extend(&components[index + 1..]);
+                pending.push(if target.is_absolute() {
+                    target.join(rest)
+                } else {
+                    dir.join(target).join(rest)
+                });
+                continue 'resolution;
+            }
+            if !meta.is_dir() {
+                return false;
+            }
+            dir = entry;
+        }
+    }
+    true
 }
 
 /// Whether the account may declare `shell` as its login shell: the

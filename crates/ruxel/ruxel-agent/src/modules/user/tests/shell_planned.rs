@@ -151,7 +151,7 @@ fn check_mode_registers_the_copy_task_that_provides_the_shell() {
     // live filesystem the copy has not mutated yet.
     use super::super::super::copy;
     shell::reset_planned_shell_providers();
-    let dir = std::env::temp_dir().join(format!("ruxel-shell-wiring-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(format!("/tmp/ruxel-shell-wiring-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let dest = dir.join("mysh");
@@ -185,7 +185,10 @@ fn check_mode_registers_the_link_task_that_provides_the_shell() {
     // link instead of failing on the live filesystem.
     use super::super::super::file;
     shell::reset_planned_shell_providers();
-    let dir = std::env::temp_dir().join(format!("ruxel-shell-wiring-link-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(format!(
+        "/tmp/ruxel-shell-wiring-link-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let link = dir.join("mysh");
@@ -215,7 +218,7 @@ fn check_mode_refuses_a_link_to_a_missing_target() {
     // instead of reporting a change the apply cannot perform.
     use super::super::super::file;
     shell::reset_planned_shell_providers();
-    let dir = std::env::temp_dir().join(format!("ruxel-shell-dangling-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(format!("/tmp/ruxel-shell-dangling-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let missing = dir.join("nowhere");
@@ -246,7 +249,7 @@ fn check_mode_refuses_a_link_to_a_non_executable_target() {
     use super::super::super::file;
     use std::os::unix::fs::PermissionsExt;
     shell::reset_planned_shell_providers();
-    let dir = std::env::temp_dir().join(format!("ruxel-shell-noexec-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(format!("/tmp/ruxel-shell-noexec-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let target = dir.join("nox");
@@ -278,7 +281,7 @@ fn check_mode_excuses_a_link_chain_to_a_planned_file() {
     // planned link to the planned file, both still missing live.
     use super::super::super::file;
     shell::reset_planned_shell_providers();
-    let dir = std::env::temp_dir().join(format!("ruxel-shell-chain-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(format!("/tmp/ruxel-shell-chain-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let target = dir.join("real");
@@ -316,4 +319,36 @@ fn a_new_plan_clears_the_shell_provider_record() {
         !shell::planned_shell_provided(&shell),
         "a new plan starts with no shell provider"
     );
+}
+
+#[test]
+fn check_mode_refuses_a_planned_shell_behind_an_unsearchable_directory() {
+    // Thread 344: a Copy-planned `/root/zsh` under a live mode-0700
+    // `/root` passed the check on its bare provider registration, but
+    // apply's account task fails `ancestors_searchable` on the walk to
+    // it — the dry run must report the change cannot succeed instead
+    // of a valid planned change.
+    use std::os::unix::fs::PermissionsExt;
+
+    shell::reset_planned_shell_providers();
+    let dir = format!("/tmp/ruxel-shell-unsearchable-{}", std::process::id());
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir(&dir).expect("scratch directory for the unsearchable ancestor");
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .expect("unsearchable ancestor directory");
+    let shell = format!("{dir}/zsh");
+    assert!(
+        std::fs::symlink_metadata(&shell).is_err(),
+        "the planned shell must be missing from the live filesystem"
+    );
+    shell::note_planned_shell_provider(&shell);
+    let error = run(
+        &json!({"name": format!("ruxel-shell-unsearchable-{}", std::process::id()), "shell": shell}),
+        &check_context(),
+    )
+    .expect_err("check mode must refuse a planned shell no account can walk to");
+    assert!(error.contains("shell"), "{error}");
+    shell::reset_planned_shell_providers();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).ok();
+    let _ = std::fs::remove_dir_all(&dir);
 }
