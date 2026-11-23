@@ -183,7 +183,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
       # jactionlint ignore=shellcheck
@@ -596,7 +596,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
       # jactionlint ignore=shellcheck
@@ -954,7 +954,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
           install_args: 'aqua:nextest-rs/nextest/cargo-nextest'
@@ -1351,7 +1351,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
       # jactionlint ignore=shellcheck
@@ -1403,7 +1403,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
           install_args: jactionlint shellcheck
@@ -1426,7 +1426,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
           install_args: 'github:asamarts/alint'
@@ -1449,7 +1449,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
           install_args: 'github:tailrocks/velnor-new rust mr-boxington'
@@ -1472,7 +1472,7 @@ jobs:
       - name: Install tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d
         with:
-          version: '2026.11.10'
+          version: '2026.11.12'
           sha256: '${{ runner.os != ''Windows'' && runner.os != ''Linux'' && (runner.os == ''macOS'' && runner.arch == ''ARM64'' && ''3f4ba9d21c6f2170048d0870fd98ab287e04730b76a6fc8e83964d59c80eb704'' || runner.os == ''macOS'' && runner.arch == ''X64'' && ''7eab8054d301b75dcbd93440ff184bee6864d95799cfdc4a00ce858313b68783'' || ''no-mise-digest-for-this-runner'') || '''' }}'
           cache: false
           install_args: rust
