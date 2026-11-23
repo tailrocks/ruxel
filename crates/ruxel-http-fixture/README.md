@@ -9,10 +9,10 @@ Other paths are refused, and no directory listing or general web-server surface
 is provided. The scenario uses no other endpoint.
 
 ```sh
-cargo test --locked --offline --manifest-path crates/ruxel-http-fixture/Cargo.toml
-cargo clippy --locked --offline --manifest-path crates/ruxel-http-fixture/Cargo.toml --all-targets -- -D warnings
-cargo build --release --locked --offline --manifest-path crates/ruxel-http-fixture/Cargo.toml
-./crates/ruxel-http-fixture/target/release/ruxel-http-fixture --directory /isolated/payload --port 18080
+cargo test --locked -p ruxel-http-fixture
+cargo clippy --locked -p ruxel-http-fixture --all-targets -- -D warnings
+cargo build --release --locked -p ruxel-http-fixture
+./target/release/ruxel-http-fixture --directory /isolated/payload --port 18080
 ```
 
 The disposable-VM harness must build this crate for its fixture VM's OS and
