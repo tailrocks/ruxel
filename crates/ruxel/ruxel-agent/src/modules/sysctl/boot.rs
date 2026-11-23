@@ -89,8 +89,12 @@ pub(super) fn system_files_in(dirs: &[(&str, u8)]) -> Result<Vec<PathBuf>, Strin
             // dropping it would hide a later-loading assignment from
             // the override probe.
             let entry = entry.map_err(|error| scan_error(dir, &error))?;
+            // The raw basename's suffix decides: `Path::extension`
+            // reports no extension for a basename that is entirely
+            // `.conf`, yet procps loads that dotfile — an unmanaged
+            // `.conf` would otherwise override invisibly.
             let name = entry.file_name();
-            if Path::new(&name).extension().is_none_or(|ext| ext != "conf") {
+            if !name.as_encoded_bytes().ends_with(b".conf") {
                 continue;
             }
             by_name
