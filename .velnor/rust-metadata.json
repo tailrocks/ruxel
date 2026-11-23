@@ -219,6 +219,16 @@
               "requires_features": false
             },
             {
+              "name": "core_sysctl_file",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/core_sysctl_file.rs",
+              "requires_features": false
+            },
+            {
               "name": "debconf_package_type",
               "kinds": [
                 "test"
@@ -396,6 +406,16 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel/ruxel-config/tests/workflow_copy.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_linux",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_linux.rs",
               "requires_features": false
             },
             {
@@ -1609,5 +1629,5 @@
     "tools/control-flow-assertions/Cargo.toml": "78a047f0079ca2ec30d0ec35edbe0a133049f1ae28c992c0e0894149d187fda5",
     "tools/http-fixture/Cargo.toml": "b8e1fd62c9f9901e809d14361169b006d039d92d580115d17b1a6c8e9ad6ca59"
   },
-  "layout": "c16b605348619e9ff75375d57064bc7d11611b2446c4b5a208a11789d0e6bc42"
+  "layout": "0d3d8cc67bf3e59abf596d6d56e52e271634bfca181f6050f2a2c28c40543c0e"
 }
