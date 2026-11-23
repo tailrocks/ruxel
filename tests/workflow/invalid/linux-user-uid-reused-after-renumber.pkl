@@ -1,9 +1,10 @@
-// The uid 1500 changes hands through a renumbering: stage 2 moves
-// `alice` itself to 1600, so 1500 is free before stage 3 assigns it to
-// `bob` — `usermod -u 1600` releases the old number on the hosts it
-// covers, and the later `useradd -u 1500` succeeds there the way it does
-// after a removal. An intervening renumbering of the same identity frees
-// the old number like a removal does.
+// expect: claim the uid 1500 for different accounts
+// The uid 1500 must not change hands through a renumbering: stage 2
+// moves `alice` itself to 1600, but `usermod -u` releases nothing —
+// the out-of-home files keep the old number — so stage 3's
+// `useradd -u 1500` for `bob` would hand Bob the kernel ownership of
+// Alice's residual files. A number is reused only after a removal
+// with `removeHome` proves the earlier holder gone from it.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
@@ -32,4 +33,4 @@ stages {
   }
 }
 
-name = "valid/linux-user-uid-reused-after-renumber.pkl"
+name = "invalid/linux-user-uid-reused-after-renumber.pkl"

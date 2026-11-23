@@ -1,15 +1,13 @@
+// expect: claim the uid 1500 for different accounts
+// The uid 1500 must not change hands here: the second stage removes
+// Alice without `removeHome`, so the removal frees nothing — and the
+// fourth stage's renumbering to 1600 releases nothing either, since
+// `usermod -u` leaves the out-of-home files owned by the old number —
+// so the fifth stage's `useradd -u 1500` for `bob` would hand Bob the
+// kernel ownership of Alice's residual files.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
-
-// A re-armed draw frees the way any draw frees: Alice holds 1500 in
-// the first stage, the second removes her, and the third recreates her
-// without a uid — so the recreation draws a fresh number — but the
-// fourth stage renumbers her to 1600, which releases whatever the
-// allocator drew, and the fifth stage may claim 1500 for Bob. The
-// renumbering covers every host both the draw and the claim run on,
-// so the later `useradd -u 1500` succeeds there the way it does after
-// a removal.
 stages {
   new Stage {
     title = "numbered"
@@ -48,4 +46,4 @@ stages {
   }
 }
 
-name = "valid/linux-user-uid-recreated-then-renumbered.pkl"
+name = "invalid/linux-user-uid-recreated-then-renumbered.pkl"

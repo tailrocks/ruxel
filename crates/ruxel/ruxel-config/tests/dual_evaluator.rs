@@ -304,7 +304,7 @@ const EXAMPLES: &[&str] = &[
     "valid/linux-user-uid-provided-before-draw.pkl",
     "valid/linux-user-uid-renumbered-frees-draw.pkl",
     "invalid/linux-user-uid-draw-recreated-after-removal.pkl",
-    "valid/linux-user-uid-recreated-then-renumbered.pkl",
+    "invalid/linux-user-uid-recreated-then-renumbered.pkl",
     "invalid/linux-user-uid-across-login-users.pkl",
     "valid/linux-user-uid-login-users-same-account.pkl",
     "valid/linux-sysctl-literal-dot-apart.pkl",

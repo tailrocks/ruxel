@@ -151,10 +151,11 @@ function accepted(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<S
 /// is reused only after the earlier holder is proven gone from it: a
 /// step removing the account (for a gid claim, the group) in a stage
 /// between the two claims — for a uid claim the removal takes the home
-/// with it, or the freed number still owns the holder's files — or a
-/// step that keeps the same identity present under another explicit
-/// number — `usermod -u` releases the old number on the hosts it covers,
-/// so the later claim succeeds there the way it does after a removal.
+/// with it, or the freed number still owns the holder's files. A
+/// renumbering never frees the old number: `usermod -u` (or `groupmod
+/// -g`) leaves the out-of-home files owned by the old number behind,
+/// so a later claim of it would hand another account the kernel
+/// ownership of the holder's residual files.
 function identityNumbersAcrossStages(_stages: List<core.Stage>, _indexes: List<StageIndex>): List<String> =
   let (claims = positions(_indexes).flatMap((m) -> numbersOf(_indexes[m], m)))
   claims.flatMap((c) -> claims
@@ -174,53 +175,29 @@ function numbersOf(ix: StageIndex, m: Int): List<IdClaim> =
 
 /// Whether the earlier claimant's identity is proven gone from the number
 /// before the later claim: a step removing the account (for a gid claim,
-/// the group) in a stage between the two claims, or a step that keeps
-/// the same identity present under another explicit number — on every
-/// host both claimant stages run on. A removal or a renumbering listed
-/// before the later claim in its own stage frees the number the same
-/// way: the steps of a stage run where the author wrote them, so an
-/// `absent` before the claim releases the number on the hosts the stage
-/// covers. The number is freed per machine: a removal or a renumbering
-/// covering only one of the shared hosts leaves the original holder
-/// present on the others, where the later `useradd -u` (or `groupadd
-/// -g`) still fails, so the proof covers the whole intersection and may
-/// be spread over several intervening stages, each covering one of its
-/// hosts.
+/// the group) in a stage between the two claims, on every host both
+/// claimant stages run on. A removal listed before the later claim in
+/// its own stage frees the number the same way: the steps of a stage
+/// run where the author wrote them, so an `absent` before the claim
+/// releases the number on the hosts the stage covers. The number is
+/// freed per machine: a removal covering only one of the shared hosts
+/// leaves the original holder present on the others, where the later
+/// `useradd -u` (or `groupadd -g`) still fails, so the proof covers
+/// the whole intersection and may be spread over several intervening
+/// stages, each covering one of its hosts.
 function numberFreed(_stages: List<core.Stage>, _indexes: List<StageIndex>, c: IdClaim, d: IdClaim): Boolean =
   sharedIdentityHosts(_stages[c.stage], _stages[d.stage]).every((h) ->
     positions(_indexes).filter((k) -> k > c.stage && k < d.stage)
-      .any((k) -> identityRunsOn(_stages[k], h) && (removedNumber(_indexes[k], c) || renumberedIdentity(_indexes[k], c)))
+      .any((k) -> identityRunsOn(_stages[k], h) && removedNumber(_indexes[k], c))
     || numberFreedBefore(_indexes[d.stage], c, d.step))
 
 /// Whether a step listed before the later claim in its own stage frees
 /// the earlier claimant's number: a removal of the identity with the
-/// number the claim holds, or a renumbering of it to another explicit
-/// number. The order is the point: a removal or a renumbering listed
+/// number the claim holds. The order is the point: a removal listed
 /// after the claim runs after the claim has already failed on the taken
 /// number, so only the steps before it free anything.
 function numberFreedBefore(ix: StageIndex, c: IdClaim, upto: Int): Boolean =
-  positions(ix.steps).filter((j) -> j < upto).any((j) -> removalFreesNumber(ix.steps[j], c) || renumberFreesNumber(ix.steps[j], c))
-
-/// Whether a stage renumbers the claimant's identity to another explicit
-/// number: a step that keeps the same account (for a gid claim, the
-/// group) present under a stated number that differs — `usermod -u 1600`
-/// (or `groupmod -g`) releases the old number on the hosts the stage
-/// covers, so a later claim of it succeeds there. A redeclaration of the
-/// same number renumbers nothing and frees nothing, and a step that draws
-/// its number states none: only a stated number releases one.
-function renumberedIdentity(ix: StageIndex, c: IdClaim): Boolean =
-  ix.steps.any((s) -> renumberFreesNumber(s, c))
-
-/// Whether the step renumbers the claimant's identity to another
-/// explicit number: a step that keeps the same account (for a gid claim,
-/// the group) present under a stated number that differs — `usermod -u
-/// 1600` (or `groupmod -g`) releases the old number on the hosts the
-/// stage covers, so a later claim of it succeeds there. A redeclaration
-/// of the same number renumbers nothing and frees nothing, and a step
-/// that draws its number states none: only a stated number releases one.
-function renumberFreesNumber(s: core.Step, c: IdClaim): Boolean =
-  if (c.kind == "uid") s is linux.User && s.state == "present" && s.user == c.name && s.uid != null && s.uid != c.number
-  else s is linux.Group && s.state == "present" && s.name == c.name && s.gid != null && s.gid != c.number
+  positions(ix.steps).filter((j) -> j < upto).any((j) -> removalFreesNumber(ix.steps[j], c))
 
 /// The hosts both stages run on: one machine when they connect alike —
 /// the same identity `hostsOverlap` compares stages by.
