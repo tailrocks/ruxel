@@ -39,10 +39,7 @@ impl Fixture {
         // Embed the fixture source: archived test-group jobs run without
         // the source tree, so CARGO_MANIFEST_DIR paths do not resolve.
         let agent_source = fixture.root.join("local_exit_agent.rs");
-        fs::write(
-            &agent_source,
-            include_str!("fixtures/local_exit_agent.rs"),
-        )?;
+        fs::write(&agent_source, include_str!("fixtures/local_exit_agent.rs"))?;
         let compiled = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
             .args(["--edition=2024", "--crate-name", "local_exit_agent"])
             .arg(&agent_source)
