@@ -43,16 +43,29 @@ fn a_no_log_sysctl_still_declares_its_managed_entry() {
     let mut ledger = crate::ledger::Ledger::load(&dir);
     declare_no_log(&mut ledger, "first", "net.test", "1", &first);
     declare_no_log(&mut ledger, "second", "net.test", "2", &second);
-    // The preflight's managed set carries the seal: plain plan
-    // entries would verify nothing here, so the ledger's own set —
-    // the shape `serve` consults — is what the test weighs.
-    let managed = ledger.sysctl_preflight_managed("sysctl", &[]);
+    // The preflight's managed set is plan-first: the frames carry the
+    // full static set, so the plan's own plain declarations lead and
+    // the ledger's sealed records of the same keys stay behind them —
+    // the shape `serve` consults. The seals themselves are weighed
+    // where the ledger's own set is read.
+    let managed = ledger.sysctl_preflight_managed(
+        "sysctl",
+        &[
+            ManagedSysctl::plain(first_text.clone(), "net.test".to_string(), "1".to_string()),
+            ManagedSysctl::plain(second_text.clone(), "net.test".to_string(), "2".to_string()),
+        ],
+    );
     assert_eq!(
         managed.entries.len(),
         2,
         "both stages declare their entries despite no_log"
     );
-    for entry in &managed.entries {
+    assert_eq!(
+        managed.plan.len(),
+        2,
+        "the plan's own declarations authorize the waiver"
+    );
+    for entry in ledger.managed_sysctl_entries() {
         assert!(
             matches!(entry.value, ManagedValue::Sealed(_)),
             "a declaration-only record keeps only the value's seal: {}",
@@ -256,9 +269,17 @@ fn an_empty_key_no_log_sysctl_declares_without_storing_its_value() {
             .all(|entry| matches!(entry.value, ManagedValue::Sealed(_))),
         "the retained declaration keeps only the value's seal"
     );
-    // The earlier stage still passes: the later file holds the
-    // workflow's own declared transition, not an unmanaged override.
-    let managed = ledger.sysctl_preflight_managed("sysctl", &[]);
+    // The earlier stage still passes: the plan declares the later
+    // file's value, so it holds the workflow's own declared
+    // transition, not an unmanaged override.
+    let managed = ledger.sysctl_preflight_managed(
+        "sysctl",
+        &[ManagedSysctl::plain(
+            second_text.clone(),
+            "net.test".to_string(),
+            secret.to_string(),
+        )],
+    );
     let host = vec![(second.clone(), b"net.test=s3cr3t-beta\n".to_vec())];
     assert_eq!(
         boot::boot_override(&first_text, "net.test", "s3cr3t-alpha", &host, &managed,),

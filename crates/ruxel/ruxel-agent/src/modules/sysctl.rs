@@ -43,19 +43,24 @@ impl ManagedSysctl {
 /// The managed set one preflight consults, with the key that verifies
 /// sealed entries: the ledger's host key, `None` where the ledger has
 /// none or the entries travel without one. The entries are the plan's
-/// own declarations first with the ledger's retained ones behind.
+/// own declarations first with the ledger's retained ones behind; the
+/// plan's own are also listed separately, because only they authorize a
+/// differing later assignment (see `boot_override`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SysctlManaged {
     pub entries: Vec<ManagedSysctl>,
+    pub plan: Vec<ManagedSysctl>,
     pub seal: Option<[u8; 32]>,
 }
 
 impl SysctlManaged {
     /// A seal-less managed set for tests: plain entries only, so the
-    /// byte comparison decides without a ledger key.
+    /// byte comparison decides without a ledger key. Every entry counts
+    /// as the plan's own, the way a unit preflight models one.
     #[cfg(test)]
     pub(crate) fn testing(entries: Vec<ManagedSysctl>) -> Self {
         SysctlManaged {
+            plan: entries.clone(),
             entries,
             seal: None,
         }
@@ -1335,6 +1340,9 @@ mod stale_plan_tests {
                 super::ManagedSysctl::plain(OLD.to_string(), KEY.to_string(), "0".to_string()),
                 super::ManagedSysctl::plain(USR.to_string(), KEY.to_string(), "1".to_string()),
             ],
+            // Retained records alone: the plan that produced this set
+            // declared none of them anymore.
+            plan: vec![],
             seal: None,
         }
     }
@@ -1344,6 +1352,11 @@ mod stale_plan_tests {
     fn plan_managed() -> super::SysctlManaged {
         super::SysctlManaged {
             entries: vec![super::ManagedSysctl::plain(
+                USR.to_string(),
+                KEY.to_string(),
+                "1".to_string(),
+            )],
+            plan: vec![super::ManagedSysctl::plain(
                 USR.to_string(),
                 KEY.to_string(),
                 "1".to_string(),
@@ -1370,12 +1383,19 @@ mod stale_plan_tests {
 
     #[test]
     fn a_dropped_tasks_override_is_refused_under_the_plans_own_set() {
-        // The same stale set in the override direction: the leftover
-        // assignment in the later-loading file is a declared transition
-        // under the retained record and an unmanaged override under the
-        // plan's own set.
+        // Thread 332: the leftover assignment in the later-loading file
+        // is an unmanaged override wherever the current plan no longer
+        // declares it — a retained record of the dropped task authorizes
+        // nothing. The first updated apply refuses instead of passing
+        // the stale value as a declared transition and succeeding while
+        // reboot restores it.
         let newcomer = super::SysctlManaged {
             entries: vec![super::ManagedSysctl::plain(
+                NEW.to_string(),
+                KEY.to_string(),
+                "1".to_string(),
+            )],
+            plan: vec![super::ManagedSysctl::plain(
                 NEW.to_string(),
                 KEY.to_string(),
                 "1".to_string(),
@@ -1388,13 +1408,42 @@ mod stale_plan_tests {
         )];
         assert_eq!(
             boot::boot_override(NEW, KEY, "1", &host, &stale_managed()),
-            None,
-            "the stale set treats the leftover as a declared transition"
+            Some((OLD.to_string(), "0".to_string())),
+            "a retained record of the dropped task authorizes no override waiver"
         );
         assert_eq!(
             boot::boot_override(NEW, KEY, "1", &host, &newcomer),
             Some((OLD.to_string(), "0".to_string())),
             "the leftover assignment is an unmanaged override again"
+        );
+    }
+
+    #[test]
+    fn a_retained_entry_beside_the_plans_own_does_not_waive() {
+        // Thread 332, the merged production set: the plan declares the
+        // earlier-loading file while the retained record of the dropped
+        // task still names the later-loading leftover. Only the plan's
+        // own declaration may waive, so the leftover refuses.
+        let merged = super::SysctlManaged {
+            entries: vec![
+                super::ManagedSysctl::plain(NEW.to_string(), KEY.to_string(), "1".to_string()),
+                super::ManagedSysctl::plain(OLD.to_string(), KEY.to_string(), "0".to_string()),
+            ],
+            plan: vec![super::ManagedSysctl::plain(
+                NEW.to_string(),
+                KEY.to_string(),
+                "1".to_string(),
+            )],
+            seal: None,
+        };
+        let host = vec![(
+            std::path::PathBuf::from(OLD),
+            b"net.ipv4.ip_forward=0\n".to_vec(),
+        )];
+        assert_eq!(
+            boot::boot_override(NEW, KEY, "1", &host, &merged),
+            Some((OLD.to_string(), "0".to_string())),
+            "the dropped task's retained entry waives nothing beside the plan's own"
         );
     }
 }

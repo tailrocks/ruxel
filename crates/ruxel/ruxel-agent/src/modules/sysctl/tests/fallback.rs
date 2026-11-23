@@ -70,10 +70,14 @@ fn a_replayed_stage_admits_through_the_carry_over() {
             .sysctl_preflight_managed("sysctl", &planned.entries)
             .entries,
     );
+    // Thread 332: the carry-over no longer admits the replay — the
+    // retained record of the earlier revision's later file is history,
+    // so the leftover refuses even beside the plan's own entries. Only
+    // the plan's declarations waive.
     assert_eq!(
         boot::boot_override(NEW, KEY, "1", &host, &merged),
-        None,
-        "the carry-over admits the replay as a declared transition"
+        Some((OLD.to_string(), "0".to_string())),
+        "the carry-over admits nothing: the leftover refuses"
     );
     drop(std::fs::remove_dir_all(&dir));
 }

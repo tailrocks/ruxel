@@ -95,11 +95,14 @@ fn named_assignments(file: &str, name: &str, host: &[(PathBuf, Vec<u8>)]) -> Vec
 /// A file ruxel manages: an assignment of the key ruxel declared there
 /// is a declared managed value, not an unmanaged boot override. The
 /// value must be the declared one — a managed file that drifted to
-/// another value carries an unmanaged assignment again.
+/// another value carries an unmanaged assignment again. Only the
+/// current plan's declarations authorize: a retained entry of a task
+/// the plan dropped is history, so its leftover file's differing
+/// assignment refuses instead of passing as a declared transition.
 fn declared(path: &Path, key: &str, value: &[u8], managed: &super::super::SysctlManaged) -> bool {
     use super::super::{ManagedValue, declaration_digest};
     let bytes = path.as_os_str().as_bytes();
-    managed.entries.iter().any(|entry| {
+    managed.plan.iter().any(|entry| {
         entry.file.as_bytes() == bytes
             && sysctl_key(&entry.name) == key
             && match &entry.value {

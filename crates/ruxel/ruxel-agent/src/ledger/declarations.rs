@@ -62,6 +62,7 @@ impl Ledger {
         }
         SysctlManaged {
             entries: merged,
+            plan: plan.to_vec(),
             seal: self.host_key,
         }
     }
