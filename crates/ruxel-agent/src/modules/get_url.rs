@@ -78,8 +78,19 @@ fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-fn curl_args(url: &str) -> [&str; 4] {
-    ["--disable", "-fsSL", "--", url]
+fn curl_args(url: &str) -> Vec<&str> {
+    // A fetched script executes its download: an HTTPS origin that
+    // redirects to plain HTTP would hand the network the program the
+    // host then runs, so HTTPS downloads follow HTTPS redirects only.
+    // Plain-HTTP downloads keep the client's default, whatever fetches
+    // them: only Track A's fetched scripts lower to get_url, and their
+    // URLs are HTTPS by type.
+    let mut args = vec!["--disable", "-fsSL"];
+    if url.starts_with("https://") {
+        args.extend(["--proto-redir", "=https"]);
+    }
+    args.extend(["--", url]);
+    args
 }
 
 fn fetch(url: &str, dest: &std::fs::File, ctx: &ExecContext) -> Result<bool, String> {
@@ -125,9 +136,15 @@ fn fetch_with_programs(
     let Some(wget) = wget else {
         return Ok(false);
     };
-    let wget = client::command(wget, ctx)
-        .arg("--no-config")
-        .arg("-q")
+    let mut wget = client::command(wget, ctx);
+    wget.arg("--no-config").arg("-q");
+    // Like curl above: an HTTPS download follows HTTPS redirects only,
+    // so a downgrade off the encrypted transport fails the fetch
+    // instead of feeding the network's answer to the run.
+    if url.starts_with("https://") {
+        wget.arg("--https-only");
+    }
+    let wget = wget
         .arg("-O")
         .arg("-")
         .arg("--")
@@ -155,8 +172,12 @@ mod tests {
         assert!(super::validate_url("file:///etc/passwd").is_err());
         let args = super::curl_args("https://example.test/a");
         assert_eq!(args[0], "--disable");
-        assert_eq!(args[2], "--");
-        assert_eq!(args[3], "https://example.test/a");
+        assert_eq!(args[2], "--proto-redir");
+        assert_eq!(args[3], "=https");
+        assert_eq!(args[4], "--");
+        assert_eq!(args[5], "https://example.test/a");
+        let plain = super::curl_args("http://example.test/a");
+        assert!(!plain.contains(&"--proto-redir"));
     }
 
     #[test]

@@ -30,12 +30,17 @@ fn clients_keep_proxy_but_drop_task_path_loader_and_config_environment() {
     .map(|(name, value)| (name.into(), value.into()))
     .into();
     for (name, curl, wget, options) in [
-        ("curl", Some(client.as_path()), None, "--disable\n-fsSL"),
+        (
+            "curl",
+            Some(client.as_path()),
+            None,
+            "--disable\n-fsSL\n--proto-redir\n=https",
+        ),
         (
             "wget",
             None,
             Some(client.as_path()),
-            "--no-config\n-q\n-O\n-",
+            "--no-config\n-q\n--https-only\n-O\n-",
         ),
     ] {
         let output = root.0.join(name);

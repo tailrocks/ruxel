@@ -45,6 +45,22 @@ fn rewrite_lines(
         "present" => {
             let line = line.ok_or("lineinfile: line required for present")?;
             if lines.iter().any(|l| l == line) {
+                // The line is there: any other line the match still names
+                // is stale — the file may still parse the stale value —
+                // so the entry removes those and only those.
+                if let Some(re) = regexp {
+                    let before = lines.len();
+                    let mut kept = false;
+                    lines.retain(|l| {
+                        if l == line && !kept {
+                            kept = true;
+                            true
+                        } else {
+                            !re.is_match(l)
+                        }
+                    });
+                    changed = lines.len() != before;
+                }
             } else if let Some(re) = regexp {
                 let last_match = lines.iter().rposition(|l| re.is_match(l));
                 if let Some(idx) = last_match {
@@ -78,9 +94,17 @@ fn rewrite_lines(
     }
 
     if changed {
-        let mut content = lines.join("\n");
+        // The file keeps its own line endings: rebuilding a CRLF file
+        // with LF would rewrite every unrelated line and corrupt
+        // format-sensitive files.
+        let ending = if current.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let mut content = lines.join(ending);
         if had_trailing_nl || !content.is_empty() {
-            content.push('\n');
+            content.push_str(ending);
         }
         Ok((content, true))
     } else {
@@ -93,13 +117,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn verbatim_line_wins_before_regexp_rewrite() {
+    fn present_line_removes_stale_matches_and_converges() {
         let re = Regex::new("^key=").unwrap();
-        let current = "key=old\nkey=want\n";
+        let (next, changed) = rewrite_lines(
+            "key=old\nkey=want\n",
+            "present",
+            Some("key=want"),
+            Some(&re),
+        )
+        .unwrap();
+        assert_eq!(next, "key=want\n");
+        assert!(changed);
         assert_eq!(
-            rewrite_lines(current, "present", Some("key=want"), Some(&re)).unwrap(),
-            (current.into(), false)
+            rewrite_lines(&next, "present", Some("key=want"), Some(&re)).unwrap(),
+            (next.clone(), false)
         );
+    }
+
+    #[test]
+    fn crlf_files_keep_crlf_endings() {
+        let re = Regex::new("^key=").unwrap();
+        let (next, changed) = rewrite_lines("a\r\nb\r\n", "present", Some("c"), Some(&re)).unwrap();
+        assert_eq!(next, "a\r\nb\r\nc\r\n");
+        assert!(changed);
+        let (stable, changed) = rewrite_lines("a\r\nb\r\n", "present", Some("a"), None).unwrap();
+        assert_eq!(stable, "a\r\nb\r\n");
+        assert!(!changed);
     }
 
     #[test]
