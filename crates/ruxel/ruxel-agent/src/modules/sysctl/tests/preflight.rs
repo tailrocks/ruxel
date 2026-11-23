@@ -246,6 +246,31 @@ fn a_missing_target_stages_the_exact_bytes_it_will_publish() {
 }
 
 #[test]
+fn a_missing_target_rehearses_the_staging_primitives() {
+    // Thread 337: the publish stages through a private staging
+    // directory — `mkdirat` plus a hard link plus an exchange rename —
+    // so a mount that allows file creation but refuses subdirectories
+    // must refuse the missing-target rehearsal too, before `sysctl -w`
+    // changes the live value with no boot entry behind it. A file
+    // squatting on the staging directory's path proves the absent
+    // branch mirrors the staging step: without it the rehearsal
+    // succeeds although the publish cannot stage.
+    let dir = scratch("missing-stage-dir");
+    let path = dir.join("x.conf");
+    let text = path.to_str().expect("path is text").to_owned();
+    let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
+    std::fs::write(format!("{}.stage", first.display()), b"squat").expect("operation succeeds");
+    let error = super::super::preflight_persistence(&text, b"net.test=1\n", true)
+        .expect_err("the rehearsal must refuse without its staging directory");
+    assert!(error.contains("cannot persist"), "{error}");
+    assert!(
+        !path.exists(),
+        "a refused rehearsal must not publish the missing target"
+    );
+    std::fs::remove_dir_all(&dir).expect("operation succeeds");
+}
+
+#[test]
 fn a_stranded_pid_only_probe_does_not_block_a_missing_target() {
     // A kill between the probe's creation and its cleanup strands the
     // pid-only probe; after the pid is reused every file-changing task

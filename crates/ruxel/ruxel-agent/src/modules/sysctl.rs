@@ -289,11 +289,12 @@ fn unique_probe_name() -> String {
 /// reopened by name. Where the target is absent the handle itself
 /// carries the exact bytes the publish writes — a quota that fits an
 /// empty file but not the new content refuses here, before `sysctl -w`
-/// — and where the target lives the rehearsal stages the exact
-/// rewritten bytes under its own scratch names and renames one over
-/// the other. The caller removes the scratch name whatever this
-/// reports, so no refusal strands it. A refusal names the persistence
-/// file and the operating system's error, never the staged bytes.
+/// — and both branches rehearse the staging primitives the publish
+/// performs over scratch names, so a mount that allows file creation
+/// but refuses subdirectories or hard links refuses here too. The
+/// caller removes the scratch name whatever this reports, so no
+/// refusal strands it. A refusal names the persistence file and the
+/// operating system's error, never the staged bytes.
 fn stage_probe(
     file: &str,
     scratch: &std::path::Path,
@@ -326,12 +327,53 @@ fn stage_probe(
         // The target is absent: there is no live file to rehearse
         // against, so the handle carries the exact bytes the
         // publish will write — a quota that fits an empty file but
-        // not the new content refuses here, before `sysctl -w`.
+        // not the new content refuses here, before `sysctl -w` —
+        // and the staging primitives the publish performs are
+        // rehearsed over scratch names the same way the live branch
+        // rehearses them, before `sysctl -w` changes the live value
+        // with no persistent entry behind it.
         staged
             .write_all(content)
             .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+        let first = dir.join(format!(".ruxel-sysctl-rehearse-a-{}", std::process::id()));
+        let second = dir.join(format!(".ruxel-sysctl-rehearse-b-{}", std::process::id()));
+        // A scratch name of a dead process reuses no live pid,
+        // so taking the names collides with no live rehearsal.
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        let outcome = (|| {
+            stage_plain(file, &first, content)?;
+            rehearse_exchange(file, &first, &second)
+        })();
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+        outcome?;
         Ok(())
     }
+}
+
+/// The staged bytes with no live identity to preserve: the missing
+/// target the publish creates carries no mode or owner to inherit, so
+/// the rehearsal stages the exact bytes the publish will write under
+/// an exclusive owner-only scratch name — a quota that fits an empty
+/// file but not the new content refuses here, the way the probe handle
+/// refuses it.
+fn stage_plain(file: &str, first: &std::path::Path, content: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut stage = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(first)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    stage
+        .write_all(content)
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    stage
+        .sync_all()
+        .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
+    Ok(())
 }
 
 /// The probe's own handle: one exclusive open carrying no mode but the
@@ -559,16 +601,28 @@ fn rehearse_replacement(
     stage
         .set_permissions(std::fs::Permissions::from_mode(live.mode() & 0o7777))
         .map_err(|e| format!("sysctl: cannot persist {file}: {e}"))?;
-    // The replacement the publish performs, over scratch names: the
-    // staged bytes are linked into a private staging directory and
-    // exchanged with a second scratch name that exists, the way the
-    // publish exchanges its payload with the live name — and a
-    // directory that refuses any of the three primitives refuses here,
-    // before `sysctl -w` changes the live value with no persistent
-    // entry behind it. The scratch names are predictable per pid, so
-    // the opens are exclusive and follow no link: a planted symlink at
-    // a name refuses instead of handing the rehearsal's truncate to
-    // whatever it names.
+    rehearse_exchange(file, first, second)
+}
+
+/// The publication primitives the atomic publish performs, over scratch
+/// names: the staged bytes are linked into a private staging directory
+/// and exchanged with a second scratch name that exists — the
+/// `mkdirat`, hard link and exchange rename the publish performs
+/// (`atomic/stage.rs`), over scratch names instead of the live file.
+/// Both rehearsal branches share it: the live branch stages the exact
+/// rewritten bytes carrying the live identity, the missing-target
+/// branch stages the exact bytes the publish will write with none — and
+/// a directory that refuses any of the three primitives refuses here,
+/// before `sysctl -w` changes the live value with no persistent entry
+/// behind it. The scratch names are predictable per pid, so the opens
+/// are exclusive and follow no link: a planted symlink at a name
+/// refuses instead of handing the rehearsal's truncate to whatever it
+/// names.
+fn rehearse_exchange(
+    file: &str,
+    first: &std::path::Path,
+    second: &std::path::Path,
+) -> Result<(), String> {
     let stage = std::path::PathBuf::from(format!("{}.stage", first.display()));
     // A staging directory of a dead rehearsal reuses no live pid, so
     // taking the name collides with no live rehearsal — and a file
