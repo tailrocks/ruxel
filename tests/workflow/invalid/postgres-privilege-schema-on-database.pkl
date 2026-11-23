@@ -1,0 +1,20 @@
+// The schema rides table and default-privilege grants alone: a database
+// grant names none.
+// expect: the schema rides table and default-privilege grants alone; a database grant names no schema
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "database"
+    privs = "CONNECT"
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-schema-on-database.pkl"

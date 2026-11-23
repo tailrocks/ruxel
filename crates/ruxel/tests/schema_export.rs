@@ -46,10 +46,11 @@ fn files(dir: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-const MODULES: [&str; 8] = [
+const MODULES: [&str; 9] = [
     "ruxel/Core.pkl",
     "ruxel/Debian.pkl",
     "ruxel/Linux.pkl",
+    "ruxel/Postgres.pkl",
     "ruxel/Storage.pkl",
     "ruxel/Systemd.pkl",
     "ruxel/Workflow.pkl",

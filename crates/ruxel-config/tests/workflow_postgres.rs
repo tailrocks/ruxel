@@ -237,6 +237,74 @@ fn grants_lower_and_database_grants_default_their_objects() -> Result {
     Ok(())
 }
 
+/// A table grant over `ALL_IN_SCHEMA` names its schema: without one the
+/// grant names no tables.
+#[test]
+fn a_table_grant_over_all_in_schema_names_its_schema() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("postgres-privilege-table-all-in-schema-no-schema.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "a table grant over ALL_IN_SCHEMA names its schema; \
+                    without one the grant names no tables";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
+
+/// A blank privilege entry names nothing: the listing element that is
+/// whitespace alone is refused instead of silently dropped.
+#[test]
+fn a_grant_refuses_a_blank_privilege_entry() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("postgres-privilege-blank-priv-entry.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "a blank privilege names nothing; \
+                    drop the blank entry or name the privilege";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
+
+/// The schema rides table and default-privilege grants alone: a database
+/// grant names none.
+#[test]
+fn a_database_grant_names_no_schema() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("postgres-privilege-schema-on-database.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "the schema rides table and default-privilege grants alone; \
+                    a database grant names no schema";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
+
+/// Default privileges name their schema, not objects: the future tables of
+/// the schema carry them, so the grant names no `objs`.
+#[test]
+fn default_privileges_name_no_objects() -> Result {
+    let path = root()
+        .join("invalid")
+        .join("postgres-privilege-default-privs-objs.pkl");
+    let error = ruxel_config::eval_config(&path, &options())
+        .err()
+        .ok_or("evaluated")?
+        .to_string();
+    let expected = "default privileges name their schema, not objects; \
+                    a default_privs grant names no objects";
+    assert!(error.contains(expected), "{error}");
+    Ok(())
+}
+
 /// The rendered access file is 0640 owned by postgres with secrets in its
 /// body, so its task is never logged; the service reloads on it and never
 /// restarts on it.

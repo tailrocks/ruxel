@@ -1,0 +1,21 @@
+// A blank privilege entry names nothing: the grant spells SELECT beside a
+// blank listing element.
+// expect: a blank privilege names nothing; drop the blank entry or name the privilege
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = new Listing { "SELECT"; " " }
+    objs { "ALL_IN_SCHEMA" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-blank-priv-entry.pkl"

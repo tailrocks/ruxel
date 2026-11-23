@@ -1167,6 +1167,14 @@ function postgresSettings(s: core.Step): List<String> =
     List("'\(name(s))': privilege \"\(badPriv(s))\" is not a \(s.type) privilege; grant one of \(grantable(s.type))")
   else if (s is postgres.Privilege && (s.type == "schema" || s.type == "table") && s.objs.isEmpty)
     List("'\(name(s))': a \(s.type) grant names its objects; the database grant alone defaults to the database itself")
+  else if (s is postgres.Privilege && s.type == "table" && s.objs.toList().contains("ALL_IN_SCHEMA") && s.schema == null)
+    List("'\(name(s))': a table grant over ALL_IN_SCHEMA names its schema; without one the grant names no tables")
+  else if (s is postgres.Privilege && hasBlankPriv(s.privs))
+    List("'\(name(s))': a blank privilege names nothing; drop the blank entry or name the privilege")
+  else if (s is postgres.Privilege && (s.type == "database" || s.type == "schema") && s.schema != null)
+    List("'\(name(s))': the schema rides table and default-privilege grants alone; a \(s.type) grant names no schema")
+  else if (s is postgres.Privilege && s.type == "default_privs" && !s.objs.isEmpty)
+    List("'\(name(s))': default privileges name their schema, not objects; a default_privs grant names no objects")
   else if (s is postgres.Privilege && !s.targetRoles.isEmpty && s.type != "default_privs")
     List("'\(name(s))': target roles ride default privileges alone; a \(s.type) grant names no target roles")
   else if (s is postgres.PendingRestartNotice && hasSecrets(s.output))
@@ -1202,6 +1210,13 @@ const function privsTokens(privs: Any): List<String> =
 /// names a privilege.
 const function rawPrivs(privs: Any): List<String> =
   (if (privs is String) List(privs) else privs.toList()).flatMap((priv) -> priv.split(",")).map((priv) -> priv.trim()).filter((priv) -> !priv.isEmpty)
+
+/// Whether any privilege the grant spells is blank: comma-separated text
+/// splits on its commas, a listing on its elements, and a blank entry —
+/// empty or whitespace alone — names nothing, so the lowering refuses it
+/// instead of silently dropping it the way `rawPrivs` drops blanks.
+function hasBlankPriv(privs: Any): Boolean =
+  (if (privs is String) List(privs) else privs.toList()).flatMap((priv) -> priv.split(",")).any((priv) -> priv.trim().isEmpty)
 
 /// Whether every privilege the grant names is one of its kind's, or `ALL`:
 /// the agent refuses any other before it grants anything.

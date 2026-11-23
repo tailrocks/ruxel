@@ -1,0 +1,21 @@
+// Default privileges name their schema, not objects: the future tables of
+// the schema carry them, so the grant names no objs.
+// expect: default privileges name their schema, not objects; a default_privs grant names no objects
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    objs { "ledger" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-default-privs-objs.pkl"

@@ -99,12 +99,13 @@ local pgConf = new File {
 //   branch = "main"
 // }
 
-// BLOCKED on the mount track: the UUID the capture learns feeds the mount
-// of the XFS volume at /var/lib/postgresql.
-local lvmUuid = new Capture {
-  title = "Learn the UUID of the data volume"
-  bash = "blkid -s UUID -o value /dev/data/data"
-}
+// BLOCKED on the mount track: the mount of the XFS volume at
+// /var/lib/postgresql waits on it, and the capture whose UUID feeds the
+// mount waits with it, parked here until the mount lands.
+// local lvmUuid = new Capture {
+//   title = "Learn the UUID of the data volume"
+//   bash = "blkid -s UUID -o value /dev/data/data"
+// }
 
 // BLOCKED on the line-editing catalogue: commenting swap out of /etc/fstab,
 // the pam_limits line, and the postgres memlock and nofile limits in
@@ -199,7 +200,8 @@ stages {
   } }
   new Stage { title = "Set up postgresql-nova"; hosts = new Listing { postgresqlNova }; steps {
   new Directory { path = "/var/lib/postgresql"; mode = "0755" }
-  lvmUuid
+  // The blkid capture is parked with the blocked mount above until that
+  // track lands.
   // pg_parquet 0.5.1 at its tag's commit (resolved at author time), built
   // with cargo-pgrx 0.16.0: each step runs once, when its marker is absent.
   new linux.GitCheckout {
