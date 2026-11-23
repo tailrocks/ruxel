@@ -94,8 +94,8 @@ fn the_malformed_chain_variants_are_refused_under_both_evaluators() -> Result {
             &path,
             format!(
                 "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
-                 name = \"{name}\"\n\
-                 import \"../inventory.pkl\"\n\n\
+                 import \"../inventory.pkl\"\n\
+                 name = \"{name}\"\n\n\
                  stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n  \
                  new File {{\n    path = \"/etc/app/app.env\"\n    mode = \"0600\"\n    \
                  content = \"{content}\"\n  }}\n}} }} }}\n"

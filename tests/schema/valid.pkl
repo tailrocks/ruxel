@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as R
 config = new R.Config {
+  workflow = "tests/schema/valid.pkl"
   inventory {
     hosts { ["node"] = new R.Host { address = "localhost" } }
     groups { ["all"] = new R.Group { hosts { "node" } } }

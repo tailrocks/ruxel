@@ -4,7 +4,8 @@
 // intersection the later claim shares with the earlier one — so stage
 // "three"'s `useradd -u 1001` for `bob` succeeds on both hosts. One
 // removal stage per shared host is enough; the proof is per host, not
-// per pair of stages.
+// per pair of stages. Each removal takes the home with it, or the
+// freed uid would still own Alice's files on that machine.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "../inventory.pkl"
@@ -17,10 +18,10 @@ stages {
     new linux.User { user = "alice"; uid = 1001 }
   } }
   new Stage { title = "one"; hosts { a }; steps {
-    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+    new linux.User { user = "alice"; uid = 1001; home = "/home/alice"; state = "absent"; removeHome = true }
   } }
   new Stage { title = "two"; hosts { b }; steps {
-    new linux.User { user = "alice"; uid = 1001; state = "absent" }
+    new linux.User { user = "alice"; uid = 1001; home = "/home/alice"; state = "absent"; removeHome = true }
   } }
   new Stage { title = "ab2"; hosts { a; b }; steps {
     new linux.User { user = "bob"; uid = 1001 }

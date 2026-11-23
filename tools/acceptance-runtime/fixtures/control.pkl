@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-runtime/fixtures/control.pkl"
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "flow"; targets { "all" }; tasks {
   new { name = "set fact"; operation = new Ruxel.SetFact { values { ["answer"] = new Ruxel.Literal { value = "local-fact" } } } }

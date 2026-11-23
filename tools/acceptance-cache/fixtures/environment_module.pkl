@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-cache/fixtures/environment_module.pkl"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "environment"; targets { "fixture" }; tasks {
   new { name = "sensitive copy"; operation = new Ruxel.Copy { dest = TARGET; content = new Ruxel.Call { `function` = "base64Encode"; args { new Ruxel.Lookup { provider = "synthetic"; key = FAKE_VALUE } } } } }

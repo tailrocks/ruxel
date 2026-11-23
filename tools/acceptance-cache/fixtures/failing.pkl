@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-cache/fixtures/failing.pkl"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "failure"; targets { "fixture" }; tasks {
   new { name = "private failure"; noLog = true; operation = new Ruxel.Debug { msg = new Ruxel.Ref { path { "synthetic-private-path-marker" } } } }

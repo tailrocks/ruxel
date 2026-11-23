@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-cache/fixtures/handler.pkl"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "handler"; targets { "fixture" }; tasks {
   new { name = "trigger"; changedWhen = new Ruxel.Literal { value = true }; notify { "private handler" }; operation = new Ruxel.Debug { msg = "trigger" } }

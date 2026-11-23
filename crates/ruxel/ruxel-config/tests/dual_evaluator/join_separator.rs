@@ -29,9 +29,9 @@ fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
     let separator = "x".repeat(1_000_000);
     let workflow = format!(
         "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
-         name = \"long-separator\"\n\
          import \"modulepath:/ruxel/Core.pkl\" as core\n\
          import \"inventory.pkl\"\n\
+         name = \"long-separator\"\n\
          \n\
          stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
          \x20 new Command {{\n\

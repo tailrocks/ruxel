@@ -5,12 +5,12 @@ import "../inventory.pkl"
 
 // A removal between the provider and the recreation re-arms the
 // allocator: the first stage numbers Alice 1500, the second removes
-// her, and the third recreates her without a uid — `useradd` draws a
-// fresh number then, which may be 1500 again — so the fourth stage's
-// `useradd -u 1500` for Bob can claim the number the new draw took and
-// fails on the taken number. Only a provider still present at the
-// draw's stage suppresses the draw; an earlier one a removal took away
-// does not.
+// her with her home, and the third recreates her without a uid —
+// `useradd` draws a fresh number then, which may be 1500 again — so
+// the fourth stage's `useradd -u 1500` for Bob can claim the number
+// the new draw took and fails on the taken number. Only a provider
+// still present at the draw's stage suppresses the draw; an earlier
+// one a removal took away does not.
 stages {
   new Stage {
     title = "numbered"
@@ -23,7 +23,7 @@ stages {
     title = "remove"
     hosts = inventory.workers
     steps {
-      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
     }
   }
   new Stage {

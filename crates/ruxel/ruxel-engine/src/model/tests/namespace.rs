@@ -103,7 +103,7 @@ fn namespace_has_no_cross_domain_collisions() {
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
     );
     let mut merged = workflow(json!({"kind": "debug", "msg": "one"}));
-    merged["plays"] = json!([{"name": "base\0app", "targets": [], "tasks": [{"name": "test"}]}]);
+    merged["plays"] = json!([{"name": "base\0app", "targets": [], "tasks": [{"name": "test", "operation": {"kind": "debug"}}]}]);
     let merged = workflow_namespace(&validate_config(&merged).expect("config"));
     assert_ne!(base, merged, "a merged play name is a different workflow");
     let mut smuggled = workflow(json!({"kind": "debug", "msg": "one"}));

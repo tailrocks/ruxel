@@ -42,7 +42,7 @@ fn exported_engine() -> String {
 
 fn config(import: &str) -> String {
     format!(
-        "import \"{import}\" as R\nconfig = new R.Config {{\n  inventory {{ hosts {{ [\"node\"] = new R.Host {{ address = \"localhost\" }} }} }}\n}}\n"
+        "import \"{import}\" as R\nconfig = new R.Config {{\n  workflow = \"eval-probe\"\n  inventory {{ hosts {{ [\"node\"] = new R.Host {{ address = \"localhost\" }} }} }}\n}}\n"
     )
 }
 
