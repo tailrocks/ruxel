@@ -726,8 +726,18 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 let home_s = claimed_home(home, name);
                 args.push("-d");
                 args.push(&home_s);
+                // The template `useradd -m` populates the home from: a
+                // host that configures `SKEL` elsewhere pins that
+                // template explicitly, so the creation populates from
+                // the same directory the rollback compares against.
+                let skel = apply::skel_dir();
+                let skel_arg = apply::skel_configured(&skel).then_some(skel);
                 if create_home {
                     args.push("-m");
+                    if let Some(skel) = &skel_arg {
+                        args.push("-k");
+                        args.push(skel);
+                    }
                 } else {
                     args.push("-M");
                 }

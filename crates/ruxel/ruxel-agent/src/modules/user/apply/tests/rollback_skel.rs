@@ -257,3 +257,40 @@ fn a_plant_between_scan_and_removal_is_kept_and_reported() {
     let _ = std::fs::remove_dir_all(&skel);
     let _ = std::fs::remove_dir_all(&home);
 }
+
+#[test]
+fn the_configured_skel_wins_over_the_shadow_default() {
+    // Thread 330: `useradd -m` populates the home from the host's
+    // configured `SKEL`, so the creation pins it with `-k` and the
+    // rollback compares against it — a valid skeleton file must never
+    // read as concurrently planted. The last uncommented `SKEL` line
+    // wins, `USERGROUPS_ENAB`-style, and anything else is the default.
+    assert_eq!(
+        skel_dir_from("SKEL /srv/skel\n"),
+        "/srv/skel",
+        "the configured template is the rollback's"
+    );
+    assert_eq!(
+        skel_dir_from("#SKEL /srv/ignored\nSKEL /srv/a\nSKEL /srv/b # trailing\n"),
+        "/srv/b",
+        "the last uncommented SKEL line wins"
+    );
+    assert_eq!(
+        skel_dir_from("# only a comment\nUSERGROUPS_ENAB yes\n"),
+        "/etc/skel",
+        "no SKEL line is the shadow default"
+    );
+    assert_eq!(
+        skel_dir_from(""),
+        "/etc/skel",
+        "an empty policy is the shadow default"
+    );
+    assert!(
+        !skel_configured("/etc/skel"),
+        "the default needs no explicit -k"
+    );
+    assert!(
+        skel_configured("/srv/skel"),
+        "a configured template is passed explicitly"
+    );
+}

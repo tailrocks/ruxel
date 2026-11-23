@@ -8,17 +8,55 @@ use std::path::{Path, PathBuf};
 
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat, unlinkat};
 
+/// The skeleton directory `useradd -m` populates a created home from
+/// where the host configures none: the shadow default, copied into
+/// every new home where it is non-empty.
+const DEFAULT_SKEL_DIR: &str = "/etc/skel";
+
 /// The skeleton directory `useradd -m` populates a created home from:
-/// the host's own template, copied into every new home where it is
-/// non-empty.
-const SKEL_DIR: &str = "/etc/skel";
+/// the host's configured `SKEL` in `/etc/login.defs`, the shadow
+/// default where the host configures none. An unreadable policy fails
+/// to the default: `useradd` would populate from it in the same case.
+pub(crate) fn skel_dir() -> String {
+    match std::fs::read_to_string("/etc/login.defs") {
+        Ok(content) => skel_dir_from(&content),
+        Err(_) => DEFAULT_SKEL_DIR.to_string(),
+    }
+}
+
+/// The canned-content counterpart of [`skel_dir`]: the last uncommented
+/// `SKEL` line wins, and anything else — including absent — is the
+/// shadow default.
+pub(crate) fn skel_dir_from(content: &str) -> String {
+    let mut skel = DEFAULT_SKEL_DIR.to_string();
+    for line in content.lines() {
+        let stripped = line.split('#').next().unwrap_or("").trim();
+        if stripped.is_empty() {
+            continue;
+        }
+        let mut fields = stripped.split_whitespace();
+        if fields.next() == Some("SKEL")
+            && let Some(dir) = fields.next()
+        {
+            skel = dir.to_string();
+        }
+    }
+    skel
+}
+
+/// Whether the skeleton directory differs from the shadow default: only
+/// a configured template is passed to `useradd -k` explicitly — the
+/// default rides along with `-m` the way it does today.
+pub(crate) fn skel_configured(skel: &str) -> bool {
+    skel != DEFAULT_SKEL_DIR
+}
 
 /// The home `useradd -m` created for a new account, taken back: the
 /// directory the operation added goes with the account, while contents
 /// a concurrent writer planted are kept and reported rather than
 /// deleted. Only a home this operation created is removed.
 pub(crate) fn rollback_created_home(home: &str) -> Result<(), String> {
-    rollback_created_home_from(home, Path::new(SKEL_DIR))
+    rollback_created_home_from(home, Path::new(&skel_dir()))
 }
 
 /// The canned-skel counterpart of [`rollback_created_home`]: the
