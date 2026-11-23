@@ -9,6 +9,35 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// Resolve rustc without relying on `PATH`: archived test jobs run with a
+/// scrubbed environment where a bare `rustc` lookup fails. Prefer the
+/// runtime override, then the toolchain Cargo used to build this test
+/// (compile-time `RUSTC`, or `rustc` beside compile-time `CARGO`), then the
+/// rustup shim under `$HOME/.cargo/bin`.
+fn rustc_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("RUSTC") {
+        return PathBuf::from(path);
+    }
+    if let Some(path) = option_env!("RUSTC") {
+        return PathBuf::from(path);
+    }
+    if let Some(cargo) = option_env!("CARGO")
+        && let Some(dir) = PathBuf::from(cargo).parent()
+    {
+        let sibling = dir.join("rustc");
+        if sibling.is_file() {
+            return sibling;
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let shim = PathBuf::from(home).join(".cargo/bin/rustc");
+        if shim.is_file() {
+            return shim;
+        }
+    }
+    PathBuf::from("rustc")
+}
+
 struct Fixture {
     root: PathBuf,
     agent: PathBuf,
@@ -40,12 +69,13 @@ impl Fixture {
         // the source tree, so CARGO_MANIFEST_DIR paths do not resolve.
         let agent_source = fixture.root.join("local_exit_agent.rs");
         fs::write(&agent_source, include_str!("fixtures/local_exit_agent.rs"))?;
-        let compiled = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
+        let compiled = Command::new(rustc_path())
             .args(["--edition=2024", "--crate-name", "local_exit_agent"])
             .arg(&agent_source)
             .arg("-o")
             .arg(&fixture.agent)
-            .output()?;
+            .output()
+            .map_err(|error| format!("spawn {}: {error}", rustc_path().display()))?;
         assert!(compiled.status.success(), "{compiled:?}");
         Ok(fixture)
     }
