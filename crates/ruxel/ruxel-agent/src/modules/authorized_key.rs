@@ -514,9 +514,9 @@ fn system_services() -> String {
 /// whole entry.
 fn service_port_in(port: &[u8], services: &str) -> bool {
     if port.is_empty()
-        || !port
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_' || *byte == b'.')
+        || !port.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_' || *byte == b'.'
+        })
     {
         return false;
     }

@@ -126,8 +126,7 @@ fn root_by_identity(path: &Path, roots: &[&str]) -> Option<String> {
         // taking the link.
         let canonical = std::fs::canonicalize(root).ok()?;
         let resolved = std::fs::metadata(&canonical).ok()?;
-        (meta.dev() == resolved.dev() && meta.ino() == resolved.ino())
-            .then(|| (*root).to_string())
+        (meta.dev() == resolved.dev() && meta.ino() == resolved.ino()).then(|| (*root).to_string())
     })
 }
 

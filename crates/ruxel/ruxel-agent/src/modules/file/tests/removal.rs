@@ -195,9 +195,8 @@ fn a_detached_parent_is_refused_in_check_mode_too() {
     std::fs::create_dir(&base).unwrap();
     std::fs::write(base.join("target"), b"replacement").unwrap();
     let mounts: Vec<super::super::mounts::Mount> = Vec::new();
-    let error =
-        super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
-            .unwrap_err();
+    let error = super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
+        .unwrap_err();
     assert!(error.contains("replaced"), "{error}");
     assert_eq!(std::fs::read(base.join("target")).unwrap(), b"replacement");
     std::fs::remove_dir_all(base.with_extension("moved")).unwrap();
@@ -217,9 +216,8 @@ fn a_detached_parent_of_a_directory_is_refused_in_check_mode_too() {
     std::fs::create_dir(&base).unwrap();
     std::fs::create_dir(base.join("target")).unwrap();
     let mounts: Vec<super::super::mounts::Mount> = Vec::new();
-    let error =
-        super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
-            .unwrap_err();
+    let error = super::super::removal::remove_opened(&parent, &name, &target, false, true, &mounts)
+        .unwrap_err();
     assert!(error.contains("replaced"), "{error}");
     std::fs::remove_dir_all(base.with_extension("moved")).unwrap();
     std::fs::remove_dir_all(&base).unwrap();

@@ -175,8 +175,7 @@ fn a_same_device_bind_below_the_target_is_refused() {
         }])
     };
     let error =
-        super::super::removal::recheck::check_tree_with(&dir, &base, &base, &listing)
-            .unwrap_err();
+        super::super::removal::recheck::check_tree_with(&dir, &base, &base, &listing).unwrap_err();
     assert!(error.contains("mount point"), "{error}");
     assert!(nested.exists(), "the mounted tree is untouched");
     std::fs::remove_dir_all(base).unwrap();

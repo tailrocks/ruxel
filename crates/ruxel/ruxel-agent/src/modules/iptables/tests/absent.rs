@@ -1,5 +1,6 @@
 use super::{context, run_with, scratch, stub};
 use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn state_absent_deletes_a_present_rule_and_is_idempotent_when_absent() {
@@ -59,7 +60,6 @@ fn check_mode_absent_mutates_nothing() {
 /// A stub that keeps the rules of the chain, one per line, the way the
 /// firewall lists them, and deletes the rule it is told to delete.
 fn listing_stub(dir: &std::path::Path, rules: &[&str]) -> (String, std::path::PathBuf) {
-    use std::os::unix::fs::PermissionsExt;
     let file = dir.join("rules");
     std::fs::write(&file, rules.join("\n") + "\n").unwrap();
     let script = dir.join("iptables-stub");
@@ -115,7 +115,6 @@ fn a_bare_chain_line_is_the_empty_rule() {
         ),
     )
     .unwrap();
-    use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     let params = json!({"chain":"INPUT", "state":"absent"});
     let result = run_with(

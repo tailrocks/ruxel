@@ -341,16 +341,12 @@ fn a_permit_with_a_service_name_carries_the_key() {
     });
     let Some(name) = named.next() else { return };
     assert_eq!(
-        key_material(&format!(
-            "permitopen=\"{name}\" ssh-ed25519 AAAAC3Nza"
-        )),
+        key_material(&format!("permitopen=\"{name}\" ssh-ed25519 AAAAC3Nza")),
         None,
         "a bare name is not a host and a port"
     );
     assert_eq!(
-        key_material(&format!(
-            "permitopen=\"db:{name}\" ssh-ed25519 AAAAC3Nza"
-        )),
+        key_material(&format!("permitopen=\"db:{name}\" ssh-ed25519 AAAAC3Nza")),
         Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
     );
 }

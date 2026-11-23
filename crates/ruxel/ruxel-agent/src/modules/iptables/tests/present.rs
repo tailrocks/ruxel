@@ -109,14 +109,15 @@ fn a_commented_rule_the_firewall_lists_is_already_there() {
     .unwrap();
     assert_eq!(result["changed"], false);
     let left = std::fs::read_to_string(&file).unwrap();
-    assert_eq!(left, "-p tcp -m comment --comment hello -j DROP\n", "{left}");
+    assert_eq!(
+        left, "-p tcp -m comment --comment hello -j DROP\n",
+        "{left}"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-
 #[test]
 fn a_stale_rule_taken_in_between_is_reread_not_appended() {
-    use std::os::unix::fs::PermissionsExt;
     let dir = scratch("vanished-position");
     // Another writer takes the stale rule and installs the declared one
     // between the stale read and the position read: the replacement has
@@ -154,7 +155,6 @@ fn a_stale_rule_taken_in_between_is_reread_not_appended() {
 
 #[test]
 fn a_rival_that_stops_on_the_last_round_still_converges() {
-    use std::os::unix::fs::PermissionsExt;
     let dir = scratch("last-round");
     // Another writer re-adds the stale rule after every deletion but
     // stops while the last round's own change lands: the chain holds
