@@ -1,0 +1,16 @@
+// expect: 'The sloppy check': repeat 1000.0000005.ms must be a whole number of milliseconds; a systemd timer reads the interval in seconds or milliseconds
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "A timer repeats after a fraction of a millisecond"
+    hosts = inventory.workers
+    steps {
+      new systemd.SystemdTimer { title = "The sloppy check"; name = "postgresql-sloppy-check"; service = "postgresql-sloppy-check"; onCalendar = "daily"; repeat = 1000.0000005.ms }
+    }
+  }
+}
+
+name = "invalid/timer-repeat-fractional-millisecond.pkl"

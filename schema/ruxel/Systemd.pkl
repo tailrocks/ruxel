@@ -102,6 +102,11 @@ class SystemdTimer extends core.Step {
   onCalendar: Static? = null
   /// How long after boot the timer fires.
   onBoot: Duration? = null
+  /// How often the timer fires again after its last firing: a systemd
+  /// `OnUnitActiveSec=` interval, such as `5.min`. The timer still
+  /// needs its first firing, so a repeat with neither `onCalendar` nor
+  /// `onBoot` is refused like a timer with no schedule at all.
+  repeat: Duration? = null
   /// Whether the timer fires for a run it missed while the machine was off.
   /// Only a calendar timer catches up: systemd remembers the last calendar
   /// run, not the last boot.

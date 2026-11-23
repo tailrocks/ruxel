@@ -3,6 +3,9 @@
 //!
 //! A reload is a handler kind of its own, beside the restart, and a timer
 //! lowers to its own unit file and to the enablement of the `.timer` unit.
+//!
+//! The delay cases (whole-millisecond precision and limits) live in
+//! `workflow_systemd_timer_delay.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -96,7 +99,8 @@ fn a_timer_lowers_to_its_unit_file_and_its_enablement() -> Result {
         .as_str()
         .ok_or("no timer file content")?;
     assert!(content.contains("OnCalendar=daily"), "{content}");
-    assert!(content.contains("OnBootSec=300"), "{content}");
+    assert!(content.contains("OnBootSec=120"), "{content}");
+    assert!(content.contains("OnUnitActiveSec=300"), "{content}");
     assert!(content.contains("Persistent=true"), "{content}");
     assert!(content.contains("WantedBy=timers.target"), "{content}");
     let enable = all
@@ -160,42 +164,9 @@ fn a_timer_without_a_service_starts_the_service_of_its_own_name() -> Result {
     Ok(())
 }
 
-/// A fractional millisecond is refused, not rounded.
+/// A repeat lowers to `OnUnitActiveSec`, beside the boot delay.
 #[test]
-fn a_fractional_boot_delay_is_refused() -> Result {
-    for (name, delay) in [
-        ("timer-boot-fractional-millisecond.pkl", "1000.0000005.ms"),
-        ("timer-boot-half-nanosecond.pkl", "0.5.ns"),
-        (
-            "timer-boot-fractional-millisecond-large.pkl",
-            "1.0000000000000005E9.ms",
-        ),
-        (
-            "timer-boot-fractional-millisecond-huge.pkl",
-            "2.0000000000000005E12.s",
-        ),
-        (
-            "timer-boot-fractional-huge-integer.pkl",
-            "9007199254740992.ns",
-        ),
-    ] {
-        let path = root().join("invalid").join(name);
-        let error = ruxel_config::eval_config(&path, &options())
-            .err()
-            .ok_or_else(|| format!("{name}: evaluated"))?
-            .to_string();
-        let expected = format!(
-            "onBoot {delay} must be a whole number of milliseconds; \
-             a systemd timer reads the delay in seconds or milliseconds"
-        );
-        assert!(error.contains(&expected), "{name}: {error}");
-    }
-    Ok(())
-}
-
-/// A delay keeps its precision: half a second is not zero.
-#[test]
-fn a_timer_keeps_the_precision_of_its_boot_delay() -> Result {
+fn a_repeat_lowers_to_on_unit_active_sec() -> Result {
     let config = valid("systemd-timer.pkl")?;
     let all = tasks(&config);
     let content = |unit: &str| {
@@ -204,104 +175,39 @@ fn a_timer_keeps_the_precision_of_its_boot_delay() -> Result {
             .and_then(|task| task["operation"]["content"].as_str().map(str::to_owned))
             .ok_or_else(|| format!("no timer file {unit}"))
     };
-    let daily = content("/etc/systemd/system/postgresql-multixact-monitor.timer")?;
-    assert!(daily.contains("OnBootSec=300"), "{daily}");
+    let repeating = content("/etc/systemd/system/postgresql-multixact-monitor.timer")?;
+    assert!(repeating.contains("OnUnitActiveSec=300"), "{repeating}");
+    // A timer without a repeat carries no interval line.
     let quick = content("/etc/systemd/system/postgresql-quick-check.timer")?;
-    assert!(quick.contains("OnBootSec=500ms"), "{quick}");
-    assert!(!quick.contains("OnBootSec=0"), "{quick}");
+    assert!(!quick.contains("OnUnitActiveSec"), "{quick}");
     Ok(())
 }
 
-/// A large delay is kept as written; one past the exact limit is refused.
+/// The monitor workload is the whole composition: the executable
+/// script, the service unit, the timer, and the daemon-reload ordered
+/// after the unit file and before the timer.
 #[test]
-fn a_large_boot_delay_keeps_its_milliseconds() -> Result {
-    let config = valid("systemd-timer-large-delay.pkl")?;
+fn a_timer_workload_orders_script_service_reload_and_timer() -> Result {
+    let config = valid("systemd-timer.pkl")?;
     let all = tasks(&config);
-    let content = all
+    let position = |name: &str| {
+        all.iter()
+            .position(|task| task["name"] == name)
+            .ok_or_else(|| format!("no task {name:?}"))
+    };
+    let script = all
         .iter()
-        .find(|task| task["operation"]["dest"] == "/etc/systemd/system/postgresql-long-delay.timer")
-        .and_then(|task| task["operation"]["content"].as_str().map(str::to_owned))
-        .ok_or("no timer file task")?;
-    assert!(content.contains("OnBootSec=1000000"), "{content}");
-    // Every delay at or beyond the exact limit is refused with one sentence.
-    for name in [
-        "beyond-exact-limit",
-        "beyond-exact-limit-seconds",
-        "beyond-exact-limit-huge",
-        "beyond-systemd-span",
-    ] {
-        let error = ruxel_config::eval_config(
-            &root()
-                .join("invalid")
-                .join(format!("timer-boot-{name}.pkl")),
-            &options(),
-        )
-        .err()
-        .ok_or("evaluated")?
-        .to_string();
-        assert!(
-            error.contains("onBoot is beyond the 9007199254740991ms"),
-            "{name}: {error}"
-        );
-    }
-    Ok(())
-}
-
-/// Two spellings of one delay are one timer.
-#[test]
-fn two_spellings_of_one_delay_are_one_timer() -> Result {
-    let config = valid("systemd-timer-delay-spellings.pkl")?;
-    let all = tasks(&config);
-    let timers: Vec<&&serde_json::Value> = all
-        .iter()
-        .filter(|task| {
-            task["operation"]["dest"] == "/etc/systemd/system/postgresql-spelled-delay.timer"
-        })
-        .collect();
-    assert_eq!(timers.len(), 1, "{timers:#?}");
-    let content = timers[0]["operation"]["content"]
-        .as_str()
-        .ok_or("no timer file content")?;
-    assert!(content.contains("OnBootSec=1001ms"), "{content}");
-    Ok(())
-}
-
-/// A whole-millisecond delay keeps every digit at every magnitude.
-#[test]
-fn an_exactly_integral_boot_delay_keeps_every_digit() -> Result {
-    let config = valid("systemd-timer-exact-huge-delay.pkl")?;
-    let all = tasks(&config);
-    for (unit, on_boot) in [
-        ("exact-millisecond", "OnBootSec=4503599627370497ms"),
-        ("exact-half-even", "OnBootSec=4503599627370497ms"),
-        ("exact-odd-bound", "OnBootSec=9007199254740991ms"),
-    ] {
-        let dest = format!("/etc/systemd/system/postgresql-{unit}.timer");
-        let content = all
-            .iter()
-            .find(|task| task["operation"]["dest"] == dest)
-            .and_then(|task| task["operation"]["content"].as_str())
-            .ok_or_else(|| format!("no timer file {dest}"))?;
-        assert!(content.contains(on_boot), "{dest}: {content}");
-    }
-    // A half millisecond is refused: the contract is whole-millisecond.
-    let half = root().join("invalid/systemd-timer-fractional-delay.pkl");
-    let error = ruxel_config::eval_config(&half, &options())
-        .err()
-        .ok_or("evaluated")?
-        .to_string();
+        .find(|task| task["operation"]["dest"] == "/usr/local/bin/multixact-monitor")
+        .ok_or("no monitor script task")?;
+    assert_eq!(script["operation"]["mode"], "0755");
+    let script_at = position("Write /usr/local/bin/multixact-monitor")?;
+    let unit_at = position("Write /etc/systemd/system/postgresql-multixact-monitor.service")?;
+    let reload_at = position("Reload systemd")?;
+    let timer_at = position("Manage timer postgresql-multixact-monitor on daily")?;
+    let enable_at = position("Enable timer postgresql-multixact-monitor")?;
     assert!(
-        error.contains("must be a whole number of milliseconds"),
-        "{error}"
-    );
-    let lost = root().join("invalid").join("timer-boot-lost-fraction.pkl");
-    let error = ruxel_config::eval_config(&lost, &options())
-        .err()
-        .ok_or("evaluated")?
-        .to_string();
-    assert!(
-        error.contains("must be a whole number of milliseconds"),
-        "{error}"
+        script_at < unit_at && unit_at < reload_at && reload_at < timer_at && timer_at < enable_at,
+        "script, unit, reload, timer and enablement run in order"
     );
     Ok(())
 }

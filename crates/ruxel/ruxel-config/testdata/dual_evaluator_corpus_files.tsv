@@ -341,6 +341,9 @@ dual_evaluator_systemd
   tests/workflow/invalid/timer-multiline-calendar.pkl
   tests/workflow/invalid/timer-name-too-long.pkl
   tests/workflow/invalid/timer-persistent-without-calendar.pkl
+  tests/workflow/invalid/timer-repeat-fractional-millisecond.pkl
+  tests/workflow/invalid/timer-repeat-negative.pkl
+  tests/workflow/invalid/timer-repeat-zero.pkl
   tests/workflow/invalid/timer-service-name.pkl
   tests/workflow/invalid/timer-spaces-calendar.pkl
   tests/workflow/invalid/timer-tab-calendar.pkl
