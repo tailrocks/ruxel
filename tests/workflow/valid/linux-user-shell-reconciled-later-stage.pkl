@@ -1,0 +1,21 @@
+// A later shell provider is a reconciliation where an earlier one
+// already made the shell available: the first stage writes the
+// executable file, the second stage's account reads it, and the third
+// stage writes it again — every apply converges on the same path.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "provide"; hosts = inventory.workers; steps {
+    new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
+  } }
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "app"; shell = "/opt/appsh" }
+  } }
+  new Stage { title = "reconcile"; hosts = inventory.workers; steps {
+    new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
+  } }
+}
+
+name = "valid/linux-user-shell-reconciled-later-stage.pkl"

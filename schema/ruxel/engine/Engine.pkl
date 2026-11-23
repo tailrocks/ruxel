@@ -89,6 +89,10 @@ class Config {
   fixed schemaFingerprint: String = "unserved"
   /// Set by the workflow language (`modulepath:/ruxel/internal/Lowering.pkl`) when it builds this configuration; ruxel refuses one built by copies of the language modules.
   languageFingerprint: String? = null
+  /// The calling workflow's `name`: the stable identity the engine
+  /// namespaces the ledger by, so unrelated workflows that reuse play
+  /// and host names never share ledger state.
+  workflow: String
   inventory: Inventory
   plays: Listing<Play>
   ssh: Ssh? = null

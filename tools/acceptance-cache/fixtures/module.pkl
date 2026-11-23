@@ -4,6 +4,7 @@ function ref(a: String, b: String): Ruxel.Ref = new { path { a; b } }
 function encode(v: Ruxel.Expr): Ruxel.Call = new { `function` = "base64Encode"; args { v } }
 function lit(v: String): Ruxel.Literal = new { value = v }
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-cache/fixtures/module.pkl"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "synthetic"; targets { "fixture" }; tasks {
   new { name = "public-read"; operation = new Ruxel.Slurp { src = PUBLIC_PATH } }

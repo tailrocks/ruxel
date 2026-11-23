@@ -1,0 +1,34 @@
+// expect: which stage "s1" removes with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `userdel -r` deletes the home directory of the account it removes: a
+// later stage that declares the home root again creates that root only,
+// not the deeper parent the file writes into, so the file task cannot
+// open its parent.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/alice"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/alice/deep/config"; content = "x\n" }
+    }
+  }
+}
+
+name = "invalid/linux-user-home-removed-deep-parent.pkl"

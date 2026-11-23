@@ -1,0 +1,35 @@
+// expect: which does not make it executable for the account
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The effective provider carries the mode: the first stage writes an
+// executable shell, but the second overwrites it without an executable
+// mode before the account runs — so the account's task reads the
+// non-executable file and `shell_allowed` refuses it. The superseded
+// first stage is obsolete and not judged; the effective second one is.
+stages {
+  new Stage {
+    title = "good"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/appsh"; mode = "0755"; content = "#!/bin/sh\n" }
+    }
+  }
+  new Stage {
+    title = "bad"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/opt/appsh"; mode = "0600"; content = "#!/bin/sh\n" }
+    }
+  }
+  new Stage {
+    title = "account"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; shell = "/opt/appsh" }
+    }
+  }
+}
+
+name = "invalid/linux-user-shell-effective-provider-not-executable.pkl"

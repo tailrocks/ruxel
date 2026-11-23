@@ -3,6 +3,7 @@ function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
 function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
 function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-runtime/fixtures/nested_loops.pkl"
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "nested loops"; targets { "all" }
   vars { ["parents"] = new Ruxel.ListExpr { items {

@@ -1,0 +1,27 @@
+// Values that differ only in edge whitespace are one kernel value:
+// procps strips vertical tabs around a value before it applies it, and
+// the comparison trims them too — so a vertically padded "1" and "1"
+// agree, whatever stages persist them in.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-new.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "\u{B}1"; path = "/etc/sysctl.d/10-old.conf" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1\u{B}"; path = "/etc/sysctl.d/11-old.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-value-vertical-tab.pkl"

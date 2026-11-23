@@ -1,0 +1,34 @@
+// Near misses are not nesting: the earlier stage creates the parent
+// directory itself — a directory leaves room for things inside it — and
+// the sibling file only shares a prefix with the sysctl's path without
+// standing inside it. The leaf/descendant relation is strict, so the
+// cross-stage nested check admits the workflow.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/etc/sysctl.d" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/etc/sysctl.d/90-ruxel.conf-backup"; content = "x\n" }
+    }
+  }
+  new Stage {
+    title = "third"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-nested-directory.pkl"

@@ -1,0 +1,21 @@
+// expect: removes the system account app
+// A removal that states the account is a system account is refused: a
+// system account is the host's to keep whatever uid the allocator drew
+// for it — it is not necessarily below UID 1000 — so the workflow must
+// not remove it. The agent mirrors the refusal on the plan's own
+// system record, with the uid-1000 rule kept only as the fallback.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; state = "absent"; system = true }
+    }
+  }
+}
+
+name = "invalid/linux-user-absent-system.pkl"

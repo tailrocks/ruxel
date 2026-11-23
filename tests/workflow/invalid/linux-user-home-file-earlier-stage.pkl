@@ -1,0 +1,30 @@
+// expect: inside the home /home/alice of 'Manage account alice' (step 1) of stage "second" before the account's task creates the directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The apply runs the stages where the author wrote them: `useradd -m`
+// creates the missing home, so a file an earlier overlapping-host stage
+// writes beneath it fails on the absent parent at apply time. The
+// stage-local provider-order check sees one stage at a time and admits
+// this workflow; a step that publishes inside an account's claimed home
+// runs after the account's task creates the directory, across stages as
+// much as inside one.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new File { path = "/home/alice/config"; content = "x\n" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+}
+
+name = "invalid/linux-user-home-file-earlier-stage.pkl"

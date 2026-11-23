@@ -6,3 +6,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/\(module.currentHost.name).conf"; content = "x" }
 } } }
+
+name = "invalid/runtime-value-in-path.pkl"

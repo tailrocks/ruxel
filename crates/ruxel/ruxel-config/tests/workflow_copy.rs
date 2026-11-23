@@ -38,7 +38,7 @@ fn copies_of_the_language_modules_are_refused() -> Result {
             "import \"internal/Lowering.pkl\" as Lowering",
         ),
     )?;
-    let body = "\nimport \"modulepath:/ruxel/Core.pkl\" as core\nimport \"modulepath:/ruxel/Linux.pkl\" as linux\nstages { new core.Stage { title = \"t\"; hosts { new core.Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { new linux.Timezone { name = \"UTC\" } } } }\n";
+    let body = "\nimport \"modulepath:/ruxel/Core.pkl\" as core\nimport \"modulepath:/ruxel/Linux.pkl\" as linux\nname = \"language-copy-probe\"\nstages { new core.Stage { title = \"t\"; hosts { new core.Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { new linux.Timezone { name = \"UTC\" } } } }\n";
     for (name, amends) in [
         ("served.pkl", "modulepath:/ruxel/Workflow.pkl"),
         ("workflow-copy.pkl", "export/ruxel/Workflow.pkl"),
@@ -78,7 +78,9 @@ fn copies_of_the_language_modules_are_refused() -> Result {
         let root = scratch.join(name);
         std::fs::write(
             &root,
-            format!("amends \"modulepath:/ruxel/Workflow.pkl\"\n{copied}{stages}\n"),
+            format!(
+                "amends \"modulepath:/ruxel/Workflow.pkl\"\n{copied}name = \"{name}\"\n{stages}\n"
+            ),
         )?;
         let error = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())
             .err()
@@ -127,7 +129,7 @@ fn copied_layer_steps_are_refused() -> Result {
         std::fs::write(
             &root,
             format!(
-                "amends \"modulepath:/ruxel/Workflow.pkl\"\n{imports}{}\n",
+                "amends \"modulepath:/ruxel/Workflow.pkl\"\n{imports}name = \"{name}\"\n{}\n",
                 stage(steps)
             ),
         )?;
@@ -152,7 +154,7 @@ fn served_layer_steps_are_admitted() -> Result {
     let root = scratch.join("served-service.pkl");
     std::fs::write(
         &root,
-        "amends \"modulepath:/ruxel/Workflow.pkl\"\nimport \"modulepath:/ruxel/Core.pkl\" as core\nimport \"modulepath:/ruxel/Systemd.pkl\" as systemd\nlocal config = new core.File { path = \"/etc/nginx/nginx.conf\"; content = \"x\" }\nstages { new core.Stage { title = \"t\"; hosts { new core.Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { config; new systemd.Service { name = \"nginx\"; restartOnChangeOf { config } } } } }\n",
+        "amends \"modulepath:/ruxel/Workflow.pkl\"\nimport \"modulepath:/ruxel/Core.pkl\" as core\nimport \"modulepath:/ruxel/Systemd.pkl\" as systemd\nname = \"served-service\"\nlocal config = new core.File { path = \"/etc/nginx/nginx.conf\"; content = \"x\" }\nstages { new core.Stage { title = \"t\"; hosts { new core.Host { name = \"web\"; address = \"192.0.2.1\" } }; steps { config; new systemd.Service { name = \"nginx\"; restartOnChangeOf { config } } } } }\n",
     )?;
     let config = ruxel_config::eval_config(&root, &ruxel_config::EvalOptions::default())?;
     let handlers = config["plays"][0]["handlers"]

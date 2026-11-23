@@ -23,3 +23,5 @@ stages {
     new debian.AptPackages { title = "Install the held bash again"; names { "bash=2" } }
   } }
 }
+
+name = "valid/apt-hold-superseded.pkl"

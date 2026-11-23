@@ -8,3 +8,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.Service { name = "app"; restartOnChangeOf { config } }
   config
 } } }
+
+name = "invalid/later-dependency.pkl"

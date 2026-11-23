@@ -31,6 +31,7 @@ mod lineinfile;
 mod lvg;
 mod lvol;
 mod mount;
+mod ownership;
 mod postgresql;
 mod replace;
 mod shell;
@@ -102,6 +103,81 @@ impl Outcome {
 }
 
 pub(crate) use copy::validate_source;
+#[cfg(test)]
+pub(super) use ownership::{OWNERSHIP_RESOLUTIONS, resolve_gid_from, resolve_uid_from};
+pub(super) use ownership::{Ownership, resolve_ownership};
+pub(crate) use sysctl::{
+    ManagedSysctl, ManagedValue, SysctlManaged, boot_fingerprint, declaration_digest, entry_key,
+    proc_sys_path, sysctl_cache_covered, sysctl_host_files, sysctl_key, trimmed_value,
+};
+pub(crate) use user::begin_plan;
+
+/// The sysctl declaration the current plan's task carries: the file it
+/// declares the key in, the key, and the value it declared there. The
+/// plan declares the entry whatever the run does with the task — a cache
+/// hit and a check-mode run declare too — so a later task's preflight
+/// reads the plan's own entries, not the ledger's retained history of a
+/// task the workflow dropped. A task that failed to parse declares
+/// nothing: its entry is unknown.
+pub(crate) fn sysctl_plan_declaration(module: &str, params: &Value) -> Option<ManagedSysctl> {
+    if module != "sysctl" {
+        return None;
+    }
+    let name = params.get("name").and_then(Value::as_str)?;
+    let value = match params.get("value")? {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => if *value { "1" } else { "0" }.to_string(),
+        _ => return None,
+    };
+    let file = params
+        .get("sysctl_file")
+        .and_then(Value::as_str)
+        .unwrap_or(ruxel_proto::constants::DEFAULT_SYSCTL_FILE);
+    Some(ManagedSysctl::plain(
+        file.to_string(),
+        name.to_string(),
+        value,
+    ))
+}
+
+/// The managed sysctl entries a task's module consumes: only the
+/// sysctl module reads them, and the scan they need weighs on every
+/// persisted record — so a workflow of ordinary tasks would pay
+/// 1+2+…+N inspections for a result none of them reads. The gate
+/// keeps the scan to the module that needs it.
+#[cfg(test)]
+pub(crate) fn managed_sysctl_entries(
+    module: &str,
+    ledger: &crate::ledger::Ledger,
+) -> Vec<ManagedSysctl> {
+    if module == "sysctl" {
+        ledger.managed_sysctl_entries()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Whether the plan's own earlier steps moved the number of an
+/// identity this task names, so the task's cached result is stale.
+///
+/// `usermod -u` renumbers the account but leaves an arbitrary file at
+/// the old number, and the cached probe of a file weighs the file's
+/// numbers alone: the task would be served from the cache and skipped,
+/// and the file would keep the number the plan gave the account. The
+/// task names the identity whose number moved, so the plan's own
+/// record of it is what tells the cache is stale.
+pub(crate) fn ownership_cache_stale(module: &str, params: &Value) -> bool {
+    if !matches!(
+        module,
+        "file" | "copy" | "template" | "lineinfile" | "replace" | "blockinfile"
+    ) {
+        return false;
+    }
+    let owner = params.get("owner").and_then(Value::as_str);
+    let group = params.get("group").and_then(Value::as_str);
+    owner.is_some_and(user::user_number_changed) || group.is_some_and(user::group_number_changed)
+}
 
 pub(crate) fn execute(
     module: &str,
@@ -110,6 +186,7 @@ pub(crate) fn execute(
     source: Option<&[u8]>,
     ctx: &ExecContext,
     system_state: &mut crate::system_state::SystemState,
+    managed: &SysctlManaged,
 ) -> Outcome {
     if ctx.become_user.is_some()
         && !matches!(
@@ -146,7 +223,7 @@ pub(crate) fn execute(
         "apt" => apt::run(params, ctx, system_state),
         "apt_repository" => apt_repository::run(params, ctx, system_state),
         "blockinfile" => blockinfile::run(params, ctx),
-        "sysctl" => sysctl::run(params, ctx),
+        "sysctl" => sysctl::run(params, ctx, managed),
         "group" => user::group(params, ctx),
         "user" => user::run(params, ctx),
         "authorized_key" => authorized_key::run(params, ctx),
@@ -208,6 +285,18 @@ pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(
     Ok(())
 }
 
+/// A value the operating system cannot carry: a NUL cannot be in a
+/// process argument at all, so a value that holds one is refused before
+/// it reaches a spawn.
+pub(super) fn reject_nuls(module: &str, fields: &[(&str, &str)]) -> Result<(), String> {
+    for (name, value) in fields {
+        if value.contains('\0') {
+            return Err(format!("{module}: {name} must not hold a NUL byte"));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn run_checked(
     mut command: std::process::Command,
 ) -> Result<std::process::Output, String> {
@@ -262,81 +351,6 @@ fn bool_param(obj: &Map<String, Value>, key: &str, default: bool) -> bool {
     }
 }
 
-fn resolve_uid(owner: &str) -> Result<u32, String> {
-    #[cfg(test)]
-    count_ownership_resolution();
-    if let Ok(uid) = owner.parse::<u32>() {
-        return Ok(uid);
-    }
-    let passwd = std::fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    resolve_uid_from(&passwd, owner)
-}
-
-/// The requested ownership of a file, resolved to ids.
-pub(super) struct Ownership {
-    pub(super) uid: Option<u32>,
-    pub(super) gid: Option<u32>,
-}
-
-/// Resolves the requested owner and group of `obj` to ids.
-///
-/// The ids are resolved once and reused by the caller: a change to the
-/// passwd or group file between the resolution and the use of the ids
-/// cannot fail or mis-apply a publication that already succeeded.
-pub(super) fn resolve_ownership(obj: &Map<String, Value>) -> Result<Ownership, String> {
-    Ok(Ownership {
-        uid: str_param(obj, "owner").map(resolve_uid).transpose()?,
-        gid: str_param(obj, "group").map(resolve_gid).transpose()?,
-    })
-}
-
-// The number of ownership resolutions of the current thread.
-//
-// The counter is a test aid: a module that resolves the requested
-// ownership once must not resolve it again.
-#[cfg(test)]
-thread_local! {
-    pub(super) static OWNERSHIP_RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// Counts one ownership resolution of the current thread.
-#[cfg(test)]
-fn count_ownership_resolution() {
-    OWNERSHIP_RESOLUTIONS.with(|count| count.set(count.get() + 1));
-}
-
-fn resolve_uid_from(passwd: &str, owner: &str) -> Result<u32, String> {
-    for line in passwd.lines() {
-        let mut fields = line.split(':');
-        if fields.next() == Some(owner) {
-            let uid = fields.nth(1).ok_or("malformed passwd line")?;
-            return uid.parse().map_err(|_| "malformed uid".to_string());
-        }
-    }
-    Err(format!("user {owner:?} not found"))
-}
-
-fn resolve_gid(group: &str) -> Result<u32, String> {
-    #[cfg(test)]
-    count_ownership_resolution();
-    if let Ok(gid) = group.parse::<u32>() {
-        return Ok(gid);
-    }
-    let groups = std::fs::read_to_string("/etc/group").map_err(|e| e.to_string())?;
-    resolve_gid_from(&groups, group)
-}
-
-fn resolve_gid_from(groups: &str, group: &str) -> Result<u32, String> {
-    for line in groups.lines() {
-        let mut fields = line.split(':');
-        if fields.next() == Some(group) {
-            let gid = fields.nth(1).ok_or("malformed group line")?;
-            return gid.parse().map_err(|_| "malformed gid".to_string());
-        }
-    }
-    Err(format!("group {group:?} not found"))
-}
-
 pub(super) fn parse_mode(value: &Value) -> Result<u32, String> {
     match value {
         Value::String(s) => u32::from_str_radix(s.trim_start_matches("0o"), 8)
@@ -359,6 +373,10 @@ pub(super) fn default_file_mode(status: &str) -> u32 {
 }
 
 #[cfg(test)]
+#[path = "tests/managed_entries.rs"]
+mod managed_entries_tests;
+
+#[cfg(test)]
 #[path = "tests/security.rs"]
 mod security_tests;
 
@@ -369,3 +387,7 @@ mod systemd_wire_tests;
 #[cfg(test)]
 #[path = "tests/state_invalidation.rs"]
 mod state_invalidation_tests;
+
+#[cfg(test)]
+#[path = "tests/template_invalidation.rs"]
+mod template_invalidation_tests;

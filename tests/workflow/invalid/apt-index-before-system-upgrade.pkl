@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPackageIndex { title = "Refresh the index" }
   new debian.AptSystemUpgrade { title = "Upgrade the system" }
 } } }
+
+name = "invalid/apt-index-before-system-upgrade.pkl"

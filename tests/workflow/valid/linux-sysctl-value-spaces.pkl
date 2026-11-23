@@ -1,0 +1,20 @@
+// Values that differ only in edge spaces are one kernel value: procps
+// strips the blanks around a value before it applies it, and the
+// fingerprint compares the trimmed values too — so "1" and " 1" are one
+// ask, merged into one task instead of two conflicting declarations.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = " 1"; path = "/etc/sysctl.d/10-a.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-value-spaces.pkl"

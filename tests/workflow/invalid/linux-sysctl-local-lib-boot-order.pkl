@@ -1,0 +1,18 @@
+// expect: hands the boot value back to stage
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// /usr/local/lib/sysctl.d loads below /etc: the earlier stage's /etc
+// file loads after the later stage's file, so it hands the boot value
+// back to the earlier stage while the live value follows the stages.
+stages {
+  new Stage { title = "earlier"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-x.conf" }
+  } }
+  new Stage { title = "later"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/usr/local/lib/sysctl.d/10-y.conf" }
+  } }
+}
+
+name = "invalid/linux-sysctl-local-lib-boot-order.pkl"

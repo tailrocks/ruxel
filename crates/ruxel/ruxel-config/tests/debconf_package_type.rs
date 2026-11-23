@@ -13,6 +13,7 @@ fn refuses(name: &str) -> Result {
         "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
          import \"modulepath:/ruxel/Debian.pkl\" as debian\n\
          import \"inventory.pkl\"\n\
+         name = \"debconf-package-type-probe\"\n\
          \n\
          stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
          \x20 new debian.DebconfEntry {{ package = \"{name}\"; question = \"postfix/relay_pw\"; type = \"boolean\"; value = \"true\" }}\n\

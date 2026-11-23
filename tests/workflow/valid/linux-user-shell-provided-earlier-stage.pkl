@@ -1,0 +1,35 @@
+// The shell outlives the stage that writes it: an earlier
+// overlapping-host stage provides the file (and the link's target), so
+// the account's task finds the shell where the author wrote it and the
+// cross-stage provider check admits the workflow — only a provider at or
+// after the account's stage runs too late.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/opt"; mode = "0755" }
+      new File { path = "/opt/real"; content = "#!/bin/sh\n"; mode = "0755" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new Symlink { path = "/opt/esh"; target = "/opt/real" }
+    }
+  }
+  new Stage {
+    title = "third"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; shell = "/opt/esh" }
+    }
+  }
+}
+
+name = "valid/linux-user-shell-provided-earlier-stage.pkl"

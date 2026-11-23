@@ -12,3 +12,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { title = "The lost fraction"; name = "postgresql-lost-fraction"; onBoot = 4503599627370497.5.ms }
 } } }
+
+name = "invalid/timer-boot-lost-fraction.pkl"

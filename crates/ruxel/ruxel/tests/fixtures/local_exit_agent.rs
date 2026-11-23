@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         next = frame(&mut input)?;
     }
-    if next != [42, 0] {
+    if next != [42, 0] && next != [42, 2, 8, 0] && next != [42, 2, 8, 1] {
         return Err("expected Done".into());
     }
     if std::env::var_os("RUXEL_TEST_SHUTDOWN_FAILURE").is_some() {

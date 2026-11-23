@@ -1,4 +1,5 @@
 use super::{Ledger, Path};
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 
 impl Ledger {
@@ -21,12 +22,52 @@ impl Ledger {
         Ledger {
             path,
             host_key,
+            workflow: String::new(),
             records,
+            encountered: HashSet::new(),
+            aborted: false,
+            complete: false,
             dirty: false,
+            #[cfg(test)]
+            scans: std::cell::Cell::new(0),
         }
     }
 
-    pub(crate) fn flush(&self) {
+    /// The plan has ended: every record of its own workflow it never
+    /// encountered is history — a task a previous plan ran and this
+    /// one does not — and expires before what the plan still owns is
+    /// persisted. A complete plan that encountered nothing still
+    /// expires everything of its own workflow: a workflow that dropped
+    /// its last agent task runs no task of its own, and keeping its
+    /// old records would leave them trusted — a removed sysctl
+    /// declaration would keep authorizing its dropped task's
+    /// still-present later file. Records of other workflows live in
+    /// their own maps and are never this plan's verdict: the ledger is
+    /// shared per host, so another workflow's completion must not
+    /// delete them.
+    ///
+    /// Only a complete plan may expire what it never encountered. A
+    /// plan that stopped early — a task failed and the plan halted on
+    /// the failure — leaves the tasks it never reached in the workflow,
+    /// and their records are the workflow's own: the next run must see
+    /// the earlier stage's declaration of a later task, or it treats
+    /// the later task's file as an unmanaged override and refuses the
+    /// earlier stage before the later task can run. A session that
+    /// ended without its end — the controller's stream closed mid-plan
+    /// — is an executed prefix, not a complete plan, and expires
+    /// nothing either.
+    pub(crate) fn flush(&mut self) {
+        if self.complete && !self.aborted {
+            let before: usize = self.records.values().map(HashMap::len).sum();
+            if let Some(owned) = self.records.get_mut(&self.workflow) {
+                owned.retain(|key, _| self.encountered.contains(key));
+            }
+            self.records.retain(|_, owned| !owned.is_empty());
+            let after: usize = self.records.values().map(HashMap::len).sum();
+            self.dirty |= after != before;
+        }
+        // The plan is over: the next plan's encounters are its own.
+        self.encountered.clear();
         if !self.dirty {
             return;
         }

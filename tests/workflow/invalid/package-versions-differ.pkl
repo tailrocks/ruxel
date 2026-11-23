@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPackages { names { "curl=7.88.1-10" } }
   new debian.AptPackages { names { "curl=8.5.0-2" } }
 } } }
+
+name = "invalid/package-versions-differ.pkl"

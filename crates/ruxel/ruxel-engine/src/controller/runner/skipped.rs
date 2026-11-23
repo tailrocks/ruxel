@@ -11,6 +11,11 @@ impl<B: Backend> Runner<'_, B> {
             && !self.options.tags.is_empty()
             && !super::super::tag_selection::selected(task, &parent.tags, &self.options.tags)
         {
+            // The omission latches where the rejection happens: an
+            // excluded block returns before any leaf is visited, so
+            // leaf-latched filtering would miss it and shutdown would
+            // prune the records of every task the block keeps.
+            self.filtered = true;
             if array(task, "block").is_empty() {
                 self.skip_tagged_leaf(task, layer)?;
             }
@@ -24,6 +29,12 @@ impl<B: Backend> Runner<'_, B> {
         tasks: &[Value],
         parent: &ContextLayer,
     ) -> Result<()> {
+        // A `when:false` block omits tasks the workflow keeps: the
+        // omission latches here, where the rejection happens, the way
+        // a tag rejection latches where it happens — the leaves are
+        // never visited to latch it, and an unlatch run's end would
+        // prune the records of every task the block keeps.
+        self.filtered = true;
         for task in tasks {
             let layer = Self::layer(task, parent);
             if self.skip_unselected_task(task, parent, &layer)? {

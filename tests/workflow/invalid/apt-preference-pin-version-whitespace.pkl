@@ -12,3 +12,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin jq"; package = "jq"; pin = "version 5.* extra"; priority = 100 }
 } } }
+
+name = "invalid/apt-preference-pin-version-whitespace.pkl"

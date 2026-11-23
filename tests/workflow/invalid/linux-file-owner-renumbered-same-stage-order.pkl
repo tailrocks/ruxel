@@ -1,0 +1,30 @@
+// expect: the number is not repaired in the files the identity owns
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The same-stage repair must name the same file: the second stage
+// renumbers Alice to 1600 and then redeclares a DIFFERENT file with
+// her as owner — so the first stage's file keeps the old number and
+// no longer has the owner it declares. Only a redeclaration of the
+// same path reconciles.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+      new File { path = "/srv/app.conf"; content = "x\n"; owner = "alice" }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1600 }
+      new File { path = "/srv/other.conf"; content = "y\n"; owner = "alice" }
+    }
+  }
+}
+
+name = "invalid/linux-file-owner-renumbered-same-stage-order.pkl"

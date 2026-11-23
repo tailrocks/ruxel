@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new recipes.ApiProxy { backends = inventory.controlPlanes }
   new File { path = "/etc/haproxy/haproxy.cfg"; content = "other" }
 } } }
+
+name = "invalid/conflict-inside-recipe.pkl"

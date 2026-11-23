@@ -11,3 +11,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.DebconfEntry { title = "Two lines"; package = "nginx"; question = "nginx/nginx-user"; type = "string"; value = "www-data\nsecond" }
 } } }
+
+name = "invalid/debconf-value-multiline.pkl"

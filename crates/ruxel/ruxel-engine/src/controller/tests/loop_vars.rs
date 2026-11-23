@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn retired_variables_name_is_a_custom_loop_binding() -> Result<()> {
     let config = crate::model::validate_config(&json!({
+        "workflow":"synthetic-workflow",
         "inventory":{"hosts":{"h":{"address":"fixture.invalid"}},"groups":{}},
         "plays":[{"name":"custom binding","targets":["h"],"vars":{"prefix":{"kind":"literal","value":"canonical"}},"tasks":[{
             "name":"loop","loopVar":"variables","loop":{"kind":"list","items":[

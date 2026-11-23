@@ -1,0 +1,29 @@
+// Values that differ only in edge whitespace are one kernel value:
+// procps strips the blanks around a value before it applies it, and the
+// runtime compares the trimmed values too — so the same-stage pair of
+// one parameter with " 1" and "1 " agrees, and the cross-stage pair
+// whose later file loads first does not hand the boot value back
+// either. (The raw comparison refused both as contradictory.)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-new.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = " 1"; path = "/etc/sysctl.d/10-old.conf" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1 "; path = "/etc/sysctl.d/11-old.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-value-padded-equal.pkl"

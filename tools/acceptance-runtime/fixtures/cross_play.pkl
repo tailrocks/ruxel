@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-runtime/fixtures/cross_play.pkl"
  inventory { hosts { ["fixture-a"] { address = "127.0.0.1" }; ["fixture-b"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture-a"; "fixture-b" } } } }
  plays {
   new { name = "set"; targets { "all" }; tasks { new { name = "set private fact"; noLog = true

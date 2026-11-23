@@ -40,6 +40,10 @@ struct Execution {
     lookups: Arc<Lookups>,
     output: Arc<Output>,
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
+    /// The sysctl catalogue entries each agent session has already
+    /// received: the plan's declarations ride every frame, so the
+    /// per-frame send carries only what the session has not seen yet.
+    sysctl_sent: Arc<tokio::sync::Mutex<BTreeMap<String, Vec<ruxel_proto::v1::SysctlDeclaration>>>>,
     source_gate: Arc<tokio::sync::RwLock<()>>,
     template_root: Arc<templates::SourceRoot>,
     copy_root: Arc<copy_sources::SourceRoot>,
@@ -108,6 +112,7 @@ pub async fn run(
         mode: options.mode,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root,
         copy_root,
@@ -161,12 +166,18 @@ pub async fn run(
     let mut shutdown_errors = Vec::new();
     let connections = std::mem::take(&mut *execution.connections.lock().await);
     for (host, connection) in connections {
+        // A filtered or aborted run is no verdict on the records of the
+        // tasks it never sent, so its end must expire nothing: tag
+        // selection omits tasks the workflow keeps, and a
+        // controller-side failure stops the session before its tasks
+        // are all sent.
+        let filtered = session_incomplete(&result, &host);
         match Arc::try_unwrap(connection) {
             Err(_) => {
                 shutdown_errors.push((host, anyhow::anyhow!("agent connection still in use")));
             }
             Ok(connection) => {
-                if let Err(error) = connection.into_inner().shutdown().await {
+                if let Err(error) = connection.into_inner().shutdown(filtered).await {
                     shutdown_errors.push((host, error));
                 }
             }
@@ -219,3 +230,22 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests;
+
+/// Whether the session's end is no verdict on the records of the tasks
+/// it never sent, so the agent must not expire them: tag selection
+/// omitted tasks the workflow keeps (`filtered`), the controller
+/// stopped the session before its tasks were all sent (`aborted`), or
+/// the run itself failed before the shutdown could read a recap.
+fn session_incomplete(result: &Result<BTreeMap<String, Recap>>, host: &str) -> bool {
+    match result {
+        // An opened connection with no recap is no complete session:
+        // a task that delegates to a host which is not itself a play
+        // target opens that host's connection, but the recap stays
+        // keyed to the play target — the miss must read as incomplete,
+        // or shutdown prunes the delegate's unseen records.
+        Ok(recap) => recap
+            .get(host)
+            .is_none_or(|total| total.filtered || total.aborted),
+        Err(_) => true,
+    }
+}

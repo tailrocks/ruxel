@@ -185,6 +185,7 @@ pub async fn connect_with(
     run_id: &str,
     check_mode: bool,
     options: &ConnectOptions,
+    workflow: &str,
 ) -> Result<(AgentConnection, HostFacts)> {
     let remote = RemoteHost {
         destination: destination.to_owned(),
@@ -195,7 +196,7 @@ pub async fn connect_with(
         test_path: None,
     };
     let policy = ruxel_guard::Policy::new(&[], &[])?;
-    connect_remote(remote, &policy, agent_binary, run_id, check_mode).await
+    connect_remote(remote, &policy, agent_binary, run_id, check_mode, workflow).await
 }
 
 async fn connect_remote(
@@ -204,6 +205,7 @@ async fn connect_remote(
     agent_binary: &Path,
     run_id: &str,
     check_mode: bool,
+    workflow: &str,
 ) -> Result<(AgentConnection, HostFacts)> {
     remote.admit(policy).await?;
     let options = &remote.options;
@@ -235,6 +237,7 @@ async fn connect_remote(
                 check_mode,
                 diff_mode: options.diff_mode,
                 no_cache: options.no_cache,
+                workflow_namespace: workflow.to_string(),
             })),
         },
     )
@@ -296,11 +299,11 @@ impl AgentConnection {
 
     /// # Errors
     /// Returns stream errors or an unsuccessful agent exit.
-    pub async fn shutdown(mut self) -> Result<()> {
+    pub async fn shutdown(mut self, filtered: bool) -> Result<()> {
         write_frame(
             &mut self.stdin,
             &v1::Envelope {
-                msg: Some(EnvMsg::Done(v1::Done {})),
+                msg: Some(EnvMsg::Done(v1::Done { filtered })),
             },
         )
         .await?;

@@ -11,3 +11,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { service = "postgresql-long-name-target"; name = "taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; onCalendar = "daily" }
 } } }
+
+name = "valid/systemd-timer-long-name.pkl"

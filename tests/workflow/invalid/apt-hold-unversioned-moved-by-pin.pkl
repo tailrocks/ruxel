@@ -10,3 +10,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPackages { title = "Hold bash"; names { "bash" }; hold = true }
   new debian.AptPackages { title = "Pin bash"; names { "bash=0" } }
 } } }
+
+name = "invalid/apt-hold-unversioned-moved-by-pin.pkl"

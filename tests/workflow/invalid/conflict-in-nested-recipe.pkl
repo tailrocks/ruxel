@@ -13,3 +13,5 @@ local class Outer extends Recipe {
 }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Outer {} } } }
+
+name = "invalid/conflict-in-nested-recipe.pkl"

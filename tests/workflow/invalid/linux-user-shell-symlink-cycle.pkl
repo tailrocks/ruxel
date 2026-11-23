@@ -1,0 +1,22 @@
+// expect: whose managed link chain leads back to
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Managed links that point at each other never resolve: the chain from
+// the shell leads back to a link it already visited, and the account's
+// task fails following it — the runtime reports ELOOP where the
+// lowering stayed silent.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Symlink { path = "/opt/sh"; target = "/opt/next" }
+      new Symlink { path = "/opt/next"; target = "/opt/sh" }
+      new linux.User { user = "app"; shell = "/opt/sh" }
+    }
+  }
+}
+
+name = "invalid/linux-user-shell-symlink-cycle.pkl"

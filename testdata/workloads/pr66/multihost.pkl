@@ -2,6 +2,7 @@ import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 
 output {
   value = new Ruxel.Config {
+ workflow = "testdata/workloads/pr66/multihost.pkl"
     inventory {
       hosts {
         ["fixture-1"] { address = "127.0.0.1" }

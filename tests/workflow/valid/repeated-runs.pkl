@@ -36,3 +36,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new linux.Timezone { name = "UTC" }
   new Common {}
 } } }
+
+name = "valid/repeated-runs.pkl"

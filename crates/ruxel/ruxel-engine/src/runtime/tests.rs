@@ -2,11 +2,13 @@ use super::*;
 use crate::expression::percent_encode;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+mod aborted;
 mod agent_diff;
 mod copy_fingerprint;
 mod fetch_secret;
 mod prefetch;
 mod sensitive_output;
+mod sysctl_catalogue;
 
 #[test]
 fn sensitive_event_exposes_only_safe_metadata() -> Result<()> {

@@ -1,0 +1,35 @@
+// expect: remove 'alice' before reusing its uid
+// The uid 1001 must not change hands here: stage 2 removes the account
+// but leaves its home behind (`removeHome` defaults to false), so the
+// home stays owned by uid 1001 and stage 3's `useradd -u 1001` would
+// hand Bob the kernel ownership of Alice's files. A removal frees a uid
+// for reuse only when it takes the home with it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1001; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1001 }
+    }
+  }
+}
+
+name = "invalid/linux-user-uid-reused-without-home-removal.pkl"

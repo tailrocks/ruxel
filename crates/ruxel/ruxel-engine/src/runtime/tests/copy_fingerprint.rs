@@ -77,9 +77,11 @@ fn execution() -> Result<Execution> {
             local_state: None,
             local_agent: None,
             controller_state: None,
+            workflow_namespace: String::new(),
         },
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(templates::SourceRoot::open(std::path::Path::new("."))?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(std::path::Path::new("."))?),
@@ -94,6 +96,7 @@ fn request() -> Request {
     Request {
         host: "fixture".into(),
         content_fingerprint: Some("abcd1234".to_owned()),
+        plan_sysctl: Vec::new(),
         task: v1::RenderedTask {
             task_id: 4,
             name: "Write the env file".into(),

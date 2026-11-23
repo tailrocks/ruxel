@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.Service { name = "app"; running = true; enabled = true }
   new systemd.Service { name = "app.service"; running = false; enabled = true }
 } } }
+
+name = "invalid/service-unit-alias.pkl"

@@ -12,3 +12,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.DebconfEntry { title = "Set the relay host for postfix"; package = "postfix"; question = "mail/relay-host"; type = "string"; value = "mx.example.com" }
   new debian.DebconfEntry { title = "Set the relay host for dovecot"; package = "dovecot"; question = "mail/relay-host"; type = "string"; value = "mx2.example.com" }
 } } }
+
+name = "invalid/debconf-entry-shared-question.pkl"

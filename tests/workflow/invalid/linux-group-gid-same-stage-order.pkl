@@ -1,0 +1,29 @@
+// expect: claim the gid 1000 for different groups
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The order inside the later stage is the point: the claim for Bob
+// runs before the removal of Alice, so the gid is still taken when
+// `groupadd -g` runs — only a removal listed before the claim releases
+// the number, and one listed after it runs after the claim has already
+// failed on it.
+stages {
+  new Stage {
+    title = "first"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "alice"; gid = 1000 }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts = inventory.workers
+    steps {
+      new linux.Group { name = "bob"; gid = 1000 }
+      new linux.Group { name = "alice"; state = "absent" }
+    }
+  }
+}
+
+name = "invalid/linux-group-gid-same-stage-order.pkl"

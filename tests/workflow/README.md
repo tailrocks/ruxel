@@ -14,3 +14,8 @@ serves: `Core.pkl`, which it extends, and the layer modules beside it
 two example recipes that several cases share. `resources/` holds the files
 a workflow reads with `read("…")`: no import reaches them, so a walk that
 follows imports alone would never name them.
+
+Every workflow sets the required `name`: the stable identity the engine
+namespaces its ledger by, so two workflows that reuse play and host names
+never share ledger state. Fixtures use their corpus path, which is unique
+here for the same reason; name a real workflow after what it does.

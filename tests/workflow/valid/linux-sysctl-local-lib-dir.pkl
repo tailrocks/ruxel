@@ -1,0 +1,18 @@
+// A sysctl persistence file under /usr/local/lib/sysctl.d is a file
+// the system loader reads at boot: the earlier stage persists there —
+// below /run and /etc, above /usr/lib — and the later stage's file
+// sorts after it, so the boot value follows the stages.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "earlier"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/usr/local/lib/sysctl.d/10-y.conf" }
+  } }
+  new Stage { title = "later"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/99-x.conf" }
+  } }
+}
+
+name = "valid/linux-sysctl-local-lib-dir.pkl"

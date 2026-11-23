@@ -14,10 +14,11 @@ pub(super) fn run(cli: &Path, agent: &Path) -> Result<()> {
     let payload_string = payload.to_str().context("payload path is not UTF-8")?;
     let path = serde_json::to_string(payload_string)?;
     let file_uri = serde_json::to_string(&format!("file:{payload_string}"))?;
-    let fixture = |task: &str| {
+    let fixture = |name: &str, task: &str| {
         format!(
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "{name}"
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "fixture" }}; tasks {{ {task} }} }} }}
 }} }}"#
@@ -26,9 +27,12 @@ output {{ value = new Ruxel.Config {{
     let write = base.join("fixtures/write.pkl");
     fs::write(
         &write,
-        fixture(&format!(
-            r#"new {{ name = "private"; noLog = true; operation = new Ruxel.Copy {{ dest = {path}; content = "{MARKER}" }} }}"#
-        )),
+        fixture(
+            "acceptance-plan/privacy-write",
+            &format!(
+                r#"new {{ name = "private"; noLog = true; operation = new Ruxel.Copy {{ dest = {path}; content = "{MARKER}" }} }}"#
+            ),
+        ),
     )?;
     process::run_extra(
         cli,
@@ -48,9 +52,12 @@ output {{ value = new Ruxel.Config {{
     let plan = base.join("fixtures/plan.pkl");
     fs::write(
         &plan,
-        fixture(&format!(
-            r#"new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = read({file_uri}).text }} }}"#
-        )),
+        fixture(
+            "acceptance-plan/privacy-plan",
+            &format!(
+                r#"new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = read({file_uri}).text }} }}"#
+            ),
+        ),
     )?;
     let log = base.join("plan.jsonl");
     let events = process::run_extra(
@@ -81,6 +88,7 @@ output {{ value = new Ruxel.Config {{
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({file_uri}).text
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-plan/privacy-host-plan"
  inventory {{ hosts {{ [key] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ key }}; tasks {{ new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = "public" }} }} }} }} }}
 }} }}"#
@@ -121,6 +129,7 @@ output {{ value = new Ruxel.Config {{
             r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 local key = read({file_uri}).text
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-plan/privacy-bad-target"
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ key }}; tasks {{ new {{ name = "observe"; operation = new Ruxel.Debug {{ msg = "public" }} }} }} }} }}
 }} }}"#

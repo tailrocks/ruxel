@@ -7,3 +7,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts { new Host { name = "localhost"; address = "192.0.2.9" } }; steps {
   new linux.Timezone { name = "UTC" }
 } } }
+
+name = "invalid/localhost-host.pkl"

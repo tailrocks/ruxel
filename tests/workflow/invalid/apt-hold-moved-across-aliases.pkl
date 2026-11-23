@@ -15,3 +15,5 @@ stages {
     new debian.AptPackages { title = "Pin bash"; names { "bash=2" } }
   } }
 }
+
+name = "invalid/apt-hold-moved-across-aliases.pkl"

@@ -6,3 +6,4 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/./app.conf"; content = "a" }
 } } }
+name = "invalid/path-not-normal.pkl"

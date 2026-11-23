@@ -13,3 +13,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { title = "The rounded bound"; name = "postgresql-beyond-exact-limit"; onBoot = 9007199254740993.ms }
 } } }
+
+name = "invalid/timer-boot-beyond-exact-limit.pkl"

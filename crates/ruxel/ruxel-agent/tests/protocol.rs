@@ -93,11 +93,59 @@ fn finish_agent(agent: &mut Child, stdin: &mut impl std::io::Write) {
     write_frame(
         stdin,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
     assert_eq!(agent.wait().unwrap().code(), Some(0));
+}
+
+fn hello_namespaced(run_id: &str, workflow: &str) -> v1::Envelope {
+    v1::Envelope {
+        msg: Some(Msg::Hello(v1::Hello {
+            proto_version: PROTO_VERSION,
+            run_id: run_id.into(),
+            workflow_namespace: workflow.into(),
+            ..Default::default()
+        })),
+    }
+}
+
+#[test]
+fn two_workflows_keep_their_own_ledger_records() {
+    // Thread 294 end-to-end: the ledger is shared per host, so two
+    // sessions of different workflows on one state dir must keep both
+    // workflows' records — the second completion must not prune the
+    // first workflow's, the way it would prune its own dropped tasks.
+    let dir = temp_dir("namespaces");
+    for (workflow, name) in [("workflow-a", "a.txt"), ("workflow-b", "b.txt")] {
+        let dest = dir.join(name);
+        let mut agent = spawn_agent(&dir);
+        let mut stdin = agent.stdin.take().unwrap();
+        let mut stdout = agent.stdout.take().unwrap();
+        write_frame(&mut stdin, &hello_namespaced(workflow, workflow)).unwrap();
+        let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+        write_frame(&mut stdin, &copy_plan(1, &dest, "content", workflow)).unwrap();
+        assert_eq!(read_task_result(&mut stdout).status, "changed");
+        finish_agent(&mut agent, &mut stdin);
+    }
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("ledger/ledger.json")).unwrap()).unwrap();
+    // Records are keyed by workflow and task: the store's outer keys
+    // name the owning workflows.
+    let mut workflows: Vec<&str> = ledger
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    workflows.sort_unstable();
+    assert_eq!(
+        workflows,
+        vec!["workflow-a", "workflow-b"],
+        "both workflows' records survive both completions: {ledger}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -120,7 +168,7 @@ fn handshake_facts_clean_shutdown() {
     write_frame(
         &mut stdin,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
@@ -342,7 +390,7 @@ fn second_agent_is_locked_out_and_kill9_releases() {
     write_frame(
         &mut stdin3,
         &v1::Envelope {
-            msg: Some(Msg::Done(v1::Done {})),
+            msg: Some(Msg::Done(v1::Done { filtered: false })),
         },
     )
     .unwrap();
@@ -666,5 +714,74 @@ fn chaos_drop_after_task_start_flushes_ledger_and_rerun_converges() {
 #[path = "protocol/source_content.rs"]
 mod source_content;
 
+#[path = "protocol/filtered_done.rs"]
+mod filtered_done;
+
 #[path = "protocol/sensitive_check.rs"]
 mod sensitive_check;
+
+#[path = "protocol/session_plans.rs"]
+mod session_plans;
+
+#[test]
+fn plan_frame_declarations_are_accepted_before_tasks_execute() {
+    // Thread 314: the frame carries the plan's full static sysctl
+    // declaration list, so the agent weighs later stages' files before
+    // their tasks execute. The frame decodes on the new field, the
+    // check-mode task runs without touching the system, and the
+    // declared later stage is part of the plan set it ran under.
+    let dir = temp_dir("frame-declarations");
+    let mut agent = spawn_agent(&dir);
+    let mut stdin = agent.stdin.take().unwrap();
+    let mut stdout = agent.stdout.take().unwrap();
+    write_frame(&mut stdin, &hello("frame-decls", PROTO_VERSION)).unwrap();
+    let _: v1::Event = read_frame(&mut stdout).unwrap().expect("hello ack");
+    let file = dir.join("10-a.conf");
+    let params_json = serde_json::to_vec(&serde_json::json!({
+        "name": "net.test.stale314",
+        "value": "1",
+        "sysctl_file": file.to_string_lossy(),
+        "sysctl_set": false,
+        "reload": false,
+        "state": "present",
+    }))
+    .unwrap();
+    write_frame(
+        &mut stdin,
+        &v1::Envelope {
+            msg: Some(Msg::Plan(v1::Plan {
+                tasks: vec![v1::RenderedTask {
+                    task_id: 1,
+                    name: "earlier sysctl".into(),
+                    module: "sysctl".into(),
+                    rendered: true,
+                    iterations: vec![v1::Iteration {
+                        params_json,
+                        ledger_key: "earlier".into(),
+                        ..Default::default()
+                    }],
+                    force_check_mode: true,
+                    ..Default::default()
+                }],
+                sysctl_declarations: vec![v1::SysctlDeclaration {
+                    file: dir.join("99-b.conf").to_string_lossy().into_owned(),
+                    name: "net.test.stale314".into(),
+                    value: "2".into(),
+                }],
+                ..Default::default()
+            })),
+        },
+    )
+    .unwrap();
+    let result = read_task_result(&mut stdout);
+    assert_eq!(
+        result.status, "changed",
+        "the check-mode task runs: {result:?}"
+    );
+    assert!(
+        !file.exists(),
+        "check mode stages nothing at the persistence path"
+    );
+    finish_agent(&mut agent, &mut stdin);
+    let _ = std::fs::remove_dir_all(&dir);
+}

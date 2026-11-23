@@ -1,0 +1,22 @@
+// expect: ask for different values of the sysctl net.ipv4.ip_forward (1 and  2)
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Edge trimming forgives only the blanks around the value: "1" and " 2"
+// still name different kernel values once trimmed, so the same-stage
+// pair is refused the way any contradictory declaration is. The blanks
+// inside the value stay significant too — trimming never equates values
+// that differ past their edges.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = " 2"; path = "/etc/sysctl.d/10-backup.conf" }
+    }
+  }
+}
+
+name = "invalid/linux-sysctl-values-padded-differ.pkl"

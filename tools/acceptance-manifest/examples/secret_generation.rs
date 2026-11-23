@@ -22,6 +22,7 @@ fn workflow(root: &Path) -> String {
     format!(
         r#"amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Core.pkl" as core
+name = "generated-and-fetched-secrets"
 
 local fixture = new core.Host {{ name = "fixture"; address = "127.0.0.1" }}
 

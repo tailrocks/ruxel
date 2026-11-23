@@ -11,3 +11,5 @@ local class Motd extends Recipe {
 }
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new Motd { site = "a" }; new Motd { site = "b" } } } }
+
+name = "invalid/recipe-capture-used-twice.pkl"

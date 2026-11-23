@@ -1,0 +1,22 @@
+// expect: takes its uid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The draw happens where the identity is not provided yet: Alice is
+// numbered on the workers only, so the control-plane stage's
+// unnumbered redeclaration still draws there — and the control-plane
+// claim of 1600 for Bob is refused.
+stages {
+  new Stage { title = "numbered"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "unnumbered"; hosts = inventory.controlPlanes; steps {
+    new linux.User { user = "alice" }
+  } }
+  new Stage { title = "claim"; hosts = inventory.controlPlanes; steps {
+    new linux.User { user = "bob"; uid = 1600 }
+  } }
+}
+
+name = "invalid/linux-user-uid-draw-other-hosts.pkl"

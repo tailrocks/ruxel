@@ -1,0 +1,30 @@
+// expect: leaves the account alice in the group developers
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+
+// The group database is host-wide: two stages that reach one endpoint
+// and port as different login users still share one machine's groups,
+// so the removal refuses wherever the membership is kept — keying the
+// relation by connection (which counts the SSH user) would miss it.
+local deployer = new Host { name = "deployer"; address = "192.0.2.60"; user = "deployer" }
+local remover = new Host { name = "remover"; address = "192.0.2.60"; user = "root" }
+
+stages {
+  new Stage {
+    title = "first"
+    hosts { deployer }
+    steps {
+      new linux.Group { name = "developers" }
+      new linux.User { user = "alice"; uid = 1500; groups = new Listing { "developers" } }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts { remover }
+    steps {
+      new linux.Group { name = "developers"; state = "absent" }
+    }
+  }
+}
+
+name = "invalid/linux-group-removal-same-machine-different-user.pkl"

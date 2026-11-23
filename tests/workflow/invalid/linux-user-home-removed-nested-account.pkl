@@ -1,0 +1,27 @@
+// expect: manages /home/app/bob, which stage "s1" removes with the account's home directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Only a directory provides its own missing parents: an account created
+// inside a removed home needs the parents the removal took — `useradd`
+// does not create them — so the later account's home is refused until a
+// directory (or a covering home) is declared again.
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1501; home = "/home/app/bob" }
+    }
+  }
+}
+
+name = "invalid/linux-user-home-removed-nested-account.pkl"

@@ -17,3 +17,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { title = "Reload second"; run { "app"; "reload" }; onChangeOf { secondView } }
   new Directory { path = "/etc/app"; mode = "755" }
 } } }
+
+name = "valid/file-mode-spellings.pkl"

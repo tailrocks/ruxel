@@ -26,7 +26,15 @@ fn dispatch_with(
         environment: vec![],
         become_user: None,
     };
-    execute(module, params, "", None, &ctx, system_state)
+    execute(
+        module,
+        params,
+        "",
+        None,
+        &ctx,
+        system_state,
+        &crate::modules::SysctlManaged::default(),
+    )
 }
 
 pub(super) fn verify(root: &Path) -> Result<(), Box<dyn std::error::Error>> {

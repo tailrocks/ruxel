@@ -1,4 +1,6 @@
+mod namespace;
 pub(crate) mod notifications;
+pub use namespace::workflow_namespace;
 mod operations;
 mod shapes;
 use anyhow::{Context, Result, ensure};
@@ -323,6 +325,10 @@ pub fn validate_config(value: &Value) -> Result<Value> {
     };
     let config: Config =
         serde_json::from_value(value.clone()).context("invalid configuration shape")?;
+    ensure!(
+        !config.workflow.is_empty(),
+        "workflow requires a name: two empty-named workflows with common play and target names would share one ledger namespace"
+    );
     for host in config.inventory.hosts.values() {
         ensure!(
             !host.address.is_empty()

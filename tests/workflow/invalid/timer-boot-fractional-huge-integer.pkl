@@ -19,3 +19,5 @@ stages {
     }
   }
 }
+
+name = "invalid/timer-boot-fractional-huge-integer.pkl"

@@ -6,3 +6,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/motd"; content = "one" }
   new File { path = "/etc/motd"; content = "two" }
 } } }
+
+name = "invalid/duplicate-step.pkl"

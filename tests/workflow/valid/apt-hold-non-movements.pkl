@@ -15,3 +15,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPackages { title = "Install the arm64 kubelet"; names { "kubelet:arm64=1.37.2-1.1" } }
   new debian.AptPackages { title = "Reinstall the pinned kubelet"; names { "kubelet:amd64=1.37.2-1.1" } }
 } } }
+
+name = "valid/apt-hold-non-movements.pkl"

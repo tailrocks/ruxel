@@ -1,0 +1,24 @@
+// expect: loads one file per name from the highest-precedence directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One machine keeps one boot whatever login user opened the SSH
+// connection: both stages reach 192.0.2.50:22 — the first as root, the
+// second as deployer — so the /etc copy shadows the /usr/lib one on
+// that machine, and the keys only the lower-precedence copy carries
+// revert after reboot. The shadow check keys the machine by endpoint
+// and port, not by the SSH login user.
+local webRoot = new Host { name = "web-root"; address = "192.0.2.50" }
+local webDeployer = new Host { name = "web-deployer"; address = "192.0.2.50"; user = "deployer" }
+
+stages {
+  new Stage { title = "lower"; hosts { webRoot }; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/usr/lib/sysctl.d/50-ruxel.conf" }
+  } }
+  new Stage { title = "higher"; hosts { webDeployer }; steps {
+    new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/50-ruxel.conf" }
+  } }
+}
+
+name = "invalid/linux-sysctl-shadow-login-users.pkl"

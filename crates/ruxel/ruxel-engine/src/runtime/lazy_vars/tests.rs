@@ -27,10 +27,12 @@ fn execution() -> Result<Execution> {
             local_state: None,
             local_agent: None,
             controller_state: None,
+            workflow_namespace: String::new(),
         },
         mode: Mode::Apply,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(crate::runtime::templates::SourceRoot::open(
             std::path::Path::new("."),

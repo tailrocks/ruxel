@@ -98,7 +98,7 @@ pub(super) fn run_in(
         // attributes apply the same ids afterwards. A change to the passwd
         // or group file between the two resolutions cannot fail or
         // mis-apply a publication that already succeeded.
-        let ownership = resolve_ownership(obj)?;
+        let ownership = resolve_ownership(obj, ctx.check_mode)?;
         if writes {
             let creation_mode = if let Some(mode) = obj.get("mode") {
                 // The replacement is created with the requested mode before
@@ -127,6 +127,21 @@ pub(super) fn run_in(
         }
     }
     result["changed"] = json!(changed);
+    // The task's own provider record: check mode runs no writes, so a
+    // shell an earlier copy manages is still missing from the live
+    // filesystem when the account's task verifies it — the registry
+    // stands in for it the way the plan's group record stands in for
+    // a group `groupadd` has not created yet. Only the mode the task
+    // declares decides: a declared executable mode registers the
+    // destination, a declared non-executable one unregisters it, and
+    // no declared mode preserves whatever the destination already is.
+    super::user::note_managed_shell_file(
+        dest,
+        obj.get("mode")
+            .map(super::parse_mode)
+            .transpose()
+            .map_err(|error| format!("copy: {error}"))?,
+    );
     Ok(result)
 }
 
@@ -217,16 +232,56 @@ mod tests {
         for content in ["rendered", "rendered\n", "rendered\n\n"] {
             let params = serde_json::json!({"dest": path, "content": content});
             ctx.check_mode = true;
-            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            assert!(
+                super::super::execute(
+                    "template",
+                    &params,
+                    "",
+                    None,
+                    &ctx,
+                    &mut state,
+                    &super::super::SysctlManaged::default()
+                )
+                .changed
+            );
             ctx.check_mode = false;
-            assert!(super::super::execute("template", &params, "", None, &ctx, &mut state).changed);
+            assert!(
+                super::super::execute(
+                    "template",
+                    &params,
+                    "",
+                    None,
+                    &ctx,
+                    &mut state,
+                    &super::super::SysctlManaged::default()
+                )
+                .changed
+            );
             assert_eq!(std::fs::read(&path).unwrap(), content.as_bytes());
             assert!(
-                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+                !super::super::execute(
+                    "template",
+                    &params,
+                    "",
+                    None,
+                    &ctx,
+                    &mut state,
+                    &super::super::SysctlManaged::default()
+                )
+                .changed
             );
             ctx.check_mode = true;
             assert!(
-                !super::super::execute("template", &params, "", None, &ctx, &mut state).changed
+                !super::super::execute(
+                    "template",
+                    &params,
+                    "",
+                    None,
+                    &ctx,
+                    &mut state,
+                    &super::super::SysctlManaged::default()
+                )
+                .changed
             );
         }
         std::fs::remove_dir_all(dir).unwrap();

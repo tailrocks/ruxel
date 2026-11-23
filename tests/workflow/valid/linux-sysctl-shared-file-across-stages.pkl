@@ -1,0 +1,17 @@
+// One shared file is the multi-entry model, not a shadow: the two
+// stages persist different keys in the same file, each entry its own,
+// and the boot loads the one file with both.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "first"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/50-x.conf" }
+  } }
+  new Stage { title = "second"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/50-x.conf" }
+  } }
+}
+
+name = "valid/linux-sysctl-shared-file-across-stages.pkl"

@@ -4,6 +4,16 @@ use ruxel_proto::{PROTO_VERSION, frame::*, v1};
 use std::io::{self, Read};
 
 #[test]
+fn filtered_done_semantics_require_protocol_v4() {
+    // Thread 293: Done carries `filtered = false` as pruning
+    // authorization, which the old empty Done decodes to — so a v3
+    // controller paired with a v4 agent (or the reverse) must fail the
+    // handshake instead of silently applying legacy completion
+    // semantics to a tag-filtered or controller-aborted run.
+    assert_eq!(PROTO_VERSION, 4);
+}
+
+#[test]
 fn hello_roundtrips() {
     let hello = v1::Hello {
         proto_version: PROTO_VERSION,
@@ -11,6 +21,7 @@ fn hello_roundtrips() {
         check_mode: true,
         diff_mode: false,
         no_cache: false,
+        workflow_namespace: "synthetic-workflow".into(),
     };
     let bytes = hello.encode_to_vec();
     let decoded = v1::Hello::decode(bytes.as_slice()).expect("hello frame decodes");
@@ -32,7 +43,7 @@ fn roundtrip_through_buffer() {
     write_frame(
         &mut buf,
         &v1::Envelope {
-            msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered: false })),
         },
     )
     .expect("frame operation succeeds");
@@ -48,6 +59,26 @@ fn roundtrip_through_buffer() {
     assert!(matches!(second.msg, Some(v1::envelope::Msg::Done(_))));
     let eof: Option<v1::Envelope> = read_frame(&mut r).expect("frame operation succeeds");
     assert!(eof.is_none());
+}
+
+#[test]
+fn done_filtered_roundtrips() {
+    // The filtered flag travels the whole frame path: a tagged run's
+    // end must still read filtered on the agent's side.
+    for filtered in [false, true] {
+        let mut buf = Vec::new();
+        let env = v1::Envelope {
+            msg: Some(v1::envelope::Msg::Done(v1::Done { filtered })),
+        };
+        write_frame(&mut buf, &env).expect("frame operation succeeds");
+        let mut r = buf.as_slice();
+        let decoded: v1::Envelope = read_frame(&mut r)
+            .expect("frame operation succeeds")
+            .expect("frame operation succeeds");
+        assert!(
+            matches!(decoded.msg, Some(v1::envelope::Msg::Done(done)) if done.filtered == filtered)
+        );
+    }
 }
 
 #[test]
@@ -113,7 +144,7 @@ fn interrupted_read_retries() {
     }
 
     let expected = v1::Envelope {
-        msg: Some(v1::envelope::Msg::Done(v1::Done {})),
+        msg: Some(v1::envelope::Msg::Done(v1::Done { filtered: false })),
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &expected).expect("frame operation succeeds");

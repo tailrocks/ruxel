@@ -1,0 +1,20 @@
+// expect: loads one file per name from the highest-precedence directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One name in two directories loads once: the earlier stage persists
+// 50-ruxel.conf under /usr/lib, and the later stage persists the same
+// name under /etc. The lower-precedence copy never loads, so the keys
+// only it carries revert after reboot — whatever keys the two files
+// manage.
+stages {
+  new Stage { title = "lower"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/usr/lib/sysctl.d/50-ruxel.conf" }
+  } }
+  new Stage { title = "higher"; hosts = inventory.workers; steps {
+    new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/50-ruxel.conf" }
+  } }
+}
+
+name = "invalid/linux-sysctl-shadow-across-dirs.pkl"

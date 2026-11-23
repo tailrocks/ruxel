@@ -58,6 +58,7 @@ async fn async_and_sync_framing_are_byte_identical() {
         msg: Some(v1::envelope::Msg::Hello(v1::Hello {
             proto_version: ruxel_proto::PROTO_VERSION,
             run_id: "codec-identity".into(),
+            workflow_namespace: "synthetic-workflow".into(),
             ..Default::default()
         })),
     };

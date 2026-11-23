@@ -1,0 +1,28 @@
+// Two declarations of one absent account that differ only in the fields
+// the removal branch never reads — the shell and the supplementary
+// groups — are the same state: the runtime returns from the removal
+// branch before it reads them, so both declarations remove the account
+// exactly the same way. The system flag is not one of those fields: a
+// removal that states it names a system account, which the host keeps.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.User {
+        user = "app"
+        uid = 1500
+        state = "absent"
+        shell = "/bin/sh"
+        groups = new Listing { "docker" }
+      }
+      new linux.User { user = "app"; uid = 1500; state = "absent" }
+    }
+  }
+}
+
+name = "valid/linux-user-absent-fields-inactive.pkl"

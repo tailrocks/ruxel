@@ -1,0 +1,19 @@
+// expect: ask for different values of the sysctl
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The trim reaches the edges only: a vertical tab around another value
+// is still another kernel value, so the same-stage pair is refused.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/10-a.conf" }
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "\u{B}2\u{B}"; path = "/etc/sysctl.d/11-b.conf" }
+    }
+  }
+}
+
+name = "invalid/linux-sysctl-value-vertical-tab-difference.pkl"

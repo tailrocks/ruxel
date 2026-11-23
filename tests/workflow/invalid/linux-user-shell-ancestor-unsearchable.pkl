@@ -1,0 +1,25 @@
+// expect: manages the directory /opt/private above the shell /opt/private/appsh
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The file's own executable mode decides nothing above it: the account's
+// task walks every ancestor directory on its way to the shell and judges
+// each one by the other-search bit (`shell_allowed`), so a managed shell
+// beneath a root-owned 0700 directory leaves the account unable to reach
+// it after the earlier tasks have already mutated the host. The static
+// model examines only the shell path itself and admits this workflow; a
+// managed ancestor directory of a login shell carries a searchable mode.
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/opt/private"; mode = "0700" }
+      new File { path = "/opt/private/appsh"; content = "#!/bin/sh\n"; mode = "0755" }
+      new linux.User { user = "app"; shell = "/opt/private/appsh" }
+    }
+  }
+}
+
+name = "invalid/linux-user-shell-ancestor-unsearchable.pkl"

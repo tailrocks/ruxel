@@ -1,0 +1,49 @@
+// expect: claim the uid 1500 for different accounts
+// The uid 1500 must not change hands here: the second stage removes
+// Alice without `removeHome`, so the removal frees nothing — and the
+// fourth stage's renumbering to 1600 releases nothing either, since
+// `usermod -u` leaves the out-of-home files owned by the old number —
+// so the fifth stage's `useradd -u 1500` for `bob` would hand Bob the
+// kernel ownership of Alice's residual files.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+stages {
+  new Stage {
+    title = "numbered"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "recreate"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice" }
+    }
+  }
+  new Stage {
+    title = "renumber"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1600 }
+    }
+  }
+  new Stage {
+    title = "claim"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1500 }
+    }
+  }
+}
+
+name = "invalid/linux-user-uid-recreated-then-renumbered.pkl"

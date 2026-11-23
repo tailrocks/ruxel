@@ -10,3 +10,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { title = "The longest literal"; name = "postgresql-beyond-exact-limit-huge"; onBoot = 9223372036854775807.ms }
 } } }
+
+name = "invalid/timer-boot-beyond-exact-limit-huge.pkl"

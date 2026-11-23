@@ -12,3 +12,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
   new debian.AptSystemUpgrade { title = "Upgrade the system" }
 } } }
+
+name = "invalid/apt-preference-before-system-upgrade.pkl"

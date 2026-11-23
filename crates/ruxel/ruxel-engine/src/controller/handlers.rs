@@ -16,13 +16,22 @@ impl<B: Backend> Runner<'_, B> {
         }
     }
 
-    pub(super) async fn run_handlers(&mut self, layer: &ContextLayer) -> Result<()> {
+    /// Whether the handler flush ran to its end: a handler that
+    /// stops the play without an execution error — `Ok(false)` —
+    /// leaves notified handlers unexecuted, so the session stopped
+    /// before its tasks were all sent and the recap must carry the
+    /// aborted mark, the way a failed play task does. The caller
+    /// maps `Ok(false)` onto that mark; the unexecuted notified
+    /// handlers stay defined, so the unknown-handler bail below
+    /// never fires for them on either path.
+    pub(super) async fn run_handlers(&mut self, layer: &ContextLayer) -> Result<bool> {
         let handlers = self.handlers.clone();
         let defined: BTreeSet<_> = handlers
             .iter()
             .filter_map(|handler| string(handler, "name"))
             .collect();
         let mut executed = BTreeSet::new();
+        let mut completed = true;
         'flush: loop {
             let before = executed.len();
             for handler in &handlers {
@@ -44,6 +53,7 @@ impl<B: Backend> Runner<'_, B> {
                         }
                     })?;
                     if !result {
+                        completed = false;
                         break 'flush;
                     }
                 }
@@ -60,6 +70,6 @@ impl<B: Backend> Runner<'_, B> {
                 self.notified.keys().collect::<Vec<_>>()
             );
         }
-        Ok(())
+        Ok(completed)
     }
 }

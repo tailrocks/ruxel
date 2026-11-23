@@ -15,3 +15,5 @@ stages {
     new debian.AptPackages { title = "Pin bash"; names { "bash=0" } }
   } }
 }
+
+name = "invalid/apt-hold-unversioned-moved-by-pin-later-stage.pkl"

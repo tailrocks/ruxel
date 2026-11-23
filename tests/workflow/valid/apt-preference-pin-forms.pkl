@@ -20,3 +20,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { package = "wget"; pin = "release a=1.01"; priority = 100 }
   new debian.AptPreference { package = "tmux"; pin = "release o=Google LLC"; priority = 500 }
 } } }
+
+name = "valid/apt-preference-pin-forms.pkl"

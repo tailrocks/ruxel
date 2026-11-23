@@ -1,3 +1,4 @@
+use super::selection::group_hosts;
 use super::*;
 
 #[test]

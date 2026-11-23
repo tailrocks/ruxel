@@ -6,3 +6,5 @@ amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Ruxel.pkl" as ruxel
 
 stages { new Stage { title = "t"; hosts { new ruxel.Host { name = "web"; address = "192.0.2.1" } }; steps { new Timezone { name = "UTC" } } } }
+
+name = "invalid/old-ruxel-module.pkl"

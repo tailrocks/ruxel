@@ -12,8 +12,8 @@ async fn concurrent_connections_share_fresh_cache_safely() -> anyhow::Result<()>
     .await?;
     let (first, _) = first?;
     let (second, _) = second?;
-    first.shutdown().await?;
-    second.shutdown().await?;
+    first.shutdown(false).await?;
+    second.shutdown(false).await?;
     let calls = fixture.calls()?;
     for (position, event) in calls
         .iter()
@@ -44,13 +44,13 @@ async fn exercise() -> anyhow::Result<()> {
     let (connection, facts) = fixture.connect().await?;
     assert!(connection.uploaded_agent);
     assert_eq!(facts.facts.hostname, "synthetic-agent");
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     let uploaded = fixture.verify_first_upload()?;
     let cache = fixture.root.join("remote/var/lib/ruxel/agent");
     std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o755))?;
     let (connection, _) = fixture.connect().await?;
     assert!(!connection.uploaded_agent);
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     assert_eq!(
         std::fs::metadata(&cache)?.permissions().mode() & 0o777,
         0o700
@@ -58,7 +58,7 @@ async fn exercise() -> anyhow::Result<()> {
     std::fs::write(&uploaded, b"corrupt cached bytes")?;
     let (connection, _) = fixture.connect().await?;
     assert!(connection.uploaded_agent);
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     std::fs::write(fixture.root.join("mismatch"), b"synthetic hash mismatch")?;
     assert!(
         fixture
@@ -156,7 +156,7 @@ async fn controller_refuses_agent_with_previous_protocol_version() -> anyhow::Re
     assert!(
         error
             .to_string()
-            .contains("agent speaks proto v1, controller v3")
+            .contains("agent speaks proto v1, controller v4")
     );
     Ok(())
 }
@@ -203,7 +203,7 @@ async fn allowed_address_is_pinned(hostname: &str) -> anyhow::Result<()> {
     let fixture = Fixture::new()?;
     std::fs::write(fixture.root.join("hostname"), hostname)?;
     let (connection, _) = fixture.connect().await?;
-    connection.shutdown().await?;
+    connection.shutdown(false).await?;
     let calls = fixture.calls()?;
     assert!(
         calls[0][1]

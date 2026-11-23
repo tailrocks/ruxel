@@ -24,3 +24,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { title = "Reload plain"; run { "echo"; "plain" }; onChangeOf { plain } }
   new Command { title = "Reload held"; run { "echo"; "held" }; onChangeOf { held } }
 } } }
+
+name = "valid/apt-hold.pkl"

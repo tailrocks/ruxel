@@ -6,3 +6,5 @@ local config = new File { path = "/etc/app.conf"; content = "x" }
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { run { "app"; "reload" }; onChangeOf { config } }
 } } }
+
+name = "invalid/missing-dependency.pkl"

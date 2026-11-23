@@ -1,0 +1,22 @@
+// expect: loads one file per name from the highest-precedence directory
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// One name in two directories of one stage loads once: the stage
+// persists 50-tune.conf under /usr/lib and under /etc. The
+// higher-precedence /etc copy shadows the /usr/lib one, so the keys
+// only the lower-precedence file carries never load — whatever order
+// the two tasks run in.
+stages {
+  new Stage {
+    title = "tune"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/usr/lib/sysctl.d/50-tune.conf" }
+      new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/50-tune.conf" }
+    }
+  }
+}
+
+name = "invalid/linux-sysctl-shadow-same-stage.pkl"

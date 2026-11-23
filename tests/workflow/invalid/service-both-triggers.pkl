@@ -15,3 +15,5 @@ stages {
     }
   }
 }
+
+name = "invalid/service-both-triggers.pkl"

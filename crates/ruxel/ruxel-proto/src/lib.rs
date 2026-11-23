@@ -17,4 +17,11 @@ pub mod v1 {
     include!(concat!(env!("OUT_DIR"), "/ruxel.v1.rs"));
 }
 
-pub const PROTO_VERSION: u32 = 3;
+/// The protocol version the handshake enforces on both sides: v4
+/// carries the workflow namespace that scopes ledger pruning and the
+/// filtered completion bit whose `false` authorizes it. A v3 peer
+/// decodes an empty Done as `filtered = false` and would prune the
+/// records of tasks a tag-filtered or controller-aborted run never
+/// sent — so mixed binaries are refused instead of silently applying
+/// legacy completion semantics.
+pub const PROTO_VERSION: u32 = 4;

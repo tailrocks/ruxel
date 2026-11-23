@@ -40,6 +40,10 @@ fn record_file(ledger: &mut Ledger, key: &str, path: &Path) {
     );
 }
 
+mod fallback;
 mod group_1;
 mod group_2;
 mod group_3;
+mod group_4;
+mod group_5;
+mod prune_empty;

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Config {
+    pub(super) workflow: String,
     pub(super) inventory: Inventory,
     pub(super) plays: Vec<Play>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

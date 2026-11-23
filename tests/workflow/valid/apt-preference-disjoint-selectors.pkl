@@ -12,3 +12,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { package = "vim:amd64"; pin = "version 9.0"; priority = 100 }
   new debian.AptPreference { package = "vim:i386"; pin = "version 9.0"; priority = 100 }
 } } }
+
+name = "valid/apt-preference-disjoint-selectors.pkl"

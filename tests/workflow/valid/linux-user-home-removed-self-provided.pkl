@@ -1,0 +1,27 @@
+// The step that writes inside the removed home provides the parents
+// itself: a directory creates every missing parent of its path, so the
+// later stage's directory is the recreation — the step counts as the
+// covering declaration and no separate one between the removal and it
+// is needed.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/home/app/.config"; mode = "0755" }
+    }
+  }
+}
+
+name = "valid/linux-user-home-removed-self-provided.pkl"

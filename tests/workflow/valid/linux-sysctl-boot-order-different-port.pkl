@@ -1,0 +1,29 @@
+// The port is part of the machine: two stages that reach 192.0.2.50 on
+// different ports run on different machines, so their reversed sysctl
+// files never load on one boot and nothing hands the value back. The
+// sysctl cross-stage checks key the machine by endpoint and port.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+local webSsh = new Host { name = "web-ssh"; address = "192.0.2.50"; port = 22 }
+local webAlt = new Host { name = "web-alt"; address = "192.0.2.50"; port = 2222 }
+
+stages {
+  new Stage {
+    title = "first"
+    hosts { webSsh }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.d/99-old.conf" }
+    }
+  }
+  new Stage {
+    title = "second"
+    hosts { webAlt }
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "0"; path = "/etc/sysctl.d/10-new.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-boot-order-different-port.pkl"

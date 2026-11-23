@@ -5,3 +5,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { run { "true" }; changes = new UnlessOutput { stdoutContains = "a"; stderrContains = "b" } }
 } } }
+
+name = "invalid/unless-output-both.pkl"

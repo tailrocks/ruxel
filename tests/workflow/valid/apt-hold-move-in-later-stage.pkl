@@ -16,3 +16,5 @@ stages {
     new debian.AptPackages { title = "Hold the newer curl"; names { "curl=1.1" }; hold = true }
   } }
 }
+
+name = "valid/apt-hold-move-in-later-stage.pkl"

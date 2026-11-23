@@ -72,7 +72,15 @@ fn stored_identity_is_host_keyed_and_stable() {
         &std::fs::read(dir.0.join("ledger/ledger.json")).expect("operation succeeds"),
     )
     .expect("operation succeeds");
+    // The store nests by owning workflow: the outer key names it,
+    // the inner key is the host-keyed storage key, never the
+    // controller's own key.
     let stored_key = stored
+        .as_object()
+        .expect("operation succeeds")
+        .values()
+        .next()
+        .expect("operation succeeds")
         .as_object()
         .expect("operation succeeds")
         .keys()

@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-isolation/fixtures/hosts.pkl"
  inventory { hosts { HOSTS }; groups { ["all"] { hosts { HOSTNAMES } } } }
  plays {
   new { name = "first"; targets { "all" }; tasks {

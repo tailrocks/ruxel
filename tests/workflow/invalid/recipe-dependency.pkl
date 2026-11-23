@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   proxy
   new Command { run { "logger"; "proxy changed" }; onChangeOf { proxy } }
 } } }
+
+name = "invalid/recipe-dependency.pkl"

@@ -4,3 +4,5 @@ import "modulepath:/ruxel/Debian.pkl" as debian
 import "../inventory.pkl"
 
 stages { new Stage { title = "t"; hosts = inventory.workers; steps { new debian.AptPackages { names { "libc6:any" } } } } }
+
+name = "invalid/package-pseudo-arch.pkl"

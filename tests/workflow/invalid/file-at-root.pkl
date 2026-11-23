@@ -6,3 +6,4 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/"; content = "a" }
 } } }
+name = "invalid/file-at-root.pkl"

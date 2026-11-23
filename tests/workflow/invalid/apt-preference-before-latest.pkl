@@ -11,3 +11,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "release n=stable"; priority = 500 }
   new debian.AptPackages { title = "Track nginx"; names { "nginx" }; latest = true }
 } } }
+
+name = "invalid/apt-preference-before-latest.pkl"

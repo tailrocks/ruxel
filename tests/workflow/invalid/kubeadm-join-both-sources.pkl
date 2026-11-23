@@ -9,3 +9,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   caHash
   new recipes.KubeadmJoinConfig { endpoint = "api:7443"; readyControlPlane = inventory.cp1; sharedCaHash = caHash }
 } } }
+
+name = "invalid/kubeadm-join-both-sources.pkl"

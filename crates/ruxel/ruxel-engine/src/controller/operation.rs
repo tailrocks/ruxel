@@ -206,9 +206,32 @@ impl<B: Backend> Runner<'_, B> {
         } else {
             String::new()
         };
+        // The declarations travel scoped to the session that receives
+        // the request: a delegation to another host carries that
+        // host's static set — recomputed from the full configuration
+        // — so the destination never treats a source-only declaration
+        // as managed. A delegated task itself never declares up front
+        // (see `static_sysctl_declaration`), so the source host's own
+        // set is the right one only where nothing delegated.
+        // The session the request reaches: an incomplete origin marks
+        // its destinations incomplete too, so the destination's
+        // shutdown never reads only its unrelated origin recap.
+        if destination != self.host {
+            self.delegated.insert(destination.clone());
+        }
+        let plan_sysctl = if destination == self.host {
+            self.plan_sysctl.clone()
+        } else {
+            super::static_sysctl::static_sysctl_declarations_for_host(
+                self.full_config,
+                &destination,
+                &self.options.tags,
+            )
+        };
         let mut request = Request {
             host: destination,
             content_fingerprint,
+            plan_sysctl,
             task: v1::RenderedTask {
                 task_id: id,
                 name: string(task, "name").unwrap_or(kind).to_owned(),

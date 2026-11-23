@@ -6,3 +6,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new Command { run { "hostnamectl"; "set-hostname"; module.currentHost.name } }
 } } }
+
+name = "invalid/runtime-value-in-command.pkl"

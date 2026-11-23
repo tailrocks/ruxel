@@ -6,3 +6,4 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/app.conf"; content = "a" }
   new File { path = "/etc/app.conf"; content = "a"; owner = "null" }
 } } }
+name = "invalid/owner-null-and-text.pkl"

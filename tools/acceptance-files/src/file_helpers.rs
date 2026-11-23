@@ -11,6 +11,7 @@ use std::{
 
 pub(super) const PKL: &str = r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "acceptance-files/lifecycle"
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "files"; targets { "all" }; vars { ["value"] = new Ruxel.Literal { value = "rendered" } }; tasks {
   new { name = "remove"; operation = new Ruxel.File { path = ABSENT; state = "absent" } }

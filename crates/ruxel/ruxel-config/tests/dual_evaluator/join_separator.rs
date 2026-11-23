@@ -31,6 +31,7 @@ fn a_long_join_separator_decodes_under_both_evaluators() -> Result {
         "amends \"modulepath:/ruxel/Workflow.pkl\"\n\
          import \"modulepath:/ruxel/Core.pkl\" as core\n\
          import \"inventory.pkl\"\n\
+         name = \"long-separator\"\n\
          \n\
          stages {{ new Stage {{ title = \"t\"; hosts = inventory.workers; steps {{\n\
          \x20 new Command {{\n\

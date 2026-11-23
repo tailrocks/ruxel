@@ -56,6 +56,7 @@ impl Fixture {
             format!(
                 r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "exit-classification"
  inventory {{ hosts {{ ["fixture"] {{ address = "fixture.invalid" }} }} }}
  plays {{ new {{ name = "exit classification"; targets {{ "fixture" }}; tasks {{
   new {{ name = "controller task"; {controls} operation = {operation} }}

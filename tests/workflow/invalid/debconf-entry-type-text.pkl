@@ -10,3 +10,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.DebconfEntry { package = "postfix"; question = "postfix/x"; type = "text"; value = "x" }
 } } }
+
+name = "invalid/debconf-entry-type-text.pkl"

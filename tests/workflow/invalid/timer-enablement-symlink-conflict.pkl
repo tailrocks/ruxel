@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new systemd.SystemdTimer { name = "app"; service = "app"; onCalendar = "daily" }
   new Symlink { path = "/etc/systemd/system/timers.target.wants/app.timer"; target = "/etc/systemd/system/app.timer" }
 } } }
+
+name = "invalid/timer-enablement-symlink-conflict.pkl"

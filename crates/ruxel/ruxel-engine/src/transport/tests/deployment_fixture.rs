@@ -141,6 +141,7 @@ impl Fixture {
             &self.root.join("agent"),
             "deployment-test",
             true,
+            "synthetic-workflow",
         )
         .await
     }

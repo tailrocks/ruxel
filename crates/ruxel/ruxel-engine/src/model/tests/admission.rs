@@ -3,6 +3,7 @@ use super::*;
 #[test]
 fn validation_preserves_inventory_declaration_order() -> Result<()> {
     let value = json!({
+        "workflow": "synthetic-workflow",
         "inventory": {"hosts": {
             "zeta": {"address": "zeta.invalid"},
             "alpha": {"address": "alpha.invalid"}
@@ -23,6 +24,7 @@ fn validation_preserves_inventory_declaration_order() -> Result<()> {
 #[test]
 fn admission_configuration_keeps_full_input_and_inventory_order() -> Result<()> {
     let input = json!({"config": {
+        "workflow": "synthetic-workflow",
         "inventory": {"hosts": {"zeta": {"address": "zeta.invalid"}, "alpha": {"address": "alpha.invalid"}}},
         "plays": [],
         "ssh": {"identityFile": "keys/id", "knownHostsFile": "keys/hosts"}

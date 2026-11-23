@@ -12,3 +12,5 @@ stages {
     }
   }
 }
+
+name = "invalid/timer-empty-calendar.pkl"

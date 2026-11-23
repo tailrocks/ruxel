@@ -1,0 +1,21 @@
+// expect: needs the group alice, which stage "remove" removes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// No surviving member keeps the private group: Alice goes with no
+// holder left, so `userdel` takes the empty same-name group with her —
+// and the later file cannot resolve it.
+stages {
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; state = "absent" }
+  } }
+  new Stage { title = "file"; hosts = inventory.workers; steps {
+    new File { path = "/srv/app-team.txt"; content = "keep\n"; group = "alice" }
+  } }
+}
+
+name = "invalid/linux-user-private-group-gone-no-member.pkl"

@@ -7,3 +7,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new File { path = "/etc/systemd/system/app.timer/child"; content = "a" }
   new systemd.SystemdTimer { name = "app"; service = "app"; onCalendar = "daily" }
 } } }
+
+name = "invalid/timer-file-inside.pkl"

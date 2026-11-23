@@ -1,0 +1,26 @@
+// The membership that blocks the private-group draw is the one on the
+// machine the proof is about: Bob joins Alice's private group on the
+// control planes only, so the account removal on the workers still takes
+// the empty group with it there — and the workers' claim of its number
+// is valid. A same-machine membership would still block (see
+// `linux-group-gid-held-blocks-free`).
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "accounts"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "elsewhere"; hosts = inventory.controlPlanes; steps {
+    new linux.User { user = "bob"; uid = 1501; groups = new Listing { "alice" } }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500; state = "absent" }
+  } }
+  new Stage { title = "claim"; hosts = inventory.workers; steps {
+    new linux.Group { name = "team"; gid = 1000 }
+  } }
+}
+
+name = "valid/linux-user-private-group-disjoint-member.pkl"

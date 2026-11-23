@@ -7,6 +7,7 @@ mod system_state;
 
 use frames::{effective_check_mode, log_event, send_result};
 use ruxel_proto::PROTO_VERSION;
+use ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS;
 use ruxel_proto::frame::{read_frame, write_frame};
 use ruxel_proto::v1::{self, envelope::Msg};
 use std::io::Write as _;
@@ -103,9 +104,7 @@ fn serve() -> i32 {
     {
         let handshaken = handshaken.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(
-                ruxel_proto::constants::HANDSHAKE_TIMEOUT_SECS,
-            ));
+            std::thread::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
             if !handshaken.load(std::sync::atomic::Ordering::Relaxed) {
                 std::process::exit(67);
             }
@@ -117,6 +116,7 @@ fn serve() -> i32 {
     let mut no_cache = false;
     let mut ledger = ledger::Ledger::load(&dir);
     let mut system_state = system_state::SystemState::default();
+    let mut plan_sysctl: Vec<modules::ManagedSysctl> = Vec::new();
 
     loop {
         let envelope: v1::Envelope = match read_frame(&mut stdin) {
@@ -163,6 +163,12 @@ fn serve() -> i32 {
                     return 65;
                 }
                 handshaken.store(true, Ordering::Relaxed);
+                // The session's plans are one workflow's (the engine
+                // frames every task as its own Plan): state begins here,
+                // namespaced by the workflow the Hello carries so the
+                // session's end prunes only its own records.
+                ledger.begin_plan(&hello.workflow_namespace);
+                modules::begin_plan();
                 let ack = v1::Event {
                     msg: Some(v1::event::Msg::HelloAck(v1::HelloAck {
                         agent_version: env!("CARGO_PKG_VERSION").into(),
@@ -176,27 +182,59 @@ fn serve() -> i32 {
                     return 64;
                 }
             }
-            Some(Msg::Done(_)) => {
+            Some(Msg::Done(done)) => {
+                if complete_on_done(done.filtered, check_mode) {
+                    ledger.complete_plan();
+                }
                 ledger.flush();
                 return 0;
             }
-            Some(Msg::Plan(v1::Plan { tasks, .. }) | Msg::PlanPatch(v1::PlanPatch { tasks })) => {
-                for task in &tasks {
-                    let mut task = task.clone();
-                    task.no_log |= sensitive_effects.is_marked();
-                    if execute_task(
-                        &mut stdout,
-                        &task,
-                        check_mode,
-                        diff_mode,
-                        no_cache,
-                        &mut ledger,
-                        &mut system_state,
-                        &mut sensitive_effects,
-                    ) {
-                        break;
-                    }
-                }
+            Some(Msg::Plan(v1::Plan {
+                tasks,
+                sysctl_declarations,
+                ..
+            })) => {
+                // Every frame is one task of the session's workflow; the
+                // plan state began at Hello and every frame keeps it. A
+                // frame that arrives after a halted one is evidence the
+                // controller rescued the failure and continued, so the
+                // earlier abort clears: only the session's end decides
+                // what expires, never one failed frame. The frame's
+                // static declarations land before the frame's tasks run:
+                // the whole plan's unconditional sysctl entries, so an
+                // earlier task's preflight weighs the later stages'
+                // files on the first run — before any task executed and
+                // before the ledger holds anything.
+                ledger.continue_plan();
+                merge_frame_declarations(&mut plan_sysctl, &sysctl_declarations);
+                execute_frame(
+                    &mut stdout,
+                    &tasks,
+                    check_mode,
+                    diff_mode,
+                    no_cache,
+                    &mut ledger,
+                    &mut system_state,
+                    &mut sensitive_effects,
+                    &mut plan_sysctl,
+                );
+            }
+            Some(Msg::PlanPatch(v1::PlanPatch { tasks })) => {
+                // A patch carries the frame's tasks without restating
+                // the plan's static declarations: the full frame
+                // already delivered them, and the plan set keeps them.
+                ledger.continue_plan();
+                execute_frame(
+                    &mut stdout,
+                    &tasks,
+                    check_mode,
+                    diff_mode,
+                    no_cache,
+                    &mut ledger,
+                    &mut system_state,
+                    &mut sensitive_effects,
+                    &mut plan_sysctl,
+                );
             }
             Some(Msg::Resume(_)) => {
                 log_event(
@@ -217,6 +255,65 @@ fn serve() -> i32 {
     }
 }
 
+/// The frame's static declarations join the plan set before the
+/// frame's tasks execute: the whole plan's unconditional sysctl
+/// entries, deduplicated against the executed declarations the plan
+/// already accumulated.
+fn merge_frame_declarations(
+    plan_sysctl: &mut Vec<modules::ManagedSysctl>,
+    declarations: &[v1::SysctlDeclaration],
+) {
+    for declared in declarations {
+        let entry = modules::ManagedSysctl::plain(
+            declared.file.clone(),
+            declared.name.clone(),
+            declared.value.clone(),
+        );
+        if !plan_sysctl.contains(&entry) {
+            plan_sysctl.push(entry);
+        }
+    }
+}
+
+/// The frame's tasks in order: a halted frame aborts the plan so
+/// the tasks it never reached keep their records at the plan's end.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a frame carries protocol, state and mode together"
+)]
+fn execute_frame(
+    out: &mut impl std::io::Write,
+    tasks: &[v1::RenderedTask],
+    check_mode: bool,
+    diff_mode: bool,
+    no_cache: bool,
+    ledger: &mut ledger::Ledger,
+    system_state: &mut crate::system_state::SystemState,
+    sensitive_effects: &mut sensitivity::Marker,
+    plan_sysctl: &mut Vec<modules::ManagedSysctl>,
+) {
+    for task in tasks {
+        let mut task = task.clone();
+        task.no_log |= sensitive_effects.is_marked();
+        if execute_task(
+            out,
+            &task,
+            check_mode,
+            diff_mode,
+            no_cache,
+            ledger,
+            system_state,
+            sensitive_effects,
+            plan_sysctl,
+        ) {
+            // The plan halted before its last task: the tasks it never reached are
+            // still the workflow's, so their records must not expire at the plan's end.
+            ledger.abort_plan();
+            break;
+        }
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     clippy::too_many_arguments,
@@ -232,6 +329,7 @@ fn execute_task(
     ledger: &mut ledger::Ledger,
     system_state: &mut system_state::SystemState,
     sensitive_effects: &mut sensitivity::Marker,
+    plan_sysctl: &mut Vec<modules::ManagedSysctl>,
 ) -> bool {
     let task_check_mode =
         effective_check_mode(check_mode, task.force_check_mode, task.check_mode_override);
@@ -266,6 +364,9 @@ fn execute_task(
         } else {
             serde_json::from_slice(&iteration.params_json).map_err(|e| e.to_string())
         };
+        // The plan has encountered this task whatever the run does with it — cache
+        // hit, check-mode run, unrecorded run — and its end expires only records it never saw.
+        ledger.encounter(&iteration.ledger_key);
         let params = match parsed.and_then(|params| {
             modules::validate_source(&task.module, &params, iteration.source_content.as_deref())?;
             Ok(params)
@@ -288,17 +389,31 @@ fn execute_task(
             }
         };
 
+        // The plan's sysctl entries in delivery order, not the ledger's dropped-task history.
+        if let Some(declared) = modules::sysctl_plan_declaration(&task.module, &params)
+            && !plan_sysctl.contains(&declared)
+        {
+            plan_sysctl.push(declared);
+        }
+
+        // The preflight's managed set, shared with the cache below.
+        let managed = ledger.sysctl_preflight_managed(&task.module, plan_sysctl);
+        let key = &iteration.ledger_key;
         if !no_cache
             && task.become_user.is_empty()
             && ledger::cache_allowed(&task.module, &params)
             && !task_check_mode
             && !task.no_log
             && !iteration.ledger_key.is_empty()
-            && let Some(cached) = ledger.cached_ok_with_state(&iteration.ledger_key, system_state)
+            // The plan's own earlier steps can renumber an identity the
+            // task names: `usermod -u` leaves an arbitrary file at the
+            // old number, and the cached probe weighs the file's number
+            // alone — the file would keep the number the plan gave out.
+            && !modules::ownership_cache_stale(&task.module, &params)
+            && let Some(cached) = ledger.cached_ok_with_managed(key, system_state, &managed)
         {
-            // A forced task the ledger satisfies still observes the host:
-            // the predictions of its own dimension are reconciled here
-            // too, so no later task judges against one it made stale.
+            // A forced task the ledger satisfies still observes the host,
+            // reconciling its own predictions so no later task judges a stale one.
             if task.module == "systemd" {
                 modules::systemd::reconcile_predictions(&params, system_state);
             }
@@ -328,16 +443,28 @@ fn execute_task(
             iteration.source_content.as_deref(),
             &ctx,
             system_state,
+            &managed,
         );
-        if !task_check_mode && !task.no_log {
-            ledger.record_with_state(
-                &iteration.ledger_key,
-                &task.module,
-                &params,
-                outcome.status,
-                &outcome.result,
-                system_state,
-            );
+        if !task_check_mode {
+            if task.no_log {
+                // The result and its probes stay out of the ledger;
+                // the sysctl declaration is the workflow's own.
+                ledger.record_managed_declaration(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                );
+            } else {
+                ledger.record_with_state(
+                    &iteration.ledger_key,
+                    &task.module,
+                    &params,
+                    outcome.status,
+                    &outcome.result,
+                    system_state,
+                );
+            }
         }
         send_result(
             out,
@@ -353,4 +480,77 @@ fn execute_task(
         }
     }
     false
+}
+
+/// Whether the session's end completes the plan: only a complete
+/// unfiltered apply plan expires unencountered records. A dry-run
+/// session encounters the tasks of the revision it checked without
+/// recording them, so completing it would prune the apply ledger's
+/// retained declarations for tasks the checked revision omits — and
+/// the next apply would reject their still-present files as unmanaged
+/// shadows. A dry run therefore never completes, whatever Done says.
+fn complete_on_done(filtered: bool, check_mode: bool) -> bool {
+    !filtered && !check_mode
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    #[test]
+    fn only_an_unfiltered_apply_end_completes_the_plan() {
+        // Thread 356: a dry-run session encounters the tasks of the
+        // revision it checked without recording them — completing it
+        // would prune the apply ledger's retained declarations for
+        // tasks the checked revision omits. A filtered end never
+        // completes either: the run omitted tasks the workflow keeps.
+        assert!(complete_on_done(false, false));
+        assert!(!complete_on_done(true, false));
+        assert!(!complete_on_done(false, true));
+        assert!(!complete_on_done(true, true));
+    }
+
+    #[test]
+    fn frame_declarations_land_before_the_frame_executes() {
+        // Thread 314: the frame carries the whole plan's unconditional
+        // entries, so the plan set holds the later stages' files
+        // before any task of the frame executes — deduplicated against
+        // the executed declarations already accumulated.
+        let mut plan = vec![modules::ManagedSysctl::plain(
+            "/etc/sysctl.d/10-a.conf".into(),
+            "net.test".into(),
+            "1".into(),
+        )];
+        merge_frame_declarations(
+            &mut plan,
+            &[
+                v1::SysctlDeclaration {
+                    file: "/etc/sysctl.d/10-a.conf".into(),
+                    name: "net.test".into(),
+                    value: "1".into(),
+                },
+                v1::SysctlDeclaration {
+                    file: "/etc/sysctl.d/99-b.conf".into(),
+                    name: "net.test".into(),
+                    value: "2".into(),
+                },
+            ],
+        );
+        assert_eq!(
+            plan,
+            vec![
+                modules::ManagedSysctl::plain(
+                    "/etc/sysctl.d/10-a.conf".into(),
+                    "net.test".into(),
+                    "1".into(),
+                ),
+                modules::ManagedSysctl::plain(
+                    "/etc/sysctl.d/99-b.conf".into(),
+                    "net.test".into(),
+                    "2".into(),
+                ),
+            ],
+            "frame declarations merge ahead of execution, without duplicates"
+        );
+    }
 }

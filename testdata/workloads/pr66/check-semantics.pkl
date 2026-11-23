@@ -2,6 +2,7 @@ import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 
 output {
   value = new Ruxel.Config {
+ workflow = "testdata/workloads/pr66/check-semantics.pkl"
     inventory {
       hosts { ["fixture"] { address = "127.0.0.1" } }
       groups { ["all"] { hosts { "fixture" } } }

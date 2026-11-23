@@ -1,0 +1,27 @@
+// expect: claim the uid 1501 for different accounts
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The uid 1501 changes hands on one machine only: stage "a" renumbers
+// `alice` to 1502 on 127.0.0.1 alone, and on 127.0.0.2 the original
+// holder is still present on 1501, so stage "ab2"'s `useradd -u 1501`
+// for `bob` fails there. A renumbering frees the old number on the hosts
+// it runs on — the proof must cover every host both claimant stages
+// share, or one surviving holder would free the number globally.
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "ab"; hosts { a; b }; steps {
+    new linux.User { user = "alice"; uid = 1501 }
+  } }
+  new Stage { title = "a"; hosts { a }; steps {
+    new linux.User { user = "alice"; uid = 1502 }
+  } }
+  new Stage { title = "ab2"; hosts { a; b }; steps {
+    new linux.User { user = "bob"; uid = 1501 }
+  } }
+}
+
+name = "invalid/linux-user-uid-renumber-partial-hosts.pkl"

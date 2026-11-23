@@ -1,0 +1,18 @@
+// A directory at the home's path reconciles with the account across
+// stages as much as inside one: the earlier stage ensures /srv/alice
+// as a directory, and the later account claims it as its home, which
+// the account's task finds and reconciles instead of creating.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "directory"; hosts = inventory.workers; steps {
+    new Directory { path = "/srv/alice"; mode = "0755" }
+  } }
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; home = "/srv/alice" }
+  } }
+}
+
+name = "valid/linux-user-home-directory-cross-stage.pkl"

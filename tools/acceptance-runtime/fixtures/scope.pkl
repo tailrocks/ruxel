@@ -2,6 +2,7 @@ import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 function lit(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
 function ref(n: String): Ruxel.Ref = new { path { "vars"; n } }
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-runtime/fixtures/scope.pkl"
  inventory {
   hosts { ["fixture"] { address = "127.0.0.1"; vars { ["host_only"] = lit("H"); ["shared"] = lit("host") } } }
   groups { ["group"] { hosts { "fixture" }; vars { ["group_only"] = lit("G"); ["shared"] = lit("group") } } }

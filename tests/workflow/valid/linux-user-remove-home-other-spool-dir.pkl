@@ -1,0 +1,17 @@
+// A path in a custom mail directory that carries no account's name is
+// no account's spool: the earlier stage manages /srv/mail/other, which
+// the later recursive removal of `app` leaves alone.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "spool"; hosts = inventory.workers; steps {
+    new File { path = "/srv/mail/other"; content = "spooled\n" }
+  } }
+  new Stage { title = "remove"; hosts = inventory.workers; steps {
+    new linux.User { user = "app"; uid = 1500; home = "/home/app"; state = "absent"; removeHome = true }
+  } }
+}
+
+name = "valid/linux-user-remove-home-other-spool-dir.pkl"

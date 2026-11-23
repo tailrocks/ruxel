@@ -16,3 +16,5 @@ stages {
     }
   }
 }
+
+name = "valid/systemd-timer-delay-spellings.pkl"

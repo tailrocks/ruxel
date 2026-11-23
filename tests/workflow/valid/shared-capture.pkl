@@ -47,3 +47,5 @@ stages {
     }
   }
 }
+
+name = "valid/shared-capture.pkl"

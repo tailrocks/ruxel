@@ -11,7 +11,7 @@ use std::{
 };
 use tempfile::TempDir;
 
-const FIXTURE_HASH: &str = "9d6b924a63c728620603246a58f38b7bf9f7d4035427bd84bf2c72aa936b6d31";
+const FIXTURE_HASH: &str = "aac7b4fa92a05850730419462cd0ec7b0093ed421b1c5adb483500d7e335d2d3";
 
 fn prepare() -> Result<TempDir> {
     let temp = tempfile::Builder::new()
@@ -34,6 +34,7 @@ fn fixture(temp: &TempDir, name: &str, tasks: &str) -> Result<PathBuf> {
     let source = format!(
         r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output {{ value = new Ruxel.Config {{
+ workflow = "acceptance-control/checks"
  inventory {{ hosts {{ ["fixture"] {{ address = "127.0.0.1" }} }}; groups {{ ["all"] {{ hosts {{ "fixture" }} }} }} }}
  plays {{ new {{ name = "fixture"; targets {{ "all" }}; tasks {{ {tasks} }} }} }}
 }} }}

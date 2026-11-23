@@ -1,0 +1,21 @@
+// Every directory the lookup enters on its way to the shell lets the
+// account in: the managed ancestor carries the other-search bit, so the
+// account's task walks to its shell and the static permission model
+// admits the workflow.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "t"
+    hosts = inventory.workers
+    steps {
+      new Directory { path = "/opt/private"; mode = "0755" }
+      new File { path = "/opt/private/appsh"; content = "#!/bin/sh\n"; mode = "0755" }
+      new linux.User { user = "app"; shell = "/opt/private/appsh" }
+    }
+  }
+}
+
+name = "valid/linux-user-shell-ancestor-searchable.pkl"

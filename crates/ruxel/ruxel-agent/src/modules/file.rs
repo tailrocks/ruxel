@@ -28,6 +28,7 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                 return Err(format!("file: {path} does not exist"));
             }
             apply_attrs(p, obj, &mut changed, ctx.check_mode)?;
+            note_shell_provider(obj, path)?;
             Ok(json!({"path": path, "state": "file", "changed": changed, "failed": false}))
         }
         "directory" => {
@@ -81,12 +82,36 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     std::os::unix::fs::symlink(src, p).map_err(|e| e.to_string())?;
                 }
             }
+            // The task's own provider record, the link half of the
+            // copy's: a managed link is only as good as its target
+            // chain, which the account's task verifies — the lowering
+            // judges every hop — so the link declares its destination
+            // while the target's own step registers the target. The
+            // bare destination alone proves nothing: check mode never
+            // creates the link, so a dangling declaration must fail
+            // the account instead of excusing it.
+            super::user::note_planned_shell_link(path, src);
             Ok(
                 json!({"dest": path, "src": src, "state": "link", "changed": changed, "failed": false}),
             )
         }
         other => Err(format!("file: state {other:?} outside the closed surface")),
     }
+}
+
+/// The task's own shell-provider record for a managed file: the same
+/// mode judgment the copy carries — an executable mode registers the
+/// path, a declared non-executable one unregisters it, and no declared
+/// mode changes nothing.
+fn note_shell_provider(obj: &serde_json::Map<String, Value>, path: &str) -> Result<(), String> {
+    super::user::note_managed_shell_file(
+        path,
+        obj.get("mode")
+            .map(super::parse_mode)
+            .transpose()
+            .map_err(|error| format!("file: {error}"))?,
+    );
+    Ok(())
 }
 
 fn path_start(path: &Path) -> Result<OwnedFd, String> {

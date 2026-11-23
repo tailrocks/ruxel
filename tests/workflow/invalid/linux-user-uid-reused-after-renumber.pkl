@@ -1,0 +1,36 @@
+// expect: claim the uid 1500 for different accounts
+// The uid 1500 must not change hands through a renumbering: stage 2
+// moves `alice` itself to 1600, but `usermod -u` releases nothing —
+// the out-of-home files keep the old number — so stage 3's
+// `useradd -u 1500` for `bob` would hand Bob the kernel ownership of
+// Alice's residual files. A number is reused only after a removal
+// with `removeHome` proves the earlier holder gone from it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage {
+    title = "s1"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500 }
+    }
+  }
+  new Stage {
+    title = "s2"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1600 }
+    }
+  }
+  new Stage {
+    title = "s3"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "bob"; uid = 1500 }
+    }
+  }
+}
+
+name = "invalid/linux-user-uid-reused-after-renumber.pkl"

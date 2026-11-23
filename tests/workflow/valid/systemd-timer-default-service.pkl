@@ -15,3 +15,5 @@ stages {
     }
   }
 }
+
+name = "valid/systemd-timer-default-service.pkl"

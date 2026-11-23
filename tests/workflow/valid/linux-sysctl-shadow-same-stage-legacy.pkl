@@ -1,0 +1,21 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The legacy file stands outside the directory shadowing inside one
+// stage too: `sysctl --system` loads `/etc/sysctl.conf` after every
+// directory file and never skips it, so the legacy file and the
+// same-named directory file both load — even where one stage persists
+// them together — and no key reverts after reboot.
+stages {
+  new Stage {
+    title = "tune"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1"; path = "/etc/sysctl.conf" }
+      new linux.Sysctl { name = "net.ipv4.conf.all.forwarding"; value = "0"; path = "/etc/sysctl.d/sysctl.conf" }
+    }
+  }
+}
+
+name = "valid/linux-sysctl-shadow-same-stage-legacy.pkl"

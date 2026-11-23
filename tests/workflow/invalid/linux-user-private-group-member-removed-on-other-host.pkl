@@ -1,0 +1,37 @@
+// expect: takes its gid automatically
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The private group of an account is created with it (`useradd -U`) and
+// draws a number of its own. `userdel` takes that group with the
+// account only where it is empty: on 127.0.0.1 `bob` keeps his
+// membership in it, because his removal runs on 127.0.0.2 alone, so the
+// group is left behind on 127.0.0.1 and its number stays taken. The
+// freeing proof is per host: a removal on another machine leaves the
+// membership here, so the draw is not freed on 127.0.0.1 and a later
+// explicit claim of a number the allocator can hand the draw collides
+// there.
+local a = new Host { name = "a"; address = "127.0.0.1" }
+local b = new Host { name = "b"; address = "127.0.0.2" }
+
+stages {
+  new Stage { title = "setup"; hosts { a; b }; steps {
+    new linux.Group { name = "ops"; gid = 2000 }
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "join"; hosts { a; b }; steps {
+    new linux.User { user = "bob"; uid = 1600; group = "ops"; groups = new Listing { "alice" } }
+  } }
+  new Stage { title = "leave-b"; hosts { b }; steps {
+    new linux.User { user = "bob"; uid = 1600; state = "absent" }
+  } }
+  new Stage { title = "leave-a"; hosts { a; b }; steps {
+    new linux.User { user = "alice"; uid = 1500; state = "absent" }
+  } }
+  new Stage { title = "claim"; hosts { a; b }; steps {
+    new linux.Group { name = "staff"; gid = 1000 }
+  } }
+}
+
+name = "invalid/linux-user-private-group-member-removed-on-other-host.pkl"

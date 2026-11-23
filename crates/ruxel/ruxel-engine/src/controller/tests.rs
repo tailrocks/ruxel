@@ -1,5 +1,6 @@
 use super::*;
 
+mod aborted;
 mod always_errors;
 mod assertion;
 mod block_check_mode;
@@ -9,8 +10,10 @@ mod block_skip;
 mod block_tags;
 mod cases;
 mod change_aggregate;
+mod conditional_skip;
 mod content_fingerprint;
 mod creates_environment;
+mod delegation_incomplete;
 mod excluded_vars;
 mod fact_control;
 mod failures;
@@ -40,6 +43,7 @@ mod retry_source;
 mod skipped_result;
 mod smoke;
 mod standard_expression;
+mod static_sysctl;
 mod until_sensitivity;
 mod url_timezone;
 

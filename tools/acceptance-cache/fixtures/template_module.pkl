@@ -1,5 +1,6 @@
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "tools/acceptance-cache/fixtures/template_module.pkl"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "template"; targets { "fixture" }; tasks {
   new { name = "write template"; operation = new Ruxel.Copy { dest = SOURCE; content = new Ruxel.Call { `function` = "concat"; args {

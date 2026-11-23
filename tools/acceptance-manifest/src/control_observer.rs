@@ -69,6 +69,7 @@ impl Backend for Observer {
                 msg: Some(v1::envelope::Msg::Plan(v1::Plan {
                     tasks: vec![request.task.clone()],
                     blobs_referenced: vec![],
+                    sysctl_declarations: request.plan_sysctl.clone(),
                 })),
             })
             .await?;
@@ -255,6 +256,31 @@ fn verify_control_events(observed: &Observations, preview: bool) -> Result<()> {
     );
     Ok(())
 }
+async fn connect_observer(env: &Env, phase: &str, preview: bool) -> Result<Observer> {
+    let workflow_namespace = env
+        .module
+        .canonicalize()
+        .context("cannot namespace the observer workflow")?
+        .to_string_lossy()
+        .into_owned();
+    let (connection, _, _) = LocalConnection::connect(
+        &env.agent,
+        &env.root.path().join("state"),
+        phase,
+        preview,
+        phase == "diff",
+        true,
+        &workflow_namespace,
+    )
+    .await?;
+    let resolver = Resolver::new(std::sync::Arc::new(ProcessBackend::default()))
+        .map_err(anyhow::Error::msg)?;
+    Ok(Observer {
+        connection,
+        observed: Observations::default(),
+        resolver,
+    })
+}
 pub(super) fn execute(env: &Env) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -276,22 +302,7 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 "diff" => Mode::Diff,
                 _ => Mode::Apply,
             };
-            let (connection, _, _) = LocalConnection::connect(
-                &env.agent,
-                &env.root.path().join("state"),
-                phase,
-                preview,
-                phase == "diff",
-                true,
-            )
-            .await?;
-            let resolver = Resolver::new(std::sync::Arc::new(ProcessBackend::default()))
-                .map_err(anyhow::Error::msg)?;
-            let mut observer = Observer {
-                connection,
-                observed: Observations::default(),
-                resolver,
-            };
+            let mut observer = connect_observer(env, phase, preview).await?;
             let mut facts = BTreeMap::new();
             let recap = tokio::time::timeout(
                 Duration::from_secs(45),
@@ -314,7 +325,12 @@ pub(super) fn execute(env: &Env) -> Result<()> {
                 "observer recap mismatch"
             );
             verify(&observer.observed, &facts, phase, preview)?;
-            tokio::time::timeout(Duration::from_secs(5), observer.connection.shutdown()).await??;
+            let filtered = recap["fixture"].filtered || recap["fixture"].aborted;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                observer.connection.shutdown(filtered),
+            )
+            .await??;
             if preview {
                 ensure!(
                     state::snapshot(&env.payload)? == before

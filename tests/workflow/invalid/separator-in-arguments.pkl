@@ -8,3 +8,4 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   listed
   new Command { run { "true" }; onChangeOf { other } }
 } } }
+name = "invalid/separator-in-arguments.pkl"

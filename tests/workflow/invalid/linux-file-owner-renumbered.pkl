@@ -1,0 +1,21 @@
+// expect: declare the file's owner again after the renumbering
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// Nothing reconciles the file after the renumbering: it keeps the old
+// number and no longer has the owner it declares, so the renumbering
+// is refused until the file is declared again.
+stages {
+  new Stage { title = "account"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1500 }
+  } }
+  new Stage { title = "file"; hosts = inventory.workers; steps {
+    new File { path = "/tmp/x"; content = "keep\n"; owner = "alice" }
+  } }
+  new Stage { title = "renumber"; hosts = inventory.workers; steps {
+    new linux.User { user = "alice"; uid = 1600 }
+  } }
+}
+
+name = "invalid/linux-file-owner-renumbered.pkl"

@@ -6,3 +6,5 @@ import "../inventory.pkl"
 stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptRepository { name = "x"; url = "https://example.test/"; suite = "/"; components { "main" }; signingKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----" }
 } } }
+
+name = "invalid/flat-repository-with-components.pkl"

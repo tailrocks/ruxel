@@ -1,0 +1,28 @@
+// expect: the persistence file must be a regular file the entry can join
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The home of a present account is a directory the account's task
+// creates, so a sysctl that persists its entry there cannot write the
+// file: the entry joins a regular file, and the account leaves a
+// directory behind. The later stage's sysctl task fails on it wherever
+// it stands in the order, so the workflow is refused.
+stages {
+  new Stage {
+    title = "account"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; home = "/etc/sysctl.d/90-ruxel.conf" }
+    }
+  }
+  new Stage {
+    title = "sysctl"
+    hosts = inventory.workers
+    steps {
+      new linux.Sysctl { name = "net.ipv4.ip_forward"; value = "1" }
+    }
+  }
+}
+
+name = "invalid/linux-sysctl-user-home-clash.pkl"

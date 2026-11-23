@@ -1,0 +1,35 @@
+// expect: state the effective home
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The invalidation is per host: the middle stage removes Alice on
+// worker-1 only, so the /srv/alice declaration still stands for her live
+// home on worker-2 — the recursive removal there names /home/alice and
+// fails where the runtime compares it with the live one, while worker-1
+// compares against a home the workflow cannot read and passes.
+stages {
+  new Stage {
+    title = "account"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/srv/alice" }
+    }
+  }
+  new Stage {
+    title = "remove"
+    hosts = new { inventory.worker1 }
+    steps {
+      new linux.User { user = "alice"; uid = 1500; state = "absent" }
+    }
+  }
+  new Stage {
+    title = "scrub"
+    hosts = inventory.workers
+    steps {
+      new linux.User { user = "alice"; uid = 1500; home = "/home/alice"; state = "absent"; removeHome = true }
+    }
+  }
+}
+
+name = "invalid/linux-user-removal-home-after-partial-removal.pkl"

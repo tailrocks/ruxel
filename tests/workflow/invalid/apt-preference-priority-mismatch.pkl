@@ -12,3 +12,5 @@ stages { new Stage { title = "t"; hosts = inventory.workers; steps {
   new debian.AptPreference { title = "Pin nginx"; package = "nginx"; pin = "version 1.25.*"; priority = 1001 }
   new debian.AptPreference { title = "Pin nginx again"; package = "nginx"; pin = "version 1.25.*"; priority = 500 }
 } } }
+
+name = "invalid/apt-preference-priority-mismatch.pkl"

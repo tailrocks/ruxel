@@ -16,6 +16,7 @@ use docker_fixture::Docker;
 const FIXTURE: &str = r#"
 import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+  workflow = "acceptance-manifest/postgres-session"
   inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
   plays { new { name = "Synthetic PostgreSQL session reuse"; targets { "all" }; tasks {
     new { name = "First synthetic role"; becomeUser = "postgres"; operation = new Ruxel.PostgresRole { login_user = "postgres"; login_db = "postgres"; name = "ruxel_session_a"; state = "present"; login_port = 40000 } }

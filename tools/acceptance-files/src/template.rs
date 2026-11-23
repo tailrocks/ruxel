@@ -6,6 +6,7 @@ use std::{fs, os::unix::fs::MetadataExt, path::Path};
 const PIN: &str = "c231e95be0d13fb69bd1908c94143408011e6ea29219608325711b16ecd163bb";
 const PKL: &str = r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "acceptance-files/template"
  inventory { hosts { ["fixture"] { address = "127.0.0.1" } }; groups { ["all"] { hosts { "fixture" } } } }
  plays { new { name = "native template"; targets { "all" }; vars {
   ["fixture_lines"] = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "alpha" }; new Ruxel.Literal { value = "beta" } } }

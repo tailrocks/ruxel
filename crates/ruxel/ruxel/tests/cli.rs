@@ -132,6 +132,7 @@ fn detailed_plan_counts_only_selected_operations() -> Result<(), Box<dyn std::er
         &root,
         r#"import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
 output { value = new Ruxel.Config {
+ workflow = "cli-plan"
  inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
  plays { new { name = "plan"; targets { "fixture" }; tasks { new {
   name = "deferred"; tags { "selected" }; operation = new Ruxel.Debug { msg = "fixture" }
@@ -197,6 +198,7 @@ fn scratch(name: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>>
 
 const CONFIG: &str = r#"import "IMPORT" as R
 config = new R.Config {
+  workflow = "cli-config"
   inventory { hosts { ["fixture"] { address = "ADDRESS" } } }
   plays { new { name = "plan"; targets { "fixture" }; tasks { new {
     name = "deferred"; operation = new R.Debug { msg = "fixture" }
@@ -324,6 +326,7 @@ fn module_path_serves_shared_roles() -> Result<(), Box<dyn std::error::Error>> {
         r#"import "modulepath:/ruxel/engine/Engine.pkl" as R
 import "modulepath:/roles/debug.pkl" as Debug
 config = new R.Config {
+  workflow = "cli-roles"
   inventory { hosts { ["fixture"] { address = "fixture.invalid" } } }
   plays { new { name = "roles"; targets { "fixture" }; tasks { Debug.task } } }
 }

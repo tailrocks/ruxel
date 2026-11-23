@@ -20,3 +20,5 @@ stages {
     new debian.AptPackages { title = "Install curl"; names { "curl=2" } }
   } }
 }
+
+name = "invalid/apt-hold-superseded-partial-hosts.pkl"
