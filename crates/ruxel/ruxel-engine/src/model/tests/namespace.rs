@@ -15,10 +15,12 @@ fn namespace_is_stable_over_task_edits() {
     // hazard for one transition.
     let before = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let after = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "two"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     assert_eq!(before, after, "a task edit keeps the workflow's identity");
 }
 
@@ -28,7 +30,8 @@ fn namespace_ignores_play_and_host_order() {
     // identity.
     let forward = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let mut config = workflow(json!({"kind": "debug", "msg": "one"}));
     let plays: Vec<Value> = config["plays"]
         .as_array()
@@ -38,7 +41,8 @@ fn namespace_ignores_play_and_host_order() {
         .rev()
         .collect();
     config["plays"] = Value::Array(plays);
-    let backward = workflow_namespace(&validate_config(&config).expect("config"));
+    let backward =
+        workflow_namespace(&validate_config(&config).expect("config")).expect("validated names");
     assert_eq!(forward, backward, "play order is not identity");
 }
 
@@ -49,16 +53,19 @@ fn namespace_names_plays_and_hosts() {
     // inventory host names.
     let base = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let mut renamed = workflow(json!({"kind": "debug", "msg": "one"}));
     renamed["plays"][0]["name"] = json!("other");
-    let renamed = workflow_namespace(&validate_config(&renamed).expect("config"));
+    let renamed =
+        workflow_namespace(&validate_config(&renamed).expect("config")).expect("validated names");
     assert_ne!(base, renamed, "a play rename is a different workflow");
     let mut rehosted = workflow(json!({"kind": "debug", "msg": "one"}));
     rehosted["inventory"]["hosts"] = json!({"elsewhere": {"address": "unused.invalid"}});
     rehosted["plays"][0]["targets"] = json!(["elsewhere"]);
     rehosted["plays"][1]["targets"] = json!(["elsewhere"]);
-    let rehosted = workflow_namespace(&validate_config(&rehosted).expect("config"));
+    let rehosted =
+        workflow_namespace(&validate_config(&rehosted).expect("config")).expect("validated names");
     assert_ne!(base, rehosted, "a host rename is a different workflow");
 }
 
@@ -92,10 +99,12 @@ fn namespace_names_the_workflow() {
     // other's cache and declarations.
     let base = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let mut renamed = workflow(json!({"kind": "debug", "msg": "one"}));
     renamed["workflow"] = json!("another-workflow");
-    let renamed = workflow_namespace(&validate_config(&renamed).expect("config"));
+    let renamed =
+        workflow_namespace(&validate_config(&renamed).expect("config")).expect("validated names");
     assert_ne!(base, renamed, "a workflow rename is a different owner");
 }
 
@@ -106,11 +115,13 @@ fn namespace_names_the_play_to_host_mapping() {
     // different workflow, the way renaming either side is.
     let base = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let mut swapped = workflow(json!({"kind": "debug", "msg": "one"}));
     swapped["plays"][0]["targets"] = json!(["db"]);
     swapped["plays"][1]["targets"] = json!(["web"]);
-    let swapped = workflow_namespace(&validate_config(&swapped).expect("config"));
+    let swapped =
+        workflow_namespace(&validate_config(&swapped).expect("config")).expect("validated names");
     assert_ne!(base, swapped, "a play-to-host swap is a different workflow");
 }
 
@@ -122,14 +133,17 @@ fn namespace_has_no_cross_domain_collisions() {
     // reads as a play name.
     let base = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     let mut merged = workflow(json!({"kind": "debug", "msg": "one"}));
     merged["plays"] = json!([{"name": "base\0app", "targets": [], "tasks": [{"name": "test", "operation": {"kind": "debug"}}]}]);
-    let merged = workflow_namespace(&validate_config(&merged).expect("config"));
+    let merged =
+        workflow_namespace(&validate_config(&merged).expect("config")).expect("validated names");
     assert_ne!(base, merged, "a merged play name is a different workflow");
     let mut smuggled = workflow(json!({"kind": "debug", "msg": "one"}));
     smuggled["workflow"] = json!("synthetic-workflow\0plays:2");
-    let smuggled = workflow_namespace(&validate_config(&smuggled).expect("config"));
+    let smuggled =
+        workflow_namespace(&validate_config(&smuggled).expect("config")).expect("validated names");
     assert_ne!(base, smuggled, "a workflow name cannot smuggle structure");
 }
 
@@ -140,7 +154,8 @@ fn namespace_is_opaque() {
     // never a filesystem location.
     let namespace = workflow_namespace(
         &validate_config(&workflow(json!({"kind": "debug", "msg": "one"}))).expect("config"),
-    );
+    )
+    .expect("validated names");
     assert!(
         namespace.chars().all(|c| c.is_ascii_hexdigit()),
         "the namespace is a hex digest, not a path: {namespace}"

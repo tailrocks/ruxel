@@ -39,8 +39,10 @@ async fn a_filtered_origin_marks_its_delegation_destination() -> Result<()> {
         ]}
     ]});
     let mut backend = Fake::default();
-    let mut options = Options::default();
-    options.tags = vec!["fast".into()];
+    let options = Options {
+        tags: vec!["fast".into()],
+        ..Default::default()
+    };
     let recaps = run(
         &config,
         &std::collections::BTreeMap::new(),

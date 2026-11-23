@@ -14,15 +14,15 @@ use serde_json::Value;
 /// Breaking by design: it never matches the checkout-path namespaces
 /// the revision before last wrote, nor the structure-only digests of
 /// the revision that dropped the path but not the collisions.
-pub fn workflow_namespace(config: &Value) -> String {
-    // `validate_config` refuses an empty or missing workflow name, so
-    // the identity below never defaults: a silent default would let two
-    // unrelated empty-named workflows share one ledger namespace.
+///
+/// An empty or missing workflow name has no namespace: `validate_config`
+/// refuses those before namespacing, and a silent default here would let
+/// two unrelated empty-named workflows share one ledger namespace.
+pub fn workflow_namespace(config: &Value) -> Option<String> {
     let workflow = config
         .get("workflow")
         .and_then(Value::as_str)
-        .filter(|workflow| !workflow.is_empty())
-        .expect("workflow identity is validated before namespacing");
+        .filter(|workflow| !workflow.is_empty())?;
     let mut plays: Vec<(&str, Vec<&str>)> = config
         .get("plays")
         .and_then(Value::as_array)
@@ -56,7 +56,7 @@ pub fn workflow_namespace(config: &Value) -> String {
             push_field(&mut preimage, "target", target);
         }
     }
-    blake3::hash(preimage.as_bytes()).to_hex().to_string()
+    Some(blake3::hash(preimage.as_bytes()).to_hex().to_string())
 }
 
 /// One tagged, length-prefixed part: the tag keeps the domains apart

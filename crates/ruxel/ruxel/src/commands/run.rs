@@ -24,7 +24,12 @@ pub(crate) fn run(args: RunArgs, mode: ruxel_engine::controller::Mode) -> ExitCo
     // The ledger identity comes from the workflow itself, never the
     // checkout's location: the same workflow from another directory
     // owns the same records (see `workflow_namespace`).
-    let workflow_namespace = ruxel_engine::model::workflow_namespace(&value);
+    let Some(workflow_namespace) = ruxel_engine::model::workflow_namespace(&value) else {
+        if writeln!(std::io::stderr().lock(), "configuration validation failed").is_err() {
+            return ExitCode::Internal;
+        }
+        return ExitCode::Config;
+    };
     let runtime_options = ruxel_engine::runtime::RuntimeOptions {
         agent: args.agent,
         jobs: usize::from(args.jobs),
@@ -115,8 +120,8 @@ mod namespace_tests {
         };
         let (first_value, second_value) = (load(&first), load(&second));
         let (first_ns, second_ns) = (
-            ruxel_engine::model::workflow_namespace(&first_value),
-            ruxel_engine::model::workflow_namespace(&second_value),
+            ruxel_engine::model::workflow_namespace(&first_value).expect("fixture names"),
+            ruxel_engine::model::workflow_namespace(&second_value).expect("fixture names"),
         );
         assert_eq!(first_ns, second_ns, "one workflow is one ledger owner");
         assert!(
