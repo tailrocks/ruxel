@@ -117,7 +117,9 @@ fn run_with(
     // time before the run reports a concurrent mutation.
     let mut check: Vec<&str> = vec!["-C", chain];
     check.extend(spec.iter().map(String::as_str));
-    if chain::probe(binary, &check)? && chain::stale_rules(binary, chain, &spec)?.is_empty() {
+    if chain::probe(binary, &check)?
+        && chain::stale_rules(binary, chain, &spec)?.is_empty()
+    {
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
     Err(format!(
@@ -142,7 +144,7 @@ fn install_at(
         Some(first) => chain::position_of(binary, chain, first)?,
         None => None,
     };
-    if !shadowed.is_empty() && position.is_none() {
+    if shadowed.first().is_some() && position.is_none() {
         return Ok(false);
     }
     if let Some(position) = position {
