@@ -19,6 +19,10 @@ pub struct Request {
 }
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Recap {
+    // `delegated` rides beside the counts: every session this origin
+    // sent a request to, so an incomplete origin marks its destinations
+    // incomplete too instead of leaving them an unrelated clean recap.
+    pub delegated: std::collections::BTreeSet<String>,
     pub ok: u64,
     pub changed: u64,
     pub failed: u64,

@@ -213,6 +213,12 @@ impl<B: Backend> Runner<'_, B> {
         // as managed. A delegated task itself never declares up front
         // (see `static_sysctl_declaration`), so the source host's own
         // set is the right one only where nothing delegated.
+        // The session the request reaches: an incomplete origin marks
+        // its destinations incomplete too, so the destination's
+        // shutdown never reads only its unrelated origin recap.
+        if destination != self.host {
+            self.delegated.insert(destination.clone());
+        }
         let plan_sysctl = if destination == self.host {
             self.plan_sysctl.clone()
         } else {

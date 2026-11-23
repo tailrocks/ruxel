@@ -7,7 +7,7 @@ use super::{
     Backend, ContextLayer, Mode, Options, Recap, RunFailure, Runner, TrackedValue, array, bail,
     object, string,
 };
-use super::{plan, static_sysctl, validation};
+use super::{delegation::mark_delegation_destinations, plan, static_sysctl, validation};
 use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -114,6 +114,7 @@ pub async fn run_with_full_config<B: Backend>(
                 recap: Recap::default(),
                 next_id: 1,
                 filtered: false,
+                delegated: BTreeSet::new(),
             };
             if let Some(persisted) = set_facts.get(&host) {
                 runner.scope.insert("setFacts".into(), persisted.clone())?;
@@ -153,42 +154,59 @@ pub async fn run_with_full_config<B: Backend>(
             if let Some(persisted) = runner.scope.get("setFacts") {
                 set_facts.insert(host.clone(), persisted);
             }
-            let recap = totals.entry(host).or_insert_with(Recap::default);
-            recap.ok += runner.recap.ok;
-            recap.changed += runner.recap.changed;
-            recap.failed += runner.recap.failed;
-            recap.unreachable += runner.recap.unreachable
-                + runner
-                    .backend
-                    .connection_failures()
-                    .saturating_sub(connection_failures_before);
-            recap.skipped += runner.recap.skipped;
-            recap.rescued += runner.recap.rescued;
-            recap.ignored += runner.recap.ignored;
-            recap.filtered |= runner.filtered;
-            match execution {
-                // The session stopped before its tasks were all sent:
-                // the agent never receives the rest and never calls
-                // `abort_plan`, so the shutdown must not prune them.
-                Err(error) => {
-                    recap.aborted = true;
-                    let error =
-                        if layer.control_sensitive || runner.backend.conservative_sensitive() {
-                            anyhow::anyhow!("sensitive execution failed")
-                        } else {
-                            error
-                        };
-                    return Err(RunFailure::new(error, totals).into());
+            let failure = {
+                let recap = totals.entry(host.clone()).or_insert_with(Recap::default);
+                recap.ok += runner.recap.ok;
+                recap.changed += runner.recap.changed;
+                recap.failed += runner.recap.failed;
+                recap.unreachable += runner.recap.unreachable
+                    + runner
+                        .backend
+                        .connection_failures()
+                        .saturating_sub(connection_failures_before);
+                recap.skipped += runner.recap.skipped;
+                recap.rescued += runner.recap.rescued;
+                recap.ignored += runner.recap.ignored;
+                recap.filtered |= runner.filtered;
+                recap.delegated.extend(runner.delegated.iter().cloned());
+                match execution {
+                    // The session stopped before its tasks were all
+                    // sent: the agent never receives the rest and never
+                    // calls `abort_plan`, so the shutdown must not
+                    // prune them.
+                    Err(error) => {
+                        recap.aborted = true;
+                        Some(
+                            if layer.control_sensitive
+                                || runner.backend.conservative_sensitive()
+                            {
+                                anyhow::anyhow!("sensitive execution failed")
+                            } else {
+                                error
+                            },
+                        )
+                    }
+                    // A task that stops the play without an execution
+                    // error — an agent result overridden by `failedWhen`,
+                    // or a controller-local fail — ends the session the
+                    // same way: the later tasks are never sent, so the
+                    // recap carries the aborted mark too.
+                    Ok(false) => {
+                        recap.aborted = true;
+                        None
+                    }
+                    Ok(true) => None,
                 }
-                // A task that stops the play without an execution
-                // error — an agent result overridden by `failedWhen`,
-                // or a controller-local fail — ends the session the
-                // same way: the later tasks are never sent, so the
-                // recap carries the aborted mark too.
-                Ok(false) => {
-                    recap.aborted = true;
-                }
-                Ok(true) => {}
+            };
+            // An incomplete origin marks its destinations incomplete
+            // too: the destination's shutdown must not read only its
+            // unrelated origin recap and prune another play's records
+            // with an unfiltered Done.
+            if totals.get(&host).is_some_and(|total| total.filtered || total.aborted) {
+                mark_delegation_destinations(&mut totals, play, &host);
+            }
+            if let Some(error) = failure {
+                return Err(RunFailure::new(error, totals).into());
             }
         }
     }

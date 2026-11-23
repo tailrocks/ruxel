@@ -13,6 +13,7 @@ mod change_aggregate;
 mod conditional_skip;
 mod content_fingerprint;
 mod creates_environment;
+mod delegation_incomplete;
 mod excluded_vars;
 mod fact_control;
 mod failures;

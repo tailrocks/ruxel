@@ -17,6 +17,7 @@ fn shadowed_parent_lookup_does_not_taint_public_until() -> Result<()> {
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        delegated: BTreeSet::new(),
         plan_sysctl: Vec::new(),
         full_config: &empty_config,
     };
@@ -126,6 +127,7 @@ fn sensitivity_follows_the_visible_binding_for_cross_name_references() {
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        delegated: BTreeSet::new(),
         plan_sysctl: Vec::new(),
         full_config: &empty_config,
     };

@@ -59,6 +59,7 @@ async fn sensitive_control_taints_stored_fact_without_tainting_public_siblings()
         recap: Recap::default(),
         next_id: 1,
         filtered: false,
+        delegated: BTreeSet::new(),
         plan_sysctl: Vec::new(),
         full_config: &empty_config,
     };

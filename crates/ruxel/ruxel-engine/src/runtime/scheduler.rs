@@ -54,8 +54,10 @@ pub(super) async fn run_plays(
             .buffer_unordered(execution.runtime.jobs)
             .collect()
             .await;
+        let mut play_hosts = Vec::new();
         for (host, result, host_facts) in completed {
             set_facts.extend(host_facts);
+            play_hosts.push(host.clone());
             match result {
                 Err(failure) => {
                     if let Some(partial) = failure.downcast_ref::<controller::RunFailure>() {
@@ -78,6 +80,15 @@ pub(super) async fn run_plays(
                 }
             }
         }
+        // An incomplete origin marks its destinations incomplete too:
+        // a delegated host with a clean direct recap of its own must
+        // still shut down filtered, or its unfiltered Done prunes the
+        // delegated records the origin never resent.
+        for host in &play_hosts {
+            if totals.get(host).is_some_and(|total| total.filtered || total.aborted) {
+                controller::mark_delegation_destinations(&mut totals, play, host);
+            }
+        }
     }
     Ok(totals)
 }
@@ -96,4 +107,5 @@ fn merge_recap(total: &mut Recap, recap: &Recap) {
     total.ignored += recap.ignored;
     total.filtered |= recap.filtered;
     total.aborted |= recap.aborted;
+    total.delegated.extend(recap.delegated.iter().cloned());
 }

@@ -147,6 +147,10 @@ struct Runner<'a, B> {
     /// Tag selection omitted a task this workflow keeps: the run is a
     /// filtered subset, so its end must expire nothing.
     filtered: bool,
+    /// Every session this run sent a request to: an incomplete origin
+    /// marks its destinations incomplete too, so a delegated host never
+    /// sends an unfiltered Done off its unrelated origin recap.
+    delegated: BTreeSet<String>,
     /// The full configuration's static sysctl declarations that run on
     /// this host: every unconditional top-level sysctl task's entry in
     /// every play the host runs, computed before the first task
@@ -219,6 +223,8 @@ fn result_scope(scope: &TrackedValue, task: &Value, result: &TrackedValue) -> Re
 }
 
 mod assertion;
+mod delegation;
+pub(crate) use delegation::mark_delegation_destinations;
 mod failure;
 mod handlers;
 pub(crate) use failure::RunFailure;
