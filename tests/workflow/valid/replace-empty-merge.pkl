@@ -1,0 +1,12 @@
+// An omitted replacement and an empty one are one deletion: both lower
+// to the same empty replacement, so the two declarations merge instead
+// of conflicting.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+name = "valid/replace-empty-merge.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new ReplaceLine { title = "Drop the debug flag"; path = "/etc/motd"; regexp = "^debug = true$" }
+  new ReplaceLine { title = "Drop the debug flag again"; path = "/etc/motd"; regexp = "^debug = true$"; replace = "" }
+} } }

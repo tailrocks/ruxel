@@ -1,0 +1,13 @@
+// expect: manages a line of /etc/motd, which 'Take over the motd'
+// A directory after line entries leaves no file for them: the declared
+// lines are absent at the end, so the author lists the seeding step
+// before the entries it seeds.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "day" }
+  new Directory { title = "Take over the motd"; path = "/etc/motd" }
+} } }
+
+name = "invalid/ensure-line-dir-overwrite.pkl"

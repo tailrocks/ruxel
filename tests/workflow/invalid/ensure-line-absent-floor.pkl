@@ -1,0 +1,13 @@
+// expect: /etc/tool is removed, so /etc/tool/config cannot be inside it
+// A removal takes the entries beneath it: a line entry under a removed
+// path fails where the directory is gone, so the author removes the
+// path instead or moves the removal later.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the tool config line"; path = "/etc/tool/config"; line = "key = value" }
+  new Absent { title = "Drop the tool"; path = "/etc/tool"; recursive = true }
+} } }
+
+name = "invalid/ensure-line-absent-floor.pkl"

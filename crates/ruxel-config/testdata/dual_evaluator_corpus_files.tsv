@@ -64,16 +64,24 @@ dual_evaluator
   tests/workflow/invalid/engine-debconf-question-space.pkl
   tests/workflow/invalid/engine-debconf-value-multiline.pkl
   tests/workflow/invalid/engine-iptables-policy-state.pkl
+  tests/workflow/invalid/ensure-line-absent-floor.pkl
+  tests/workflow/invalid/ensure-line-absent-overwrite.pkl
+  tests/workflow/invalid/ensure-line-dir-overwrite.pkl
   tests/workflow/invalid/ensure-line-empty-regexp.pkl
   tests/workflow/invalid/ensure-line-empty.pkl
   tests/workflow/invalid/ensure-line-file-overwrite.pkl
+  tests/workflow/invalid/ensure-line-home-removed-later-stage.pkl
+  tests/workflow/invalid/ensure-line-home-removed.pkl
+  tests/workflow/invalid/ensure-line-literal-regexp.pkl
   tests/workflow/invalid/ensure-line-multiline.pkl
   tests/workflow/invalid/ensure-line-regexp-multiline.pkl
   tests/workflow/invalid/ensure-line-under-file.pkl
   tests/workflow/invalid/ensure-replace-same-match.pkl
+  tests/workflow/invalid/fetched-script-creates-ancestor.pkl
   tests/workflow/invalid/fetched-script-creates-dest.pkl
   tests/workflow/invalid/fetched-script-plain-http.pkl
   tests/workflow/invalid/git-branch-dash.pkl
+  tests/workflow/invalid/git-branch-dot.pkl
   tests/workflow/invalid/git-branch-qualified-ref.pkl
   tests/workflow/invalid/git-branch-root-dest.pkl
   tests/workflow/invalid/git-branch-scp-dash.pkl
@@ -81,6 +89,7 @@ dual_evaluator
   tests/workflow/invalid/git-branch-sha.pkl
   tests/workflow/invalid/git-branch-ssh-bad-port.pkl
   tests/workflow/invalid/git-branch-ssh-no-host.pkl
+  tests/workflow/invalid/git-branch-ssh-port-zero.pkl
   tests/workflow/invalid/iptables-chain-name-long.pkl
   tests/workflow/invalid/iptables-chain-name-newline.pkl
   tests/workflow/invalid/iptables-chain-name-queue.pkl
@@ -290,6 +299,7 @@ dual_evaluator
   tests/workflow/valid/debconf-entry.pkl
   tests/workflow/valid/ensure-line.pkl
   tests/workflow/valid/fetched-script-never-watch.pkl
+  tests/workflow/valid/fetched-script-watch-order.pkl
   tests/workflow/valid/fetched-script.pkl
   tests/workflow/valid/git-branch.pkl
   tests/workflow/valid/iptables-absent-jumps.pkl
@@ -351,6 +361,7 @@ dual_evaluator
   tests/workflow/valid/notice-repeat-capture.pkl
   tests/workflow/valid/notice.pkl
   tests/workflow/valid/read-resource.pkl
+  tests/workflow/valid/replace-empty-merge.pkl
   tests/workflow/valid/secret-literal-prefix.pkl
   tests/workflow/valid/secret-op-reference-dotted.pkl
   tests/workflow/valid/secret-placeholder-shared-terminator.pkl

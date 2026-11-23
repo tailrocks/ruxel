@@ -1238,16 +1238,23 @@ function conflicts(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
-/// A line entry the stage's later whole-file writer overwrites: the
-/// writer replaces the file the entries composed, so the declared lines
-/// are absent at the end and both sides report changes on every apply.
-/// A writer that precedes the entries composes with them — it seeds the
-/// file the entries then manage — so only the reversed ordering is
+/// A line entry the stage's later destructive step erases: a whole-file
+/// writer replaces the file the entries composed, and a removal or a
+/// directory in its place leaves no file for them at all, so the declared
+/// lines are absent at the end and both sides report changes on every
+/// apply. A writer that precedes the entries composes with them — it seeds
+/// the file the entries then manage — so only the reversed ordering is
 /// refused, and the author lists the writer first.
 function linesOverwritten(ix: StageIndex, i: Int): List<String> =
-  if (!(ix.steps[i] is core.File || ix.steps[i] is core.Symlink)) List()
+  if (!(ix.steps[i] is core.File || ix.steps[i] is core.Symlink || ix.steps[i] is core.Absent || ix.steps[i] is core.Directory)) List()
   else earlier(i).filter((j) -> (ix.steps[j] is core.EnsureLine || ix.steps[j] is core.ReplaceLine) && linePath(ix.steps[j]) == ix.steps[i].path)
-    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages a line of \(linePath(ix.steps[j])), which '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) rewrites after it; list the whole-file writer before the line entries it seeds")
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages a line of \(linePath(ix.steps[j])), which '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) \(overwritesHow(ix.steps[i])) after it; list the seeding step before the line entries it seeds")
+
+/// How the later step erases the line entries, for the refusal's wording.
+const function overwritesHow(s: core.Step): String =
+  if (s is core.Absent) "removes"
+  else if (s is core.Directory) "replaces with a directory"
+  else "rewrites"
 
 /// The file a line entry manages.
 const function linePath(s: core.Step): String =
@@ -1830,8 +1837,8 @@ const function customSpoolInside(a: core.Step, b: core.Step): List<List<String>>
 
 function homeRemovals(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
-    let (byEarlier = removedInside(ix.steps[j], paths(ix.steps[i])))
-    let (byLater = removedInside(ix.steps[i], paths(ix.steps[j])))
+    let (byEarlier = removedInside(ix.steps[j], nestedPaths(ix.steps[i])))
+    let (byLater = removedInside(ix.steps[i], nestedPaths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is removed with the account's home directory and mail spool, so \(pair.first.last) cannot be inside it"))
@@ -1967,7 +1974,7 @@ function homeRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 /// removed, and the refusal for the ones no step recreates.
 function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
   removedHomes(_indexes[n]).flatMap((h) -> positions(_indexes[m].steps).flatMap((i) ->
-    let (inside = paths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    let (inside = nestedPaths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
     if (inside.isEmpty) List()
     else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
     else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
@@ -2000,7 +2007,7 @@ function removedCustomSpoolRels(_stages: List<core.Stage>, _indexes: List<StageI
   let (reserved = (if (s.home == null) List() else List(s.home)) + mailSpools(s.user))
   positions(_indexes[n].steps).flatMap((i) ->
     let (t = _indexes[n].steps[i])
-    let (custom = paths(t).filter((p) -> isMailSpool(s.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/")) && !accountOwnsPath(t, s.user)))
+    let (custom = nestedPaths(t).filter((p) -> isMailSpool(s.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/")) && !accountOwnsPath(t, s.user)))
     if (custom.isEmpty) List()
     else List("'\(name(t))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(custom.first), which stage \"\(_stages[m].title)\" removes with the account's mail spool; userdel -r removes the spool and everything in it, so the path does not survive the run"))
 
@@ -2015,7 +2022,7 @@ function removedCustomSpoolRels(_stages: List<core.Stage>, _indexes: List<StageI
 function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, account: String, what: String, how: String): List<String> =
   positions(_indexes[n].steps).flatMap((i) ->
     let (s = _indexes[n].steps[i])
-    let (inside = paths(s).filter((p) -> (p == h || p.startsWith(h + "/")) && !accountOwnsPath(s, account)))
+    let (inside = nestedPaths(s).filter((p) -> (p == h || p.startsWith(h + "/")) && !accountOwnsPath(s, account)))
     if (inside.isEmpty) List()
     else List("'\(name(s))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
 
@@ -3034,7 +3041,7 @@ class Identity {
     // a chain. Keys are generated (`<kind>_<hex>`), so a plain join after the
     // self-delimiting fields is unambiguous.
     else fields(List(actionShape(s), optional(s.creates), changesText(s))) + envFingerprint(s)
-      + listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w)).join(",")
+      + keyOrder.set(listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w))).join(",")
 }
 
 /// A command's environment in its identity: two commands that differ only in
@@ -3145,8 +3152,8 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // message, rendered with its one capture. A branch checkout is its
   // repository, path, branch and host-key choice. A fetched script is an
   // action: its shape lives in `actionShape` (G5).
-  ["ensureLine"] = (s) -> fields(List(s.path, lineMatch(s), s.line))
-  ["replaceLine"] = (s) -> fields(List(s.path, s.regexp, optional(s.replace)))
+  ["ensureLine"] = (s) -> fields(List(s.path, s.line, optional(s.regexp)))
+  ["replaceLine"] = (s) -> fields(List(s.path, s.regexp, if (s.replace == null) "" else s.replace))
   ["notice"] = (s) -> fields(List(s.message))
   ["gitBranch"] = (s) -> fields(List(s.repository, s.path, s.branch, "\(s.acceptHostKey)"))
   ["capture"] = (s) -> s.id()
@@ -4306,8 +4313,8 @@ function trackASettings(s: core.Step): List<String> =
     List("'\(name(s))': the message reads \(trackANoticeRefs(s).length) captures; a notice reads at most one capture's output")
   else if (s is core.Notice && !noticeNonCaptureRefs(s).isEmpty)
     List("'\(name(s))': the message reads a run-time value; a notice renders static text with at most one capture's output, so read the value with a capture first")
-  else if (s is core.FetchedScript && s.creates != null && s.creates == s.dest)
-    List("'\(name(s))': the marker is the destination; the probe sees the downloaded \(s.dest) and skips the run on every apply, so the fetched script never runs")
+  else if (s is core.FetchedScript && s.creates != null && (s.creates == s.dest || s.dest.startsWith(s.creates + "/")))
+    List("'\(name(s))': the marker is at or above the destination; the download runs before the probe and leaves the marker present, so the probe skips the run on every apply and the fetched script never runs")
   else if (s is linux.GitBranch && s.branch.startsWith("refs/"))
     List("'\(name(s))': branch \"\(s.branch)\" is a fully qualified ref; after fetching, the agent probes refs/remotes/origin/\(s.branch) and falls back to the stale clone-time commit, so the checkout never converges — name the branch itself")
   else if (s is linux.GitBranch && s.path == "/")

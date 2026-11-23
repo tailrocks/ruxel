@@ -1,4 +1,4 @@
-// expect: 'Fetch and run the holla installer': the marker is the destination; the probe sees the downloaded /opt/holla-install.sh and skips the run on every apply, so the fetched script never runs
+// expect: 'Fetch and run the holla installer': the marker is at or above the destination; the download runs before the probe and leaves the marker present, so the probe skips the run on every apply and the fetched script never runs
 // A fetched script's marker guards its run: the marker is the
 // destination, the probe sees the download and skips the run on every
 // apply, so the fetched script never runs.

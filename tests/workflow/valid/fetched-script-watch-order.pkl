@@ -1,0 +1,33 @@
+// Two fetched scripts watching the same steps in another order are one
+// download: the guard ORs the watched results whatever order the author
+// lists them in, so the declarations merge instead of conflicting.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local first = new Command { title = "First view"; run { "echo"; "first" } }
+local second = new Command { title = "Second view"; run { "echo"; "second" } }
+
+local fetchA = new FetchedScript {
+  title = "Fetch the holla installer"
+  url = "https://get.example.test/holla/install.sh"
+  dest = "/opt/holla-install.sh"
+  creates = "/opt/holla/.installed"
+  onChangeOf { first second }
+}
+
+local fetchB = new FetchedScript {
+  title = "Fetch the holla installer"
+  url = "https://get.example.test/holla/install.sh"
+  dest = "/opt/holla-install.sh"
+  creates = "/opt/holla/.installed"
+  onChangeOf { second first }
+}
+
+name = "valid/fetched-script-watch-order.pkl"
+
+stages { new Stage { title = "Holla install"; hosts = inventory.workers; steps {
+  first
+  second
+  fetchA
+  fetchB
+} } }
