@@ -101,13 +101,27 @@ fn run_with(
         // matches, where it is never read; and deleting the stale rules
         // one by one leaves a window where a less restrictive stale
         // rule still answers first.
-        if !present {
-            install_at(binary, chain, &spec, &shadowed)?;
+        if !present && !install_at(binary, chain, &spec, &shadowed)? {
+            // The stale rule the replacement would take the place of
+            // is gone already: another writer took it in between. Its
+            // position is gone with it, so appending would land the
+            // replacement behind a catch-all that already matches,
+            // where it is never read. Read the chain again instead.
+            continue;
         }
         chain::delete_rules(binary, chain, &shadowed, MAX_DELETIONS)?;
     }
     // The loop above ran out without converging: another writer kept
-    // changing the chain under it.
+    // changing the chain under it. That writer may have stopped while
+    // the last round's own change landed, so the chain is read one last
+    // time before the run reports a concurrent mutation.
+    let mut check: Vec<&str> = vec!["-C", chain];
+    check.extend(spec.iter().map(String::as_str));
+    if chain::probe(binary, &check)?
+        && chain::stale_rules(binary, chain, &spec)?.is_empty()
+    {
+        return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
+    }
     Err(format!(
         "{binary}: the chain {chain} changed during the operation"
     ))
@@ -115,25 +129,35 @@ fn run_with(
 
 /// Installs the declared rule: at the position of the first stale rule
 /// it replaces, or appended when no rule of the match is there.
+///
+/// Reports whether the rule was installed: when the stale rule it
+/// would replace is gone already, its position is gone with it, and
+/// the caller reads the chain again instead of appending behind a
+/// catch-all that already matches.
 fn install_at(
     binary: &str,
     chain: &str,
     spec: &[String],
     shadowed: &[Vec<String>],
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let position = match shadowed.first() {
         Some(first) => chain::position_of(binary, chain, first)?,
         None => None,
     };
+    if shadowed.first().is_some() && position.is_none() {
+        return Ok(false);
+    }
     if let Some(position) = position {
         let at = position.to_string();
         let mut insert: Vec<&str> = vec!["-I", chain, &at];
         insert.extend(spec.iter().map(String::as_str));
-        return chain::exec_rule(binary, &insert);
+        chain::exec_rule(binary, &insert)?;
+        return Ok(true);
     }
     let mut append: Vec<&str> = vec!["-A", chain];
     append.extend(spec.iter().map(String::as_str));
-    chain::exec_rule(binary, &append)
+    chain::exec_rule(binary, &append)?;
+    Ok(true)
 }
 
 #[cfg(test)]
