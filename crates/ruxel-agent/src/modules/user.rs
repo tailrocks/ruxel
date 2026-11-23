@@ -1372,6 +1372,7 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
 /// either: the step asks for no home at all.
 #[expect(
     clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
     clippy::similar_names,
     reason = "the repair decision reads the declaration, the planned identity and the move flags together; splitting it would scatter one match across callers"
 )]
