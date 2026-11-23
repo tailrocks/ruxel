@@ -87,13 +87,11 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
     let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
     let repair = super::super::planned_home_repair(
         Some("/srv/alice"),
-        "/srv/alice",
         &account,
         Some(&primary),
         Some(1500),
         1500,
         999,
-        false,
         false,
         true,
         true,
@@ -112,17 +110,16 @@ fn the_declared_home_repair_chowns_to_the_declared_group() {
 }
 
 #[test]
-fn the_default_home_repair_covers_a_primary_group_move() {
-    // A primary-group renumbering (`groupmod -g`) leaves the home
-    // directory's ownership behind, so a step that moves the group
-    // without declaring a home still repairs the effective default
-    // home — while a step that moves no identity manages the untouched
-    // default nowhere.
+fn an_undeclared_home_plans_no_repair() {
+    // Thread 331: a home the step does not declare is the host's, not
+    // the step's — not even where the step moves the primary group.
+    // Repairing it would create or chown directories the workflow never
+    // claimed: a missing live home, or a root-owned directory the
+    // account merely points at.
     let (account, primary) = an_account_with_its_group();
     let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
     let repair = super::super::planned_home_repair(
         None,
-        &format!("/home/{account}"),
         &account,
         Some(&primary),
         None,
@@ -131,29 +128,20 @@ fn the_default_home_repair_covers_a_primary_group_move() {
         false,
         true,
         true,
-        true,
     )
-    .expect("the owner must resolve");
+    .expect("the group move must still plan");
     assert_eq!(
-        repair,
-        Some(super::super::apply::Home {
-            path: format!("/home/{account}"),
-            uid: 1500,
-            owner: super::super::apply::HomeOwner::Number(gid),
-            managed_uid: 1500,
-        }),
-        "the default home is repaired to the moved group's number"
+        repair, None,
+        "a primary-group move repairs no undeclared home"
     );
     // No move, no repair: a no-op task never claimed the default home.
     let idle = super::super::planned_home_repair(
         None,
-        &format!("/home/{account}"),
         &account,
         Some(&primary),
         None,
         1500,
         gid,
-        false,
         false,
         true,
         true,
@@ -171,13 +159,11 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
     let (account, _) = an_account_with_its_group();
     let unknown = super::super::planned_home_repair(
         None,
-        "/srv/alice",
         &account,
         None,
         None,
         u64::MAX,
         u64::MAX,
-        true,
         true,
         false,
         true,
@@ -189,13 +175,11 @@ fn no_repair_runs_against_numbers_the_allocator_draws() {
     );
     let explicit = super::super::planned_home_repair(
         Some("/srv/alice"),
-        "/srv/alice",
         &account,
         None,
         None,
         u64::MAX,
         u64::MAX,
-        true,
         true,
         false,
         true,
@@ -222,14 +206,12 @@ fn a_missing_group_plans_no_repair_for_the_change_it_covers() {
     super::super::entries::note_planned_group(&missing, None);
     let repair = super::super::planned_home_repair(
         None,
-        &format!("/home/{account}"),
         &account,
         Some(&missing),
         None,
         1500,
         999,
         false,
-        true,
         true,
         true,
     )
@@ -239,17 +221,15 @@ fn a_missing_group_plans_no_repair_for_the_change_it_covers() {
 }
 
 #[test]
-fn a_group_only_change_repairs_the_account_effective_home() {
-    // An existing account with a custom passwd home (`/srv/alice`)
-    // that changes only its primary group: the repair covers the home
-    // the account holds under the plan — not the creation default
-    // `/home/<name>`, a path this step never claimed and must not
-    // create or chown while the real home keeps the old GID.
+fn a_group_only_change_with_no_declared_home_repairs_nothing() {
+    // Thread 331: an existing account that changes only its primary
+    // group, without declaring a home, repairs nothing — neither the
+    // custom passwd home (`/srv/alice`) the step never claimed, nor the
+    // creation default `/home/<name>`. Both are the host's, not the
+    // step's, so neither is created nor chownned.
     let (account, primary) = an_account_with_its_group();
-    let (_, gid) = group_entry(&primary).unwrap().expect("the live group");
     let repair = super::super::planned_home_repair(
         None,
-        "/srv/alice",
         &account,
         Some(&primary),
         None,
@@ -258,24 +238,14 @@ fn a_group_only_change_repairs_the_account_effective_home() {
         false,
         true,
         true,
-        true,
     )
-    .expect("the owner must resolve");
+    .expect("the group-only change must still plan");
     assert_eq!(
-        repair,
-        Some(super::super::apply::Home {
-            path: "/srv/alice".to_string(),
-            uid: 1500,
-            owner: super::super::apply::HomeOwner::Number(gid),
-            managed_uid: 1500,
-        }),
-        "the group-only change repairs the account's effective home, not the creation default"
+        repair, None,
+        "the group-only change repairs no undeclared home"
     );
-    // An account whose effective home is the default still repairs
-    // that default: the effective home is what decides, either way.
     let default = super::super::planned_home_repair(
         None,
-        &format!("/home/{account}"),
         &account,
         Some(&primary),
         None,
@@ -284,18 +254,11 @@ fn a_group_only_change_repairs_the_account_effective_home() {
         false,
         true,
         true,
-        true,
     )
-    .expect("the owner must resolve");
+    .expect("the group-only change must still plan");
     assert_eq!(
-        default,
-        Some(super::super::apply::Home {
-            path: format!("/home/{account}"),
-            uid: 1500,
-            owner: super::super::apply::HomeOwner::Number(gid),
-            managed_uid: 1500,
-        }),
-        "a default effective home still repairs the default path"
+        default, None,
+        "a default live home is repaired no more than a custom one"
     );
 }
 

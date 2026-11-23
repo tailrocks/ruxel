@@ -935,11 +935,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // `halt_on_failure = false` must not leave later tasks
             // comparing against a set the host never took.
             let mut planned_primary: Option<PlannedPrimary> = None;
-            // Whether the step moves the account's primary group: the
-            // declared group resolves to another number, or the implicit
-            // claim moves the account onto its same-name group. The
-            // default home's repair below is scoped to that move.
-            let mut primary_gid_moves = implicit_group_move;
             if let Some(g) = group {
                 match planned_gid(g, ctx.check_mode)? {
                     // The group is not on the host yet but an earlier
@@ -963,7 +958,6 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
                     Some(want_gid) => {
                         if u64::from(want_gid) != effective.gid {
                             identity_change = true;
-                            primary_gid_moves = true;
                             args.push("-g");
                             args.push(g);
                         }
@@ -1078,30 +1072,26 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
             // change the plan already reports covers the repair, so
             // nothing is compared against a gid that does not exist.
             //
-            // The effective home the step does not declare is repaired
-            // where the step moves the account's primary group:
-            // `groupmod -g` leaves the directory's ownership behind, so
-            // the repair covers it the way the declared home's does. A
-            // step that moves no identity manages the untouched default
-            // nowhere: building the repair there would create and chown
-            // directories a no-op task never claimed. And numbers the
-            // plan never stated are the allocator's to draw: the repair
-            // runs against none of them — the change the plan already
-            // reports covers it, the way a group that is not on the host
-            // yet does.
+            // A home the step does not declare is never repaired: the
+            // passwd home it would repair is the host's, not the step's,
+            // so building the repair there would create and chown
+            // directories the workflow never claimed — a missing live
+            // home, or a root-owned directory the account merely points
+            // at. And numbers the plan never stated are the allocator's
+            // to draw: the repair runs against none of them — the
+            // change the plan already reports covers it, the way a
+            // group that is not on the host yet does.
             let numbers_known = !planned_creation
                 || (plan::uid(name).is_some()
                     && plan::primary(name).is_some_and(|primary| primary.gid.is_some()));
             let home_repair = planned_home_repair(
                 home,
-                &planned_home,
                 name,
                 group,
                 uid,
                 effective.uid,
                 effective.gid,
                 implicit_group_move,
-                primary_gid_moves,
                 numbers_known,
                 ctx.check_mode,
             )?;
@@ -1359,17 +1349,14 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// The home's repair the step plans: the declared home, or the
-/// account's effective home where the step moves the account's primary
-/// group — `groupmod -g` leaves the directory's ownership behind, so
-/// the repair covers it the way the declared home's does. A step that
-/// moves no identity manages the untouched default nowhere: building
-/// the repair there would create and chown directories a no-op task
-/// never claimed. And numbers the plan never stated are the
-/// allocator's to draw: the repair runs against none of them — the
-/// primary-group change the plan already reports covers it, the way a
-/// group that is not on the host yet does — so an unknown number plans
-/// no repair.
+/// The home's repair the step plans: the declared home, or nothing.
+/// A home the step does not declare is the host's, not the step's, so
+/// no repair is planned for it — building one would create and chown
+/// directories the workflow never claimed. And numbers the plan never
+/// stated are the allocator's to draw: the repair runs against none of
+/// them — the primary-group change the plan already reports covers it,
+/// the way a group that is not on the host yet does — so an unknown
+/// number plans no repair.
 #[expect(
     clippy::too_many_arguments,
     clippy::fn_params_excessive_bools,
@@ -1378,14 +1365,12 @@ fn planned_visible_supplementary(set: Vec<String>) -> Vec<String> {
 )]
 fn planned_home_repair(
     home: Option<&str>,
-    planned_home: &str,
     name: &str,
     group: Option<&str>,
     uid: Option<u64>,
     effective_uid: u64,
     effective_gid: u64,
     implicit_group_move: bool,
-    primary_gid_moves: bool,
     numbers_known: bool,
     check_mode: bool,
 ) -> Result<Option<Home>, String> {
@@ -1401,31 +1386,8 @@ fn planned_home_repair(
             owner,
             managed_uid: effective_uid,
         }),
-        None if primary_gid_moves && incidental_home_repairable(planned_home) => {
-            owner.map(|owner| Home {
-                path: planned_home.to_string(),
-                uid: uid.unwrap_or(effective_uid),
-                owner,
-                managed_uid: effective_uid,
-            })
-        }
         None => None,
     })
-}
-
-/// Whether the incidental repair of an undeclared home may run: the
-/// step claimed no home, so the passwd home it would repair is the
-/// host's, not the step's. A home that exists as anything but a plain
-/// directory — a symlink such as a usr-merged `/bin`, or a device or
-/// file a system account names — is not a directory this step may
-/// chown, and refusing it would block an unrelated group move for an
-/// account the step never asked to house. A missing home keeps the
-/// repair, and lookup errors keep surfacing from the repair itself.
-fn incidental_home_repairable(planned_home: &str) -> bool {
-    match std::fs::symlink_metadata(planned_home) {
-        Ok(meta) => meta.is_dir(),
-        Err(_) => true,
-    }
 }
 
 /// The owner the home's repair chowns to: the declared group's number,
