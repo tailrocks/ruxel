@@ -15,10 +15,6 @@ fn root() -> PathBuf {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/workflow")).to_path_buf()
 }
 
-fn workflows() -> PathBuf {
-    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../workflows")).to_path_buf()
-}
-
 fn options() -> ruxel_config::EvalOptions {
     ruxel_config::EvalOptions {
         root_dir: Some(root()),
@@ -31,43 +27,6 @@ fn valid(name: &str) -> Result<serde_json::Value> {
         &root().join("valid").join(name),
         &options(),
     )?)
-}
-
-fn workload() -> Result<serde_json::Value> {
-    Ok(ruxel_config::eval_config(
-        &workflows().join("setup-postgresql-nova.pkl"),
-        &ruxel_config::EvalOptions {
-            root_dir: Some(workflows()),
-            ..ruxel_config::EvalOptions::default()
-        },
-    )?)
-}
-
-/// Every task of every play, including block children and handlers: the
-/// units the leak test walks.
-fn all_tasks(config: &serde_json::Value) -> Vec<&serde_json::Value> {
-    fn collect<'value>(
-        task: &'value serde_json::Value,
-        found: &mut Vec<&'value serde_json::Value>,
-    ) {
-        found.push(task);
-        for section in ["block", "rescue", "always"] {
-            if let Some(children) = task.get(section).and_then(|tasks| tasks.as_array()) {
-                for child in children {
-                    collect(child, found);
-                }
-            }
-        }
-    }
-    let mut found = Vec::new();
-    for play in config["plays"].as_array().into_iter().flatten() {
-        for section in ["preTasks", "tasks", "handlers"] {
-            for task in play[section].as_array().into_iter().flatten() {
-                collect(task, &mut found);
-            }
-        }
-    }
-    found
 }
 
 fn tasks(config: &serde_json::Value) -> Vec<&serde_json::Value> {
