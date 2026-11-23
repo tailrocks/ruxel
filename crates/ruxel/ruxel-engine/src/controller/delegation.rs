@@ -34,10 +34,13 @@ fn collect(task: &Value, targets: &mut BTreeSet<String>) {
 
 /// Mark every session the incomplete origin may have delegated to:
 /// the play's literal targets — a skipped task never evaluates its
-/// destination — and the destinations the run actually sent to. The
-/// mark is `filtered`, the same no-prune verdict the origin carries:
-/// it only delays expiry to a later complete run, never wrongly
-/// authorizes one.
+/// destination — and the destinations the run actually sent to. Only
+/// sessions with a recap of their own are marked: a delegated host
+/// with no recap at all already shuts down incomplete (see
+/// `session_incomplete`), so no entry is ever created here and the
+/// reported recaps never gain a host that ran nothing. The mark is
+/// `filtered`, the same no-prune verdict the origin carries: it only
+/// delays expiry to a later complete run, never wrongly authorizes one.
 pub(crate) fn mark_delegation_destinations(
     totals: &mut BTreeMap<String, Recap>,
     play: &Value,
@@ -49,6 +52,8 @@ pub(crate) fn mark_delegation_destinations(
     }
     destinations.remove(origin);
     for destination in destinations {
-        totals.entry(destination).or_default().filtered = true;
+        if let Some(total) = totals.get_mut(&destination) {
+            total.filtered = true;
+        }
     }
 }

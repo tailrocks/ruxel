@@ -196,19 +196,24 @@ pub async fn run_with_full_config<B: Backend>(
                     Ok(true) => None,
                 }
             };
-            // An incomplete origin marks its destinations incomplete
-            // too: the destination's shutdown must not read only its
-            // unrelated origin recap and prune another play's records
-            // with an unfiltered Done.
-            if totals
-                .get(&host)
-                .is_some_and(|total| total.filtered || total.aborted)
-            {
-                mark_delegation_destinations(&mut totals, play, &host);
-            }
             if let Some(error) = failure {
                 return Err(RunFailure::new(error, totals).into());
             }
+        }
+    }
+    // An incomplete origin marks its destinations incomplete too: the
+    // mark runs after every play, so a destination whose play runs
+    // later still carries a recap to mark. The destination's shutdown
+    // must not read only its unrelated origin recap and prune another
+    // play's records with an unfiltered Done.
+    let incomplete: Vec<String> = totals
+        .iter()
+        .filter(|(_, total)| total.filtered || total.aborted)
+        .map(|(host, _)| host.clone())
+        .collect();
+    for play in array(config, "plays") {
+        for origin in &incomplete {
+            mark_delegation_destinations(&mut totals, play, origin);
         }
     }
     Ok(totals)
