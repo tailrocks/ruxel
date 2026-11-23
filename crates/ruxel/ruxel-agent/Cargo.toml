@@ -13,7 +13,7 @@ name = "ruxel-agent"
 path = "src/main.rs"
 
 [dependencies]
-rustix.workspace = true
+rustix = { workspace = true, features = ["process"] }
 pbkdf2.workspace = true
 md5.workspace = true
 regex-lite.workspace = true

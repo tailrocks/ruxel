@@ -1,0 +1,11 @@
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A 28-byte chain name is the largest the firewall takes
+// (`XT_EXTENSION_MAXNAMELEN` is 29), so it is admitted.
+name = "valid/iptables-chain-name-max.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "AAAAAAAAAAAAAAAAAAAAAAAAAAAA"; jump = "DROP" }
+} } }

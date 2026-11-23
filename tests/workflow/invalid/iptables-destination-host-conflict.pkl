@@ -1,0 +1,14 @@
+// expect: both manage the ipv4 iptables rule INPUT to 10.0.0.1/32 tcp with different settings
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// A host destination carries its full prefix: the firewall prints
+// `10.0.0.1` as `10.0.0.1/32`, so the two declarations name one rule of
+// one chain and match, and two jumps for it are a conflict.
+name = "invalid/iptables-destination-host-conflict.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.1"; jump = "DROP" }
+  new linux.IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.1/32"; jump = "ACCEPT" }
+} } }

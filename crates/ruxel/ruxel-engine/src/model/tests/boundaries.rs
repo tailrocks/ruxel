@@ -196,3 +196,29 @@ fn apt_operation_accepts_a_hold() -> Result<()> {
     );
     Ok(())
 }
+
+/// A key and a firewall rule can be removed, so the engine admits the
+/// "absent" state of both.
+#[test]
+fn authorized_key_state_absent_and_firewall_state_are_valid() -> Result<()> {
+    let key = json!({"key":"ssh-ed25519 AAAAC3Nza", "user":"deploy", "state":"absent"});
+    validate_operation("authorized_key", key.as_object().context("object")?)?;
+    let firewall = json!({"chain":"INPUT", "state":"absent"});
+    validate_operation("iptables", firewall.as_object().context("object")?)?;
+    Ok(())
+}
+
+/// A chain policy is not a rule: the agent's policy branch never looks at
+/// the state, so a policy with a state would apply the policy where the
+/// author asked for a removal.
+#[test]
+fn a_firewall_policy_takes_no_state() -> Result<()> {
+    let policy = json!({"chain":"INPUT", "policy":"DROP"});
+    validate_operation("iptables", policy.as_object().context("object")?)?;
+    let absent = json!({"chain":"INPUT", "policy":"DROP", "state":"absent"});
+    assert!(
+        validate_operation("iptables", absent.as_object().context("object")?).is_err(),
+        "a policy with a state applies the policy"
+    );
+    Ok(())
+}

@@ -1,0 +1,13 @@
+// expect-pklr: expected Destination
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The destination of a rule is an address with an optional prefix: a
+// text that names no address is no destination at all.
+name = "invalid/iptables-destination-syntax.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "INPUT"; destination = "not-an-address"; jump = "DROP" }
+} } }

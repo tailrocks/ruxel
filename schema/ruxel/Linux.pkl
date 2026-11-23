@@ -51,8 +51,63 @@ typealias Uid = Int(isBetween(0, 60000))
 /// A numeric group id: 0 to 60000.
 typealias Gid = Int(isBetween(0, 60000))
 
-/// Whether a thing is there or not.
+/// Whether a managed thing is there or not: `"present"` (the default) or
+/// `"absent"`. Copied from `Core.pkl`; keep the copies in sync.
 typealias Presence = "present"|"absent"
+
+/// An iptables chain name: at most 28 bytes, as the firewall allows — the
+/// kernel's `XT_EXTENSION_MAXNAMELEN` is 29, and the chain parser refuses
+/// names of that length and more. The name is ASCII, so its length in
+/// characters is its length in bytes. The name is not the spelling of an
+/// option: the chain parser refuses a name that begins with `-` or `!`.
+/// The name holds no whitespace: the chain parser refuses every character
+/// `isspace` accepts, so a name that holds one is refused at apply and
+/// must be refused here. And the name is not a target the firewall would
+/// read instead of the chain: a chain named `LOG` or `REJECT` never
+/// survives `xtables_find_target`, so it is refused at apply and must be
+/// refused here.
+typealias ChainName = Static(!isEmpty && length <= 28 && isAscii(this) && !startsWith("-") && !startsWith("!") && !hasWhitespace(this) && this != "DROP" && this != "ACCEPT" && this != "REJECT" && this != "LOG")
+
+/// An outgoing interface name: at most 15 characters, the kernel's
+/// interface-name limit (`IFNAMSIZ` is 16, the name and its terminator),
+/// and without what the kernel refuses in a name: the `/`, the `:`, and
+/// the whitespace, and never the exact names `.` and `..`.
+typealias InterfaceName = Static(!isEmpty && length < 16 && isAscii(this) && !contains("/") && !contains(":") && !hasWhitespace(this) && this != "." && this != "..")
+
+/// Whether the text is ASCII: the firewall measures the names it takes in
+/// bytes — the chain name's length and the interface name's limit are byte
+/// limits, and the firewall reads a name the way C does, by its encoded
+/// length — while a length in characters is not a length in bytes. Where
+/// the name is ASCII the two lengths are one, so the name the schema
+/// admits is the name the firewall accepts.
+const local function isAscii(s: String): Boolean =
+  s.matches(Regex("[\\x00-\\x7F]*"))
+
+/// Whether the text holds whitespace: the characters `isspace` accepts —
+/// the space, the tab, the newline, the vertical tab, the form feed and
+/// the carriage return. The kernel refuses them in an interface name and
+/// the chain parser of the firewall refuses them in a chain name.
+const local function hasWhitespace(s: String): Boolean =
+  s.contains(" ") || s.contains("\t") || s.contains("\n") || s.contains("\u{0B}") || s.contains("\u{0C}") || s.contains("\r")
+
+/// A destination address: an IPv4 or an IPv6 address, with an optional
+/// prefix length — the network the rule matches.
+typealias Destination = Static(isDestination(this))
+
+/// Whether the text is an address with an optional prefix: an IPv4 address
+/// with a prefix of at most 32 bits, an IPv6 address with a prefix of at
+/// most 128 bits.
+const local function isDestination(s: String): Boolean =
+  if (!s.contains("/")) isIpv4(s) || isIpv6Address(s)
+  else
+    let (parts = s.split("/"))
+    if (parts.length != 2) false
+    else
+      let (prefix = parts[1])
+      if (!prefix.matches(Regex("[0-9]{1,3}"))) false
+      else if (isIpv4(parts[0])) prefix.toInt() <= 32
+      else if (isIpv6Address(parts[0])) prefix.toInt() <= 128
+      else false
 
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
@@ -247,4 +302,29 @@ class GitCheckout extends core.Step {
   repository: HttpsUrl
   path: AbsolutePath
   commit: CommitSha
+}
+
+/// A rule in an iptables chain.
+///
+///     new IptablesRule { chain = "INPUT"; protocol = "tcp"; destination = "10.0.0.0/8"; jump = "DROP" }
+///
+/// The chain and the match (protocol, destination, outgoing interface)
+/// identify the rule: two rules that match the same way in the same chain
+/// are the same rule, so they must agree on their jump. `state = "absent"`
+/// removes the rule instead of adding it.
+///
+/// The match must be one the firewall can administer: the protocol and the
+/// destination belong to the IP version of the rule (`icmp` is IPv4's,
+/// `icmpv6` IPv6's, and the address is of the version's family), and the
+/// `INPUT` and `PREROUTING` chains carry no outgoing interface, because a
+/// packet there has none yet.
+class IptablesRule extends core.Step {
+  hidden fixed kind = "iptablesRule"
+  chain: ChainName
+  destination: Destination? = null
+  protocol: "all"|"tcp"|"udp"|"icmp"|"icmpv6" = "all"
+  outInterface: InterfaceName? = null
+  jump: "DROP"|"ACCEPT"|"REJECT"|"LOG" = "DROP"
+  ipVersion: "ipv4"|"ipv6" = "ipv4"
+  state: Presence = "present"
 }
