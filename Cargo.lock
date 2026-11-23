@@ -1585,6 +1585,125 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruxel-acceptance-cache"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "rustix 1.1.6",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-control"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-copy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-files"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "rustix 1.1.6",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-isolation"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-manifest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "ruxel-config",
+ "ruxel-engine",
+ "ruxel-proto",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "ruxel-acceptance-plan"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "regex",
+ "rustix 1.1.6",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-pty"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-restart-rootless"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ruxel-acceptance-xfs"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "ruxel-agent"
 version = "0.1.0"
 dependencies = [
@@ -1621,6 +1740,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruxel-control-flow-assertions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ruxel-engine"
 version = "0.1.0"
 dependencies = [
@@ -1652,6 +1780,10 @@ dependencies = [
  "rustix 1.1.6",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "ruxel-http-fixture"
+version = "0.1.0"
 
 [[package]]
 name = "ruxel-proto"

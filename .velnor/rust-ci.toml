@@ -5,8 +5,8 @@
 #
 # Migration note: this replaces the old velnor-actions 0.1.80 setup
 # (.velnor/config.toml + release-manifest.json -> ci.yml, state-seal.yml,
-# cache-prune.yml). Every old ci.yml job is covered: the root workspace and
-# the 13 standalone tool roots below via Rust lanes, cargo-deny via the
+# cache-prune.yml). Every old ci.yml job is covered: the single root
+# workspace (all 19 crates under crates/) via Rust lanes, cargo-deny via the
 # policy job (deny.toml), cargo-machete via the policy job (mise pin),
 # dual-evaluator via [[lint]] mise task, acceptance-local via the declared
 # .velnor/workflows.toml workflow (hosted ubuntu-26.04; [[lint]] cannot
@@ -18,7 +18,7 @@ default_branch = "main"
 runner = "ubuntu-26.04-scale-set"
 hosted = false
 required_check = "Required"
-mbx_shared_store = true
+mbx_shared_store = false
 docs = "post_merge"
 check_alone = "post_merge"
 
@@ -34,14 +34,10 @@ cainfo = "/opt/velnor/crates-mirror/ca-bundle.pem"
 [public_sources]
 git = ["https://github.com/donbeave/pklr", "https://github.com/jdx/pklr"]
 
-# The 13 standalone tool workspaces keep their own jobs (no workspace
-# group): a group would share one target directory with the root lane's
-# ambient and velnor-ci would refuse it ("cannot be told apart"). Each
-# subdir root builds into target/velnor-roots/<root> (helper 0.1.107+),
-# apart from the repository root's target, so the root lane no longer
-# claims the nested roots and every root has its own target directory.
-# The root workspace (ruxel, ruxel-agent, ruxel-config, ruxel-engine,
-# ruxel-guard, ruxel-proto) keeps its own jobs.
+# The repository holds a single Cargo workspace rooted at `.`: every
+# crate (ruxel, the acceptance tools, control-flow assertions, the HTTP
+# fixture, and the agent/config/engine/guard/proto libraries) lives
+# directly under crates/ and builds in the root target directory.
 
 # Files outside any Cargo root, mapped to the package whose tests read them
 # (mirrors the old [[stacks.rust.inputs]] selection). Input globs are literal
@@ -49,23 +45,23 @@ git = ["https://github.com/donbeave/pklr", "https://github.com/jdx/pklr"]
 # ruxel-config test suites walk tests/workflow wholesale, so the whole tree
 # maps there; schema holds only .pkl files.
 [[inputs]]
-glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs"
+glob = "crates/ruxel-agent/src/modules/filesystem/tests/xfs.rs"
 packages = ["ruxel-acceptance-xfs"]
 
 [[inputs]]
-glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs"
+glob = "crates/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs"
 packages = ["ruxel-acceptance-xfs"]
 
 [[inputs]]
-glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl"
+glob = "crates/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl"
 packages = ["ruxel-acceptance-xfs"]
 
 [[inputs]]
-glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl"
+glob = "crates/ruxel-agent/src/modules/filesystem/xfs.pl"
 packages = ["ruxel-acceptance-xfs"]
 
 [[inputs]]
-glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs"
+glob = "crates/ruxel-agent/src/modules/filesystem/xfs.rs"
 packages = ["ruxel-acceptance-xfs"]
 
 [[inputs]]
@@ -223,5 +219,17 @@ timeout_minutes = 20
 # required in the branch ruleset so the gate stays as strong.
 
 [[inputs]]
-glob = "crates/ruxel/ruxel/tests/fixtures/local_exit_agent.rs"
+glob = "crates/ruxel/tests/fixtures/local_exit_agent.rs"
 packages = ["ruxel"]
+
+# Process-group cleanup tests spawn real shells and process trees; under
+# the consolidated archive job's load they time out spuriously. Their own
+# hosted job keeps them in the low-load environment they had as
+# standalone tool jobs before the flat workspace merge.
+[[test_groups]]
+name = "process"
+root = "."
+runner = "ubuntu-26.04"
+hosted = true
+needs = ["cargo"]
+filter = "package(ruxel-acceptance-isolation) or package(ruxel-acceptance-runtime) and test(~process::tests::descendants) or package(ruxel-acceptance-runtime) and test(~completed_cli_does_not_leave_descendants_running)"

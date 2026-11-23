@@ -1,0 +1,29 @@
+[package]
+name = "ruxel-acceptance-manifest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+rustix = { workspace = true, features = ["event", "process"] }
+
+sha2.workspace = true
+tempfile = "=3.27.0"
+
+ruxel-engine.workspace = true
+ruxel-config.workspace = true
+ruxel-proto.workspace = true
+tokio.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+too_many_lines = "deny"

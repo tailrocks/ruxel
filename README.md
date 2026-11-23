@@ -150,7 +150,7 @@ Exit status is `0` on success, `2` for command-line usage, `4` for invalid
 configuration, and `8` for failed tasks. `--detailed-exitcode` returns `3` when
 successful execution reports changes; in plan mode, selected potential
 operations also produce `3`. Internal errors return `1`. Other
-reserved codes are defined in `crates/ruxel/ruxel/src/exit.rs`.
+reserved codes are defined in `crates/ruxel/src/exit.rs`.
 
 ## Development
 
