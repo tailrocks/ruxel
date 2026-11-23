@@ -26,7 +26,8 @@ pub(super) struct ProcessGroup {
 }
 impl ProcessGroup {
     pub(super) fn start() -> Result<Self> {
-        let mut command = Command::new(std::env::current_exe()?);
+        let exe = std::env::current_exe().context("resolve current exe for sentinel")?;
+        let mut command = Command::new(&exe);
         #[cfg(not(test))]
         command.arg(SENTINEL_ARG);
         #[cfg(test)]
@@ -38,7 +39,8 @@ impl ProcessGroup {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .process_group(0)
-            .spawn()?;
+            .spawn()
+            .with_context(|| format!("spawn sentinel {}", exe.display()))?;
         let id = rustix::process::Pid::from_child(&leader);
         Ok(Self {
             leader: Some(leader),

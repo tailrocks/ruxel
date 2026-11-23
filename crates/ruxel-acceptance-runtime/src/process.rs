@@ -39,7 +39,7 @@ pub fn run_extra(
     secret: Option<&str>,
     expected_code: i32,
 ) -> Result<Vec<Value>> {
-    let mut group = ProcessGroup::start()?;
+    let mut group = ProcessGroup::start().context("start acceptance process group")?;
     let mut child = spawn_workload(
         Command::new(cli)
             .arg(mode)

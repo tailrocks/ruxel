@@ -28,7 +28,7 @@ fn run_ready(
     limit: Duration,
     mut ready: impl FnMut() -> bool,
 ) -> Result<Output> {
-    let mut group = ProcessGroup::start()?;
+    let mut group = ProcessGroup::start().context("start acceptance process group")?;
     let mut child = spawn_workload(
         command
             .stdin(Stdio::null())
