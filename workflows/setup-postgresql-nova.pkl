@@ -8,9 +8,9 @@
 // restarted automatically.
 //
 // Several playbook steps wait on other phase-3 tracks and stand here as
-// comments naming what they wait on: the SSH git form (Track A), the mount
-// and line-editing steps, absent packages, recursive ownership, the daemon
-// reload of a plain service, and the timer interval. The secret public key
+// comments naming what they wait on: the SSH git form (Track A), the
+// line-editing steps, absent packages, the daemon reload of a plain
+// service, and the timer interval. The secret public key
 // at 0644 waits on the secret-type choice the Wonder design owns: a secret
 // file is 0600 or narrower today, and the rendered access file is the only
 // 0640 exception the catalogue carries.
@@ -19,6 +19,7 @@ import "modulepath:/ruxel/Core.pkl" as core
 import "modulepath:/ruxel/Debian.pkl" as debian
 import "modulepath:/ruxel/Linux.pkl" as linux
 import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "modulepath:/ruxel/Storage.pkl" as storage
 import "modulepath:/ruxel/Postgres.pkl" as postgres
 
 // The nova host itself. The address stands in for the real inventory: the
@@ -70,10 +71,10 @@ local pgHba = postgres.renderPgHba(new Listing {
   new postgres.PgHbaRule { type = "host"; database = "redshift"; user = "looker"; address = "0.0.0.0/0"; method = "scram-sha-256" }
   new postgres.PgHbaRule { type = "host"; database = "lightdash"; user = "lightdash"; address = "0.0.0.0/0"; method = "scram-sha-256" }
   new postgres.PgHbaRule { type = "host"; database = "all"; user = "all"; address = "0.0.0.0/0"; method = "reject" }
-}, "/etc/postgresql/18/main/pg_hba.conf")
+}, "/etc/postgresql/19/main/pg_hba.conf")
 
 local pgConf = new File {
-  path = "/etc/postgresql/18/main/postgresql.conf"
+  path = "/etc/postgresql/19/main/postgresql.conf"
   content = read("postgresql-nova.conf").text
   mode = "0644"
   owner = "postgres"
@@ -99,33 +100,39 @@ local pgConf = new File {
 //   branch = "main"
 // }
 
-// BLOCKED on the mount track: the mount of the XFS volume at
-// /var/lib/postgresql waits on it, and the capture whose UUID feeds the
-// mount waits with it, parked here until the mount lands.
-// local lvmUuid = new Capture {
-//   title = "Learn the UUID of the data volume"
-//   bash = "blkid -s UUID -o value /dev/data/data"
-// }
+// The UUID a blkid capture learns on the host feeds the mount of the XFS
+// volume at /var/lib/postgresql, the composition the landed storage track
+// proves.
+local lvmUuid = new Capture {
+  title = "Learn the UUID of the data volume"
+  bash = "blkid -s UUID -o value /dev/data/data"
+}
+
+local dataMount = new storage.Mount {
+  path = "/var/lib/postgresql"
+  src = lvmUuid.stdout()
+  fstype = "xfs"
+  opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k"
+}
 
 // BLOCKED on the line-editing catalogue: commenting swap out of /etc/fstab,
 // the pam_limits line, and the postgres memlock and nofile limits in
 // /etc/security/limits.conf have no catalogue step yet.
 
 // BLOCKED on the absent-packages catalogue: removing every PostgreSQL
-// server major except 18 (postgresql-13 through postgresql-17) has no
+// server major except 19 (postgresql-13 through postgresql-18) has no
 // catalogue step yet.
-
-// BLOCKED on recursive ownership: chown -R postgres:postgres on
-// /var/lib/postgresql has no catalogue step yet (no recurse).
 
 // BLOCKED on the systemd track: the daemon reload before the service is
 // used has no plain-service form (timers reload it themselves).
 
 // The report the playbook warns from: the capture reads the settings a
-// reload could not adopt, and the notice carries them into the run.
+// reload could not adopt, and the notice carries them into the run. The
+// capture connects over TCP, where the access file trusts the postgres
+// user without a password; over the socket peer would refuse root.
 local pendingRestart = new Capture {
   title = "Report settings that still require a restart"
-  bash = "psql -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+  bash = "psql -h 127.0.0.1 -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
 }
 
 stages {
@@ -194,32 +201,40 @@ stages {
   // BLOCKED on the apt track: installing from a repository the workflow
   // writes is refused in this stage and in every later one on the host
   // (check and diff plan against candidates the host still has), so the
-  // PostgreSQL 18 installs wait on that track's design.
-  // new debian.AptPackages { names { "postgresql-18" } }
-  // new debian.AptPackages { names { "postgresql-server-dev-18" } }
+  // PostgreSQL 19 installs wait on that track's design.
+  // new debian.AptPackages { names { "postgresql-19" } }
+  // new debian.AptPackages { names { "postgresql-server-dev-19" } }
   } }
   new Stage { title = "Set up postgresql-nova"; hosts = new Listing { postgresqlNova }; steps {
   new Directory { path = "/var/lib/postgresql"; mode = "0755" }
-  // The blkid capture is parked with the blocked mount above until that
-  // track lands.
-  // pg_parquet 0.5.1 at its tag's commit (resolved at author time), built
-  // with cargo-pgrx 0.16.0: each step runs once, when its marker is absent.
+  lvmUuid
+  dataMount
+  // The mounted tree belongs to postgres: the command runs only when the
+  // mount changed, so the first apply fixes ownership and the second is a
+  // no-change.
+  new Command {
+    title = "Give the data volume to postgres"
+    run { "chown"; "-R"; "postgres:postgres"; "/var/lib/postgresql" }
+    onChangeOf { dataMount }
+  }
+  // pg_parquet 0.6.1 at its tag's commit (resolved at author time), built
+  // with cargo-pgrx 0.19.3: each step runs once, when its marker is absent.
   new linux.GitCheckout {
     repository = "https://github.com/CrunchyData/pg_parquet.git"
     path = "/opt/pg_parquet"
-    commit = "253bfa2228a0d5323180455cdc9ae9301db38be5"
+    commit = "b0793da35530eae9877c9f634b0022d80f7140f5"
   }
   new Script {
     bash = """
       eval "$(mise activate bash)"
-      cargo install cargo-pgrx --version 0.16.0 --locked
+      cargo install cargo-pgrx --version 0.19.3 --locked
       """
     creates = "/root/.cargo/bin/cargo-pgrx"
   }
   new Script {
     bash = """
       eval "$(mise activate bash)"
-      cargo pgrx init --pg18 /usr/bin/pg_config
+      cargo pgrx init --pg19 /usr/bin/pg_config
       """
     creates = "/root/.pgrx"
   }
@@ -227,9 +242,9 @@ stages {
     bash = """
       cd /opt/pg_parquet
       eval "$(mise activate bash)"
-      cargo pgrx install --release --features pg18
+      cargo pgrx install --release --features pg19
       """
-    creates = "/usr/lib/postgresql/18/lib/pg_parquet.so"
+    creates = "/usr/lib/postgresql/19/lib/pg_parquet.so"
   }
   new Directory { path = "/etc/systemd/system/postgresql@.service.d"; mode = "0755" }
   new File {
@@ -240,7 +255,7 @@ stages {
   pgConf
   pgHba
   new systemd.Service {
-    name = "postgresql@18-main"
+    name = "postgresql@19-main"
     enabled = true
     running = true
     reloadOnChangeOf { pgConf; pgHba }
@@ -251,7 +266,7 @@ stages {
   pendingRestart
   new postgres.PendingRestartNotice {
     output = pendingRestart.stdout()
-    version = "18"
+    version = "19"
   }
   new File {
     path = "/usr/local/sbin/chainargos-postgresql-multixact-monitor"

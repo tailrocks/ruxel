@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly DATA_DIRECTORY="/var/lib/postgresql/18/main"
+readonly DATA_DIRECTORY="/var/lib/postgresql/19/main"
 readonly MULTIXACT_MEMBER_DIRECTORY="${DATA_DIRECTORY}/pg_multixact/members"
 readonly MULTIXACT_OFFSET_DIRECTORY="${DATA_DIRECTORY}/pg_multixact/offsets"
 readonly DATABASE_AGE_WARN=300000000

@@ -270,13 +270,13 @@ fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
     assert_eq!(databases, 18);
     let file = all
         .iter()
-        .find(|task| task["operation"]["dest"] == "/etc/postgresql/18/main/pg_hba.conf")
+        .find(|task| task["operation"]["dest"] == "/etc/postgresql/19/main/pg_hba.conf")
         .ok_or("no pg_hba file")?;
     assert_eq!(file["operation"]["mode"], "0640");
     assert_eq!(file["noLog"], serde_json::json!(true));
     for dest in [
-        "/etc/postgresql/18/main/postgresql.conf",
-        "/etc/postgresql/18/main/pg_hba.conf",
+        "/etc/postgresql/19/main/postgresql.conf",
+        "/etc/postgresql/19/main/pg_hba.conf",
     ] {
         let watched = all
             .iter()
@@ -284,7 +284,7 @@ fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
             .ok_or_else(|| format!("no {dest} file"))?;
         assert_eq!(
             watched["notify"],
-            serde_json::json!(["Reload postgresql@18-main"]),
+            serde_json::json!(["Reload postgresql@19-main"]),
             "{dest}"
         );
     }
