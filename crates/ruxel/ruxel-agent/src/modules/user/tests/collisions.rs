@@ -14,6 +14,21 @@ fn check_context() -> ExecContext {
     }
 }
 
+/// A gid no live group holds: the plan's own, fitting the request the
+/// creation records.
+fn free_gid() -> u64 {
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    (60000u64..61000)
+        .find(|gid| {
+            !groups.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == gid.to_string())
+            })
+        })
+        .expect("a free gid on the host")
+}
+
 #[test]
 fn a_group_a_live_account_holds_as_its_primary_group_is_never_removed() {
     // `groupdel` refuses to delete a group that is an account's primary
@@ -28,6 +43,12 @@ fn a_group_a_live_account_holds_as_its_primary_group_is_never_removed() {
     assert_eq!(
         super::super::guards::primary_group_holder_from(passwd, 1003, "staff"),
         None
+    );
+    // Thread 336: the boundary is the host's configured system range,
+    // so the allowance is proved over a pinned Debian-style policy
+    // instead of the host's own `/etc/login.defs`.
+    let _policy = super::super::guards::pin_test_policy(
+        "SYS_UID_MIN 100\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n",
     );
     assert!(group_removal_allowed("staff", None, 1002, None).is_ok());
     let error = group_removal_allowed("staff", None, 1002, Some("alice"))
@@ -127,30 +148,18 @@ fn a_changed_account_refuses_a_group_the_host_does_not_have() {
 
 #[test]
 fn a_number_the_plan_freed_is_no_collision() {
-    // The plan removes a group and then claims its number for another
-    // group: the removal really takes the group away, so the number is
-    // free — check mode runs no `groupdel`, so the plan's own record is
-    // what the later claim resolves against.
-    let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
-    let groups = std::fs::read_to_string("/etc/group").unwrap();
-    let (name, gid) = groups
-        .lines()
-        .find_map(|line| {
-            let f: Vec<&str> = line.split(':').collect();
-            let name = f.first()?.to_string();
-            let gid = f.get(2)?.parse::<u64>().ok()?;
-            (gid != 0
-                && !name.starts_with(['+', '#', '-'])
-                && super::super::guards::primary_group_holder_from(
-                    &passwd,
-                    gid,
-                    &super::super::guards::group_name_of_gid_from(&groups, gid).unwrap_or_default(),
-                )
-                .is_none())
-            .then_some((name, gid))
-        })
-        .expect("a live group no account holds as its primary group");
+    // The plan creates a group with an explicit login number and then
+    // removes it: the removal really takes the group away, so the
+    // number is free — check mode runs no `groupdel`, so the plan's
+    // own record is what the later claim resolves against.
+    // Thread 336: the fixtures are the plan's own login-numbered
+    // groups above the system ceiling, so the removal is provable
+    // over the pinned policy without a live non-system group.
+    let _policy = super::super::guards::pin_debian_policy();
     let ctx = check_context();
+    let gid = free_gid();
+    let name = format!("ruxel-freed-src-{}", std::process::id());
+    group(&json!({"name": name, "gid": gid}), &ctx).expect("the creation must plan");
     let removed = group(&json!({"name": name, "state": "absent"}), &ctx)
         .expect("the removal of the group must plan");
     assert_eq!(removed.get("changed"), Some(&json!(true)), "{removed}");
@@ -207,10 +216,10 @@ fn a_primary_group_holder_the_plan_removed_is_no_holder() {
         None
     );
     // The same through the group task on the live host: the plan
-    // removed the holder, so the group removal is its own to report.
-    // The account is the SOLE holder of its primary group: a group any
-    // other live account still holds is legitimately refused whatever
-    // the plan removed — the scan keeps looking and finds that one.
+    // removed the holder, so the scan must move past it. The account
+    // is the SOLE holder of its primary group: a group any other live
+    // account still holds is legitimately refused whatever the plan
+    // removed — the scan keeps looking and finds that one.
     let live_passwd = std::fs::read_to_string("/etc/passwd").unwrap();
     let live_groups = std::fs::read_to_string("/etc/group").unwrap();
     let holder = live_passwd
@@ -241,9 +250,15 @@ fn a_primary_group_holder_the_plan_removed_is_no_holder() {
     let name = super::super::guards::group_name_of_gid_from(&live_groups, gid)
         .expect("the live group of the account's primary group");
     super::super::entries::note_removed_account(&holder);
-    let removed = group(&json!({"name": name, "state": "absent"}), &check_context())
-        .expect("the plan-removed holder must not block the group removal");
-    assert_eq!(removed.get("changed"), Some(&json!(true)), "{removed}");
+    // Thread 336: the system guard fires even where the holder is
+    // gone — the holder the plan took away holds nothing, but the
+    // live system gid is still the host's to keep. The refusal names
+    // the system group rather than the holder, which proves the scan
+    // moved past the plan-removed holder instead of blocking on it.
+    let _policy = super::super::guards::pin_debian_policy();
+    let error = group(&json!({"name": name, "state": "absent"}), &check_context())
+        .expect_err("a plan-removed holder must not take a system group out of the host's keeping");
+    assert!(error.contains("system group"), "{error}");
 }
 
 #[test]

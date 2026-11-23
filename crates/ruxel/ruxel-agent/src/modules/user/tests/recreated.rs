@@ -46,6 +46,10 @@ fn the_apply_resolves_a_recreated_account_from_the_live_database() {
     // runs. The apply must resolve that number — a pending ownership
     // reports a change and chowns nothing, and the file keeps the
     // number of whoever claimed the freed one.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let check = check_context();
     let (name, live, gid) = host_account();
     let groups = std::fs::read_to_string("/etc/group").unwrap();
@@ -307,6 +311,10 @@ fn a_numbered_recreation_keeps_its_planned_uid_at_removal() {
     // and apply delete the recreated entry — so the mismatch is refused
     // instead of skipping the guards the way an unnumbered recreation
     // (whose number the allocator draws) must.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let check = check_context();
     let name = format!("ruxel-recreated-uid-{}", std::process::id());
     assert!(

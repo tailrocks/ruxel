@@ -50,51 +50,6 @@ fn group_removal_verifies_the_host_entry_not_the_workflow_value() {
 }
 
 #[test]
-fn a_system_account_is_never_removed_whatever_the_workflow_states() {
-    // The daemon scenario: the workflow states uid 1000, the host
-    // account is UID 1. The host entry, not the workflow value, is
-    // what the deletion acts on.
-    let daemon = PasswdEntry {
-        uid: 1,
-        gid: 1,
-        ..PasswdEntry::default()
-    };
-    assert!(removal_allowed("daemon", Some(1000), Some(&daemon), false).is_err());
-    assert!(removal_allowed("daemon", None, Some(&daemon), false).is_err());
-    let toor = PasswdEntry {
-        uid: 0,
-        ..PasswdEntry::default()
-    };
-    assert!(removal_allowed("toor", Some(0), Some(&toor), false).is_err());
-    let app = PasswdEntry {
-        uid: 1500,
-        ..PasswdEntry::default()
-    };
-    assert!(removal_allowed("app", Some(1500), Some(&app), false).is_ok());
-    assert!(removal_allowed("app", Some(1000), Some(&app), false).is_err());
-    assert!(removal_allowed("app", None, Some(&app), false).is_ok());
-    // Thread 326: a declared system account is the host's to keep even
-    // where the allocator drew it a regular-looking uid — the live
-    // entry carries no system bit, so the plan's own record decides.
-    assert!(removal_allowed("app", Some(1500), Some(&app), true).is_err());
-    assert!(removal_allowed("app", None, Some(&app), true).is_err());
-    let error = removal_allowed("app", Some(1500), Some(&app), true)
-        .expect_err("a declared system account must not be removed");
-    assert!(error.contains("system account"), "{error}");
-    // With no entry at all nothing verifies — unless the plan declared
-    // a system account, which is refused on the declaration alone.
-    assert!(removal_allowed("app", None, None, false).is_ok());
-    assert!(removal_allowed("app", None, None, true).is_err());
-    assert!(group_removal_allowed("app", Some(1500), 1500, None).is_ok());
-    assert!(group_removal_allowed("app", Some(1000), 1500, None).is_err());
-    assert!(group_removal_allowed("wheel", None, 0, None).is_err());
-    // A group a live account holds as its primary group is the
-    // account's to keep: `groupdel` refuses to delete one without
-    // `--force`, which this removal does not pass.
-    assert!(group_removal_allowed("app", Some(1500), 1500, Some("alice")).is_err());
-}
-
-#[test]
 fn a_recursive_removal_verifies_the_declared_home_against_the_live_entry() {
     // `userdel -r` deletes the LIVE home and mail spool whatever the
     // workflow names: a declared home that is not the live one reserves
@@ -218,6 +173,10 @@ fn a_removal_verifies_the_uid_against_the_planned_number() {
         })
         .expect("a non-root account on the host");
     let primary = super::super::guards::group_name_of_gid_from(&groups, gid);
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let planned = u32::try_from(live + 100_000).expect("the planned uid fits");
     run(&json!({"name": name, "uid": planned}), &ctx).expect("the earlier renumbering must plan");
     // The stale live uid must not stand in for the planned one: a
@@ -302,6 +261,10 @@ fn apply_reinspects_the_group_file_after_userdel() {
     // `groupadd` on a group that exists. The host double is the live
     // group database (read-only) with `userdel` faked: the group the
     // fake deletion never touched is still listed.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let (name, _gid) = empty_live_group().expect("an empty live group on the host");
     assert!(
         passwd_entry(&name).unwrap().is_none(),
@@ -359,6 +322,10 @@ fn apply_records_the_removal_where_the_group_is_gone() {
     // The mirror: the account's same-name group is not on the host, so
     // the `userdel` the fake absorbs takes the last trace of it — the
     // apply records the removal the way check mode predicts it.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let name = format!("ruxel-gone-group-{}", std::process::id());
     assert!(
         group_entry(&name).unwrap().is_none(),

@@ -69,33 +69,19 @@ pub(super) fn live_group() -> Option<String> {
     })
 }
 
-/// A live group nothing holds: no member of it, no account that holds
-/// it as its primary group, and no account of its own name.
-fn live_empty_group() -> Option<String> {
-    let groups = std::fs::read_to_string("/etc/group").ok()?;
-    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
-    let accounts: Vec<&str> = passwd
-        .lines()
-        .filter_map(|line| line.split(':').next())
-        .collect();
-    for line in groups.lines() {
-        let f: Vec<&str> = line.split(':').collect();
-        if f.len() < 4 || f[2].parse::<u64>().is_ok_and(|gid| gid == 0) {
-            continue;
-        }
-        if !f[3].is_empty() || accounts.contains(&f[0]) {
-            continue;
-        }
-        let gid = f[2].parse::<u64>().unwrap_or(0);
-        let held = passwd.lines().any(|account| {
-            let f: Vec<&str> = account.split(':').collect();
-            f.len() >= 4 && f[3].parse::<u64>() == Ok(gid)
-        });
-        if !held {
-            return Some(f[0].to_string());
-        }
-    }
-    None
+/// A gid no live group holds: the plan's own, fitting the request the
+/// creation records.
+fn free_gid() -> u64 {
+    let groups = std::fs::read_to_string("/etc/group").unwrap();
+    (60000u64..61000)
+        .find(|gid| {
+            !groups.lines().any(|line| {
+                line.split(':')
+                    .nth(2)
+                    .is_some_and(|held| held == gid.to_string())
+            })
+        })
+        .expect("a free gid on the host")
 }
 
 #[test]
@@ -339,11 +325,22 @@ fn an_account_removal_records_the_private_group_it_takes_with_it() {
     // the apply performs, the group being gone before that step runs.
     // On a host that keeps the empty group the plan records no removal
     // for it, so the later step reports the removal the apply runs.
-    let group = live_empty_group().expect("a live group nothing holds");
+    // Thread 336: the fixtures are the plan's own login-numbered group
+    // and account above the system ceiling, so the later removal is
+    // provable over the pinned policy without a live non-system group.
+    let _policy = super::super::guards::pin_debian_policy();
+    let group = format!("ruxel-takeback-{}", std::process::id());
     let ctx = check_context();
-    // The plan's account: the group is the private group of the
-    // account the plan creates.
-    run(&json!({"name": group, "create_home": false}), &ctx).expect("the creation must plan");
+    // The plan's group and the plan's account: the group is the
+    // private group of the account the plan creates, declared
+    // explicitly the way a shared same-name group must be.
+    super::super::group(&json!({"name": group, "gid": free_gid()}), &ctx)
+        .expect("the group creation must plan");
+    run(
+        &json!({"name": group, "group": group, "create_home": false}),
+        &ctx,
+    )
+    .expect("the creation must plan");
     let removal =
         run(&json!({"name": group, "state": "absent"}), &ctx).expect("the removal must plan");
     assert_eq!(

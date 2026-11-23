@@ -26,6 +26,7 @@ mod planned_check_mode;
 mod reconciliation;
 mod recreated;
 mod removal;
+mod removal_policy;
 mod removal_recreated;
 mod removal_system;
 mod shell_planned;

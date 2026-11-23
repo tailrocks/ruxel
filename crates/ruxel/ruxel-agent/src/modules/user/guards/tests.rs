@@ -1,4 +1,75 @@
 #[test]
+fn the_system_range_comes_from_the_host_policy() {
+    // Thread 336: the boundary is the host's configured range, not the
+    // fixed 1000. The last uncommented line per key wins — the
+    // `USERGROUPS_ENAB` pattern — with trailing comments stripped, and
+    // a statically assigned system uid below the floor is still the
+    // host's to keep: the ceiling, not the floor, is the boundary.
+    let _policy = super::pin_test_policy(
+        "# a comment\nSYS_UID_MIN 100\nSYS_UID_MAX 999 # trailing\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n",
+    );
+    let ranges = super::system_id_ranges().expect("the pinned policy parses");
+    assert_eq!((ranges.uid_min, ranges.uid_max), (100, 999));
+    assert_eq!((ranges.gid_min, ranges.gid_max), (100, 999));
+    assert!(super::system_uid_kept(1, &ranges));
+    assert!(super::system_uid_kept(999, &ranges));
+    assert!(!super::system_uid_kept(1000, &ranges));
+    assert!(super::system_gid_kept(999, &ranges));
+    assert!(!super::system_gid_kept(1000, &ranges));
+    let entry = |uid: u64| super::super::PasswdEntry {
+        uid,
+        ..super::super::PasswdEntry::default()
+    };
+    assert!(
+        super::removal_allowed("daemon", None, Some(&entry(1)), false).is_err(),
+        "a statically assigned system uid below the floor is the host's to keep"
+    );
+    assert!(
+        super::removal_allowed("svc", None, Some(&entry(999)), false).is_err(),
+        "the ceiling itself is the host's to keep"
+    );
+    assert!(
+        super::removal_allowed("app", None, Some(&entry(1000)), false).is_ok(),
+        "one above the ceiling is a login uid"
+    );
+    assert!(
+        super::group_removal_allowed("svc", None, 999, None).is_err(),
+        "the gid ceiling is the host's to keep too"
+    );
+    assert!(
+        super::group_removal_allowed("app", None, 1000, None).is_ok(),
+        "one above the gid ceiling is a login group"
+    );
+}
+
+#[test]
+fn the_system_range_resolves_like_usergroups_enab() {
+    // The last uncommented line per key wins; a commented-out line and
+    // a missing, unparsable or inverted key parse as no range, which
+    // fails the removal closed downstream.
+    let ranges = super::system_id_ranges_from(
+        "SYS_UID_MIN 100\n#SYS_UID_MIN 500\nSYS_UID_MIN 200\nSYS_UID_MAX 1999\nSYS_GID_MIN 200\nSYS_GID_MAX 1999\n",
+    )
+    .expect("four parsable numbers parse");
+    assert_eq!((ranges.uid_min, ranges.uid_max), (200, 1999));
+    assert!(super::system_id_ranges_from("SYS_UID_MIN 100\n").is_none());
+    assert!(
+        super::system_id_ranges_from(
+            "SYS_UID_MIN 100\nSYS_UID_MAX many\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n"
+        )
+        .is_none(),
+        "an unparsable key is no range"
+    );
+    assert!(
+        super::system_id_ranges_from(
+            "SYS_UID_MIN 1000\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n"
+        )
+        .is_none(),
+        "a floor above its ceiling is no range"
+    );
+}
+
+#[test]
 fn other_primary_holders_follow_a_renumbered_group() {
     // Alice's private group lives at gid 1000 and Bob holds it as
     // his primary group; the plan renumbers the group to 2000. The

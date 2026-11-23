@@ -66,6 +66,10 @@ fn a_recreated_account_keeps_the_pending_ownership() {
     // that account would be reported unchanged while the apply chowns
     // it to the number the allocator drew. The requested ownership is
     // PENDING, like any other unnumbered identity.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let check = check_context();
     let (name, live, gid) = host_account();
     let groups = std::fs::read_to_string("/etc/group").unwrap();
@@ -107,10 +111,22 @@ fn a_recreated_group_keeps_the_pending_ownership() {
     // intervening task creates it again without a number, so the
     // allocator draws the gid and the stale live entry must not stand
     // in for it.
+    // Thread 336: the plan mechanics run over a pinned Debian-style
+    // policy, so the removal is provable without the host's own
+    // `/etc/login.defs`.
+    let _policy = super::super::guards::pin_debian_policy();
     let check = check_context();
-    let (name, _live) = host_group();
-    group(&json!({"name": name}), &check).expect("the earlier group step must plan");
-    group(&json!({"name": name, "state": "absent"}), &check).expect("the removal must plan");
+    let (name, live) = host_group();
+    let planned = live + 100_000;
+    // The plan renumbers the group first: the removal verifies its
+    // declaration against the planned number, which is no system
+    // group's number.
+    group(&json!({"name": name, "gid": planned}), &check).expect("the renumbering must plan");
+    group(
+        &json!({"name": name, "state": "absent", "gid": planned}),
+        &check,
+    )
+    .expect("the removal must plan");
     group(&json!({"name": name}), &check).expect("the creation must plan");
     let owned = crate::modules::resolve_ownership(
         json!({"group": name}).as_object().expect("params object"),

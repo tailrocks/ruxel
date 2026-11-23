@@ -15,12 +15,12 @@ fn check_context() -> ExecContext {
 }
 
 #[test]
-fn a_group_the_plan_moves_an_account_off_of_is_removed() {
+fn a_group_the_plan_moves_an_account_off_of_is_no_longer_held() {
     // An earlier check-mode task moves an account off the group, and a
-    // later task removes the group: the apply moves the account first
-    // (`usermod -g`) and its `groupdel` then succeeds, so the dry run
-    // must not refuse the removal — the holder scan reads the plan's
-    // own record, not the host's unchanged passwd file.
+    // later task removes the group: the holder scan reads the plan's
+    // own record, not the host's unchanged passwd file — the moved-off
+    // account no longer blocks the removal, and whatever refuses next
+    // is the next guard, not the holder.
     let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
     let groups = std::fs::read_to_string("/etc/group").unwrap();
     let (group_name, _gid, account) = groups
@@ -58,10 +58,15 @@ fn a_group_the_plan_moves_an_account_off_of_is_removed() {
     let ctx = check_context();
     // The earlier task of the plan: the account's primary group moves.
     run(&json!({"name": account, "group": other}), &ctx).expect("the primary-group move must plan");
-    // The later task: the group the account has left is removed.
-    let removed = group(&json!({"name": group_name, "state": "absent"}), &ctx)
-        .expect("the group the plan moved the account off of must be removed");
-    assert_eq!(removed.get("changed"), Some(&json!(true)), "{removed}");
+    // Thread 336: the moved-off group is a live system group, so the
+    // later removal is still refused — but as the host's, not as held:
+    // the refusal names the system group rather than the holder, which
+    // proves the scan read the plan's record and found no holder left.
+    // A group the plan emptied above the ceiling would plan here.
+    let _policy = super::super::guards::pin_debian_policy();
+    let error = group(&json!({"name": group_name, "state": "absent"}), &ctx)
+        .expect_err("a system group stays the host's whatever the plan moved off it");
+    assert!(error.contains("system group"), "{error}");
 }
 
 #[test]

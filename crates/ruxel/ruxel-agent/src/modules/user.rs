@@ -1801,16 +1801,27 @@ mod cat06_batch_b {
 
     #[test]
     fn check_mode_keeps_an_unnumbered_recreation_pending_at_removal() {
-        // The plan removes a live group, recreates it without a number
-        // and removes it again with a declared number: the apply draws
-        // the recreated number from the allocator, so the live entry is
-        // stale — check mode keeps the recreated number pending instead
-        // of verifying the declaration against the stale entry.
+        // The plan renumbers a live group, removes it, recreates it
+        // without a number and removes it again with a declared number:
+        // the apply draws the recreated number from the allocator, so
+        // the live entry is stale — check mode keeps the recreated
+        // number pending instead of verifying the declaration against
+        // the stale entry. The renumbering moves the removal above the
+        // host's system range, so the guard verifies the declaration
+        // against the planned number (see
+        // `a_removal_verifies_the_uid_against_the_planned_number`).
+        let _policy = super::guards::pin_debian_policy();
         let check = check_context();
         let (name, live) = removable_group();
-        group(&json!({"name": name, "state": "absent"}), &check).expect("the removal must plan");
+        let planned = live + 100_000;
+        group(&json!({"name": name, "gid": planned}), &check).expect("the renumbering must plan");
+        group(
+            &json!({"name": name, "state": "absent", "gid": planned}),
+            &check,
+        )
+        .expect("the removal must plan");
         group(&json!({"name": name}), &check).expect("the recreation must plan");
-        let wrong = live + 100_000;
+        let wrong = planned + 100_000;
         let result = group(
             &json!({"name": name, "state": "absent", "gid": wrong}),
             &check,
@@ -1823,11 +1834,22 @@ mod cat06_batch_b {
     fn apply_mode_verifies_the_removal_against_the_live_group() {
         // The mirror: apply resolves the live entry the recreation drew,
         // so a declaration that matches no live number is refused before
-        // anything mutates.
+        // anything mutates. The renumbering moves the removal above the
+        // host's system range, so the guard compares against the planned
+        // number first and the stale live one after the recreation.
+        let _policy = super::guards::pin_debian_policy();
         let apply = apply_context();
         let (name, live) = removable_group();
+        let planned = live + 100_000;
         test_hook::arm(vec![Ok(())]);
-        group(&json!({"name": name, "state": "absent"}), &apply).expect("the removal must run");
+        group(&json!({"name": name, "gid": planned}), &apply).expect("the renumbering must run");
+        test_hook::take_calls();
+        test_hook::arm(vec![Ok(())]);
+        group(
+            &json!({"name": name, "state": "absent", "gid": planned}),
+            &apply,
+        )
+        .expect("the removal must run");
         test_hook::take_calls();
         test_hook::arm(vec![Ok(())]);
         group(&json!({"name": name}), &apply).expect("the recreation must run");
@@ -1851,13 +1873,22 @@ mod cat06_batch_b {
 
     #[test]
     fn a_redeclared_group_compares_against_the_recreated_entry() {
-        // The plan removes a group, recreates it and declares it present
-        // again: the recreation retires the removal's tombstone for the
-        // present branch, so the third step compares against the
-        // recreated entry instead of attempting another creation.
+        // The plan renumbers a group, removes it, recreates it and
+        // declares it present again: the recreation retires the
+        // removal's tombstone for the present branch, so the fourth
+        // step compares against the recreated entry instead of
+        // attempting another creation. The renumbering moves the
+        // removal above the host's system range.
+        let _policy = super::guards::pin_debian_policy();
         let check = check_context();
-        let (name, _live) = removable_group();
-        group(&json!({"name": name, "state": "absent"}), &check).expect("the removal must plan");
+        let (name, live) = removable_group();
+        let planned = live + 100_000;
+        group(&json!({"name": name, "gid": planned}), &check).expect("the renumbering must plan");
+        group(
+            &json!({"name": name, "state": "absent", "gid": planned}),
+            &check,
+        )
+        .expect("the removal must plan");
         group(&json!({"name": name}), &check).expect("the recreation must plan");
         let again = group(&json!({"name": name}), &check).expect("the redeclaration must plan");
         assert_eq!(again.get("changed"), Some(&json!(false)), "{again}");
@@ -1867,11 +1898,21 @@ mod cat06_batch_b {
     fn apply_redeclaration_after_a_group_recreation_reports_no_change() {
         // The mirror in apply: the recreation really ran, so the
         // redeclaration compares against the live entry and reports no
-        // change without running anything.
+        // change without running anything. The renumbering moves the
+        // removal above the host's system range.
+        let _policy = super::guards::pin_debian_policy();
         let apply = apply_context();
-        let (name, _live) = removable_group();
+        let (name, live) = removable_group();
+        let planned = live + 100_000;
         test_hook::arm(vec![Ok(())]);
-        group(&json!({"name": name, "state": "absent"}), &apply).expect("the removal must run");
+        group(&json!({"name": name, "gid": planned}), &apply).expect("the renumbering must run");
+        test_hook::take_calls();
+        test_hook::arm(vec![Ok(())]);
+        group(
+            &json!({"name": name, "state": "absent", "gid": planned}),
+            &apply,
+        )
+        .expect("the removal must run");
         test_hook::take_calls();
         test_hook::arm(vec![Ok(())]);
         group(&json!({"name": name}), &apply).expect("the recreation must run");
