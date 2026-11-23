@@ -183,8 +183,7 @@ fn serve() -> i32 {
                 }
             }
             Some(Msg::Done(done)) => {
-                // Only a complete unfiltered plan expires unencountered records.
-                if !done.filtered {
+                if complete_on_done(done.filtered, check_mode) {
                     ledger.complete_plan();
                 }
                 ledger.flush();
@@ -483,9 +482,33 @@ fn execute_task(
     false
 }
 
+/// Whether the session's end completes the plan: only a complete
+/// unfiltered apply plan expires unencountered records. A dry-run
+/// session encounters the tasks of the revision it checked without
+/// recording them, so completing it would prune the apply ledger's
+/// retained declarations for tasks the checked revision omits — and
+/// the next apply would reject their still-present files as unmanaged
+/// shadows. A dry run therefore never completes, whatever Done says.
+fn complete_on_done(filtered: bool, check_mode: bool) -> bool {
+    !filtered && !check_mode
+}
+
 #[cfg(test)]
 mod frame_tests {
     use super::*;
+
+    #[test]
+    fn only_an_unfiltered_apply_end_completes_the_plan() {
+        // Thread 356: a dry-run session encounters the tasks of the
+        // revision it checked without recording them — completing it
+        // would prune the apply ledger's retained declarations for
+        // tasks the checked revision omits. A filtered end never
+        // completes either: the run omitted tasks the workflow keeps.
+        assert!(complete_on_done(false, false));
+        assert!(!complete_on_done(true, false));
+        assert!(!complete_on_done(false, true));
+        assert!(!complete_on_done(true, true));
+    }
 
     #[test]
     fn frame_declarations_land_before_the_frame_executes() {
