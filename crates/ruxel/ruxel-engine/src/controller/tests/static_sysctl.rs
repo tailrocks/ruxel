@@ -72,6 +72,30 @@ fn tag_selection_gates_the_static_set() {
     );
 }
 
+#[test]
+fn forced_check_tasks_declare_nothing_up_front() {
+    // Thread 343: a task with `checkMode: true` never writes its
+    // persistence file (`effective_check_mode`), so its declaration
+    // must not authorize earlier preflights — a pre-existing
+    // later-loading file matching the declaration would read as
+    // managed and suppress the override error, letting the apply
+    // succeed while reboot restores the overriding value. An explicit
+    // `checkMode: false` still executes, so it still declares.
+    let tasks = json!([
+        {"name": "forced", "checkMode": true, "operation": {"kind": "sysctl", "name": "net.test", "value": "1", "sysctl_file": "/etc/sysctl.d/10-forced.conf"}},
+        {"name": "override-off", "checkMode": false, "operation": {"kind": "sysctl", "name": "net.test", "value": "2", "sysctl_file": "/etc/sysctl.d/10-override.conf"}},
+        {"name": "plain", "operation": {"kind": "sysctl", "name": "net.test", "value": "3", "sysctl_file": "/etc/sysctl.d/10-plain.conf"}}
+    ]);
+    assert_eq!(
+        super::super::static_sysctl::static_sysctl_declarations(&play(&tasks), &[]),
+        vec![
+            decl("/etc/sysctl.d/10-override.conf", "net.test", "2"),
+            decl("/etc/sysctl.d/10-plain.conf", "net.test", "3"),
+        ],
+        "a forced-check task declares nothing up front"
+    );
+}
+
 #[tokio::test]
 async fn every_frame_carries_later_plays_declarations() -> Result<()> {
     // Thread 325: the declaration lives in a later play (a later

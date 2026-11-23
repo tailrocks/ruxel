@@ -6,8 +6,9 @@
 //!
 //! A task qualifies only when nothing can divert it or reshape its
 //! params: no `when` condition, no loop, no tags the selection could
-//! filter, no delegation to another session, no block nesting — and
-//! all of name, value and file literal. Anything else stays out: an
+//! filter, no delegation to another session, no block nesting, no
+//! forced check mode — and all of name, value and file literal.
+//! Anything else stays out: an
 //! excluded task keeps today's behavior (its declaration lands as it
 //! executes, or the preflight refuses fail-safe), while an included
 //! one is guaranteed to declare exactly this entry, so authorizing it
@@ -36,6 +37,17 @@ fn static_sysctl_declaration(
     filter: &[String],
 ) -> Option<v1::SysctlDeclaration> {
     if !filter.is_empty() && !super::tag_selection::selected(task, inherited, filter) {
+        return None;
+    }
+    // A forced-check task never writes its persistence file
+    // (`effective_check_mode`): its declaration must not authorize
+    // earlier preflights, or a pre-existing later-loading file matching
+    // it reads as managed and suppresses the override error. An
+    // explicit `checkMode: false` still executes, so it still declares.
+    if task
+        .get("checkMode")
+        .is_some_and(|mode| mode == &Value::Bool(true))
+    {
         return None;
     }
     // Any gate that can divert the task or reshape its run keeps it
