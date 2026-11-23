@@ -1634,7 +1634,7 @@
     "crates/ruxel-acceptance-xfs/Cargo.toml": "22d585e7fa64684c92b372e2bc5682904311b0d1bf3369d18c0926bab700d4e2",
     "crates/ruxel-agent/Cargo.toml": "76424627cc49cb4e34651123efd71e2c69a6f0ed46babf867965e6992595ebce",
     "crates/ruxel-config/Cargo.toml": "6b041475c3efc318c5bfc6b54918eab6494a07c82de83d4beac6232ab59078ff",
-    "crates/ruxel-control-flow-assertions/Cargo.toml": "9ceaaaa2c6975f2f8f4038c56fae58154a94e304382b3e771bfed3f6e87bcc6f",
+    "crates/ruxel-control-flow-assertions/Cargo.toml": "caa901f9a678baca12af5a45470f4746dda6713fb6a76a64da16cf83c7f968d3",
     "crates/ruxel-engine/Cargo.toml": "fa0b2dd056a3b1434b5dd81ea43540cd463f8ec95c317abf2fda4cb442d26fd8",
     "crates/ruxel-guard/Cargo.toml": "6860a7146b348234b2ff9edc9808e9fbecc0250e94b8af5821eaf37017526e71",
     "crates/ruxel-http-fixture/Cargo.toml": "c1592edb61a2cc4abb997a391b5f53789df8f2bb3c939499dc4bcdacf7187ae6",
