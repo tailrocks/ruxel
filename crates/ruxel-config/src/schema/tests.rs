@@ -113,7 +113,7 @@ fn the_embedded_engine_is_the_committed_file() {
         .map_or("", |(_, text)| *text);
     assert_eq!(
         embedded,
-        include_str!("../../../../schema/ruxel/engine/Engine.pkl")
+        include_str!("../../../schema/ruxel/engine/Engine.pkl")
     );
 }
 

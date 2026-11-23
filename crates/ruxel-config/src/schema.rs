@@ -52,7 +52,7 @@ pub(crate) const TREE: &[(&str, &str)] = &[
     ),
     (
         "/ruxel/Storage.pkl",
-        include_str!("../../../../schema/ruxel/Storage.pkl"),
+        include_str!("../../../schema/ruxel/Storage.pkl"),
     ),
     (
         "/ruxel/Workflow.pkl",

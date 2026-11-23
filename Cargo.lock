@@ -1589,7 +1589,7 @@ name = "ruxel-acceptance-cache"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "rustix 1.1.6",
  "serde_json",
  "tempfile",
@@ -1621,7 +1621,7 @@ name = "ruxel-acceptance-files"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "rustix 1.1.6",
  "serde_json",
  "sha2",
