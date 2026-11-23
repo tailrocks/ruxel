@@ -34,6 +34,14 @@ operation has stopped; establish process quiescence before another mutation.
 The prototype remains gated on isolated mounted-XFS acceptance. Its mocked
 geometry and allocation-group tests do not establish mounted-filesystem safety.
 
+## Phase3 privilege rule
+
+SSH as root for the base, disk, and postgres plays. `Host.user` defaults to
+`root`, and the phase3 workflow catalogues use no `becomeUser`. This holds
+until a real privilege step lands. Any `becomeUser` in a phase3 workflow is a
+review failure. See `tests/workflow/README.md` (Timer workloads section) for
+the composition precedent.
+
 ## Filesystem identity limits during migration
 
 Attribute changes use held descriptors. On macOS, a target must be readable,
