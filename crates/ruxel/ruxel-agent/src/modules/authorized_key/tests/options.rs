@@ -281,3 +281,52 @@ fn a_line_with_a_refused_option_value_is_a_dead_line() {
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn an_empty_command_is_a_command_sshd_reads() {
+    // sshd reads `command=""` as the empty command: the line is active,
+    // and the key behind it is managed. The grammars that need a value
+    // still refuse theirs.
+    assert_eq!(
+        key_material("command=\"\" ssh-ed25519 AAAAC3Nza"),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+    assert_eq!(
+        key_material("from=\"\" ssh-ed25519 AAAAC3Nza"),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+    assert_eq!(key_material("expiry-time=\"\" ssh-ed25519 AAAAC3Nza"), None);
+    assert_eq!(key_material("environment=\"\" ssh-ed25519 AAAAC3Nza"), None);
+    assert_eq!(key_material("permitopen=\"\" ssh-ed25519 AAAAC3Nza"), None);
+    assert_eq!(
+        key_material("permitlisten=\"\" ssh-ed25519 AAAAC3Nza"),
+        None
+    );
+    assert_eq!(key_material("tunnel=\"\" ssh-ed25519 AAAAC3Nza"), None);
+}
+
+#[test]
+fn a_repeated_singleton_is_a_line_sshd_rejects() {
+    // sshd reads `command`, `principals` and `from` once: a line that
+    // repeats one is rejected, so the key behind it is not managed.
+    for options in [
+        "command=\"one\",command=\"two\"",
+        "principals=\"a\",principals=\"b\"",
+        "from=\"h1\",from=\"h2\"",
+        "COMMAND=\"one\",command=\"two\"",
+    ] {
+        assert_eq!(
+            key_material(&format!("{options} ssh-ed25519 AAAAC3Nza")),
+            None,
+            "{options} repeats a singleton"
+        );
+    }
+    // One of each, and repeats of the options that hold many times,
+    // still carry the key.
+    assert_eq!(
+        key_material(
+            "command=\"one\",principals=\"a\",from=\"h1\",permitopen=\"db:5432\",permitopen=\"web:80\" ssh-ed25519 AAAAC3Nza"
+        ),
+        Some(("ssh-ed25519".into(), "AAAAC3Nza".into()))
+    );
+}

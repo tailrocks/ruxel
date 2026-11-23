@@ -225,13 +225,41 @@ fn first_field_span(line: &[u8]) -> &[u8] {
 /// carries no key.
 fn is_options_bytes(field: &[u8]) -> bool {
     let mut any = false;
+    // The options sshd reads once: a second `command`, `principals` or
+    // `from` is a line sshd rejects, not a line that carries a key.
+    let mut singletons: Vec<&[u8]> = Vec::new();
     for option in split_options_bytes(field) {
         if !is_option_bytes(option) {
             return false;
         }
+        if let Some(name) = singleton_name(option) {
+            if singletons
+                .iter()
+                .any(|seen| seen.eq_ignore_ascii_case(name))
+            {
+                return false;
+            }
+            singletons.push(name);
+        }
         any = true;
     }
     any
+}
+
+/// The singleton name of an option, when the option names one: `command`,
+/// `principals` and `from` hold once, and a second one rejects the line.
+fn singleton_name(option: &[u8]) -> Option<&[u8]> {
+    let (name, _) = match option.iter().position(|byte| *byte == b'=') {
+        Some(at) => (&option[..at], Some(&option[at + 1..])),
+        None => (option, None),
+    };
+    [
+        b"command".as_slice(),
+        b"principals".as_slice(),
+        b"from".as_slice(),
+    ]
+    .into_iter()
+    .find(|known| name.eq_ignore_ascii_case(known))
 }
 
 /// The options of the field, split on the commas that are not quoted.
@@ -274,7 +302,12 @@ fn is_option_bytes(option: &[u8]) -> bool {
     let Some(inner) = value.and_then(dequoted) else {
         return false;
     };
-    !inner.is_empty() && valid_valued_option(name, &inner)
+    // An empty value reaches the grammar of its own option: `command=""`
+    // is the empty command sshd reads, while an empty `expiry-time` or
+    // `environment` is a time or an assignment no grammar accepts. A
+    // blanket rejection here would read `command=""` as a line sshd
+    // rejects, and the key as one that is not there.
+    valid_valued_option(name, &inner)
 }
 
 /// Whether the name is a flag sshd accepts: `restrict` and
