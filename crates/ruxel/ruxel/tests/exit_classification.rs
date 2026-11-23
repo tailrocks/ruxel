@@ -96,7 +96,13 @@ output {{ value = new Ruxel.Config {{
 "#
             ),
         )?;
-        let mut command = Command::new(env!("CARGO_BIN_EXE_ruxel"));
+        // Nextest archives relocate binaries: prefer its runtime
+        // CARGO_BIN_EXE_ruxel over the compile-time baked path, which
+        // names the build job's target directory.
+        let ruxel = std::env::var_os("CARGO_BIN_EXE_ruxel")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_ruxel")));
+        let mut command = Command::new(&ruxel);
         command
             .arg("apply")
             .arg(&module)
