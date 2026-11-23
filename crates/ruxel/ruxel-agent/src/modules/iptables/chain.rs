@@ -189,7 +189,9 @@ pub(super) fn list_chain(binary: &str, chain: &str) -> Result<Vec<String>, Strin
     let listing = String::from_utf8_lossy(&out.stdout).to_string();
     Ok(listing
         .lines()
-        .filter(|line| *line == format!("-A {chain}") || line.starts_with(&format!("-A {chain} ")))
+        .filter(|line| {
+            *line == format!("-A {chain}") || line.starts_with(&format!("-A {chain} "))
+        })
         .map(std::string::ToString::to_string)
         .collect())
 }
