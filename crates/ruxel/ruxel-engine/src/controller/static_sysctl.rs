@@ -31,43 +31,47 @@ fn is_static_text(value: &str) -> bool {
 /// of an unconditional top-level sysctl task with literal params. The
 /// tag filter is the play's own selection: without it every task runs,
 /// and with it only a selected task is guaranteed to.
+/// Whether the step may join the static set at all: the play's tag
+/// selection must keep it, and a forced-check step never writes its
+/// persistence file (`effective_check_mode`), so its declaration must
+/// not authorize earlier preflights — or a pre-existing later-loading
+/// file matching it reads as managed and suppresses the override
+/// error. An explicit `checkMode: false` still executes, so it still
+/// declares.
+fn selected_and_writing(task: &Value, inherited: &[String], filter: &[String]) -> bool {
+    if !filter.is_empty() && !super::tag_selection::selected(task, inherited, filter) {
+        return false;
+    }
+    !task
+        .get("checkMode")
+        .is_some_and(|mode| mode == &Value::Bool(true))
+}
+
 fn static_sysctl_declaration(
     task: &Value,
     inherited: &[String],
     filter: &[String],
 ) -> Option<v1::SysctlDeclaration> {
-    if !filter.is_empty() && !super::tag_selection::selected(task, inherited, filter) {
-        return None;
-    }
-    // A forced-check task never writes its persistence file
-    // (`effective_check_mode`): its declaration must not authorize
-    // earlier preflights, or a pre-existing later-loading file matching
-    // it reads as managed and suppresses the override error. An
-    // explicit `checkMode: false` still executes, so it still declares.
-    if task
-        .get("checkMode")
-        .is_some_and(|mode| mode == &Value::Bool(true))
-    {
+    if !selected_and_writing(task, inherited, filter) {
         return None;
     }
     // Any gate that can divert the task or reshape its run keeps it
     // out: a `when` condition, a loop, a delegation to another
     // session, or block nesting (a task with a block runs the block,
     // never its own operation).
-    for gate in [
-        "when",
-        "loop",
-        "delegateTo",
-        "delegateAllow",
-        "delegateLocalhost",
-        "block",
-        "rescue",
-        "always",
-    ] {
+    for gate in conditional_gates(false) {
         if task.get(gate).is_some_and(|value| !value.is_null()) {
             return None;
         }
     }
+    operation_sysctl_declaration(task)
+}
+
+/// The sysctl entry of literal operation params, if any: the name is
+/// the parameter's canonical identity and the value is literal text,
+/// so the declaration is what the task is guaranteed to declare when
+/// it runs.
+fn operation_sysctl_declaration(task: &Value) -> Option<v1::SysctlDeclaration> {
     let operation = task.get("operation")?;
     if string(operation, "kind") != Some("sysctl") {
         return None;
@@ -94,10 +98,66 @@ fn static_sysctl_declaration(
     })
 }
 
+/// The gates that keep a task out of the static set. A `when`
+/// condition diverts a task — but a notified handler evaluates its
+/// condition when it runs, and a skipped one latches the session
+/// filtered so nothing is pruned, while an unnotified handler sends
+/// no frame and latches nothing: the notification is the handler's
+/// execution gate, so handlers tolerate `when` and every other gate
+/// keeps them out the way it keeps tasks out.
+fn conditional_gates(handlers: bool) -> &'static [&'static str] {
+    if handlers {
+        &[
+            "loop",
+            "delegateTo",
+            "delegateAllow",
+            "delegateLocalhost",
+            "block",
+            "rescue",
+            "always",
+        ]
+    } else {
+        &[
+            "when",
+            "loop",
+            "delegateTo",
+            "delegateAllow",
+            "delegateLocalhost",
+            "block",
+            "rescue",
+            "always",
+        ]
+    }
+}
+
+/// The declaration a handler guarantees when it runs: the handler's
+/// static params, without its notification gate — the scan cannot see
+/// who the run notifies. An unnotified handler sends no frame and sets
+/// no filtered mark, so without its keys the session's end prunes the
+/// handler's record while its file is still present, and another task
+/// rejects the file as unmanaged. Carrying the declared keys through
+/// completion authorizes exactly the files the handler manages.
+fn handler_sysctl_declaration(
+    task: &Value,
+    inherited: &[String],
+    filter: &[String],
+) -> Option<v1::SysctlDeclaration> {
+    if !selected_and_writing(task, inherited, filter) {
+        return None;
+    }
+    for gate in conditional_gates(true) {
+        if task.get(gate).is_some_and(|value| !value.is_null()) {
+            return None;
+        }
+    }
+    operation_sysctl_declaration(task)
+}
+
 /// The plan's static sysctl declarations: the guaranteed entries of
-/// its top-level `preTasks` and `tasks`, deduplicated. Handlers and
-/// nested block children declare conditionally, so they stay out and
-/// land as they execute, the way they do today.
+/// its top-level `preTasks` and `tasks`, deduplicated, plus the
+/// declared keys of its handlers. Nested block children still declare
+/// conditionally as they execute. A handler runs only when notified,
+/// so its keys ride the plan instead of expiring with its record.
 pub(super) fn static_sysctl_declarations(
     play: &Value,
     selected_tags: &[String],
@@ -115,6 +175,13 @@ pub(super) fn static_sysctl_declarations(
             {
                 declarations.push(declared);
             }
+        }
+    }
+    for handler in array(play, "handlers") {
+        if let Some(declared) = handler_sysctl_declaration(handler, &inherited, selected_tags)
+            && !declarations.contains(&declared)
+        {
+            declarations.push(declared);
         }
     }
     declarations

@@ -275,3 +275,37 @@ async fn every_frame_carries_the_full_static_set() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn handlers_carry_their_declared_keys() {
+    // Thread 352: an unnotified handler sends no frame and latches no
+    // filtered mark, so without its keys the session's end prunes the
+    // handler's record while its file is still present — and another
+    // task rejects the file as unmanaged. The plan carries the
+    // declared keys of handlers through completion instead. The
+    // notification is the handler's execution gate, so `when` is
+    // tolerated; every other gate keeps the handler out the way it
+    // keeps tasks out.
+    let play = json!({
+        "targets": ["h"],
+        "tasks": [
+            {"name": "plain", "operation": {"kind": "sysctl", "name": "net.test", "value": "1", "sysctl_file": "/etc/sysctl.d/10-a.conf"}}
+        ],
+        "handlers": [
+            {"name": "notified", "operation": {"kind": "sysctl", "name": "net.test", "value": "2", "sysctl_file": "/etc/sysctl.d/20-h.conf"}},
+            {"name": "conditional", "when": {"kind": "literal", "value": true}, "operation": {"kind": "sysctl", "name": "net.test", "value": "3", "sysctl_file": "/etc/sysctl.d/30-c.conf"}},
+            {"name": "looped", "loop": {"kind": "literal", "value": [1]}, "operation": {"kind": "sysctl", "name": "net.test", "value": "9", "sysctl_file": "/etc/sysctl.d/50-l.conf"}},
+            {"name": "forced", "checkMode": true, "operation": {"kind": "sysctl", "name": "net.test", "value": "9", "sysctl_file": "/etc/sysctl.d/50-f.conf"}},
+            {"name": "other-kind", "operation": {"kind": "command", "argv": ["true"]}}
+        ]
+    });
+    assert_eq!(
+        super::super::static_sysctl::static_sysctl_declarations(&play, &[]),
+        vec![
+            decl("/etc/sysctl.d/10-a.conf", "net.test", "1"),
+            decl("/etc/sysctl.d/20-h.conf", "net.test", "2"),
+            decl("/etc/sysctl.d/30-c.conf", "net.test", "3"),
+        ],
+        "handlers declare their keys; looped and forced-check ones stay out"
+    );
+}
