@@ -26,7 +26,7 @@ cargo-binstall = "1.26.2"
 zig = "0.17.1"
 hk = "2.12.0"
 gitleaks = "8.30.1"
-rumdl = "0.3.2"
+rumdl = "v0.3.5"
 # Repository policy (.alint.yml): the generated Alint job installs this pin.
 # A cargo backend is refused here: the CI tools cache holds prebuilt
 # binaries only, so alint must publish one (as github:asamarts/alint does).
