@@ -39,8 +39,7 @@ geometry and allocation-group tests do not establish mounted-filesystem safety.
 SSH as root for the base, disk, and postgres plays. `Host.user` defaults to
 `root`, and the phase3 workflow catalogues use no `becomeUser`. This holds
 until a real privilege step lands. Any `becomeUser` in a phase3 workflow is a
-review failure. See `tests/workflow/README.md` (Timer workloads section) for
-the composition precedent.
+review failure. See `tests/workflow/README.md` for the corpus layout and composition precedent.
 
 ## Filesystem identity limits during migration
 
