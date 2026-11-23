@@ -267,5 +267,9 @@ mod alias_tests;
 mod selection_tests;
 
 #[cfg(test)]
+#[path = "boot/dot_conf.rs"]
+mod dot_conf_tests;
+
+#[cfg(test)]
 #[path = "boot/scratch.rs"]
 mod scratch;
