@@ -810,7 +810,10 @@ pub(crate) fn sysctl_host_files() -> Result<Vec<(std::path::PathBuf, Vec<u8>)>, 
 /// matching — so the cache must recheck the declarations: where the
 /// record's entry is overridden by a file nothing manages anymore,
 /// the task must run (and refuse) instead of reporting a convergence
-/// the next reboot reverts.
+/// the next reboot reverts. The shadow refusal is replayed the same
+/// way: a same-basename shadow in a higher-precedence directory hides
+/// the managed file from the boot whatever it assigns, so a shadow no
+/// declaration owns must unveil the cache too.
 pub(crate) fn sysctl_cache_covered(
     file: &str,
     name: &str,
@@ -818,7 +821,24 @@ pub(crate) fn sysctl_cache_covered(
     host: &[(std::path::PathBuf, Vec<u8>)],
     managed: &SysctlManaged,
 ) -> bool {
+    sysctl_cache_covered_in(file, name, value, host, managed, &boot::DIRS)
+}
+
+/// The cache gate over `dirs`, split out so the shadow replay is
+/// provable without the system directories: a same-basename shadow the
+/// managed set never declares unveils the cache, a declared shadow of
+/// a deliberate transition keeps it covered.
+fn sysctl_cache_covered_in(
+    file: &str,
+    name: &str,
+    value: &str,
+    host: &[(std::path::PathBuf, Vec<u8>)],
+    managed: &SysctlManaged,
+    dirs: &[(&str, u8)],
+) -> bool {
     boot::boot_override(file, name, value, host, managed).is_none()
+        && boot::shadowing_in(file, dirs)
+            .is_none_or(|shadow| declared_shadow(&shadow, name, managed))
 }
 
 /// The managed entry's rewrite of the file: the one entry line is
