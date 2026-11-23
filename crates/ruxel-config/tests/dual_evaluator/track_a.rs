@@ -16,6 +16,8 @@ pub(super) const EXAMPLES: &[&str] = &[
     "invalid/git-branch-ssh-bad-port.pkl",
     "invalid/git-branch-scp-dash.pkl",
     "invalid/git-branch-dash.pkl",
+    "invalid/git-branch-qualified-ref.pkl",
+    "invalid/git-branch-root-dest.pkl",
     "invalid/ensure-line-empty.pkl",
     "invalid/ensure-line-empty-regexp.pkl",
     "invalid/ensure-line-regexp-multiline.pkl",

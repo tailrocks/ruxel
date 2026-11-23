@@ -74,6 +74,8 @@ dual_evaluator
   tests/workflow/invalid/fetched-script-creates-dest.pkl
   tests/workflow/invalid/fetched-script-plain-http.pkl
   tests/workflow/invalid/git-branch-dash.pkl
+  tests/workflow/invalid/git-branch-qualified-ref.pkl
+  tests/workflow/invalid/git-branch-root-dest.pkl
   tests/workflow/invalid/git-branch-scp-dash.pkl
   tests/workflow/invalid/git-branch-sha-uppercase.pkl
   tests/workflow/invalid/git-branch-sha.pkl
