@@ -16,14 +16,34 @@ rust = { version = "1.99.1", profile = "minimal", components = [
 ], mr_boxington = true }
 cargo-binstall = "1.26.2"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
-"cargo:cargo-machete" = "0.9.2"
-"cargo:cargo-deny" = "0.20.2"
-"cargo:cargo-zigbuild" = "0.24.1"
+"github:bnjbvr/cargo-machete" = "v0.10.1"
+# cargo-deny publishes no x86_64-apple-darwin asset, so on Intel macOS the
+# aqua prebuilt cannot resolve; that platform builds cargo-deny from crates.io
+# source (the `cargo:` backend) instead of failing `mise install --locked`.
+"aqua:EmbarkStudios/cargo-deny" = { version = "0.22.0", os = ["linux", "windows", "macos/arm64"] }
+"cargo:cargo-deny" = { version = "0.22.0", os = ["macos/x64"] }
+"aqua:rust-cross/cargo-zigbuild" = "0.24.1"
 zig = "0.17.1"
 hk = "2.12.0"
 gitleaks = "8.30.1"
 rumdl = "0.3.2"
-"cargo:alint" = "0.21.1"
+# Repository policy (.alint.yml): the generated Alint job installs this pin.
+# A cargo backend is refused here: the CI tools cache holds prebuilt
+# binaries only, so alint must publish one (as github:asamarts/alint does).
+"github:asamarts/alint" = "0.22.1"
+jactionlint = "2.6.0"
+shellcheck = "0.11.0"
+# velnor-gen (tools release tag). velnor-gen refuses a tool that applies on the
+# runner OS without a prebuilt binary in mise.lock, and the release has no macOS
+# asset, so Linux takes the release asset and macOS builds that tag's commit
+# from source (a `rev:`, not the movable tag). Bump with
+# # `velnor-gen pin-helper <version>`. `matching` (not a wildcard
+# `asset_pattern`) keeps selection arch-aware: without it, lock resolution
+# picks one asset for every Linux platform and put the x86_64 build into the
+# linux-arm64 lock slot on fresh ARM setup.
+"cargo:https://github.com/tailrocks/velnor-new" = { version = "rev:146a9960b0b41adf6612462d28982bff2c60a1c6", crate = "velnor-gen", os = ["macos"] }
+
+"github:tailrocks/velnor-new" = { version = "tools-v0.1.111", os = ["linux"], matching = "velnor-gen" }
 
 [settings]
 cargo.binstall = true
@@ -138,13 +158,6 @@ run = "cargo test --workspace --doc --all-features --locked"
 description = "Licenses, bans, sources and advisories"
 run = "cargo deny --locked check"
 
-[tasks."deny-ci"]
-description = "Verify cargo-deny CI inputs and run cargo-deny"
-run = [
-  "cargo run --locked -p ruxel-config --bin check-deny-inputs",
-  "cargo deny --locked check",
-]
-
 [tasks.machete]
 description = "Unused dependencies"
 run = "cargo machete"
@@ -193,11 +206,16 @@ depends = [
   "machete",
   "policy",
   "acceptance-local",
+  "check-generated-workflows",
 ]
 
 [tasks.ci]
 description = "Fresh-checkout aggregate: install, build, check"
 run = ["mise run install", "mise run build", "mise run check"]
+
+[tasks.check-generated-workflows]
+description = "Fail when .github/workflows/rust-ci.yml or .velnor/rust-metadata.json differs from velnor-gen output"
+run = "velnor-gen --root . check"
 
 [tasks.agent]
 description = "Static musl ruxel-agent for x86_64 Linux hosts"

@@ -5,10 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "check-deny-inputs"
-path = "src/bin/check_deny_inputs.rs"
-
 [features]
 # Gates the dual-evaluator suites. The suites demand the official Pkl CLI
 # (see tests/dual_evaluator.rs and tests/dual_evaluator_systemd.rs) and fail

@@ -1,0 +1,227 @@
+# velnor-gen input. `velnor-gen generate` writes .github/workflows/rust-ci.yml
+# (plus rust-cache-trim.yml) and .velnor/rust-metadata.json from this file;
+# `velnor-gen check` (mise task check-generated-workflows, hk hook, CI job)
+# fails on drift. Full reference: generator/CONFIG.md in tailrocks/velnor-new.
+#
+# Migration note: this replaces the old velnor-actions 0.1.80 setup
+# (.velnor/config.toml + release-manifest.json -> ci.yml, state-seal.yml,
+# cache-prune.yml). Every old ci.yml job is covered: the root workspace and
+# the 13 standalone tool roots below via Rust lanes, cargo-deny via the
+# policy job (deny.toml), cargo-machete via the policy job (mise pin),
+# dual-evaluator via [[lint]] mise task, acceptance-local via the declared
+# .velnor/workflows.toml workflow (hosted ubuntu-26.04; [[lint]] cannot
+# select a runner), Alint and Jactionlint via [[lint]]. Dropped with no replacement: state-seal.yml
+# (old-engine state attestation, no velnor-gen equivalent) and
+# cache-prune.yml (superseded by generator-owned rust-cache-trim.yml).
+
+default_branch = "main"
+runner = "ubuntu-26.04-scale-set"
+hosted = false
+required_check = "Required"
+mbx_shared_store = true
+docs = "post_merge"
+check_alone = "post_merge"
+
+[crates_mirror]
+runner = "ubuntu-26.04-scale-set"
+registry = "sparse+https://crates-mirror.velnor-system.svc.cluster.local/index/"
+cainfo = "/opt/velnor/crates-mirror/ca-bundle.pem"
+
+# Cargo.lock pins pklr from public git repositories at full commits: the
+# default dependency from jdx/pklr and ruxel-config's feature-gated upstream
+# path from donbeave/pklr (a fork of it). Declaring them lets the base caches
+# save and the pull-request deltas work.
+[public_sources]
+git = ["https://github.com/donbeave/pklr", "https://github.com/jdx/pklr"]
+
+# The 13 standalone tool workspaces keep their own jobs (no workspace
+# group): a group would share one target directory with the root lane's
+# ambient and velnor-ci would refuse it ("cannot be told apart"). Each
+# subdir root builds into target/velnor-roots/<root> (helper 0.1.107+),
+# apart from the repository root's target, so the root lane no longer
+# claims the nested roots and every root has its own target directory.
+# The root workspace (ruxel, ruxel-agent, ruxel-config, ruxel-engine,
+# ruxel-guard, ruxel-proto) keeps its own jobs.
+
+# Files outside any Cargo root, mapped to the package whose tests read them
+# (mirrors the old [[stacks.rust.inputs]] selection). Input globs are literal
+# paths or a trailing `/**` only: a `*` inside a segment is refused. The
+# ruxel-config test suites walk tests/workflow wholesale, so the whole tree
+# maps there; schema holds only .pkl files.
+[[inputs]]
+glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs.rs"
+packages = ["ruxel-acceptance-xfs"]
+
+[[inputs]]
+glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_perl.rs"
+packages = ["ruxel-acceptance-xfs"]
+
+[[inputs]]
+glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/tests/xfs_synthetic.pl"
+packages = ["ruxel-acceptance-xfs"]
+
+[[inputs]]
+glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.pl"
+packages = ["ruxel-acceptance-xfs"]
+
+[[inputs]]
+glob = "crates/ruxel/ruxel-agent/src/modules/filesystem/xfs.rs"
+packages = ["ruxel-acceptance-xfs"]
+
+[[inputs]]
+glob = "schema/ruxel/**"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "tests/schema/**"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "tests/workflow/**"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/become-environment.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/check-semantics.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/control-flow.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/controller-delegation.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/files-content.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/multihost.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/performance-snapshots.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/postgresql-ownership.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/restart-actions.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/shape-variants.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/storage-ext4.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/storage-two-tier.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/storage-xfs.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/system-surface.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/assets/template.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/invalid/copy-source-and-content.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/invalid/file-path-and-dest.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/lazy-layers/block.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "testdata/workloads/pr66/lazy-layers/play.pkl"
+packages = ["ruxel-config"]
+
+[[inputs]]
+glob = "tools/verify-pkl-artifact"
+packages = ["ruxel-config"]
+
+# libblkid build scripts feed the static ruxel-agent binary (mise run agent).
+[[inputs]]
+glob = "tools/build-libblkid"
+packages = ["ruxel-agent"]
+
+[[inputs]]
+glob = "tools/build-libblkid-source"
+packages = ["ruxel-agent"]
+
+[[inputs]]
+glob = "tools/pkg-config-libblkid"
+packages = ["ruxel-agent"]
+
+# Filesystem-trust tests run on a GitHub-hosted runner: the scale-set
+# pods check out onto overlayfs (0x794c7630), which the production
+# fs-allowlist refuses, while hosted ext4 passes. Moving the tests (not
+# weakening the allowlist) is the fix. The filter names every test that
+# failed for this reason in runs 45116130760 and 45136005935; the
+# default lane leaves them out and `velnor-ci test-groups check`
+# enforces the disjointness at build time.
+[[test_groups]]
+name = "trusted-fs"
+root = "."
+runner = "ubuntu-26.04"
+hosted = true
+needs = ["cargo"]
+filter = "package(ruxel-guard) and (test(mux::tests::rejects_untrusted_ancestor_and_final_symlink) or test(target::directory_tests::rejects_existing_directory_with_group_access) or test(target::long_path_test::rejects_long_socket_path_before_ssh) or test(target::tests::admission_uses_simulated_ssh_only_for_allowed_hosts) or test(target::tests::all_policy_refusals_precede_admission_effects) or test(target::tests::untrusted_known_hosts_are_refused_before_ssh) or test(trusted_path::tests::identity_requires_existing_trusted_regular_file) or test(trusted_path::tests::platform::linux::precreation_caps_inherited_named_user_write_permissions) or test(trusted_path::tests::precreates_private_file_and_keeps_existing_keys) or test(trusted_path::tests::rejects_final_symlink_directory_and_symlink_ancestor) or test(trusted_path::tests::rejects_parent_traversal_before_creation) or test(trusted_path::tests::rejects_writable_file_and_ancestor_without_repairing_them) or test(allowed_host_is_admitted_by_local_ssh_configuration)) or package(ruxel-agent) and (test(modules::get_url::client::tests::system_executable_resolves_to_an_absolute_trusted_path) or test(modules::get_url::download_tests::clients::trusted_absolute_client_resolution_ignores_task_path)) or package(ruxel) and binary(exit_classification) or package(ruxel-engine) and test(~transport::tests::deployment)"
+
+[[lint]]
+kind = "jactionlint"
+config = ".github/jactionlint.yaml"
+
+[[lint]]
+kind = "alint"
+config = ".alint.yml"
+
+# The generator check itself has no native equivalent: it must stay green.
+[[lint]]
+kind = "mise-task"
+id = "generated-workflows"
+name = "Generated workflows"
+task = "check-generated-workflows"
+tools = ["github:tailrocks/velnor-new", "rust", "mr-boxington"]
+timeout_minutes = 10
+
+# No native equivalent: needs the official Pkl CLI, which the closed pinned
+# tool set cannot express, so the mise task provisions it via
+# tools/verify-pkl-artifact (see the task comments).
+[[lint]]
+kind = "mise-task"
+id = "dual-evaluator"
+name = "Dual evaluator"
+task = "dual-evaluator"
+tools = ["rust"]
+timeout_minutes = 20
+
+# Acceptance local moved to .velnor/workflows.toml: [[lint]] cannot
+# select a runner, and the task needs hosted ubuntu-26.04 (get_url
+# refuses the scale-set overlayfs). The declared acceptance-local.yml
+# workflow runs the same mise task on the hosted runner; keep its job
+# required in the branch ruleset so the gate stays as strong.
+
+[[inputs]]
+glob = "crates/ruxel/ruxel/tests/fixtures/local_exit_agent.rs"
+packages = ["ruxel"]

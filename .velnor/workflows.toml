@@ -1,0 +1,51 @@
+# Declared workflow for the acceptance-local mise task. The [[lint]]
+# mise-task entry cannot select a runner (LintJob has no runner/hosted
+# keys), and the task fails on the scale-set runners: get_url refuses the
+# overlayfs client filesystem (0x794c7630). The old velnor-actions setup
+# ran this check on hosted ubuntu-26.04, so this workflow pins exactly
+# that: runner = "ubuntu-26.04" with hosted = true. Fork pull requests
+# run it on fork_runner like every other job.
+#
+# Gate note: this workflow has its own jobs outside rust-ci.yml, so the
+# Required gate does not wait for it. The branch ruleset (protect-main)
+# requires the "Acceptance local" check context alongside Required, so
+# merging keeps the pre-#120 blocking behavior.
+
+[[workflow]]
+file = "acceptance-local"
+name = "Acceptance local"
+runner = "ubuntu-26.04"
+hosted = true
+
+[workflow.concurrency]
+group = "${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.head_ref || github.run_id }}"
+cancel_in_progress = true
+
+[workflow.on]
+merge_group = true
+
+[workflow.on.workflow_dispatch]
+
+[workflow.on.push]
+branches = ["main"]
+
+[workflow.on.pull_request]
+types = ["opened", "synchronize", "reopened", "ready_for_review", "edited"]
+branches = ["main"]
+
+[[workflow.job]]
+id = "acceptance-local"
+name = "Acceptance local"
+timeout_minutes = 30
+permissions = { contents = "read" }
+
+[[workflow.job.step]]
+uses = "checkout"
+
+[[workflow.job.step]]
+uses = "mise"
+with = { version = "2026.11.10", cache = "false", install_args = "rust" }
+
+[[workflow.job.step]]
+name = "Run the mise task acceptance-local"
+run = "mise run --force --skip-tools acceptance-local"

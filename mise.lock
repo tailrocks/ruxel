@@ -2,6 +2,47 @@
 
 lockfile_version = 4
 
+[[tools."aqua:EmbarkStudios/cargo-deny"]]
+version = "0.22.0"
+backend = "aqua:EmbarkStudios/cargo-deny"
+specifiers = ["0.22.0"]
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-arm64"]
+checksum = "sha256:4818d44cdcac285776336504fca722493ab634d3377b94a462e98aad3f41484a"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401428"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-arm64-musl"]
+checksum = "sha256:4818d44cdcac285776336504fca722493ab634d3377b94a462e98aad3f41484a"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401428"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-x64"]
+checksum = "sha256:98c56e6a408bfa5c3c60744b6015aaa6aa08f743fdeb88386d06fca035bb1786"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401805"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-x64-musl"]
+checksum = "sha256:98c56e6a408bfa5c3c60744b6015aaa6aa08f743fdeb88386d06fca035bb1786"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401805"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.macos-arm64"]
+checksum = "sha256:aa23e2f32eaf0b92efb36de3fc925f3e1b841fdafcc555ddab43d4d146cec251"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768403477"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.windows-x64"]
+checksum = "sha256:a85b270b4aa28633d2cb2be97fccd4518ccb783014914e99463e75468cb3183c"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768406065"
+
 [[tools."aqua:nextest-rs/nextest/cargo-nextest"]]
 version = "0.9.151"
 backend = "aqua:nextest-rs/nextest/cargo-nextest"
@@ -48,6 +89,52 @@ checksum = "sha256:e51bdb4b5883df48f335381b287378edb244318fac65ae0adaf6b9e692982
 checksum_source = "mise-versions"
 url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.151/cargo-nextest-0.9.151-x86_64-pc-windows-msvc.tar.gz"
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/703606897"
+
+[[tools."aqua:rust-cross/cargo-zigbuild"]]
+version = "0.24.1"
+backend = "aqua:rust-cross/cargo-zigbuild"
+specifiers = ["0.24.1"]
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-arm64"]
+checksum = "sha256:70bb4c9cc71a6d16211b9079996e3cd588671053312adeff4d043499ed887601"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-aarch64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674761"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-arm64-musl"]
+checksum = "sha256:70bb4c9cc71a6d16211b9079996e3cd588671053312adeff4d043499ed887601"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-aarch64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674761"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-x64"]
+checksum = "sha256:32581c8e13f27a807bb244aaaac870522f5b51263c766cf77b1a99771ce9fa5c"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674861"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-x64-musl"]
+checksum = "sha256:32581c8e13f27a807bb244aaaac870522f5b51263c766cf77b1a99771ce9fa5c"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674861"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.macos-arm64"]
+checksum = "sha256:e38d2a30aa8f4c27bf9e3ced266aae1f47e4dbd6be939852ec07d8662eec408e"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-aarch64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674719"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.macos-x64"]
+checksum = "sha256:9f047b1a0f97efbfef64919d7c25e33304a4448b832cde12f6588c4f11489877"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-x86_64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674794"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.windows-x64"]
+checksum = "sha256:7f660482f8dada6dfcd495bfc52a4c4f0cf6b2e01ac9740811855a1de7c4f60a"
+checksum_source = "mise-versions"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.24.1/cargo-zigbuild-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/709674833"
 
 [[tools.cargo-binstall]]
 version = "1.26.2"
@@ -96,25 +183,185 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/695464456"
 provenance = "github-attestations"
 
-[[tools."cargo:alint"]]
-version = "0.21.1"
-backend = "cargo:alint"
-specifiers = ["0.21.1"]
+[[tools.cargo-deny]]
+version = "0.22.0"
+backend = "aqua:EmbarkStudios/cargo-deny"
+specifiers = ["0.22.0"]
+
+[tools.cargo-deny."platforms.linux-arm64"]
+checksum = "sha256:4818d44cdcac285776336504fca722493ab634d3377b94a462e98aad3f41484a"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401428"
+
+[tools.cargo-deny."platforms.linux-arm64-musl"]
+checksum = "sha256:4818d44cdcac285776336504fca722493ab634d3377b94a462e98aad3f41484a"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401428"
+
+[tools.cargo-deny."platforms.linux-x64"]
+checksum = "sha256:98c56e6a408bfa5c3c60744b6015aaa6aa08f743fdeb88386d06fca035bb1786"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401805"
+
+[tools.cargo-deny."platforms.linux-x64-musl"]
+checksum = "sha256:98c56e6a408bfa5c3c60744b6015aaa6aa08f743fdeb88386d06fca035bb1786"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768401805"
+
+[tools.cargo-deny."platforms.macos-arm64"]
+checksum = "sha256:aa23e2f32eaf0b92efb36de3fc925f3e1b841fdafcc555ddab43d4d146cec251"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768403477"
+
+[tools.cargo-deny."platforms.windows-x64"]
+checksum = "sha256:a85b270b4aa28633d2cb2be97fccd4518ccb783014914e99463e75468cb3183c"
+checksum_source = "mise-versions"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/768406065"
 
 [[tools."cargo:cargo-deny"]]
-version = "0.20.2"
+version = "0.22.0"
 backend = "cargo:cargo-deny"
-specifiers = ["0.20.2"]
+specifiers = ["0.22.0"]
 
-[[tools."cargo:cargo-machete"]]
-version = "0.9.2"
-backend = "cargo:cargo-machete"
-specifiers = ["0.9.2"]
+[[tools."cargo:https://github.com/tailrocks/velnor-new"]]
+version = "rev:146a9960b0b41adf6612462d28982bff2c60a1c6"
+backend = "cargo:https://github.com/tailrocks/velnor-new"
+specifiers = ["rev:146a9960b0b41adf6612462d28982bff2c60a1c6"]
 
-[[tools."cargo:cargo-zigbuild"]]
-version = "0.24.1"
-backend = "cargo:cargo-zigbuild"
-specifiers = ["0.24.1"]
+[tools."cargo:https://github.com/tailrocks/velnor-new".options]
+crate = "velnor-gen"
+
+[[tools."github:asamarts/alint"]]
+version = "0.22.1"
+backend = "github:asamarts/alint"
+specifiers = ["0.22.1"]
+
+[tools."github:asamarts/alint"."platforms.linux-arm64"]
+checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.linux-arm64-musl"]
+checksum = "sha256:56164a05e0c798ff6ff551c232d92ebadaf732bd4371ac73bfc9e9a0cb98ac08"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833608"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.linux-x64"]
+checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.linux-x64-musl"]
+checksum = "sha256:be0fb8cfefb07b47fe7ee76d571ed9731d20037d3a421cdd9d285b01d79f9489"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833671"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.macos-arm64"]
+checksum = "sha256:f5c3ac8dd319dcb39a6b697eae95b0dc59079d819fe8d3d560f4eccbf193e609"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833603"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.macos-x64"]
+checksum = "sha256:f5b2248abd61d78ff4b68771629c1f220e8a05a46d586bf0596a74621c8103eb"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833609"
+provenance = "github-attestations"
+
+[tools."github:asamarts/alint"."platforms.windows-x64"]
+checksum = "sha256:91fafae19acfea25e7b7136a7e45cb0b4bef20ffc010c82b018b009240ffc662"
+url = "https://github.com/asamarts/alint/releases/download/v0.22.1/alint-v0.22.1-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/asamarts/alint/releases/assets/736833616"
+provenance = "github-attestations"
+
+[[tools."github:bnjbvr/cargo-machete"]]
+version = "0.10.1"
+backend = "github:bnjbvr/cargo-machete"
+specifiers = ["v0.10.1"]
+
+[tools."github:bnjbvr/cargo-machete"."platforms.linux-arm64"]
+checksum = "sha256:32271da65eee1b52af60aad7ed34c0466d05b58988fbaeadda510bcef5765282"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752025911"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.linux-arm64-musl"]
+checksum = "sha256:32271da65eee1b52af60aad7ed34c0466d05b58988fbaeadda510bcef5765282"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752025911"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.linux-x64"]
+checksum = "sha256:785d381985140ffa172246d82089adeb7f2eb9c774d961c48f77a4494023afb5"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752025688"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.linux-x64-musl"]
+checksum = "sha256:785d381985140ffa172246d82089adeb7f2eb9c774d961c48f77a4494023afb5"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752025688"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.macos-arm64"]
+checksum = "sha256:0659860970e26179d730d1a2e99fc6513e41fea122ad5451d7ae43234fc1ebab"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752038849"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.macos-x64"]
+checksum = "sha256:19c7384d636a27032ff0b4695b67e79b75a366e5c0573b220bd12bc71b59b435"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752039360"
+
+[tools."github:bnjbvr/cargo-machete"."platforms.windows-x64"]
+checksum = "sha256:64bd4ceae7680af1d1468cc1edbe09c9bea6221f4f525231c8213666eb01fa5a"
+checksum_source = "mise-versions"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752026034"
+
+[[tools."github:tailrocks/velnor-new"]]
+version = "tools-v0.1.111"
+backend = "github:tailrocks/velnor-new"
+specifiers = ["tools-v0.1.111"]
+
+[tools."github:tailrocks/velnor-new".options]
+matching = "velnor-gen"
+
+[tools."github:tailrocks/velnor-new"."platforms.linux-arm64"]
+checksum = "sha256:3fc853061764dde7509c70ad3fd3eed8326edd68baf14002080da6ad5f523384"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424483"
+provenance = "github-attestations"
+
+[tools."github:tailrocks/velnor-new"."platforms.linux-arm64-musl"]
+checksum = "sha256:3fc853061764dde7509c70ad3fd3eed8326edd68baf14002080da6ad5f523384"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424483"
+provenance = "github-attestations"
+
+[tools."github:tailrocks/velnor-new"."platforms.linux-x64"]
+checksum = "sha256:933695ac11db7ba5feba98d10e63a12d5fc2e9e34b27130b2612c2b410519e08"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424527"
+provenance = "github-attestations"
+
+[tools."github:tailrocks/velnor-new"."platforms.linux-x64-musl"]
+checksum = "sha256:933695ac11db7ba5feba98d10e63a12d5fc2e9e34b27130b2612c2b410519e08"
+url = "https://github.com/tailrocks/velnor-new/releases/download/tools-v0.1.111/velnor-gen-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tailrocks/velnor-new/releases/assets/775424527"
+provenance = "github-attestations"
 
 [[tools.gitleaks]]
 version = "8.30.1"
@@ -167,6 +414,7 @@ url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378333
 version = "2.12.0"
 backend = "packslip:github.com/jdx/hk"
 specifiers = ["2.12.0"]
+unsupported_platforms = ["macos-x64"]
 
 [tools.hk."platforms.linux-arm64"]
 checksum = "sha256:0f4e44802c3fcf98461b6608281353ae1944b82fd12f4a683f8e2e6683e562f3"
@@ -204,10 +452,58 @@ url = "https://github.com/jdx/hk/releases/download/v2.12.0/hk-x86_64-pc-windows-
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 repository_ids = { repository = "922514152" }
 
+[[tools.jactionlint]]
+version = "2.6.0"
+backend = "packslip:github.com/jdx/jactionlint"
+specifiers = ["2.6.0"]
+
+[tools.jactionlint."platforms.linux-arm64"]
+checksum = "sha256:c726185a85f26d09aa94ea556509a19827979074b35d65f357f3a4947573e934"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_linux_arm64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.linux-arm64-musl"]
+checksum = "sha256:c726185a85f26d09aa94ea556509a19827979074b35d65f357f3a4947573e934"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_linux_arm64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.linux-x64"]
+checksum = "sha256:d5400967b8f0d3a5ae9a4cee21f56400a50eb3f05d0cbb4ef17184f17f0760c8"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_linux_amd64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.linux-x64-musl"]
+checksum = "sha256:d5400967b8f0d3a5ae9a4cee21f56400a50eb3f05d0cbb4ef17184f17f0760c8"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_linux_amd64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.macos-arm64"]
+checksum = "sha256:c3f373c7eac668aacb390b9c802cf4b5e2ad1a11b0b0c0aea6b04ca0cfa0c018"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_darwin_arm64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.macos-x64"]
+checksum = "sha256:aa89c49ad5c9530f2308f18333166050f97f14d420f478a8225d043bef1e2cab"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_darwin_amd64.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
+[tools.jactionlint."platforms.windows-x64"]
+checksum = "sha256:e939dd8c0eeeb620e70d30aa9aa21c671be078876660a831a82d07e372f0fa4d"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_windows_amd64.zip"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
+repository_ids = { repository = "1404951382" }
+
 [[tools.mr-boxington]]
 version = "1.30.0"
 backend = "packslip:github.com/jdx/mr-boxington"
 specifiers = ["1.30.0"]
+unsupported_platforms = ["macos-x64"]
 
 [tools.mr-boxington."platforms.linux-arm64"]
 checksum = "sha256:6317bb6780404e78c3b670d95e128c85871809dfc541882b2efaa34120f45e71"
@@ -256,6 +552,12 @@ checksum_source = "mise-versions"
 url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-aarch64"
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
 
+[tools.pkl."platforms.linux-x64"]
+checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"
+checksum_source = "mise-versions"
+url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
+
 # linux-arm64-musl carries no entry on purpose: apple/pkl 0.33.0 ships
 # no alpine aarch64 asset (pkl-alpine-linux-aarch64 does not exist;
 # only pkl-alpine-linux-amd64 does), and pkl-linux-aarch64 is a glibc
@@ -265,15 +567,7 @@ url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
 # alpine correction above; tools/verify-pkl-artifact refuses the
 # platform with its unsupported result before any lookup instead.
 
-[tools.pkl."platforms.linux-x64"]
-checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"
-checksum_source = "mise-versions"
-url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
-url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
-
 [tools.pkl."platforms.linux-x64-musl"]
-# The musl slot must pin the alpine asset: pkl-linux-amd64 is a glibc
-# binary and cannot run on a musl host.
 checksum = "sha256:38e983b0953018888761c8b410ccdc6f27ce77407ad306e73e6369c07bc23d1f"
 checksum_source = "mise-versions"
 url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-alpine-linux-amd64"
@@ -347,6 +641,53 @@ specifiers = ["1.99.1"]
 components = "clippy,rustfmt"
 profile = "minimal"
 targets = "aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu,x86_64-unknown-linux-musl"
+
+[[tools.shellcheck]]
+version = "0.11.0"
+backend = "aqua:koalaman/shellcheck"
+specifiers = ["0.11.0"]
+
+[tools.shellcheck."platforms.linux-arm64"]
+checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
+
+[tools.shellcheck."platforms.linux-arm64-musl"]
+checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
+
+[tools.shellcheck."platforms.linux-x64"]
+checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
+
+[tools.shellcheck."platforms.linux-x64-musl"]
+checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
+
+[tools.shellcheck."platforms.macos-arm64"]
+checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
+
+[tools.shellcheck."platforms.macos-x64"]
+checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
+
+[tools.shellcheck."platforms.windows-x64"]
+checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
+checksum_source = "mise-versions"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.zig]]
 version = "0.17.1"

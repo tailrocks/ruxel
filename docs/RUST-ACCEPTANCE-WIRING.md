@@ -36,9 +36,9 @@ invocation so a final private command does not suppress later public checks;
 their payload remains shared. Privacy and cross-play suites retain shared state
 to check persistent sensitivity, convergence and drift repair.
 
-`deny-ci` uses the native `ruxel-config` `check-deny-inputs` binary before
-cargo-deny. Named checks declare Rust sources, manifests, lockfiles, fixtures and
-frozen oracle inputs explicitly.
+`cargo-deny` runs per Cargo root (workspace root plus every `tools/*` root), as
+generated from the workspace layout by `velnor-gen`. Named checks declare Rust
+sources, manifests, lockfiles, fixtures and frozen oracle inputs explicitly.
 
 ## Pending XFS and aggregate gate
 
