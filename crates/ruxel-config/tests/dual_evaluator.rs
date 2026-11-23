@@ -25,6 +25,9 @@ mod join_separator;
 #[path = "dual_evaluator/retired_path.rs"]
 mod retired_path;
 
+#[path = "dual_evaluator/track_a.rs"]
+mod track_a;
+
 #[path = "dual_evaluator/corpus_files.rs"]
 mod corpus_files;
 
@@ -371,21 +374,6 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-interface-name-bytes.pkl",
     "invalid/iptables-interface-name-whitespace.pkl",
     "invalid/absent-floor-system-alias.pkl",
-    // Track A: a branch checkout over SSH, a fetched installer, line
-    // entries composing in one file, and controller notices — each valid
-    // case and its refusals lower the same way under both evaluators.
-    "valid/git-branch.pkl",
-    "valid/fetched-script.pkl",
-    "valid/ensure-line.pkl",
-    "valid/notice.pkl",
-    "invalid/git-branch-sha.pkl",
-    "invalid/ensure-line-empty-regexp.pkl",
-    "invalid/ensure-line-multiline.pkl",
-    "invalid/replace-line-empty-regexp.pkl",
-    "invalid/notice-empty.pkl",
-    "invalid/notice-secret.pkl",
-    "invalid/notice-two-captures.pkl",
-    "invalid/fetched-script-plain-http.pkl",
 ];
 
 /// The examples of the secret language evaluate the same way under both
@@ -394,7 +382,11 @@ const EXAMPLES: &[&str] = &[
 fn the_examples_evaluate_the_same_way_under_both_evaluators() -> Result {
     let pkl = pkl()?;
     let modules = modules()?;
-    for example in EXAMPLES {
+    let examples = EXAMPLES
+        .iter()
+        .copied()
+        .chain(track_a::EXAMPLES.iter().copied());
+    for example in examples {
         compare(
             example,
             &root().join(example),
