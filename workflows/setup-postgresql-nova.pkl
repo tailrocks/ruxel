@@ -127,6 +127,12 @@ local dataMount = new storage.Mount {
   opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k"
 }
 
+local pgParquetCheckout = new linux.GitCheckout {
+  repository = "https://github.com/CrunchyData/pg_parquet.git"
+  path = "/opt/pg_parquet"
+  commit = "b0793da35530eae9877c9f634b0022d80f7140f5"
+}
+
 // BLOCKED on the line-editing catalogue: commenting swap out of /etc/fstab,
 // the pam_limits line, and the postgres memlock and nofile limits in
 // /etc/security/limits.conf have no catalogue step yet.
@@ -235,12 +241,10 @@ stages {
   // with cargo-pgrx 0.19.3: each step runs once, when its marker is absent.
   // The pgrx marker carries its version, so a host prepared by an older
   // workflow (whose binary the bare path would mistake for this one) still
-  // installs instead of skipping into a stale toolchain.
-  new linux.GitCheckout {
-    repository = "https://github.com/CrunchyData/pg_parquet.git"
-    path = "/opt/pg_parquet"
-    commit = "b0793da35530eae9877c9f634b0022d80f7140f5"
-  }
+  // installs instead of skipping into a stale toolchain. The extension
+  // install re-runs when its checkout moves, so a later pin bump reaches
+  // the server instead of stopping at the existing .so.
+  pgParquetCheckout
   new Script {
     bash = """
       eval "$(mise activate bash)"
@@ -263,6 +267,7 @@ stages {
       cargo pgrx install --release --features pg19
       """
     creates = "/usr/lib/postgresql/19/lib/pg_parquet.so"
+    onChangeOf { pgParquetCheckout }
   }
   new Directory { path = "/etc/systemd/system/postgresql@.service.d"; mode = "0755" }
   new File {
