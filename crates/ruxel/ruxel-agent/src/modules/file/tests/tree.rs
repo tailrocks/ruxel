@@ -33,7 +33,7 @@ fn a_nested_directory_that_was_replaced_is_not_emptied() {
         &CString::new("sub").unwrap(),
         &child,
         identity,
-        meta.dev(),
+        &dir,
         &dir,
         &mut std::collections::HashSet::new(),
     )
@@ -54,7 +54,7 @@ fn an_entry_with_the_staging_prefix_is_removed_like_any_other() {
     std::fs::write(base.join(".ruxel-remove-1-1"), b"content").unwrap();
     std::fs::write(base.join("other"), b"content").unwrap();
     let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
-    super::super::tree::remove_tree(&dir, &base).unwrap();
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
     assert!(
         !base.join(".ruxel-remove-1-1").exists(),
         "the prefixed entry is gone"
@@ -96,7 +96,7 @@ fn a_child_created_after_the_snapshot_is_taken_too() {
             std::fs::write(watched.join("late"), b"late").unwrap();
         }));
     let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
-    super::super::tree::remove_tree(&dir, &base).unwrap();
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
     assert!(fired.load(Ordering::SeqCst), "the hook fired");
     assert!(!base.join("late").exists(), "the late child is gone");
     assert!(!sub.exists(), "the snapshotted tree is gone");
@@ -139,7 +139,7 @@ fn a_tree_emptied_on_the_last_round_is_gone_not_changed() {
             .unwrap();
         }));
     let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
-    super::super::tree::remove_tree(&dir, &base).unwrap();
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
     assert_eq!(
         fired.load(Ordering::SeqCst),
         8,

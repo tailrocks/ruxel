@@ -111,28 +111,18 @@ fn parse(listing: &[u8]) -> Vec<Mount> {
     mounts
 }
 
-/// The identity of every mount point of the host: the device and the
-/// inode of the tree that is mounted. A bind mount keeps the identity
-/// of the tree it is mounted from, so an entry with that identity is a
-/// mount point under another name.
-pub(super) fn mount_identities() -> Result<Vec<(u64, u64)>, String> {
-    Ok(identities(&mounts()?))
-}
-
-/// The identity of every mount of the list: the device and the inode of
-/// the tree that is mounted.
-pub(super) fn identities(mounts: &[Mount]) -> Vec<(u64, u64)> {
-    mounts
-        .iter()
-        .map(|mount| mount.identity)
-        .filter(|identity| *identity != (0, 0))
-        .collect()
-}
-
-/// Whether an entry of a tree is a mount point: it carries the
-/// identity of a tree the kernel mounted.
-pub(super) fn is_mount_identity(mounts: &[(u64, u64)], identity: (u64, u64)) -> bool {
-    mounts.contains(&identity)
+/// Whether the entry the path names is mounted content: the path is a
+/// mount point itself, or it lies inside a mounted tree whose root
+/// identity it carries. A bare identity is not enough: a bind mount
+/// keeps the identity of the tree it is mounted from, so the bind
+/// source and a hard link to a bind-mounted file carry a mounted
+/// identity while standing outside every mount point. Only an entry
+/// the mount covers — at its point or below it — is the mount's own.
+pub(super) fn is_mounted(mounts: &[Mount], path: &Path, identity: (u64, u64)) -> bool {
+    mounts.iter().any(|mount| {
+        mount.point == *path
+            || (identity != (0, 0) && identity == mount.identity && path.starts_with(&mount.point))
+    })
 }
 
 /// The system root a path lands in, when the path reaches it through a
@@ -310,7 +300,6 @@ pub(super) fn child_path(dir: &Path, name: &std::ffi::CStr) -> PathBuf {
 /// under another name (`/bin/tool` for `/usr/bin/tool`), and only the
 /// identity the entry carries tells then.
 pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<(), String> {
-    let identities = identities(mounts);
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -331,10 +320,16 @@ pub(super) fn preflight(dir: &OwnedFd, path: &Path, mounts: &[Mount]) -> Result<
         }
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
-        // A bind mount keeps the identity of the tree it is mounted
-        // from: the entry carries the identity of a mount point under
-        // another name, and the spelling of the path says nothing.
-        if is_mount_identity(&identities, (super::floor::device(&meta), meta.st_ino)) {
+        // A mount point reached under another spelling carries the
+        // identity of the mounted tree: the spelling of the path says
+        // nothing, but the mount that covers the entry tells. An entry
+        // outside every mount point is the mounted tree's source, not
+        // the mount, and the walk may pass it.
+        if is_mounted(
+            mounts,
+            &child_path,
+            (super::floor::device(&meta), meta.st_ino),
+        ) {
             return Err(format!(
                 "file: refusing to remove {}: it holds the mount point {}",
                 path.display(),

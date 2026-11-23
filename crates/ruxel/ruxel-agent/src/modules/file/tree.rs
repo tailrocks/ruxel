@@ -6,7 +6,6 @@ use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat, unlinkat};
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 /// The rounds a walk re-reads a directory before it declares the tree
@@ -17,11 +16,9 @@ const REENUMERATE_ROUNDS: usize = 8;
 /// Removes the tree under the pinned directory, and the directory itself
 /// is left to the caller: every entry is taken away through the
 /// descriptor, so a name that is replaced in between is never followed.
-pub(super) fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
-    let held = std::fs::File::from(dir.try_clone().map_err(|error| error.to_string())?)
-        .metadata()
-        .map_err(|error| error.to_string())?;
-    let held = held.dev();
+/// `at` names the directory the descriptor holds, so a mount check can
+/// tell mounted content from the source it is mounted from.
+pub(super) fn remove_tree(dir: &OwnedFd, path: &Path, at: &Path) -> Result<(), String> {
     // The names this walk stages entries under are tracked exactly: only
     // a name this walk staged is left alone, and an entry a user named
     // with the same prefix is an entry like any other.
@@ -46,7 +43,7 @@ pub(super) fn remove_tree(dir: &OwnedFd, path: &Path) -> Result<(), String> {
             return Ok(());
         }
         for name in pending {
-            remove_entry(dir, &name, &mut owned, held, path)?;
+            remove_entry(dir, &name, &mut owned, path, at)?;
         }
     }
     // The last round may have taken the last entry: read once more, and
@@ -69,8 +66,8 @@ fn remove_entry(
     dir: &OwnedFd,
     name: &CString,
     owned: &mut HashSet<Vec<u8>>,
-    held: u64,
     path: &Path,
+    at: &Path,
 ) -> Result<(), String> {
     let meta = match statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW) {
         Ok(meta) => meta,
@@ -93,7 +90,15 @@ fn remove_entry(
             Err(rustix::io::Errno::NOENT) => return Ok(()),
             Err(error) => return Err(error.to_string()),
         };
-        take_nested(dir, name, &child, identity, held, path, owned)?;
+        take_nested(
+            dir,
+            name,
+            &child,
+            identity,
+            path,
+            &super::mounts::child_path(at, name),
+            owned,
+        )?;
     } else {
         take_plain(dir, name, identity, path)?;
     }
@@ -109,10 +114,11 @@ pub(super) fn take_nested(
     name: &CString,
     child: &OwnedFd,
     identity: (u64, u64),
-    held: u64,
     path: &Path,
+    at: &Path,
     owned: &mut HashSet<Vec<u8>>,
 ) -> Result<(), String> {
+    let held = super::floor::device(&rustix::fs::fstat(dir).map_err(|error| error.to_string())?);
     let opened = rustix::fs::fstat(child).map_err(|error| error.to_string())?;
     let opened_id = (super::floor::device(&opened), opened.st_ino);
     if opened_id != identity {
@@ -122,14 +128,15 @@ pub(super) fn take_nested(
     }
     // The mounts are read again as the walk descends: a mount that
     // appeared after the preflight must not be followed.
-    let mounts = super::mounts::mount_identities()?;
-    if super::mounts::is_mount_identity(&mounts, opened_id) {
-        // The entry carries the identity of a tree the kernel mounted:
-        // it is a mount point under another name.
+    let mounts = super::mounts::mounts()?;
+    if super::mounts::is_mounted(&mounts, at, opened_id) {
+        // The entry is mounted content: it is the mount point itself,
+        // or it lies inside the mounted tree. An entry outside every
+        // mount point is the mounted tree's source, not the mount.
         return Err(format!(
             "file: refusing to remove {}: it holds the mount point {}",
             path.display(),
-            name.to_string_lossy()
+            at.display()
         ));
     }
     if super::floor::is_mount_point(held, super::floor::device(&opened)) {
@@ -147,7 +154,7 @@ pub(super) fn take_nested(
     let staging = super::attachment::take_entry(dir, name, identity, path)?;
     owned.insert(staging.as_bytes().to_vec());
     let removed = (|| {
-        remove_tree(child, path)?;
+        remove_tree(child, path, at)?;
         unlinkat(dir, staging.as_c_str(), AtFlags::REMOVEDIR).map_err(|error| error.to_string())
     })();
     // The name is given back when the removal failed: a name that is

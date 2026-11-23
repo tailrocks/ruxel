@@ -209,3 +209,40 @@ fn a_system_link_is_a_system_root() {
         assert!(error.contains("system root"), "{root}: {error}");
     }
 }
+
+#[test]
+fn a_root_under_another_spelling_is_still_a_root() {
+    // The spelling says nothing on a case-insensitive filesystem, so a
+    // root is also held by the device and the inode of the path itself.
+    let base = scratch("identity-root");
+    let real = base.join("real");
+    std::fs::create_dir(&real).unwrap();
+    let root = real.to_string_lossy().to_string();
+    let roots = [root.as_str()];
+    // The root under its own name is refused.
+    assert!(super::super::floor::refuse_root(&real, &roots).is_err());
+    // The same directory under another spelling (`..` stays written, so
+    // the string differs) is refused by identity.
+    let other = base.join("real").join("..").join("real");
+    assert_ne!(other.to_string_lossy(), root);
+    let error = super::super::floor::refuse_root(&other, &roots).unwrap_err();
+    assert!(error.contains("another spelling"), "{error}");
+    // A symlink to the root is a link, not the root: taking it takes
+    // nothing, so it passes.
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    super::super::floor::refuse_root(&link, &roots).unwrap();
+    // Another directory is neither spelling nor identity.
+    let elsewhere = base.join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    super::super::floor::refuse_root(&elsewhere, &roots).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_root_reached_through_dotdot_is_still_a_root() {
+    // `/..` is the filesystem root under another spelling: the string
+    // differs, but the identity is the root's own.
+    let error = super::super::floor::refuse_system_root(std::path::Path::new("/..")).unwrap_err();
+    assert!(error.contains("another spelling"), "{error}");
+}

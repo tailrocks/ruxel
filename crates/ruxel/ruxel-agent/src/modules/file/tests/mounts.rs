@@ -162,20 +162,40 @@ fn the_preflight_finds_a_mount_point_whose_name_is_not_text() {
 }
 
 #[test]
-fn the_preflight_finds_a_mount_point_reached_through_an_alias() {
-    // The mount point is named elsewhere: the tree is reached through an
-    // alias (`tool` for `/usr/bin/tool`), so the spelling of the path
-    // misses it and only the identity the entry carries tells.
-    let base = scratch("alias-mount");
+fn the_preflight_passes_a_bind_source_outside_every_mount_point() {
+    // The entry carries a mounted identity but stands outside every
+    // mount point: it is the bind source the mount shows elsewhere
+    // (`tool` for `/usr/bin/tool`), not the mount, so the walk may
+    // pass it.
+    let base = scratch("bind-source");
     let tool = base.join("tool");
     std::fs::create_dir(&tool).unwrap();
     let meta = std::fs::metadata(&tool).unwrap();
     let mounts = vec![mount("/usr/bin", "/usr/bin/tool", (meta.dev(), meta.ino()))];
     let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::mounts::preflight(&dir, &base, &mounts).unwrap();
+    assert!(tool.exists());
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn the_preflight_refuses_mounted_content_below_a_mount_point() {
+    // The entry carries the mounted identity and lies below the mount
+    // point: it is the mounted tree under another spelling, and the
+    // walk must not enter it.
+    let base = scratch("covered-mount");
+    let sub = base.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    let meta = std::fs::metadata(&sub).unwrap();
+    let mounts = vec![mount(
+        "/data",
+        base.to_str().unwrap(),
+        (meta.dev(), meta.ino()),
+    )];
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
     let error = super::super::mounts::preflight(&dir, &base, &mounts).unwrap_err();
     assert!(error.contains("mount point"), "{error}");
-    // The tree is untouched.
-    assert!(tool.exists());
+    assert!(sub.exists());
     std::fs::remove_dir_all(base).unwrap();
 }
 
@@ -191,27 +211,40 @@ fn a_listing_that_cannot_be_read_is_not_an_empty_listing() {
 }
 
 #[test]
-fn an_entry_that_carries_the_identity_of_a_mount_point_is_a_mount_point() {
+fn only_an_entry_a_mount_covers_is_mounted_content() {
+    use super::super::mounts::is_mounted;
+    // The mount point itself is the mount, whatever identity it carries.
+    let mounts = vec![mount("/data", "/mnt/x", (7, 11))];
+    assert!(is_mounted(&mounts, Path::new("/mnt/x"), (0, 0)));
+    // An entry below the point with the mounted identity is the mounted
+    // tree under another spelling.
+    assert!(is_mounted(&mounts, Path::new("/mnt/x/sub"), (7, 11)));
     // A bind mount keeps the identity of the tree it is mounted from:
-    // the device alone does not tell it apart.
-    assert!(super::super::mounts::is_mount_identity(&[(7, 11)], (7, 11)));
-    assert!(!super::super::mounts::is_mount_identity(
-        &[(7, 11)],
-        (7, 12)
-    ));
+    // the source carries the mounted identity while standing outside
+    // every mount point, so it is not mounted content. The same holds
+    // for a hard link to a bind-mounted file.
+    assert!(!is_mounted(&mounts, Path::new("/src"), (7, 11)));
+    assert!(!is_mounted(&mounts, Path::new("/src/file"), (7, 11)));
+    // Another identity under the point is an ordinary entry of the tree.
+    assert!(!is_mounted(&mounts, Path::new("/mnt/x/sub"), (7, 12)));
+    assert!(!is_mounted(&mounts, Path::new("/elsewhere"), (7, 12)));
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn the_mount_points_of_the_host_carry_the_identity_of_their_directories() {
-    let identities = super::super::mounts::mount_identities().unwrap();
+    let mounts = super::super::mounts::mounts().unwrap();
     assert!(
-        !identities.is_empty(),
+        !mounts.is_empty(),
         "the host holds the mount points it lists"
     );
-    for mount in super::super::mounts::mounts().unwrap() {
+    for mount in &mounts {
         let meta = std::fs::metadata(&mount.point).unwrap();
-        assert!(identities.contains(&(meta.dev(), meta.ino())), "{mount:?}");
+        assert_eq!((meta.dev(), meta.ino()), mount.identity, "{mount:?}");
+        assert!(
+            super::super::mounts::is_mounted(&mounts, &mount.point, mount.identity),
+            "{mount:?} is mounted content"
+        );
     }
 }
 

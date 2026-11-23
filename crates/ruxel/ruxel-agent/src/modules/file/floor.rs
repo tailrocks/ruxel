@@ -45,10 +45,24 @@ pub(super) const SYSTEM_ROOTS: [&str; 22] = [
 /// that points at a system root is a link, and taking a link takes
 /// nothing.
 pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
+    refuse_root(path, &SYSTEM_ROOTS)
+}
+
+/// A removal never takes one of the roots, however the path reaches
+/// it. The roots are held by spelling and by identity: the spelling
+/// says nothing on a case-insensitive filesystem (`/USERS` is
+/// `/Users`), while the identity is read without following the final
+/// symlink, since taking a symlink takes the link and nothing else.
+pub(super) fn refuse_root(path: &Path, roots: &[&str]) -> Result<(), String> {
     let written = written_path(path);
-    if SYSTEM_ROOTS.contains(&written.as_str()) {
+    if roots.contains(&written.as_str()) {
         return Err(format!(
             "file: refusing to remove {written}: a removal never takes a system root"
+        ));
+    }
+    if let Some(root) = root_by_identity(path, roots) {
+        return Err(format!(
+            "file: refusing to remove {written}: it is the system root {root} under another spelling"
         ));
     }
     // The system's own layout (`/var` -> `/private/var`, `/bin` ->
@@ -69,19 +83,19 @@ pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
             "file: refusing to remove {written}: it reaches the filesystem root"
         ));
     }
-    for root in SYSTEM_ROOTS {
+    for root in roots {
         // A root is held by the name it was written under and by the name
         // it resolves to: `/var` and `/private/var` are one root.
         let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| PathBuf::from(root));
         let canonical = canonical.to_string_lossy().to_string();
-        let roots = [root.to_string(), canonical];
-        let reached = roots.iter().any(|root| inside(&resolved, root));
+        let spellings = [root.to_string(), canonical];
+        let reached = spellings.iter().any(|root| inside(&resolved, root));
         if !reached {
             continue;
         }
         // The path was already inside the root as it was written: the
         // resolution did not take it there.
-        let already = roots.iter().any(|root| inside(&written_parent, root));
+        let already = spellings.iter().any(|root| inside(&written_parent, root));
         if already {
             continue;
         }
@@ -90,6 +104,20 @@ pub(super) fn refuse_system_root(path: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// The root the path names under another spelling, if any: the device
+/// and the inode of the path itself, read without following the final
+/// symlink. A path that is not there, or a root that is not either,
+/// simply does not match.
+fn root_by_identity(path: &Path, roots: &[&str]) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    roots.iter().find_map(|root| {
+        let root_meta = std::fs::symlink_metadata(root).ok()?;
+        (meta.dev() == root_meta.dev() && meta.ino() == root_meta.ino())
+            .then(|| (*root).to_string())
+    })
 }
 
 /// Whether a path is a root or lies inside it.
