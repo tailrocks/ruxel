@@ -39,6 +39,26 @@
       "prBodyNotes": [
         "Also set `rust-version` in Cargo.toml to the new minor version (for example \"1.100\")."
       ]
+    },
+    {
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "pkl",
+        "apple/pkl",
+        "aqua:apple/pkl"
+      ],
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "mise"
+      ],
+      "matchUpdateTypes": [
+        "lockFileMaintenance"
+      ],
+      "enabled": false
     }
   ]
 }
