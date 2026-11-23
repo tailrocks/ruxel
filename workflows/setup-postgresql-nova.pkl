@@ -102,10 +102,11 @@ local pgConf = new File {
 
 // The UUID a blkid capture learns on the host feeds the mount of the XFS
 // volume at /var/lib/postgresql, the composition the landed storage track
-// proves.
+// proves: the capture prints `UUID=<value>`, the static shape a literal
+// source spells, because the agent resolves only that form to a device.
 local lvmUuid = new Capture {
   title = "Learn the UUID of the data volume"
-  bash = "blkid -s UUID -o value /dev/data/data"
+  bash = "uuid=$(blkid -s UUID -o value /dev/data/data); printf 'UUID=%s' \"$uuid\""
 }
 
 local dataMount = new storage.Mount {
@@ -219,6 +220,9 @@ stages {
   }
   // pg_parquet 0.6.1 at its tag's commit (resolved at author time), built
   // with cargo-pgrx 0.19.3: each step runs once, when its marker is absent.
+  // The pgrx marker carries its version, so a host prepared by an older
+  // workflow (whose binary the bare path would mistake for this one) still
+  // installs instead of skipping into a stale toolchain.
   new linux.GitCheckout {
     repository = "https://github.com/CrunchyData/pg_parquet.git"
     path = "/opt/pg_parquet"
@@ -228,8 +232,9 @@ stages {
     bash = """
       eval "$(mise activate bash)"
       cargo install cargo-pgrx --version 0.19.3 --locked
+      touch /root/.cargo/bin/.cargo-pgrx-0.19.3
       """
-    creates = "/root/.cargo/bin/cargo-pgrx"
+    creates = "/root/.cargo/bin/.cargo-pgrx-0.19.3"
   }
   new Script {
     bash = """
