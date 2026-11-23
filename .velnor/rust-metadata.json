@@ -1,0 +1,1643 @@
+{
+  "roots": {
+    "Cargo.toml": {
+      "target_dir": "target",
+      "members": [
+        {
+          "name": "ruxel",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "clap",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive",
+                "color",
+                "env",
+                "help",
+                "usage"
+              ]
+            },
+            {
+              "name": "ruxel-config",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-config/Cargo.toml"
+            },
+            {
+              "name": "ruxel-engine",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-engine/Cargo.toml"
+            },
+            {
+              "name": "ruxel-guard",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-guard/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "preserve_order"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "rt-multi-thread",
+                "macros",
+                "io-util",
+                "time",
+                "process",
+                "signal",
+                "sync"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/ruxel/ruxel/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "ruxel",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "cli",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel/tests/cli.rs",
+              "requires_features": false
+            },
+            {
+              "name": "exit_classification",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel/tests/exit_classification.rs",
+              "requires_features": false
+            },
+            {
+              "name": "schema_export",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel/tests/schema_export.rs",
+              "requires_features": false
+            },
+            {
+              "name": "build-script-build",
+              "kinds": [
+                "build-script"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel/build.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "ruxel-config",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel-config/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "blake3",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "pklr",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "eval-core",
+                "native-io",
+                "miette-diagnostics"
+              ]
+            },
+            {
+              "name": "pklr",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "eval-core",
+                "native-io",
+                "miette-diagnostics"
+              ],
+              "optional": true,
+              "rename": "pklr-upstream"
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs"
+              ]
+            },
+            {
+              "name": "ruxel-guard",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-guard/Cargo.toml"
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "preserve_order"
+              ]
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml_edit",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "parse"
+              ]
+            },
+            {
+              "name": "libc",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_vendor = \"apple\")"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_config",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/ruxel/ruxel-config/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "check-deny-inputs",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/src/bin/check_deny_inputs.rs",
+              "requires_features": false
+            },
+            {
+              "name": "core_sysctl_file",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/core_sysctl_file.rs",
+              "requires_features": false
+            },
+            {
+              "name": "debconf_package_type",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/debconf_package_type.rs",
+              "requires_features": false
+            },
+            {
+              "name": "debconf_value_union",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/debconf_value_union.rs",
+              "requires_features": false
+            },
+            {
+              "name": "dual_evaluator",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/dual_evaluator.rs",
+              "requires_features": true
+            },
+            {
+              "name": "dual_evaluator_systemd",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/dual_evaluator_systemd.rs",
+              "requires_features": true
+            },
+            {
+              "name": "eval",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/eval.rs",
+              "requires_features": false
+            },
+            {
+              "name": "pklr_module_path_parent",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs",
+              "requires_features": false
+            },
+            {
+              "name": "render",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/render.rs",
+              "requires_features": false
+            },
+            {
+              "name": "schema",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/schema.rs",
+              "requires_features": false
+            },
+            {
+              "name": "schema_layers",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/schema_layers.rs",
+              "requires_features": false
+            },
+            {
+              "name": "single_schema",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/single_schema.rs",
+              "requires_features": false
+            },
+            {
+              "name": "systemd_names",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/systemd_names.rs",
+              "requires_features": false
+            },
+            {
+              "name": "verify_pkl_artifact",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/verify_pkl_artifact.rs",
+              "requires_features": false
+            },
+            {
+              "name": "verify_pkl_artifact_wiring",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/verify_pkl_artifact_wiring.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_apt",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_apt.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_apt_cross_stage",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_apt_cross_stage.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_apt_hold",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_apt_hold.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_copy",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_copy.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_linux",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_linux.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_secrets",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_secrets.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_systemd",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-config/tests/workflow_systemd.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "ruxel-guard",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel-guard/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "getrandom",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "ipnet",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "ipnet",
+              "kind": "build",
+              "manifest": null
+            },
+            {
+              "name": "exacl",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_os = \"macos\")"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_guard",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/ruxel/ruxel-guard/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "admit",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-guard/tests/admit.rs",
+              "requires_features": false
+            },
+            {
+              "name": "build-script-build",
+              "kinds": [
+                "build-script"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-guard/build.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "ruxel-engine",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel-engine/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "blake3",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "futures-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "indexmap",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "serde"
+              ]
+            },
+            {
+              "name": "openssh-sftp-client",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "percent-encoding",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "prost",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "ruxel-config",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-config/Cargo.toml"
+            },
+            {
+              "name": "ruxel-guard",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-guard/Cargo.toml"
+            },
+            {
+              "name": "ruxel-proto",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-proto/Cargo.toml"
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "preserve_order"
+              ]
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "rt-multi-thread",
+                "macros",
+                "io-util",
+                "time",
+                "process",
+                "signal",
+                "sync"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_engine",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/ruxel/ruxel-engine/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "transport",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-engine/tests/transport.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "ruxel-proto",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel-proto/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "prost",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "proptest",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "prost-build",
+              "kind": "build",
+              "manifest": null
+            },
+            {
+              "name": "protoc-bin-vendored",
+              "kind": "build",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_proto",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/ruxel/ruxel-proto/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "frame",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-proto/tests/frame.rs",
+              "requires_features": false
+            },
+            {
+              "name": "source_content",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-proto/tests/source_content.rs",
+              "requires_features": false
+            },
+            {
+              "name": "build-script-build",
+              "kinds": [
+                "build-script"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-proto/build.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "ruxel-agent",
+          "version": "0.1.0",
+          "manifest": "crates/ruxel/ruxel-agent/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "hmac",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "md-5",
+              "kind": "normal",
+              "manifest": null,
+              "rename": "md5"
+            },
+            {
+              "name": "pbkdf2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "regex-lite",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs"
+              ]
+            },
+            {
+              "name": "ruxel-proto",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-proto/Cargo.toml"
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "preserve_order"
+              ]
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rsblkid",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_os = \"linux\")"
+            },
+            {
+              "name": "rustix-linux-procfs",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_os = \"linux\")"
+            },
+            {
+              "name": "exacl",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_vendor = \"apple\")"
+            },
+            {
+              "name": "libc",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_vendor = \"apple\")"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-agent",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-agent/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "protocol",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-agent/tests/protocol.rs",
+              "requires_features": false
+            },
+            {
+              "name": "provider_dispatch",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel/ruxel-agent/tests/provider_dispatch.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-cache/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_cache",
+      "members": [
+        {
+          "name": "ruxel-acceptance-cache",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-cache/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "event",
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-cache",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-cache/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-control/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_control",
+      "members": [
+        {
+          "name": "ruxel-acceptance-control",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-control/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "process"
+              ],
+              "platform": "cfg(unix)"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-control",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-control/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-copy/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_copy",
+      "members": [
+        {
+          "name": "ruxel-acceptance-copy",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-copy/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "process"
+              ],
+              "platform": "cfg(unix)"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-copy",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-copy/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-files/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_files",
+      "members": [
+        {
+          "name": "ruxel-acceptance-files",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-files/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "event",
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-files",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-files/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-isolation/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_isolation",
+      "members": [
+        {
+          "name": "ruxel-acceptance-isolation",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-isolation/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "process"
+              ],
+              "platform": "cfg(unix)"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-isolation",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-isolation/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-manifest/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_manifest",
+      "members": [
+        {
+          "name": "ruxel-acceptance-manifest",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-manifest/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "event",
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "ruxel-config",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-config/Cargo.toml"
+            },
+            {
+              "name": "ruxel-engine",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-engine/Cargo.toml"
+            },
+            {
+              "name": "ruxel-proto",
+              "kind": "normal",
+              "manifest": "crates/ruxel/ruxel-proto/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "rt",
+                "time"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-manifest",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-manifest/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "postgres_session",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "tools/acceptance-manifest/examples/postgres_session.rs",
+              "requires_features": false
+            },
+            {
+              "name": "secret_dedup",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "tools/acceptance-manifest/examples/secret_dedup.rs",
+              "requires_features": false
+            },
+            {
+              "name": "secret_generation",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "tools/acceptance-manifest/examples/secret_generation.rs",
+              "requires_features": false
+            },
+            {
+              "name": "unsupported",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-manifest/tests/unsupported.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-plan/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_plan",
+      "members": [
+        {
+          "name": "ruxel-acceptance-plan",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-plan/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "regex",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "process"
+              ],
+              "platform": "cfg(unix)"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-plan",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-plan/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-pty/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_pty",
+      "members": [
+        {
+          "name": "ruxel-acceptance-pty",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-pty/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "event",
+                "fs",
+                "process",
+                "pty",
+                "termios"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_acceptance_pty",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "tools/acceptance-pty/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "ruxel-acceptance-pty",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-pty/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "orphan_output",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-pty/tests/orphan_output.rs",
+              "requires_features": false
+            },
+            {
+              "name": "partial_output",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-pty/tests/partial_output.rs",
+              "requires_features": false
+            },
+            {
+              "name": "terminal_anchor",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-pty/tests/terminal_anchor.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-restart-rootless/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_restart_rootless",
+      "members": [
+        {
+          "name": "ruxel-acceptance-restart-rootless",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-restart-rootless/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "event",
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-restart-rootless",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-restart-rootless/src/main.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-runtime/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_runtime",
+      "members": [
+        {
+          "name": "ruxel-acceptance-runtime",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-runtime/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "process"
+              ],
+              "platform": "cfg(unix)"
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel-acceptance-runtime",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-runtime/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "proxy_entry",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/acceptance-runtime/tests/proxy_entry.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/acceptance-xfs/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_acceptance_xfs",
+      "members": [
+        {
+          "name": "ruxel-acceptance-xfs",
+          "version": "0.1.0",
+          "manifest": "tools/acceptance-xfs/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "serde_json",
+              "kind": "dev",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_acceptance_xfs",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "tools/acceptance-xfs/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/control-flow-assertions/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_control_flow_assertions",
+      "members": [
+        {
+          "name": "ruxel-control-flow-assertions",
+          "version": "0.1.0",
+          "manifest": "tools/control-flow-assertions/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "anyhow",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "ruxel_control_flow_assertions",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "tools/control-flow-assertions/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    },
+    "tools/http-fixture/Cargo.toml": {
+      "target_dir": "target/velnor-roots/tools_http_fixture",
+      "members": [
+        {
+          "name": "ruxel-http-fixture",
+          "version": "0.1.0",
+          "manifest": "tools/http-fixture/Cargo.toml",
+          "dependencies": [],
+          "targets": [
+            {
+              "name": "ruxel_http_fixture",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "tools/http-fixture/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "ruxel-http-fixture",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/http-fixture/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "binary",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/http-fixture/tests/binary.rs",
+              "requires_features": false
+            },
+            {
+              "name": "deadline",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/http-fixture/tests/deadline.rs",
+              "requires_features": false
+            },
+            {
+              "name": "http",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "tools/http-fixture/tests/http.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "manifests": {
+    "Cargo.toml": "3c0c3129d9ab31f2044fbb92b3db004ebf98afb81b5f6422dc61fee83d33138b",
+    "crates/ruxel/ruxel-agent/Cargo.toml": "4162054fa9cb3502e944be05af5e77a5530311cd8f813ca819e4a76d47ee2f25",
+    "crates/ruxel/ruxel-config/Cargo.toml": "968ba45321d3bcd5981c26fabc49bf233558b61a6777084d5e72a03626d1a627",
+    "crates/ruxel/ruxel-engine/Cargo.toml": "fa0b2dd056a3b1434b5dd81ea43540cd463f8ec95c317abf2fda4cb442d26fd8",
+    "crates/ruxel/ruxel-guard/Cargo.toml": "6860a7146b348234b2ff9edc9808e9fbecc0250e94b8af5821eaf37017526e71",
+    "crates/ruxel/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
+    "crates/ruxel/ruxel/Cargo.toml": "958bcee539704880984357a6d2a5baccfa98c37f09f10fbc4e3fb0e6d4d57981",
+    "tools/acceptance-cache/Cargo.toml": "953be819d3ce68122b1c84ff89323b501d9a2febbb4ce039980c5147aae0ba56",
+    "tools/acceptance-control/Cargo.toml": "7e8a37ed96a26d2e0278a43e0e9006ce120b96b688981d4a9b005d4408e37419",
+    "tools/acceptance-copy/Cargo.toml": "cd61c5db083b8fc369e19fc7c23b3820fced1c18f1a89c61521c6ba9c4e8e30a",
+    "tools/acceptance-files/Cargo.toml": "67c85b69b2065314f7257d1c0e8e8a72d721c01129d1927ce712dc3f8406391d",
+    "tools/acceptance-isolation/Cargo.toml": "5657db3483aeb9929de729c186f3767b48431ed1d2159562e6a28d064eadbd3b",
+    "tools/acceptance-manifest/Cargo.toml": "991275ae66bc211842d38bd2497ce035372d9fd88a529cc198acd6f5d8acc61e",
+    "tools/acceptance-plan/Cargo.toml": "1b5beb87e35fbf0f584ca7d61e57ab72bc064e840c47865a7a609da6e1e1a27b",
+    "tools/acceptance-pty/Cargo.toml": "342977f0ad07100a10af5d174affc80e4f9705b4a7a77e0d83468849a921d62b",
+    "tools/acceptance-restart-rootless/Cargo.toml": "934608d763a826c3b8ffcb7be8754a36df3c6c2c52bffe775990fa85e61620a6",
+    "tools/acceptance-runtime/Cargo.toml": "665ea36d22a4d0e018faf7646d7f71538df9c194aa0d0dd8d2994d117ae751d2",
+    "tools/acceptance-xfs/Cargo.toml": "2e3af23683f3e46750a6a00dbbbbf91955b2fef8ff08f294a62154a2e12c1897",
+    "tools/control-flow-assertions/Cargo.toml": "78a047f0079ca2ec30d0ec35edbe0a133049f1ae28c992c0e0894149d187fda5",
+    "tools/http-fixture/Cargo.toml": "b8e1fd62c9f9901e809d14361169b006d039d92d580115d17b1a6c8e9ad6ca59"
+  },
+  "layout": "09c2573bd57354179d5f601765eb5f81f3a9c3a7eaf174e3f5c66293e04041e2"
+}

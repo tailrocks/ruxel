@@ -22,6 +22,25 @@ local hookSteps = new Mapping<String, Step> {
   ["rumdl"] = Builtins.rumdl
 }
 
+// Generated CI is written by velnor-gen from .velnor/rust-ci.toml. `velnor-gen
+// check` exits 1 when .github/workflows/rust-ci.yml or .velnor/rust-metadata.json
+// differs from what `velnor-gen generate` would write. CI runs the same task
+// (`check-generated-workflows`), so a bypassed hook is caught server-side.
+local generatedWorkflows = new Step {
+  glob = List(
+    ".velnor/**",
+    ".github/workflows/**",
+    "**/Cargo.toml",
+    "**/Cargo.lock",
+    "**/rust-toolchain.toml",
+    "mise.toml",
+    "mise.lock",
+    ".cargo/**",
+    ".config/nextest.toml"
+  )
+  check = "mise run check-generated-workflows"
+}
+
 local linters = (hookSteps) {
   ["cargo_check"] = (Builtins.cargo_check) {
     glob = null
@@ -57,10 +76,17 @@ hooks {
   ["pre-commit"] {
     fix = true
     stash = "git"
-    steps = hookSteps
+    steps = (hookSteps) {
+      ["generated-workflows"] = generatedWorkflows
+    }
   }
   ["pre-push"] {
-    steps = hookSteps
+    steps = (hookSteps) {
+      ["generated-workflows"] = (generatedWorkflows) {
+        // A push checks the tree at HEAD, not every pushed commit.
+        glob = null
+      }
+    }
   }
   ["fix"] {
     fix = true
