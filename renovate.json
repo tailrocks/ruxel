@@ -50,6 +50,15 @@
         "aqua:apple/pkl"
       ],
       "enabled": false
+    },
+    {
+      "matchManagers": [
+        "mise"
+      ],
+      "matchUpdateTypes": [
+        "lockFileMaintenance"
+      ],
+      "enabled": false
     }
   ]
 }
