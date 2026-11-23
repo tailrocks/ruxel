@@ -91,6 +91,26 @@ pub(in crate::modules::file) fn check_tree(
     path: &Path,
     at: &Path,
 ) -> Result<(), String> {
+    check_tree_with(dir, path, at, &super::super::mounts::mounts)
+}
+
+/// Walks the tree against the mounts the listing reads, refusing where
+/// the run refuses: an entry the mounts cover is mounted content even
+/// on the same device — a bind mount keeps the identity of the tree it
+/// is mounted from — and an entry on another device is a mount point.
+///
+/// The table is read again as the walk descends: a mount installed
+/// after the preflight must not be walked past, the way the run does
+/// not walk past it.
+pub(in crate::modules::file) fn check_tree_with(
+    dir: &OwnedFd,
+    path: &Path,
+    at: &Path,
+    listing: &super::super::mounts::Listing,
+) -> Result<(), String> {
+    // A table that cannot be read is a refusal, and not an empty table
+    // the check walks a tree with.
+    let mounts = listing().map_err(|error| super::super::mounts::mount_table_failed(&error))?;
     let held = fstat(dir).map_err(|error| error.to_string())?;
     let held = super::super::floor::device(&held);
     let entries = rustix::fs::Dir::read_from(dir).map_err(|error| error.to_string())?;
@@ -103,6 +123,14 @@ pub(in crate::modules::file) fn check_tree(
         let entry_at = super::super::mounts::child_path(at, name);
         let meta =
             statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| error.to_string())?;
+        let identity = (super::super::floor::device(&meta), meta.st_ino);
+        if super::super::mounts::is_mounted(&mounts, &entry_at, identity) {
+            return Err(format!(
+                "file: refusing to remove {}: it holds the mount point {}",
+                path.display(),
+                entry_at.display()
+            ));
+        }
         if super::super::floor::is_mount_point(held, super::super::floor::device(&meta)) {
             return Err(format!(
                 "file: refusing to remove {}: it holds the mount point {}",
@@ -120,7 +148,7 @@ pub(in crate::modules::file) fn check_tree(
             Mode::empty(),
         )
         .map_err(|error| error.to_string())?;
-        check_tree(&child, path, &entry_at)?;
+        check_tree_with(&child, path, &entry_at, listing)?;
     }
     Ok(())
 }

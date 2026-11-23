@@ -152,3 +152,32 @@ fn a_tree_emptied_on_the_last_round_is_gone_not_changed() {
     drop(dir);
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn a_same_device_bind_below_the_target_is_refused() {
+    // A same-filesystem bind mount keeps the identity of the tree it is
+    // mounted from, so the device walk alone waves it through: the check
+    // reads the mount table the way the run does and refuses where the
+    // run refuses.
+    let base = scratch("bind-same-device");
+    let sub = base.join("sub");
+    let nested = sub.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    let meta = std::fs::symlink_metadata(&nested).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let point = nested.clone();
+    let listing = move || {
+        Ok(vec![super::super::mounts::Mount {
+            root: PathBuf::from("/elsewhere"),
+            point: point.clone(),
+            identity,
+        }])
+    };
+    let error =
+        super::super::removal::recheck::check_tree_with(&dir, &base, &base, &listing)
+            .unwrap_err();
+    assert!(error.contains("mount point"), "{error}");
+    assert!(nested.exists(), "the mounted tree is untouched");
+    std::fs::remove_dir_all(base).unwrap();
+}
