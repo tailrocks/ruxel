@@ -1,0 +1,16 @@
+// expect: 'Report both': the message reads 2 captures; a notice reads at most one capture's output
+// A notice reads one report: two captures' outputs in one message would
+// print two reports as one, so each report gets its own notice.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local first = new Capture { title = "Read the first report"; bash = "cat /run/holla/first" }
+local second = new Capture { title = "Read the second report"; bash = "cat /run/holla/second" }
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  first
+  second
+  new Notice { title = "Report both"; message = "\(first.stdout()) \(second.stdout())" }
+} } }
+
+name = "invalid/notice-two-captures.pkl"

@@ -371,6 +371,19 @@ const EXAMPLES: &[&str] = &[
     "invalid/iptables-interface-name-bytes.pkl",
     "invalid/iptables-interface-name-whitespace.pkl",
     "invalid/absent-floor-system-alias.pkl",
+    // Track A: a branch checkout over SSH, a fetched installer, line
+    // entries composing in one file, and controller notices — each valid
+    // case and its refusals lower the same way under both evaluators.
+    "valid/git-branch.pkl",
+    "valid/fetched-script.pkl",
+    "valid/ensure-line.pkl",
+    "valid/notice.pkl",
+    "invalid/git-branch-sha.pkl",
+    "invalid/ensure-line-multiline.pkl",
+    "invalid/replace-line-empty-regexp.pkl",
+    "invalid/notice-secret.pkl",
+    "invalid/notice-two-captures.pkl",
+    "invalid/fetched-script-plain-http.pkl",
 ];
 
 /// The examples of the secret language evaluate the same way under both

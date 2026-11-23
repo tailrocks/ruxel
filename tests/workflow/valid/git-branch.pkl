@@ -1,0 +1,14 @@
+// A branch checkout over SSH: the repository is an SSH URL, the branch
+// floats, and the host key is accepted on first contact where the author
+// says so. Tags never float here: a tag is resolved to its SHA at author
+// time and pinned with GitCheckout. Host.user defaults to root.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+name = "valid/git-branch.pkl"
+
+stages { new Stage { title = "Holla checkout"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "git@git.example.test:holla/holla.git"; path = "/opt/holla"; branch = "release/1.2"; acceptHostKey = true }
+  new linux.GitBranch { title = "Follow the docs main branch"; repository = "ssh://git@git.example.test/holla/docs.git"; path = "/opt/holla-docs"; branch = "main" }
+} } }

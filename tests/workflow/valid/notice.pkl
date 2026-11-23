@@ -1,0 +1,21 @@
+// The Holla play in the catalogue language: the controller's terminal
+// description is read by a Capture delegated to the controller host (G1),
+// the steps run in explicit author order (G2), a capture-backed notice
+// renders the report and a static one always prints, and the 1001-priority
+// preference is composed as an ordinary step after the install it pins.
+// Host.user defaults to root, so no step names another account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Debian.pkl" as debian
+import "../inventory.pkl"
+
+local terminfo = new Capture { title = "Read the controller terminfo"; runOn = inventory.cp1; bash = "infocmp" }
+
+name = "valid/notice.pkl"
+
+stages { new Stage { title = "Holla"; hosts = inventory.workers; steps {
+  terminfo
+  new Notice { title = "Report the terminal"; message = "Controller terminfo:\n\(terminfo.stdout())" }
+  new Notice { title = "Holla is ready"; message = "Holla is ready" }
+  new debian.AptPackages { title = "Install holla"; names { "holla" } }
+  new debian.AptPreference { title = "Pin holla"; package = "holla"; pin = "version 1.2.3"; priority = 1001 }
+} } }

@@ -142,3 +142,50 @@ fn the_account_step_kind_is_user() -> Result {
     assert_eq!(account["register"], serde_json::json!(watched));
     Ok(())
 }
+
+/// A branch checkout lowers to the engine's git operation: the branch as
+/// the version, updated to the branch head on every apply, with the
+/// author's host-key choice. Never forced: a dirty tree fails the apply
+/// instead of being overwritten.
+#[test]
+fn branch_checkout_follows_the_branch_over_ssh() -> Result {
+    let config = valid("git-branch.pkl")?;
+    let checkouts: Vec<&serde_json::Value> = tasks(&config)
+        .into_iter()
+        .filter(|task| task["operation"]["kind"] == "git")
+        .collect();
+    assert_eq!(checkouts.len(), 2, "two checkouts: {checkouts:#?}");
+    let release = checkouts
+        .iter()
+        .find(|task| task["operation"]["dest"] == "/opt/holla")
+        .ok_or("no release checkout")?;
+    assert_eq!(release["name"], "Follow the holla release branch");
+    assert_eq!(
+        release["operation"]["repo"],
+        "git@git.example.test:holla/holla.git"
+    );
+    assert_eq!(release["operation"]["version"], "release/1.2");
+    assert_eq!(release["operation"]["update"], true);
+    assert_eq!(release["operation"]["accept_hostkey"], true);
+    assert!(
+        release["operation"]
+            .get("force")
+            .is_none_or(serde_json::Value::is_null),
+        "a branch checkout never force-resets: {release:#}"
+    );
+    let docs = checkouts
+        .iter()
+        .find(|task| task["operation"]["dest"] == "/opt/holla-docs")
+        .ok_or("no docs checkout")?;
+    assert_eq!(
+        docs["operation"]["repo"],
+        "ssh://git@git.example.test/holla/docs.git"
+    );
+    assert_eq!(docs["operation"]["version"], "main");
+    assert_eq!(docs["operation"]["update"], true);
+    assert_eq!(
+        docs["operation"]["accept_hostkey"], false,
+        "an unstated host-key choice stays off: {docs:#}"
+    );
+    Ok(())
+}
