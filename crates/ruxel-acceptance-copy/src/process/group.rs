@@ -26,7 +26,11 @@ pub(super) struct ProcessGroup {
 }
 impl ProcessGroup {
     pub(super) fn start() -> Result<Self> {
-        let mut command = Command::new(std::env::current_exe()?);
+        #[cfg(target_os = "linux")]
+        let exe = std::path::PathBuf::from("/proc/self/exe");
+        #[cfg(not(target_os = "linux"))]
+        let exe = std::env::current_exe().context("resolve current exe for sentinel")?;
+        let mut command = Command::new(&exe);
         #[cfg(not(test))]
         command.arg(SENTINEL_ARG);
         #[cfg(test)]

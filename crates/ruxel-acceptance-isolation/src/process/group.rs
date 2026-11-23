@@ -26,6 +26,13 @@ pub(super) struct ProcessGroup {
 }
 impl ProcessGroup {
     pub(super) fn start() -> Result<Self> {
+        // Spawn through /proc/self/exe on Linux: in archived nextest
+        // jobs the extracted test binary can be unlinked mid-run (its
+        // path gains a " (deleted)" suffix), but the kernel still
+        // serves the running image through /proc/self/exe.
+        #[cfg(target_os = "linux")]
+        let exe = std::path::PathBuf::from("/proc/self/exe");
+        #[cfg(not(target_os = "linux"))]
         let exe = std::env::current_exe().context("resolve current exe for sentinel")?;
         let mut command = Command::new(&exe);
         #[cfg(not(test))]
