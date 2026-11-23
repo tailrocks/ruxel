@@ -1,0 +1,17 @@
+// An empty database name quotes to the zero-length SQL identifier, which
+// the agent would fail only during apply.
+// expect: the database's name is empty; name the database
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Database {
+    name = ""
+    owner = "chainargos"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-database-empty-name.pkl"

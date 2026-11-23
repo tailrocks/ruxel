@@ -1,0 +1,19 @@
+// A table grant over ALL_IN_SCHEMA names the schema its tables are in.
+// expect: a table grant over ALL_IN_SCHEMA names its schema; without one the grant names no tables
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ALL_IN_SCHEMA" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-table-all-in-schema-no-schema.pkl"

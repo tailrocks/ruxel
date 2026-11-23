@@ -1,0 +1,21 @@
+// A table grant in no schema names no tables, which the agent would fail
+// only during apply.
+// expect: the grant's schema is empty; a table grant names its schema
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ledger" }
+    schema = ""
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-empty-schema.pkl"

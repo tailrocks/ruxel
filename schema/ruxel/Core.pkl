@@ -685,6 +685,14 @@ abstract class Action extends Step {
   environment: Mapping<EnvKey, Static|SecretText>
 }
 
+/// An account the agent may become: what `runuser` and `getent passwd`
+/// read. All-digit names are refused, since both treat a numeric key as a
+/// UID, so such a name could select a different account. `Postgres.pkl`
+/// carries the same constraint under the same name — keep them in sync;
+/// pklr cannot share typealiases across modules, and would silently drop
+/// the constraints of a dotted alias.
+typealias BecomeUser = Static(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")) && !matches(Regex("^[0-9]+$")))
+
 /// A change is reported unless the output contains this text. Set exactly
 /// one of the two fields.
 class UnlessOutput {
@@ -737,6 +745,10 @@ class Capture extends Step {
   /// Runs on this host, once for each host of the stage, instead of on the
   /// stage's hosts.
   runOn: Host? = null
+  /// The OS account the agent becomes to run the read, such as `postgres`
+  /// for a query over the Unix-domain socket, where peer authentication
+  /// checks the operating-system user. Unset runs as the connection user.
+  becomeUser: BecomeUser? = null
   retry: Retry = new Retry {}
 
   /// The script's standard output, for `File.content` of a later step.
@@ -744,7 +756,7 @@ class Capture extends Step {
 
   function id(): String =
     // Each field is prefixed with its length, so no text stands for two.
-    "capture_" + List(title ?? description(), if (runOn == null) "-" else "+" + runOn.name, "\(retry.attempts)", "\(retry.delay.toUnit("s").value.toInt())", bash)
+    "capture_" + List(title ?? description(), if (runOn == null) "-" else "+" + runOn.name, "\(retry.attempts)", "\(retry.delay.toUnit("s").value.toInt())", becomeUser ?? "-", bash)
       .map((v) -> "\(v.length):\(v)").join("").sha256.substring(0, 32)
 
   /// The generated plan line, used when there is no title.

@@ -1,0 +1,18 @@
+// A file built beside the renderer carries no unchecked line: the
+// lowering checks the carried rules with the renderer's own sentences, so
+// a local rule that takes an address is refused however the file was made.
+// expect: a local pg_hba rule matches Unix-domain sockets, so it takes no address
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.PgHbaFile {
+    path = "/etc/postgresql/18/main/pg_hba.conf"
+    rules {
+      new postgres.PgHbaRule { type = "local"; database = "all"; user = "all"; address = "127.0.0.1/32"; method = "peer" }
+    }
+  }
+} } }
+
+name = "invalid/postgres-pg-hba-direct-bad-rule.pkl"

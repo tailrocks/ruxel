@@ -1,0 +1,73 @@
+// PostgreSQL grants of every kind: a database grant names no objects and
+// grants on the database itself, schemas and tables name theirs, and default
+// privileges name the schema their future tables inherit them in. Privileges
+// read case-insensitively, so `select` and `SELECT` are one grant.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "database"
+    privs = "CONNECT"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "schema"
+    privs = "USAGE"
+    objs { "public"; "wallet_tags" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "select"
+    objs { "ALL_IN_SCHEMA" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ALL_IN_SCHEMA" }
+    schema = "wallet_tags"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = new Listing { "SELECT" }
+    schema = "wallet_tags"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+    becomeUser = "postgres"
+  }
+} } }
+
+name = "valid/postgres-privileges.pkl"

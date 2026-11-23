@@ -1,0 +1,22 @@
+// ALL_IN_SCHEMA names every table of the schema, so it rides alone: a
+// grant that mixes it with table names would grant the named tables or
+// fail on the sentinel, never the whole schema.
+// expect: ALL_IN_SCHEMA names every table of the schema, so it rides alone
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ALL_IN_SCHEMA"; "ledger" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-all-in-schema-mixed.pkl"

@@ -1,0 +1,14 @@
+// A notice reads a capture's output, never a static line.
+// expect: a notice reads exactly one capture's output; read the report's stdout()
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.PendingRestartNotice {
+    output = "nothing to report"
+    version = "18"
+  }
+} } }
+
+name = "invalid/postgres-notice-no-capture.pkl"

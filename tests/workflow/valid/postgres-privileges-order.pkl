@@ -1,0 +1,28 @@
+// The same schemas in another order are one grant: the agent reads a set,
+// so the spelling order carries no state and the two declarations merge.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "schema"
+    privs = "USAGE"
+    objs { "public"; "wallet_tags" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "schema"
+    privs = "USAGE"
+    objs { "wallet_tags"; "public" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "valid/postgres-privileges-order.pkl"

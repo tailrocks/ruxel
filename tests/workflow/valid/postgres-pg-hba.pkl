@@ -1,0 +1,23 @@
+// The rendered host-based access file: 1Password usernames fill its body at
+// 0640 owned by postgres, and the service reloads — never restarts — on it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Systemd.pkl" as systemd
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+local processorUsername = core.onePassword("ChainArgos", "ChainArgos bitcoin@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+
+local pgHba = postgres.renderPgHba(new Listing {
+  new postgres.PgHbaRule { type = "local"; database = "all"; user = "postgres"; method = "peer" }
+  new postgres.PgHbaRule { type = "host"; database = "redshift"; user = "chainargos"; address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "bitcoin"; user = postgres.secretName(processorUsername); address = "0.0.0.0/0"; method = "scram-sha-256" }
+  new postgres.PgHbaRule { type = "host"; database = "all"; user = "all"; address = "0.0.0.0/0"; method = "reject" }
+}, "/etc/postgresql/18/main/pg_hba.conf")
+
+stages { new Stage { title = "PostgreSQL reads its configuration without a restart"; hosts = inventory.workers; steps {
+  pgHba
+  new systemd.Service { name = "postgresql@18-main"; enabled = true; running = true; reloadOnChangeOf { pgHba } }
+} } }
+
+name = "valid/postgres-pg-hba.pkl"

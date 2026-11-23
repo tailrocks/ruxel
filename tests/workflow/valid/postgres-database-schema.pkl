@@ -1,0 +1,34 @@
+// PostgreSQL databases and a schema: static names, a static owner, and an
+// owner the secret store holds. Every step names the login that reaches the
+// cluster on its port.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+local processorUsername = core.onePassword("ChainArgos", "ChainArgos bitcoin@postgresql-nova PostgreSQL", "username", new core.OnePasswordOptions {})
+
+stages { new Stage { title = "Chain databases belong to their roles"; hosts = inventory.workers; steps {
+  new postgres.Database {
+    name = "redshift"
+    owner = "chainargos"
+    loginUser = "postgres"
+    loginDb = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Database {
+    name = "bitcoin"
+    owner = postgres.secretName(processorUsername)
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Schema {
+    name = "wallet_tags"
+    loginDb = "redshift"
+    owner = "chainargos"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "valid/postgres-database-schema.pkl"

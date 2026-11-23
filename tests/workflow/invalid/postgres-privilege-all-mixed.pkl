@@ -1,0 +1,22 @@
+// ALL grants every privilege of the kind, so it rides alone: the grammar
+// makes it an alternative to a privilege list, not an element of one, and
+// the agent would fail the grant only during apply.
+// expect: ALL grants every table privilege, so it rides alone
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "ALL, SELECT"
+    objs { "ALL_IN_SCHEMA" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-all-mixed.pkl"

@@ -1,0 +1,18 @@
+// An empty role name quotes to the zero-length SQL identifier, which the
+// agent would fail only during apply.
+// expect: the role's name is empty; name the role
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = ""
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-role-empty-name.pkl"

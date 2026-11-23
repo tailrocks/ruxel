@@ -1,0 +1,20 @@
+// A granted object that is empty names nothing, which the agent would
+// fail only during apply.
+// expect: a granted object is empty; name every object the grant is on
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "schema"
+    privs = "USAGE"
+    objs { "public"; "" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-empty-objs.pkl"
