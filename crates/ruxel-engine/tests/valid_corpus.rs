@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 fn corpus_root() -> PathBuf {
     Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../tests/workflow"
+        "/../../tests/workflow"
     ))
     .to_path_buf()
 }
