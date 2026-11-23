@@ -1,12 +1,11 @@
 [workspace]
 members = [
-    "crates/ruxel/ruxel",
-    "crates/ruxel/ruxel-agent",
-    "crates/ruxel/ruxel-config",
-    "crates/ruxel/ruxel-engine",
-    "crates/ruxel/ruxel-guard",
-
-    "crates/ruxel/ruxel-proto",
+    "crates/ruxel",
+    "crates/ruxel-agent",
+    "crates/ruxel-config",
+    "crates/ruxel-engine",
+    "crates/ruxel-guard",
+    "crates/ruxel-proto",
 ]
 resolver = "3"
 
@@ -19,9 +18,9 @@ repository = "https://github.com/tailrocks/ruxel"
 homepage = "https://github.com/tailrocks/ruxel"
 
 [workspace.dependencies]
-ruxel-config = { path = "crates/ruxel/ruxel-config", version = "0.1.0" }
-ruxel-proto = { path = "crates/ruxel/ruxel-proto", version = "0.1.0" }
-ruxel-guard = { path = "crates/ruxel/ruxel-guard", version = "0.1.0" }
+ruxel-config = { path = "crates/ruxel-config", version = "0.1.0" }
+ruxel-proto = { path = "crates/ruxel-proto", version = "0.1.0" }
+ruxel-guard = { path = "crates/ruxel-guard", version = "0.1.0" }
 
 base64 = "0.22"
 percent-encoding = "2"
