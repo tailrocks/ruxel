@@ -1,0 +1,14 @@
+// expect-pklr: expected ChainName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// `RETURN` is a builtin standard target too: a chain by that name never
+// survives `xtables_find_target`, so a rule for it is refused at apply
+// and must be refused here.
+name = "invalid/iptables-chain-name-return.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "RETURN"; jump = "DROP" }
+} } }

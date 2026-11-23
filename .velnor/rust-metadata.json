@@ -379,6 +379,16 @@
               "requires_features": false
             },
             {
+              "name": "workflow_absent",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_absent.rs",
+              "requires_features": false
+            },
+            {
               "name": "workflow_apt",
               "kinds": [
                 "test"
@@ -651,6 +661,16 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel-engine/tests/transport.rs",
+              "requires_features": false
+            },
+            {
+              "name": "valid_corpus",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-engine/tests/valid_corpus.rs",
               "requires_features": false
             }
           ]
@@ -1413,7 +1433,8 @@
               "kind": "normal",
               "manifest": null,
               "features": [
-                "fs"
+                "fs",
+                "process"
               ]
             },
             {
@@ -1611,7 +1632,7 @@
     "crates/ruxel-acceptance-restart-rootless/Cargo.toml": "8af0cc5c20fad8d68372a29660d70830f1ce8899f8bf395d1e99e15f9a635c2f",
     "crates/ruxel-acceptance-runtime/Cargo.toml": "26f2d86a775ab8a04cd52cf24833610530e3a5c5574b2f058a931c80f4ba62e5",
     "crates/ruxel-acceptance-xfs/Cargo.toml": "22d585e7fa64684c92b372e2bc5682904311b0d1bf3369d18c0926bab700d4e2",
-    "crates/ruxel-agent/Cargo.toml": "4162054fa9cb3502e944be05af5e77a5530311cd8f813ca819e4a76d47ee2f25",
+    "crates/ruxel-agent/Cargo.toml": "76424627cc49cb4e34651123efd71e2c69a6f0ed46babf867965e6992595ebce",
     "crates/ruxel-config/Cargo.toml": "6b041475c3efc318c5bfc6b54918eab6494a07c82de83d4beac6232ab59078ff",
     "crates/ruxel-control-flow-assertions/Cargo.toml": "9ceaaaa2c6975f2f8f4038c56fae58154a94e304382b3e771bfed3f6e87bcc6f",
     "crates/ruxel-engine/Cargo.toml": "fa0b2dd056a3b1434b5dd81ea43540cd463f8ec95c317abf2fda4cb442d26fd8",
@@ -1620,5 +1641,5 @@
     "crates/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
     "crates/ruxel/Cargo.toml": "958bcee539704880984357a6d2a5baccfa98c37f09f10fbc4e3fb0e6d4d57981"
   },
-  "layout": "117137cfe7bfccdd11caff73786f78c06508adf0f30536a02d2b30adc43fc07c"
+  "layout": "32315fc79173204e0846f9475c19d1dbf5685b8f0bf3ef1592ffac1c3f96e7a7"
 }

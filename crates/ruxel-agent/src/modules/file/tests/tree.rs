@@ -1,0 +1,182 @@
+use std::ffi::CString;
+use std::os::fd::OwnedFd;
+use std::os::unix::fs::MetadataExt;
+use std::path::PathBuf;
+
+fn scratch(tag: &str) -> PathBuf {
+    let base = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(format!("ruxel-file-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    base
+}
+
+#[test]
+fn a_nested_directory_that_was_replaced_is_not_emptied() {
+    let base = scratch("replaced-nested");
+    let dir = base.join("sub");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("file"), b"content").unwrap();
+    let meta = std::fs::symlink_metadata(&dir).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    let parent = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let child = OwnedFd::from(std::fs::File::open(&dir).unwrap());
+    // The directory is renamed away, and a replacement takes its name.
+    std::fs::rename(&dir, base.join("moved")).unwrap();
+    std::fs::create_dir(&dir).unwrap();
+    // The name does not hold the directory that was opened: the removal
+    // must refuse, and the tree of the moved directory stays.
+    let error = super::super::tree::take_nested(
+        &parent,
+        &CString::new("sub").unwrap(),
+        &child,
+        identity,
+        &dir,
+        &dir,
+        &mut std::collections::HashSet::new(),
+    )
+    .unwrap_err();
+    assert!(error.contains("replaced"), "{error}");
+    // The replacement is back under the name it took, and the tree that
+    // was read is where it was.
+    assert!(dir.exists());
+    assert_eq!(std::fs::read(base.join("moved/file")).unwrap(), b"content");
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn an_entry_with_the_staging_prefix_is_removed_like_any_other() {
+    let base = scratch("staging-prefix");
+    // The prefix reserves nothing: an entry a user named this way is an
+    // entry like any other, and the walk takes it with the tree.
+    std::fs::write(base.join(".ruxel-remove-1-1"), b"content").unwrap();
+    std::fs::write(base.join("other"), b"content").unwrap();
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
+    assert!(
+        !base.join(".ruxel-remove-1-1").exists(),
+        "the prefixed entry is gone"
+    );
+    assert!(!base.join("other").exists(), "the other entry is gone");
+    drop(dir);
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn a_child_created_after_the_snapshot_is_taken_too() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let base = scratch("late-child");
+    let sub = base.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("file"), b"content").unwrap();
+    let meta = std::fs::symlink_metadata(&base).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    // The writer holds a descriptor and adds a child after the walk read
+    // the names: the walk reads the directory again and takes it too.
+    // The hook is scoped to the watched directory and fires once, so the
+    // walks of other tests never trip it.
+    let fired = Arc::new(AtomicBool::new(false));
+    let armed = fired.clone();
+    let watched = base.clone();
+    super::super::tree::AFTER_SNAPSHOT
+        .lock()
+        .unwrap()
+        .push(Arc::new(move |dir: &OwnedFd, _path: &std::path::Path| {
+            let held = rustix::fs::fstat(dir).unwrap();
+            if (super::super::floor::device(&held), held.st_ino) != identity {
+                return;
+            }
+            if armed.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            std::fs::write(watched.join("late"), b"late").unwrap();
+        }));
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
+    assert!(fired.load(Ordering::SeqCst), "the hook fired");
+    assert!(!base.join("late").exists(), "the late child is gone");
+    assert!(!sub.exists(), "the snapshotted tree is gone");
+    drop(dir);
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn a_tree_emptied_on_the_last_round_is_gone_not_changed() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let base = scratch("last-round-empty");
+    std::fs::write(base.join("seed"), b"content").unwrap();
+    let meta = std::fs::symlink_metadata(&base).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    // The writer adds a child after each of the first seven snapshots
+    // and then stops: the eighth round takes the last entry, and the
+    // directory is empty when the rounds run out. The removal must read
+    // once more and report the empty tree as gone, not roll it back as
+    // changed during the operation.
+    let fired = Arc::new(AtomicUsize::new(0));
+    let armed = fired.clone();
+    let watched = base.clone();
+    super::super::tree::AFTER_SNAPSHOT
+        .lock()
+        .unwrap()
+        .push(Arc::new(move |dir: &OwnedFd, _path: &std::path::Path| {
+            let held = rustix::fs::fstat(dir).unwrap();
+            if (super::super::floor::device(&held), held.st_ino) != identity {
+                return;
+            }
+            if armed.fetch_add(1, Ordering::SeqCst) >= 7 {
+                return;
+            }
+            std::fs::write(
+                watched.join(format!("late-{}", armed.load(Ordering::SeqCst))),
+                b"late",
+            )
+            .unwrap();
+        }));
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    super::super::tree::remove_tree(&dir, &base, &base).unwrap();
+    assert_eq!(
+        fired.load(Ordering::SeqCst),
+        8,
+        "the hook fired every round"
+    );
+    assert!(
+        std::fs::read_dir(&base).unwrap().next().is_none(),
+        "the emptied directory holds nothing"
+    );
+    drop(dir);
+    std::fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn a_same_device_bind_below_the_target_is_refused() {
+    // A same-filesystem bind mount keeps the identity of the tree it is
+    // mounted from, so the device walk alone waves it through: the check
+    // reads the mount table the way the run does and refuses where the
+    // run refuses.
+    let base = scratch("bind-same-device");
+    let sub = base.join("sub");
+    let nested = sub.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    let meta = std::fs::symlink_metadata(&nested).unwrap();
+    let identity = (meta.dev(), meta.ino());
+    let dir = OwnedFd::from(std::fs::File::open(&base).unwrap());
+    let point = nested.clone();
+    let listing = move || {
+        Ok(vec![super::super::mounts::Mount {
+            root: PathBuf::from("/elsewhere"),
+            point: point.clone(),
+            identity,
+        }])
+    };
+    let error =
+        super::super::removal::recheck::check_tree_with(&dir, &base, &base, &listing).unwrap_err();
+    assert!(error.contains("mount point"), "{error}");
+    assert!(nested.exists(), "the mounted tree is untouched");
+    std::fs::remove_dir_all(base).unwrap();
+}

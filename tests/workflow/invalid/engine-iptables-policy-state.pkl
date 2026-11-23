@@ -1,0 +1,9 @@
+// expect-pklr: property 'policy' expected
+// expect-pkl: Type constraint
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+// A chain policy is not a rule: the agent's policy branch never looks at
+// the state, so a policy with a state would apply the policy where the
+// author asked for a removal. The Engine surface refuses the pair at
+// admission, as the Rust shape validation does.
+output { value = new Ruxel.Firewall { chain = "INPUT"; policy = "DROP"; state = "absent" } }

@@ -1,0 +1,13 @@
+// expect-pklr: expected InterfaceName
+// expect-pkl: Type constraint
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+// The kernel refuses the exact names `.` and `..` as interface names, so
+// a rule that matches on one can never match and must be refused here.
+name = "invalid/iptables-interface-name-dot.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.IptablesRule { chain = "OUTPUT"; outInterface = "."; jump = "DROP" }
+} } }
