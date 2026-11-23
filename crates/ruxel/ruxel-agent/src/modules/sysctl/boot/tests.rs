@@ -141,4 +141,3 @@ fn a_per_entry_scan_error_refuses_with_the_directory_named() {
         "the refusal must carry the failure: {error}"
     );
 }
-
