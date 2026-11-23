@@ -5,11 +5,23 @@
 /// A line-editing target that stays a link: `read_to_string` follows the
 /// link into its target, but an atomic publish would replace the link's
 /// own inode, silently converting a linked configuration path into a
-/// regular file while leaving the intended target unchanged. Edit the
-/// resolved target instead, so the link survives. A path that resolves to
-/// nothing keeps its spelling and fails where it always did.
-pub(crate) fn resolve_edit_target(path: &str) -> std::path::PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path))
+/// regular file while leaving the intended target unchanged. Editing
+/// through the link instead would let anyone who can plant a link where
+/// the entry points redirect a privileged write into an arbitrary file.
+/// Neither silent outcome is acceptable, so a final link is refused
+/// loudly: point the entry at the target file itself. Links in parent
+/// directories keep the kernel's resolution, as before.
+pub(crate) fn refuse_final_symlink<'a>(
+    module: &str,
+    path: &'a str,
+) -> Result<&'a std::path::Path, String> {
+    let target = std::path::Path::new(path);
+    if std::fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(format!(
+            "{module}: refusing to edit through the symlink at {path}; point the entry at the target file"
+        ));
+    }
+    Ok(target)
 }
 
 /// A regular expression that can match without consuming text: under

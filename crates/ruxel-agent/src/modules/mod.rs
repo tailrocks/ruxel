@@ -276,7 +276,7 @@ pub(crate) fn shutdown() {
 }
 
 pub(super) use atomic::{write_atomic, write_atomic_with};
-pub(super) use lineedit::{reject_empty_span, resolve_edit_target};
+pub(super) use lineedit::{refuse_final_symlink, reject_empty_span};
 
 pub(super) fn reject_newlines(module: &str, fields: &[(&str, &str)]) -> Result<(), String> {
     for (name, value) in fields {

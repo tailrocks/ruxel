@@ -4,7 +4,7 @@
 )]
 
 use super::{
-    ExecContext, params_object, reject_empty_span, resolve_edit_target, str_param, write_atomic,
+    ExecContext, params_object, refuse_final_symlink, reject_empty_span, str_param, write_atomic,
 };
 use regex_lite::Regex;
 use serde_json::{Value, json};
@@ -23,12 +23,12 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
         None => None,
     };
 
-    let target = resolve_edit_target(path);
-    let current = std::fs::read_to_string(&target).map_err(|e| format!("read {path}: {e}"))?;
+    let target = refuse_final_symlink("lineinfile", path)?;
+    let current = std::fs::read_to_string(target).map_err(|e| format!("read {path}: {e}"))?;
     let (content, changed) = rewrite_lines(&current, state, line, regexp.as_ref())?;
 
     if changed && !ctx.check_mode {
-        write_atomic(&target, content.as_bytes())?;
+        write_atomic(target, content.as_bytes())?;
     }
 
     let mut result = json!({"changed": changed, "failed": false, "msg": if changed { "line changed" } else { "" }});
@@ -69,14 +69,30 @@ fn rewrite_lines(
                     changed = lines.len() != before;
                 }
             } else if let Some(re) = regexp {
-                let last_match = lines.iter().rposition(|l| re.is_match(l));
-                if let Some(idx) = last_match {
-                    lines[idx] = line.to_string();
-                    changed = true;
-                } else {
-                    lines.push(line.to_string());
-                    changed = true;
+                // The line is absent: rewrite the last match in place, or
+                // append when nothing matches — and drop every other
+                // match, so one apply establishes the entry instead of
+                // leaving a stale line for the next one to remove.
+                match lines.iter().rposition(|l| re.is_match(l)) {
+                    Some(idx) => {
+                        lines[idx] = line.to_string();
+                    }
+                    None => {
+                        lines.push(line.to_string());
+                    }
                 }
+                let mut seen = false;
+                lines.retain(|l| {
+                    if l == line && !seen {
+                        seen = true;
+                        true
+                    } else {
+                        !re.is_match(l)
+                    }
+                });
+                // The rewrite or the append changes the file; dropping
+                // any other match only adds to it.
+                changed = true;
             } else {
                 lines.push(line.to_string());
                 changed = true;
@@ -142,6 +158,19 @@ mod tests {
     }
 
     #[test]
+    fn absent_line_converges_in_one_apply() {
+        let re = Regex::new("^key=").unwrap();
+        let (next, changed) =
+            rewrite_lines("key=1\nkey=2\n", "present", Some("key=3"), Some(&re)).unwrap();
+        assert_eq!(next, "key=3\n");
+        assert!(changed);
+        assert_eq!(
+            rewrite_lines(&next, "present", Some("key=3"), Some(&re)).unwrap(),
+            (next.clone(), false)
+        );
+    }
+
+    #[test]
     fn crlf_files_keep_crlf_endings() {
         let re = Regex::new("^key=").unwrap();
         let (next, changed) = rewrite_lines("a\r\nb\r\n", "present", Some("c"), Some(&re)).unwrap();
@@ -171,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn edits_through_a_symlink_keep_the_link() {
+    fn final_symlinks_are_refused_loudly() {
         use std::os::unix::fs::symlink;
         let target =
             std::env::temp_dir().join(format!("ruxel-lineinfile-target-{}", std::process::id()));
@@ -187,13 +216,13 @@ mod tests {
             environment: vec![],
             become_user: None,
         };
-        let changed = run(
+        let error = run(
             &json!({"path": link, "regexp": "^key=", "line": "key=new"}),
             &context,
         )
-        .unwrap();
-        assert_eq!(changed["changed"], true);
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "key=new\n");
+        .unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "key=old\n");
         assert!(
             std::fs::symlink_metadata(&link)
                 .unwrap()
@@ -211,7 +240,7 @@ mod tests {
             rewrite_lines("key=1\nother\nkey=2\n", "present", Some("key=3"), Some(&re))
                 .unwrap()
                 .0,
-            "key=1\nother\nkey=3\n"
+            "other\nkey=3\n"
         );
         assert_eq!(
             rewrite_lines("other\n", "present", Some("key=3"), Some(&re))

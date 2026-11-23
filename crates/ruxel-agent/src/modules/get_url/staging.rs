@@ -58,7 +58,10 @@ impl Download {
                 openat(
                     &directory,
                     "payload",
-                    OFlags::WRONLY
+                    // Read-write: the download converges the destination,
+                    // so the runner reads the staged bytes back to compare
+                    // them with what is there before publishing.
+                    OFlags::RDWR
                         | OFlags::CREATE
                         | OFlags::EXCL
                         | OFlags::NOFOLLOW
@@ -94,7 +97,7 @@ impl Download {
             openat(
                 &staged.directory,
                 "payload",
-                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 Mode::from_raw_mode(0o666),
             )
             .map_err(|e| e.to_string())?,
@@ -108,6 +111,20 @@ impl Download {
             .ok_or("get_url: destination filename required")?;
         self.file.sync_all().map_err(|e| e.to_string())?;
         publish_noreplace(&self.directory, &self.parent, name)
+    }
+
+    /// Atomically swap the staged payload over an existing destination:
+    /// the download converges the destination, so changed upstream bytes
+    /// replace what is there instead of leaving stale content behind.
+    /// Like the publish, the swap is bound to the opened descriptors, so
+    /// a renamed parent cannot redirect it.
+    pub(super) fn replace(&self, dest: &Path) -> Result<(), String> {
+        let name = dest
+            .file_name()
+            .ok_or("get_url: destination filename required")?;
+        self.file.sync_all().map_err(|e| e.to_string())?;
+        rustix::fs::renameat(&self.directory, "payload", &self.parent, name)
+            .map_err(|e| format!("get_url: cannot replace destination: {e}"))
     }
 }
 
