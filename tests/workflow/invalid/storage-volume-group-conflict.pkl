@@ -1,0 +1,14 @@
+// expect: 'Create the nova volume group' (step 1) and 'Recreate the nova volume group' (step 2) both manage the volume group ruxel_nova with different settings; a stage declares one state for each thing, so put the second state in a later stage
+// One volume group per name: a second declaration for the same group with
+// another device set is another state for it, so the two conflict. An
+// exact repeat is the same step and merges.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+name = "invalid/storage-volume-group-conflict.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new storage.VolumeGroup { title = "Create the nova volume group"; vg = "ruxel_nova"; devices { "/dev/disk/by-id/ruxel-nova-disk-1" } }
+  new storage.VolumeGroup { title = "Recreate the nova volume group"; vg = "ruxel_nova"; devices { "/dev/disk/by-id/ruxel-nova-disk-1"; "/dev/disk/by-id/ruxel-nova-disk-2" } }
+} } }

@@ -1,0 +1,17 @@
+// The nova mount play in the catalogue language: a blkid capture learns the
+// UUID of the formatted volume on the host (G8), and the mount carries its
+// stdout as the source, so the UUID is learned and used in the same run.
+// The capture prints `UUID=<value>` with no trailing newline, which is the
+// static shape a literal source spells.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+local uuid = new Capture { title = "Read the nova volume UUID"; bash = "uuid=$(blkid -s UUID -o value /dev/ruxel_nova/data); printf 'UUID=%s' \"$uuid\"" }
+
+name = "valid/storage-nova-mount.pkl"
+
+stages { new Stage { title = "nova mount"; hosts = inventory.workers; steps {
+  uuid
+  new storage.Mount { title = "Mount the nova volume"; src = uuid.stdout(); path = "/var/lib/postgresql"; opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k" }
+} } }

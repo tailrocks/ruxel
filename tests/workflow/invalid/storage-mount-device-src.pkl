@@ -1,0 +1,14 @@
+// expect: 'Mount the device path': source "/dev/ruxel_nova/data" is not a UUID= source; name the device as UUID=<value>, or carry a blkid capture's stdout() that prints one
+// A mount names the formatted volume by its UUID, never by a device path:
+// the path is what the volume group and the device names spell today, and
+// a re-created volume would mount the wrong device. The UUID is learned on
+// the host by a blkid capture in the same stage.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Storage.pkl" as storage
+import "../inventory.pkl"
+
+name = "invalid/storage-mount-device-src.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new storage.Mount { title = "Mount the device path"; src = "/dev/ruxel_nova/data"; path = "/var/lib/postgresql" }
+} } }

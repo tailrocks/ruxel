@@ -1,0 +1,125 @@
+// Fixture nova drives: the `init-postgresql-nova-drives` play plus the
+// mount the `setup-postgresql-nova` play owns, as one ordered play.
+//
+// G6: the tasks run Stat and Assert on the disks first, then the volume
+// group, the logical volume, the filesystem and the mount, in that order.
+// G7: the disks are resolved by a readlink task. G8: the mount source is
+// the UUID a blkid task learned on the host, used in the same run. The
+// packages the storage operations need (`lvm2`, `xfsprogs`) are composed
+// as an ordinary package task first, not installed behind the play.
+import "modulepath:/ruxel/engine/Engine.pkl" as Ruxel
+
+function literal(v: Ruxel.Scalar): Ruxel.Literal = new { value = v }
+function ref(p: Listing<String>): Ruxel.Ref = new { path = p }
+function call(n: String, a: Listing<Ruxel.Expr>): Ruxel.Call = new { `function` = n; args = a }
+
+output {
+  value = new Ruxel.Config {
+    workflow = "testdata/workloads/pr66/storage-nova.pkl"
+    inventory {
+      hosts { ["fixture"] { address = "127.0.0.1" } }
+      groups { ["storage"] { hosts { "fixture" } } }
+    }
+    plays {
+      new {
+        name = "Fixture nova storage"
+        targets { "storage" }
+        vars {
+          ["nova_disks"] = new Ruxel.ListExpr { items { new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-nova-disk-1" }; new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-nova-disk-2" }; new Ruxel.Literal { value = "/dev/disk/by-id/ruxel-nova-disk-3" } } }
+        }
+        tasks {
+          new {
+            name = "Install the nova storage tools"
+            operation = new Ruxel.Apt { name = new Listing { "lvm2"; "xfsprogs" }; state = "present"; update_cache = true }
+          }
+          new {
+            name = "Resolve nova disks"
+            operation = new Ruxel.Command {
+              argv = new Ruxel.ListExpr {
+                items {
+                  new Ruxel.Literal { value = "readlink" }
+                  new Ruxel.Literal { value = "-e" }
+                  new Ruxel.Ref { path { "item" } }
+                }
+              }
+            }
+            `loop` = new Ruxel.Ref { path { "vars"; "nova_disks" } }
+            register = "nova_disk_devices"
+            changedWhen = new Ruxel.Literal { value = false }
+            checkMode = false
+          }
+          new {
+            name = "Stat nova disks"
+            operation = new Ruxel.Stat { path = new Ruxel.Ref { path { "item" } }; follow = true }
+            `loop` = new Ruxel.Ref { path { "vars"; "nova_disks" } }
+            register = "nova_disk_stats"
+          }
+          new {
+            name = "Assert nova disks exist"
+            operation = new Ruxel.Assert {
+              that = call("and", new Listing {
+                call("eq", new Listing { call("length", new Listing { ref(new Listing { "results"; "nova_disk_stats"; "results" }) }); literal(3) })
+                call("and", new Listing {
+                  ref(new Listing { "results"; "nova_disk_stats"; "results"; "0"; "stat"; "exists" })
+                  call("and", new Listing {
+                    ref(new Listing { "results"; "nova_disk_stats"; "results"; "1"; "stat"; "exists" })
+                    ref(new Listing { "results"; "nova_disk_stats"; "results"; "2"; "stat"; "exists" })
+                  })
+                })
+              })
+            }
+          }
+          new {
+            name = "Create nova volume group"
+            operation = new Ruxel.VolumeGroup {
+              vg = "ruxel_nova"
+              pvs = new Ruxel.Call {
+                `function` = "mapAttribute"
+                args {
+                  new Ruxel.Ref { path { "results"; "nova_disk_devices"; "results" } }
+                  new Ruxel.Literal { value = "stdout" }
+                }
+              }
+            }
+          }
+          new {
+            name = "Create nova logical volume"
+            operation = new Ruxel.LogicalVolume { lv = "data"; vg = "ruxel_nova"; size = "+100%FREE"; resizefs = true }
+          }
+          new {
+            name = "Format nova volume"
+            operation = new Ruxel.Filesystem { fstype = "xfs"; dev = "/dev/ruxel_nova/data"; resizefs = true }
+          }
+          new {
+            name = "Read nova volume UUID"
+            operation = new Ruxel.Command {
+              argv = new Ruxel.ListExpr {
+                items {
+                  new Ruxel.Literal { value = "blkid" }
+                  new Ruxel.Literal { value = "-s" }
+                  new Ruxel.Literal { value = "UUID" }
+                  new Ruxel.Literal { value = "-o" }
+                  new Ruxel.Literal { value = "value" }
+                  new Ruxel.Literal { value = "/dev/ruxel_nova/data" }
+                }
+              }
+            }
+            register = "nova_volume_uuid"
+            changedWhen = new Ruxel.Literal { value = false }
+            checkMode = false
+          }
+          new {
+            name = "Mount nova volume"
+            operation = new Ruxel.Mount {
+              path = "/var/lib/postgresql"
+              src = call("concat", new Listing { literal("UUID="); call("trim", new Listing { ref(new Listing { "results"; "nova_volume_uuid"; "stdout" }) }) })
+              fstype = "xfs"
+              opts = "logbufs=8,noatime,inode64,allocsize=16m,logbsize=256k"
+              state = "mounted"
+            }
+          }
+        }
+      }
+    }
+  }
+}
