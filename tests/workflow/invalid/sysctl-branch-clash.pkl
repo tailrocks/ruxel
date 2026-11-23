@@ -1,0 +1,18 @@
+// expect: as a checkout
+// A sysctl entry joins a regular file: a branch checkout at its path
+// leaves a directory, so the entry can never join and the checkout and
+// the entry cannot share their hosts across stages.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages {
+  new Stage { title = "Checkout"; hosts = inventory.workers; steps {
+    new linux.GitBranch { title = "Follow the sysctl branch"; repository = "git@git.example.test:holla/holla.git"; path = "/etc/sysctl.d/90-ruxel.conf"; branch = "main" }
+  } }
+  new Stage { title = "Tune"; hosts = inventory.workers; steps {
+    new linux.Sysctl { title = "Tune swappiness"; name = "vm.swappiness"; value = "10" }
+  } }
+}
+
+name = "invalid/sysctl-branch-clash.pkl"

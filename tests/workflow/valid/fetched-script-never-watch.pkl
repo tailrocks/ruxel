@@ -1,0 +1,24 @@
+// A fetched script that never changes still reports its download: the
+// download registers beside the run, so a watcher reacts when the
+// download changed even though the guarded run reports no change of its
+// own (G5). Host.user defaults to root, so no step names another
+// account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local install = new FetchedScript {
+  title = "Fetch and run the holla installer"
+  url = "https://get.example.test/holla/install.sh"
+  dest = "/opt/holla-install.sh"
+  args { "--prefix"; "/opt/holla" }
+  creates = "/opt/holla/.installed"
+  changes = "never"
+  onChangeOf {}
+}
+
+name = "valid/fetched-script-never-watch.pkl"
+
+stages { new Stage { title = "Holla install"; hosts = inventory.workers; steps {
+  install
+  new Command { title = "Show the installed version"; run { "/opt/holla/bin/holla"; "--version" }; onChangeOf { install } }
+} } }

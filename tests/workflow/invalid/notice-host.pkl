@@ -1,0 +1,12 @@
+// expect: 'Report the host': the message reads a run-time value; a notice renders static text with at most one capture's output, so read the value with a capture first
+// A notice renders static text with at most one capture's output: the
+// host's own state is neither, so a notice that reports it reads it
+// with a capture first.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Notice { title = "Report the host"; message = "Running on \(currentHost.name)" }
+} } }
+
+name = "invalid/notice-host.pkl"

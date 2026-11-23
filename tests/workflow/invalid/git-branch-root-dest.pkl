@@ -1,0 +1,12 @@
+// expect: 'Check out the root': the destination is the filesystem root; a clone there refuses a nonempty directory, and an existing /.git would turn the whole system root into the checkout, so check out beneath a directory
+// A branch checkout lives beneath a directory: the filesystem root is
+// never a checkout destination, so the author checks out beneath one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Check out the root"; repository = "git@git.example.test:holla/holla.git"; path = "/"; branch = "main" }
+} } }
+
+name = "invalid/git-branch-root-dest.pkl"

@@ -1,0 +1,14 @@
+// expect-pkl: BranchName
+// expect-pklr: expected BranchName
+// A branch never starts with a dash: the Git agent refuses every version
+// beginning with one as a flag-like positional, so such a checkout could
+// never run and the name is refused first.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "git@git.example.test:holla/holla.git"; path = "/opt/holla"; branch = "-release" }
+} } }
+
+name = "invalid/git-branch-dash.pkl"

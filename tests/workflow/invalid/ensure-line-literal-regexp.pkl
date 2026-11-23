@@ -1,0 +1,13 @@
+// expect: both manage the line matching debug = true in /etc/motd
+// One match is one state: an entry matching the line itself and a
+// replacement with the same match manage the same line, so the omitted
+// match and the spelled-out one conflict instead of merging.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the debug flag"; path = "/etc/motd"; line = "debug = true" }
+  new ReplaceLine { title = "Drop the debug flag literally"; path = "/etc/motd"; regexp = "debug = true"; replace = "debug = false" }
+} } }
+
+name = "invalid/ensure-line-literal-regexp.pkl"

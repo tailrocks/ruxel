@@ -1,0 +1,11 @@
+// expect: 'Say nothing': the message is empty; a notice with no message says nothing
+// A notice prints a message: an empty one says nothing, so the step carries
+// one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new Notice { title = "Say nothing"; message = "" }
+} } }
+
+name = "invalid/notice-empty.pkl"

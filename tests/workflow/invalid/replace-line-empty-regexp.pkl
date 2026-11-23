@@ -1,0 +1,11 @@
+// expect: 'Drop everything': the match is empty; an empty match names every gap of /etc/motd, so name what to replace
+// A replacement names its match: an empty match names every gap of the
+// file, so nothing may be replaced by it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new ReplaceLine { title = "Drop everything"; path = "/etc/motd"; regexp = "" }
+} } }
+
+name = "invalid/replace-line-empty-regexp.pkl"

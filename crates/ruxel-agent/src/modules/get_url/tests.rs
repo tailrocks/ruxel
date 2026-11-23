@@ -59,7 +59,15 @@ fn planted_legacy_symlink_is_never_opened() {
     assert_eq!(fs::read(&dest).unwrap(), b"download\0\xff");
     assert_eq!(fs::read(&victim).unwrap(), b"unchanged");
     assert_eq!(fs::read_dir(&root.0).unwrap().count(), 3);
-    run_with_fetch(&params, &context(false), |_, _| panic!("converged fetch")).unwrap();
+    // A converged destination fetches again but publishes nothing: the
+    // fetch runs so a moved URL is noticed, and identical bytes report
+    // no change.
+    assert_eq!(
+        run_with_fetch(&params, &context(false), |_, file| write_bytes(file)).unwrap()["changed"],
+        false
+    );
+    assert_eq!(fs::read(&dest).unwrap(), b"download\0\xff");
+    assert_eq!(fs::read(&victim).unwrap(), b"unchanged");
 }
 
 #[test]

@@ -1,0 +1,13 @@
+// expect: 'Pin the release': branch "ABCDEF0123456789ABCDEF0123456789ABCDEF01" looks like a commit SHA; resolve a tag to its SHA at author time and pin it with GitCheckout, and follow a branch here
+// A branch checkout follows a branch whatever the case: an uppercase SHA
+// spells the same commit, so it pins with GitCheckout like a lowercase
+// one and never floats here.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Pin the release"; repository = "git@git.example.test:holla/holla.git"; path = "/opt/holla"; branch = "ABCDEF0123456789ABCDEF0123456789ABCDEF01" }
+} } }
+
+name = "invalid/git-branch-sha-uppercase.pkl"

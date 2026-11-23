@@ -1,0 +1,14 @@
+// expect: removed with the account's home directory
+// A line entry under a removed home dies with it: userdel -r takes the
+// home and everything in it, so no step manages a path inside one the
+// same stage removes.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.User { title = "Remove holla"; user = "holla"; state = "absent"; uid = 1500; home = "/home/holla"; removeHome = true }
+  new EnsureLine { title = "Set the holla config line"; path = "/home/holla/.config"; line = "key = value" }
+} } }
+
+name = "invalid/ensure-line-home-removed.pkl"

@@ -1,5 +1,6 @@
 /// Linux system steps: the timezone, accounts and groups, a kernel
-/// parameter, and a Git working tree pinned to one commit.
+/// parameter, a Git working tree pinned to one commit, and a Git branch
+/// followed over SSH.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Linux.pkl`.
 /// Workflow files import it beside `Core.pkl`, qualifying every class:
@@ -112,6 +113,74 @@ const local function isDestination(s: String): Boolean =
 
 /// A SHA-1 (40) or SHA-256 (64) Git object ID.
 typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
+
+/// An SSH Git URL: the `scp`-like `user@host:path` or the `ssh://`
+/// scheme. Never `https`: a branch checkout authenticates over SSH, and
+/// the two transports take different credentials, so one spelling cannot
+/// name both. No spaces and no control characters, which no URL can hold,
+/// and no run-time value or secret reference: the repository is static
+/// text.
+typealias SshGitUrl = Static(isSshGitUrl(this))
+
+/// Whether the text is an SSH Git URL: the `ssh://` scheme with a user,
+/// a host and an optional numeric port in range, or the `scp`-like
+/// `user@host:path`. A URI scheme (`://`) that is not `ssh://` —
+/// `https://`, or `https://user@host:port/…` — is refused, and so is a
+/// text without a user or without a path.
+const local function isSshGitUrl(s: String): Boolean =
+  !s.contains(" ") && !s.matches(Regex("(?s).*[\\x00-\\x1f\\x7f].*")) && (isSshSchemeUrl(s) || isScpGitUrl(s))
+
+const local function isSshSchemeUrl(s: String): Boolean =
+  s.startsWith("ssh://") && (
+    let (rest = s.substring(7, s.length))
+    let (at = rest.indexOf("@"))
+    let (slash = if (rest.contains("/")) rest.indexOf("/") else rest.length)
+    let (authority = rest.substring(at + 1, slash))
+    at > 0 && slash > at + 1 && slash < rest.length - 1
+      && !sshAuthorityHost(authority).isEmpty
+      && isDialablePort(sshAuthorityPort(authority)))
+
+/// The host of an `ssh://` authority: the bracketed IPv6 literal, or the
+/// text before the port's colon. Empty when the authority names no host,
+/// as in `ssh://git@:/repo`, which the Git agent could only fail to
+/// resolve.
+const local function sshAuthorityHost(authority: String): String =
+  if (authority.startsWith("[")) (
+    if (!authority.contains("]")) "" else authority.substring(1, authority.indexOf("]")))
+  else if (authority.contains(":")) authority.substring(0, authority.indexOf(":"))
+  else authority
+
+/// The port of an `ssh://` authority, or null when it names none. A colon
+/// with nothing after it, as in `ssh://git@host:/repo`, names no port the
+/// agent could dial, and neither does a number outside 1–65535, which no
+/// SSH server listens on.
+const local function sshAuthorityPort(authority: String?): String? =
+  if (authority == null || authority.startsWith("[")) (
+    if (authority != null && authority.contains("]") && authority.substring(authority.indexOf("]") + 1, authority.length).startsWith(":"))
+      authority.substring(authority.indexOf("]") + 2, authority.length)
+    else null)
+  else if (authority.contains(":")) authority.substring(authority.indexOf(":") + 1, authority.length)
+  else null
+
+/// Whether the port text is a port the agent can dial: digits in 1–65535.
+const local function isDialablePort(port: String?): Boolean =
+  port == null || (port.matches(Regex("[0-9]+")) && port.length <= 5 && port.toInt() >= 1 && port.toInt() <= 65535)
+
+const local function isScpGitUrl(s: String): Boolean =
+  let (at = s.indexOf("@"))
+  let (rest = if (at < 0) "" else s.substring(at + 1, s.length))
+  let (colon = rest.indexOf(":"))
+  !s.contains("://") && !s.startsWith("-") && at > 0 && colon > 0 && colon < rest.length - 1
+
+/// A Git branch name: letters, digits, `.`, `_`, `/` and `-`, never an
+/// empty component and never `.` or `..` beside a separator, no component
+/// starting or ending with a dot, and never a `.lock` suffix or a leading
+/// dash, which the Git agent refuses as a flag-like positional — the way
+/// `git check-ref-format --branch` reads one. A 40- or 64-character
+/// lowercase hex string also matches, but the Lowering refuses it there:
+/// that spells a commit SHA, which is pinned with `GitCheckout`, never
+/// followed here.
+typealias BranchName = Static(matches(Regex("[A-Za-z0-9._/-]+")) && !contains("..") && !startsWith("/") && !startsWith("-") && !endsWith("/") && !contains("//") && this != "." && !startsWith("./") && !endsWith("/.") && !contains("/./") && !endsWith(".lock") && !this.split("/").toList().any((c) -> c.startsWith(".") || c.endsWith(".")))
 
 /// `https://`, a host name, IPv4 address or bracketed IPv6 address, an
 /// optional port from 1 to 65535, and an optional path without spaces.
@@ -303,6 +372,30 @@ class GitCheckout extends core.Step {
   repository: HttpsUrl
   path: AbsolutePath
   commit: CommitSha
+}
+
+/// A Git working tree following a branch over SSH. The branch floats: the
+/// step updates the tree to the branch head on every apply, so a tag —
+/// which names one commit — never floats here. Resolve a tag to its SHA
+/// at author time and pin it with `GitCheckout` instead; a 40- or
+/// 64-character lowercase hex branch is refused for the same reason: that
+/// spells a SHA, not a branch.
+///
+/// Its identity is the path, like a pinned checkout's, so a branch and a
+/// pin of one path are two states for it and are refused. The tree must
+/// be clean: the step never force-resets, and a dirty tree fails the
+/// apply instead of being overwritten.
+class GitBranch extends core.Step {
+  hidden fixed kind = "gitBranch"
+  repository: SshGitUrl
+  path: AbsolutePath
+  branch: BranchName
+  /// Accept the host key on first contact (`StrictHostKeyChecking`
+  /// `accept-new`). Without it a host the controller never saw fails the
+  /// clone instead of trusting a key it was never given — and the agent
+  /// enforces strict rejection even where SSH is configured leniently,
+  /// so the field is a genuine opt-in.
+  acceptHostKey: Boolean = false
 }
 
 /// A rule in an iptables chain.

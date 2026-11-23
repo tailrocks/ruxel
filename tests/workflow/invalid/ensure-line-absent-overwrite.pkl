@@ -1,0 +1,13 @@
+// expect: manages a line of /etc/motd, which 'Forget the motd'
+// A removal after line entries erases them: the declared lines are
+// absent at the end, so the author lists the seeding step before the
+// entries it seeds — or drops the entries the removal takes.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "day" }
+  new Absent { title = "Forget the motd"; path = "/etc/motd" }
+} } }
+
+name = "invalid/ensure-line-absent-overwrite.pkl"

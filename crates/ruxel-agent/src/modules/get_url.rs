@@ -5,6 +5,7 @@
 
 use super::{ExecContext, params_object, str_param};
 use serde_json::{Value, json};
+use std::io::{Read, Seek};
 use std::path::Path;
 
 mod access;
@@ -25,20 +26,14 @@ fn run_with_fetch(
     validate_url(url)?;
     let dest = str_param(obj, "dest").ok_or("get_url: dest required")?;
     let p = Path::new(dest);
-
-    if p.exists() {
-        return Ok(json!({
-            "changed": false,
-            "failed": false,
-            "dest": dest,
-            "url": url,
-            "msg": "file already exists",
-        }));
-    }
+    let existed = p.exists();
 
     if ctx.check_mode {
+        // Without fetching there is nothing to compare against: a
+        // missing destination would download, an existing one is
+        // reported as is.
         return Ok(json!({
-            "changed": true,
+            "changed": !existed,
             "failed": false,
             "dest": dest,
             "url": url,
@@ -51,6 +46,12 @@ fn run_with_fetch(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
+    // The download converges the destination: existence alone proves
+    // nothing, because the URL may have moved on since the last apply.
+    // Fetch to the private staging area, compare with what is there, and
+    // publish only when the bytes differ — so a changed upstream
+    // replaces stale bytes instead of executing them again, while an
+    // identical one reports no change.
     let tmp = staging::Download::new(p)?;
     let fetched = fetch(url, &tmp.file)?;
     if !fetched {
@@ -58,7 +59,31 @@ fn run_with_fetch(
             "get_url: neither curl nor wget available to fetch {url}"
         ));
     }
-    tmp.publish(p)?;
+    if existed {
+        let mut staged = Vec::new();
+        let mut staged_file = &tmp.file;
+        staged_file
+            .seek(std::io::SeekFrom::Start(0))
+            .map_err(|e| e.to_string())?;
+        staged_file
+            .read_to_end(&mut staged)
+            .map_err(|e| e.to_string())?;
+        let current = std::fs::read(p).map_err(|e| format!("read {dest}: {e}"))?;
+        if staged == current {
+            return Ok(json!({
+                "changed": false,
+                "failed": false,
+                "dest": dest,
+                "url": url,
+                "msg": "destination already matches the download",
+            }));
+        }
+        tmp.replace(p)?;
+    } else {
+        // A destination created concurrently still wins: the download
+        // publishes only when nothing is there.
+        tmp.publish(p)?;
+    }
 
     Ok(json!({
         "changed": true,
@@ -78,8 +103,19 @@ fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-fn curl_args(url: &str) -> [&str; 4] {
-    ["--disable", "-fsSL", "--", url]
+fn curl_args(url: &str) -> Vec<&str> {
+    // A fetched script executes its download: an HTTPS origin that
+    // redirects to plain HTTP would hand the network the program the
+    // host then runs, so HTTPS downloads follow HTTPS redirects only.
+    // Plain-HTTP downloads keep the client's default, whatever fetches
+    // them: only Track A's fetched scripts lower to get_url, and their
+    // URLs are HTTPS by type.
+    let mut args = vec!["--disable", "-fsSL"];
+    if url.starts_with("https://") {
+        args.extend(["--proto-redir", "=https"]);
+    }
+    args.extend(["--", url]);
+    args
 }
 
 fn fetch(url: &str, dest: &std::fs::File, ctx: &ExecContext) -> Result<bool, String> {
@@ -125,9 +161,15 @@ fn fetch_with_programs(
     let Some(wget) = wget else {
         return Ok(false);
     };
-    let wget = client::command(wget, ctx)
-        .arg("--no-config")
-        .arg("-q")
+    let mut wget = client::command(wget, ctx);
+    wget.arg("--no-config").arg("-q");
+    // Like curl above: an HTTPS download follows HTTPS redirects only,
+    // so a downgrade off the encrypted transport fails the fetch
+    // instead of feeding the network's answer to the run.
+    if url.starts_with("https://") {
+        wget.arg("--https-only");
+    }
+    let wget = wget
         .arg("-O")
         .arg("-")
         .arg("--")
@@ -155,12 +197,17 @@ mod tests {
         assert!(super::validate_url("file:///etc/passwd").is_err());
         let args = super::curl_args("https://example.test/a");
         assert_eq!(args[0], "--disable");
-        assert_eq!(args[2], "--");
-        assert_eq!(args[3], "https://example.test/a");
+        assert_eq!(args[2], "--proto-redir");
+        assert_eq!(args[3], "=https");
+        assert_eq!(args[4], "--");
+        assert_eq!(args[5], "https://example.test/a");
+        let plain = super::curl_args("http://example.test/a");
+        assert!(!plain.contains(&"--proto-redir"));
     }
 
     #[test]
-    fn existing_destination_short_circuits_without_fetch() {
+    fn identical_destination_reports_no_change_after_fetching() {
+        use std::io::Write;
         let path = std::env::temp_dir().join(format!("ruxel-get-url-{}", std::process::id()));
         std::fs::write(&path, "existing").unwrap();
         let ctx = ExecContext {
@@ -170,12 +217,45 @@ mod tests {
             environment: vec![],
             become_user: None,
         };
-        let result = super::run(
+        let result = super::run_with_fetch(
             &json!({"url":"https://example.invalid/file", "dest":path}),
             &ctx,
+            |_, file| {
+                let mut file = file.try_clone().map_err(|e| e.to_string())?;
+                file.write_all(b"existing").map_err(|e| e.to_string())?;
+                Ok(true)
+            },
         )
         .unwrap();
         assert_eq!(result["changed"], false);
+        assert_eq!(std::fs::read(&path).unwrap(), b"existing");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn changed_upstream_replaces_a_stale_destination() {
+        use std::io::Write;
+        let path = std::env::temp_dir().join(format!("ruxel-get-url-stale-{}", std::process::id()));
+        std::fs::write(&path, "stale").unwrap();
+        let ctx = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let result = super::run_with_fetch(
+            &json!({"url":"https://example.invalid/file", "dest":path}),
+            &ctx,
+            |_, file| {
+                let mut file = file.try_clone().map_err(|e| e.to_string())?;
+                file.write_all(b"fresh").map_err(|e| e.to_string())?;
+                Ok(true)
+            },
+        )
+        .unwrap();
+        assert_eq!(result["changed"], true);
+        assert_eq!(std::fs::read(&path).unwrap(), b"fresh");
         std::fs::remove_file(path).unwrap();
     }
 }

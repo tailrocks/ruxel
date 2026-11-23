@@ -1,0 +1,13 @@
+// expect-pkl: isSshGitUrl(this)
+// expect-pklr: expected SshGitUrl
+// An SSH URL's port is dialable: port 0 reaches no SSH server, so the
+// checkout refuses it instead of failing the clone.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "ssh://git@git.example.test:0/holla/holla.git"; path = "/opt/holla"; branch = "main" }
+} } }
+
+name = "invalid/git-branch-ssh-port-zero.pkl"

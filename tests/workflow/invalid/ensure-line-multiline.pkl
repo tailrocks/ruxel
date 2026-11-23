@@ -1,0 +1,11 @@
+// expect: 'Set the banner': the line is more than one line; a line break would write a second entry into /etc/motd, so keep the line to one line
+// A line entry is one line: a line break would write a second entry into
+// the file, so the entry keeps to one line.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "first\nsecond" }
+} } }
+
+name = "invalid/ensure-line-multiline.pkl"

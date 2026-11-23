@@ -1,0 +1,22 @@
+// A fetched installer: the download converges on every apply, the run is
+// guarded by its marker, and a watcher reacts when either the download
+// or the run changed (G5). Host.user defaults to root, so no step names
+// another account.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+local install = new FetchedScript {
+  title = "Fetch and run the holla installer"
+  url = "https://get.example.test/holla/install.sh"
+  dest = "/opt/holla-install.sh"
+  args { "--prefix"; "/opt/holla" }
+  creates = "/opt/holla/.installed"
+  onChangeOf {}
+}
+
+name = "valid/fetched-script.pkl"
+
+stages { new Stage { title = "Holla install"; hosts = inventory.workers; steps {
+  install
+  new Command { title = "Show the installed version"; run { "/opt/holla/bin/holla"; "--version" }; onChangeOf { install } }
+} } }

@@ -39,6 +39,8 @@ fn touched() -> Result<Vec<String>> {
     ];
     let mut files: Vec<String> = EXAMPLES
         .iter()
+        .copied()
+        .chain(super::track_a::EXAMPLES.iter().copied())
         .map(|example| format!("tests/workflow/{example}"))
         .collect();
     for source in SOURCES {

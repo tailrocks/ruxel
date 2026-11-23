@@ -1,12 +1,22 @@
 use std::process::Command;
 
+fn ruxel_bin() -> std::path::PathBuf {
+    // Nextest archives relocate binaries: prefer its runtime
+    // CARGO_BIN_EXE_ruxel over the compile-time baked path, which
+    // names the build job's target directory.
+    std::env::var_os("CARGO_BIN_EXE_ruxel").map_or_else(
+        || std::path::PathBuf::from(env!("CARGO_BIN_EXE_ruxel")),
+        std::path::PathBuf::from,
+    )
+}
+
 #[test]
 fn dump_and_missing_file() -> Result<(), Box<dyn std::error::Error>> {
     let root = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../ruxel-config/testdata/eval/minimal.pkl"
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let output = Command::new(ruxel_bin())
         .args(["config", "dump", root])
         .output()?;
     assert!(output.status.success());
@@ -14,7 +24,7 @@ fn dump_and_missing_file() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_slice::<serde_json::Value>(&output.stdout)?,
         serde_json::json!({"name":"ruxel", "count":1})
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let output = Command::new(ruxel_bin())
         .args(["config", "dump", "/nonexistent.pkl"])
         .output()?;
     assert_eq!(output.status.code(), Some(4));
@@ -27,10 +37,10 @@ fn dump_preserves_declaration_order_and_rejects_raw() -> Result<(), Box<dyn std:
         env!("CARGO_MANIFEST_DIR"),
         "/../ruxel-config/testdata/eval/minimal.pkl"
     );
-    let plain = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let plain = Command::new(ruxel_bin())
         .args(["config", "dump", root])
         .output()?;
-    let raw = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let raw = Command::new(ruxel_bin())
         .args(["config", "dump", root, "--raw"])
         .output()?;
     assert!(plain.status.success());
@@ -46,9 +56,7 @@ fn dump_preserves_declaration_order_and_rejects_raw() -> Result<(), Box<dyn std:
 
 #[test]
 fn version_and_usage_codes() -> Result<(), Box<dyn std::error::Error>> {
-    let version = Command::new(env!("CARGO_BIN_EXE_ruxel"))
-        .arg("--version")
-        .output()?;
+    let version = Command::new(ruxel_bin()).arg("--version").output()?;
     assert!(version.status.success());
     assert_eq!(
         String::from_utf8(version.stdout)?,
@@ -58,9 +66,7 @@ fn version_and_usage_codes() -> Result<(), Box<dyn std::error::Error>> {
             ruxel_guard::Policy::compiled_entries()
         )
     );
-    let short = Command::new(env!("CARGO_BIN_EXE_ruxel"))
-        .arg("-V")
-        .output()?;
+    let short = Command::new(ruxel_bin()).arg("-V").output()?;
     assert!(short.status.success());
     assert_eq!(
         short.stdout,
@@ -71,15 +77,13 @@ fn version_and_usage_codes() -> Result<(), Box<dyn std::error::Error>> {
         )
         .as_bytes()
     );
-    let help = Command::new(env!("CARGO_BIN_EXE_ruxel"))
-        .arg("--help")
-        .output()?;
+    let help = Command::new(ruxel_bin()).arg("--help").output()?;
     assert!(help.status.success());
     assert!(!String::from_utf8(help.stdout)?.contains("compiled deny entries"));
-    let missing = Command::new(env!("CARGO_BIN_EXE_ruxel")).output()?;
+    let missing = Command::new(ruxel_bin()).output()?;
     assert_eq!(missing.status.code(), Some(2));
     assert_eq!(missing.stdout, b"");
-    let usage = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let usage = Command::new(ruxel_bin())
         .args(["config", "dump"])
         .output()?;
     assert_eq!(usage.status.code(), Some(2));
@@ -96,7 +100,7 @@ fn unwritable_stdout_is_internal_error() -> Result<(), Box<dyn std::error::Error
     let (writer, reader) = std::os::unix::net::UnixStream::pair()?;
     drop(reader);
     let writer = std::os::fd::OwnedFd::from(writer);
-    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let output = Command::new(ruxel_bin())
         .args(["config", "dump", root])
         .stdout(writer)
         .output()?;
@@ -110,9 +114,7 @@ fn execution_rejects_untyped_output_as_config_error() -> Result<(), Box<dyn std:
         env!("CARGO_MANIFEST_DIR"),
         "/../ruxel-config/testdata/eval/minimal.pkl"
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
-        .args(["plan", root])
-        .output()?;
+    let output = Command::new(ruxel_bin()).args(["plan", root]).output()?;
     assert_eq!(output.status.code(), Some(4));
     assert_eq!(output.stdout, Vec::<u8>::new());
     let stderr = String::from_utf8(output.stderr)?;
@@ -141,7 +143,7 @@ output { value = new Ruxel.Config {
 "#,
     )?;
     for (tag, expected, planned) in [("selected", 3, 1), ("other", 0, 0)] {
-        let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+        let output = Command::new(ruxel_bin())
             .arg("plan")
             .arg(&root)
             .args([
@@ -205,7 +207,7 @@ config = new R.Config {
 "#;
 
 fn plan(root: &std::path::Path, extra: &[&str]) -> std::io::Result<std::process::Output> {
-    Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    Command::new(ruxel_bin())
         .arg("plan")
         .arg(root)
         .args(["--agent", "/missing-agent"])
@@ -236,7 +238,7 @@ fn schema_export_serves_editors_and_stale_exports_are_refused()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = scratch("export")?;
     let export = directory.join("exported");
-    let output = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let output = Command::new(ruxel_bin())
         .args(["schema", "export"])
         .arg(&export)
         .output()?;
@@ -331,7 +333,7 @@ config = new R.Config {
 "#,
     )?;
     let module_path = format!("{}:{}", first.display(), second.display());
-    let dump = Command::new(env!("CARGO_BIN_EXE_ruxel"))
+    let dump = Command::new(ruxel_bin())
         .args(["config", "dump"])
         .arg(&root)
         .args(["--module-path", &module_path])
@@ -364,7 +366,7 @@ fn configuration_reads_are_confined_to_the_root_dir() -> Result<(), Box<dyn std:
         "import \"../inventory.pkl\" as I\nhosts = I.hosts\n",
     )?;
     let dump = |root: &std::path::Path, extra: &[&std::ffi::OsStr]| {
-        Command::new(env!("CARGO_BIN_EXE_ruxel"))
+        Command::new(ruxel_bin())
             .args(["config", "dump"])
             .arg(root)
             .args(extra)

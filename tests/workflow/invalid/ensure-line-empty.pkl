@@ -1,0 +1,11 @@
+// expect: 'Set the banner': the line is empty; an empty entry names no line of /etc/motd, so state the line to ensure
+// A line entry states its line: an empty entry names no line of the
+// file, so the entry states the line to ensure.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "" }
+} } }
+
+name = "invalid/ensure-line-empty.pkl"

@@ -1,0 +1,12 @@
+// expect: 'Set the banner': the match is more than one line; the entry is matched against one line of /etc/motd at a time, so keep the match to one line
+// A line entry's match names one line: the agent matches it against one
+// line of the file at a time, so a match spanning lines could never
+// match and the step keeps its match to one line.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the banner"; path = "/etc/motd"; line = "day"; regexp = "day\nnight" }
+} } }
+
+name = "invalid/ensure-line-regexp-multiline.pkl"

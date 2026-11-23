@@ -55,7 +55,7 @@ fn renamed_stage_cannot_redirect_publication_through_symlink() {
 fn clients_write_to_stdout_descriptor_and_wget_remains_fallback() {
     let root = Root::new();
     let script = root.0.join("client");
-    fs::write(&script, "#!/bin/sh\ncase \"$1\" in\n--disable) test \"$2\" = -fsSL && test \"$3\" = -- || exit 9;;\n--no-config) test \"$2\" = -q && test \"$3\" = -O && test \"$4\" = - && test \"$5\" = -- || exit 10;;\n*) exit 11;;\nesac\nprintf 'client bytes'\n").unwrap();
+    fs::write(&script, "#!/bin/sh\ncase \"$1\" in\n--disable) test \"$2\" = -fsSL && test \"$3\" = --proto-redir && test \"$4\" = =https && test \"$5\" = -- || exit 9;;\n--no-config) test \"$2\" = -q && test \"$3\" = --https-only && test \"$4\" = -O && test \"$5\" = - && test \"$6\" = -- || exit 10;;\n*) exit 11;;\nesac\nprintf 'client bytes'\n").unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     for curl in [Some(script.as_path()), None] {
         let stage = Download::new(&root.0.join("result")).unwrap();

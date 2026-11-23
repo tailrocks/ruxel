@@ -1,0 +1,13 @@
+// expect: 'Pin the release': branch "0123456789abcdef0123456789abcdef01234567" looks like a commit SHA; resolve a tag to its SHA at author time and pin it with GitCheckout, and follow a branch here
+// A branch checkout follows a branch: a SHA names one commit, and a tag
+// names one commit too, so both are pinned with GitCheckout — a tag after
+// resolving it to its SHA at author time — and never spelled here.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Pin the release"; repository = "git@git.example.test:holla/holla.git"; path = "/opt/holla"; branch = "0123456789abcdef0123456789abcdef01234567" }
+} } }
+
+name = "invalid/git-branch-sha.pkl"

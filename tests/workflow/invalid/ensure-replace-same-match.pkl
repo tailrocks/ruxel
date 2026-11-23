@@ -1,0 +1,13 @@
+// expect: both manage the line matching debug = true in /etc/motd
+// One match is one state: an entry and a replacement with the same
+// match in the same file manage the same line, so they conflict and
+// the author states the composition across stages instead.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new EnsureLine { title = "Set the debug flag"; path = "/etc/motd"; line = "debug = true" }
+  new ReplaceLine { title = "Drop the debug flag"; path = "/etc/motd"; regexp = "debug = true"; replace = "debug = false" }
+} } }
+
+name = "invalid/ensure-replace-same-match.pkl"

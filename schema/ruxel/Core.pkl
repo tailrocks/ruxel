@@ -4,9 +4,10 @@
 /// hosts. A step says how one thing on a host should be: a package is
 /// installed, a file has this content, a service is running. This module
 /// holds the workflow shape itself (`Stage`, `Host`, `Recipe`, `Step`) and
-/// the steps that are not tied to one system: files, links, commands,
-/// scripts and captures. The steps that belong to one system live in the
-/// modules beside it: `Linux.pkl`, `Systemd.pkl`, `Debian.pkl`.
+/// the steps that are not tied to one system: files, line entries, links,
+/// commands, scripts, fetched scripts, captures and notices. The steps that
+/// belong to one system live in the modules beside it: `Linux.pkl`,
+/// `Systemd.pkl`, `Debian.pkl`.
 ///
 /// The ruxel binary serves this module at `modulepath:/ruxel/Core.pkl`.
 /// `Workflow.pkl` extends it, so workflow files amend
@@ -601,6 +602,43 @@ class Absent extends Step {
   recursive: Boolean = false
 }
 
+// ── Lines ───────────────────────────────────────────────────────────────────
+
+/// One line that must be in a file. The entry is matched by `regexp` — a
+/// regular expression the way the agent's line editor reads it — or, when
+/// the step names none, by the line itself. A repeat of one match with one
+/// line is the same step; a second line for one match is a second state
+/// for it and is refused: the file holds one line per match. A different
+/// match is a different entry, so several lines compose in one file in the
+/// order the stage lists them (G2).
+///
+/// The line is one line of static text: a line break would write a second
+/// entry, so the Lowering refuses one. A line never carries a run-time
+/// value or a secret: an entry is matched before any task runs, and a
+/// secret in one would be compared and logged in the clear.
+class EnsureLine extends Step {
+  hidden fixed kind = "ensureLine"
+  path: FilePath
+  line: Static
+  /// The match, when it is not the line itself.
+  regexp: Static? = null
+}
+
+/// The replacement of every match of a regular expression in a file. A
+/// repeat of one match with one replacement is the same step; a second
+/// replacement for one match is a second state for it and is refused,
+/// while a different match is a different entry that composes in stage
+/// order. Without a `replace` the match is deleted.
+///
+/// Like an `EnsureLine`, the match and the replacement are static text:
+/// no run-time value and no secret.
+class ReplaceLine extends Step {
+  hidden fixed kind = "replaceLine"
+  path: FilePath
+  regexp: Static
+  replace: Static? = null
+}
+
 // ── Commands ────────────────────────────────────────────────────────────────
 
 /// What a command or script needs: when to run, and what to report.
@@ -718,6 +756,39 @@ class Retry {
   attempts: Int(isBetween(1, 100)) = 1
   /// Whole seconds; at least one.
   delay: Duration = 5.s
+}
+
+// ── Fetched scripts and notices ─────────────────────────────────────────────
+
+/// A script fetched over HTTPS and run where it lands. The download
+/// converges on every apply; the run is an action like any other, with
+/// its `creates` guard, its `onChangeOf` reactions, its change rule and
+/// its environment. Its identity is the three together (G5): a changed
+/// download with a skipped run still reports the step's change to its
+/// watchers, the way a changed key reports its repository's.
+///
+/// The script runs under `/bin/bash` with the listed arguments. Only
+/// `https` fetches: a plain-`http` URL would run whatever the network
+/// answers, so the type refuses one.
+class FetchedScript extends Action {
+  hidden fixed kind = "fetchedScript"
+  url: HttpsUrl
+  /// Where the download lands: the file the step manages, so no other
+  /// step of the stage may own it.
+  dest: FilePath
+  args: StaticList = new {}
+}
+
+/// A message the controller prints when the play reaches it. The message
+/// is static text, optionally with the output of exactly one capture —
+/// a controller Capture for the controller's own state (G1), such as its
+/// terminal description — rendered where it stands. It never carries a
+/// secret: a notice prints on the controller, so the Lowering refuses one
+/// there. A notice backed by a capture warns only when the report is not
+/// empty; a static one always prints. It never reports a change.
+class Notice extends Step {
+  hidden fixed kind = "notice"
+  message: String
 }
 
 // ── Content ─────────────────────────────────────────────────────────────────

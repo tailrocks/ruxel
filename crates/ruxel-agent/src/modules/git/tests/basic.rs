@@ -151,6 +151,18 @@ fn positional_flags_are_rejected() {
 }
 
 #[test]
+fn host_key_verification_is_strict_unless_accepted() {
+    assert_eq!(
+        super::ssh_command(true),
+        "ssh -o StrictHostKeyChecking=accept-new"
+    );
+    assert_eq!(
+        super::ssh_command(false),
+        "ssh -o StrictHostKeyChecking=yes"
+    );
+}
+
+#[test]
 fn chooses_clone_update_compare_or_noop() {
     assert_eq!(super::repo_action(false, false, false), "clone");
     assert_eq!(super::repo_action(true, false, false), "unchanged");

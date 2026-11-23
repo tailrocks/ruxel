@@ -86,6 +86,11 @@ const local canonicalClasses: Mapping<String, (core.Step) -> Boolean> = new {
   ["logicalVolume"] = (s) -> s is storage.LogicalVolume
   ["filesystem"] = (s) -> s is storage.Filesystem
   ["mount"] = (s) -> s is storage.Mount
+  ["fetchedScript"] = (s) -> s is core.FetchedScript
+  ["ensureLine"] = (s) -> s is core.EnsureLine
+  ["replaceLine"] = (s) -> s is core.ReplaceLine
+  ["notice"] = (s) -> s is core.Notice
+  ["gitBranch"] = (s) -> s is linux.GitBranch
   ["packageIndex"] = (s) -> s is debian.AptPackageIndex
   ["packages"] = (s) -> s is debian.AptPackages
   ["aptSystemUpgrade"] = (s) -> s is debian.AptSystemUpgrade
@@ -698,6 +703,7 @@ const function leavesUnusable(s: core.Step, p: String): Boolean =
   (s is core.Directory && paths(s).contains(p))
   || (s is core.Symlink && paths(s).contains(p))
   || (s is linux.GitCheckout && paths(s).contains(p))
+  || (s is linux.GitBranch && paths(s).contains(p))
   || (s is linux.User && s.state == "present" && presentHome(s).contains(p))
 
 /// The home a present account's task leaves behind: the home the step
@@ -710,7 +716,7 @@ const function presentHome(s: linux.User): List<String> =
 const function unusableAs(s: core.Step): String =
   if (s is core.Symlink) "a link"
   else if (s is core.Directory) "a directory"
-  else if (s is linux.GitCheckout) "a checkout"
+  else if (s is linux.GitCheckout || s is linux.GitBranch) "a checkout"
   else "the account's home directory"
 
 function bootClash(a: core.Stage, ia: StageIndex, b: core.Stage, ib: StageIndex): List<String> =
@@ -1002,7 +1008,7 @@ const function mergeable(s: core.Step): Boolean = !subjectsOf(s).isEmpty && !(s 
 // ── Checks: references must point at earlier steps of the same stage ───────
 
 function problemsAt(ix: StageIndex, i: Int): List<String> =
-  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), absentFloor(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
+  List(settings(ix.steps[i]), recipeDeps(ix, i), missingDeps(ix, i), silentDeps(ix, i), missingCaptures(ix, i), conflicts(ix, i), nested(ix, i), linesOverwritten(ix, i), absentFloor(ix, i), keyringModes(ix, i), sysctlFiles(ix, i), sysctlValues(ix, i), sysctlShadow(ix, i), groupRels(ix, i), shellRels(ix, i), homeRels(ix, i), homeRemovals(ix, i), customSpoolRels(ix, i), fileIdentities(ix, i), packageVersions(ix, i), holdConflicts(ix, i), preferenceConflicts(ix, i), pinUpgradeClashes(ix, i), preferencePlanning(ix, i), indexPlanning(ix, i), repositoryPlanning(ix, i)).flatMap((x) -> x)
 
 /// Rules between fields of one step. Plain sentences rather than type
 /// constraints: pklr reports a broken constraint without naming it (G16).
@@ -1130,6 +1136,9 @@ function settings(s: core.Step): List<String> =
   // formatted one.
   else if (s is storage.Mount && mountSourceProblem(s.src) != null)
     List("'\(name(s))': \(mountSourceProblem(s.src))")
+  // Track A's rules live in `trackASettings`, one branch of this chain,
+  // so the chain stays shallow (P3).
+  else if (trackAApplies(s)) trackASettings(s)
   else List()
 
 /// The agent's closed selector grammar, checked here so a workflow that could
@@ -1229,19 +1238,49 @@ function conflicts(ix: StageIndex, i: Int): List<String> =
   earlier(i).filter((j) -> subjectsOf(ix.steps[j]).any((x) -> mine.contains(x)) && (ix.steps[j].kind != ix.steps[i].kind || identity.settings(ix.steps[j]) != identity.settings(ix.steps[i])))
     .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) both manage \(subjectsOf(ix.steps[j]).filter((x) -> mine.contains(x)).first)" + (if (ix.steps[j].kind != ix.steps[i].kind) ": \(withArticle(className(ix.steps[j]))) and \(withArticle(className(ix.steps[i])))" else " with different settings") + "; a stage declares one state for each thing, so put the second state in a later stage")
 
+/// A line entry the stage's later destructive step erases: a whole-file
+/// writer replaces the file the entries composed, and a removal or a
+/// directory in its place leaves no file for them at all, so the declared
+/// lines are absent at the end and both sides report changes on every
+/// apply. A writer that precedes the entries composes with them — it seeds
+/// the file the entries then manage — so only the reversed ordering is
+/// refused, and the author lists the writer first.
+function linesOverwritten(ix: StageIndex, i: Int): List<String> =
+  if (!(ix.steps[i] is core.File || ix.steps[i] is core.Symlink || ix.steps[i] is core.Absent || ix.steps[i] is core.Directory)) List()
+  else earlier(i).filter((j) -> (ix.steps[j] is core.EnsureLine || ix.steps[j] is core.ReplaceLine) && linePath(ix.steps[j]) == ix.steps[i].path)
+    .map((j) -> "'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages a line of \(linePath(ix.steps[j])), which '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) \(overwritesHow(ix.steps[i])) after it; list the seeding step before the line entries it seeds")
+
+/// How the later step erases the line entries, for the refusal's wording.
+const function overwritesHow(s: core.Step): String =
+  if (s is core.Absent) "removes"
+  else if (s is core.Directory) "replaces with a directory"
+  else "rewrites"
+
+/// The file a line entry manages.
+const function linePath(s: core.Step): String =
+  if (s is core.EnsureLine) s.path else if (s is core.ReplaceLine) s.path else throw("not a line entry")
+
 /// A regular file or a link leaves no room for anything inside it, so no
 /// other step of the stage may manage a path beneath one. A Git checkout is
 /// not such a leaf: steps may manage paths inside it that the repository
 /// ignores (Oh My Zsh's `custom/plugins`), which no evaluation can tell
-/// from tracked ones.
+/// from tracked ones. A line entry's file counts among the managed paths:
+/// an entry beneath a regular file's path fails where the file step left
+/// no directory (`nestedPaths`), while the entry's synthetic subject
+/// keeps composing per match.
 function nested(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
-    let (byEarlier = inside(leaves(ix.steps[j]), paths(ix.steps[i])))
-    let (byLater = inside(leaves(ix.steps[i]), paths(ix.steps[j])))
+    let (byEarlier = inside(leaves(ix.steps[j]), nestedPaths(ix.steps[i])))
+    let (byLater = inside(leaves(ix.steps[i]), nestedPaths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
     let (leafAbsent = if (byEarlier.isEmpty) ix.steps[i].kind == "absent" else ix.steps[j].kind == "absent")
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is " + (if (leafAbsent) "removed, so" else "a file, so") + " \(pair.first.last) cannot be inside it"))
+
+/// The file-system locations a step manages: whole-file subjects and
+/// sysctl files, and a line entry's file, which no subject names.
+const function nestedPaths(s: core.Step): List<String> =
+  paths(s) + (if (s is core.EnsureLine || s is core.ReplaceLine) List(s.path) else List())
 
 /// Paths a step writes as a regular file or a link, or removes: its
 /// whole-file subjects, and a sysctl's entry file — the entries are its
@@ -1249,7 +1288,7 @@ function nested(ix: StageIndex, i: Int): List<String> =
 /// writes its unit file, which is a regular file like any other.
 const function leaves(s: core.Step): List<String> =
   if (s is linux.Sysctl) List(s.path)
-  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer", "absent").contains(s.kind)) subjectsOf(s)
+  else if (List("file", "symlink", "aptRepository", "aptPreference", "systemdTimer", "absent", "fetchedScript").contains(s.kind)) subjectsOf(s)
   else List()
 
 /// A removal never takes a system root, and never takes a directory that
@@ -1506,6 +1545,9 @@ function shellRels(ix: StageIndex, i: Int): List<String> =
   else positions(ix.steps)
     .filter((j) -> (ix.steps[j] is core.File || ix.steps[j] is core.Symlink) && paths(ix.steps[j]).contains(u.shell))
     .flatMap((j) -> shellRel(ix, u, i, j))
+    + positions(ix.steps)
+      .filter((j) -> (ix.steps[j] is linux.GitCheckout || ix.steps[j] is linux.GitBranch) && ix.steps[j].path == u.shell)
+      .map((j) -> "'\(name(u))' (\(where(ix.placed[i]))) names the shell \(u.shell), which '\(name(ix.steps[j]))' (\(where(ix.placed[j]))) manages as a checkout; a checkout is a directory, and the account's task runs where no shell can be one, so give the account a file or a link")
 
 function shellRel(ix: StageIndex, u: linux.User, i: Int, j: Int): List<String> =
   let (s = ix.steps[j])
@@ -1795,8 +1837,8 @@ const function customSpoolInside(a: core.Step, b: core.Step): List<List<String>>
 
 function homeRemovals(ix: StageIndex, i: Int): List<String> =
   earlier(i).flatMap((j) ->
-    let (byEarlier = removedInside(ix.steps[j], paths(ix.steps[i])))
-    let (byLater = removedInside(ix.steps[i], paths(ix.steps[j])))
+    let (byEarlier = removedInside(ix.steps[j], nestedPaths(ix.steps[i])))
+    let (byLater = removedInside(ix.steps[i], nestedPaths(ix.steps[j])))
     let (pair = if (byEarlier.isEmpty) byLater else byEarlier)
     if (pair.isEmpty) List()
     else List("'\(name(ix.steps[j]))' (\(where(ix.placed[j]))) and '\(name(ix.steps[i]))' (\(where(ix.placed[i]))) conflict: \(pair.first.first) is removed with the account's home directory and mail spool, so \(pair.first.last) cannot be inside it"))
@@ -1932,7 +1974,7 @@ function homeRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<Stag
 /// removed, and the refusal for the ones no step recreates.
 function removedHomeRels(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int): List<String> =
   removedHomes(_indexes[n]).flatMap((h) -> positions(_indexes[m].steps).flatMap((i) ->
-    let (inside = paths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
+    let (inside = nestedPaths(_indexes[m].steps[i]).filter((p) -> p != h && p.startsWith(h + "/")))
     if (inside.isEmpty) List()
     else if (recreatesHome(_stages, _indexes, n, m, i, h, inside.first)) List()
     else List("'\(name(_indexes[m].steps[i]))' (\(where(_indexes[m].placed[i]))) manages \(inside.first), which stage \"\(_stages[n].title)\" removes with the account's home directory; the directory is gone by then, so declare it again in a later stage")))
@@ -1965,7 +2007,7 @@ function removedCustomSpoolRels(_stages: List<core.Stage>, _indexes: List<StageI
   let (reserved = (if (s.home == null) List() else List(s.home)) + mailSpools(s.user))
   positions(_indexes[n].steps).flatMap((i) ->
     let (t = _indexes[n].steps[i])
-    let (custom = paths(t).filter((p) -> isMailSpool(s.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/")) && !accountOwnsPath(t, s.user)))
+    let (custom = nestedPaths(t).filter((p) -> isMailSpool(s.user, p) && !reserved.any((h) -> p == h || p.startsWith(h + "/")) && !accountOwnsPath(t, s.user)))
     if (custom.isEmpty) List()
     else List("'\(name(t))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(custom.first), which stage \"\(_stages[m].title)\" removes with the account's mail spool; userdel -r removes the spool and everything in it, so the path does not survive the run"))
 
@@ -1980,7 +2022,7 @@ function removedCustomSpoolRels(_stages: List<core.Stage>, _indexes: List<StageI
 function removedPathRelsFor(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, h: String, account: String, what: String, how: String): List<String> =
   positions(_indexes[n].steps).flatMap((i) ->
     let (s = _indexes[n].steps[i])
-    let (inside = paths(s).filter((p) -> (p == h || p.startsWith(h + "/")) && !accountOwnsPath(s, account)))
+    let (inside = nestedPaths(s).filter((p) -> (p == h || p.startsWith(h + "/")) && !accountOwnsPath(s, account)))
     if (inside.isEmpty) List()
     else List("'\(name(s))' (\(where(_indexes[n].placed[i]))) of stage \"\(_stages[n].title)\" manages \(inside.first), which stage \"\(_stages[m].title)\" removes with the account's \(what); userdel -r \(how), so the path does not survive the run"))
 
@@ -2955,8 +2997,13 @@ const function listed(s: core.Step): List<core.Step> =
 /// `recipeDeps`.
 function watched(s: core.Step): List<core.Step> = listed(s).filter((w) -> !(w is core.Recipe))
 
+/// Whether watching the step can fire: a capture, a package index, a
+/// silenced action and a notice never report one. A fetched script always
+/// can: its download registers beside the run, so a changed download
+/// with a skipped run still reports the step's change (`anyChanged`
+/// reads both).
 function canReportChange(s: core.Step): Boolean =
-  !(s is core.Capture || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
+  s is core.FetchedScript || !(s is core.Capture || s is core.Notice || s is debian.AptPackageIndex || (s is core.Action && s.changes == "never"))
 
 /// Ids of the captures whose output this step's content uses.
 function capturesUsed(s: core.Step): List<String> =
@@ -2964,6 +3011,7 @@ function capturesUsed(s: core.Step): List<String> =
     .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
   else if (s is storage.Mount) placeholder.findMatchesIn(s.src).map((m) -> m.groups[1].value)
     .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1])
+  else if (s is core.Notice) trackANoticeRefs(s)
   else List()
 
 // ── Identity, names and tags ────────────────────────────────────────────────
@@ -2992,8 +3040,8 @@ class Identity {
     // outside `fields`: every level counts against pklr's depth limit along
     // a chain. Keys are generated (`<kind>_<hex>`), so a plain join after the
     // self-delimiting fields is unambiguous.
-    else fields(List(if (s is core.Command) fields(s.run.toList()) else s.bash, optional(s.creates), changesText(s))) + envFingerprint(s)
-      + listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w)).join(",")
+    else fields(List(actionShape(s), optional(s.creates), changesText(s))) + envFingerprint(s)
+      + keyOrder.set(listed(s).map((w) -> if (w is core.Recipe) "recipe" else this.key(w))).join(",")
 }
 
 /// A command's environment in its identity: two commands that differ only in
@@ -3099,6 +3147,15 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["logicalVolume"] = (s) -> fields(List(s.vg, s.lv, s.size, "\(s.resizefs)"))
   ["filesystem"] = (s) -> fields(List(s.dev, "\(s.resizefs)"))
   ["mount"] = (s) -> fields(List(s.src, s.path, s.fstype, s.opts))
+  // A line entry is its file, its effective match and its text: a second
+  // line for one match is another state, not a repeat. A notice is its
+  // message, rendered with its one capture. A branch checkout is its
+  // repository, path, branch and host-key choice. A fetched script is an
+  // action: its shape lives in `actionShape` (G5).
+  ["ensureLine"] = (s) -> fields(List(s.path, s.line, optional(s.regexp)))
+  ["replaceLine"] = (s) -> fields(List(s.path, s.regexp, if (s.replace == null) "" else s.replace))
+  ["notice"] = (s) -> fields(List(s.message))
+  ["gitBranch"] = (s) -> fields(List(s.repository, s.path, s.branch, "\(s.acceptHostKey)"))
   ["capture"] = (s) -> s.id()
 }
 
@@ -3169,6 +3226,17 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["logicalVolume"] = (s) -> List("the logical volume \(s.vg)/\(s.lv)")
   ["filesystem"] = (s) -> List("the filesystem on \(s.dev)")
   ["mount"] = (s) -> List("the mount at \(s.path)")
+  // A fetched script manages its download; a line entry and a replacement
+  // manage their match in their file, so two entries with different
+  // matches compose while two states for one match conflict. A notice
+  // manages nothing: it prints where it is written, like a command runs
+  // where it is written. A branch checkout manages its path, like a
+  // pinned checkout does, so the two are two states for one tree.
+  ["fetchedScript"] = (s) -> List(s.dest)
+  ["ensureLine"] = (s) -> List("the line matching \(lineMatch(s)) in \(s.path)")
+  ["replaceLine"] = (s) -> List("the line matching \(s.regexp) in \(s.path)")
+  ["notice"] = (_) -> List()
+  ["gitBranch"] = (s) -> List(s.path)
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
@@ -3544,6 +3612,11 @@ const local describers: Mapping<String, (core.Step) -> String> = new {
   ["logicalVolume"] = (s) -> "Create logical volume \(s.vg)/\(s.lv)"
   ["filesystem"] = (s) -> "Format \(s.dev) as xfs"
   ["mount"] = (s) -> "Mount \(s.path)"
+  ["fetchedScript"] = (s) -> "Fetch \(s.url) and run \(s.dest)"
+  ["ensureLine"] = (s) -> "Ensure the line in \(s.path) matching \(lineMatch(s))"
+  ["replaceLine"] = (s) -> "Replace \(s.regexp) in \(s.path)"
+  ["notice"] = (_) -> "Print a notice"
+  ["gitBranch"] = (s) -> "Check out branch \(s.branch) of \(s.repository) into \(s.path)"
   ["command"] = (s) -> "Run " + s.run.join(" ")
   ["script"] = (s) -> "Run script " + s.bash.trim().split("\n").first
   ["capture"] = (s) -> s.description()
@@ -3711,6 +3784,11 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["logicalVolume"] = (s, m) -> List(task(m, logicalVolume(s.vg, s.lv, s.size, s.resizefs), null, null))
   ["filesystem"] = (s, m) -> List(task(m, filesystem(s.dev, s.resizefs), null, null))
   ["mount"] = (s, m) -> List(task(m, mount(s.src, s.path, s.fstype, s.opts), null, null))
+  ["fetchedScript"] = (s, m) -> fetchedScriptTasks(s, m)
+  ["ensureLine"] = (s, m) -> List(task(m, lineEntry(s.path, s.line, s.regexp), null, null))
+  ["replaceLine"] = (s, m) -> List(task(m, replaceEntry(s.path, s.regexp, s.replace), null, null))
+  ["notice"] = (s, m) -> List(task(m, noticeDebug(s), noticeWhen(s), lit(false)))
+  ["gitBranch"] = (s, m) -> List(task(m, gitBranchCheckout(s.repository, s.path, s.branch, s.acceptHostKey), null, null))
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
@@ -3850,9 +3928,11 @@ function existsGuard(a: core.Action): engine.Expr =
   call1("not", ref(List("results", probeKey(a.creates), "stat", "exists")))
 
 /// `or` of the `changed` results of the watched steps. An apt repository
-/// also changes when only its keyring does.
+/// also changes when only its keyring does, and a fetched script when only
+/// its download does: each carries a second result beside the run's
+/// (`keyringMeta`, `fetchedDownloadMeta`).
 function anyChanged(ids: List<String>): engine.Expr =
-  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key", keyringsResult) else List(id))
+  ids.flatMap((id) -> if (id.startsWith("aptRepository_")) List(id, "\(id)_key", keyringsResult) else if (id.startsWith("fetchedScript_")) List(id, "\(id)_download") else List(id))
     .map((id) -> ref(List("results", id, "changed")))
     .fold(null, (acc, e) -> if (acc == null) e else call2("or", acc, e))
 
@@ -4180,6 +4260,187 @@ const function mountSourceProblem(src: String): String? =
   if (src.contains("__ruxel_rt_8d41.")) null
   else if (src.startsWith("UUID=") && src.length > 5 && !hasSpace(src)) null
   else "source \"\(src)\" is not a UUID= source; name the device as UUID=<value>, or carry a blkid capture's stdout() that prints one"
+
+// ── Track A: fetched scripts, line entries, notices, branch checkouts ───────
+//
+// Track A owns this region: the `fetchedScript`, `ensureLine`,
+// `replaceLine` and `notice` steps of `Core.pkl` and the `gitBranch` step
+// of `Linux.pkl` lower to the engine's get_url, command, lineinfile,
+// replace, debug and git operations. No other track adds lines here; the
+// dispatch tables above carry one line per Track A kind each,
+// line-disjoint from the storage, postgres and timer regions.
+//
+// G1: the controller's own state — its terminal description — is read by
+// a Capture delegated to the controller host (`runOn`), never by host
+// tasks; a Notice renders that output. G2: the Holla play lists its steps
+// in run order — fetch, line entries, checkout, notice — and every
+// reaction is an explicit `onChangeOf` edge, so the lowered play keeps
+// the author's order. G3: handlers run at end-of-stage; no step restarts
+// a service inline. G4: nothing flushes handlers mid-run — reactions wait
+// for the stage's end, which the lowering keeps by emitting no flush
+// task. G5: a fetched script's identity is its download, its run and its
+// `creates` guard together, so a changed download with a skipped run
+// still reports the step's change to its watchers (the `_download`
+// result beside the run's, like the keyring's beside its repository's).
+
+/// Whether the step is one of Track A's: the fetched script, the line
+/// entries, the notice or the branch checkout. The lowering checks their
+/// rules in `trackASettings`, one branch of `settings`, so the chain
+/// there stays shallow (P3).
+const function trackAApplies(s: core.Step): Boolean =
+  s is core.FetchedScript || s is core.EnsureLine || s is core.ReplaceLine
+    || s is core.Notice || s is linux.GitBranch
+
+/// Rules between the fields of Track A's steps. Plain sentences rather
+/// than type constraints: pklr reports a broken constraint without naming
+/// it (G16). One branch of `settings`.
+function trackASettings(s: core.Step): List<String> =
+  if (s is core.EnsureLine && (s.line.contains("\n") || s.line.contains("\r")))
+    List("'\(name(s))': the line is more than one line; a line break would write a second entry into \(s.path), so keep the line to one line")
+  else if (s is core.EnsureLine && s.line.isEmpty)
+    List("'\(name(s))': the line is empty; an empty entry names no line of \(s.path), so state the line to ensure")
+  else if (s is core.EnsureLine && s.regexp != null && (s.regexp.contains("\n") || s.regexp.contains("\r")))
+    List("'\(name(s))': the match is more than one line; the entry is matched against one line of \(s.path) at a time, so keep the match to one line")
+  else if (s is core.EnsureLine && s.regexp != null && s.regexp.isEmpty)
+    List("'\(name(s))': the match is empty; an empty match names every line of \(s.path), so name the match or drop it and match the line itself")
+  else if (s is core.ReplaceLine && s.regexp.isEmpty)
+    List("'\(name(s))': the match is empty; an empty match names every gap of \(s.path), so name what to replace")
+  else if (s is core.Notice && s.message.isEmpty)
+    List("'\(name(s))': the message is empty; a notice with no message says nothing")
+  else if (s is core.Notice && hasSecrets(s.message))
+    List("'\(name(s))': the message carries a secret; a notice prints on the controller, so read a capture's output instead")
+  else if (s is core.Notice && trackANoticeRefs(s).length > 1)
+    List("'\(name(s))': the message reads \(trackANoticeRefs(s).length) captures; a notice reads at most one capture's output")
+  else if (s is core.Notice && !noticeNonCaptureRefs(s).isEmpty)
+    List("'\(name(s))': the message reads a run-time value; a notice renders static text with at most one capture's output, so read the value with a capture first")
+  else if (s is core.FetchedScript && s.creates != null && (s.creates == s.dest || s.dest.startsWith(s.creates + "/")))
+    List("'\(name(s))': the marker is at or above the destination; the download runs before the probe and leaves the marker present, so the probe skips the run on every apply and the fetched script never runs")
+  else if (s is linux.GitBranch && s.branch.startsWith("refs/"))
+    List("'\(name(s))': branch \"\(s.branch)\" is a fully qualified ref; after fetching, the agent probes refs/remotes/origin/\(s.branch) and falls back to the stale clone-time commit, so the checkout never converges — name the branch itself")
+  else if (s is linux.GitBranch && s.path == "/")
+    List("'\(name(s))': the destination is the filesystem root; a clone there refuses a nonempty directory, and an existing /.git would turn the whole system root into the checkout, so check out beneath a directory")
+  else if (s is linux.GitBranch && looksLikeCommitSha(s.branch))
+    List("'\(name(s))': branch \"\(s.branch)\" looks like a commit SHA; resolve a tag to its SHA at author time and pin it with GitCheckout, and follow a branch here")
+  else List()
+
+/// Whether the branch spells a commit SHA: 40 or 64 hex characters of
+/// either case. Such a name never floats: it is pinned with GitCheckout,
+/// and a tag is resolved to its SHA at author time and pinned the same
+/// way. The case is the agent's: its object test reads hex of either
+/// case, so an uppercase SHA would silently pin where the author asked
+/// to follow.
+const function looksLikeCommitSha(branch: String): Boolean =
+  branch.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"))
+
+/// The run of an action in its identity: the argv of a command, the
+/// script of a script, the download, destination and arguments of a
+/// fetched script (G5). `const`, like the other helpers `Identity`
+/// calls: official Pkl lets a class body reference only const module
+/// members.
+const function actionShape(s: core.Action): String =
+  if (s is core.Command) fields(s.run.toList())
+  else if (s is core.Script) s.bash
+  else fetchedScriptShape(s)
+
+/// The download, destination and arguments of a fetched script: with the
+/// `creates` guard, the change rule, the environment and the watched
+/// steps the `Identity` adds around it, the three are the step's
+/// identity (G5).
+const function fetchedScriptShape(s: core.FetchedScript): String =
+  fields(List(s.url, s.dest, fields(s.args.toList())))
+
+/// The effective match of a line entry: the named match, or the line
+/// itself when the step names none. `const`, like the other helpers the
+/// dispatch tables call: official Pkl lets a class body reference only
+/// const module members.
+const function lineMatch(s: core.EnsureLine): String = s.regexp ?? s.line
+
+/// The ids of the captures a notice reads: at most one, enforced by
+/// `trackASettings`. One entry per capture: a message repeating one
+/// capture reads one report, not two. The same scan `capturesUsed` runs
+/// for files and mounts; a secret placeholder never matches it, and a
+/// secret in the message is refused before the lowering reads it.
+function trackANoticeRefs(s: core.Notice): List<String> =
+  let (refs = placeholder.findMatchesIn(s.message).map((m) -> m.groups[1].value)
+    .filter((p) -> p.startsWith("results.")).map((p) -> p.split(".")[1]))
+  refs.fold(List(), (seen, r) -> if (seen.contains(r)) seen else seen + List(r))
+
+/// The run-time values in a notice that are no capture's output: the
+/// host's own state, which a notice may not render. `Static` already
+/// refuses these everywhere but in file content; a notice is not file
+/// content, and its contract is static text with at most one capture.
+function noticeNonCaptureRefs(s: core.Notice): List<String> =
+  placeholder.findMatchesIn(s.message).map((m) -> m.groups[1].value)
+    .filter((p) -> !p.startsWith("results."))
+
+/// A fetched script as the engine sees it: the download converging the
+/// destination, then the guarded run. The download registers beside the
+/// run (`fetchedDownloadMeta`), so a changed download with a skipped run
+/// still reports the step's change (G5); watchers of the step read both
+/// (`anyChanged`).
+function fetchedScriptTasks(s: core.FetchedScript, m: Meta): List<engine.Task> =
+  List(task(fetchedDownloadMeta(s, m), fetchedGetUrl(s.dest, s.url), null, null))
+  + actionTasks(s, List("/bin/bash", s.dest) + s.args.toList(), m)
+
+/// The download's task fields: the step's own plan line, its tags and
+/// notifies, and the result beside the run's. Like the keyring's, a new
+/// download is a change of the step.
+function fetchedDownloadMeta(s: core.FetchedScript, m: Meta): Meta = new Meta {
+  name = "Download \(s.dest)"
+  tags = m.tags
+  notify = m.notify
+  register = if (m.register == null) null else "\(m.register)_download"
+  noLog = m.noLog
+}
+
+/// The engine's download: the URL to the destination.
+function fetchedGetUrl(_dest: String, _url: String): engine.GetUrl = new engine.GetUrl {
+  dest = _dest
+  url = _url
+}
+
+/// The engine's line entry: the line present in the file under its
+/// match, or under an exact comparison when the author named no match.
+/// A named match is a regular expression; an omitted one is the literal
+/// line itself, which must not be read as a pattern.
+function lineEntry(_path: String, _line: String, _match: String?): engine.LineInFile = new engine.LineInFile {
+  path = _path
+  line = _line
+  regexp = _match
+  state = "present"
+}
+
+/// The engine's replacement: every match rewritten, or deleted without
+/// one.
+function replaceEntry(_path: String, _regexp: String, _replace: String?): engine.Replace = new engine.Replace {
+  path = _path
+  regexp = _regexp
+  when (_replace != null) { replace = _replace }
+}
+
+/// The engine's notice: an informational debug. It never reports a
+/// change (`lit(false)`); a capture-backed one warns only when the
+/// report is not empty (`noticeWhen`).
+function noticeDebug(s: core.Notice): engine.Debug = new engine.Debug { msg = runtimeText(s.message) }
+
+/// When the notice prints: a static one always does, and a capture-backed
+/// one only when the report names something — an empty report is nothing
+/// to warn about.
+function noticeWhen(s: core.Notice): engine.Expr? =
+  if (trackANoticeRefs(s).isEmpty) null
+  else call2("ne", ref(List("results", trackANoticeRefs(s).first, "stdout")), lit(""))
+
+/// The engine's branch checkout: the branch as the version, updated to
+/// the branch head on every apply, with the author's host-key choice.
+/// Never forced: a dirty tree fails the apply instead of being
+/// overwritten.
+function gitBranchCheckout(_repo: String, _dest: String, _version: String, _acceptHostKey: Boolean): engine.Git = new engine.Git {
+  repo = _repo
+  dest = _dest
+  version = _version
+  update = true
+  accept_hostkey = _acceptHostKey
+}
 
 // ── Run-time and secret text ────────────────────────────────────────────────
 

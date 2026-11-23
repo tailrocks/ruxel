@@ -1,0 +1,13 @@
+// expect: cannot be inside it
+// A line entry needs its file's directory: an entry beneath a path a
+// regular file manages fails where the file left no directory, so the
+// two cannot share a stage.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new File { title = "Write the tool state"; path = "/etc/tool"; content = "state\n" }
+  new EnsureLine { title = "Set the tool config line"; path = "/etc/tool/config"; line = "key = value" }
+} } }
+
+name = "invalid/ensure-line-under-file.pkl"

@@ -26,19 +26,14 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let exists = dest_git.is_dir();
     let action = repo_action(exists, update, ctx.check_mode);
 
-    let mut env_ssh = String::new();
-    if accept_hostkey {
-        env_ssh = "ssh -o StrictHostKeyChecking=accept-new".to_string();
-    }
+    let env_ssh = ssh_command(accept_hostkey);
     let git = |args: &[&str], cwd: Option<&str>| -> Result<(String, bool), String> {
         let mut cmd = std::process::Command::new("git");
         cmd.args(args);
         if let Some(d) = cwd {
             cmd.current_dir(d);
         }
-        if !env_ssh.is_empty() {
-            cmd.env("GIT_SSH_COMMAND", &env_ssh);
-        }
+        cmd.env("GIT_SSH_COMMAND", &env_ssh);
         for (k, v) in &ctx.environment {
             cmd.env(k, v);
         }
@@ -286,6 +281,18 @@ fn advertised_object(refs: &str, version: &str) -> Result<Option<String>, String
 
 fn clone_branch(version: Option<&str>) -> Option<&str> {
     version.filter(|version| *version != "HEAD")
+}
+
+/// The SSH wrapper for Git: opt-in host-key acceptance, or strict
+/// rejection otherwise. Leaving the field false must reject an unseen
+/// host key even where the ambient SSH configuration would accept one,
+/// or the opt-in promises nothing.
+fn ssh_command(accept_hostkey: bool) -> String {
+    if accept_hostkey {
+        "ssh -o StrictHostKeyChecking=accept-new".to_string()
+    } else {
+        "ssh -o StrictHostKeyChecking=yes".to_string()
+    }
 }
 
 fn validate_positionals(values: &[(&str, Option<&str>)]) -> Result<(), String> {

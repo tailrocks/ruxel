@@ -1,0 +1,14 @@
+// Line entries compose in one file in stage order (G2): two entries with
+// different matches coexist, and the replacement rewrites its match. An
+// exact repeat merges.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+name = "valid/ensure-line.pkl"
+
+stages { new Stage { title = "Holla config"; hosts = inventory.workers; steps {
+  new File { path = "/etc/holla/holla.conf"; content = "# holla\n" }
+  new EnsureLine { title = "Set the holla port"; path = "/etc/holla/holla.conf"; line = "port = 8080" }
+  new EnsureLine { title = "Set the holla host"; path = "/etc/holla/holla.conf"; line = "host = 0.0.0.0"; regexp = "host\\s*=.*" }
+  new ReplaceLine { title = "Drop the debug flag"; path = "/etc/holla/holla.conf"; regexp = "^debug = true$"; replace = "debug = false" }
+} } }

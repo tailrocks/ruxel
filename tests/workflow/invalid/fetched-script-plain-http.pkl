@@ -1,0 +1,12 @@
+// expect-pkl: isHttpsUrl(this)
+// expect-pklr: expected HttpsUrl
+// Only https fetches: a plain-http URL would run whatever the network
+// answers, so the download refuses one.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new FetchedScript { title = "Fetch over plain http"; url = "http://get.example.test/holla/install.sh"; dest = "/opt/holla-install.sh"; creates = "/opt/holla/.installed"; onChangeOf {} }
+} } }
+
+name = "invalid/fetched-script-plain-http.pkl"

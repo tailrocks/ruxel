@@ -1,0 +1,13 @@
+// expect-pkl: isSshGitUrl(this)
+// expect-pklr: expected SshGitUrl
+// An SSH URL's port is digits: a port the agent cannot dial reaches no
+// machine, so the checkout refuses it.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Linux.pkl" as linux
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new linux.GitBranch { title = "Follow the holla release branch"; repository = "ssh://git@git.example.test:two/holla/holla.git"; path = "/opt/holla"; branch = "main" }
+} } }
+
+name = "invalid/git-branch-ssh-bad-port.pkl"

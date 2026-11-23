@@ -3,7 +3,9 @@
     expect(clippy::unwrap_used, reason = "replaced by the Ruxel rewrite")
 )]
 
-use super::{ExecContext, params_object, str_param, write_atomic};
+use super::{
+    ExecContext, params_object, refuse_final_symlink, reject_empty_span, str_param, write_atomic,
+};
 use regex_lite::Regex;
 use serde_json::{Value, json};
 
@@ -13,15 +15,20 @@ pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let state = str_param(obj, "state").unwrap_or("present");
     let line = str_param(obj, "line");
     let regexp = match str_param(obj, "regexp") {
-        Some(r) => Some(Regex::new(r).map_err(|e| format!("lineinfile regexp: {e}"))?),
+        Some(r) => {
+            let compiled = Regex::new(r).map_err(|e| format!("lineinfile regexp: {e}"))?;
+            reject_empty_span("lineinfile", r, compiled.is_match(""))?;
+            Some(compiled)
+        }
         None => None,
     };
 
-    let current = std::fs::read_to_string(path).map_err(|e| format!("read {path}: {e}"))?;
+    let target = refuse_final_symlink("lineinfile", path)?;
+    let current = std::fs::read_to_string(target).map_err(|e| format!("read {path}: {e}"))?;
     let (content, changed) = rewrite_lines(&current, state, line, regexp.as_ref())?;
 
     if changed && !ctx.check_mode {
-        write_atomic(std::path::Path::new(path), content.as_bytes())?;
+        write_atomic(target, content.as_bytes())?;
     }
 
     let mut result = json!({"changed": changed, "failed": false, "msg": if changed { "line changed" } else { "" }});
@@ -45,15 +52,47 @@ fn rewrite_lines(
         "present" => {
             let line = line.ok_or("lineinfile: line required for present")?;
             if lines.iter().any(|l| l == line) {
-            } else if let Some(re) = regexp {
-                let last_match = lines.iter().rposition(|l| re.is_match(l));
-                if let Some(idx) = last_match {
-                    lines[idx] = line.to_string();
-                    changed = true;
-                } else {
-                    lines.push(line.to_string());
-                    changed = true;
+                // The line is there: any other line the match still names
+                // is stale — the file may still parse the stale value —
+                // so the entry removes those and only those.
+                if let Some(re) = regexp {
+                    let before = lines.len();
+                    let mut kept = false;
+                    lines.retain(|l| {
+                        if l == line && !kept {
+                            kept = true;
+                            true
+                        } else {
+                            !re.is_match(l)
+                        }
+                    });
+                    changed = lines.len() != before;
                 }
+            } else if let Some(re) = regexp {
+                // The line is absent: rewrite the last match in place, or
+                // append when nothing matches — and drop every other
+                // match, so one apply establishes the entry instead of
+                // leaving a stale line for the next one to remove.
+                match lines.iter().rposition(|l| re.is_match(l)) {
+                    Some(idx) => {
+                        lines[idx] = line.to_string();
+                    }
+                    None => {
+                        lines.push(line.to_string());
+                    }
+                }
+                let mut seen = false;
+                lines.retain(|l| {
+                    if l == line && !seen {
+                        seen = true;
+                        true
+                    } else {
+                        !re.is_match(l)
+                    }
+                });
+                // The rewrite or the append changes the file; dropping
+                // any other match only adds to it.
+                changed = true;
             } else {
                 lines.push(line.to_string());
                 changed = true;
@@ -78,9 +117,17 @@ fn rewrite_lines(
     }
 
     if changed {
-        let mut content = lines.join("\n");
+        // The file keeps its own line endings: rebuilding a CRLF file
+        // with LF would rewrite every unrelated line and corrupt
+        // format-sensitive files.
+        let ending = if current.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let mut content = lines.join(ending);
         if had_trailing_nl || !content.is_empty() {
-            content.push('\n');
+            content.push_str(ending);
         }
         Ok((content, true))
     } else {
@@ -93,13 +140,97 @@ mod tests {
     use super::*;
 
     #[test]
-    fn verbatim_line_wins_before_regexp_rewrite() {
+    fn present_line_removes_stale_matches_and_converges() {
         let re = Regex::new("^key=").unwrap();
-        let current = "key=old\nkey=want\n";
+        let (next, changed) = rewrite_lines(
+            "key=old\nkey=want\n",
+            "present",
+            Some("key=want"),
+            Some(&re),
+        )
+        .unwrap();
+        assert_eq!(next, "key=want\n");
+        assert!(changed);
         assert_eq!(
-            rewrite_lines(current, "present", Some("key=want"), Some(&re)).unwrap(),
-            (current.into(), false)
+            rewrite_lines(&next, "present", Some("key=want"), Some(&re)).unwrap(),
+            (next.clone(), false)
         );
+    }
+
+    #[test]
+    fn absent_line_converges_in_one_apply() {
+        let re = Regex::new("^key=").unwrap();
+        let (next, changed) =
+            rewrite_lines("key=1\nkey=2\n", "present", Some("key=3"), Some(&re)).unwrap();
+        assert_eq!(next, "key=3\n");
+        assert!(changed);
+        assert_eq!(
+            rewrite_lines(&next, "present", Some("key=3"), Some(&re)).unwrap(),
+            (next.clone(), false)
+        );
+    }
+
+    #[test]
+    fn crlf_files_keep_crlf_endings() {
+        let re = Regex::new("^key=").unwrap();
+        let (next, changed) = rewrite_lines("a\r\nb\r\n", "present", Some("c"), Some(&re)).unwrap();
+        assert_eq!(next, "a\r\nb\r\nc\r\n");
+        assert!(changed);
+        let (stable, changed) = rewrite_lines("a\r\nb\r\n", "present", Some("a"), None).unwrap();
+        assert_eq!(stable, "a\r\nb\r\n");
+        assert!(!changed);
+    }
+
+    #[test]
+    fn empty_span_patterns_are_refused_before_touching_the_file() {
+        let path =
+            std::env::temp_dir().join(format!("ruxel-lineinfile-empty-{}", std::process::id()));
+        std::fs::write(&path, "a\n").unwrap();
+        let context = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let error = run(&json!({"path": path, "regexp": "^", "line": "a"}), &context).unwrap_err();
+        assert!(error.contains("empty spans"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a\n");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn final_symlinks_are_refused_loudly() {
+        use std::os::unix::fs::symlink;
+        let target =
+            std::env::temp_dir().join(format!("ruxel-lineinfile-target-{}", std::process::id()));
+        let link =
+            std::env::temp_dir().join(format!("ruxel-lineinfile-link-{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        std::fs::write(&target, "key=old\n").unwrap();
+        symlink(&target, &link).unwrap();
+        let context = ExecContext {
+            check_mode: false,
+            diff_mode: false,
+            no_log: false,
+            environment: vec![],
+            become_user: None,
+        };
+        let error = run(
+            &json!({"path": link, "regexp": "^key=", "line": "key=new"}),
+            &context,
+        )
+        .unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "key=old\n");
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        std::fs::remove_file(&link).unwrap();
+        std::fs::remove_file(&target).unwrap();
     }
 
     #[test]
@@ -109,7 +240,7 @@ mod tests {
             rewrite_lines("key=1\nother\nkey=2\n", "present", Some("key=3"), Some(&re))
                 .unwrap()
                 .0,
-            "key=1\nother\nkey=3\n"
+            "other\nkey=3\n"
         );
         assert_eq!(
             rewrite_lines("other\n", "present", Some("key=3"), Some(&re))
