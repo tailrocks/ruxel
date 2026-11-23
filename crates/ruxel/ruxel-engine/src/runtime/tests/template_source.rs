@@ -27,6 +27,7 @@ fn template_execution(directory: &std::path::Path) -> Result<Execution> {
         },
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(templates::SourceRoot::open(directory)?),
         copy_root: Arc::new(copy_sources::SourceRoot::open(directory)?),

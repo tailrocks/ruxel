@@ -40,6 +40,10 @@ struct Execution {
     lookups: Arc<Lookups>,
     output: Arc<Output>,
     resources: Arc<tokio::sync::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<Resources>>>>>,
+    /// The sysctl catalogue entries each agent session has already
+    /// received: the plan's declarations ride every frame, so the
+    /// per-frame send carries only what the session has not seen yet.
+    sysctl_sent: Arc<tokio::sync::Mutex<BTreeMap<String, Vec<ruxel_proto::v1::SysctlDeclaration>>>>,
     source_gate: Arc<tokio::sync::RwLock<()>>,
     template_root: Arc<templates::SourceRoot>,
     copy_root: Arc<copy_sources::SourceRoot>,
@@ -108,6 +112,7 @@ pub async fn run(
         mode: options.mode,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root,
         copy_root,

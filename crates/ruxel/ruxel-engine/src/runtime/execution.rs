@@ -9,6 +9,30 @@ use ruxel_proto::v1;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 
+impl Execution {
+    /// The catalogue entries the agent session has not seen yet: the
+    /// plan's sysctl declarations ride every frame today, so N
+    /// unconditional sysctls cost O(N^2) wire and allocation across the
+    /// session's frames and can trip the frame limit — while the agent
+    /// accumulates every frame's set into its own plan set
+    /// (`merge_frame_declarations`), so sending each entry once per
+    /// agent session converges to the same managed set. One agent
+    /// session runs per host here (connections establish once and are
+    /// never re-established), so the per-host sent set is the session's.
+    pub(super) async fn unsent_sysctl(&self, request: &Request) -> Vec<v1::SysctlDeclaration> {
+        let mut sent = self.sysctl_sent.lock().await;
+        let sent = sent.entry(request.host.clone()).or_default();
+        let unsent: Vec<v1::SysctlDeclaration> = request
+            .plan_sysctl
+            .iter()
+            .filter(|declared| !sent.contains(declared))
+            .cloned()
+            .collect();
+        sent.extend(unsent.iter().cloned());
+        unsent
+    }
+}
+
 impl Backend for Execution {
     fn connection_failures(&self) -> u64 {
         self.connection_failures
@@ -167,7 +191,8 @@ impl Backend for Execution {
             .iterations
             .first()
             .and_then(|iteration| serde_json::from_slice::<Value>(&iteration.params_json).ok());
-        let plan = copy_sources::plan(request.task, request.plan_sysctl)?;
+        let unsent = self.unsent_sysctl(&request).await;
+        let plan = copy_sources::plan(request.task, unsent)?;
         connection.send(&plan).await.inspect_err(|_| {
             self.connection_failures += 1;
         })?;

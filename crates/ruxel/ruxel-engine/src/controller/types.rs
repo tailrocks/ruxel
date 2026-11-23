@@ -13,8 +13,9 @@ pub struct Request {
     /// The keyed fingerprint of the task's secret-bearing content, built
     /// from the selectors alone before the content was evaluated.
     pub content_fingerprint: Option<String>,
-    /// The plan's static sysctl declarations, carried on every frame so
-    /// the agent weighs later stages' files before they execute.
+    /// The plan's static sysctl declarations, whose unseen entries ride
+    /// each frame so the agent weighs later stages' files before they
+    /// execute; entries the session already received stay behind.
     pub plan_sysctl: Vec<super::v1::SysctlDeclaration>,
 }
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

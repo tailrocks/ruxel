@@ -8,6 +8,7 @@ mod copy_fingerprint;
 mod fetch_secret;
 mod prefetch;
 mod sensitive_output;
+mod sysctl_catalogue;
 
 #[test]
 fn sensitive_event_exposes_only_safe_metadata() -> Result<()> {

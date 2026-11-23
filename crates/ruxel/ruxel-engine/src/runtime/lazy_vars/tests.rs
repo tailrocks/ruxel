@@ -32,6 +32,7 @@ fn execution() -> Result<Execution> {
         mode: Mode::Apply,
         connections: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         resources: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+        sysctl_sent: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
         source_gate: Arc::new(tokio::sync::RwLock::new(())),
         template_root: Arc::new(crate::runtime::templates::SourceRoot::open(
             std::path::Path::new("."),
