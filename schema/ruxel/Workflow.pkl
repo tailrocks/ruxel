@@ -24,8 +24,12 @@ import "modulepath:/ruxel/internal/Lowering.pkl" as Lowering
 /// not the directory it was loaded from. Name it after what the
 /// workflow does (for example the repository and purpose); the corpus
 /// names its fixtures by their path, which is unique there for the
-/// same reason.
-name: String
+/// same reason. The name must not be empty: two empty-named workflows
+/// with common play and target names would share one namespace, and
+/// one run could consume or prune the other's ledger records. The
+/// emptiness itself is refused in `internal/Lowering.pkl` as well,
+/// which both evaluators enforce with the same message.
+name: String(length > 0)
 
 /// Stages run one after another.
 stages: Listing<Stage>

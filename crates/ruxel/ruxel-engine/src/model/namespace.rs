@@ -15,10 +15,14 @@ use serde_json::Value;
 /// the revision before last wrote, nor the structure-only digests of
 /// the revision that dropped the path but not the collisions.
 pub fn workflow_namespace(config: &Value) -> String {
+    // `validate_config` refuses an empty or missing workflow name, so
+    // the identity below never defaults: a silent default would let two
+    // unrelated empty-named workflows share one ledger namespace.
     let workflow = config
         .get("workflow")
         .and_then(Value::as_str)
-        .unwrap_or_default();
+        .filter(|workflow| !workflow.is_empty())
+        .expect("workflow identity is validated before namespacing");
     let mut plays: Vec<(&str, Vec<&str>)> = config
         .get("plays")
         .and_then(Value::as_array)

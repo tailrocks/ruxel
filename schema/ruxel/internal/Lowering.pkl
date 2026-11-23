@@ -40,7 +40,8 @@ hidden servedFingerprint: String = "unserved"
 /// the checkout's location never becomes the identity.
 function config(stages: Listing<core.Stage>, workflowFingerprint: String, workflowName: String): engine.Config =
   let (copied = copiedClasses(stages.toList()))
-  if (copied != null) throw(copied)
+  if (workflowName.isEmpty) throw("The workflow needs a name: two empty-named workflows with common play and target names would share one ledger namespace.")
+  else if (copied != null) throw(copied)
   else (configOf(hostsOf(stages), stages.toList(), checkedIndexes(stages), workflowName)) {
     languageFingerprint = fingerprintOf(workflowFingerprint, servedFingerprint)
   }

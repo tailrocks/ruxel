@@ -1,0 +1,12 @@
+// An empty workflow name is refused: the name is the ledger's stable
+// identity, so two empty-named workflows with common play and target
+// names would share one namespace, and one run could consume or prune
+// the other's records.
+// expect: The workflow needs a name
+amends "modulepath:/ruxel/Workflow.pkl"
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+} } }
+
+name = ""

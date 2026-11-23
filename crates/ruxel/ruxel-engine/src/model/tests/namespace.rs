@@ -63,6 +63,30 @@ fn namespace_names_plays_and_hosts() {
 }
 
 #[test]
+fn empty_workflow_names_are_refused_before_namespacing() {
+    // Thread 328: the documentation requires an identity no other
+    // workflow on the machines shares, so an empty name is refused at
+    // validation: two unrelated empty-named workflows with common play
+    // and target names would otherwise share one namespace, and a
+    // completed run could consume or prune the other's ledger records.
+    let mut empty = workflow(json!({"kind": "debug", "msg": "one"}));
+    empty["workflow"] = json!("");
+    assert!(
+        validate_config(&empty).is_err(),
+        "an empty workflow name is refused"
+    );
+    let mut missing = workflow(json!({"kind": "debug", "msg": "one"}));
+    missing
+        .as_object_mut()
+        .expect("config")
+        .remove("workflow");
+    assert!(
+        validate_config(&missing).is_err(),
+        "a missing workflow name is refused"
+    );
+}
+
+#[test]
 fn namespace_names_the_workflow() {
     // Threads 319 and 324: the explicit workflow identity is the
     // namespace's first domain — two workflows that reuse every play
