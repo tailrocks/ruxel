@@ -136,8 +136,7 @@ impl Modules {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default();
+            .map_or_default(|elapsed| elapsed.as_nanos());
         let path = std::env::temp_dir().join(format!(
             "ruxel-dual-evaluator-{}-{}-{}",
             std::process::id(),

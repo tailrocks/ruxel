@@ -26,8 +26,7 @@ fn run_directory() -> Result<&'static std::path::Path, String> {
     let base = std::env::temp_dir();
     let started = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or_default();
+        .map_or_default(|elapsed| elapsed.as_nanos());
     let mut attempt = 0_u32;
     loop {
         let directory = base.join(format!(
