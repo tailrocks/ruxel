@@ -18,7 +18,7 @@ default_branch = "main"
 runner = "ubuntu-26.04-scale-set"
 hosted = false
 required_check = "Required"
-mbx_shared_store = true
+mbx_shared_store = false
 docs = "post_merge"
 check_alone = "post_merge"
 
