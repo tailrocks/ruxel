@@ -117,8 +117,9 @@ typealias CommitSha = String(matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}")))
 /// An SSH Git URL: the `scp`-like `user@host:path` or the `ssh://`
 /// scheme. Never `https`: a branch checkout authenticates over SSH, and
 /// the two transports take different credentials, so one spelling cannot
-/// name both. No spaces and no NUL, which no URL can hold, and no
-/// run-time value or secret reference: the repository is static text.
+/// name both. No spaces and no control characters, which no URL can hold,
+/// and no run-time value or secret reference: the repository is static
+/// text.
 typealias SshGitUrl = Static(isSshGitUrl(this))
 
 /// Whether the text is an SSH Git URL: the `ssh://` scheme with a user,
@@ -126,10 +127,14 @@ typealias SshGitUrl = Static(isSshGitUrl(this))
 /// `ssh://` — `https://`, or `https://user@host:port/…` — is refused,
 /// and so is a text without a user or without a path.
 const local function isSshGitUrl(s: String): Boolean =
-  !s.contains(" ") && (isSshSchemeUrl(s) || isScpGitUrl(s))
+  !s.contains(" ") && !s.matches(Regex("(?s).*[\\x00-\\x1f\\x7f].*")) && (isSshSchemeUrl(s) || isScpGitUrl(s))
 
 const local function isSshSchemeUrl(s: String): Boolean =
-  s.startsWith("ssh://") && s.substring(7, s.length).contains("@") && s.substring(7, s.length).length > 2
+  s.startsWith("ssh://") && (
+    let (rest = s.substring(7, s.length))
+    let (at = rest.indexOf("@"))
+    let (slash = if (rest.contains("/")) rest.indexOf("/") else rest.length)
+    at > 0 && slash > at + 1 && slash < rest.length - 1)
 
 const local function isScpGitUrl(s: String): Boolean =
   let (at = s.indexOf("@"))
@@ -138,11 +143,12 @@ const local function isScpGitUrl(s: String): Boolean =
   !s.contains("://") && at > 0 && colon > 0 && colon < rest.length - 1
 
 /// A Git branch name: letters, digits, `.`, `_`, `/` and `-`, never an
-/// empty component and never `.` or `..` beside a separator, the way
-/// `git check-ref-format` reads one. A 40- or 64-character lowercase hex
-/// string also matches, but the Lowering refuses it there: that spells a
-/// commit SHA, which is pinned with `GitCheckout`, never followed here.
-typealias BranchName = Static(matches(Regex("[A-Za-z0-9._/-]+")) && !contains("..") && !startsWith("/") && !endsWith("/") && !contains("//"))
+/// empty component and never `.` or `..` beside a separator, and never a
+/// `.lock` suffix, the way `git check-ref-format` reads one. A 40- or
+/// 64-character lowercase hex string also matches, but the Lowering
+/// refuses it there: that spells a commit SHA, which is pinned with
+/// `GitCheckout`, never followed here.
+typealias BranchName = Static(matches(Regex("[A-Za-z0-9._/-]+")) && !contains("..") && !startsWith("/") && !endsWith("/") && !contains("//") && this != "." && !startsWith("./") && !endsWith("/.") && !contains("/./") && !endsWith(".lock"))
 
 /// `https://`, a host name, IPv4 address or bracketed IPv6 address, an
 /// optional port from 1 to 65535, and an optional path without spaces.
