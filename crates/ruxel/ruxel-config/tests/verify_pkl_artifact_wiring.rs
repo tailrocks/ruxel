@@ -1,10 +1,18 @@
 //! The committed wiring around `tools/verify-pkl-artifact`: the
 //! mise.lock slots the verifier compares the installed binary against,
-//! and the `.velnor/config.toml` input lists that decide whether the
+//! and the `.velnor/rust-ci.toml` entries that decide whether the
 //! mandatory pkl suites run at all when a PR touches the files they
-//! read. An input list that omits such a file classifies the mandatory
+//! read. A selection that omits such a file classifies the mandatory
 //! check unaffected and skips it, so the association is a contract, not
 //! a comment.
+//!
+//! velnor-gen renders every `[[lint]]` entry as a job that runs on every
+//! ready pull request with no file selection, so the dual-evaluator
+//! check reruns on any change by construction and what could silently
+//! drop it is the entry going missing. The ruxel-config test lane is
+//! still file-selected through `[[inputs]]`, so its mapping of
+//! `tools/verify-pkl-artifact` stays a checked per-file contract, as do
+//! the corpus-file presence checks below.
 //!
 //! PR #91 thread `PRRT_kwDOS3Fimc62bLfg`: no pkl musl slot may pin a
 //! glibc asset, and linux-arm64-musl carries no slot at all while
@@ -16,7 +24,7 @@
 //! when `tools/verify-pkl-artifact` changes, because the lane's
 //! `verify_pkl_artifact` suite executes that script.
 //! Thread `PRRT_kwDOS3Fimc62ioGG`: every workflow the dual-evaluator
-//! corpus names must be an input of the `dual-evaluator` check. The
+//! corpus names must be covered by the `dual-evaluator` check. The
 //! corpus lives in a feature-gated target the pkl-less lanes skip, so an
 //! omission there cannot catch itself: this file is an ordinary target
 //! of the same lane, and it reads the corpus source rather than running
@@ -65,23 +73,32 @@ fn pkl_slots(lock: &DocumentMut) -> Result<Vec<(String, String)>> {
     Ok(slots)
 }
 
-/// The declared inputs of one generated check.
-fn check_inputs<'a>(config: &'a DocumentMut, id: &str) -> Result<Vec<&'a str>> {
-    let checks = config
-        .get("checks")
+/// The dual-evaluator lint entry: velnor-gen renders every `[[lint]]`
+/// as a job that runs on every ready pull request with no file
+/// selection, so the check reruns on any change — including
+/// `.cargo/config.toml`, whose `[env]` can point `RUXEL_PKL` at a
+/// binary of its own — by construction. What could silently drop the
+/// mandatory suite is the entry going missing or pointing at another
+/// task, so that is what this contract pins.
+fn dual_evaluator_lint(config: &DocumentMut) -> Result {
+    let lints = config
+        .get("lint")
         .and_then(Item::as_array_of_tables)
-        .ok_or(".velnor/config.toml has no [[checks]]")?;
-    for check in checks {
-        if check.get("id").and_then(Item::as_str) != Some(id) {
+        .ok_or(".velnor/rust-ci.toml has no [[lint]]")?;
+    for lint in lints {
+        if lint.get("id").and_then(Item::as_str) != Some("dual-evaluator") {
             continue;
         }
-        let inputs = check
-            .get("inputs")
-            .and_then(Item::as_array)
-            .ok_or(format!("the {id} check carries no inputs"))?;
-        return Ok(inputs.iter().filter_map(|value| value.as_str()).collect());
+        let task = lint.get("task").and_then(Item::as_str).unwrap_or_default();
+        if task != "dual-evaluator" {
+            return Err(format!(
+                "the dual-evaluator lint entry must run the dual-evaluator mise task; it runs {task:?}"
+            )
+            .into());
+        }
+        return Ok(());
     }
-    Err(format!(".velnor/config.toml has no {id} check").into())
+    Err(".velnor/rust-ci.toml has no dual-evaluator [[lint]] entry".into())
 }
 
 /// The dual-evaluator corpus contract: every file that target reads must
@@ -125,15 +142,12 @@ fn no_pkl_musl_slot_pins_a_glibc_asset() -> Result {
 /// affects the mandatory suite's `cargo test` invocation.
 #[test]
 fn the_dual_evaluator_check_reruns_when_the_cargo_config_changes() -> Result {
-    let config = committed(".velnor/config.toml")?;
-    let inputs = check_inputs(&config, "dual-evaluator")?;
-    if !inputs.contains(&".cargo/config.toml") {
-        return Err(format!(
-            "the dual-evaluator check must declare .cargo/config.toml an input; declared: {inputs:?}"
-        )
-        .into());
-    }
-    Ok(())
+    // No per-file selection: every [[lint]] job runs on every ready pull
+    // request, so the check reruns when `.cargo/config.toml` changes by
+    // construction. The contract is the entry's existence (see
+    // `dual_evaluator_lint`).
+    let config = committed(".velnor/rust-ci.toml")?;
+    dual_evaluator_lint(&config)
 }
 
 /// `PRRT_kwDOS3Fimc62bkh9`: a PR that changes only the verifier script
@@ -143,18 +157,17 @@ fn the_dual_evaluator_check_reruns_when_the_cargo_config_changes() -> Result {
 /// unmapped lane would skip.
 #[test]
 fn the_rust_test_lane_reruns_when_the_verifier_script_changes() -> Result {
-    let config = committed(".velnor/config.toml")?;
+    let config = committed(".velnor/rust-ci.toml")?;
     let mappings = config
-        .get("stacks")
-        .and_then(|stacks| stacks.get("rust"))
-        .and_then(|rust| rust.get("inputs"))
+        .get("inputs")
         .and_then(Item::as_array_of_tables)
-        .ok_or(".velnor/config.toml has no [[stacks.rust.inputs]]")?;
+        .ok_or(".velnor/rust-ci.toml has no [[inputs]]")?;
+    let mut globs = Vec::new();
     for mapping in mappings {
         let packages = mapping
             .get("packages")
             .and_then(Item::as_array)
-            .ok_or("a [[stacks.rust.inputs]] mapping carries no packages")?;
+            .ok_or("an [[inputs]] entry carries no packages")?;
         if !packages
             .iter()
             .filter_map(|value| value.as_str())
@@ -162,20 +175,21 @@ fn the_rust_test_lane_reruns_when_the_verifier_script_changes() -> Result {
         {
             continue;
         }
-        let globs: Vec<&str> = mapping
-            .get("globs")
-            .and_then(Item::as_array)
-            .ok_or("the ruxel-config inputs mapping carries no globs")?
-            .iter()
-            .filter_map(|value| value.as_str())
-            .collect();
-        if !globs.contains(&"tools/verify-pkl-artifact") {
-            return Err(format!(
-                "the ruxel-config test lane must declare tools/verify-pkl-artifact an input; declared: {globs:?}"
-            )
-            .into());
-        }
-        return Ok(());
+        globs.push(
+            mapping
+                .get("glob")
+                .and_then(Item::as_str)
+                .ok_or("a ruxel-config [[inputs]] entry carries no glob")?,
+        );
     }
-    Err("no [[stacks.rust.inputs]] mapping runs the ruxel-config tests".into())
+    if globs.is_empty() {
+        return Err("no [[inputs]] entry runs the ruxel-config tests".into());
+    }
+    if !dual_evaluator_corpus::input_covers(&globs, "tools/verify-pkl-artifact") {
+        return Err(format!(
+            "the ruxel-config test lane must declare tools/verify-pkl-artifact an input; declared: {globs:?}"
+        )
+        .into());
+    }
+    Ok(())
 }

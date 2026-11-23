@@ -173,6 +173,21 @@ packages = ["ruxel-agent"]
 glob = "tools/pkg-config-libblkid"
 packages = ["ruxel-agent"]
 
+# Filesystem-trust tests run on a GitHub-hosted runner: the scale-set
+# pods check out onto overlayfs (0x794c7630), which the production
+# fs-allowlist refuses, while hosted ext4 passes. Moving the tests (not
+# weakening the allowlist) is the fix. The filter names every test that
+# failed for this reason in run 45116130760 and nothing else; the
+# default lane leaves them out and `velnor-ci test-groups check`
+# enforces the disjointness at build time.
+[[test_groups]]
+name = "trusted-fs"
+root = "."
+runner = "ubuntu-26.04"
+hosted = true
+needs = ["cargo"]
+filter = "package(ruxel-guard) and (test(mux::tests::rejects_untrusted_ancestor_and_final_symlink) or test(target::directory_tests::rejects_existing_directory_with_group_access) or test(target::long_path_test::rejects_long_socket_path_before_ssh) or test(target::tests::admission_uses_simulated_ssh_only_for_allowed_hosts) or test(target::tests::all_policy_refusals_precede_admission_effects) or test(target::tests::untrusted_known_hosts_are_refused_before_ssh) or test(trusted_path::tests::identity_requires_existing_trusted_regular_file) or test(trusted_path::tests::platform::linux::precreation_caps_inherited_named_user_write_permissions) or test(trusted_path::tests::precreates_private_file_and_keeps_existing_keys) or test(trusted_path::tests::rejects_final_symlink_directory_and_symlink_ancestor) or test(trusted_path::tests::rejects_parent_traversal_before_creation) or test(trusted_path::tests::rejects_writable_file_and_ancestor_without_repairing_them) or test(allowed_host_is_admitted_by_local_ssh_configuration)) or package(ruxel-agent) and (test(modules::get_url::client::tests::system_executable_resolves_to_an_absolute_trusted_path) or test(modules::get_url::download_tests::clients::trusted_absolute_client_resolution_ignores_task_path))"
+
 [[lint]]
 kind = "jactionlint"
 config = ".github/jactionlint.yaml"

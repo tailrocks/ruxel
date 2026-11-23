@@ -1,7 +1,12 @@
-//! The dual-evaluator corpus as a contract with `.velnor/config.toml`:
-//! every file the target reads must be an input of the `dual-evaluator`
-//! check, or a PR that changes only that file classifies the mandatory
-//! `Check / dual-evaluator` job unaffected. The corpus lives in a
+//! The dual-evaluator corpus as a contract with `.velnor/rust-ci.toml`:
+//! every file the target reads must be covered by the `dual-evaluator`
+//! lint entry, or a PR that changes only that file classifies the
+//! mandatory `Dual evaluator` job unaffected. velnor-gen renders every
+//! `[[lint]]` as a job that runs on every ready pull request with no
+//! file selection, so per-file coverage holds by construction while the
+//! entry exists — and what this target pins is exactly that: the
+//! entry's existence, the mise task executing every discovered harness,
+//! and every corpus file's presence. The corpus lives in a
 //! feature-gated target the pkl-less lanes skip, so an omission there
 //! cannot catch itself: this target, an ordinary one of the same lane,
 //! reads the corpus source rather than running it. The invariant's
@@ -9,7 +14,7 @@
 //! only in code and interpolation regions, never literal text or
 //! comments (line or block); block comments masked; only relative
 //! corpus paths followed; every URI scheme and `modulepath:` excluded;
-//! every discovered harness source path a declared input, and the mise
+//! every discovered harness source path present, and the mise
 //! task executing every discovered harness — and a file outside those
 //! rules is a scope question, not a defect.
 
@@ -28,6 +33,14 @@ mod mask;
 mod fnmatch;
 
 use fnmatch::matching_inputs;
+
+/// Whether any of `inputs` covers `path`, in the fnmatch sense the
+/// lane classification applies. The ruxel-config lane contract (in the
+/// parent target) shares the corpus matcher so a widened `[[inputs]]`
+/// glob keeps satisfying it.
+pub(super) fn input_covers(inputs: &[&str], path: &str) -> bool {
+    !matching_inputs(inputs, path).is_empty()
+}
 
 /// The Pkl text scanner the corpus contract reads sources with; a
 /// utility kept beside this module so the contract itself stays small.
@@ -137,30 +150,27 @@ fn examples(harness: &str, declaration: &str) -> Result<Vec<String>> {
 }
 
 /// `PRRT_kwDOS3Fimc62ioGG`: every workflow each dual-evaluator harness
-/// names must be an input of the `dual-evaluator` check — the
+/// names must be covered by the `dual-evaluator` check — the
 /// secret-language corpus and PR #94's systemd corpus alike. The lists
-/// and the input list are maintained by hand and can drift: PR #90
-/// added `valid/user-missing-account.pkl` without declaring it, and a
-/// PR that changed only that file classified the mandatory
-/// `Check / dual-evaluator` job unaffected. The suites that would
-/// notice are the ones being skipped, so the contract lives in this
-/// ordinary, always-run lane.
+/// were once matched against a hand-maintained input list that could
+/// drift: PR #90 added `valid/user-missing-account.pkl` without
+/// declaring it, and a PR that changed only that file classified the
+/// mandatory check unaffected. Under velnor-gen every `[[lint]]` job
+/// runs on every ready pull request, so coverage holds by construction
+/// while the entry exists; the suites that would notice a missing entry
+/// are the ones being skipped, so the contract lives in this ordinary,
+/// always-run lane.
 #[test]
 fn every_dual_evaluator_example_is_a_declared_input() -> Result {
-    let config = committed(".velnor/config.toml")?;
-    let inputs = check_inputs(&config, "dual-evaluator")?;
+    let config = committed(".velnor/rust-ci.toml")?;
+    // The entry runs unconditionally: no per-file inputs to drift.
+    dual_evaluator_lint(&config)?;
     for (harness, declaration) in harnesses()? {
         for example in examples(&harness, &declaration)? {
             let path = format!("tests/workflow/{example}");
             if !repo().join(&path).is_file() {
                 return Err(format!(
                     "{harness}: EXAMPLES names {path}, which is not a committed file"
-                )
-                .into());
-            }
-            if matching_inputs(&inputs, &path).is_empty() {
-                return Err(format!(
-                    "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
                 )
                 .into());
             }
@@ -185,8 +195,9 @@ fn every_dual_evaluator_example_is_a_declared_input() -> Result {
 /// required, because that is the day the suite reads it.
 #[test]
 fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
-    let config = committed(".velnor/config.toml")?;
-    let inputs = check_inputs(&config, "dual-evaluator")?;
+    let config = committed(".velnor/rust-ci.toml")?;
+    // The entry runs unconditionally: no per-file inputs to drift.
+    dual_evaluator_lint(&config)?;
     let harnesses = harnesses()?;
     harnesses::task_runs_every_harness(&harnesses)?;
     // The corpus the harnesses touch at runtime, from the manifest each
@@ -202,20 +213,14 @@ fn every_corpus_file_the_dual_evaluator_reads_is_declared() -> Result {
             )
             .into());
         }
-        if matching_inputs(&inputs, path).is_empty() {
-            return Err(format!(
-                "the dual-evaluator check must declare {path} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
-            )
-            .into());
-        }
     }
-    // A harness source is a file the check reads too: an undeclared
-    // module would classify the mandatory check unaffected for a PR
-    // that changes only it (`PRRT_kwDOS3Fimc62pCSO`).
+    // A harness source is a file the check reads too: a missing module
+    // breaks the mandatory check for a PR that changes only it
+    // (`PRRT_kwDOS3Fimc62pCSO`), so presence is still pinned here.
     for source in harness_sources()? {
-        if matching_inputs(&inputs, &source).is_empty() {
+        if !repo().join(&source).is_file() {
             return Err(format!(
-                "the dual-evaluator check must declare {source} an input; a PR that changes only it classifies the mandatory check unaffected; declared: {inputs:?}"
+                "the dual-evaluator harness source {source} is not a committed file"
             )
             .into());
         }

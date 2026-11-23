@@ -1610,7 +1610,7 @@
     "tools/acceptance-copy/Cargo.toml": "cd61c5db083b8fc369e19fc7c23b3820fced1c18f1a89c61521c6ba9c4e8e30a",
     "tools/acceptance-files/Cargo.toml": "67c85b69b2065314f7257d1c0e8e8a72d721c01129d1927ce712dc3f8406391d",
     "tools/acceptance-isolation/Cargo.toml": "5657db3483aeb9929de729c186f3767b48431ed1d2159562e6a28d064eadbd3b",
-    "tools/acceptance-manifest/Cargo.toml": "04ecf21f6ad375b831a4b1bc6765513dbcee9b1122bcecac043f303a0138b4f5",
+    "tools/acceptance-manifest/Cargo.toml": "991275ae66bc211842d38bd2497ce035372d9fd88a529cc198acd6f5d8acc61e",
     "tools/acceptance-plan/Cargo.toml": "1b5beb87e35fbf0f584ca7d61e57ab72bc064e840c47865a7a609da6e1e1a27b",
     "tools/acceptance-pty/Cargo.toml": "342977f0ad07100a10af5d174affc80e4f9705b4a7a77e0d83468849a921d62b",
     "tools/acceptance-restart-rootless/Cargo.toml": "934608d763a826c3b8ffcb7be8754a36df3c6c2c52bffe775990fa85e61620a6",
