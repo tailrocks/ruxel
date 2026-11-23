@@ -182,6 +182,7 @@ stages {
   new linux.Sysctl { name = "vm.overcommit_memory"; value = "1"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
   new linux.Sysctl { name = "vm.nr_hugepages"; value = "16384"; path = "/etc/sysctl.d/10-postgres-hugepages.conf" }
   new linux.Sysctl { name = "vm.overcommit_ratio"; value = "100"; path = "/etc/sysctl.d/10-postgres-overcommit.conf" }
+  new debian.AptPackageIndex {}
   // The base packages come from the stock sources, so they install before
   // the PGDG repository is written: a stage that installs after a repository
   // plans against candidates check and diff never see, and the lowering
