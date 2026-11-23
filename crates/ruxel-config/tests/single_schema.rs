@@ -19,7 +19,7 @@ const MAY_NAME_EMBEDDED: &[&str] = &[
     "crates/ruxel-config/src/schema/tests.rs",
     "crates/ruxel-config/tests/eval.rs",
     "crates/ruxel-config/tests/single_schema.rs",
-    "tools/acceptance-plan/src/coverage/mod.rs",
+    "crates/ruxel-acceptance-plan/src/coverage/mod.rs",
     ".velnor/rust-ci.toml",
 ];
 /// `.ruxel` holds the ignored `ruxel schema export` the README documents.

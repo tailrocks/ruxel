@@ -1,0 +1,16 @@
+[package]
+name = "ruxel-acceptance-plan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+regex = "1"
+sha2.workspace = true
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }

@@ -1,10 +1,23 @@
 [workspace]
 members = [
     "crates/ruxel",
+    "crates/ruxel-acceptance-cache",
+    "crates/ruxel-acceptance-control",
+    "crates/ruxel-acceptance-copy",
+    "crates/ruxel-acceptance-files",
+    "crates/ruxel-acceptance-isolation",
+    "crates/ruxel-acceptance-manifest",
+    "crates/ruxel-acceptance-plan",
+    "crates/ruxel-acceptance-pty",
+    "crates/ruxel-acceptance-restart-rootless",
+    "crates/ruxel-acceptance-runtime",
+    "crates/ruxel-acceptance-xfs",
     "crates/ruxel-agent",
     "crates/ruxel-config",
+    "crates/ruxel-control-flow-assertions",
     "crates/ruxel-engine",
     "crates/ruxel-guard",
+    "crates/ruxel-http-fixture",
     "crates/ruxel-proto",
 ]
 resolver = "3"
@@ -21,6 +34,7 @@ homepage = "https://github.com/tailrocks/ruxel"
 ruxel-config = { path = "crates/ruxel-config", version = "0.1.0" }
 ruxel-proto = { path = "crates/ruxel-proto", version = "0.1.0" }
 ruxel-guard = { path = "crates/ruxel-guard", version = "0.1.0" }
+ruxel-engine = { path = "crates/ruxel-engine", version = "0.1.0" }
 
 base64 = "0.22"
 percent-encoding = "2"
