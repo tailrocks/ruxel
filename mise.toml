@@ -76,7 +76,7 @@ description = "Unit and integration tests"
 # execute this task — Velnor's rust adapter synthesizes its own nextest command
 # from the stack config, so nothing here runs in CI. The chain provisions the
 # official Pkl CLI for the mandatory dual-evaluator suite
-# (crates/ruxel/ruxel-config/tests/dual_evaluator.rs), which Velnor's closed
+# (crates/ruxel-config/tests/dual_evaluator.rs), which Velnor's closed
 # pinned-tool set cannot express; the suite is gated behind ruxel-config's
 # `dual-evaluator` feature (--all-features here enables it) so the pkl-less
 # lanes skip it instead of failing, and CI runs it in the dedicated
@@ -136,7 +136,7 @@ run = [
   # The feature-gated upstream path (jdx/pklr preparation, jdx/pklr#419) is
   # a non-default feature, so no other CI lane compiles it: the generated
   # rust lanes pass no feature flag. This command is the mandatory CI runner
-  # for it — the adapter in crates/ruxel/ruxel-config/src/upstream_pklr.rs is
+  # for it — the adapter in crates/ruxel-config/src/upstream_pklr.rs is
   # compiled against the pinned upstream revision and its tests run, so a
   # broken upstream revision or a renamed upstream API fails here instead of
   # rotting silently until the default dependency is flipped.
@@ -171,28 +171,28 @@ description = "Safe native Pkl acceptance against actual local agent subprocesse
 run = [
   "cargo build --locked --target-dir target -p ruxel -p ruxel-agent 1>&2",
   "perl -T -MConfig -MFcntl -MMath::BigInt -MPOSIX -e 1 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-xfs/Cargo.toml 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-plan/Cargo.toml 1>&2",
-  "cargo build --locked --target-dir target --manifest-path tools/http-fixture/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --http-fixture target/debug/ruxel-http-fixture 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-manifest/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-manifest/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-manifest/Cargo.toml --example secret_dedup -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-manifest/Cargo.toml --example secret_generation -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-pty/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-pty/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-control/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-control/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-files/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-files/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --asset testdata/workloads/pr66/assets/template.pkl 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-copy/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-copy/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-cache/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-cache/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-isolation/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-isolation/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
-  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path tools/acceptance-runtime/Cargo.toml 1>&2",
-  "cargo run --locked --target-dir target --manifest-path tools/acceptance-runtime/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-xfs/Cargo.toml 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-plan/Cargo.toml 1>&2",
+  "cargo build --locked --target-dir target --manifest-path crates/ruxel-http-fixture/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-plan/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --http-fixture target/debug/ruxel-http-fixture 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --scenario check-semantics --scenario multihost --scenario controller-delegation 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml --example secret_dedup -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-manifest/Cargo.toml --example secret_generation -- target/debug/ruxel target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-pty/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-pty/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-control/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-control/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-files/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-files/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent --asset testdata/workloads/pr66/assets/template.pkl 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-copy/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-copy/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-cache/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-cache/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-isolation/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-isolation/Cargo.toml -- --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
+  "RUSTDOC=\"$(rustc --print sysroot)/bin/rustdoc\" cargo test --locked --target-dir target --manifest-path crates/ruxel-acceptance-runtime/Cargo.toml 1>&2",
+  "cargo run --locked --target-dir target --manifest-path crates/ruxel-acceptance-runtime/Cargo.toml -- --root . --ruxel target/debug/ruxel --agent target/debug/ruxel-agent 1>&2",
 ]
 
 [tasks.check]

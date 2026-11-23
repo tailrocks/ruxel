@@ -5,7 +5,7 @@ Rust crates. Every crate runs both `cargo test` and its actual local CLI/agent
 runner. Building a runner alone does not establish acceptance. The former driver
 sources remain until coordinated removal; these tasks no longer select them.
 
-| Rust crate under `tools/` | Replaced drivers and unit modules under `tests/acceptance/pr66/` |
+| Rust crate under `crates/` | Replaced drivers and unit modules under `tests/acceptance/pr66/` |
 | --- | --- |
 | `acceptance-plan` | `test_coverage`, `coverage`, `plan_matrix` |
 | `acceptance-manifest` | `test_expectations_runner`, `expectations_runner`, both `local_scenarios` selections |
@@ -36,7 +36,7 @@ invocation so a final private command does not suppress later public checks;
 their payload remains shared. Privacy and cross-play suites retain shared state
 to check persistent sensitivity, convergence and drift repair.
 
-`cargo-deny` runs per Cargo root (workspace root plus every `tools/*` root), as
+`cargo-deny` runs on the single unified workspace root, as
 generated from the workspace layout by `velnor-gen`. Named checks declare Rust
 sources, manifests, lockfiles, fixtures and frozen oracle inputs explicitly.
 

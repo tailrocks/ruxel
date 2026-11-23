@@ -135,7 +135,7 @@ typealias PreferencePin = OneLine(matches(Regex(#"((?i:version|origin)\s+\S+|(?i
 /// one of its property types names a class of another module — the step
 /// classes of this module would no longer be `core.Step`s, and the lowering
 /// would refuse every workflow that uses them. The repro is in
-/// `crates/ruxel/ruxel-config/tests/pklr_module_path_parent.rs`; official
+/// `crates/ruxel-config/tests/pklr_module_path_parent.rs`; official
 /// Pkl 0.33.0 evaluates the same files correctly. A class of this module in
 /// the union keeps the union closed and pklr whole; the secret reaches it
 /// through `secretAnswer`, whose parameter names the secret class — a
@@ -256,7 +256,7 @@ class DebconfEntry extends core.Step {
   /// runtime-validated. The secret branch is a class
   /// of this module and not `core.SecretText` because of the pklr defect
   /// `SecretAnswer` names; both pklr and official Pkl check the union the
-  /// same way (`crates/ruxel/ruxel-config/tests/debconf_value_union.rs`).
+  /// same way (`crates/ruxel-config/tests/debconf_value_union.rs`).
   value: OneLine|SecretAnswer
 }
 

@@ -38,7 +38,7 @@ accounts and host configuration. It is permitted only on dedicated disposable
 fixture VMs, never on local or real servers. HTTP start and stop tasks inherit
 check mode; preview nonmutation still requires end-to-end verification.
 The disposable harness must first stage a target-compatible native binary at
-`__RUN_ROOT__/ruxel-http-fixture`; see `tools/http-fixture/README.md`. The start
+`__RUN_ROOT__/ruxel-http-fixture`; see `crates/ruxel-http-fixture/README.md`. The start
 task validates its executable bit and version. Artifact staging is still an
 unresolved harness dependency; the scenario has not been run on a VM.
 
