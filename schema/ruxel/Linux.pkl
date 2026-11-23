@@ -65,8 +65,9 @@ typealias Presence = "present"|"absent"
 /// must be refused here. And the name is not a target the firewall would
 /// read instead of the chain: a chain named `LOG` or `REJECT` never
 /// survives `xtables_find_target`, so it is refused at apply and must be
-/// refused here.
-typealias ChainName = Static(!isEmpty && length <= 28 && isAscii(this) && !startsWith("-") && !startsWith("!") && !hasWhitespace(this) && this != "DROP" && this != "ACCEPT" && this != "REJECT" && this != "LOG")
+/// refused here. `RETURN` and `QUEUE` are builtin standard targets too,
+/// and a chain by either name never survives either.
+typealias ChainName = Static(!isEmpty && length <= 28 && isAscii(this) && !startsWith("-") && !startsWith("!") && !hasWhitespace(this) && this != "DROP" && this != "ACCEPT" && this != "REJECT" && this != "LOG" && this != "RETURN" && this != "QUEUE")
 
 /// An outgoing interface name: at most 15 characters, the kernel's
 /// interface-name limit (`IFNAMSIZ` is 16, the name and its terminator),

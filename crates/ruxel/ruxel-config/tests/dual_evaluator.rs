@@ -337,6 +337,8 @@ const EXAMPLES: &[&str] = &[
     "invalid/engine-iptables-policy-state.pkl",
     "invalid/iptables-chain-option-name.pkl",
     "invalid/iptables-chain-target-name.pkl",
+    "invalid/iptables-chain-name-return.pkl",
+    "invalid/iptables-chain-name-queue.pkl",
     "invalid/iptables-chain-name-long.pkl",
     "invalid/iptables-interface-name.pkl",
     "invalid/iptables-interface-name-colon.pkl",

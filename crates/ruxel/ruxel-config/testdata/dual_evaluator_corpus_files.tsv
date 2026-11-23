@@ -66,6 +66,8 @@ dual_evaluator
   tests/workflow/invalid/engine-iptables-policy-state.pkl
   tests/workflow/invalid/iptables-chain-name-long.pkl
   tests/workflow/invalid/iptables-chain-name-newline.pkl
+  tests/workflow/invalid/iptables-chain-name-queue.pkl
+  tests/workflow/invalid/iptables-chain-name-return.pkl
   tests/workflow/invalid/iptables-chain-name-whitespace.pkl
   tests/workflow/invalid/iptables-chain-option-name.pkl
   tests/workflow/invalid/iptables-chain-target-name.pkl
