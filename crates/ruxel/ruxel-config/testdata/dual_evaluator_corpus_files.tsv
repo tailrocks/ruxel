@@ -98,6 +98,7 @@ dual_evaluator
   tests/workflow/invalid/linux-file-owner-renumbered-across-stages.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-same-stage-order.pkl
   tests/workflow/invalid/linux-file-owner-renumbered-unknown.pkl
+  tests/workflow/invalid/linux-file-owner-renumbered-unproven.pkl
   tests/workflow/invalid/linux-file-owner-renumbered.pkl
   tests/workflow/invalid/linux-file-sysctl-clash.pkl
   tests/workflow/invalid/linux-group-absent-after-user.pkl
@@ -160,6 +161,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-home-removed-later-stage.pkl
   tests/workflow/invalid/linux-user-home-removed-nested-account.pkl
   tests/workflow/invalid/linux-user-home-removed-partial-hosts.pkl
+  tests/workflow/invalid/linux-user-home-removed-recreated-shallow.pkl
   tests/workflow/invalid/linux-user-home-renumbered-group.pkl
   tests/workflow/invalid/linux-user-home-root.pkl
   tests/workflow/invalid/linux-user-home-vs-file.pkl
@@ -169,6 +171,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-mail-spool.pkl
   tests/workflow/invalid/linux-user-needs-later-account.pkl
   tests/workflow/invalid/linux-user-needs-later-group.pkl
+  tests/workflow/invalid/linux-user-needs-removed-group-earlier-stage.pkl
   tests/workflow/invalid/linux-user-private-group-as-supplementary.pkl
   tests/workflow/invalid/linux-user-private-group-gone-no-member.pkl
   tests/workflow/invalid/linux-user-private-group-member-removed-on-other-host.pkl
@@ -179,6 +182,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-remove-home-custom-spool.pkl
   tests/workflow/invalid/linux-user-remove-home-mail-elsewhere.pkl
   tests/workflow/invalid/linux-user-remove-home-mail.pkl
+  tests/workflow/invalid/linux-user-remove-home-managed-home.pkl
   tests/workflow/invalid/linux-user-remove-home-no-home.pkl
   tests/workflow/invalid/linux-user-root-group.pkl
   tests/workflow/invalid/linux-user-root-uid.pkl
@@ -198,6 +202,7 @@ dual_evaluator
   tests/workflow/invalid/linux-user-shell-symlink-target-later.pkl
   tests/workflow/invalid/linux-user-uid-across-login-users.pkl
   tests/workflow/invalid/linux-user-uid-across-stages.pkl
+  tests/workflow/invalid/linux-user-uid-auto-allocation-configured-range.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-low-number.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation-same-stage.pkl
   tests/workflow/invalid/linux-user-uid-auto-allocation.pkl
