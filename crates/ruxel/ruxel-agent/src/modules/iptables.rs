@@ -14,6 +14,11 @@ mod rules;
 /// removal looping forever.
 const MAX_DELETIONS: u32 = 1024;
 
+/// How many times a present run re-reads the chain before it gives up:
+/// another writer may install or take a rule in between, and the run
+/// converges instead of looping forever.
+const MAX_ROUNDS: u32 = 8;
+
 pub(super) fn run(params: &Value, ctx: &ExecContext) -> Result<Value, String> {
     let obj = params_object(params)?;
     let chain = str_param(obj, "chain").ok_or("iptables: chain required")?;
@@ -60,28 +65,75 @@ fn run_with(
         };
         return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
     }
-    let mut check: Vec<&str> = vec!["-C", chain];
-    check.extend(spec.iter().map(String::as_str));
-    let present = chain::probe(binary, &check)?;
     // The chain and the match are the rule's identity: a rule of the
     // chain that matches the same way is the rule that is there, whatever
     // its jump. A rule with another jump shadows the declared one — it
     // ends the match before the declared rule is ever read — so it goes
     // before the declared rule is installed.
-    let shadowed = chain::stale_rules(binary, chain, &spec)?;
-    let changed = !present || !shadowed.is_empty();
-    if changed && !ctx.check_mode {
-        // The replacement is installed before the stale rules go: `-D`
-        // and `-A` are separate commands, so deleting first and then
-        // failing to append would leave the match unfiltered.
+    //
+    // The probe and the listing are one-time snapshots, and another
+    // writer may install or take a rule in between, so the run reads
+    // both again after every change and converges instead of reporting
+    // a rule that is no longer there.
+    let mut check: Vec<&str> = vec!["-C", chain];
+    check.extend(spec.iter().map(String::as_str));
+    if ctx.check_mode {
+        // Check mode only probes: it never installs or deletes.
+        let present = chain::probe(binary, &check)?;
+        let changed = !present || !chain::stale_rules(binary, chain, &spec)?.is_empty();
+        return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
+    }
+    let mut changed = false;
+    for _ in 0..=MAX_ROUNDS {
+        let mut check: Vec<&str> = vec!["-C", chain];
+        check.extend(spec.iter().map(String::as_str));
+        let present = chain::probe(binary, &check)?;
+        let shadowed = chain::stale_rules(binary, chain, &spec)?;
+        if present && shadowed.is_empty() {
+            return Ok(json!({"changed": changed, "failed": false, "chain": chain}));
+        }
+        changed = true;
+        // The replacement is installed before the stale rules go, and at
+        // the position of the first stale rule: `-D` and `-A` are
+        // separate commands, so deleting first and then failing to
+        // install would leave the match unfiltered; appending last would
+        // land the replacement behind a later catch-all that already
+        // matches, where it is never read; and deleting the stale rules
+        // one by one leaves a window where a less restrictive stale
+        // rule still answers first.
         if !present {
-            let mut append: Vec<&str> = vec!["-A", chain];
-            append.extend(spec.iter().map(String::as_str));
-            chain::exec_rule(binary, &append)?;
+            install_at(binary, chain, &spec, &shadowed)?;
         }
         chain::delete_rules(binary, chain, &shadowed, MAX_DELETIONS)?;
     }
-    Ok(json!({"changed": changed, "failed": false, "chain": chain}))
+    // The loop above ran out without converging: another writer kept
+    // changing the chain under it.
+    Err(format!(
+        "{binary}: the chain {chain} changed during the operation"
+    ))
+}
+
+/// Installs the declared rule: at the position of the first stale rule
+/// it replaces, or appended when no rule of the match is there.
+fn install_at(
+    binary: &str,
+    chain: &str,
+    spec: &[String],
+    shadowed: &[Vec<String>],
+) -> Result<(), String> {
+    let position = match shadowed.first() {
+        Some(first) => chain::position_of(binary, chain, first)?,
+        None => None,
+    };
+    if let Some(position) = position {
+        let at = position.to_string();
+        let mut insert: Vec<&str> = vec!["-I", chain, &at];
+        insert.extend(spec.iter().map(String::as_str));
+        return chain::exec_rule(binary, &insert);
+    }
+    let mut append: Vec<&str> = vec!["-A", chain];
+    append.extend(spec.iter().map(String::as_str));
+    chain::exec_rule(binary, &append)
 }
 
 #[cfg(test)]
@@ -93,7 +145,7 @@ mod replacement_first_tests {
     use super::run_with;
     use std::os::unix::fs::PermissionsExt;
 
-    /// A stub whose append always fails: the lock is held, the target is
+    /// A stub whose install always fails: the lock is held, the target is
     /// missing, or the command itself errors.
     fn failing_append_stub(dir: &std::path::Path) -> (String, std::path::PathBuf) {
         let file = dir.join("rules");
@@ -102,7 +154,7 @@ mod replacement_first_tests {
         std::fs::write(
             &script,
             format!(
-                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\n  -A) echo 'iptables: Resource temporarily unavailable' >&2; exit 4;;\nesac\nexit 0\n",
+                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -C) shift 2; if grep -q -F -x -e \"$*\" '{file}'; then exit 0; fi; echo 'iptables: Bad rule (does a matching rule exist in that chain?).' >&2; exit 1;;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\n  -A|-I) echo 'iptables: Resource temporarily unavailable' >&2; exit 4;;\nesac\nexit 0\n",
                 file = file.display()
             ),
         )

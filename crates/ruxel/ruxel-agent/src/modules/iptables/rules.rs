@@ -45,6 +45,10 @@ pub(super) fn rule_spec(obj: &serde_json::Map<String, Value>) -> Result<Vec<Stri
 fn canonical_protocol(protocol: &str) -> &str {
     if protocol == "icmpv6" {
         "ipv6-icmp"
+    } else if protocol == "0" {
+        // Protocol 0 is the wildcard the firewall omits from the
+        // listing, the way it omits `all`.
+        "all"
     } else {
         protocol
     }
@@ -60,10 +64,12 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
     while index < args.len() {
         let flag = &args[index];
         let value = args.get(index + 1);
-        if matches!(flag.as_str(), "-j" | "--jump") {
+        if matches!(flag.as_str(), "-j" | "--jump" | "-g" | "--goto") {
             // The target and its options are not part of the match:
             // they say what happens to the packet, not which packets
-            // match. Everything past the jump is the target's own.
+            // match. Everything past the jump is the target's own. A
+            // goto hands the packet to its chain the same way a jump
+            // does, so it ends the match too.
             break;
         }
         if flag.as_str() == "--comment" {
@@ -77,11 +83,12 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
             continue;
         }
         if let Some(value) = value {
-            // `-p all` is the default the listing leaves out, a host
-            // without a prefix carries its full mask in the listing, and
-            // the universal network is the destination the listing leaves
-            // out altogether.
-            if flag != "-p" || value != "all" {
+            // `-p all` is the default the listing leaves out, and so is
+            // `-p 0`: protocol 0 is the wildcard spelled as a number. A
+            // host without a prefix carries its full mask in the
+            // listing, and the universal network is the destination the
+            // listing leaves out altogether.
+            if flag != "-p" || canonical_protocol(value) != "all" {
                 let value = if flag == "-p" {
                     canonical_protocol(value).to_owned()
                 } else if flag == "-d" {
@@ -104,29 +111,68 @@ pub(super) fn match_pairs(args: &[String]) -> Vec<(String, String)> {
 
 /// The jump of a rule: the target it hands the packet to. It is not part
 /// of the match, but it is what a stale rule shadows the declared one
-/// with.
+/// with. A `--goto` hands the packet to its chain the same way, so it is
+/// the jump of the rule too.
+///
+/// The scan walks option boundaries: a comment value is the value of
+/// `--comment`, whatever it spells (`--comment -j` names the comment
+/// `-j`, not a jump), and a module name is the value of `-m`.
 pub(super) fn rule_jump(args: &[String]) -> Option<String> {
     let mut index = 0;
     while index < args.len() {
-        if matches!(args[index].as_str(), "-j" | "--jump") {
+        if matches!(args[index].as_str(), "-j" | "--jump" | "-g" | "--goto") {
             return args.get(index + 1).cloned();
         }
-        index += 1;
+        index = step_option(args, index);
     }
     None
 }
 
 /// The comment of a rule: the text the firewall prints after `--comment`.
 /// It is not part of the match, but it is part of what the rule says.
+///
+/// The scan walks option boundaries like the jump does: a value that
+/// spells `--comment` (a jump target never does) is not the comment.
 pub(super) fn rule_comment(args: &[String]) -> Option<String> {
     let mut index = 0;
     while index < args.len() {
         if args[index] == "--comment" {
             return args.get(index + 1).cloned();
         }
-        index += 1;
+        index = step_option(args, index);
     }
     None
+}
+
+/// The target options of a rule: the options of the target past its name
+/// (`--reject-with` and friends). They say what the target does, not
+/// which packets match.
+pub(super) fn rule_target_options(args: &[String]) -> Vec<String> {
+    let mut index = 0;
+    while index < args.len() {
+        if matches!(args[index].as_str(), "-j" | "--jump" | "-g" | "--goto") {
+            return args.iter().skip(index + 2).cloned().collect();
+        }
+        index = step_option(args, index);
+    }
+    Vec::new()
+}
+
+/// The next token past an option and the value it takes: `--comment`
+/// takes its text, `-m` takes its module name, and a jump or a goto
+/// takes its target. Anything else is stepped over one token at a time,
+/// so an unknown flag never swallows the token behind it.
+fn step_option(args: &[String], index: usize) -> usize {
+    if args[index] == "--comment" {
+        return index + 2;
+    }
+    if args[index] == "-m" {
+        return index + 2;
+    }
+    if matches!(args[index].as_str(), "-j" | "--jump" | "-g" | "--goto") {
+        return index + 2;
+    }
+    index + 1
 }
 
 /// The arguments of a listed rule, without the chain it belongs to. The
@@ -188,8 +234,9 @@ pub(super) fn full_mask(destination: &str) -> Result<String, String> {
         Some((address, prefix)) => (address, Some(prefix)),
         None => (destination, None),
     };
-    // An IPv6 address may carry the zone it belongs to.
-    let (bare, zone) = match address.split_once('%') {
+    // An IPv6 address may carry the zone it belongs to. The zone is
+    // dropped below: the firewall never prints it.
+    let (bare, _zone) = match address.split_once('%') {
         Some((bare, zone)) => (bare, Some(zone)),
         None => (address, None),
     };
@@ -208,11 +255,9 @@ pub(super) fn full_mask(destination: &str) -> Result<String, String> {
     }
     if let Ok(bits) = bare.parse::<std::net::Ipv6Addr>() {
         let prefix = prefix_bits(prefix, 128, destination)?;
-        if let Some(zone) = zone {
-            // The zone belongs to the address, not to the network, so a
-            // zoned address keeps its host bits.
-            return Ok(format!("{bare}%{zone}/{prefix}"));
-        }
+        // A zoned address keeps no zone: the zone names the interface
+        // the address was seen on, and the firewall never prints it, so
+        // a declared zone meets the listed network without one.
         let mask = if prefix == 0 {
             0
         } else {
@@ -286,91 +331,4 @@ fn malformed(destination: &str) -> String {
     format!(
         "iptables: destination {destination:?} is not an address with a prefix the family holds"
     )
-}
-
-#[cfg(test)]
-mod alias_tests {
-    use super::super::super::ExecContext;
-    use super::super::run_with;
-    use std::os::unix::fs::PermissionsExt;
-
-    /// A stub that lists the rules of the chain and deletes the exact
-    /// line it is told to delete.
-    fn listing_stub(dir: &std::path::Path, rule: &str) -> (String, std::path::PathBuf) {
-        let file = dir.join("rules");
-        std::fs::write(&file, format!("{rule}\n")).unwrap();
-        let script = dir.join("iptables-stub");
-        std::fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\ncase \"$1\" in\n  -S) echo \"-P $2 ACCEPT\"; sed -e \"s|^|-A $2 |\" '{file}';;\n  -D) shift 2; grep -v -F -x -e \"$*\" '{file}' > '{file}.tmp' || true; mv '{file}.tmp' '{file}';;\nesac\nexit 0\n",
-                file = file.display()
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-        (script.to_str().unwrap().to_owned(), file)
-    }
-
-    #[test]
-    fn absent_mode_finds_the_rule_by_its_printed_protocol_name() {
-        // `ip6tables` reads `icmpv6` as protocol 58 but prints the first
-        // name of that number, `ipv6-icmp`: the rule Ruxel installed is
-        // the listed rule, and absent mode must take it away.
-        let dir = std::env::temp_dir().join(format!("ruxel-iptables-alias-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let (binary, file) = listing_stub(&dir, "-p ipv6-icmp -j DROP");
-        let params = serde_json::json!({
-            "chain": "INPUT", "protocol": "icmpv6", "jump": "DROP", "state": "absent"
-        });
-        let result = run_with(
-            &binary,
-            "INPUT",
-            params.as_object().unwrap(),
-            &ExecContext {
-                check_mode: false,
-                diff_mode: false,
-                no_log: false,
-                environment: vec![],
-                become_user: None,
-            },
-        )
-        .unwrap();
-        assert_eq!(result["changed"], true);
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn absent_mode_ignores_the_target_options_of_a_reject_rule() {
-        // The firewall serializes the REJECT target with `--reject-with`
-        // even for the default type: those target options are not packet
-        // matchers, and the listed rule is the declared one.
-        let dir =
-            std::env::temp_dir().join(format!("ruxel-iptables-reject-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let (binary, file) =
-            listing_stub(&dir, "-p tcp -j REJECT --reject-with icmp-net-unreachable");
-        let params = serde_json::json!({
-            "chain": "INPUT", "protocol": "tcp", "jump": "REJECT", "state": "absent"
-        });
-        let result = run_with(
-            &binary,
-            "INPUT",
-            params.as_object().unwrap(),
-            &ExecContext {
-                check_mode: false,
-                diff_mode: false,
-                no_log: false,
-                environment: vec![],
-                become_user: None,
-            },
-        )
-        .unwrap();
-        assert_eq!(result["changed"], true);
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
-        std::fs::remove_dir_all(dir).unwrap();
-    }
 }

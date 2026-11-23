@@ -2,7 +2,7 @@
 //! change them.
 
 use super::super::run_checked;
-use super::rules::{match_pairs, rule_arguments, rule_comment, rule_jump};
+use super::rules::{match_pairs, rule_arguments, rule_comment, rule_jump, rule_target_options};
 
 /// The rules of the chain that match the declared match, with the
 /// arguments the firewall printed them with.
@@ -40,10 +40,20 @@ pub(super) fn stale_rules(
 ) -> Result<Vec<Vec<String>>, String> {
     let jump = rule_jump(spec);
     let comment = rule_comment(spec);
+    let options = normalized_target_options(jump.as_deref(), &rule_target_options(spec));
     let mut kept = false;
     let mut stale = Vec::new();
     for args in matching_rules(binary, chain, spec)? {
-        if rule_jump(&args) == jump && rule_comment(&args) == comment {
+        let listed_jump = rule_jump(&args);
+        // The target options are not packet matchers, but they are what
+        // the rule does: a rule with another `--reject-with` answers
+        // differently, and the earlier terminating target still wins,
+        // so it is stale, not the declared rule.
+        if listed_jump == jump
+            && rule_comment(&args) == comment
+            && normalized_target_options(listed_jump.as_deref(), &rule_target_options(&args))
+                == options
+        {
             // One exact copy is the declared rule; every further copy
             // is stale, and each matching packet would cross it again.
             if !kept {
@@ -54,6 +64,64 @@ pub(super) fn stale_rules(
         stale.push(args);
     }
     Ok(stale)
+}
+
+/// The target options the firewall prints for a declared target: a rule
+/// the firewall lists carries the serialized defaults even when the
+/// declaration omits them (`-j REJECT` lists as `-j REJECT
+/// --reject-with icmp-port-unreachable`), so those defaults are not a
+/// difference.
+fn normalized_target_options(jump: Option<&str>, options: &[String]) -> Vec<String> {
+    let defaults: &[&[&str]] = match jump {
+        Some("REJECT") => &[
+            &["--reject-with", "icmp-port-unreachable"],
+            &["--reject-with", "icmp6-port-unreachable"],
+        ],
+        _ => &[],
+    };
+    let mut kept: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < options.len() {
+        let mut dropped = false;
+        for default in defaults {
+            if options.len() - index >= default.len()
+                && default
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, token)| options[index + offset] == **token)
+            {
+                index += default.len();
+                dropped = true;
+                break;
+            }
+        }
+        if !dropped {
+            kept.push(options[index].clone());
+            index += 1;
+        }
+    }
+    kept
+}
+
+/// The position of a rule of the chain, counted from one the way the
+/// firewall counts them: a replacement is installed where the stale
+/// rule it replaces stood, ahead of the catch-all rules behind it.
+pub(super) fn position_of(
+    binary: &str,
+    chain: &str,
+    rule: &[String],
+) -> Result<Option<usize>, String> {
+    let mut position = 0;
+    for listed in list_chain(binary, chain)? {
+        let Some(args) = rule_arguments(&listed, chain) else {
+            continue;
+        };
+        position += 1;
+        if args == rule {
+            return Ok(Some(position));
+        }
+    }
+    Ok(None)
 }
 
 /// Deletes every rule of the chain that matches the declared match, and
