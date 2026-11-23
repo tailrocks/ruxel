@@ -6,11 +6,7 @@
 use std::path::{Path, PathBuf};
 
 fn corpus_root() -> PathBuf {
-    Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/workflow"
-    ))
-    .to_path_buf()
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/workflow")).to_path_buf()
 }
 
 /// The `Absent` corpus case lowers to a removal the engine accepts: a
