@@ -246,3 +246,23 @@ fn a_root_reached_through_dotdot_is_still_a_root() {
     let error = super::super::floor::refuse_system_root(std::path::Path::new("/..")).unwrap_err();
     assert!(error.contains("another spelling"), "{error}");
 }
+
+#[test]
+fn a_directory_a_root_resolves_to_is_refused() {
+    // The root is written under a symlink spelling, and the candidate
+    // names the directory it resolves to: it is the root under another
+    // spelling, not another directory.
+    let base = scratch("resolved-root");
+    let real = base.join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink("real", base.join("alias")).unwrap();
+    let alias = base.join("alias").to_string_lossy().to_string();
+    let roots = [alias.as_str()];
+    let error = super::super::floor::refuse_root(&real, &roots).unwrap_err();
+    assert!(error.contains("under another spelling"), "{error}");
+    // A link to the directory is still a link: taking it takes the link.
+    let link = base.join("link");
+    std::os::unix::fs::symlink("real", &link).unwrap();
+    super::super::floor::refuse_root(&link, &roots).unwrap();
+    std::fs::remove_dir_all(base).unwrap();
+}

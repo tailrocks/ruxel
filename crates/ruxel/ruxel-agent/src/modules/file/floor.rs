@@ -115,7 +115,18 @@ fn root_by_identity(path: &Path, roots: &[&str]) -> Option<String> {
     let meta = std::fs::symlink_metadata(path).ok()?;
     roots.iter().find_map(|root| {
         let root_meta = std::fs::symlink_metadata(root).ok()?;
-        (meta.dev() == root_meta.dev() && meta.ino() == root_meta.ino())
+        if meta.dev() == root_meta.dev() && meta.ino() == root_meta.ino() {
+            return Some((*root).to_string());
+        }
+        // The system's own layout names a root through a symlink
+        // (`/bin` -> `/usr/bin`, `/etc` -> `/private/etc`): the spelling
+        // the root is written under is a link, and the candidate names
+        // the directory it resolves to. The candidate itself is still
+        // read without following a final symlink, so taking a link keeps
+        // taking the link.
+        let canonical = std::fs::canonicalize(root).ok()?;
+        let resolved = std::fs::metadata(&canonical).ok()?;
+        (meta.dev() == resolved.dev() && meta.ino() == resolved.ino())
             .then(|| (*root).to_string())
     })
 }
