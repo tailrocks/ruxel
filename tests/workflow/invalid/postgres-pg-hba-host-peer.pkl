@@ -1,0 +1,14 @@
+// Peer authentication checks the operating-system user over the
+// Unix-domain socket, so a TCP rule takes no peer method.
+// expect: pg_hba method "peer" authenticates the client's operating-system user
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  postgres.renderPgHba(new Listing {
+    new postgres.PgHbaRule { type = "host"; database = "all"; user = "all"; address = "0.0.0.0/0"; method = "peer" }
+  }, "/etc/postgresql/18/main/pg_hba.conf")
+} } }
+
+name = "invalid/postgres-pg-hba-host-peer.pkl"

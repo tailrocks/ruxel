@@ -6,6 +6,14 @@ use std::path::Path;
 /// `HttpsUrl` needs) that its fields use, because pklr drops the constraints
 /// of a type reached through a dotted import such as `core.Static`. This
 /// pins each copy to Core's text, so none can drift.
+const POSTGRES_COPIES: &[&str] = &[
+    "Static",
+    "StaticList",
+    "AbsolutePath",
+    "FilePath",
+    "BecomeUser",
+];
+
 #[test]
 fn layer_typealias_copies_match_core() {
     /// The text of a module member: a `typealias`'s declaration line, or a
@@ -58,10 +66,7 @@ fn layer_typealias_copies_match_core() {
             .as_slice(),
         ),
         ("Systemd", ["Static", "Name"].as_slice()),
-        (
-            "Postgres",
-            ["Static", "StaticList", "AbsolutePath", "FilePath"].as_slice(),
-        ),
+        ("Postgres", POSTGRES_COPIES),
         (
             "Debian",
             [

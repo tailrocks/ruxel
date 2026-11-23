@@ -77,7 +77,8 @@ class Service extends core.Step {
 
 /// A systemd timer: a `.timer` unit that starts a service on a schedule.
 ///
-/// The timer owns its unit file and its enablement, and nothing else. It
+/// The timer owns its unit file, its enablement and its active state, and
+/// nothing else. It
 /// writes `/etc/systemd/system/<name>.timer` itself and manages that
 /// path — declaring a `File` for it too is refused as a second state —
 /// and it names the service it starts: the service of its own name when
@@ -113,4 +114,8 @@ class SystemdTimer extends core.Step {
   persistent: Boolean = false
   /// Enabled at boot.
   enabled: Boolean = true
+  /// Active now: the timer fires during the current uptime. An enabled
+  /// timer alone first fires after the next boot, so a monitor the stage
+  /// installs never reports until then. `false` stops it.
+  running: Boolean = true
 }

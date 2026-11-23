@@ -118,6 +118,25 @@ fn a_timer_lowers_to_its_unit_file_and_its_enablement() -> Result {
     Ok(())
 }
 
+/// A running timer starts now, not only at the next boot: the enablement
+/// carries the started state, and a stopped timer the stopped one.
+#[test]
+fn a_running_timer_starts_during_the_current_uptime() -> Result {
+    let config = valid("systemd-timer.pkl")?;
+    let all = tasks(&config);
+    let enable = all
+        .iter()
+        .find(|task| task["name"] == "Enable timer postgresql-multixact-monitor")
+        .ok_or("no enablement task")?;
+    assert_eq!(enable["operation"]["state"], "started");
+    let disable = all
+        .iter()
+        .find(|task| task["name"] == "Disable timer postgresql-backup")
+        .ok_or("no disablement task")?;
+    assert_eq!(disable["operation"]["state"], "stopped");
+    Ok(())
+}
+
 /// A timer names the service it starts in the unit file.
 #[test]
 fn a_timer_names_the_service_it_starts() -> Result {

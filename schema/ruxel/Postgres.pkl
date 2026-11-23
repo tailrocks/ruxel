@@ -47,6 +47,15 @@ typealias FilePath = AbsolutePath(this != "/")
 /// A TCP port: 1 to 65535.
 typealias Port = Int(isBetween(1, 65535))
 
+/// An OS account the agent becomes to run the operation, such as
+/// `postgres` for peer authentication over the Unix-domain socket. The
+/// copy in `Core.pkl` (`BecomeUser`) and the engine's own carry the same
+/// constraint — keep them in sync; pklr cannot share typealiases across
+/// modules, and would silently drop the constraints of a dotted alias.
+/// All-digit names are refused: `runuser` and `getent passwd` treat a
+/// numeric key as a UID, so such a name could select a different account.
+typealias BecomeUser = Static(matches(Regex("^[A-Za-z0-9_.][A-Za-z0-9_.-]*$")) && !matches(Regex("^[0-9]+$")))
+
 /// A role name or an owner: static text, or a secret the store holds (a
 /// 1Password username). A secret name reaches the host resolved and never
 /// logged; the task that carries it is never logged either, and the plan
@@ -119,9 +128,19 @@ class Role extends core.Step {
   roleAttrFlags: Static? = null
   /// The user the agent connects as. Unset connects the default way.
   loginUser: Static? = null
+  /// The database the agent connects to, such as `postgres`. Unset
+  /// connects to the database libpq defaults to — the login role — which
+  /// fails before the first query when no database of that name exists.
+  loginDb: Static? = null
   /// The port the agent connects to, such as 40000. Unset connects to the
   /// engine default.
   loginPort: Port? = null
+  /// The OS account the agent becomes to run this operation, such as
+  /// `postgres`: `psql` without a host takes the Unix-domain socket, and
+  /// peer authentication checks the operating-system user, so an
+  /// operation that connects as another role still runs as `postgres`.
+  /// Unset runs as the connection user.
+  becomeUser: BecomeUser? = null
 }
 
 /// A PostgreSQL database, owned by a role. Its name is static text; its
@@ -134,9 +153,19 @@ class Database extends core.Step {
   owner: Name? = null
   /// The user the agent connects as. Unset connects the default way.
   loginUser: Static? = null
+  /// The database the agent connects to, such as `postgres`. Unset
+  /// connects to the database libpq defaults to — the login role — which
+  /// fails before the first query when no database of that name exists.
+  loginDb: Static? = null
   /// The port the agent connects to, such as 40000. Unset connects to the
   /// engine default.
   loginPort: Port? = null
+  /// The OS account the agent becomes to run this operation, such as
+  /// `postgres`: `psql` without a host takes the Unix-domain socket, and
+  /// peer authentication checks the operating-system user, so an
+  /// operation that connects as another role still runs as `postgres`.
+  /// Unset runs as the connection user.
+  becomeUser: BecomeUser? = null
 }
 
 /// A PostgreSQL schema: a namespace inside one database. Its name is static
@@ -154,6 +183,12 @@ class Schema extends core.Step {
   /// The port the agent connects to, such as 40000. Unset connects to the
   /// engine default.
   loginPort: Port? = null
+  /// The OS account the agent becomes to run this operation, such as
+  /// `postgres`: `psql` without a host takes the Unix-domain socket, and
+  /// peer authentication checks the operating-system user, so an
+  /// operation that connects as another role still runs as `postgres`.
+  /// Unset runs as the connection user.
+  becomeUser: BecomeUser? = null
 }
 
 /// The kind of object a privilege grants on.
@@ -194,6 +229,12 @@ class Privilege extends core.Step {
   /// The port the agent connects to, such as 40000. Unset connects to the
   /// engine default.
   loginPort: Port? = null
+  /// The OS account the agent becomes to run this operation, such as
+  /// `postgres`: `psql` without a host takes the Unix-domain socket, and
+  /// peer authentication checks the operating-system user, so an
+  /// operation that connects as another role still runs as `postgres`.
+  /// Unset runs as the connection user.
+  becomeUser: BecomeUser? = null
 }
 
 /// One line of `pg_hba.conf`: who may reach which database over what
@@ -223,16 +264,19 @@ class PgHbaRule {
 /// is 0640 owned by postgres, so secret usernames may fill its body without
 /// leaking into logs. `core.File` is closed to extension, so the catalogue
 /// carries its own file-shaped step, lowered to the same engine operation.
-/// Only `renderPgHba` makes one; the task that writes it is never logged
-/// when its body holds a secret, like any file with secret content. A stage
-/// reloads PostgreSQL on it; it never restarts it.
+/// Only `renderPgHba` checks the rules; the lowering checks them again, so
+/// a file built any other way carries no unchecked line. The task that
+/// writes it is never logged when its body holds a secret, like any file
+/// with secret content. A stage reloads PostgreSQL on it; it never
+/// restarts it.
 class PgHbaFile extends core.Step {
   hidden fixed kind = "pgHbaFile"
   /// The cluster's access file, such as `/etc/postgresql/18/main/pg_hba.conf`.
   path: FilePath
-  /// The rendered body: the header and one line per rule, with secret
-  /// usernames as references evaluation never resolves.
-  content: String
+  /// The checked access rules: the lowering renders the body from these —
+  /// the header and one line per rule — with secret usernames as
+  /// references evaluation never resolves.
+  rules: Listing<PgHbaRule>
   fixed mode = "0640"
   fixed owner = "postgres"
   fixed group = "postgres"
@@ -248,24 +292,35 @@ const local validMethods = List("trust", "reject", "md5", "password", "scram-sha
 const local function hasBlank(_text: String): Boolean =
   List(" ", "\t", "\n", "\r", "\u{b}", "\u{c}").any((c) -> _text.contains(c))
 
-/// The rule the file carries: its columns checked the way the type
-/// constraints cannot — pklr does not check the elements of the listing the
-/// caller passes, so the render checks every rule itself, with a sentence
-/// that names the rule.
-function ruleChecked(_rule: PgHbaRule): PgHbaRule =
+/// The problems of the rule the file carries, if any: its columns checked
+/// the way the type constraints cannot — pklr does not check the elements
+/// of the listing the caller passes, so the render checks every rule
+/// itself, with a sentence that names the rule. Pure, so the lowering can
+/// check a file built any other way with the same sentences.
+function ruleProblems(_rule: PgHbaRule): List<String> =
   if (_rule.database.isEmpty || hasBlank(_rule.database))
-    throw("pg_hba database \"\(staticText(_rule.database))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
+    List("pg_hba database \"\(staticText(_rule.database))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
   else if (isStatic(_rule.user) && (staticText(_rule.user).isEmpty || hasBlank(staticText(_rule.user))))
-    throw("pg_hba user \"\(staticText(_rule.user))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
+    List("pg_hba user \"\(staticText(_rule.user))\" is empty or carries whitespace; a column holds one comma-separated list and no line break")
   else if (_rule.method.isEmpty || hasBlank(_rule.method))
-    throw("pg_hba method \"\(staticText(_rule.method))\" is empty or carries whitespace; a column holds one method and no line break")
+    List("pg_hba method \"\(staticText(_rule.method))\" is empty or carries whitespace; a column holds one method and no line break")
   else if (!validMethods.contains(_rule.method))
-    throw("pg_hba method \"\(staticText(_rule.method))\" is none of \(validMethods.join(", ")); an unknown method fails the reload that reads the file")
+    List("pg_hba method \"\(staticText(_rule.method))\" is none of \(validMethods.join(", ")); an unknown method fails the reload that reads the file")
+  else if (_rule.method == "peer" && _rule.type != "local")
+    List("pg_hba method \"peer\" authenticates the client's operating-system user, so it matches Unix-domain sockets alone; a \(_rule.type) rule takes no peer method")
+  else if (_rule.method == "cert" && _rule.type != "hostssl")
+    List("pg_hba method \"cert\" checks the client's TLS certificate, so it matches encrypted TCP alone; a \(_rule.type) rule takes no cert method")
   else if (_rule.type == "local" && _rule.address != null)
-    throw("a local pg_hba rule matches Unix-domain sockets, so it takes no address; drop the address or use a host rule")
+    List("a local pg_hba rule matches Unix-domain sockets, so it takes no address; drop the address or use a host rule")
   else if (_rule.type != "local" && (_rule.address == null || _rule.address.isEmpty || hasBlank(_rule.address)))
-    throw("a \(_rule.type) pg_hba rule matches TCP clients, so it takes an address such as 127.0.0.1/32 or 0.0.0.0/0")
-  else _rule
+    List("a \(_rule.type) pg_hba rule matches TCP clients, so it takes an address such as 127.0.0.1/32 or 0.0.0.0/0")
+  else List()
+
+/// The rule the file carries, checked: throws the rule's first problem,
+/// if any.
+function ruleChecked(_rule: PgHbaRule): PgHbaRule =
+  let (problems = ruleProblems(_rule))
+  if (problems.isEmpty) _rule else throw(problems.first)
 
 /// Whether the name is static text, rather than a secret the store holds.
 const function isStatic(_name: Name): Boolean = !(_name is SecretName)
@@ -291,15 +346,23 @@ const local function padded(_text: String, _width: Int): String =
 const function rendered(_rule: PgHbaRule): String =
   padded(_rule.type, 8) + padded(_rule.database, 22) + padded(userText(_rule.user), 22) + padded(_rule.address ?? "", 22) + _rule.method
 
-/// The access file of these rules at this path: its body filled in, 0640
-/// owned by postgres, so secret usernames may fill it. The path is the
-/// cluster's file, such as `/etc/postgresql/18/main/pg_hba.conf`. Every rule
-/// is checked the way the constraints cannot (see `ruleChecked`).
+/// The header of the rendered access file: the column titles the stock
+/// file carries, so the rendered body reads like it.
+const pgHbaHeader = "# TYPE  DATABASE              USER                  ADDRESS                 METHOD\n"
+
+/// The access file of these rules at this path: the checked rules the
+/// lowering renders into the body, 0640 owned by postgres, so secret
+/// usernames may fill it. The path is the cluster's file, such as
+/// `/etc/postgresql/18/main/pg_hba.conf`. Every rule is checked the way
+/// the constraints cannot (see `ruleChecked`).
 function renderPgHba(_rules: Listing<PgHbaRule>, _path: FilePath): PgHbaFile =
-  let (checked = _rules.toList().map((r) -> ruleChecked(r)))
   new PgHbaFile {
     path = _path
-    content = "# TYPE  DATABASE              USER                  ADDRESS                 METHOD\n" + checked.map((r) -> rendered(r)).join("\n") + "\n"
+    rules {
+      for (r in _rules.toList().map((r) -> ruleChecked(r))) {
+        r
+      }
+    }
   }
 
 /// The warning a restart report carries into the run. It reads one capture's

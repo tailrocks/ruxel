@@ -1,0 +1,20 @@
+// The login database is the database the agent connects to, not a blank:
+// without one libpq defaults to the login role, which fails before the
+// first query when no database of that name exists.
+// expect: the login database is empty; name the database the agent connects to
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginDb = ""
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-role-empty-login-db.pkl"

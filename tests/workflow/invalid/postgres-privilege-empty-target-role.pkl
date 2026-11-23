@@ -1,0 +1,21 @@
+// A target role that is empty names no role whose future tables carry the
+// grant, which the agent would fail only during apply.
+// expect: a target role is empty; name the roles whose future tables carry the grant
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "default_privs"
+    privs = "SELECT"
+    schema = "public"
+    role = "looker"
+    targetRoles { "" }
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-empty-target-role.pkl"

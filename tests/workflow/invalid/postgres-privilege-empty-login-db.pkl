@@ -1,0 +1,19 @@
+// A grant lives in no database, which the agent would fail only during
+// apply.
+// expect: the grant's database is empty; name the database the grant lives in
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = ""
+    type = "database"
+    privs = "CONNECT"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-privilege-empty-login-db.pkl"

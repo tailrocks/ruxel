@@ -18,6 +18,7 @@ stages { new Stage { title = "Chainargos owns its databases"; hosts = inventory.
     password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
     roleAttrFlags = "SUPERUSER"
     loginUser = "postgres"
+    loginDb = "postgres"
     loginPort = 40000
   }
 } } }

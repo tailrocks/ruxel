@@ -14,6 +14,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -23,6 +24,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -33,6 +35,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -43,6 +46,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -52,6 +56,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -61,6 +66,7 @@ stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers;
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
 } } }
 

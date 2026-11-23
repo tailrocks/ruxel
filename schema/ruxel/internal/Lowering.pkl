@@ -1177,6 +1177,34 @@ function postgresSettings(s: core.Step): List<String> =
     List("'\(name(s))': default privileges name their schema, not objects; a default_privs grant names no objects")
   else if (s is postgres.Privilege && !s.targetRoles.isEmpty && s.type != "default_privs")
     List("'\(name(s))': target roles ride default privileges alone; a \(s.type) grant names no target roles")
+  else if (s is postgres.Role && postgres.isStatic(s.name) && postgres.staticText(s.name).isEmpty)
+    List("'\(name(s))': the role's name is empty; name the role")
+  else if (s is postgres.Role && s.loginDb != null && s.loginDb.isEmpty)
+    List("'\(name(s))': the login database is empty; name the database the agent connects to")
+  else if (s is postgres.Database && s.loginDb != null && s.loginDb.isEmpty)
+    List("'\(name(s))': the login database is empty; name the database the agent connects to")
+  else if (s is postgres.Database && s.name.isEmpty)
+    List("'\(name(s))': the database's name is empty; name the database")
+  else if (s is postgres.Schema && s.name.isEmpty)
+    List("'\(name(s))': the schema's name is empty; name the schema")
+  else if (s is postgres.Schema && s.loginDb.isEmpty)
+    List("'\(name(s))': the schema's database is empty; name the database that holds the schema")
+  else if (s is postgres.Privilege && s.loginDb.isEmpty)
+    List("'\(name(s))': the grant's database is empty; name the database the grant lives in")
+  else if (s is postgres.Privilege && s.schema != null && s.schema.isEmpty)
+    List("'\(name(s))': the grant's schema is empty; a \(s.type) grant names its schema")
+  else if (s is postgres.Privilege && s.objs.toList().any((o) -> o.isEmpty))
+    List("'\(name(s))': a granted object is empty; name every object the grant is on")
+  else if (s is postgres.Privilege && s.targetRoles.toList().any((t) -> t.isEmpty))
+    List("'\(name(s))': a target role is empty; name the roles whose future tables carry the grant")
+  else if (s is postgres.Privilege && s.type == "database" && !s.objs.isEmpty)
+    List("'\(name(s))': a database grant names no objects; it grants on the database itself, which loginDb already names")
+  else if (s is postgres.Privilege && s.type == "table" && s.objs.toList().contains("ALL_IN_SCHEMA") && s.objs.toList().length > 1)
+    List("'\(name(s))': ALL_IN_SCHEMA names every table of the schema, so it rides alone; grant it alone or name tables, not both")
+  else if (s is postgres.Privilege && mixesAllWithOthers(s))
+    List("'\(name(s))': ALL grants every \(s.type) privilege, so it rides alone; name ALL or list privileges, not both")
+  else if (s is postgres.PgHbaFile)
+    s.rules.toList().flatMap((r) -> postgres.ruleProblems(r)).map((problem) -> "'\(name(s))': \(problem)")
   else if (s is postgres.PendingRestartNotice && hasSecrets(s.output))
     List("'\(name(s))': a notice reads a capture's output, never a secret; read the report's stdout()")
   else if (s is postgres.PendingRestartNotice && captureRefs(s.output).length != 1)
@@ -1236,6 +1264,13 @@ const function grantable(kind: String): String =
   (if (kind == "database") List("CREATE", "CONNECT", "TEMPORARY")
   else if (kind == "schema") List("CREATE", "USAGE")
   else List("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN")).join(", ") + ", or ALL"
+
+/// Whether the grant names `ALL` beside another privilege: the grammar
+/// makes `ALL` an alternative to a privilege list, not an element of one,
+/// so a grant that names both fails only during apply.
+const function mixesAllWithOthers(s: postgres.Privilege): Boolean =
+  let (tokens = privsTokens(s.privs))
+  tokens.length > 1 && tokens.any((priv) -> priv == "ALL" || priv == "ALL PRIVILEGES")
 
 /// The first privilege the grant names that its kind does not know, as
 /// written: the token the refusal names.
@@ -3248,7 +3283,7 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   // Restart and reload triggers add up across steps, so they are not part of
   // identity.
   ["service"] = (s) -> fields(List(s.name, "\(s.enabled)", "\(s.running)"))
-  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), onBootText(s.repeat), "\(s.persistent)", "\(s.enabled)"))
+  ["systemdTimer"] = (s) -> fields(List(s.name, timerTarget(s), optional(s.onCalendar), onBootText(s.onBoot), onBootText(s.repeat), "\(s.persistent)", "\(s.enabled)", "\(s.running)"))
   // A volume group is its name plus the full device set: a second
   // declaration for one group with another set is another state, not a
   // repeat. A mount is its resolved source: a static `UUID=` text, or the
@@ -3266,12 +3301,12 @@ const local stateFingerprints: Mapping<String, (core.Step) -> String> = new {
   ["replaceLine"] = (s) -> fields(List(s.path, s.regexp, if (s.replace == null) "" else s.replace))
   ["notice"] = (s) -> fields(List(s.message))
   ["gitBranch"] = (s) -> fields(List(s.repository, s.path, s.branch, "\(s.acceptHostKey)"))
-  ["postgresRole"] = (s) -> fields(List(roleNameIdentity(s.name), fields(List("secret", s.password.parts)), optional(s.roleAttrFlags), optional(s.loginUser), postgresPort(s.loginPort)))
-  ["postgresDatabase"] = (s) -> fields(List(s.name, optionalName(s.owner), optional(s.loginUser), postgresPort(s.loginPort)))
-  ["postgresSchema"] = (s) -> fields(List(s.name, s.loginDb, optionalName(s.owner), optional(s.loginUser), postgresPort(s.loginPort)))
-  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(privilegeObjs(s)), optional(s.schema), roleNameIdentity(s.role), fields(s.targetRoles.toList()), optional(s.loginUser), postgresPort(s.loginPort)))
+  ["postgresRole"] = (s) -> fields(List(roleNameIdentity(s.name), fields(List("secret", s.password.parts)), optional(s.roleAttrFlags), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
+  ["postgresDatabase"] = (s) -> fields(List(s.name, optionalName(s.owner), optional(s.loginUser), optional(s.loginDb), postgresPort(s.loginPort), optional(s.becomeUser)))
+  ["postgresSchema"] = (s) -> fields(List(s.name, s.loginDb, optionalName(s.owner), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
+  ["postgresPrivilege"] = (s) -> fields(List(s.loginDb, s.type, privilegePrivs(s.privs), fields(keyOrder.set(privilegeObjs(s))), optional(s.schema), roleNameIdentity(s.role), fields(keyOrder.set(s.targetRoles.toList())), optional(s.loginUser), postgresPort(s.loginPort), optional(s.becomeUser)))
   ["pendingRestartNotice"] = (s) -> fields(List(s.output, s.version, s.cluster))
-  ["pgHbaFile"] = (s) -> fields(List(s.path, s.content.sha256))
+  ["pgHbaFile"] = (s) -> fields(List(s.path, fields(s.rules.toList().map((r) -> pgHbaRuleIdentity(r)))))
   ["capture"] = (s) -> s.id()
 }
 
@@ -3292,6 +3327,13 @@ const function optionalName(n: Any?): String = if (n == null) "-" else roleNameI
 
 /// What enters the identity of an optional login port: nothing, or the port.
 const function postgresPort(p: Int?): String = if (p == null) "-" else "\(p)"
+
+/// What enters the identity of one access rule: every column, with a
+/// secret username as its encoded reference — never its value — the way
+/// `roleNameIdentity` carries a secret name, so no reference prefix ever
+/// reaches a register name.
+const function pgHbaRuleIdentity(r: postgres.PgHbaRule): String =
+  fields(List(r.type, r.database, roleNameIdentity(r.user), if (r.address == null) "-" else r.address, r.method))
 
 /// What enters the identity of granted privileges: the canonical set — the
 /// agent reads them case-insensitively and splits comma-separated text, so
@@ -3383,9 +3425,9 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
   ["command"] = (_) -> List()
   ["script"] = (_) -> List()
   ["capture"] = (_) -> List()
-  ["postgresRole"] = (s) -> List("the role " + secretRoleName(s.name))
-  ["postgresDatabase"] = (s) -> List("the database \(s.name)")
-  ["postgresSchema"] = (s) -> List("the schema \(s.name) in database \(s.loginDb)")
+  ["postgresRole"] = (s) -> List("the role " + secretRoleName(s.name) + portSubject(s.loginPort))
+  ["postgresDatabase"] = (s) -> List("the database \(s.name)" + portSubject(s.loginPort))
+  ["postgresSchema"] = (s) -> List("the schema \(s.name) in database \(s.loginDb)" + portSubject(s.loginPort))
   ["postgresPrivilege"] = (s) -> List(privilegeSubject(s))
   ["pendingRestartNotice"] = (_) -> List()
   ["pgHbaFile"] = (s) -> List(s.path)
@@ -3397,21 +3439,28 @@ const local subjects: Mapping<String, (core.Step) -> List<String>> = new {
 const function secretRoleName(n: Any): String =
   if (n is postgres.SecretName) "with a secret name " + n.parts.sha256.substring(0, 16) else n.toString()
 
+/// The port a subject names, when the step states one: one host can run
+/// several clusters, and the same name on another port is another thing.
+/// Unset states no port, the way the fingerprint states none.
+const function portSubject(p: Int?): String = if (p == null) "" else " on port \(p)"
+
 /// The thing a grant manages, without its privileges: the kind, the role,
 /// the objects and the database. Two grants for one thing with different
 /// privileges conflict; the privileges themselves are the state, not the
 /// thing, so they stay out of the subject.
 const function privilegeSubject(s: postgres.Privilege): String =
-  "the \(s.type) grant for \(secretRoleName(s.role)) on \(privilegeTarget(s)) of database \(s.loginDb)"
+  "the \(s.type) grant for \(secretRoleName(s.role)) on \(privilegeTarget(s)) of database \(s.loginDb)" + portSubject(s.loginPort)
 
 /// The objects a grant's subject names: the database itself, the named
 /// schemas or tables with their schema, or the future tables of the schema —
-/// and, for default privileges, the roles whose tables carry them.
+/// and, for default privileges, the roles whose tables carry them. Order-
+/// and repeat-free: the agent reads a set, so the same names in another
+/// order or twice over are one thing, not two.
 const function privilegeTarget(s: postgres.Privilege): String =
   if (s.type == "database") "the database"
-  else if (s.type == "schema") "schemas \(privilegeObjs(s).join(", "))"
-  else if (s.type == "table") "tables \(privilegeObjs(s).join(", ")) in schema \(s.schema ?? "-")"
-  else "future tables in schema \(s.schema ?? "-")" + (if (s.targetRoles.isEmpty) "" else " for \(s.targetRoles.join(", "))")
+  else if (s.type == "schema") "schemas \(keyOrder.set(privilegeObjs(s)).join(", "))"
+  else if (s.type == "table") "tables \(keyOrder.set(privilegeObjs(s)).join(", ")) in schema \(s.schema ?? "-")"
+  else "future tables in schema \(s.schema ?? "-")" + (if (s.targetRoles.isEmpty) "" else " for \(keyOrder.set(s.targetRoles.toList()).join(", "))")
 
 /// systemd's name for a service: `foo` is `foo.service`.
 const function unitName(name: String): String = if (name.contains(".")) name else "\(name).service"
@@ -3967,7 +4016,7 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["absent"] = (s, m) -> List(task(m, absent(s.path, s.recursive), null, null))
   ["iptablesRule"] = (s, m) -> List(task(m, firewall(s), null, null))
   ["service"] = (s, m) -> List(task(m, service(s.name, s.enabled, if (s.running) "started" else "stopped"), null, null))
-  ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, null)) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
+  ["systemdTimer"] = (s, m) -> List(task(timerFileMeta(m), copyText(timerPath(s.name), timerContent(s)), null, null), task(timerEnableMeta(s, m), (service(timerUnit(s.name), s.enabled, if (s.running) "started" else "stopped")) { when (m.register != null) { daemon_reload = ref(List("results", "\(m.register)_unit", "changed")) } }, null, timerChanged(m)))
   ["volumeGroup"] = (s, m) -> List(task(m, volumeGroup(s.vg, s.devices.toList()), null, null))
   ["logicalVolume"] = (s, m) -> List(task(m, logicalVolume(s.vg, s.lv, s.size, s.resizefs), null, null))
   ["filesystem"] = (s, m) -> List(task(m, filesystem(s.dev, s.resizefs), null, null))
@@ -3980,10 +4029,10 @@ local lowerers: Mapping<String, (core.Step, Meta) -> List<engine.Task>> = new {
   ["command"] = (s, m) -> actionTasks(s, s.run.toList(), m)
   ["script"] = (s, m) -> actionTasks(s, bash(s.bash), m)
   ["capture"] = (s, m) -> List(captureTask(task(m, command(bash(s.bash), null, null), null, lit(false)), s, m.register))
-  ["postgresRole"] = (s, m) -> List(task(m, postgresRole(s), null, null))
-  ["postgresDatabase"] = (s, m) -> List(task(m, postgresDatabase(s), null, null))
-  ["postgresSchema"] = (s, m) -> List(task(m, postgresSchema(s), null, null))
-  ["postgresPrivilege"] = (s, m) -> List(task(m, postgresPrivilege(s), null, null))
+  ["postgresRole"] = (s, m) -> List(taskAs(m, postgresRole(s), null, null, s.becomeUser))
+  ["postgresDatabase"] = (s, m) -> List(taskAs(m, postgresDatabase(s), null, null, s.becomeUser))
+  ["postgresSchema"] = (s, m) -> List(taskAs(m, postgresSchema(s), null, null, s.becomeUser))
+  ["postgresPrivilege"] = (s, m) -> List(taskAs(m, postgresPrivilege(s), null, null, s.becomeUser))
   ["pendingRestartNotice"] = (s, m) -> List(task(m, debug(noticeMessage(s)), noticeFires(s), lit(false)))
   ["pgHbaFile"] = (s, m) -> List(task(m, pgHbaCopy(s), null, null))
   ["fetchSecret"] = (s, m) -> List(fetchSecretTask(s, m))
@@ -4217,7 +4266,13 @@ function bash(script: String): List<String> = List("/bin/bash", "-c", "set -euo 
 
 // ── Engine constructors ─────────────────────────────────────────────────────
 
-function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _changedWhen: engine.Expr?): engine.Task = new engine.Task {
+function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _changedWhen: engine.Expr?): engine.Task =
+  taskAs(m, _operation, _when, _changedWhen, null)
+
+/// A task that becomes another account to run: the agent runs the operation
+/// as that user, so `psql` over the Unix-domain socket passes peer
+/// authentication. Only the steps that name an account pass one.
+function taskAs(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _changedWhen: engine.Expr?, _becomeUser: String?): engine.Task = new engine.Task {
   name = m.name
   operation = _operation
   tags { for (t in m.tags) { t } }
@@ -4227,6 +4282,7 @@ function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _chang
   when (_when != null) { `when` = _when }
   when (_changedWhen != null) { changedWhen = _changedWhen }
   when (m.register != null) { register = m.register }
+  when (_becomeUser != null) { becomeUser = _becomeUser }
 }
 
 /// A capture runs in check and diff too (`checkMode = false`): later steps
@@ -4234,6 +4290,7 @@ function task(m: Meta, _operation: engine.Operation, _when: engine.Expr?, _chang
 function captureTask(t: engine.Task, c: core.Capture, _result: String): engine.Task = (t) {
   checkMode = false
   when (c.runOn != null) { delegateTo = c.runOn.name; delegateAllow = new Listing { c.runOn.name } }
+  when (c.becomeUser != null) { becomeUser = c.becomeUser }
   when (c.retry.attempts > 1) {
     retries = c.retry.attempts - 1
     delaySeconds = c.retry.delay.toUnit("s").value.toInt()
@@ -4380,6 +4437,7 @@ function postgresRole(s: postgres.Role): engine.PostgresRole = new engine.Postgr
   password = secretValue(s.password.parts)
   when (s.roleAttrFlags != null) { role_attr_flags = s.roleAttrFlags }
   when (s.loginUser != null) { login_user = s.loginUser }
+  when (s.loginDb != null) { login_db = s.loginDb }
   when (s.loginPort != null) { login_port = s.loginPort }
 }
 
@@ -4389,6 +4447,7 @@ function postgresDatabase(s: postgres.Database): engine.PostgresDatabase = new e
   name = s.name
   when (s.owner != null) { owner = secretOrStatic(s.owner) }
   when (s.loginUser != null) { login_user = s.loginUser }
+  when (s.loginDb != null) { login_db = s.loginDb }
   when (s.loginPort != null) { login_port = s.loginPort }
 }
 
@@ -4404,7 +4463,10 @@ function postgresSchema(s: postgres.Schema): engine.PostgresSchema = new engine.
 
 /// The engine's grant operation: the privileges for the role on the
 /// effective objects. A database grant that names none grants on the
-/// database itself (see `privilegeObjs`).
+/// database itself (see `privilegeObjs`). The connection rides along the
+/// way the role, database and schema operations carry it: without the
+/// login user and port the grant targets the agent defaults — port 5432 —
+/// instead of the cluster the catalogue manages.
 function postgresPrivilege(s: postgres.Privilege): engine.PostgresPrivileges = new engine.PostgresPrivileges {
   login_db = s.loginDb
   type = s.type
@@ -4413,6 +4475,8 @@ function postgresPrivilege(s: postgres.Privilege): engine.PostgresPrivileges = n
   when (s.schema != null) { schema = s.schema }
   role = secretOrStatic(s.role)
   when (!s.targetRoles.isEmpty) { target_roles = new Listing { for (t in s.targetRoles) { t } } }
+  when (s.loginUser != null) { login_user = s.loginUser }
+  when (s.loginPort != null) { login_port = s.loginPort }
 }
 
 /// A static name or a secret reference as one engine value: static text
@@ -4454,16 +4518,22 @@ function noticeFires(s: postgres.PendingRestartNotice): engine.Expr =
 /// The engine's notice: an informational debug. It never reports a change.
 function debug(_message: engine.Expr): engine.Debug = new engine.Debug { msg = _message }
 
-/// The rendered access file as the engine's copy: its body with secrets as
-/// lookups, at 0640 owned by postgres — the fixed shape `renderPgHba` gives
-/// it.
+/// The rendered access file as the engine's copy: the checked rules
+/// rendered into the body, with secrets as lookups, at 0640 owned by
+/// postgres — the fixed shape `renderPgHba` gives it. Rendering here, not
+/// in the catalogue, keeps every file the checks can see, however built.
 function pgHbaCopy(s: postgres.PgHbaFile): engine.Copy = new engine.Copy {
   dest = s.path
-  content = runtimeText(s.content)
+  content = runtimeText(pgHbaBody(s))
   mode = s.mode
   owner = s.owner
   group = s.group
 }
+
+/// The body of the access file: the header and one line per checked rule,
+/// with secret usernames as references evaluation never resolves.
+function pgHbaBody(s: postgres.PgHbaFile): String =
+  postgres.pgHbaHeader + s.rules.toList().map((r) -> postgres.rendered(r)).join("\n") + "\n"
 /// Follows links, as the `creates` guard does: a dangling
 /// link does not count as the path existing.
 function stat(_path: String): engine.Stat = new engine.Stat { path = _path; follow = true }
@@ -5121,7 +5191,7 @@ function envOf(s: core.Step): Mapping<String, engine.Expr> =
 const function secretStep(s: core.Step): Boolean =
   s is core.FetchSecret
     || (s is core.File && hasSecrets(s.content))
-    || (s is postgres.PgHbaFile && hasSecrets(s.content))
+    || (s is postgres.PgHbaFile && s.rules.toList().any((r) -> !postgres.isStatic(r.user)))
     || (s is core.Action && s.environment.keys.toList().any((k) -> s.environment[k] is core.SecretText))
     || (s is debian.DebconfEntry && s.value is debian.SecretAnswer)
     || s is postgres.Role

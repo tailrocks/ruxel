@@ -236,7 +236,8 @@ fn contains_lookup(value: &serde_json::Value) -> bool {
 #[test]
 fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
     let config = workload()?;
-    assert!(!config["plays"].as_array().is_none_or(Vec::is_empty));
+    let plays = config["plays"].as_array().ok_or("no plays")?;
+    assert_eq!(plays.len(), 3, "prepare, set up, report the reload");
     let all = tasks(&config);
     let chainargos = all
         .iter()
@@ -257,7 +258,13 @@ fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
             "argv": [],
         })
     );
-    assert_eq!(chainargos["operation"]["role_attr_flags"], "SUPERUSER");
+    // The playbook states SUPERUSER alone and the module logs the role in
+    // by default; the agent states exactly what it is told, so the port
+    // states both flags.
+    assert_eq!(
+        chainargos["operation"]["role_attr_flags"],
+        "SUPERUSER, LOGIN"
+    );
     let roles = all
         .iter()
         .filter(|task| task["operation"]["kind"] == "postgres_role")
@@ -268,6 +275,26 @@ fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
         .filter(|task| task["operation"]["kind"] == "postgres_database")
         .count();
     assert_eq!(databases, 18);
+    // Every PostgreSQL operation runs as postgres: psql without a host
+    // takes the Unix-domain socket, where peer authentication checks the
+    // operating-system user.
+    for task in all.iter().filter(|task| {
+        task["operation"]["kind"] == "postgres_role"
+            || task["operation"]["kind"] == "postgres_database"
+            || task["operation"]["kind"] == "postgres_schema"
+            || task["operation"]["kind"] == "postgres_privileges"
+    }) {
+        assert_eq!(task["becomeUser"], "postgres", "{}", task["name"]);
+    }
+    // Every grant carries its connection: without the login user and port
+    // the grant would target the agent defaults instead of the cluster.
+    for task in all
+        .iter()
+        .filter(|task| task["operation"]["kind"] == "postgres_privileges")
+    {
+        assert_eq!(task["operation"]["login_user"], "postgres");
+        assert_eq!(task["operation"]["login_port"], 40000);
+    }
     let file = all
         .iter()
         .find(|task| task["operation"]["dest"] == "/etc/postgresql/19/main/pg_hba.conf")
@@ -288,14 +315,5 @@ fn nova_workload_lowers_with_its_roles_and_reload_wiring() -> Result {
             "{dest}"
         );
     }
-    assert!(
-        all.iter()
-            .any(|task| task["name"] == "Report settings that still require a restart")
-    );
-    assert!(
-        all.iter()
-            .any(|task| task["name"]
-                == "Warn when a restart is needed to finish applying the config")
-    );
     Ok(())
 }

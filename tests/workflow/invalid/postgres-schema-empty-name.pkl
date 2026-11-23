@@ -1,0 +1,18 @@
+// An empty schema name grants in no namespace, which the agent would fail
+// only during apply.
+// expect: the schema's name is empty; name the schema
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Schema {
+    name = ""
+    loginDb = "redshift"
+    owner = "chainargos"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-schema-empty-name.pkl"

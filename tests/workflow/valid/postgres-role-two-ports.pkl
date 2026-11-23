@@ -1,0 +1,24 @@
+// One host can run several clusters: the same role name on another port
+// is another thing, so the two declarations lower to two tasks instead of
+// conflicting.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Chainargos owns two clusters"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Role {
+    name = "chainargos"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginPort = 5432
+  }
+} } }
+
+name = "valid/postgres-role-two-ports.pkl"

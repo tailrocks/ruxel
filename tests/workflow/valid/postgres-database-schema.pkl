@@ -13,6 +13,7 @@ stages { new Stage { title = "Chain databases belong to their roles"; hosts = in
     name = "redshift"
     owner = "chainargos"
     loginUser = "postgres"
+    loginDb = "postgres"
     loginPort = 40000
   }
   new postgres.Database {

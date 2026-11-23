@@ -1,14 +1,15 @@
-// A systemd timer: the class owns the `.timer` unit file and the unit's
-// enablement, and names the service it starts. The unit file of that
-// service and the daemon-reload stay the author's own steps, in the order
-// the author wrote them.
+// A systemd timer: the class owns the `.timer` unit file, the unit's
+// enablement and its active state, and names the service it starts. The
+// unit file of that service and the daemon-reload stay the author's own
+// steps, in the order the author wrote them.
 //
 // The multixact monitor below is the whole composition: the monitor
 // script (an executable `File`), the `.service` unit file the timer
-// starts, the `.timer` itself — enabled, so it fires at boot and every
-// five minutes after its last firing — and the daemon-reload `Command`
-// ordered after the unit file. The steps run as the SSH user, which is
-// root here, so no step names another account.
+// starts, the `.timer` itself — enabled and running, so it fires at boot
+// and every five minutes after its last firing — and the daemon-reload
+// `Command` ordered after the unit file. The backup timer below is
+// disabled and stopped. The steps run as the SSH user, which is root
+// here, so no step names another account.
 amends "modulepath:/ruxel/Workflow.pkl"
 import "modulepath:/ruxel/Systemd.pkl" as systemd
 import "../inventory.pkl"
@@ -27,7 +28,7 @@ stages {
       new Command { title = "Reload systemd"; run { "systemctl"; "daemon-reload" }; onChangeOf { unit }; changes = "never" }
       monitor
       new Command { title = "List the timers"; run { "systemctl"; "list-timers"; "--no-pager" }; onChangeOf { monitor } }
-      new systemd.SystemdTimer { title = "The weekly backup"; name = "postgresql-backup"; service = "postgresql-backup"; onCalendar = "Sun *-*-* 02:00:00"; enabled = false }
+      new systemd.SystemdTimer { title = "The weekly backup"; name = "postgresql-backup"; service = "postgresql-backup"; onCalendar = "Sun *-*-* 02:00:00"; enabled = false; running = false }
       new systemd.SystemdTimer { title = "The quick check"; name = "postgresql-quick-check"; service = "postgresql-quick-check"; onBoot = 500.ms }
     }
   }

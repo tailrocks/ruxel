@@ -9,8 +9,8 @@
 //
 // Several playbook steps wait on other phase-3 tracks and stand here as
 // comments naming what they wait on: the SSH git form (Track A), the
-// line-editing steps, absent packages, the daemon reload of a plain
-// service, and the timer interval. The secret public key
+// line-editing steps, absent packages, and the daemon reload of a plain
+// service. The secret public key
 // at 0644 waits on the secret-type choice the Wonder design owns: a secret
 // file is 0600 or narrower today, and the rendered access file is the only
 // 0640 exception the catalogue carries.
@@ -81,6 +81,17 @@ local pgConf = new File {
   group = "postgres"
 }
 
+// The monitor's own unit file: hoisted so the reload below can watch it.
+// The timer's unit file carries its own daemon reload in the lowering; the
+// service file the timer starts does not.
+local monitorService = new File {
+  path = "/etc/systemd/system/chainargos-postgresql-multixact-monitor.service"
+  content = read("chainargos-postgresql-multixact-monitor.service").text
+  mode = "0644"
+  owner = "root"
+  group = "root"
+}
+
 // BLOCKED on the secret-type choice the Wonder design owns: a secret file is
 // 0600 or narrower, and only the rendered access file may hold secrets at
 // 0640. The playbook deploys the public key at 0644.
@@ -128,12 +139,13 @@ local dataMount = new storage.Mount {
 // used has no plain-service form (timers reload it themselves).
 
 // The report the playbook warns from: the capture reads the settings a
-// reload could not adopt, and the notice carries them into the run. The
-// capture connects over TCP, where the access file trusts the postgres
-// user without a password; over the socket peer would refuse root.
+// reload could not adopt, and the notice carries them into the run. It
+// runs as postgres: psql without a host takes the Unix-domain socket, and
+// peer authentication checks the operating-system user.
 local pendingRestart = new Capture {
   title = "Report settings that still require a restart"
-  bash = "psql -h 127.0.0.1 -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+  bash = "psql -p 40000 -U postgres -tAXc \"SELECT string_agg(name, ', ') FROM pg_settings WHERE pending_restart\""
+  becomeUser = "postgres"
 }
 
 stages {
@@ -144,10 +156,15 @@ stages {
     mode = "0600"
     content = "\(sshPrivateKey)"
   }
-  // Trusting an already-trusted config changes nothing, so the command
-  // never reports a change: a first apply under-reports the one-time trust
-  // instead of reporting a change on every apply.
-  new Command { run { "mise"; "trust"; "/projects/java-monorepo/mise.toml" }; changes = "never" }
+  // BLOCKED with the checkout above: the playbook trusts the config after
+  // cloning it, and the only checkout that could create
+  // /projects/java-monorepo/mise.toml is commented out. Trusting an
+  // absent config prints `No such file or directory` and exits 1, so the
+  // command waits with the checkout instead of aborting the first stage.
+  // Trusting an already-trusted config changes nothing, so once restored
+  // the command never reports a change: a first apply under-reports the
+  // one-time trust instead of reporting a change on every apply.
+  // new Command { run { "mise"; "trust"; "/projects/java-monorepo/mise.toml" }; changes = "never" }
   // Swap is already off on a configured host, so turning it off again
   // changes nothing either.
   new Command { run { "swapoff"; "-a" }; changes = "never" }
@@ -265,14 +282,6 @@ stages {
     running = true
     reloadOnChangeOf { pgConf; pgHba }
   }
-  // The report the playbook warns from: the capture reads the settings a
-  // reload could not adopt, and the notice carries them into the run. The
-  // notice never reports a change, and nothing ever restarts PostgreSQL.
-  pendingRestart
-  new postgres.PendingRestartNotice {
-    output = pendingRestart.stdout()
-    version = "19"
-  }
   new File {
     path = "/usr/local/sbin/chainargos-postgresql-multixact-monitor"
     content = read("chainargos-postgresql-multixact-monitor").text
@@ -280,83 +289,94 @@ stages {
     owner = "root"
     group = "root"
   }
-  new File {
-    path = "/etc/systemd/system/chainargos-postgresql-multixact-monitor.service"
-    content = read("chainargos-postgresql-multixact-monitor.service").text
-    mode = "0644"
-    owner = "root"
-    group = "root"
-  }
-  // The playbook's timer fires every 5 minutes past boot; the catalogue
-  // timer fires once 2 minutes past boot — the interval has no catalogue
-  // form yet (systemd track).
+  monitorService
+  // The playbook reloads systemd when the service file or the timer file
+  // changed. The timer's own change reloads it in the lowering; the
+  // service file's change reloads it here, in the order it was written.
+  // Reloading a reloaded daemon changes nothing, so the command never
+  // reports a change.
+  new Command { title = "Reload systemd"; run { "systemctl"; "daemon-reload" }; onChangeOf { monitorService }; changes = "never" }
+  // The playbook's timer fires 2 minutes past boot and every 5 minutes
+  // after; the timer starts now, so the monitor reports during the
+  // current uptime instead of waiting for the next boot.
   new systemd.SystemdTimer {
     name = "chainargos-postgresql-multixact-monitor"
     onBoot = 2.min
+    repeat = 5.min
     enabled = true
   }
   new postgres.Role {
     name = "chainargos"
     password = postgres.secretPassword(chainargosPassword)
-    roleAttrFlags = "SUPERUSER"
+    // The playbook states SUPERUSER alone: the module logs the role in by
+    // default, so the end state is LOGIN. The agent states exactly what it
+    // is told, so the port states both flags.
+    roleAttrFlags = "SUPERUSER, LOGIN"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = postgres.secretName(bitcoinUsername)
     password = postgres.secretPassword(bitcoinPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = postgres.secretName(ethereumUsername)
     password = postgres.secretPassword(ethereumPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = postgres.secretName(bscUsername)
     password = postgres.secretPassword(bscPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = postgres.secretName(tronUsername)
     password = postgres.secretPassword(tronPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = "looker"
     password = postgres.secretPassword(lookerPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Role {
     name = "kestra"
     password = postgres.secretPassword(kestraPassword)
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
-  new postgres.Database { name = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "wallet-screening"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "ethereum"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "base"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "transfer_monitor"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_java_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_rust_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_java_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_rust_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_java_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_rust_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_java_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "verify_rust_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "kestra_pegasus"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Database { name = "kestra_delorean"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000 }
-  new postgres.Schema { name = "wallet_tags"; loginDb = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000 }
+  new postgres.Database { name = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "wallet-screening"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "ethereum"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "base"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "transfer_monitor"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_java_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_rust_bitcoin"; owner = postgres.secretName(bitcoinUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_java_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_rust_eth"; owner = postgres.secretName(ethereumUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_java_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_rust_bsc"; owner = postgres.secretName(bscUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_java_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "verify_rust_tron"; owner = postgres.secretName(tronUsername); loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "kestra_pegasus"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Database { name = "kestra_delorean"; owner = "kestra"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
+  new postgres.Schema { name = "wallet_tags"; loginDb = "redshift"; owner = "chainargos"; loginUser = "postgres"; loginPort = 40000; becomeUser = "postgres" }
   new postgres.Privilege {
     loginDb = "redshift"
     type = "database"
@@ -364,6 +384,7 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -373,6 +394,7 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -383,6 +405,7 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -393,6 +416,7 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -402,6 +426,7 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
   }
   new postgres.Privilege {
     loginDb = "redshift"
@@ -411,6 +436,20 @@ stages {
     role = "looker"
     loginUser = "postgres"
     loginPort = 40000
+    becomeUser = "postgres"
+  }
+} }
+  // The report the playbook warns from. Handlers flush when the play ends,
+  // so this stage reads the settings after the reload above ran: a capture
+  // beside the service would read them before the reload, when nothing the
+  // reload could not adopt shows yet. The capture runs in check and diff
+  // too, the notice fires only on a non-empty report, and nothing ever
+  // restarts PostgreSQL.
+  new Stage { title = "Report the settings a reload could not adopt"; hosts = new Listing { postgresqlNova }; steps {
+  pendingRestart
+  new postgres.PendingRestartNotice {
+    output = pendingRestart.stdout()
+    version = "19"
   }
 } } }
 
