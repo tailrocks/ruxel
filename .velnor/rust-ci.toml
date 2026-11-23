@@ -221,3 +221,7 @@ timeout_minutes = 20
 # refuses the scale-set overlayfs). The declared acceptance-local.yml
 # workflow runs the same mise task on the hosted runner; keep its job
 # required in the branch ruleset so the gate stays as strong.
+
+[[inputs]]
+glob = "crates/ruxel/ruxel/tests/fixtures/local_exit_agent.rs"
+packages = ["ruxel"]
