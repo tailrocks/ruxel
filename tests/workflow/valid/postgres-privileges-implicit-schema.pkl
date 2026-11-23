@@ -1,0 +1,30 @@
+// An omitted table schema is the public schema the agent reads, not
+// another table: the same grant with an unset schema and with public
+// stated is one declaration, so the two merge instead of conflicting.
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "Looker reads redshift"; hosts = inventory.workers; steps {
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ledger" }
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+  new postgres.Privilege {
+    loginDb = "redshift"
+    type = "table"
+    privs = "SELECT"
+    objs { "ledger" }
+    schema = "public"
+    role = "looker"
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "valid/postgres-privileges-implicit-schema.pkl"

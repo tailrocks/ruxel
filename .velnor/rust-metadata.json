@@ -439,6 +439,16 @@
               "requires_features": false
             },
             {
+              "name": "workflow_postgres_guards",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_postgres_guards.rs",
+              "requires_features": false
+            },
+            {
               "name": "workflow_postgres_nova",
               "kinds": [
                 "test"
@@ -446,6 +456,16 @@
               "tests": true,
               "doctest": false,
               "source": "crates/ruxel-config/tests/workflow_postgres_nova.rs",
+              "requires_features": false
+            },
+            {
+              "name": "workflow_postgres_nova_monitor",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/ruxel-config/tests/workflow_postgres_nova_monitor.rs",
               "requires_features": false
             },
             {
@@ -1671,5 +1691,5 @@
     "crates/ruxel-proto/Cargo.toml": "04471c19b824f6146033e56c216aad2c1002ce6b68db02a280512eaacfd6a5ff",
     "crates/ruxel/Cargo.toml": "958bcee539704880984357a6d2a5baccfa98c37f09f10fbc4e3fb0e6d4d57981"
   },
-  "layout": "0c163adab7b71965890f4b8fd660b8a64a54342eb1dfd9580e36256b9a5d06b1"
+  "layout": "51ac3e8ffd01e4561a624fb2dbb3e08d9a3ac2a4416aa0208bc14faf68758ea5"
 }

@@ -1,0 +1,19 @@
+// A role name past PostgreSQL's 63-byte identifier limit creates the
+// silently truncated role, which the next apply mistakes for absent and
+// fails on as a duplicate.
+// expect: the role's name is 64 characters; PostgreSQL truncates identifiers past 63 bytes
+amends "modulepath:/ruxel/Workflow.pkl"
+import "modulepath:/ruxel/Core.pkl" as core
+import "modulepath:/ruxel/Postgres.pkl" as postgres
+import "../inventory.pkl"
+
+stages { new Stage { title = "t"; hosts = inventory.workers; steps {
+  new postgres.Role {
+    name = "0123456789012345678901234567890123456789012345678901234567890123"
+    password = postgres.secretPassword(core.fnox("CHAINARGOS_PASSWORD"))
+    loginUser = "postgres"
+    loginPort = 40000
+  }
+} } }
+
+name = "invalid/postgres-role-long-name.pkl"
