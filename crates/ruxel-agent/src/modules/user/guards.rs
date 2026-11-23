@@ -395,5 +395,5 @@ pub(super) fn planned_gid(group: &str, check_mode: bool) -> Result<Option<u32>, 
 /// databases still show the numbers and the sets the plan has already
 /// left behind while check mode runs.
 #[cfg(test)]
-#[path = "guards/tests.rs"]
+#[path = "guards/tests/mod.rs"]
 mod tests;
