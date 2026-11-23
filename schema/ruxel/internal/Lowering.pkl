@@ -2262,7 +2262,7 @@ function groupRemovalsAcrossStages(_stages: List<core.Stage>, _indexes: List<Sta
   positions(_indexes).flatMap((m) -> positions(_indexes[m].steps).flatMap((i) ->
     let (g = _indexes[m].steps[i])
     if (g is linux.Group && g.state == "absent")
-      positions(_indexes).filter((n) -> n < m && hostsOverlap(_stages[n], _stages[m]))
+      positions(_indexes).filter((n) -> n < m && hostsShareIdentity(_stages[n], _stages[m]))
         .flatMap((n) -> heldGroups(_stages, _indexes, n, m, i, g.name)
           .map((a) -> if (a.last == "primary")
             "stage \"\(_stages[n].title)\" leaves the account \(a.first) keeping the group \(g.name) as its primary group, and '\(name(g))' (\(where(_indexes[m].placed[i]))) of stage \"\(_stages[m].title)\" removes the group; groupdel refuses a group an account keeps as its primary one, so remove the account or move it to another group first"
@@ -2281,7 +2281,7 @@ function heldGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: In
   positions(_indexes[n].steps).flatMap((j) ->
     let (u = _indexes[n].steps[j])
     if (!(u is linux.User) || u.state != "present" || !keepsGroup(u, group)) List()
-    else if (sharedHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && stageRunsOn(_stages[k], h)
+    else if (sharedIdentityHosts(_stages[n], _stages[m]).any((h) -> !positions(_indexes).any((k) -> k > n && k <= m && identityRunsOn(_stages[k], h)
       && positions(_indexes[k].steps).any((j2) -> (k < m || j2 < i) && leavesGroup(_indexes[k].steps[j2], u, group))))
       && !supplementaryRestored(_stages, _indexes, n, m, u, group)) List(List(u.user, if (primaryGroup(u).contains(group)) "primary" else "supplementary"))
     else List())
@@ -2293,7 +2293,7 @@ function heldGroups(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: In
 /// stage declares. A primary membership is never lifted: `groupdel`
 /// refuses a group an account keeps as its primary one.
 function supplementaryRestored(_stages: List<core.Stage>, _indexes: List<StageIndex>, n: Int, m: Int, u: linux.User, group: String): Boolean =
-  !primaryGroup(u).contains(group) && sharedHosts(_stages[n], _stages[m]).every((h) -> restoresMembership(_stages, _indexes, m, u.user, group, h))
+  !primaryGroup(u).contains(group) && sharedIdentityHosts(_stages[n], _stages[m]).every((h) -> restoresMembership(_stages, _indexes, m, u.user, group, h))
 
 /// Whether a later stage puts the account's supplementary membership in
 /// `group` back on the host `h`: a stage after the removal declares the
@@ -2301,7 +2301,7 @@ function supplementaryRestored(_stages: List<core.Stage>, _indexes: List<StageIn
 /// one, so the membership `groupdel` erased holds again at the end of
 /// the run.
 function restoresMembership(_stages: List<core.Stage>, _indexes: List<StageIndex>, m: Int, account: String, group: String, h: core.Host): Boolean =
-  positions(_indexes).filter((k) -> k > m && stageRunsOn(_stages[k], h))
+  positions(_indexes).filter((k) -> k > m && identityRunsOn(_stages[k], h))
     .any((k) -> identityPresent(_indexes[k], List(group, "group")) && restoresMembershipOn(_indexes[k], account, group))
 
 /// Whether the stage declares the account keeping the group as a
