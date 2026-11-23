@@ -51,6 +51,13 @@ fn root() -> PathBuf {
 /// as static text and the hold that conflicts with a pin are refused by
 /// both, each with its own wording. Each invalid one must be refused by
 /// both.
+///
+/// The absent forms are here too: two removals of one path must agree on
+/// the recursion, the same rule for IPv4 and IPv6 is two rules of two
+/// separate rule sets, two removals of one rule are one state however
+/// they name the jump, and a chain policy takes no state. The names the
+/// firewall reads are here too: a chain name that holds whitespace and an
+/// interface name longer in bytes than in characters are refused by both.
 const EXAMPLES: &[&str] = &[
     "valid/user-missing-account.pkl",
     "valid/read-resource.pkl",
@@ -322,62 +329,37 @@ const EXAMPLES: &[&str] = &[
     "invalid/linux-group-gid-draw-same-stage-order.pkl",
     "valid/linux-user-removal-home-after-removal.pkl",
     "invalid/linux-user-removal-home-after-partial-removal.pkl",
+    "invalid/absent-recursive-mismatch.pkl",
+    "valid/iptables-parallel-versions.pkl",
+    "valid/iptables-universal-destination.pkl",
+    "invalid/iptables-universal-destination-conflict.pkl",
+    "invalid/iptables-universal-destination-ipv6-conflict.pkl",
+    "invalid/engine-iptables-policy-state.pkl",
+    "invalid/iptables-chain-option-name.pkl",
+    "invalid/iptables-chain-target-name.pkl",
+    "invalid/iptables-chain-name-long.pkl",
+    "invalid/iptables-interface-name.pkl",
+    "invalid/iptables-interface-name-colon.pkl",
+    "invalid/iptables-interface-name-dot.pkl",
+    "invalid/iptables-interface-name-dotdot.pkl",
+    "invalid/iptables-interface-name-long.pkl",
+    "invalid/iptables-destination-syntax.pkl",
+    "invalid/iptables-destination-family.pkl",
+    "invalid/iptables-destination-masked-conflict.pkl",
+    "invalid/iptables-destination-host-conflict.pkl",
+    "invalid/iptables-destination-ipv6-spelling-conflict.pkl",
+    "valid/iptables-absent-jumps.pkl",
+    "valid/iptables-chain-name-max.pkl",
+    "invalid/iptables-icmp-version.pkl",
+    "invalid/iptables-icmpv6-version.pkl",
+    "invalid/iptables-input-out-interface.pkl",
+    "invalid/iptables-prerouting-out-interface.pkl",
+    "invalid/iptables-chain-name-whitespace.pkl",
+    "invalid/iptables-chain-name-newline.pkl",
+    "invalid/iptables-interface-name-bytes.pkl",
+    "invalid/iptables-interface-name-whitespace.pkl",
+    "invalid/absent-floor-system-alias.pkl",
 ];
-
-/// The official `pkl` binary.
-///
-/// `RUXEL_PKL` is the whole resolution: the absolute path `tools/verify-pkl-artifact` hashed
-/// against the committed checksum and printed, which the mise `dual-evaluator` task exports to
-/// this suite. There is no fallback to look the binary up on the `PATH` or in the places an
-/// operator's tools live: verification and execution must resolve to one binary, so a `pkl` the
-/// verifier never hashed may never run, and where no verified path is supplied the suite fails
-/// loudly instead of picking one of its own. A named binary that does not run is a loud failure
-/// too: the check is mandatory, and a skipped check would pass every regression the corpus was
-/// added to cover.
-fn pkl() -> Result<PathBuf> {
-    let Some(path) = std::env::var_os("RUXEL_PKL") else {
-        return Err(
-            "no verified official pkl was supplied: RUXEL_PKL must name the artifact that \
-             tools/verify-pkl-artifact hashed and printed; the dual-evaluator check is \
-             mandatory and executes exactly the verified binary, never one a PATH lookup \
-             happens to find"
-                .into(),
-        );
-    };
-    let path = PathBuf::from(path);
-    if runs(&path) {
-        Ok(path)
-    } else {
-        Err(format!(
-            "RUXEL_PKL points at {}, which is not a working official pkl",
-            path.display()
-        )
-        .into())
-    }
-}
-
-/// Whether the binary answers `--version`: the probe that separates the
-/// official CLI from an arbitrary file of the same name.
-fn runs(candidate: &Path) -> bool {
-    Command::new(candidate)
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-}
-
-/// The served modules as files, for the official CLI: it serves them under
-/// `modulepath:/ruxel/`, as the binary does.
-fn modules() -> Result<PathBuf> {
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-    let directory = std::env::temp_dir().join(format!(
-        "ruxel-dual-evaluator-{}-{}",
-        std::process::id(),
-        SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&directory)?;
-    ruxel_config::schema::export(&directory)?;
-    Ok(directory)
-}
 
 /// The examples of the secret language evaluate the same way under both
 /// evaluators.

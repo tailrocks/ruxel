@@ -63,12 +63,12 @@ async fn dynamic_recurse_is_validated_before_backend_execution() -> Result<()> {
                 &mut BTreeMap::new(),
             )
             .await;
-            if recursive && state != "directory" {
+            if recursive && state != "directory" && state != "absent" {
                 let error = outcome.expect_err("invalid resolved recurse state");
                 assert!(
                     error
                         .to_string()
-                        .contains("recurse requires state=directory"),
+                        .contains("recurse requires state=directory or state=absent"),
                     "{error:#}"
                 );
                 assert_eq!(backend.executions, 0);
